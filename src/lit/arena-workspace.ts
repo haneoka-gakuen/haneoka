@@ -418,7 +418,7 @@ export class ArenaWorkspace extends LitElement {
         }
         <a
           class="icon-button"
-          href=${`/${this.server}/${this.locale}/calendar/?kinds=arena,arena-rotation,event&view=agenda`}
+          href=${`/${this.server}/${this.locale}/calendar/?kinds=arena,event&view=agenda`}
           aria-label=${this.t("calendar")}
           title=${this.t("calendar")}
         >

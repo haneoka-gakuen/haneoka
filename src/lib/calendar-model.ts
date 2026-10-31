@@ -1,6 +1,6 @@
 /** Civil dates stay separate from instants: adding a calendar day must survive DST. */
 export type CalendarDate = `${number}-${number}-${number}`;
-export type CalendarKind = "character" | "cast" | "event" | "gacha" | "login" | "pass" | "live" | "game-live" | "arena" | "arena-rotation";
+export type CalendarKind = "character" | "cast" | "event" | "gacha" | "login" | "pass" | "live" | "game-live" | "arena";
 export const CALENDAR_FACETS = [
   "our-notes:character",
   "our-notes:cast",
@@ -12,7 +12,6 @@ export const CALENDAR_FACETS = [
   "pass",
   "game-live",
   "arena",
-  "arena-rotation",
   "external-live",
 ] as const;
 export type CalendarFacet = (typeof CALENDAR_FACETS)[number];
@@ -76,6 +75,24 @@ export interface CalendarLiveSource {
   readonly realLiveIds?: Readonly<Partial<Record<string, readonly string[]>>>;
   readonly image?: string;
 }
+export interface CalendarArenaRule {
+  readonly musicType: number;
+  readonly missions: readonly number[];
+}
+export interface CalendarArenaLeague {
+  readonly id: number;
+  readonly name: readonly string[];
+  readonly image: string;
+}
+/** Each day's rule per league, resolved at build time so the page needs no Arena catalogue. */
+export interface CalendarArena {
+  readonly releaseId: string;
+  readonly href: string;
+  readonly leagues: readonly CalendarArenaLeague[];
+  readonly missions: Readonly<Record<string, string>>;
+  readonly marks: Readonly<Record<string, string>>;
+  readonly days: Readonly<Record<string, readonly (CalendarArenaRule | null)[]>>;
+}
 export interface CalendarData {
   readonly schema: "haneoka-calendar-v1";
   readonly server: string;
@@ -85,6 +102,7 @@ export interface CalendarData {
   readonly birthdays: readonly CalendarBirthday[];
   readonly activities: readonly CalendarActivity[];
   readonly unavailable: readonly string[];
+  readonly arena?: CalendarArena;
 }
 export interface CalendarOccurrence {
   readonly id: string;
@@ -160,7 +178,9 @@ export function calendarMonthDays(value: CalendarDate, weekStart = 0): CalendarD
   const first = calendarDate(d.year, d.month, 1);
   const offset = (new Date(calendarDateUtc(first)).getUTCDay() - weekStart + 7) % 7;
   const start = addCalendarDays(first, -offset);
-  return Array.from({ length: 42 }, (_, i) => addCalendarDays(start, i));
+  const nextMonth = shiftCalendarMonth(first, 1);
+  const weeks = Math.ceil(((calendarDateUtc(nextMonth) - calendarDateUtc(start)) / dayMs) / 7);
+  return Array.from({ length: weeks * 7 }, (_, i) => addCalendarDays(start, i));
 }
 export function calendarWeekStart(locale: string): number {
   const l = new Intl.Locale(locale) as Intl.Locale & {

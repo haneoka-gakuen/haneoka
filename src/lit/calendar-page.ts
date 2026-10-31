@@ -2,17 +2,18 @@ import { LitElement, html, nothing, type PropertyValues } from "lit";
 import "@material/web/list/list.js";
 import "@material/web/list/list-item.js";
 import "@material/web/divider/divider.js";
-import "@material/web/textfield/outlined-text-field.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { readPageData } from "../lib/page-data";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { icon } from "./ui/icon";
 import { iconButton, segmented } from "./ui/controls";
 import { facet } from "./ui/facet";
 import { PaneFocus } from "./ui/pane";
 import { emptyState, loadingState } from "./ui/state";
+import { arenaMission, arenaMissionLabel, arenaAttribute, type ArenaRuleContext } from "./shared/arena-rule";
+import type { ArenaCatalog } from "../lib/arena";
 import {
   CALENDAR_FACETS,
   type CalendarFacet,
@@ -26,6 +27,8 @@ import {
   calendarWeekStart,
   parseCalendarDate,
   shiftCalendarMonth,
+  type CalendarArenaLeague,
+  type CalendarArenaRule,
   type CalendarData,
   type CalendarDate,
   type CalendarKind,
@@ -70,7 +73,8 @@ const copy: Record<string, string> = {
   live: "Live",
   "game-live": "Game live event",
   arena: "Arena",
-  "arena-rotation": "Arena rotation",
+  starts: "Starts",
+  ends: "Ends",
   allDay: "All day",
   empty: "No events",
   more: "{count} more",
@@ -93,10 +97,13 @@ const facetLabels: Record<CalendarFacet, string> = {
   pass: "pass",
   "game-live": "game-live",
   arena: "arena",
-  "arena-rotation": "arena-rotation",
   "external-live": "externalLive",
 };
 let sequence = 0;
+const LANES = 3;
+const BAR_ORDER = ["event", "gacha", "live", "birthday", "other"];
+const tone = (kind: CalendarKind) =>
+  kind === "character" || kind === "cast" ? "birthday" : kind === "live" || kind === "game-live" ? "live" : kind === "gacha" ? "gacha" : kind === "event" ? "event" : "other";
 export interface CalendarPageSeed {
   readonly calendar: CalendarData;
   readonly labels?: Readonly<Record<string, string>>;
@@ -158,7 +165,6 @@ export class CalendarPage extends LitElement {
     if (parseCalendarDate(requested)) this.selected = requested as CalendarDate;
     const view = query.get("view");
     this.view = view === "agenda" ? "agenda" : "month";
-    this.removeAttribute("data-calendar-auto");
     window.addEventListener("haneoka:locale-ready", this.localeReady);
     this.clock = window.setInterval(() => {
       this.today = calendarDayAt(Date.now(), this.zone);
@@ -169,12 +175,16 @@ export class CalendarPage extends LitElement {
     window.removeEventListener("haneoka:locale-ready", this.localeReady);
     this.paneFocus.detach();
     clearAppBarActions(this.owner);
+    clearAppBarIdentity(this.owner);
     super.disconnectedCallback();
   }
   protected updated(_changed: PropertyValues) {
     setAppBarActions(
       this.owner,
-      html`${iconButton({
+      html`${iconButton({ label: this.t("previous"), icon: "chevron_left", onClick: () => this.select(shiftCalendarMonth(this.selected, -1)) })}
+      ${iconButton({ label: this.t("next"), icon: "chevron_right", onClick: () => this.select(shiftCalendarMonth(this.selected, 1)) })}
+      <button type="button" class="button button--text" @click=${() => this.select(this.today)}>${this.t("today")}</button>
+      ${iconButton({
         label: this.t("filter"),
         icon: "filter_alt",
         toggle: true,
@@ -194,12 +204,12 @@ export class CalendarPage extends LitElement {
           { value: "agenda", label: this.t("agenda"), icon: "view_list" },
         ],
         onSelect: (view) => {
-          this.removeAttribute("data-calendar-auto");
           this.view = view;
           this.sync();
         },
       })}`,
     );
+    setAppBarIdentity(this.owner, html`<span class="calendar-month-name" aria-live="polite">${this.monthName}</span>`);
     this.paneFocus.sync(this.filtersOpen ? this.querySelector<HTMLElement>(".browse__filters.is-open") : null, () => {
       this.filtersOpen = false;
     });
@@ -238,7 +248,7 @@ export class CalendarPage extends LitElement {
   private get items() {
     const days = this.days;
     return this.data
-      ? calendarOccurrences(this.data, days[0], days[41], this.zone).filter((item) =>
+      ? calendarOccurrences(this.data, days[0]!, days.at(-1)!, this.zone).filter((item) =>
           (item.facets ?? []).some((key) => this.categories.has(key)),
         )
       : [];
@@ -389,214 +399,251 @@ export class CalendarPage extends LitElement {
       })}
     </md-list>`;
   }
-  private dateStrip() {
+  private get monthName() {
+    return new Intl.DateTimeFormat(this.locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(calendarDateUtc(this.selected));
+  }
+  private get arenaShown() {
+    return Boolean(this.data?.arena) && this.categories.has("arena");
+  }
+  private get arenaContext(): ArenaRuleContext | null {
+    const arena = this.data?.arena;
+    if (!arena) return null;
+    return {
+      locale: this.locale,
+      server: this.data!.server,
+      catalog: { identity: { releaseId: arena.releaseId }, images: { missions: arena.missions } } as unknown as ArenaCatalog,
+      marks: arena.marks,
+    };
+  }
+  private arenaRules(date: CalendarDate): readonly (CalendarArenaRule | null)[] {
+    return this.arenaShown ? (this.data!.arena!.days[date] ?? []) : [];
+  }
+  /** Bands above their mission on wide cells; one tinted dot per band where a cell cannot hold marks. */
+  private dayArena(date: CalendarDate) {
+    const rules = this.arenaRules(date);
+    const context = this.arenaContext;
+    if (!rules.length || !context) return nothing;
+    const leagues = this.data!.arena!.leagues;
     return html`
-      <div class="calendar-date-strip" role="group" aria-label=${this.t("chooseDate")}>
-        ${(() => {
-          const offset =
-            (new Date(calendarDateUtc(this.selected)).getUTCDay() - calendarWeekStart(this.locale) + 7) % 7;
-          const first = addCalendarDays(this.selected, -offset);
-          return Array.from({ length: 7 }, (_, i) => addCalendarDays(first, i)).map(
-            (date) => html`
-              <button
-                type="button"
-                data-calendar-date=${date}
-                aria-pressed=${String(date === this.selected)}
-                aria-current=${date === this.today ? "date" : nothing}
-                aria-label=${this.dateLabel(date, true)}
-                @click=${() => this.select(date)}
-                @keydown=${(e: KeyboardEvent) => this.key(e, date)}
-              >
-                <small>
-                  ${new Intl.DateTimeFormat(this.locale, { weekday: "narrow", timeZone: "UTC" }).format(calendarDateUtc(date))}
-                </small>
-                <strong>${Number(date.slice(-2))}</strong>
-              </button>
-            `,
-          );
-        })()}
+      <span class="calendar-day__arena" aria-hidden="true">
+        ${rules.map((rule, index) =>
+          rule
+            ? html`
+                <span class="calendar-day__league">
+                  <img src=${leagues[index]!.image} alt="" width="16" height="16" loading="lazy" />
+                  ${arenaMission(context, rule.missions[0]!, 16)}
+                  ${rule.musicType === 99 ? nothing : arenaAttribute(context, rule.musicType, 16)}
+                </span>
+              `
+            : html`<span class="calendar-day__league"></span>`,
+        )}
+      </span>
+      <span class="calendar-day__dots" aria-hidden="true">
+        ${rules.map((rule) => html`<i data-mission=${rule?.missions[0] ?? 0}></i>`)}
+      </span>
+    `;
+  }
+  private arenaDescription(date: CalendarDate) {
+    const leagues = this.data?.arena?.leagues ?? [];
+    return this.arenaRules(date)
+      .flatMap((rule, index) =>
+        rule ? [`${this.leagueName(leagues[index]!)} ${arenaMissionLabel(this.locale, rule.missions[0]!)}`] : [],
+      )
+      .join(", ");
+  }
+  private leagueName(league: CalendarArenaLeague) {
+    return resolveLocalizedText(league.name, this.locale).text;
+  }
+  private week(days: readonly CalendarDate[], items: readonly CalendarOccurrence[]) {
+    const month = this.selected.slice(0, 7);
+    const bars = calendarWeekSegments(
+      items.filter((item) => item.kind !== "arena").sort((left, right) => BAR_ORDER.indexOf(tone(left.kind)) - BAR_ORDER.indexOf(tone(right.kind))),
+      days,
+    );
+    const arena = days.some((date) => this.arenaRules(date).length);
+    const overflow = days.map((_, column) => bars.filter((bar) => bar.lane >= LANES && column >= bar.column && column < bar.column + bar.span).length);
+    return html`
+      <div class=${`calendar-week${arena ? " calendar-week--arena" : ""}`} role="row">
+        ${days.map((date, column) => {
+          const label = [this.dateLabel(date, true), this.arenaDescription(date)].filter(Boolean).join(", ");
+          return html`
+            <button
+              type="button"
+              role="gridcell"
+              class="calendar-day"
+              style=${`grid-column:${column + 1}`}
+              data-calendar-date=${date}
+              tabindex=${date === this.selected ? 0 : -1}
+              aria-label=${label}
+              aria-selected=${String(date === this.selected)}
+              aria-current=${date === this.today ? "date" : nothing}
+              ?data-outside=${!date.startsWith(month)}
+              @click=${() => this.select(date)}
+              @keydown=${(event: KeyboardEvent) => this.key(event, date)}
+            >
+              <span class="calendar-day__number">${Number(date.slice(-2))}</span>
+              ${this.dayArena(date)}
+              ${overflow[column] ? html`<span class="calendar-day__more">+${overflow[column]}</span>` : nothing}
+            </button>
+          `;
+        })}
+        ${bars
+          .filter((bar) => bar.lane < LANES)
+          .map((bar) => {
+            const title = this.itemTitle(bar.item);
+            return html`
+              <span
+                class=${`calendar-bar calendar-bar--${tone(bar.item.kind)}`}
+                style=${`grid-column:${bar.column + 1} / span ${bar.span};grid-row:${bar.lane + 2}`}
+                ?data-before=${bar.before}
+                ?data-after=${bar.after}
+                lang=${title.lang}
+                title=${title.text}
+              >${title.text}</span>
+            `;
+          })}
       </div>
     `;
   }
   private month(items: readonly CalendarOccurrence[]) {
-    const days = this.days,
-      month = this.selected.slice(0, 7);
+    const days = this.days;
+    const weeks = Array.from({ length: Math.ceil(days.length / 7) }, (_, index) => days.slice(index * 7, index * 7 + 7));
+    const lastMonth = this.selected.slice(0, 7);
     return html`
-      <div
-        class="calendar-grid"
-        role="grid"
-        aria-label=${new Intl.DateTimeFormat(this.locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(calendarDateUtc(this.selected))}
-      >
-        <div class="calendar-weekday-row" role="row">
+      <div class="calendar-month surface" role="grid" aria-label=${this.monthName}>
+        <div class="calendar-weekdays" role="row">
           ${days.slice(0, 7).map(
             (date) => html`
-              <span role="columnheader">
-                ${new Intl.DateTimeFormat(this.locale, { weekday: "short", timeZone: "UTC" }).format(calendarDateUtc(date))}
-              </span>
+              <span role="columnheader">${new Intl.DateTimeFormat(this.locale, { weekday: "short", timeZone: "UTC" }).format(calendarDateUtc(date))}</span>
             `,
           )}
         </div>
-        ${Array.from({ length: 6 }, (_, i) => days.slice(i * 7, i * 7 + 7)).map((week) => {
-          const segments = calendarWeekSegments(items, week);
-          return html`
-            <div class="calendar-week">
-              <div class="calendar-days" role="row">
-                ${week.map((date) => {
-                  const onDay = calendarOnDay(items, date);
-                  const overflow = segments.filter(
-                    (s) => s.lane >= 3 && s.item.start <= date && s.item.end >= date,
-                  ).length;
-                  return html`
-                  <div
-                    class=${`calendar-cell${date.slice(0, 7) !== month ? " is-other-month" : ""}${date === this.selected ? " is-selected" : ""}`}
-                    role="gridcell"
-                    aria-selected=${String(date === this.selected)}
-                  >
-                    <button
-                      type="button"
-                      data-calendar-date=${date}
-                      tabindex=${date === this.selected ? "0" : "-1"}
-                      aria-label=${`${this.dateLabel(date, true)}${onDay.length ? ` · ${onDay.length}` : ""}`}
-                      aria-current=${date === this.today ? "date" : nothing}
-                      @click=${() => this.select(date)}
-                      @keydown=${(e: KeyboardEvent) => this.key(e, date)}
-                    >
-                      <span class="calendar-day-number">${Number(date.slice(-2))}</span>
-                      ${
-                        overflow
-                          ? html`
-                          <span class="calendar-more">${this.t("more").replace("{count}", String(overflow))}</span>
-                        `
-                          : nothing
-                      }
-                    </button>
-                  </div>
-                `;
+        ${weeks.filter((week) => week.some((date) => date.startsWith(lastMonth))).map((week) => this.week(week, items))}
+        ${this.arenaShown && this.data!.arena ? this.missionLegend() : nothing}
+      </div>
+    `;
+  }
+  private missionLegend() {
+    const context = this.arenaContext!;
+    const seen = [...new Set(this.days.flatMap((date) => this.arenaRules(date).flatMap((rule) => (rule ? [rule.missions[0]!] : []))))].sort();
+    return seen.length
+      ? html`
+          <p class="calendar-legend">
+            ${seen.map(
+              (mission) => html`<span><i data-mission=${mission}></i>${arenaMission(context, mission, 16)}${arenaMissionLabel(this.locale, mission)}</span>`,
+            )}
+          </p>
+        `
+      : nothing;
+  }
+  private dayArenaPanel(date: CalendarDate) {
+    const rules = this.arenaRules(date);
+    const context = this.arenaContext;
+    if (!rules.length || !context) return nothing;
+    const { leagues, href } = this.data!.arena!;
+    return html`
+      <section class="calendar-arena">
+        <h3 class="detail-section-title">
+          <span class="detail-section-title__icon" aria-hidden="true">${icon("swords", 18)}</span>
+          <span class="detail-section-title__label">${this.t("arena")}</span>
+        </h3>
+        <ul>
+          ${rules.map((rule, index) =>
+            rule
+              ? html`
+                  <li>
+                    <a href=${href}>
+                      <img src=${leagues[index]!.image} alt="" width="28" height="28" loading="lazy" />
+                      <span>${this.leagueName(leagues[index]!)}</span>
+                      ${rule.musicType === 99 ? nothing : arenaAttribute(context, rule.musicType, 20)}
+                      ${arenaMission(context, rule.missions[0]!, 20)}
+                      <small>${arenaMissionLabel(this.locale, rule.missions[0]!)}</small>
+                    </a>
+                  </li>
+                `
+              : nothing,
+          )}
+        </ul>
+      </section>
+    `;
+  }
+  private dayPanel(items: readonly CalendarOccurrence[]) {
+    return html`
+      <aside class="calendar-detail surface" aria-live="polite">
+        <header>
+          <h2>${this.dateLabel(this.selected, true)}</h2>
+          <small>${this.zone}</small>
+        </header>
+        ${this.dayArenaPanel(this.selected)}
+        ${this.entries(calendarOnDay(items, this.selected).filter((item) => item.kind !== "arena"))}
+      </aside>
+    `;
+  }
+  /** Each day of the month with what starts or ends on it, so a long event is not repeated daily. */
+  private agenda(items: readonly CalendarOccurrence[]) {
+    const month = this.selected.slice(0, 7);
+    const days = this.days.filter((date) => date.startsWith(month));
+    const context = this.arenaContext;
+    const rows = days.flatMap((date) => {
+      const changes = items.filter((item) => item.kind !== "arena" && (item.start === date || item.end === date));
+      const rules = this.arenaRules(date);
+      return changes.length || date === this.today ? [{ date, changes, rules }] : [];
+    });
+    if (!rows.length) return emptyState({ title: this.t("empty"), icon: "event" });
+    return html`
+      <ol class="calendar-agenda">
+        ${rows.map(
+          ({ date, changes, rules }) => html`
+            <li class="calendar-agenda__day surface" ?data-today=${date === this.today}>
+              <button type="button" class="calendar-agenda__date" aria-label=${this.dateLabel(date, true)} @click=${() => {
+                this.selected = date;
+                this.view = "month";
+                this.sync();
+              }}>
+                <small>${new Intl.DateTimeFormat(this.locale, { weekday: "short", timeZone: "UTC" }).format(calendarDateUtc(date))}</small>
+                <strong>${Number(date.slice(-2))}</strong>
+              </button>
+              <div>
+                ${
+                  rules.length && context
+                    ? html`<span class="calendar-agenda__arena">
+                        ${rules.map((rule, index) =>
+                          rule
+                            ? html`<span><img src=${this.data!.arena!.leagues[index]!.image} alt="" width="20" height="20" loading="lazy" />${arenaMission(context, rule.missions[0]!, 18)}</span>`
+                            : nothing,
+                        )}
+                      </span>`
+                    : nothing
+                }
+                ${changes.map((item) => {
+                  const title = this.itemTitle(item);
+                  const phase = item.start === item.end ? "" : this.t(item.start === date ? "starts" : "ends");
+                  const body = html`<i class=${`calendar-tone calendar-tone--${tone(item.kind)}`}></i><span lang=${title.lang}>${title.text}</span><small>${[phase, this.t(item.kind)].filter(Boolean).join(" · ")}</small>`;
+                  return item.kind !== "cast" && item.href
+                    ? html`<a class="calendar-agenda__item" href=${item.href}>${body}</a>`
+                    : html`<span class="calendar-agenda__item">${body}</span>`;
                 })}
               </div>
-              <div class="calendar-bars" aria-hidden="true">
-                ${segments
-                  .filter((s) => s.lane < 3)
-                  .map((s) => {
-                    const title = this.itemTitle(s.item);
-                    return html`
-                    <span
-                      class=${`calendar-bar calendar-bar--${category(s.item.kind)}${s.before ? " continues-before" : ""}${s.after ? " continues-after" : ""}`}
-                      style=${`grid-column:${s.column + 1}/span ${s.span};grid-row:${s.lane + 1}`}
-                      title=${`${title.text} · ${this.range(s.item)}`}
-                    >
-                      ${s.item.kind === "character" || s.item.kind === "cast" ? icon("cake", 14) : nothing}
-                      <span lang=${title.lang}>${title.text}</span>
-                    </span>
-                  `;
-                  })}
-              </div>
-            </div>
-          `;
-        })}
-      </div>
+            </li>
+          `,
+        )}
+      </ol>
     `;
   }
   render() {
     const items = this.items;
-    const month = new Intl.DateTimeFormat(this.locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
-      calendarDateUtc(this.selected),
-    );
     return html`
       <section class="calendar-page">
-      <div class="calendar-view" ?inert=${this.filtersOpen}>
-        <header class="calendar-toolbar">
-          <h2 aria-live="polite">${month}</h2>
-          <div class="calendar-month-actions">
-            <button type="button" class="button button--text" @click=${() => this.select(this.today)}>
-              ${this.t("today")}
-            </button>
-            ${iconButton({ label: this.t("previous"), icon: "chevron_left", onClick: () => this.select(shiftCalendarMonth(this.selected, -1)) })}
-            ${iconButton({ label: this.t("next"), icon: "chevron_right", onClick: () => this.select(shiftCalendarMonth(this.selected, 1)) })}
-            <span class="calendar-date-button">${iconButton({
-              label: this.t("chooseDate"),
-              icon: "event",
-              onClick: () => {
-                const input = this.querySelector<HTMLInputElement>("input[data-native-date]");
-                if (input?.showPicker) input.showPicker();
-                else input?.focus();
-              },
-            })}</span>
-            <md-outlined-text-field class="calendar-date-field" type="text" label=${this.t("chooseDate")}
-              .value=${this.selected} inputmode="text" pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-              @change=${(event: Event) => {
-                const field = event.target as HTMLElement & { value: string; error: boolean; errorText: string };
-                if (parseCalendarDate(field.value)) {
-                  field.error = false;
-                  this.select(field.value as CalendarDate);
-                } else {
-                  field.error = true;
-                  field.errorText = this.t("invalidDate");
-                }
-              }}>
-              <span slot="trailing-icon">${iconButton({
-                label: this.t("chooseDate"),
-                icon: "event",
-                onClick: () => {
-                  const input = this.querySelector<HTMLInputElement>("input[data-native-date]");
-                  if (input?.showPicker) input.showPicker();
-                  else input?.focus();
-                },
-              })}</span>
-            </md-outlined-text-field>
-            <input data-native-date class="calendar-native-date" type="date" aria-label=${this.t("chooseDate")} tabindex="-1" aria-hidden="true" .value=${this.selected}
-              @change=${(event: Event) => {
-                const date = (event.target as HTMLInputElement).value;
-                if (parseCalendarDate(date)) this.select(date as CalendarDate);
-              }} />
-          </div>
-        </header>
-        ${
-          this.data?.unavailable.length
-            ? html`
-                <p class="calendar-notice" role="status">${this.t("unavailable")}</p>
-              `
-            : nothing
-        }
-        <div class=${`calendar-content calendar-content--${this.view}`}>
+        <div class="calendar-view" ?inert=${this.filtersOpen}>
           ${
-            this.view === "month"
-              ? this.month(items)
-              : html`
-                  <section class="calendar-day-agenda calendar-mobile-agenda">
-                    ${this.dateStrip()}
-                    <header>
-                      <h3>${this.dateLabel(this.selected, true)}</h3>
-                      <span>${this.zone}</span>
-                    </header>
-                    ${this.entries(calendarOnDay(items, this.selected))}
-                  </section>
-                `
-          }
-          ${
-            this.view === "month"
-              ? html`
-                  <section class="calendar-day-agenda" aria-live="polite">
-                    ${this.dateStrip()}
-                    <header>
-                      <h3>${this.dateLabel(this.selected, true)}</h3>
-                      <span>${this.zone}</span>
-                    </header>
-                    ${this.entries(calendarOnDay(items, this.selected))}
-                  </section>
-                `
-              : nothing
+            !this.data
+              ? html`<div class="calendar-loading">${loadingState(clientText(this.locale, "common.states.loading", "Loading"))}</div>`
+              : this.view === "month"
+                ? html`<div class="calendar-layout">${this.month(items)}${this.dayPanel(items)}</div>`
+                : this.agenda(items)
           }
         </div>
-        ${
-          !this.data
-            ? html`
-                <div class="calendar-loading">${loadingState(clientText(this.locale, "common.states.loading", "Loading"))}</div>
-              `
-            : nothing
-        }
-      </div>
-      ${this.filterPanel()}
+        ${this.filterPanel()}
       </section>
     `;
   }

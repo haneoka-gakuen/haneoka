@@ -3209,7 +3209,8 @@
       "garupaCastBirthday": "GBP voice actor birthdays",
       "externalLive": "External live events",
       "arena": "Gekiso Arena",
-      "arena-rotation": "Arena rotation"
+      "starts": "Starts",
+      "ends": "Ends"
     },
     "eventTracker": {
       "title": "Event tracker",

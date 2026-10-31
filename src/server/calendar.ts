@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { arenaCatalog } from "./arena-catalog";
-import { t } from "../i18n/messages";
+import { arenaPeriods, arenaRuleMarkNames } from "../lib/arena";
 import { characterProfiles } from "../data/characterProfiles";
 import { castProfiles } from "../data/castProfiles";
 import {
@@ -19,7 +19,10 @@ import { resourcePath, type ReleaseServer } from "../lib/resource-route";
 import type { Locale } from "../i18n/locales";
 import { prepareCalendarLives } from "./calendar-live-build";
 import {
+  calendarDayAt,
   parseCalendarDate,
+  type CalendarArena,
+  type CalendarArenaRule,
   type CalendarBirthday,
   type CalendarLiveSource,
   type CalendarData,
@@ -35,6 +38,8 @@ const kinds = {
   passes: "pass",
   "real-lives": "game-live",
 } as const;
+/** A rotation starts at the small hours, so its civil day is read a little after. */
+const ARENA_DAY_OFFSET_MS = 6 * 3_600_000;
 const cache = new Map<string, Promise<CalendarData>>();
 const rows = (value: unknown): Array<Record<string, unknown> & { id: string }> => {
   const doc = asRecord(value),
@@ -333,16 +338,25 @@ export async function loadCalendarData(
         });
       }
     const arena = await arenaCatalog(server, release);
+    const arenaDays: Record<string, (CalendarArenaRule | null)[]> = {};
     for (const season of Object.values(arena.entries)) {
       const href = resourcePath({ server, locale, kind: "arena" });
       activities.set(`arena:${season.id}`, { id: `arena:${season.id}`, kind: "arena", title: season.title,
         startAtMs: season.startAt, endAtMs: season.endAt, href: `${href}#${season.id}`, timeZone: season.timeZone });
-      const boundaries = [...new Set(season.leagues.flatMap((league) => league.rules.map((rule) => rule.startAt)))];
-      for (const startAtMs of boundaries) activities.set(`arena-rotation:${season.id}:${startAtMs}`, {
-        id: `arena-rotation:${season.id}:${startAtMs}`, kind: "arena-rotation", title: t(locale, "catalog.arena.rotation"),
-        startAtMs, href: `${href}#arena-period-${startAtMs}`, timeZone: season.timeZone,
-      });
+      for (const period of arenaPeriods(season))
+        for (let at = period.startAt + ARENA_DAY_OFFSET_MS; at < period.endAt; at += 86_400_000)
+          arenaDays[calendarDayAt(at, season.timeZone)] = period.rules.map((rule) =>
+            rule ? { musicType: rule.musicType, missions: rule.missions } : null);
     }
+    const arenaLeagues = Object.values(arena.entries)[0]?.leagues ?? [];
+    const calendarArena: CalendarArena | undefined = Object.keys(arenaDays).length ? {
+      releaseId: arena.identity.releaseId,
+      href: resourcePath({ server, locale, kind: "arena" }),
+      leagues: arenaLeagues.map(({ id, name, image }) => ({ id, name, image })),
+      missions: arena.images?.missions ?? {},
+      marks: arenaRuleMarkNames(((await fetchOptionalStaticCatalog("ui-marks", server, release)).value as Record<string, string>) || {}),
+      days: arenaDays,
+    } : undefined;
     const liveSnapshot = sources.lives
       ? { lives: sources.lives, unavailable: false, buildId: undefined }
       : await bandoriLiveSnapshot(release, documents["real-lives"]);
@@ -394,6 +408,7 @@ export async function loadCalendarData(
       birthdays: [...birthdays.values()],
       activities: [...activities.values()],
       unavailable,
+      ...(calendarArena ? { arena: calendarArena } : {}),
     };
   };
   const promise = load();

@@ -3209,7 +3209,8 @@
       "garupaCastBirthday": "GBP 声優の誕生日",
       "externalLive": "外部ライブ",
       "arena": "撃奏アリーナ",
-      "arena-rotation": "アリーナ切替"
+      "starts": "開始",
+      "ends": "終了"
     },
     "eventTracker": {
       "title": "イベント追跡",

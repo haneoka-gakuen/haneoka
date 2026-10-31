@@ -3209,7 +3209,8 @@
       "garupaCastBirthday": "GBP 성우 생일",
       "externalLive": "외부 라이브",
       "arena": "격주 아레나",
-      "arena-rotation": "아레나 로테이션"
+      "starts": "시작",
+      "ends": "종료"
     },
     "eventTracker": {
       "title": "이벤트 추적",
