@@ -134,8 +134,11 @@
    translucent, while cards stay solid. The shell's own layer sets those backgrounds, so this sits in it. */
 @layer shell {
   :root[data-season-layer] body,
-  :root[data-season-layer] .app-shell,
-  :root[data-season-layer] .nav { background: transparent; }
+  :root[data-season-layer] .app-shell { background: transparent; }
+  /* Only the docked rail is part of the frame; the drawer lies over the page and stays solid. */
+  @media (min-width: 600px) {
+    :root[data-season-layer] :not(.nav-modal-open) > .nav { background: transparent; }
+  }
   :root[data-season-layer] .app-shell__main { background: color-mix(in srgb, var(--md-sys-color-surface) 55%, transparent); }
   :root[data-season-layer] .top-app-bar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 55%, transparent); }
 }
