@@ -142,8 +142,43 @@ def validate_job(job):
         raise ValueError('invalid capabilities')
 
 
+def run_lookup(job, origin):
+    """Demand only: no catalog or boards, so a player lookup answers in seconds."""
+    updates = Updates(job, origin)
+    region = job['region']
+    configured = region_config(region)
+    fields = {'status': 'ok'}
+    with tempfile.TemporaryDirectory(prefix='official-lookup-') as temporary:
+        root = Path(temporary)
+        os.chmod(root, 0o700)
+        credentials = root / 'credentials.json'
+        private_json(credentials, job['credentials'])
+        identity, _, auth = read_credentials(credentials, region)
+        deadline = job['deadlineMs'] / 1000 - 2
+        try:
+            sampler = Sampler(SimpleNamespace(region=region, descriptors=Path(__file__).parent/configured.descriptor,
+                output=root/'receipts', client_version=job['clientVersion'], proxy='', connect_ip=None,
+                credentials=credentials, credential_identity=identity, stop_file=None, deadline=deadline,
+                api_origin=auth['origin']))
+            sampler.version()
+            stopped = Demand(job, sampler, updates, deadline).run()
+            if stopped:
+                fields = {'status': failure_status(stopped)}
+                if fields['status'] == 'rate_limited':
+                    fields['retryAfterSeconds'] = retry_delay(stopped, 300)
+        except CallbackError:
+            raise
+        except Exception as error:
+            fields = {'status': 'failed', 'failure': failure_info('demand', error)}
+            report_failure(region, fields['failure'])
+        updates.send('complete', **fields)
+    return {'runId': job['runId'], 'status': fields['status']}
+
+
 def run_job(job, origin):
     validate_job(job)
+    if job.get('mode') == 'lookup':
+        return run_lookup(job, origin)
     updates = Updates(job, origin)
     region = job['region']
     configured = region_config(region)

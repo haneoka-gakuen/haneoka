@@ -34,7 +34,8 @@ class DemandStopped(Exception):
 class Demand:
     def __init__(self, job, sampler, updates, deadline):
         self.job, self.sampler, self.updates = job, sampler, updates
-        self.budget = min(time.time() + 40, deadline - 30)
+        lookup = job.get('mode') == 'lookup'
+        self.budget = deadline if lookup else min(time.time() + 40, deadline - 30)
 
     def room(self, requests):
         return time.time() + requests * PACE_SECONDS < self.budget

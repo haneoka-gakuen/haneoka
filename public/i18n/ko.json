@@ -5668,7 +5668,38 @@
       "cancel": "취소",
       "showRestrictedContent": "미공개 콘텐츠 표시",
       "showRestrictedContentHint": "선택한 회원 그룹만 접근할 수 있습니다. 공개 페이지에는 표시되지 않습니다.",
-      "contentAccessGroups": "접근을 허용할 회원 그룹"
+      "contentAccessGroups": "접근을 허용할 회원 그룹",
+      "pool": {
+        "title": "계정 풀",
+        "refresh": "새로고침",
+        "account": "계정",
+        "state": "상태",
+        "lastSuccess": "최근 성공",
+        "failures": "실패 횟수",
+        "hold": "일시 중지",
+        "release": "재개",
+        "clear": "중지 해제",
+        "remove": "제거",
+        "add": "계정 추가",
+        "addLabel": "계정 JSON",
+        "status": {
+          "ready": "사용 가능",
+          "working": "작업 중",
+          "cooling_down": "쿨다운 중",
+          "held": "일시 중지됨",
+          "disabled": "비활성",
+          "auth_paused": "로그인 거부",
+          "auth_uncertain": "로그인 상태 불명",
+          "ok": "정상",
+          "collecting": "수집 중",
+          "failed": "실패",
+          "rate_limited": "속도 제한",
+          "no_available_account": "사용 가능한 계정 없음",
+          "not_configured": "설정 안 됨",
+          "invalid_config": "설정 오류",
+          "not_started": "시작 안 됨"
+        }
+      }
     },
     "comments": {
       "search": "댓글 검색",

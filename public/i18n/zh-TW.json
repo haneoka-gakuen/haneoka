@@ -5668,7 +5668,38 @@
       "cancel": "取消",
       "showRestrictedContent": "顯示未公開內容",
       "showRestrictedContentHint": "僅所選身分組可以存取這些內容，公開頁面維持不變。",
-      "contentAccessGroups": "允許存取的身分組"
+      "contentAccessGroups": "允許存取的身分組",
+      "pool": {
+        "title": "帳號池",
+        "refresh": "重新整理",
+        "account": "帳號",
+        "state": "狀態",
+        "lastSuccess": "最近成功",
+        "failures": "失敗次數",
+        "hold": "暫停使用",
+        "release": "恢復使用",
+        "clear": "解除暫停",
+        "remove": "移除",
+        "add": "新增帳號",
+        "addLabel": "帳號 JSON",
+        "status": {
+          "ready": "可用",
+          "working": "工作中",
+          "cooling_down": "冷卻中",
+          "held": "已暫停",
+          "disabled": "已停用",
+          "auth_paused": "登入被拒",
+          "auth_uncertain": "登入狀態未知",
+          "ok": "正常",
+          "collecting": "採集中",
+          "failed": "失敗",
+          "rate_limited": "被限流",
+          "no_available_account": "無可用帳號",
+          "not_configured": "未設定",
+          "invalid_config": "設定無效",
+          "not_started": "未開始"
+        }
+      }
     },
     "comments": {
       "search": "搜尋留言",

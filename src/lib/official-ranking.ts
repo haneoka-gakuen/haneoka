@@ -13,6 +13,8 @@ export const OFFICIAL_API_ORIGINS: Record<GameRecordsRegion, readonly string[]> 
 };
 
 export interface OfficialCollectorAccount {
+  /** The pool's own name for the account; holds no credential. */
+  label: string;
   identity: string;
   generation: string;
   authGeneration: string;
@@ -37,10 +39,12 @@ export interface OfficialCollectorAccountHealth {
   cooldownUntilMs: number;
   leaseUntilMs: number;
   failures: number;
+  /** Set from the admin panel: skipped until released. */
+  held?: boolean;
 }
 
 export function selectOfficialCollectorAccount(pool: OfficialCollectorPool, health: Record<string, OfficialCollectorAccountHealth>, now: number): OfficialCollectorAccount | null {
-  return pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause && !health[account.identity]?.blocked[account.authGeneration]
+  return pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause && !health[account.identity]?.held && !health[account.identity]?.blocked[account.authGeneration]
     && account.availableAtMs <= now && (health[account.identity]?.cooldownUntilMs ?? 0) <= now && (health[account.identity]?.leaseUntilMs ?? 0) <= now)
     .sort((left, right) => Number(right.identity === pool.preferredIdentity) - Number(left.identity === pool.preferredIdentity)
       || (health[left.identity]?.lastUsedAtMs ?? 0) - (health[right.identity]?.lastUsedAtMs ?? 0) || left.identity.localeCompare(right.identity))[0] ?? null;
@@ -96,7 +100,7 @@ export async function parseOfficialCollectorConfiguration(raw: string, region: G
       ? generation : digest({ region, origin, auth: authentication })));
     const masterConfig = object(config.masterConfig);
     if (!Object.keys(masterConfig).length) throw new Error("invalid_collector_config");
-    accounts.push({ identity, generation, authGeneration, legacyGenerations, enabled: !pooled || config.enabled === true,
+    accounts.push({ label: pooled ? String(config.id) : "default", identity, generation, authGeneration, legacyGenerations, enabled: !pooled || config.enabled === true,
       ready: !pooled || config.state === "ready" || config.state === "cooldown",
       availableAtMs: pooled ? Number(config.nextRequestAtMs ?? 0) : 0,
       initialPause: pooled && (["auth_required", "device_conflict"].includes(String(config.state))
@@ -198,6 +202,8 @@ export interface OfficialObservation {
 
 export interface OfficialCollectorJob {
   contract: "haneoka:official-ranking-job/1";
+  /** `lookup` skips catalog and boards and only serves demand. */
+  mode?: "lookup";
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;

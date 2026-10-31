@@ -3306,6 +3306,40 @@ const putResourceServer = async (request: Request, env: Env, slug: string): Prom
   return json(request, { operation: operationValue(operation), resourceServer: resourceServerValue(updated) });
 };
 
+const POOL_REGIONS = ["jp", "tw", "en", "kr"] as const;
+type PoolRegion = (typeof POOL_REGIONS)[number];
+
+const getCollectorPool = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const regions = await Promise.all(POOL_REGIONS.map((region) => env.OFFICIAL_RANKING_COLLECTOR.getByName(region).poolView(region)));
+  return json(request, { regions: regions as unknown as JsonValue });
+};
+
+const postCollectorPool = async (request: Request, env: Env, region: PoolRegion, identity: string | null): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  if (!body) return error(request, 400, "invalid_body", "A JSON body is required");
+  const action = identity ? body.action : "add";
+  if (!identity ? !body.account : !["hold", "release", "clear", "remove"].includes(String(action)))
+    return error(request, 422, "invalid_pool_action", "The account action is invalid");
+  const target = `${region}:${identity ? identity.slice(0, 16) : "new"}`;
+  const started = await startOperation(request, env, access, `collector.pool.${String(action)}`, "collector_account", target);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName(region);
+  const result = identity
+    ? (await collector.poolAction(region, identity, action as "hold" | "release" | "clear" | "remove")) ? "ok" : "account_not_found"
+    : await collector.poolAdd(region, body.account);
+  if (result !== "ok") {
+    await failOperation(env, started.operationId, result, { region });
+    return error(request, result === "account_not_found" ? 404 : 422, result, "The account change was refused");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { action: String(action), region }, target, null);
+  return json(request, { operation: operationValue(operation) });
+};
+
 const packageMaxBytes = (env: Env): number => {
   const configured = env.ADMIN_PACKAGE_MAX_BYTES;
   if (!configured || !/^\d{1,13}$/u.test(configured)) return DEFAULT_PACKAGE_MAX_BYTES;
@@ -4569,6 +4603,14 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     return userId && SAFE_ID_PATTERN.test(userId)
       ? revokeUserSessions(request, env, userId)
       : error(request, 404, "user_not_found", "User not found");
+  }
+  if (method === "GET" && path.length === 1 && path[0] === "collector-pool") return getCollectorPool(request, env);
+  if (method === "POST" && (path.length === 2 || path.length === 3) && path[0] === "collector-pool") {
+    const region = POOL_REGIONS.find((value) => value === path[1]);
+    const identity = path[2] ?? null;
+    return region && (identity === null || /^[a-f0-9]{64}$/u.test(identity))
+      ? postCollectorPool(request, env, region, identity)
+      : error(request, 404, "account_not_found", "Account not found");
   }
   if (method === "GET" && path.length === 1 && path[0] === "resource-servers") {
     return getResourceServers(request, env);

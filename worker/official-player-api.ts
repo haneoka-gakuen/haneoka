@@ -79,7 +79,7 @@ const queue = (ctx: ExecutionContext, env: OfficialPlayerBindings, region: GameR
     Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestDemand(region, kind, [id])).catch(() => undefined),
   );
 
-const pending = (request: Request) => json(request, { error: { kind: "pending", retryAfter: 30 } }, 503);
+const pending = (request: Request) => json(request, { error: { kind: "pending", retryAfter: 3 } }, 503);
 
 async function serveCard(request: Request, ctx: ExecutionContext, env: OfficialPlayerBindings, file: string) {
   const image = await readOfficialCardImage(env, "jp", file);

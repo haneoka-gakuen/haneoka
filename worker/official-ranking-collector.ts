@@ -16,6 +16,7 @@ export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
 >> & { OFFICIAL_RANKING_ENABLED_REGIONS?: string };
 const INTERVAL_MS = 600_000;
 const JOB_MS = 120_000;
+const LOOKUP_MS = 60_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 const DEMAND_TTL_MS = 600_000;
@@ -59,6 +60,8 @@ interface CollectorState {
   legacyPermissionBlock?: string | null;
   lastFailure?: OfficialCollectorFailure | null;
   run: CollectorRun | null;
+  /** The short demand-only job, separate from collection so a lookup never waits for one. */
+  lookup?: CollectorRun | null;
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
   arenaInterests?: ArenaInterest[];
@@ -341,7 +344,7 @@ export class OfficialRankingCollector extends Container<Env> {
         return { kind: state.status, retryAfter: null };
       const active = state.run && !state.run.complete && now <= state.run.deadlineMs + 15_000;
       if (state.run && !state.run.complete && !active) return { kind: "unavailable", retryAfter: null };
-      const pool = await configFor(this.env, region);
+      const pool = await this.poolFor(region);
       if (!active && (!pool || !this.accountFor(state, pool))) return { kind: "no_available_account", retryAfter: null };
       const arena = state.arenaCatalog === undefined ? state.run?.catalog?.arena : state.arenaCatalog;
       if (!arena || seasonId !== arena.seasonId || !arena.bandIds.includes(bandId)
@@ -376,9 +379,6 @@ export class OfficialRankingCollector extends Container<Env> {
       const state = await this.stateFor(region), now = Date.now();
       const unavailable = await officialCollectorAvailability(this.env, region);
       if (unavailable) return { kind: unavailable, retryAfter: null };
-      if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration) return { kind: "auth_paused", retryAfter: null };
-      if (["rate_limited", "failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status))
-        return { kind: state.status, retryAfter: null };
       const field = kind === "player" ? "playerInterests" : kind === "song" ? "songInterests" : "cardInterests";
       const queue = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
       const missing = ids.filter((id) => !queue.some((entry) => entry.id === id));
@@ -387,7 +387,187 @@ export class OfficialRankingCollector extends Container<Env> {
       state[field] = [...queue, ...missing.map((id) => ({ id, requestedAtMs: now }))];
       this.expediteArena(state);
       await this.persist(state);
-      return { kind: "pending", retryAfter: 30 };
+      this.ctx.waitUntil(this.runLookup(region));
+      return { kind: "pending", retryAfter: 3 };
+    });
+  }
+
+  /** The secret's pool plus accounts added from the admin panel. */
+  private async poolFor(region: GameRecordsRegion): Promise<OfficialCollectorPool | null> {
+    const extra = await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? [];
+    if (!extra.length) return configFor(this.env, region);
+    const secret = this.env[`OFFICIAL_RANKING_${region.toUpperCase()}_CONFIG` as "OFFICIAL_RANKING_JP_CONFIG"];
+    const base = secret?.trim() ? object(JSON.parse(secret)) : null;
+    const accounts = base?.contract === "haneoka:official-ranking-account-pool/1" ? base.accounts as unknown[]
+      : base ? [{ ...base, id: "default", enabled: true, state: "ready" }] : [];
+    return parseOfficialCollectorConfiguration(JSON.stringify({ ...(base?.contract ? base : {}),
+      contract: "haneoka:official-ranking-account-pool/1", region, accounts: [...accounts, ...extra] }), region);
+  }
+
+  /** Redacted per-account state for the admin panel; never credentials. */
+  async poolView(region: GameRecordsRegion): Promise<Record<string, unknown>> {
+    const state = await this.stateFor(region), now = Date.now();
+    let pool: OfficialCollectorPool | null = null;
+    try { pool = await this.poolFor(region); } catch { return { region, status: "invalid_config", accounts: [] }; }
+    if (!pool) return { region, status: "not_configured", accounts: [] };
+    this.synchronizePool(state, pool);
+    const extra = new Set((await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? []).map((row) => row.id));
+    return { region, status: state.status, nextAtMs: state.nextAtMs, lastFailure: state.lastFailure ?? null,
+      queued: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).length,
+      accounts: pool.accounts.map((account) => {
+        const health = state.accounts?.[account.identity];
+        const blocked = health?.blocked[account.authGeneration] ?? account.initialPause;
+        const status = !account.enabled || !account.ready ? "disabled" : health?.held ? "held" : blocked ? blocked
+          : (health?.leaseUntilMs ?? 0) > now ? "working"
+          : Math.max(account.availableAtMs, health?.cooldownUntilMs ?? 0) > now ? "cooling_down" : "ready";
+        return { label: account.label, identity: account.identity, status, removable: extra.has(account.label),
+          preferred: account.identity === pool!.preferredIdentity, clientVersion: account.clientVersion,
+          lastUsedAtMs: health?.lastUsedAtMs || null, lastSuccessAtMs: health?.lastSuccessAtMs ?? null,
+          cooldownUntilMs: health?.cooldownUntilMs ?? 0, failures: health?.failures ?? 0 };
+      }) };
+  }
+
+  /** `hold` skips an account, `release` undoes it, `clear` forgets its pause and cooldown. */
+  async poolAction(region: GameRecordsRegion, identity: string, action: "hold" | "release" | "clear" | "remove"): Promise<boolean> {
+    return this.serialized(async () => {
+      const state = await this.stateFor(region);
+      const pool = await this.poolFor(region);
+      const account = pool?.accounts.find((row) => row.identity === identity);
+      if (!pool || !account) return false;
+      this.synchronizePool(state, pool);
+      const health = state.accounts![identity]!;
+      if (action === "remove") {
+        const extra = await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? [];
+        const kept = extra.filter((row) => row.id !== account.label);
+        if (kept.length === extra.length) return false;
+        await this.ctx.storage.put("extraAccounts", kept);
+        delete state.accounts![identity];
+      } else if (action === "hold") health.held = true;
+      else if (action === "release") health.held = false;
+      else {
+        health.blocked = {};
+        health.cooldownUntilMs = 0;
+        health.failures = 0;
+        if (state.permissionPause?.identity === identity) state.permissionPause = null;
+        if (state.legacyPermissionBlock) state.legacyPermissionBlock = null;
+        if (pool.accounts.some((row) => row.generation === state.blockedGeneration && row.identity === identity)) state.blockedGeneration = null;
+        if (["auth_paused", "auth_uncertain", "no_available_account"].includes(state.status)) state.status = "not_started";
+        state.nextAtMs = Math.min(state.nextAtMs || Date.now(), Date.now() + 1_000);
+      }
+      await this.persist(state);
+      return true;
+    });
+  }
+
+  /** Adds an account in the pool's own format after validating it with the parser. */
+  async poolAdd(region: GameRecordsRegion, value: unknown): Promise<string> {
+    return this.serialized(async () => {
+      const account = object(value);
+      try {
+        await parseOfficialCollectorConfiguration(JSON.stringify({ contract: "haneoka:official-ranking-account-pool/1", region, accounts: [account] }), region);
+      } catch { return "invalid_account"; }
+      const extra = await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? [];
+      try { await this.ctx.storage.put("extraAccounts", [...extra, account]); await this.poolFor(region); }
+      catch { await this.ctx.storage.put("extraAccounts", extra); return "duplicate_account"; }
+      return "ok";
+    });
+  }
+
+  /** Starts a demand-only job on a free account, if one is needed and possible. */
+  private async runLookup(region: GameRecordsRegion): Promise<void> {
+    const job = await this.serialized(async (): Promise<OfficialCollectorJob | null> => {
+      const state = await this.stateFor(region), now = Date.now();
+      if (state.lookup && !state.lookup.complete && now <= state.lookup.deadlineMs + 15_000) return null;
+      const live = (entries?: DemandInterest[], limit = 16) =>
+        (entries ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, limit).map((entry) => entry.id);
+      const playerLookups = live(state.playerInterests), songRankings = live(state.songInterests, 4), cardImages = live(state.cardInterests, 32);
+      if (!playerLookups.length && !songRankings.length && !cardImages.length) return null;
+      let pool: OfficialCollectorPool | null;
+      try { pool = await this.poolFor(region); } catch { return null; }
+      if (!pool) return null;
+      this.synchronizePool(state, pool);
+      const config = this.accountFor(state, pool);
+      if (!config) { await this.ctx.storage.put("collectorState", state); return null; }
+      const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
+      const runId = crypto.randomUUID().replaceAll("-", "");
+      state.lookup = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
+        authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + LOOKUP_MS,
+        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {} };
+      const health = state.accounts?.[config.identity];
+      if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + LOOKUP_MS + 15_000; }
+      let serviceToken = await this.ctx.storage.get<string>("containerToken");
+      if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
+      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+      await this.ctx.storage.put("collectorState", state);
+      return { contract: "haneoka:official-ranking-job/1", mode: "lookup", region, runId, credentialGeneration: config.generation,
+        capabilities: ["player-demand-v1"], playerLookups, songRankings, cardImages, arenaProgress: [], arenaWindows: [],
+        clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
+        callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + LOOKUP_MS };
+    });
+    if (!job) return;
+    let failed = false;
+    try {
+      const serviceToken = await this.ctx.storage.get<string>("containerToken");
+      const response = await this.containerFetch("http://container/collect", { method: "POST",
+        headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(job), signal: AbortSignal.timeout(LOOKUP_MS + 15_000) });
+      failed = !response.ok;
+      await response.body?.cancel();
+    } catch { failed = true; }
+    const again = await this.serialized(async () => {
+      const state = await this.stateFor(region), lookup = state.lookup;
+      if (!lookup || lookup.id !== job.runId) return false;
+      if (!lookup.complete) {
+        lookup.complete = true;
+        const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
+        if (health) { health.leaseUntilMs = 0; if (failed) health.failures += 1; }
+        await this.ctx.storage.put("collectorState", state);
+      }
+      return !failed;
+    });
+    if (again) await this.runLookup(region);
+  }
+
+  /** Applies a player, song or card result from either job. */
+  private async applyDemand(state: CollectorState, region: GameRecordsRegion, update: OfficialCollectorUpdate): Promise<Response | null> {
+    if (update.type === "player-profile") {
+      if (!decimal(update.profileId) || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
+      await saveOfficialPlayers(this.env, region, [{ profileId: update.profileId, found: update.found === true,
+        profile: update.profile ?? null, totalFavorite: update.totalFavorite ?? null, observedAtMs: update.observedAtMs }]);
+      state.playerInterests = (state.playerInterests ?? []).filter((entry) => entry.id !== update.profileId);
+    } else if (update.type === "card-image") {
+      if (!CARD_FILE.test(update.file) || typeof update.data !== "string") return json({ error: "invalid_update" }, 400);
+      await saveOfficialCardImage(this.env, region, update.file, Uint8Array.from(atob(update.data), (character) => character.charCodeAt(0)));
+      state.cardInterests = (state.cardInterests ?? []).filter((entry) => entry.id !== update.file);
+    } else if (update.type === "song-ranking") {
+      if (!decimal(update.musicId) || !Array.isArray(update.players) || update.players.length > 100
+        || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
+      await saveOfficialSongRanking(this.env, { region, musicId: update.musicId, players: update.players, observedAtMs: update.observedAtMs });
+      await harvestOfficialPlayers(this.env, region, update.players, update.observedAtMs);
+      state.songInterests = (state.songInterests ?? []).filter((entry) => entry.id !== update.musicId);
+    }
+    return null;
+  }
+
+  private async lookupCallback(region: GameRecordsRegion, runId: string, update: OfficialCollectorUpdate): Promise<Response> {
+    return this.serialized(async () => {
+      const state = await this.stateFor(region), lookup = state.lookup;
+      if (!lookup || lookup.id !== runId || update.contract !== "haneoka:official-ranking-update/1"
+        || update.region !== region || update.runId !== runId || update.credentialGeneration !== lookup.generation) return json({ error: "run_mismatch" }, 409);
+      if (update.type === "complete") {
+        lookup.complete = true;
+        const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
+        if (health) {
+          health.leaseUntilMs = 0;
+          if (update.status === "rate_limited") health.cooldownUntilMs = Date.now() + retryMs(update.retryAfterSeconds);
+          if (update.status === "ok") health.failures = 0;
+        }
+      } else if (["player-profile", "song-ranking", "card-image"].includes(update.type)) {
+        const refused = await this.applyDemand(state, region, update);
+        if (refused) return refused;
+      } else return json({ error: "invalid_update" }, 400);
+      await this.ctx.storage.put("collectorState", state);
+      return json({ ok: true });
     });
   }
 
@@ -437,9 +617,10 @@ export class OfficialRankingCollector extends Container<Env> {
       } else state.legacyPermissionBlock = legacyGeneration;
     }
     if (state.permissionPause) {
-      const repaired = pool.accounts.find((account) => account.enabled && account.ready && account.identity === state.permissionPause?.identity
-        && account.authGeneration !== state.permissionPause.authGeneration);
-      if (repaired) state.permissionPause = null;
+      // The rejected account stays blocked on its own; any other usable account keeps the region running.
+      const usable = pool.accounts.find((account) => account.enabled && account.ready && !account.initialPause
+        && !accounts[account.identity]!.blocked[account.authGeneration]);
+      if (usable) state.permissionPause = null;
     }
   }
 
@@ -493,7 +674,7 @@ export class OfficialRankingCollector extends Container<Env> {
         return;
       }
       let pool: OfficialCollectorPool | null;
-      try { pool = await configFor(this.env, region); }
+      try { pool = await this.poolFor(region); }
       catch { state.status = "invalid_config"; await this.persist(state, false); return; }
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return; }
       this.synchronizePool(state, pool);
@@ -524,7 +705,7 @@ export class OfficialRankingCollector extends Container<Env> {
     const state = structuredClone(await this.stateFor(region));
     const unavailable = await officialCollectorAvailability(this.env, region);
     let pool: OfficialCollectorPool | null = null;
-    try { pool = await configFor(this.env, region); } catch { /* Availability reports invalid configuration. */ }
+    try { pool = await this.poolFor(region); } catch { /* Availability reports invalid configuration. */ }
     if (pool) this.synchronizePool(state, pool);
     const now = Date.now();
     const age = state.lastSuccessfulObservationAtMs === null ? null : now - state.lastSuccessfulObservationAtMs;
@@ -553,7 +734,7 @@ export class OfficialRankingCollector extends Container<Env> {
       const state = await this.stateFor(region);
       if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) { state.status = "disabled"; await this.persist(state, false); return null; }
       let pool: OfficialCollectorPool | null;
-      try { pool = await configFor(this.env, region); }
+      try { pool = await this.poolFor(region); }
       catch { state.status = "invalid_config"; await this.persist(state, false); return null; }
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return null; }
       this.synchronizePool(state, pool);
@@ -623,18 +804,20 @@ export class OfficialRankingCollector extends Container<Env> {
     if (request.method !== "POST" || !/^[a-f0-9]{32}$/u.test(runId)) return json({ error: "invalid_request" }, 400);
     const state = await this.stateFor(region);
     const authorization = request.headers.get("Authorization") ?? "";
-    if (!state.run || state.run.id !== runId || !authorization.startsWith("Bearer ")
-      || !await sameToken(authorization.slice(7), state.run.token)) return json({ error: "unauthorized" }, 401);
+    const active = state.lookup?.id === runId ? state.lookup : state.run?.id === runId ? state.run : null;
+    if (!active || !authorization.startsWith("Bearer ") || !await sameToken(authorization.slice(7), active.token))
+      return json({ error: "unauthorized" }, 401);
     let update: OfficialCollectorUpdate;
     try { update = await boundedUpdate(request); }
     catch { return json({ error: "invalid_update" }, 400); }
+    if (active === state.lookup) return this.lookupCallback(region, runId, update);
     return this.serialized(async () => {
       const state = await this.stateFor(region);
       const run = state.run;
       if (!run || run.id !== runId || update.contract !== "haneoka:official-ranking-update/1"
         || update.region !== region || update.runId !== runId || update.credentialGeneration !== run.generation) return json({ error: "run_mismatch" }, 409);
       if (!run.accountIdentity) {
-        try { const pool = await configFor(this.env, region); if (pool) this.synchronizePool(state, pool); }
+        try { const pool = await this.poolFor(region); if (pool) this.synchronizePool(state, pool); }
         catch { return json({ error: "invalid_config" }, 409); }
       }
       let checkpoint: string;
@@ -740,25 +923,9 @@ export class OfficialRankingCollector extends Container<Env> {
             if (health) health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
           }
           await this.ctx.storage.put("collectorState", state);
-        } else if (update.type === "player-profile") {
-          if (!decimal(update.profileId) || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
-          await saveOfficialPlayers(this.env, region, [{ profileId: update.profileId, found: update.found === true,
-            profile: update.profile ?? null, totalFavorite: update.totalFavorite ?? null, observedAtMs: update.observedAtMs }]);
-          state.playerInterests = (state.playerInterests ?? []).filter((entry) => entry.id !== update.profileId);
-          run.checkpoints[checkpoint] = updateHash;
-          await this.ctx.storage.put("collectorState", state);
-        } else if (update.type === "card-image") {
-          if (!CARD_FILE.test(update.file) || typeof update.data !== "string") return json({ error: "invalid_update" }, 400);
-          await saveOfficialCardImage(this.env, region, update.file, Uint8Array.from(atob(update.data), (character) => character.charCodeAt(0)));
-          state.cardInterests = (state.cardInterests ?? []).filter((entry) => entry.id !== update.file);
-          run.checkpoints[checkpoint] = updateHash;
-          await this.ctx.storage.put("collectorState", state);
-        } else if (update.type === "song-ranking") {
-          if (!decimal(update.musicId) || !Array.isArray(update.players) || update.players.length > 100
-            || !Number.isSafeInteger(update.observedAtMs)) return json({ error: "invalid_update" }, 400);
-          await saveOfficialSongRanking(this.env, { region, musicId: update.musicId, players: update.players, observedAtMs: update.observedAtMs });
-          await harvestOfficialPlayers(this.env, region, update.players, update.observedAtMs);
-          state.songInterests = (state.songInterests ?? []).filter((entry) => entry.id !== update.musicId);
+        } else if (update.type === "player-profile" || update.type === "card-image" || update.type === "song-ranking") {
+          const refused = await this.applyDemand(state, region, update);
+          if (refused) return refused;
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "arena-observation") {
@@ -842,6 +1009,7 @@ export class OfficialRankingCollector extends Container<Env> {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
           } else if (update.status === "ok" && (state.arenaInterests?.length || state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)) this.expediteArena(state);
+          this.ctx.waitUntil(this.runLookup(region));
           const health = this.runHealth(state);
           if (health) {
             health.leaseUntilMs = 0;

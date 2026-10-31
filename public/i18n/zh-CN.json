@@ -5668,7 +5668,38 @@
       "cancel": "取消",
       "showRestrictedContent": "显示未公开内容",
       "showRestrictedContentHint": "仅所选身份组可以访问这些内容，公开页面保持不变。",
-      "contentAccessGroups": "允许访问的身份组"
+      "contentAccessGroups": "允许访问的身份组",
+      "pool": {
+        "title": "号池",
+        "refresh": "刷新",
+        "account": "账号",
+        "state": "状态",
+        "lastSuccess": "最近成功",
+        "failures": "失败次数",
+        "hold": "暂停使用",
+        "release": "恢复使用",
+        "clear": "解除暂停",
+        "remove": "移除",
+        "add": "添加账号",
+        "addLabel": "账号 JSON",
+        "status": {
+          "ready": "可用",
+          "working": "工作中",
+          "cooling_down": "冷却中",
+          "held": "已暂停",
+          "disabled": "已停用",
+          "auth_paused": "登录被拒",
+          "auth_uncertain": "登录状态未知",
+          "ok": "正常",
+          "collecting": "采集中",
+          "failed": "失败",
+          "rate_limited": "被限流",
+          "no_available_account": "无可用账号",
+          "not_configured": "未配置",
+          "invalid_config": "配置无效",
+          "not_started": "未开始"
+        }
+      }
     },
     "comments": {
       "search": "搜索评论",

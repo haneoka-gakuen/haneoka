@@ -5668,7 +5668,38 @@
       "cancel": "Cancel",
       "showRestrictedContent": "Show unpublished content",
       "showRestrictedContentHint": "Only selected account groups can access this content. Public pages remain unchanged.",
-      "contentAccessGroups": "Allowed account groups"
+      "contentAccessGroups": "Allowed account groups",
+      "pool": {
+        "title": "Account pool",
+        "refresh": "Refresh",
+        "account": "Account",
+        "state": "State",
+        "lastSuccess": "Last success",
+        "failures": "Failures",
+        "hold": "Hold",
+        "release": "Release",
+        "clear": "Clear pause",
+        "remove": "Remove",
+        "add": "Add account",
+        "addLabel": "Account JSON",
+        "status": {
+          "ready": "Ready",
+          "working": "Working",
+          "cooling_down": "Cooling down",
+          "held": "Held",
+          "disabled": "Disabled",
+          "auth_paused": "Sign-in rejected",
+          "auth_uncertain": "Sign-in uncertain",
+          "ok": "OK",
+          "collecting": "Collecting",
+          "failed": "Failed",
+          "rate_limited": "Rate limited",
+          "no_available_account": "No account available",
+          "not_configured": "Not configured",
+          "invalid_config": "Invalid configuration",
+          "not_started": "Not started"
+        }
+      }
     },
     "comments": {
       "search": "Search comments",

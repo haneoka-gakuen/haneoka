@@ -21,6 +21,7 @@ def serve():
     if len(token) < 32:
         raise ValueError('collector service token missing')
     lock = threading.Lock()
+    lookup_lock = threading.Lock()
     completed = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -61,7 +62,8 @@ def serve():
             except Exception:
                 self.reply(400, {'error': 'invalid_job'})
                 return
-            if not lock.acquire(blocking=False):
+            gate = lookup_lock if job.get('mode') == 'lookup' else lock
+            if not gate.acquire(blocking=False):
                 self.reply(409, {'error': 'busy'})
                 return
             try:
@@ -84,7 +86,7 @@ def serve():
                 report_failure(job['region'],failure_info('container',error))
                 self.reply(500, {'error': 'collection_failed'})
             finally:
-                lock.release()
+                gate.release()
 
         def log_message(self, *_args):
             pass

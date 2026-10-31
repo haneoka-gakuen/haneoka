@@ -5668,7 +5668,38 @@
       "cancel": "キャンセル",
       "showRestrictedContent": "未公開コンテンツを表示",
       "showRestrictedContentHint": "選択したユーザー区分のみアクセスできます。公開ページには表示されません。",
-      "contentAccessGroups": "アクセスを許可するユーザー区分"
+      "contentAccessGroups": "アクセスを許可するユーザー区分",
+      "pool": {
+        "title": "アカウントプール",
+        "refresh": "更新",
+        "account": "アカウント",
+        "state": "状態",
+        "lastSuccess": "最終成功",
+        "failures": "失敗回数",
+        "hold": "一時停止",
+        "release": "再開",
+        "clear": "停止を解除",
+        "remove": "削除",
+        "add": "アカウントを追加",
+        "addLabel": "アカウント JSON",
+        "status": {
+          "ready": "利用可能",
+          "working": "稼働中",
+          "cooling_down": "クールダウン中",
+          "held": "一時停止中",
+          "disabled": "無効",
+          "auth_paused": "ログイン拒否",
+          "auth_uncertain": "ログイン状態不明",
+          "ok": "正常",
+          "collecting": "収集中",
+          "failed": "失敗",
+          "rate_limited": "レート制限",
+          "no_available_account": "利用可能なアカウントなし",
+          "not_configured": "未設定",
+          "invalid_config": "設定が無効",
+          "not_started": "未開始"
+        }
+      }
     },
     "comments": {
       "search": "コメントを検索",

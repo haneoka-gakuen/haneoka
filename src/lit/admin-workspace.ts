@@ -69,6 +69,7 @@ export class AdminWorkspace extends LitElement {
     history: { state: true },
     commentHistory: { state: true },
     resourceServers: { state: true },
+    collectorPool: { state: true },
     resourceSources: { state: true },
     readyPackage: { state: true },
     packageProgress: { state: true },
@@ -128,6 +129,7 @@ export class AdminWorkspace extends LitElement {
   declare history: Value | null;
   declare commentHistory: Value | null;
   declare resourceServers: Value[];
+  declare collectorPool: Value[];
   declare resourceSources: Value[];
   declare readyPackage: Value | null;
   declare packageProgress: number;
@@ -212,6 +214,7 @@ export class AdminWorkspace extends LitElement {
     this.history = null;
     this.commentHistory = null;
     this.resourceServers = [];
+    this.collectorPool = [];
     this.resourceSources = [];
     this.readyPackage = null;
     this.packageProgress = 0;
@@ -444,6 +447,7 @@ export class AdminWorkspace extends LitElement {
     this.moveTarget = "";
     this.moveReason = "";
     this.resourceServers = [];
+    this.collectorPool = [];
     this.resourceSources = [];
     this.readyPackage = null;
     this.packageFileName = "";
@@ -608,7 +612,7 @@ export class AdminWorkspace extends LitElement {
         void this.loadAnalyticsSeries();
         void this.loadAnalyticsGeo();
       }
-      if (!append && section === "operations") await this.loadResourceServers();
+      if (!append && section === "operations") await Promise.all([this.loadResourceServers(), this.loadCollectorPool()]);
       if (!append && section === "users" && this.selectedUserId && !this.userLoading)
         await this.loadUserDetails(this.selectedUserId);
     } catch (error) {
@@ -1026,6 +1030,75 @@ export class AdminWorkspace extends LitElement {
     });
   }
 
+  private loadCollectorPool = async () => {
+    const result = await this.request("/api/v1/admin/collector-pool");
+    this.collectorPool = Array.isArray(result.regions) ? (result.regions as Value[]) : [];
+  };
+  private poolAction(region: string, identity: string, action: string) {
+    void this.mutate(`pool:${identity}:${action}`, async (assertCurrent) => {
+      await this.request(`/api/v1/admin/collector-pool/${region}/${identity}`, { method: "POST", body: JSON.stringify({ action }) });
+      assertCurrent();
+      await this.loadCollectorPool();
+    });
+  }
+  private poolAdd(region: string, event: SubmitEvent) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    const text = String(new FormData(form).get("account") || "");
+    void this.mutate(`pool:add:${region}`, async (assertCurrent) => {
+      await this.request(`/api/v1/admin/collector-pool/${region}`, { method: "POST", body: JSON.stringify({ account: JSON.parse(text) }) });
+      assertCurrent();
+      form.reset();
+      await this.loadCollectorPool();
+    });
+  }
+  private renderCollectorPool() {
+    const time = (value: unknown) => (value ? this.date(value) : "—");
+    return html`
+      <section class="resource-console" id="collector-pool">
+        <header>
+          <h2>${this.label("pool.title", "Account pool")}</h2>
+          <button class="icon-button" aria-label=${this.label("pool.refresh", "Refresh")} @click=${this.loadCollectorPool}>${icon("refresh", 20)}</button>
+        </header>
+        ${this.collectorPool.map((pool) => {
+          const region = String(pool.region), accounts = (pool.accounts ?? []) as Value[];
+          return this.disclosure({
+            id: `admin-pool-${region}`,
+            className: "admin-resource-servers",
+            label: `${region.toUpperCase()} · ${this.label(`pool.status.${String(pool.status)}`, String(pool.status))} · ${accounts.filter((row) => row.status === "ready" || row.status === "working").length}/${accounts.length}`,
+            content: html`
+              <div class="table-scroll"><table class="table">
+                <thead><tr>
+                  <th>${this.label("pool.account", "Account")}</th><th>${this.label("pool.state", "State")}</th>
+                  <th>${this.label("pool.lastSuccess", "Last success")}</th><th>${this.label("pool.failures", "Failures")}</th><th></th>
+                </tr></thead>
+                <tbody>${accounts.map((row) => {
+                  const id = String(row.identity), status = String(row.status);
+                  const button = (action: string, fallback: string) => html`<button class="button button--small button--tonal" type="button"
+                    @click=${() => this.poolAction(region, id, action)}>${this.label(`pool.${action}`, fallback)}</button>`;
+                  return html`<tr>
+                    <td>${String(row.label)}</td>
+                    <td>${this.label(`pool.status.${status}`, status)}</td>
+                    <td>${time(row.lastSuccessAtMs)}</td>
+                    <td>${String(row.failures ?? 0)}</td>
+                    <td>
+                      ${status === "held" ? button("release", "Release") : button("hold", "Hold")}
+                      ${["auth_paused", "auth_uncertain", "cooling_down"].includes(status) ? button("clear", "Clear pause") : nothing}
+                      ${row.removable ? button("remove", "Remove") : nothing}
+                    </td>
+                  </tr>`;
+                })}</tbody>
+              </table></div>
+              <form class="resource-create" @submit=${(event: SubmitEvent) => this.poolAdd(region, event)}>
+                <md-outlined-text-field name="account" type="textarea" rows="3" label=${this.label("pool.addLabel", "Account JSON")} required></md-outlined-text-field>
+                <button class="button">${this.label("pool.add", "Add account")}</button>
+              </form>
+            `,
+          });
+        })}
+      </section>
+    `;
+  }
   private async loadResourceServers() {
     const generation = this.privateGeneration;
     if (!this.accessCurrent(generation)) return;
@@ -4226,6 +4299,7 @@ export class AdminWorkspace extends LitElement {
                     : this.section === "forums"
                       ? this.renderForums()
                       : html`
+                            ${this.section === "operations" ? this.renderCollectorPool() : nothing}
                             ${this.section === "operations" ? this.renderResourceConsole() : nothing}
                             <section
                               class=${`admin-ledger admin-ledger--${this.section}`}

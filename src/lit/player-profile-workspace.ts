@@ -48,7 +48,7 @@ interface RecentPlayer {
   name: string;
 }
 const RECENT_PLAYERS_KEY = "haneoka.player-profile.recent.v1";
-const PROFILE_RETRIES = 4;
+const PROFILE_RETRIES = 20;
 function readRecentPlayers(): RecentPlayer[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(RECENT_PLAYERS_KEY) || "[]");
