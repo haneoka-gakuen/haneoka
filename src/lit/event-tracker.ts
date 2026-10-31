@@ -35,6 +35,7 @@ import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandida
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { songTitle } from "../lib/song-display";
 import { SongRanking } from "./song-ranking";
+import { ArenaRanking } from "./arena-ranking";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
 import { snackbar } from "../lib/snackbar";
@@ -298,6 +299,7 @@ export class EventTracker extends LitElement {
     await this.updateComplete;
     if (this.isConnected && this.region === region)
       this.querySelectorAll<SongRanking>("song-ranking").forEach((ranking) => ranking.refreshRanking());
+      this.querySelectorAll<ArenaRanking>("arena-ranking").forEach((ranking) => ranking.refresh());
   }
   private eventTitle() {
     return (
@@ -554,16 +556,12 @@ export class EventTracker extends LitElement {
           ${
             pointsReadable
               ? html`
-                  <song-ranking
-                    embedded
-                    points
+                  <arena-ranking
                     .locale=${this.locale}
-                    .server=${this.sourceServer()}
                     .region=${this.region}
-                    .rankingTitle=${this.label("pointRanking", "Event point ranking")}
-                    .rankingEndpoint=${`/api/v1/game/records/${this.region}/events/${event.id}/latest`}
-                    .cardCatalogData=${this.cards}
-                  ></song-ranking>
+                    .eventId=${Number(event.id)}
+                    .catalogs=${this.cards}
+                  ></arena-ranking>
                 `
               : emptyState({
                   title: this.label(

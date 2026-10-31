@@ -1,4 +1,4 @@
-"""L3: server/L2.md; bounded Arena windows and resumable, freshly witnessed population counts."""
+"""L3: server/L2.md; bounded Arena and event point windows and resumable, freshly witnessed population counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -35,6 +35,63 @@ def witnessed_counts(window, thresholds):
             yield index, 0, maximum if not rows else None
         elif rows and below == len(rows) and start + len(rows) - 1 == maximum:
             yield index, maximum, maximum
+
+
+class EventWindows:
+    """Event point ranks past the top board, in the Arena window store under band 0."""
+
+    def __init__(self, job, catalog, sampler, updates, deadline, provenance):
+        self.job, self.catalog, self.sampler, self.updates = job, catalog, sampler, updates
+        self.deadline = min(time.time() + 25, deadline)
+        self.provenance = provenance
+
+    def run(self):
+        """Reads the requested windows; a refused read ends them and is returned for the caller to judge."""
+        event = self.catalog['event']
+        for demand in self.job.get('eventWindows', [])[:20]:
+            start = demand['startRank']
+            if (time.time() + 3 >= self.deadline or demand['seasonId'] != event['id'] or demand['bandId'] != '0'
+                    or type(start) is not int or start < 1 or (start - 1) % 100 != 0):
+                continue
+            receipt = self.window(event['id'], start)
+            if receipt is not None:
+                return receipt
+        return None
+
+    def window(self, event_id, start):
+        end = start + 99
+        snapshot = uuid.uuid4().hex
+        observation = dict(snapshotId=snapshot, region=self.job['region'], seasonId=event_id, bandId='0',
+                           startRank=start, endRank=end, observedAtMs=int(time.time() * 1000))
+        self.updates.send('attempt', snapshotId=snapshot)
+        receipt, refused = None, None
+        try:
+            request = self.sampler.message('app.event.GetRankingListRequest',
+                                           dict(event_id=event_id, ranks=list(range(start, end + 1))))
+            receipt, response, _ = self.sampler.rpc('/app.event.EventService/GetRankingList', request,
+                                                    'app.event.GetRankingListResponse', snapshot)
+            observation['observedAtMs'] = int(datetime.fromisoformat(receipt['received_at']).timestamp() * 1000)
+            if response is None:
+                raise RuntimeError('event window rejected')
+            body = json_format.MessageToDict(response, preserving_proto_field_name=True)
+            rows = sorted(body.get('ranking', []), key=lambda row: row.get('rank', 0))
+            if len(rows) > 100 or any(not start <= row.get('rank', 0) <= end for row in rows):
+                raise ValueError('invalid event window')
+            for row in rows:
+                row.setdefault('point', 0)
+            # Ties can leave the last few ranks of a full window unused.
+            if rows and rows[-1]['rank'] > end - 10:
+                maximum = None
+            else:
+                maximum = rows[-1]['rank'] if rows else start - 1
+            observation.update(players=rows, maxRank=maximum, provenance=self.provenance())
+        except Exception as error:
+            observation.update(error=type(error).__name__,
+                               httpStatus=receipt.get('status') if receipt else None,
+                               grpcStatus=receipt.get('grpc_status') if receipt else None)
+            refused = receipt or dict(status=None, grpc_status=None)
+        self.updates.send('arena-observation', observation=observation)
+        return refused
 
 
 class ArenaCollector:

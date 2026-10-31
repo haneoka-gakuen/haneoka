@@ -209,6 +209,8 @@ export interface OfficialCollectorJob {
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
+  /** Event point windows: `seasonId` is the event and `bandId` is `0`. */
+  eventWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
   playerLookups?: string[];
   songRankings?: string[];
   cardImages?: string[];

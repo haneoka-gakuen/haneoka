@@ -21,7 +21,7 @@ from lifecycle import authentication_failed, board_call, board_players, read_cre
 from official_catalog import OfficialCatalog, CatalogRequestError, NoRedirect
 from regions import region_config
 from transport import Sampler, VersionError
-from arena import ArenaCollector, ArenaStopped
+from arena import ArenaCollector, ArenaStopped, EventWindows
 from demand import Demand
 
 
@@ -280,6 +280,18 @@ def run_job(job, origin):
                     updates.send('observation', observation=observation)
                     if final_status in ('auth_paused', 'rate_limited'):
                         break
+                if (final_status not in ('auth_paused', 'rate_limited') and 'event-windows-v1' in job.get('capabilities', [])
+                        and ('point', '') in targets(catalog, int(time.time() * 1000))):
+                    stage = 'event_window'
+                    def window_provenance():
+                        return dict(clientVersion=job['clientVersion'], masterVersion=sampler.master_version,
+                            resourceVersion=sampler.resource_version, apiOrigin=sampler.origin, catalogSource='official-master',
+                            catalogTableHashes=catalog.get('tableHashes'))
+                    refused = EventWindows(job, catalog, sampler, updates, deadline, window_provenance).run()
+                    # A refused window ends windows for this run; only a rate limit or a rejected login concerns the account.
+                    if refused and failure_status(refused) in ('auth_paused', 'rate_limited'):
+                        final_status, failure = failure_status(refused), failure_info(stage, RuntimeError('event window rejected'), refused)
+                        retry_after = retry_delay(refused, 300)
                 if final_status not in ('auth_paused', 'rate_limited') and 'player-demand-v1' in job.get('capabilities', []):
                     stage = 'demand'
                     stopped = Demand(job, sampler, updates, deadline).run()

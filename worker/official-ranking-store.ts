@@ -245,6 +245,9 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
   }
 }
 
+/** An event's point board shares the Arena window store under this band, which no league uses; the event stands for the season. */
+export const EVENT_POINT_BAND = "0";
+
 export interface OfficialArenaWindowMetadata {
   startRank: number;
   endRank: number;
@@ -266,6 +269,17 @@ export async function readOfficialArenaSearchWindows(env: OfficialRankingStoreBi
     WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank LIMIT 20`)
     .bind(region, seasonId, bandId, depth).all<OfficialArenaWindowMetadata>();
   return results;
+}
+
+/** The last rank an event's point board is known to reach, or null while its end is unseen. */
+export async function readOfficialEventMaxRank(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  bandId: string): Promise<number | null> {
+  const { db } = storage(env);
+  const row = await db.prepare(`SELECT MIN(max_rank) AS maxRank, MAX(CASE WHEN max_rank IS NULL THEN end_rank END) AS fullEnd
+    FROM official_arena_window_metadata WHERE region = ? AND season_id = ? AND band_id = ?`)
+    .bind(region, eventId, bandId).first<{ maxRank: number | null; fullEnd: number | null }>();
+  // A full window past the recorded end means the board has grown since.
+  return row?.maxRank != null && (row.fullEnd === null || row.maxRank >= row.fullEnd) ? row.maxRank : null;
 }
 
 export async function readOfficialArenaSearchMatch(env: OfficialRankingStoreBindings,

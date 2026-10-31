@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: Region, Arena season, league band, rank thresholds and card catalogues.
-// Output: The league ranking in song-ranking rows plus rank tiers, with rank jumps and windows of 100.
+// Output: A league or event point ranking in song-ranking rows, with rank jumps, ID search and windows of 100.
 // Pos: [Map](L2-2.md); Arena page leaderboard sharing the song-ranking row parts.
-// Effects/Dependencies: Reads /api/v1/game/records/{region}/arena/…/ranking; reports loaded rows to the page.
+// Effects/Dependencies: Reads /api/v1/game/records/{region}/arena/…/ranking or events/…/points/ranking; reports loaded rows to the page.
 import { html, nothing, type PropertyValues } from "lit";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
 import { fetchJson, JsonResponseError } from "./shared/catalog";
@@ -43,6 +43,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
     region: { type: String },
     seasonId: { type: Number },
     bandId: { type: Number },
+    eventId: { type: Number },
     ranks: { attribute: false },
     rankIcons: { attribute: false },
     rankName: { attribute: false },
@@ -56,6 +57,8 @@ export class ArenaRanking extends GameRecordsCardsElement {
   };
   declare seasonId: number;
   declare bandId: number;
+  /** Shows this event's point board instead of a league. */
+  declare eventId: number;
   declare ranks: readonly ArenaRank[];
   declare rankIcons: Record<number, string>;
   declare rankName: (rank: ArenaRank) => string;
@@ -76,6 +79,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
     this.region = "tw";
     this.seasonId = 0;
     this.bandId = 0;
+    this.eventId = 0;
     this.ranks = [];
     this.rankIcons = {};
     this.rankName = (rank) => String(rank.id);
@@ -99,11 +103,11 @@ export class ArenaRanking extends GameRecordsCardsElement {
   }
 
   protected willUpdate(changed: PropertyValues) {
-    if (changed.has("region") || changed.has("seasonId") || changed.has("bandId")) this.start = 1;
+    if (changed.has("region") || changed.has("seasonId") || changed.has("bandId") || changed.has("eventId")) this.start = 1;
   }
 
   protected updated(changed: PropertyValues) {
-    if (["region", "seasonId", "bandId", "start"].some((key) => changed.has(key)) && this.seasonId && this.bandId)
+    if (["region", "seasonId", "bandId", "eventId", "start"].some((key) => changed.has(key)) && (this.eventId || this.seasonId && this.bandId))
       void this.load();
   }
 
@@ -114,8 +118,14 @@ export class ArenaRanking extends GameRecordsCardsElement {
     );
   }
 
+  private board() {
+    return this.eventId
+      ? `/api/v1/game/records/${this.region}/events/${this.eventId}/points`
+      : `/api/v1/game/records/${this.region}/arena/seasons/${this.seasonId}/leagues/${this.bandId}`;
+  }
+
   private endpoint() {
-    return `/api/v1/game/records/${this.region}/arena/seasons/${this.seasonId}/leagues/${this.bandId}/ranking?start=${this.start}`;
+    return `${this.board()}/ranking?start=${this.start}`;
   }
 
   private async load() {
@@ -167,7 +177,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
     this.searching = true;
     try {
       const result = await fetchJson<ArenaSearchDto>(
-        `/api/v1/game/records/${this.region}/arena/seasons/${this.seasonId}/leagues/${this.bandId}/search?profileId=${profileId}`,
+        `${this.board()}/search?profileId=${profileId}`,
       );
       if (result.row) this.jump(result.row.rank);
       else
@@ -192,7 +202,7 @@ export class ArenaRanking extends GameRecordsCardsElement {
       target: row.rank === this.target,
       bare: this.limit > 0,
       ...(this.limit ? { cards: undefined } : {}),
-      detail: html`
+      detail: this.eventId ? nothing : html`
         <small class="arena-ranking__tier">
           ${tier && this.rankIcons[tier.rank] ? html`<img src=${this.rankIcons[tier.rank]} alt="" width="20" height="20" loading="lazy" />` : nothing}
           ${tier ? this.rankName(tier) : "—"}
