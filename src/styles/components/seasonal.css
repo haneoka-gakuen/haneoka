@@ -135,4 +135,5 @@
   :root[data-season-layer] .app-shell,
   :root[data-season-layer] .nav { background: transparent; }
   :root[data-season-layer] .app-shell__main { background: color-mix(in srgb, var(--md-sys-color-surface) 55%, transparent); }
+  :root[data-season-layer] .top-app-bar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 55%, transparent); }
 }
