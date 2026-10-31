@@ -1,13 +1,14 @@
 // L3 — GEB
 // Input: Player profile and song ranking reads, saved pool results and the regional collector.
-// Output: Normalized DTOs from official data; missing or stale entries queue a bounded pool read.
+// Output: Normalized DTOs from official data, or Moenotes while none is saved; missing or stale entries queue a bounded pool read.
 // Pos: [Map](L2.md); read side of the on-demand pool lookups beside official-ranking-api.ts.
 // Effects/Dependencies: Reads D1/R2 and queues Durable Object demand; never contacts the game itself.
 import type { GameProfileCardDto, GameRecordsRegion, PlayerProfileDto, SongRankingDto } from "../src/lib/game-records";
+import { moenotesPlayer, moenotesSongRanking, type MoenotesBindings } from "./moenotes-fallback";
 import { officialEventRanking } from "./official-ranking-api";
 import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
 
-export interface OfficialPlayerBindings extends OfficialRankingStoreBindings {
+export interface OfficialPlayerBindings extends OfficialRankingStoreBindings, MoenotesBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
 }
 
@@ -113,14 +114,20 @@ export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionCo
     const profileId = match[2];
     const record = await readOfficialPlayer(env, region, profileId);
     if (!record || now - record.observedAtMs > PLAYER_TTL_MS) queue(ctx, env, region, "player", profileId);
-    if (!record) return pending(request);
+    if (!record) {
+      const fallback = await moenotesPlayer(env, region, profileId);
+      return fallback ? json(request, fallback) : pending(request);
+    }
     if (!record.found) return now - record.observedAtMs < MISSING_TTL_MS ? json(request, { error: { kind: "not_found" } }, 404) : pending(request);
     return json(request, playerProfile(region, profileId, record, now));
   }
   const musicId = match[3]!;
   const ranking = await readOfficialSongRanking(env, region, musicId);
   if (!ranking || now - ranking.observedAtMs > SONG_TTL_MS) queue(ctx, env, region, "song", musicId);
-  if (!ranking) return pending(request);
+  if (!ranking) {
+    const fallback = await moenotesSongRanking(region, musicId);
+    return fallback ? json(request, fallback) : pending(request);
+  }
   const { eventId: _eventId, ...rows } = officialEventRanking(
     { region, eventId: "", kind: "total", challengeId: "", snapshotId: `song-${musicId}-${ranking.observedAtMs}`,
       observedAtMs: ranking.observedAtMs, players: ranking.players as never },

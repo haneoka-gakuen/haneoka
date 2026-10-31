@@ -56,7 +56,7 @@ export interface SongRankingRowDto {
 
 export interface GameRankingDto {
   region: GameRecordsRegion;
-  provider?: "official";
+  provider?: "official" | "moenotes";
   snapshotId?: string;
   observedAtMs?: number | null;
   fetchedAtMs: number | null;
@@ -158,6 +158,7 @@ export interface EventRankingDto extends GameRankingDto {
 export interface PlayerProfileDto {
   region: GameRecordsRegion;
   profileId: string;
+  provider?: "moenotes";
   fetchedAtMs: number | null;
   serverTimeMs: number | null;
   stale: boolean;

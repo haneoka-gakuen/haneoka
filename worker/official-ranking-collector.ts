@@ -79,6 +79,7 @@ interface CollectorState {
   arenaSweep?: { band: number; next: Record<string, number> };
   eventSweep?: { eventId: string; next: number; maxRank: number | null };
   eventInterests?: EventInterest[];
+  strikesApplied?: boolean;
   arenaInterests?: ArenaInterest[];
   playerInterests?: DemandInterest[];
   songInterests?: DemandInterest[];
@@ -713,6 +714,18 @@ export class OfficialRankingCollector extends Container<Env> {
   private synchronizePool(state: CollectorState, pool: OfficialCollectorPool): void {
     const legacyGeneration = state.legacyPermissionBlock ?? (state.accounts === undefined ? state.blockedGeneration : null);
     const accounts = state.accounts ??= {};
+    // Pauses from before strikes each came from one response: lift them, with one rejection left.
+    if (!state.strikesApplied) {
+      state.strikesApplied = true;
+      for (const health of Object.values(accounts)) {
+        if (!Object.keys(health.blocked).length) continue;
+        health.blocked = {};
+        health.rejections = AUTH_STRIKES - 1;
+      }
+      state.permissionPause = null;
+      state.blockedGeneration = null;
+      if (["auth_paused", "auth_uncertain"].includes(state.status)) state.status = "not_started";
+    }
     for (const config of pool.accounts) {
       const health = accounts[config.identity] ??= { blocked: {}, lastUsedAtMs: 0,
         lastSuccessAtMs: null, cooldownUntilMs: 0, leaseUntilMs: 0, failures: 0 };

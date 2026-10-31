@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md); official read adapter alongside legacy PT and SHA history.
 // Effects/Dependencies: Reads D1/private R2; never requests the game or writes observations.
 import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto } from "../src/lib/game-records";
+import { moenotesEventRanking } from "./moenotes-fallback";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
 import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
@@ -230,7 +231,9 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
         observations: history.observations.map((value) => publicObservation(value, now)), nextCursor: history.nextCursor });
     }
     const observation = await readOfficialLatest(env, region, eventId, kind, challengeId);
-    return observation ? response(request, officialEventRanking(observation)) : optionalTotal ? null : pending(request, env, region);
+    if (observation) return response(request, officialEventRanking(observation));
+    const fallback = await moenotesEventRanking(region, eventId, challengeId);
+    return fallback ? response(request, fallback) : optionalTotal ? null : pending(request, env, region);
   } catch (error) {
     console.warn(JSON.stringify({ event: "official_ranking_read_failed", region, error: error instanceof Error ? error.name : "Error" }));
     return optionalTotal ? null : failure(request, "upstream", 503);
