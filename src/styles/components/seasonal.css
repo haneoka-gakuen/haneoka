@@ -17,89 +17,85 @@
     pointer-events: none;
   }
 
-  .season-layer,
-  .season-celebration {
+  .season-layer {
     position: fixed;
     inset: 0;
-    z-index: calc(var(--md-sys-z-index-local-sticky) - 1);
+    z-index: -1;
     overflow: hidden;
     pointer-events: none;
+    background: var(--md-sys-color-surface-container);
     contain: strict;
   }
-  .season-celebration { z-index: var(--md-sys-z-index-overlay-toast); }
-  .season-layer .season-particle {
+  .season-wash {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(64rem 52rem at 0 0, color-mix(in srgb, var(--md-sys-color-primary-container) 70%, transparent), transparent 72%),
+      radial-gradient(72rem 44rem at 62% -10%, color-mix(in srgb, var(--md-sys-color-tertiary-container) 60%, transparent), transparent 72%),
+      radial-gradient(68rem 52rem at 100% 100%, color-mix(in srgb, var(--md-sys-color-primary-container) 55%, transparent), transparent 72%),
+      radial-gradient(56rem 44rem at 6% 100%, color-mix(in srgb, var(--md-sys-color-tertiary-container) 50%, transparent), transparent 72%);
+  }
+  .season-facets {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: var(--md-sys-color-surface-bright);
+    opacity: 0.45;
+  }
+  .season-depth {
+    position: absolute;
+    inset: -10% 0;
+    opacity: var(--opacity);
+    filter: blur(var(--blur));
+    transform: translate3d(0, calc(var(--scroll, 0) * var(--speed) * -0.12px), 0);
+  }
+  .season-depth .season-particle {
     position: absolute;
     left: var(--x);
-    top: -32px;
+    top: var(--y);
     display: grid;
-    opacity: 0.55;
-    scale: var(--scale);
-    animation: season-fall var(--duration) linear var(--delay) infinite;
-    will-change: transform;
+    width: var(--size);
+    height: var(--size);
+    place-items: center;
+    rotate: var(--angle);
+    animation: season-drift var(--duration) ease-in-out var(--delay) infinite alternate;
+  }
+  .season-depth .season-particle > svg { width: 100%; height: 100%; }
+  .season-depth .season-particle > svg:not(.material-icon) { height: auto; }
+  .season-layer[data-motif="stars"] .season-particle,
+  .season-layer[data-motif="sparkles"] .season-particle,
+  .season-layer[data-motif="fireworks"] .season-particle {
+    animation-name: season-drift, season-twinkle;
+    animation-duration: var(--duration), calc(var(--duration) / 3);
   }
   .season-particle[data-tone="0"] { color: var(--md-sys-color-primary); }
   .season-particle[data-tone="1"] { color: var(--md-sys-color-tertiary); }
-  .season-particle[data-tone="2"] { color: var(--md-sys-color-secondary); }
-  .season-particle svg:not(.material-icon) { width: 22px; height: auto; fill: currentColor; }
-
-  .season-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .season-petal { width: 10px; height: 14px; border-radius: 100% 0 100% 0; background: var(--md-sys-color-primary-container); outline: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
-  .season-confetti { width: 6px; height: 12px; border-radius: 2px; background: currentColor; }
-  .season-streak { width: 60px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, currentColor); }
-
-  /* Snow, petals, confetti and osmanthus fall and sway; hearts and sky lanterns rise. */
-  .season-layer[data-motif="hearts"] .season-particle,
-  .season-layer[data-motif="lanterns"] .season-particle { top: auto; bottom: -32px; animation-name: season-rise; }
-  .season-layer[data-motif="lanterns"] .season-particle { opacity: 0.4; }
-  .season-layer[data-motif="lanterns"] svg { width: 18px; }
-  .season-layer[data-motif="petals"] .season-particle,
-  .season-layer[data-motif="confetti"] .season-particle { animation-name: season-tumble; }
-  /* Bats cross the upper half; stars and sparkles hold still and twinkle. */
-  .season-layer[data-motif="bats"] .season-particle {
-    top: var(--y);
-    left: -40px;
-    opacity: 0.5;
-    animation-name: season-fly;
-  }
-  .season-layer[data-motif="bats"] svg { width: 32px; animation: season-flap 0.35s ease-in-out infinite alternate; }
-  .season-layer[data-motif="stars"] .season-particle,
-  .season-layer[data-motif="sparkles"] .season-particle {
-    top: var(--y);
-    animation: season-twinkle calc(var(--duration) / 3) ease-in-out var(--delay) infinite;
-  }
-  .season-layer[data-motif="stars"] .season-particle:has(.season-streak) { animation: season-shoot var(--duration) ease-in var(--delay) infinite; }
-  .season-layer[data-motif="fireworks"] .season-particle {
-    top: var(--y);
-    opacity: 1;
-    animation: none;
-  }
-  .season-burst { position: relative; width: 0; height: 0; }
-  .season-burst b {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: currentColor;
-    opacity: 0;
-    animation: season-spark calc(var(--duration) / 3) ease-out var(--delay) infinite;
-  }
-  .season-burst b:nth-child(1) { --a: 0deg; } .season-burst b:nth-child(2) { --a: 36deg; }
-  .season-burst b:nth-child(3) { --a: 72deg; } .season-burst b:nth-child(4) { --a: 108deg; }
-  .season-burst b:nth-child(5) { --a: 144deg; } .season-burst b:nth-child(6) { --a: 180deg; }
-  .season-burst b:nth-child(7) { --a: 216deg; } .season-burst b:nth-child(8) { --a: 252deg; }
-  .season-burst b:nth-child(9) { --a: 288deg; } .season-burst b:nth-child(10) { --a: 324deg; }
+  .season-particle svg:not(.material-icon) { fill: currentColor; }
+  .season-dot { width: 40%; height: 40%; border-radius: 50%; background: currentColor; }
+  .season-petal { width: 70%; height: 100%; border-radius: 100% 0 100% 0; background: currentColor; opacity: 0.8; }
+  .season-confetti { width: 36%; height: 72%; border-radius: 2px; background: currentColor; }
   .season-moon {
     position: absolute;
-    top: 88px;
-    right: 6%;
-    width: 72px;
-    height: 72px;
+    top: 12%;
+    right: 8%;
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
     background: var(--md-sys-color-tertiary-container);
-    box-shadow: 0 0 48px var(--md-sys-color-tertiary-container);
-    opacity: 0.7;
+    box-shadow: 0 0 80px 20px color-mix(in srgb, var(--md-sys-color-tertiary-container) 60%, transparent);
+    opacity: 0.8;
   }
 
+  .season-celebration {
+    position: fixed;
+    inset: 0;
+    z-index: var(--md-sys-z-index-overlay-toast);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .season-celebration .season-particle { width: 20px; height: 20px; }
+  .season-celebration .season-particle > svg { width: 100%; height: auto; }
   .season-celebration .season-particle {
     position: absolute;
     left: var(--ox);
@@ -109,39 +105,13 @@
   }
   .season-celebration svg:not(.material-icon) { width: 20px; fill: currentColor; }
 
-  @keyframes season-fall {
+  @keyframes season-drift {
     from { transform: translate(0, 0) rotate(0); }
-    50% { transform: translate(var(--sway), 55vh) rotate(90deg); }
-    to { transform: translate(0, calc(100vh + 64px)) rotate(180deg); }
+    to { transform: translate(var(--dx), var(--dy)) rotate(var(--turn)); }
   }
-  @keyframes season-tumble {
-    from { transform: translate(0, 0) rotate3d(1, 1, 0, 0deg); }
-    to { transform: translate(var(--sway), calc(100vh + 64px)) rotate3d(1, 1, 0, 720deg); }
-  }
-  @keyframes season-rise {
-    from { transform: translate(0, 0); }
-    50% { transform: translate(var(--sway), -55vh); }
-    to { transform: translate(0, calc(-100vh - 64px)); }
-  }
-  @keyframes season-fly {
-    from { transform: translate(0, 0); }
-    50% { transform: translate(55vw, var(--sway)); }
-    to { transform: translate(calc(100vw + 80px), 0); }
-  }
-  @keyframes season-flap { to { transform: scaleY(0.45); } }
   @keyframes season-twinkle {
-    0%, 100% { opacity: 0.15; transform: scale(0.7); }
-    50% { opacity: 0.7; transform: scale(1); }
-  }
-  @keyframes season-shoot {
-    0%, 90% { opacity: 0; transform: translate(0, 0) rotate(20deg); }
-    93% { opacity: 0.8; }
-    100% { opacity: 0; transform: translate(40vw, 15vw) rotate(20deg); }
-  }
-  @keyframes season-spark {
-    0% { opacity: 0; transform: rotate(var(--a)) translateX(0); }
-    10% { opacity: 1; }
-    60%, 100% { opacity: 0; transform: rotate(var(--a)) translateX(48px); }
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
   }
   @keyframes season-pop {
     from { opacity: 1; transform: translate(0, 0) scale(0.4); }
@@ -149,6 +119,16 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .season-layer { display: none; }
+    .season-depth { transform: none; }
+    .season-depth .season-particle { animation: none; }
   }
+}
+
+/* With a seasonal background the shell lets it show: its frame turns transparent and the page pane slightly
+   translucent, while cards stay solid. The shell's own layer sets those backgrounds, so this sits in it. */
+@layer shell {
+  :root[data-season-layer] body,
+  :root[data-season-layer] .app-shell,
+  :root[data-season-layer] .nav { background: transparent; }
+  :root[data-season-layer] .app-shell__main { background: color-mix(in srgb, var(--md-sys-color-surface) 55%, transparent); }
 }
