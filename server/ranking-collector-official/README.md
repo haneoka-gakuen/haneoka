@@ -1,15 +1,27 @@
-# 独立四服榜单采集器
+# Official ranking collector
 
-采集器支持 `jp`、`tw`、`en`、`kr`，从官方 Version 与官方 CDN 的 Master 生成目录，读取官方单曲榜、总榜及能力开启后的竞技场榜单／段位人数。本地模式使用固定分区运行目录与 SQLite 历史；云端模式由区域 Durable Object 调度独立 Cloudflare Container，并通过 Worker 保存云端历史。HTTP/2、TLS、进程锁和安装入口均由 Python 实现，支持 Windows、Linux 和 macOS，不依赖 PowerShell。Taki 数据源独立维护。
+Reads official event, Arena and player rankings for `jp`, `tw`, `en` and `kr`. It builds its catalogue from the official Version and Master data, then stores each observation.
 
-## Cloudflare 云端模式
+It runs in two modes. In the cloud, a regional Durable Object schedules a Cloudflare Container and the Worker stores the history. Locally, it keeps a per-region run directory and a SQLite history. It runs on Windows, Linux and macOS with Python 3.12 or later; 3.13 is recommended.
 
-云端入口是 `cloud.py`，镜像定义为本目录的 `Dockerfile`，构建上下文也为本目录。镜像只复制代码、协议描述和固定依赖，使用非 root 用户运行；运行时不需要 Linux 常驻主机或本机读取 API。仓库配置启用日服采集、保持官方读取关闭，生产切换由两个独立配置控制：
+Endpoints and payloads are in [INTERFACES.md](INTERFACES.md).
 
-- `OFFICIAL_RANKING_ENABLED_REGIONS`：实际采集区服，逗号分隔，例如 `jp,tw`。
-- `OFFICIAL_RANKING_READ_REGIONS`：网站读取官方自采的区服，逗号分隔。先完成采集验收，再逐服启用读取；移除区服可切回原网站来源，保留自采历史。
+## Cloud mode
 
-每服设置一个 Worker secret：`OFFICIAL_RANKING_JP_CONFIG`、`OFFICIAL_RANKING_TW_CONFIG`、`OFFICIAL_RANKING_EN_CONFIG`、`OFFICIAL_RANKING_KR_CONFIG`。secret 的 JSON 结构为：
+The entry point is `cloud.py` and the image is defined by this directory's `Dockerfile`. Build it from the repository root:
+
+```sh
+docker build -t haneoka-official-ranking:local server/ranking-collector-official
+```
+
+| Setting | Purpose |
+| --- | --- |
+| `OFFICIAL_RANKING_ENABLED_REGIONS` | Regions to collect, comma separated |
+| `OFFICIAL_RANKING_READ_REGIONS` | Regions the website reads from this collector |
+| `OFFICIAL_RANKING_{JP,TW,EN,KR}_CONFIG` | Worker secret for each region |
+| `OFFICIAL_CALLBACK_ORIGIN` | Callback origin, `https://haneoka.org` in production |
+
+A region's secret holds one account or a pool:
 
 ```json
 {
@@ -19,198 +31,71 @@
 }
 ```
 
-`credentials` 使用本地模式的完整凭据文档；`masterConfig` 使用下文的同服 Master 配置。两者的真实值仅通过 secret 管理入口提供，不写入 `vars`、镜像或仓库。繁中 `credentials.region` 使用 `hk`，网站及调度仍使用 `tw`。缺少配置的区服不发出游戏请求。
+Pools use `haneoka:official-ranking-account-pool/1`, the output of `account-pool.mjs export-pool`. Save a verified configuration as a GitHub Actions secret of the same name and run `official-ranking-config.yml`. Secrets never go in `vars`, the image or the repository. The `tw` region uses `hk` in `credentials.region`.
 
-同一个区服 secret 也接受 `account-pool.mjs export-pool` 输出的
-`haneoka:official-ranking-account-pool/1`。区域 Durable Object 从 `accounts` 中选择
-已启用且为 ready 的身份，优先使用 `selectedAccountId`；其余符合条件的身份按最近使用
-时间选择。全部账号暂停的有效配置仍可发布，此时停止采集。每轮只把所选账号的配置交给
-现有 Python Container，整轮独占租约和请求检查点保存在 Durable Object。
+A run lasts about two minutes. Each board request is checkpointed before it is sent, and the next one waits until the Worker has stored the last.
 
-账号健康按区服和真实玩家身份保存，认证暂停按认证字段的摘要记录；改变池内 ID、别名、
-选中账号或同服 API 别名不会清除相同认证的暂停。HTTP 401、gRPC 16、gRPC 2 的
-`authentication failed` 暂停当前认证代，下一采样周期可选择其他已有 ready 身份；
-当前失败请求不会换号重放。HTTP 403、gRPC 7 持久暂停全区，需原身份的真实认证更新；
-HTTP 429、gRPC 8 的冷却覆盖全区账号。旧单账号暂停向池状态迁移时保留暂停，无法关联
-的旧拒绝保持全区暂停。公开 status 只给账号数量、ready／暂停／冷却／租用数量。
+| Upstream response | Result |
+| --- | --- |
+| HTTP 401, gRPC 16, gRPC 2 `authentication failed` | Pauses that credential; another ready account can take over |
+| HTTP 403, gRPC 7 | Pauses the region until the credential is renewed |
+| HTTP 429, gRPC 8 | Cools down every account in the region |
 
-将实际榜单 RPC 和 Master 解码均已验证的完整配置存为同名 GitHub Actions secret，再手动运行 `official-ranking-config.yml` 并选择区服。工作流使用锁定的 Wrangler 版本，先确认生产 Worker 存在，通过权限为 0600 的临时文件更新 Worker secret，随后触发既有 Worker-only 发布；配置内容不进入命令参数、日志或构建附件。区服采集开关仍以 `wrangler.jsonc` 为准，只有成功观测验收后才开启网站读取。
+A failed request is never replayed on another account. A run interrupted between request and observation stays in `auth_uncertain` until the credential changes. Restarting does not clear a pause.
 
-单次任务最多约两分钟，每榜请求前先持久确认 `attempt` 检查点，响应后提交独立观测；Worker 确认落库后才请求下一榜。HTTP 401/403、gRPC 7/16，以及 gRPC 2 且解码后的消息精确为 `authentication failed` 时，持久暂停当前凭据代际；HTTP 429、gRPC 8 保存冷却期限。回调网络失败使用同一载荷最多重试三次，仍未确认则中止本轮，不重发游戏请求。容器在已确认请求检查点、尚未确认观测时中断，会保留 `auth_uncertain` 暂停状态，更新真实凭据代际后恢复；重启不能清除暂停。
+## Arena and event windows
 
-容器通过区域 Durable Object 的随机服务令牌接收 `/collect`，每次任务使用另一个随机令牌回调 `/api/internal/official-rankings/{region}/{runId}`。`OFFICIAL_CALLBACK_ORIGIN` 由 Worker 配置，生产值为 `https://haneoka.org`；回调拒绝重定向、其他主机及路径。`/health` 只返回就绪状态，不返回配置。私有配置和协议回执写入本轮权限受限的临时目录，任务退出后删除。
+A job negotiates these capabilities:
 
-加入分阶段诊断时，旧版本尚无目录、没有进入榜单请求检查点的已结束失败任务，会在下一次调度时重新尝试一次并写入诊断标记。认证暂停、请求结果未确认和限流期限保持原处理；公开读取不触发重试。
+| Capability | Adds |
+| --- | --- |
+| `arena-ranking-v1` | Ranks 1–100 of each league |
+| `arena-demand-v1` | Up to 20 requested windows of 100 |
+| `arena-population-v1` | Players per division, from each rank's `_lp` |
+| `arena-progress-v1` | Population search progress kept across runs |
+| `event-windows-v1` | Event point ranks past the top 100, when the event has a point board |
 
-读取接口为同域 `/api/v2/game/records/{region}`，目录、最新榜单、历史和状态路径见 [INTERFACES.md](INTERFACES.md)。GET 只读已保存的数据，不触发游戏请求，也不刷新观测时间。容器重启后的进度及历史来自 Durable Object、D1 和私有 R2，不依赖容器文件系统。
+Page reads use saved snapshots. A missing window registers a bounded interest, and game requests run only in background jobs.
 
-云端失败的 `status.lastFailure` 保存固定阶段、错误类别及可用的 HTTP/gRPC 状态码；容器日志使用相同安全字段。异常原文、凭据、回调令牌和协议正文不进入这些诊断。
+## Account pool
 
-容器可在安装了 Docker 的环境构建：
-
-```sh
-docker build -t haneoka-official-ranking:local server/ranking-collector-official
-```
-
-该命令从仓库根目录运行，只构建镜像，不配置凭据或启用生产采集。
-
-## 竞技场采集
-
-竞技场与活动复用本轮号池选中的同一身份、Version/Master 配对及请求间隔。Job 的
-`capabilities` 分别协商以下能力：
-
-- `arena-ranking-v1`：额外校验 MasterArenaSeason、MasterArenaLeague、MasterArenaRank，
-  生成赛季及各乐队已开放的 `thresholdsByBand`，采集每个联赛的第1–100位置。
-- `arena-demand-v1`：优先补 `arenaWindows` 中最多20个有界兴趣窗口，约40秒预算；
-  每窗为 `1+100*k` 起始的100个位置，成功观测落库后移出兴趣队列。
-- `arena-population-v1`：按当期 MasterArenaRank 的 `_lp` 统计每个开放细分段位的人数。
-- `arena-progress-v1`：在多轮间保存每联赛搜索候选与人数闭区间，完整发布前以本轮真实
-  响应重新核对阈值边界。缺人口时 Worker 有界预热，稳态按最旧联赛更新。
-
-无竞技场能力的旧 Job 严格沿用原三张活动表和活动回调，支持镜像与 Worker 滚动更新。
-新目录在活动空窗仍独立包含竞技场；无当前赛季时显式返回 `arena:null`。赛季、乐队或
-开放阈值变化时，Worker 清理不兼容的进度和人口完成标记。
-
-官方只读 RPC 为 `app.arena.ArenaService/ArenaRanking`。请求包含 season、可选 band 和
-起止位置；响应为 `ranking` 与 `max_rank`。名单保留原始 `profile/deck/rank/point`，
-人数按位置计数。全部探测窗口均经过 `attempt` 和 `arena-observation` 持久确认；
-解析失败也提交错误观测，解除本次 pending 后停止相应采样。
-
-单轮总截止时间仍为120秒；优先需求、五个联赛首窗和活动榜单后，余量用于人口搜索。
-完整候选已齐时会预留边界复验时间，避免持续需求饿死人口发布。未完成保存进度，
-保留旧人口及其观测时间；仅完整、单调且不超过真实 `max_rank` 的统计才发布。
-真实空榜的一次响应可确认全部阈值为0。人口时间取本轮实际探测中最早的接收时间，
-旧候选不会刷新时间。
-
-网页 GET 读取快照，缺失窗口可登记有界兴趣，游戏 RPC 仅在后台任务中执行。
-人口读取直接消费完整快照，不由访客逐次二分或补查其他来源。
-
-## 已有账号池
-
-`account-pool.mjs` 使用 Node 24 的 SQLite 与 AES-GCM，兼容原 T62 私密目录中的
-`pool-local.sqlite`、`pool-encryption-key`，保留原账号记录。管理和导出命令不联网；
-`query` 调用同包 Python 协议内核，不执行 SDK 登录、注册或角色创建。
+`account-pool.mjs` manages an encrypted private pool with Node 24. Only `query` goes online. It never logs in, registers or creates characters.
 
 ```sh
-node account-pool.mjs status --directory <私密号池目录>
-node account-pool.mjs import --directory <私密号池目录> --config <完整区服配置.json> --label <账号别名> --source sdk
-node account-pool.mjs pause --directory <私密号池目录> --account <池内账号ID>
-node account-pool.mjs enable --directory <私密号池目录> --account <池内账号ID>
-node account-pool.mjs select --directory <私密号池目录> --region tw --account <池内账号ID>
-node account-pool.mjs query --directory <私密号池目录> --region tw --kind total --id 4 --python <采集器Python> --output <新的私密结果.json>
-node account-pool.mjs query --directory <私密号池目录> --region tw --kind challenge --id 10 --python <采集器Python> --proxy http://127.0.0.1:7897 --output <新的私密结果.json>
-node account-pool.mjs export --directory <私密号池目录> --region tw --output <新的单账号配置.json>
-node account-pool.mjs export-pool --directory <私密号池目录> --region tw --output <新的区服号池配置.json>
+node account-pool.mjs status --directory <pool>
+node account-pool.mjs import --directory <pool> --config <region-config.json> --label <label> --source sdk
+node account-pool.mjs pause --directory <pool> --account <id>
+node account-pool.mjs enable --directory <pool> --account <id>
+node account-pool.mjs select --directory <pool> --region tw --account <id>
+node account-pool.mjs query --directory <pool> --region tw --kind total --id 4 --python <python> --output <result.json>
+node account-pool.mjs export-pool --directory <pool> --region tw --output <pool-config.json>
 ```
 
-导入使用上文完整区服配置结构；`--source` 支持 `sdk`、`guest`、`import`，这里只标记
-已有会话来源。配置、密钥及号池目录须为本机私密文件；命令只输出别名、池内 ID、
-origin、状态、计数和查询回执，公开榜单正文写入指定文件，排除查询账号的 myRank/myScore。
-原记录缺少可验证的 origin 时显示 `origin_required`，不使用默认来源发送其凭据。
+Output files are created with mode 0600 and never overwrite existing files. Stop local queries for an identity once it moves to the cloud.
 
-每区显式选择一个账号；每次查询持有 60 秒独占租约，使用原表的区域预算和凭据代际
-更新条件。租约取得后先持久保存未确认状态，进程中断保留 `auth_uncertain`。
-认证、权限或设备拒绝持久暂停该区查询，切换账号、启用账号、修改别名或 Master
-配置不能解除暂停；同账号真实认证字段更新后恢复。查询不会在失败后换号重放。
-过期租约仍由凭据代际与随机租约令牌校验结果归属。输出配置和结果不覆盖已有文件。
+## Local mode
 
-`export` 导出已验证账号的旧版单账号配置；`export-pool` 导出
-`haneoka:official-ranking-account-pool/1`，包含 `region`、`selectedAccountId` 和
-`accounts`。每个 entry 包含 `id`、`label`、`source`、`enabled`、`state`、
-`lastSuccessAtMs`、`nextRequestAtMs`、可选 `pauseReason` 与完整 `clientVersion`、`credentials`、`masterConfig`。
-临时 cooldown 按 `nextRequestAtMs` 到期恢复，不改变认证／权限暂停。
-全部账号暂停时仍可导出；已知权限／认证暂停随配置保留，缺少旧暂停原因时保守暂停全区。
-导出总大小限制为 5120 bytes，文件权限为 0600，用现有 GitHub secret → Cloudflare
-secret 流程传递。云采集使用现有 Durable Object 与 Container；交接后停止本地对同一
-身份发起查询，账号密码、SDK token 和游戏凭据不进入浏览器、日志或仓库。
-四区配置齐全后，`official-ranking-config.yml` 的 `region=all` 一次核对并写入四个号池，随后触发一次 Worker 发布。
-
-## 环境与配置
-
-推荐使用与仓库管线一致的 Python 3.13，最低支持 Python 3.12；Python TLS 需要支持 ALPN。运行依赖固定在 `requirements.txt`，通过离线安装入口创建独立虚拟环境。
-
-游戏凭据使用对应区服的获授权导出文件，包含 `region`、固定官方 API `origin`，以及 `credentials` 中的 `player_id`、`credential` 和可选 `device_id`。日服使用 `region=jp` 与 `origin=https://api.bang-dream-on.jp`。日服 Master 私有配置包含：
-
-- `masterRemoteRoot`：`https://static.bang-dream-on.jp/master`；
-- `cdnUsername`：从获授权客户端取得的 CDN 用户名；
-- `masterCrypto`：`salt`、`key`、`iv` 的十六进制值。
-
-两个配置文件都放在工具及运行目录之外，不提交或打包。游戏账号凭据与 CDN 认证分别使用。可选代理为本机 HTTP 代理，例如 `--proxy http://127.0.0.1:7897`；也接受 `localhost` 和 `[::1]` 的有效端口。
-
-## 国际服三个分区
-
-`init` 和 `catalog` 使用 `--region tw|en|kr`，缺省仍为 `jp`。繁中网站标识为 `tw`，已有游戏凭据文件中的标识为 `hk`；英文和韩文分别为 `en`、`kr`。三服沿用各自已有游戏身份，工具不执行 SDK 登录或创建账号。
-
-国际服先调用所选分区的匿名 Version，再通过官方 GetServerList 的 areaID（繁中 2、英文 3、韩文 4）发现该区 CDN。发现结果必须匹配固定官方 API、CDN 主机和区域路径，随后匿名获取 Master 清单和三张表。国际服外置配置只需 `masterCrypto`，不使用日服 CDN 用户名或密码；Master 版本与资源版本分别保留，榜单请求同时发送。两者独立，任一版本在目录发现与采样之间改变都停止本轮采样，下轮重新发现。Master 时间沿用仓库现有投影的 UTC+9 基准，不按网页语言或操作者时区转换。
-
-凭据 `origin` 只接受同分区的静态官方来源：繁中为 l12/l14 HK，英文为 l14/l17 VA，韩文为 l14/l17 KR，完整主机名见 [分区合同](core/regions.py)。运行时使用凭据选定的 API 来源查询 Version、GetServerList 及榜单，再从发现结果对应的 CDN 读取目录；不会把另一来源签发的凭据自动转送到默认来源。采样前再次核对来源与目录版本，回执和观测保存实际 `apiOrigin`。仅检查目录的命令使用分区默认来源，不读取游戏凭据。
-
-每服使用独立运行目录、数据库和 API 端口。错误分区的凭据在创建运行目录前拒绝，新目录使用 `haneoka:official-ranking-collector/2` 并立即在数据库绑定分区；已有目录不能切服。原 `haneoka:official-jp-collector/1` 只接受日服，缺少 `region` 时仍按 `jp` 读取，不重写旧配置。旧数据库的日服身份由原目录及观测推导，只读检查不迁移，写入时才保存身份；混服历史拒绝读取或续写。活动最高 ID 和历史游标分别保存在各服数据库，API 只接受该运行目录所配置的分区路径。
-
-```sh
-python collector.py catalog --region tw --output <繁中目录检查> --master-config <外置解码配置> --client-version 1.1.0
-python collector.py init --region tw --output <繁中运行目录> --credentials <繁中已有游戏凭据> --master-config <外置解码配置> --hours 0.2 --interval 300 --client-version 1.1.0
-python collector.py start --output <繁中运行目录>
-```
-
-英文和韩文分别指定 `--region en`、`--region kr`，使用对应凭据及全新目录。Master 获取失败保持失败状态，不回退到 Moenotes 或其他分区；凭据拒绝和限流沿用日服的暂停及退避机制。
-
-## 离线安装
-
-在可联网的准备环境下载固定依赖，构建器会核对每个分发包的摘要。protobuf 使用通用 Python wheel，运行依赖不需要平台专用原生扩展；候选包不携带 Python 运行时。
+Install from an offline package built on a connected machine:
 
 ```sh
 python -m pip download --no-deps --only-binary=:all: --platform any --dest wheelhouse protobuf==6.33.0 h2==4.4.1 hpack==4.2.0 hyperframe==6.1.0 setuptools==80.9.0 wheel==0.45.1
 python -m pip download --no-deps --no-binary=:all: --dest wheelhouse py3rijndael==0.3.3
-python build.py --wheelhouse wheelhouse --output <新的ZIP路径>
-```
-
-解压后进入包目录，用工具虚拟环境之外的 Python 安装；升级前先停止采集。`setup.py` 会重建工具内的 `.venv`，只从包内 wheelhouse 安装固定依赖，再运行不联网的 `doctor`；运行目录及外置配置不受影响。
-
-```sh
-python setup.py --python <Python3.13解释器>
-# Linux / macOS
+python build.py --wheelhouse wheelhouse --output <package.zip>
+python setup.py --python <python3.13>
 .venv/bin/python collector.py doctor
-# Windows
-.venv\Scripts\python.exe collector.py doctor
 ```
 
-以下命令的 `python` 均指上述虚拟环境解释器。候选包不包含账号、Master 配置、数据库、日志或玩家数据。
-
-## 仅发现官方目录
-
-这个入口不读取游戏凭据，也不请求榜单：
+Keep credentials and Master configuration outside the tool and run directories. The JP Master configuration holds `masterRemoteRoot`, `cdnUsername` and `masterCrypto`; other regions need only `masterCrypto`.
 
 ```sh
-python collector.py catalog --output <独立目录> --master-config <外置Master配置> --client-version 1.1.0
+python collector.py catalog --region tw --output <dir> --master-config <master.json> --client-version 1.1.0
+python collector.py init --region tw --output <run> --credentials <credentials.json> --master-config <master.json> --hours 0.2 --interval 300 --client-version 1.1.0
+python collector.py start --output <run>
+python collector.py status --output <run> --verify
+python collector.py stop --output <run>
+python collector.py resume --output <run>
+python collector.py serve --output <run> --port 18779
+python collector.py backup --output <run> --destination <new-path>
 ```
 
-日服匿名 Version 提供当前 Master 版本和动态 CDN 密码；来源固定为官方域名，密码只驻留内存，不写入请求文件、回执或配置。每次发现都获取版本匹配的 Manifest，并按大小及 SHA256 验证三张表后解码。表缓存按版本隔离并原子替换，损坏缓存重新获取。全部表成功后才提交目录，不回退第三方目录；窗口外写入 `event=null`。
-
-Master 时间按 UTC+9 解析，挑战开始字段保留原生拼写 `_stratAt`。单曲和总榜开关来自官方 Master，聚合期来自 `event_ranking_aggregation_time`。多个活跃活动视为冲突；新活动优先于旧活动聚合期。最高已接受活动 ID 与目录同事务保存，状态文件落后、空档或重启都不会接受活动回退。挑战自己的窗口分别标记 `upcoming`、`nowOn`、`aggregation`、`finished`。
-
-`catalog` 拒绝已有采集运行目录，实际采样与该入口不共享同一输出目录。
-
-## 有界运行与恢复
-
-```sh
-python collector.py init --output <全新运行目录> --credentials <外置日服凭据> --master-config <外置Master配置> --hours 0.2 --interval 300 --client-version 1.1.0
-python collector.py start --output <运行目录>
-python collector.py status --output <运行目录> --verify
-python collector.py stop --output <运行目录>
-python collector.py resume --output <运行目录>
-python collector.py serve --output <运行目录> --port 18779
-python collector.py backup --output <运行目录> --destination <运行目录外的新备份路径>
-```
-
-`start` 返回实际 PID，Windows 隐藏窗口，POSIX 使用独立会话。`run` 在前台执行，可由现有 Python 服务管理器托管；工具不注册系统服务。`stop` 与截止时间在连接、读取、请求间隔和重试等待中检查；单次 RPC 总预算为 20 秒。`resume` 沿用原截止时间，已完成的运行、采样代码或协议及配置变化需要新目录。进程锁随进程退出释放，状态查询与采集共用相同的锁实现。
-
-首次网络请求前持久化账号身份与分区，发送时从一次凭据读取构造身份和认证头。HTTP401/gRPC16、HTTP403/gRPC7，以及上述 gRPC 2 认证拒绝，暂停相同认证字段；国际服还按分区及实际 API 来源隔离认证代际，修改无关元数据不会解除暂停。外部凭据替换只接受同账号，不执行注册或登录。HTTP429/gRPC8 遵守 Retry-After，并将冷却时间写入状态。目录来源或版本在采样前发生变化时停止本轮，下轮重新发现。请求及重试也受各榜单的独立窗口限制。
-
-每个成功或失败观测独立保存，空榜单与损坏数据分别处理。备份通过 SQLite 在线备份 API 获取一致快照，校验数据库、外键、观测关系和正文摘要，再通过硬链接原子创建新文件，不覆盖已有目标；备份目标文件系统需支持硬链接。
-
-## 本地读取与验收范围
-
-只读 API 绑定 `127.0.0.1`，接口及后续网站接入方案见 [INTERFACES.md](INTERFACES.md)。读取时按原观测时间计算年龄；GET 不访问游戏或改写历史。数据损坏返回错误，不作为空榜成功。
-
-匿名 Version、目录投影、进程锁、离线安装、备份和接口检查分别记录；完整真实账号连续采样、凭据失效和实服跨活动切换仍需获授权账号验收。源码与离线包不会自动切换网站、生产 Worker 或 Taki。
+`catalog` reads no game credentials and requests no rankings. Each region needs its own run directory, and a directory cannot change region. `--proxy` accepts a loopback HTTP proxy. The read API binds to `127.0.0.1`, and GET requests never contact the game.

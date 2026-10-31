@@ -1,16 +1,14 @@
-# 来源与边界
+# Notices
 
-Haneoka 工具源码沿用随包 LICENSE（MPL-2.0）。游戏协议和第三方依赖保留各自权利归属。
+Haneoka's tool source is MPL-2.0, as in the bundled LICENSE. The game protocol and third-party dependencies remain under their own terms.
 
-- core/total-descriptors.pb 是已有 Sirius 1.0.3 协议子集与日服 1.1.0 实际总榜响应验证的描述子，SHA256 为 e8225c67eb066c1cdb2232a4c95f661a460d54dd88420f634ea2c8242de71adf。players 的 player_data、score、high_score_deck 已用于实测；my_rank / my_score 字段编号仍为暂定，采集输出不使用。协议描述不属于 Haneoka 的 MPL 授权。
-- core/http2.py 与 core/transport.py 是 Python 的固定四服只读 HTTP/2 传输；允许的方法和各分区官方 origin 固定，不提供注册或登录。官方 Master 获取参考本仓 scripts/ingest/master.py、scripts/ingest/apks.py 和 scripts/extract/master.py 的合同。
-- protobuf 6.33.0：BSD-3-Clause，完整许可在固定通用 wheel 的 dist-info 目录内。
-- h2 4.4.1、hpack 4.2.0、hyperframe 6.1.0：MIT，完整许可随各固定 wheel 保留。
-- py3rijndael 0.3.3：MIT，固定 PyPI 源码包未包含许可文件，另随包保留上游 https://github.com/meyt/py3rijndael/blob/master/LICENSE 的完整文本于 LICENSE.py3rijndael.txt。
-- setuptools 80.9.0 与 wheel 0.45.1 是离线安装 py3rijndael 所需的构建依赖；完整许可和其捆绑依赖许可随各 wheel 保留。版本及摘要见 build-requirements.txt。
-- Python 由操作者安装，工具不携带运行时。
+| Component | License or source |
+| --- | --- |
+| protobuf 6.33.0 | BSD-3-Clause, in the wheel's `dist-info` |
+| h2 4.4.1, hpack 4.2.0, hyperframe 6.1.0 | MIT, in each wheel |
+| py3rijndael 0.3.3 | MIT, in [LICENSE.py3rijndael.txt](LICENSE.py3rijndael.txt) |
+| setuptools 80.9.0, wheel 0.45.1 | Build dependencies, licensed in each wheel |
+| `core/total-descriptors.pb` | Sirius 1.0.3 protocol subset with the JP 1.1.0 ranking response, not covered by Haneoka's MPL grant. SHA-256 `e8225c67eb066c1cdb2232a4c95f661a460d54dd88420f634ea2c8242de71adf` |
+| `core/intl-descriptors.pb` | International Sirius 1.0.3 subset with the read-only `ArenaRanking` messages, not covered by Haneoka's MPL grant. SHA-256 `2c0fd5de69765a544861a6e63da43f28e679da53c50f52e612b72fee2182147a` |
 
-构建器只收录固定源码清单和校验过的七个依赖包，不收录客户端用户名、CDN 密码、解码参数、游戏账号凭据、数据库、运行日志、玩家正文或虚拟环境。MANIFEST.json 记录全部组成文件摘要。实服验收与候选包构建分别记录；此工具不加入网站部署。
-
-- core/intl-descriptors.pb 来自既有国际服 Sirius 1.0.3 协议子集，补入只读 ArenaRanking 请求、响应和 ArenaRankingEntry，SHA256 为 2c0fd5de69765a544861a6e63da43f28e679da53c50f52e612b72fee2182147a；不属于 Haneoka MPL 授权。原总榜 players 已经国际服 1.1.0 验证；my_rank / my_score 不用于输出。
-- ArenaRanking 字段与日服 1.1.0/10065、国际服 1.1.0/v86 原始程序集的请求／响应访问器一致，并经四服 season1/band1 第1–100位置实测。繁中另验证101–200位置；各响应均100行，返回 max_rank。段位阈值来自同服已校验 MasterArenaRank._lp；人口按实际位置计数，rank 仅保留原始显示值。
+Python is installed by the operator. The package builder includes only the pinned sources and verified dependencies, listed with their digests in `MANIFEST.json`. It never includes accounts, CDN secrets, decoding parameters, databases, logs or player data.
