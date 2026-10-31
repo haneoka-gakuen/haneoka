@@ -152,10 +152,10 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
   if (position <= stop) return pending([Math.floor((position - 1) / WINDOW) * WINDOW + 1]);
   await attachProfileCards(env, ctx, region, rows);
   const now = Date.now();
-  // A stale window is still shown; the next run refreshes it without pulling that run forward.
+  // A stale window is still shown while a run brought forward refreshes it.
   if (staleAt(observedAtMs, now, 1_200_000))
     ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region, seasonId, bandId,
-      [...new Set([start, Math.min(stop, end)].map((rank) => Math.floor((rank - 1) / WINDOW) * WINDOW + 1))], [], false)).catch(() => undefined));
+      [...new Set([start, Math.min(stop, end)].map((rank) => Math.floor((rank - 1) / WINDOW) * WINDOW + 1))])).catch(() => undefined));
   return { region, seasonId, bandId, start, end, provider: "official", snapshotId: [...snapshots].join("."),
     observedAtMs, fetchedAtMs: observedAtMs, serverTimeMs: now, stale: staleAt(observedAtMs, now, 1_200_000),
     maxRank: metadata.maxRank, rows: markTies(rows) };

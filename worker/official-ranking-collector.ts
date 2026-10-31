@@ -20,7 +20,9 @@ const LOOKUP_MS = 60_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
-const ARENA_SWEEP_WINDOWS = 10;
+const ARENA_SWEEP_WINDOWS = 20;
+/** Ranks searched by player ID stay freshest: three windows in four go to them. */
+const ARENA_NEAR_RANKS = 2000;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
 /** Rejections in a row before an account is paused; each one rests it this much longer, and any success clears them. */
@@ -372,16 +374,18 @@ export class OfficialRankingCollector extends Container<Env> {
     const sweep = state.arenaSweep ??= { band: 0, next: {} };
     const maxima = new Map<string, number | null>();
     const windows: { seasonId: string; bandId: string; startRank: number; endRank: number }[] = [];
-    for (let turn = 0; windows.length < count && turn < count + arena.bandIds.length; turn++) {
+    for (let turn = 0; windows.length < count && turn < 2 * count + arena.bandIds.length; turn++) {
       const bandId = arena.bandIds[sweep.band % arena.bandIds.length]!;
       sweep.band = (sweep.band + 1) % arena.bandIds.length;
       if (!maxima.has(bandId))
         maxima.set(bandId, (await readOfficialArenaMetadata(this.env, region, arena.seasonId, bandId).catch(() => null))?.maxRank ?? null);
       const maxRank = maxima.get(bandId);
       if (!maxRank || maxRank <= 100) continue;
-      const key = `${arena.seasonId}:${bandId}`;
-      let startRank = sweep.next[key] ?? 101;
-      if (startRank > maxRank) startRank = 101;
+      const deep = turn % 4 === 3 && maxRank > ARENA_NEAR_RANKS;
+      const key = `${arena.seasonId}:${bandId}${deep ? ":deep" : ""}`;
+      const first = deep ? ARENA_NEAR_RANKS + 1 : 101, last = deep ? maxRank : Math.min(maxRank, ARENA_NEAR_RANKS);
+      let startRank = sweep.next[key] ?? first;
+      if (startRank > last) startRank = first;
       sweep.next[key] = startRank + 100;
       windows.push({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 });
     }

@@ -233,6 +233,9 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       const id = profile?.profile_id ?? profile?.profileId;
       if (typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)) profiles[id] = observation.startRank + index;
     });
+    const replaced = await db.prepare(`SELECT snapshot_id, payload_key, observed_at_ms FROM official_arena_window_metadata
+      WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank = ?`)
+      .bind(observation.region, observation.seasonId, observation.bandId, observation.startRank).first<ReplacedWindow>();
     await db.prepare(`INSERT INTO official_arena_window_metadata
       (region, season_id, band_id, start_rank, end_rank, max_rank, player_count, profile_index, snapshot_id, observed_at_ms, payload_key, payload_hash)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, season_id, band_id, start_rank) DO UPDATE SET
@@ -242,7 +245,19 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       .bind(observation.region, observation.seasonId, observation.bandId, observation.startRank, observation.endRank,
         observation.maxRank ?? null, observation.players.length, JSON.stringify(profiles), observation.snapshotId,
         observation.observedAtMs, key, hash).run();
+    if (replaced) await dropReplaced(env, "official_arena_ranking_observations", observation, replaced);
   }
+}
+
+interface ReplacedWindow { snapshot_id: string; payload_key: string; observed_at_ms: number }
+
+/** A window keeps only its latest snapshot; history has no reader. */
+async function dropReplaced(env: OfficialRankingStoreBindings, table: string,
+  observation: { region: string; snapshotId: string; observedAtMs: number }, replaced: ReplacedWindow) {
+  if (replaced.snapshot_id === observation.snapshotId || replaced.observed_at_ms > observation.observedAtMs) return;
+  const { db, bucket } = storage(env);
+  await db.prepare(`DELETE FROM ${table} WHERE region = ? AND snapshot_id = ?`).bind(observation.region, replaced.snapshot_id).run();
+  await bucket.delete(replaced.payload_key);
 }
 
 export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<void> {
@@ -269,6 +284,9 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
     const id = profile?.profile_id ?? profile?.profileId;
     if (typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)) profiles[id] = observation.startRank + index;
   });
+  const replaced = await db.prepare(`SELECT snapshot_id, payload_key, observed_at_ms FROM official_event_window_metadata
+    WHERE region = ? AND event_id = ? AND start_rank = ?`)
+    .bind(observation.region, observation.eventId, observation.startRank).first<ReplacedWindow>();
   await db.prepare(`INSERT INTO official_event_window_metadata
     (region, event_id, start_rank, end_rank, max_rank, player_count, profile_index, snapshot_id, observed_at_ms, payload_key, payload_hash)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, event_id, start_rank) DO UPDATE SET
@@ -277,6 +295,7 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
     WHERE excluded.observed_at_ms >= official_event_window_metadata.observed_at_ms`)
     .bind(observation.region, observation.eventId, observation.startRank, observation.endRank, observation.maxRank ?? null,
       observation.players.length, JSON.stringify(profiles), observation.snapshotId, observation.observedAtMs, key, hash).run();
+  if (replaced) await dropReplaced(env, "official_event_window_observations", observation, replaced);
 }
 
 export interface OfficialEventWindowMetadata {
@@ -530,11 +549,11 @@ export const OFFICIAL_KEEP_ALL_MS = 12 * 3_600_000;
 const JST_MS = 9 * 3_600_000;
 
 /** Thins raw observations older than {@link OFFICIAL_KEEP_ALL_MS}: event boards keep the last snapshot of each
- * Japan-time day per board (the points event charts read); Arena windows keep only what each window's latest
+ * Japan-time day per board (the points event charts read); Arena and event windows keep only what each window's latest
  * metadata points at; population counts keep the latest per board. Deletes rows and payloads; returns how many. */
 export async function pruneOfficialObservations(env: OfficialRankingStoreBindings, limit = 200): Promise<number> {
   const { db, bucket } = storage(env);
-  const before = Date.now() - OFFICIAL_KEEP_ALL_MS;
+  const before = Date.now() - OFFICIAL_KEEP_ALL_MS, orphaned = Date.now() - 3_600_000;
   const doomed: { table: string; cursor: number; key: string }[] = [];
   const take = async (table: string, sql: string, ...values: unknown[]) => {
     if (doomed.length >= limit) return;
@@ -549,10 +568,10 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
     ORDER BY o.observed_at_ms LIMIT ?`, before, JST_MS, JST_MS);
   await take("official_arena_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_arena_ranking_observations AS o
     WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
-      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, before);
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, orphaned);
   await take("official_event_window_observations", `SELECT o.cursor, o.payload_key FROM official_event_window_observations AS o
     WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
-      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, before);
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, orphaned);
   await take("official_arena_population_observations", `SELECT o.cursor, o.payload_key FROM official_arena_population_observations AS o
     WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
       WHERE later.region = o.region AND later.season_id = o.season_id AND later.band_id = o.band_id

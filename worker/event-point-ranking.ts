@@ -36,7 +36,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
   const rows = source.players.map((player, index) => arenaRankingRow(player, start + index, region));
   await attachProfileCards(env, ctx, region, rows);
   const stale = now - source.observedAtMs > STALE_MS;
-  if (stale) ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region, eventId, [start], false)).catch(() => undefined));
+  if (stale) ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region, eventId, [start])).catch(() => undefined));
   return { ...base, snapshotId: source.snapshotId, observedAtMs: source.observedAtMs, fetchedAtMs: source.observedAtMs, stale, rows: markTies(rows) };
 }
 
