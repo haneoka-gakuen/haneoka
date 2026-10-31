@@ -1523,6 +1523,21 @@ def _source_index_storage_errors(
     return errors
 
 
+# Sources the native app reads by name. A game update can drop one, which breaks
+# story or chart playback, so a release reports it without failing the build.
+APP_REQUIRED_SOURCES = (
+    "Assets/AddressableResources/Common/Adv/Prefab/AdvBackgroundField.prefab",
+    "Assets/AddressableResources/Common/Adv/Prefab/AdvCharacterField.prefab",
+    "Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2",
+    "Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2",
+    "Assets/AddressableResources/UI/Prefab/UIAdvWidget.prefab",
+)
+
+
+def missing_app_sources(paths: set[str]) -> list[str]:
+    return [source for source in APP_REQUIRED_SOURCES if f"metadata/sources/{source}.json" not in paths]
+
+
 def verify_release(
     server: str,
     release_id: str,
@@ -1734,6 +1749,9 @@ def verify_release(
         raise ValueError(
             f"release verification failed ({len(errors)}):\n" + "\n".join(errors[:100])
         )
+    paths = {str(entry.get("path")) for entry in entries if isinstance(entry, dict)}
+    for source in missing_app_sources(paths):
+        print(f"::warning title=App source missing::{server} {release_id} lacks {source}", flush=True)
     return manifest
 
 
