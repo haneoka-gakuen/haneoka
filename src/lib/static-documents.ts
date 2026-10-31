@@ -165,6 +165,7 @@ export function staticDocumentLookupPath(pathname: string): string | undefined {
   const chartShell = communityChartShellPath(pathname);
   if (chartShell) return coreStaticDocumentPath(chartShell);
   if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;
+  if (pathname === "/data/sponsors/v1.json") return pathname;
   if (/^\/(?:provider-static|asset-static|playlist-static)\//u.test(pathname)) {
     const parts = pathname.split("/").filter(Boolean);
     if (pathname.endsWith("/index.html") && (parts[0] !== "provider-static" || parts.length === 6))

@@ -36,6 +36,7 @@ const writeJson = (file, value) => {
 };
 function localeForPath(pathname) {
   if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return "ja";
+  if (pathname === "/data/sponsors/v1.json") return "ja";
   const parts = pathname.split("/").filter(Boolean);
   let candidate;
   if (["jp", "intl", "playlist-static"].includes(parts[0])) candidate = parts[1];
