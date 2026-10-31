@@ -21,6 +21,7 @@
 | `/events/{eventId}/challenges/{challengeId}/latest` | 指定单曲最后成功观测 |
 | `/events/{eventId}/total/latest` | 四曲总榜最后成功观测 |
 | `/events/{eventId}/latest` | 活动积分榜最后成功观测；活动 `_isRankingDisabled` 为 false 时才采集，请求前 100 名 |
+| `/events/{eventId}/points/ranking?start=`、`points/search?profileId=` | 活动积分榜按 100 名分窗；`GetRankingList` 的 `ranks` 可传任意名次，窗口存于 `official_event_window_*`；挑战曲榜与总榜的接口无名次参数，只有前 100 名 |
 | 上述latest改为`history?after={cursor}` | observations与nextCursor，每页最多100条；失败也保留 |
 
 榜单合同仍为 `haneoka:ranking-observation/2`，保留snapshotId、cursor、payloadHash、eventId、challengeId、players、provenance、stale。新增官方主数据来源不应冒充Moenotes采集时间。榜单原始玩家字段不是完整图片资源；名片图片下载未接入。
@@ -39,6 +40,7 @@ Job 的可选 `capabilities` 协商 `arena-ranking-v1`、`arena-population-v1`�
 及 `thresholdsByBand`；活动为 null 仍独立采竞技场，当前无赛季为显式 `arena:null`。
 
 `arenaWindows` 最多20项 `{seasonId,bandId,startRank,endRank}`，按100位置对齐。
+`eventWindows` 最多20项 `{eventId,startRank,endRank}`，回调 `event-window`；榜尾由空窗口或不足的窗口得出 `maxRank`，满窗无 `maxRank`。
 `arena-observation` 含窗口、真实 `maxRank` 及原始 `players`；所有名单的默认 `point=0`
 均显式补出。排名显示字段不参与人数累计。
 
