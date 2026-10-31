@@ -10,6 +10,7 @@ interface SponsorCopy {
   body: string[];
   afdian: string;
   patreon: string;
+  kofi: string;
   wallTitle: string;
   wallUpdated: string;
   tierEmpty: string;
@@ -33,12 +34,12 @@ const initial = (name: string) => [...name][0]?.toUpperCase() ?? "";
     <div class="sponsor-links">
       {SPONSOR_PLATFORMS.map((platform) => (
         <a class={`sponsor-link sponsor-link--${platform.id}`} href={platform.url} target="_blank" rel="noopener">
-          {platform.id === "afdian" ? (
-            <Icon name="electric_bolt" size={24} filled />
-          ) : (
+          {platform.id === "afdian" && <Icon name="electric_bolt" size={24} filled />}
+          {platform.id === "patreon" && (
             <svg class="material-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="14.5" cy="9.5" r="7" fill="currentColor" /><rect x="3" y="2.5" width="3.5" height="19" rx="0.6" fill="currentColor" /></svg>
           )}
-          <span>{platform.id === "afdian" ? copy.afdian : copy.patreon}</span>
+          {platform.id === "kofi" && <Icon name="local_cafe" size={24} filled />}
+          <span>{copy[platform.id]}</span>
           <Icon name="open_in_new" size={20} />
         </a>
       ))}

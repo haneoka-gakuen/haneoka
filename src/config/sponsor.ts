@@ -4,11 +4,12 @@
 // Pos: [Map](../L2.md)；赞助页与构建期名单共用的档位定义。
 // Effects/Dependencies: 无。
 
-export type SponsorPlatform = "afdian" | "patreon";
+export type SponsorPlatform = "afdian" | "patreon" | "kofi";
 
 export const SPONSOR_PLATFORMS: readonly { id: SponsorPlatform; url: string }[] = [
   { id: "afdian", url: "https://afdian.com/a/haneoka" },
   { id: "patreon", url: "https://www.patreon.com/cw/haneoka" },
+  { id: "kofi", url: "https://ko-fi.com/haneoka" },
 ];
 
 export type SponsorTierId = "black" | "platinum" | "gold" | "normal";

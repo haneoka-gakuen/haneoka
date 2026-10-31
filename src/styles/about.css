@@ -574,7 +574,8 @@
       border-radius var(--motion-spatial-fast),
       background-color var(--motion-effects);
   }
-  .sponsor-link--patreon {
+  .sponsor-link--patreon,
+  .sponsor-link--kofi {
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
   }
