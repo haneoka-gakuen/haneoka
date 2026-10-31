@@ -8863,7 +8863,7 @@ def build_api(
     timings["write catalogues"] = round(time.perf_counter() - begin, 3)
     from build.card_recognition import build_card_recognition_source
     begin = time.perf_counter()
-    recognition = build_card_recognition_source(layout.root, config.id, source_id)
+    recognition = build_card_recognition_source(layout.root, config.id, source_id, data=data)
     timings["card recognition"] = round(time.perf_counter() - begin, 3)
     result = {
         "schema": "haneoka-catalog-build-v1",

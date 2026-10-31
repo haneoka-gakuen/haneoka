@@ -8,9 +8,42 @@ from core.server_policy import is_validation_source
 from recognize.build_index import source_index
 
 SOURCE_PATH = "runtime/card-recognition/source.json"
+LOCAL_PATH = "runtime/card-recognition/local.json"
+# Tile sizes keep each sheet small enough to fetch on demand in the browser and app.
+TILES = {"members": (45, 60), "snapshots": (64, 36)}
+SHEET_COLUMNS = 16
 
 
-def build_card_recognition_source(root: Path, server: str, source_id: str, *, card_only=False):
+def write_local_reference(root: Path, server: str, source: dict, data) -> dict:
+    """Downsampled thumbnail sheets plus level glyphs for on-device recognition."""
+    from PIL import Image
+    kinds = {}
+    for kind, (width, height) in TILES.items():
+        refs = sorted((r for r in source["references"] if r["kind"] == kind), key=lambda r: r["cardId"])
+        rows = -(-len(refs) // SHEET_COLUMNS)
+        sheet = Image.new("RGB", (width * SHEET_COLUMNS, height * max(1, rows)))
+        for index, ref in enumerate(refs):
+            file = data.asset_file(ref["sourcePath"].removeprefix("assets/"))
+            if file is None:
+                raise ValueError("recognition thumbnail is missing from the build")
+            with Image.open(file) as image:
+                tile = image.convert("RGB").resize((width, height), Image.Resampling.BOX)
+            sheet.paste(tile, ((index % SHEET_COLUMNS) * width, (index // SHEET_COLUMNS) * height))
+        path = f"runtime/card-recognition/{kind}.png"
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save(target, optimize=True)
+        kinds[kind] = {"tile": [width, height], "columns": SHEET_COLUMNS, "sheet": f"{kind}.png",
+                       "cardIds": [r["cardId"] for r in refs]}
+    reader = source.get("levelReader")
+    document = {"schema": "haneoka-card-recognition-local-v1", "server": server, "sourceId": source["sourceId"],
+                "kinds": kinds, "levelReader": None if reader is None else
+                {"glyphs": reader["glyphs"], "allowedLevels": reader["allowedLevels"]}}
+    write_json(root / LOCAL_PATH, document)
+    return {"path": LOCAL_PATH, "levelReader": reader is not None}
+
+
+def build_card_recognition_source(root: Path, server: str, source_id: str, *, data=None):
     selected = read_json(root / "metadata/source-index.json")
     if selected.get("server") != server or selected.get("sourceId") != source_id:
         raise ValueError("recognition input index belongs to a different source")
@@ -29,7 +62,7 @@ def build_card_recognition_source(root: Path, server: str, source_id: str, *, ca
         (root / SOURCE_PATH).unlink(missing_ok=True)
         return {"status": "unavailable", "reason": "catalog-thumbnails-incomplete",
                 "missingThumbnailCount": missing, "catalogCardCount": len(expected), "sourceId": source_id}
-    source = source_index(root, server, include_levels=not card_only)
+    source = source_index(root, server, data=data)
     if source.get("schema") != "haneoka-card-recognition-source-v1" or source.get("sourceId") != source_id or "releaseId" in source:
         raise ValueError("recognition source identity is invalid or self-referential")
     refs = source["references"]
@@ -42,5 +75,6 @@ def build_card_recognition_source(root: Path, server: str, source_id: str, *, ca
                 or ref["path"] != f"images/{digest}.png" or ref["variant"] != "thumbnail"):
             raise ValueError("recognition thumbnail identity is invalid")
     write_json(root / SOURCE_PATH, source)
-    return {"path": SOURCE_PATH, "references": len(refs), "levelReaderAvailable": source.get("levelReader") is not None,
+    local = write_local_reference(root, server, source, data) if data is not None else None
+    return {"path": SOURCE_PATH, "local": local, "references": len(refs), "levelReaderAvailable": source.get("levelReader") is not None,
             "levelReaderStatus": source.get("levelReaderStatus"), "sourceId": source_id}

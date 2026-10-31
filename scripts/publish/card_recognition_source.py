@@ -90,7 +90,7 @@ def prepare(store, config, identity, staging, inputs):
     # A selected-record projection of verified source-index partitions, never a research build.
     write_json(inputs / "metadata/source-index.json", {
         "server": config.id, "sourceId": identity["sourceId"], "sources": selected_sources})
-    result = build_card_recognition_source(inputs, config.id, identity["sourceId"], card_only=True)
+    result = build_card_recognition_source(inputs, config.id, identity["sourceId"])
     source = json.loads((inputs / SOURCE_PATH).read_text())
     if source.get("levelReader") is not None:
         raise ValueError("card-only current projection must leave visible levels unknown")
