@@ -23,6 +23,9 @@ const ARENA_INTEREST_TTL_MS = 3_600_000;
 const ARENA_SWEEP_WINDOWS = 10;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
+/** Rejections in a row before an account is paused; each one rests it this much longer, and any success clears them. */
+const AUTH_STRIKES = 3;
+const AUTH_RETRY_MS = 900_000;
 const DEMAND_TTL_MS = 600_000;
 const DEMAND_LIMITS = { player: 64, song: 8, card: 128 };
 const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
@@ -43,6 +46,7 @@ interface CollectorRun {
   deadlineMs: number;
   pendingAttempt: string | null;
   resolvedAttempt: boolean;
+  authStruck?: boolean;
   complete: boolean;
   catalog: OfficialCatalog | null;
   checkpoints: Record<string, string>;
@@ -550,6 +554,7 @@ export class OfficialRankingCollector extends Container<Env> {
         health.blocked = {};
         health.cooldownUntilMs = 0;
         health.failures = 0;
+        health.rejections = 0;
         if (state.permissionPause?.identity === identity) state.permissionPause = null;
         if (state.legacyPermissionBlock) state.legacyPermissionBlock = null;
         if (pool.accounts.some((row) => row.generation === state.blockedGeneration && row.identity === identity)) state.blockedGeneration = null;
@@ -741,12 +746,23 @@ export class OfficialRankingCollector extends Container<Env> {
     return state.run?.accountIdentity ? state.accounts?.[state.run.accountIdentity] ?? null : null;
   }
 
+  /** A single rejection or a lost response proves little: the account rests and is tried again. Only repeated
+   * rejections pause it. `auth_uncertain` says nothing about the credential, so it never counts. */
   private pauseRun(state: CollectorState, kind: "auth_paused" | "auth_uncertain", permission = false): void {
     const run = state.run;
     if (!run) return;
+    const health = this.runHealth(state);
+    if (health && kind === "auth_paused" && !run.authStruck) {
+      run.authStruck = true;
+      health.rejections = (health.rejections ?? 0) + 1;
+    }
+    if (health && (kind === "auth_uncertain" || (health.rejections ?? 0) < AUTH_STRIKES)) {
+      health.cooldownUntilMs = Math.max(health.cooldownUntilMs, Date.now() + AUTH_RETRY_MS * Math.max(1, health.rejections ?? 0));
+      state.status = "failed";
+      return;
+    }
     state.blockedGeneration = run.generation;
     state.status = kind;
-    const health = this.runHealth(state);
     if (health && run.authGeneration) health.blocked[run.authGeneration] = kind;
     if (permission && run.accountIdentity && run.authGeneration) state.permissionPause = { identity: run.accountIdentity, authGeneration: run.authGeneration };
   }
@@ -1041,7 +1057,10 @@ export class OfficialRankingCollector extends Container<Env> {
           if (!update.observation.error) {
             state.lastSuccessfulObservationAtMs = Math.max(state.lastSuccessfulObservationAtMs ?? 0, update.observation.observedAtMs);
             const health = this.runHealth(state);
-            if (health) health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
+            if (health) {
+              health.rejections = 0;
+              health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
+            }
           }
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "player-profile" || update.type === "card-image" || update.type === "song-ranking") {
@@ -1107,7 +1126,10 @@ export class OfficialRankingCollector extends Container<Env> {
           if (!update.observation.error) {
             state.lastSuccessfulObservationAtMs = Math.max(state.lastSuccessfulObservationAtMs ?? 0, update.observation.observedAtMs);
             const health = this.runHealth(state);
-            if (health) health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
+            if (health) {
+              health.rejections = 0;
+              health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observation.observedAtMs);
+            }
           }
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "arena-progress") {

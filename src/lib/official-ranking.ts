@@ -39,6 +39,8 @@ export interface OfficialCollectorAccountHealth {
   cooldownUntilMs: number;
   leaseUntilMs: number;
   failures: number;
+  /** Rejections in a row; any success clears them. */
+  rejections?: number;
   /** Set from the admin panel: skipped until released. */
   held?: boolean;
 }

@@ -37,11 +37,11 @@ A run lasts about two minutes. Each board request is checkpointed before it is s
 
 | Upstream response | Result |
 | --- | --- |
-| HTTP 401, gRPC 16, gRPC 2 `authentication failed` | Pauses that credential; another ready account can take over |
-| HTTP 403, gRPC 7 | Pauses the region until the credential is renewed |
+| HTTP 401, gRPC 16, gRPC 2 `authentication failed` | Rests the account for 15 minutes per rejection; another ready account can take over |
+| HTTP 403, gRPC 7 | The same, and the third rejection pauses the whole region |
 | HTTP 429, gRPC 8 | Cools down every account in the region |
 
-A failed request is never replayed on another account. A run interrupted between request and observation stays in `auth_uncertain` until the credential changes. Restarting does not clear a pause.
+Three rejections in a row pause an account until its credential changes, and any success clears the count. A failed request is never replayed on another account. A run interrupted between request and observation only rests the account.
 
 ## Arena and event windows
 
