@@ -28,6 +28,7 @@ import { cleanupUnverifiedAccounts } from "./account-lifecycle";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
+import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
 import { handleEventPointRankingApi } from "./event-point-ranking";
 import { handleAdminRequest } from "./admin";
 import { applySiteSettings, readSiteSettings, testContentAllowed, isPublicResourceServer, restrictedResourceRequest, privateResourceResponse } from "./site-settings";
@@ -2399,7 +2400,9 @@ async function handleCatalogApiRequest(
             `metadata/sources/${sourcePath}.json`,
             "application/json; charset=utf-8",
           );
-          return response || errorResponse(request, 404, "source_not_found", "Unity source not found");
+          if (response) return response;
+          if (sourcePath === CAMERA_MANAGER_SOURCE) return Response.json(cameraManagerDescriptor, { headers: CORS });
+          return errorResponse(request, 404, "source_not_found", "Unity source not found");
         },
         CATALOG_API_CACHE_CONTROL,
       ),
@@ -2788,7 +2791,7 @@ async function handleReleaseMedia(
   const [, tree, rawServer, rawPath] = match;
   if (!tree || !rawServer || !rawPath) return new Response("not found", { status: 404, headers: CORS });
   const serverSlug = decodePathPart(rawServer);
-  const relative = cleanRelativePath(rawPath);
+  let relative = cleanRelativePath(rawPath);
   if (!serverSlug || !RESOURCE_SERVER_SLUG_PATTERN.test(serverSlug) || !relative)
     return new Response("not found", { status: 404, headers: CORS });
   const server = await accessibleResourceServer(env, request, serverSlug);
@@ -2817,6 +2820,12 @@ async function handleReleaseMedia(
     return requested
       ? errorResponse(request, 404, "release_not_found", "Requested release is not available")
       : new Response("not found", { status: 404, headers: CORS });
+  }
+  const retired = tree === "objects" ? retiredObject(relative) : null;
+  if (retired) return new Response(retired, { headers: { ...CORS, "Content-Type": "application/gzip", "Cache-Control": PINNED_MEDIA_CACHE_CONTROL } });
+  if (tree === "runtime" && relative.includes("LiveAtlas.spriteatlasv2/sactx-") && !(await releaseEntry(env, release, `runtime/${relative}`))) {
+    const atlas = await readReleaseJson(env, release, LIVE_ATLAS_SOURCE).catch(() => null) as { outputs?: { path: string }[] } | null;
+    relative = renamedAtlasPage(relative, atlas?.outputs ?? []) ?? relative;
   }
   if (stampDiagnostics && !(await testContentAllowed(request, env))) {
     const target = new URL(`/api/v1/servers/${server.slug}/stamps/textless`, request.url);
