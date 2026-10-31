@@ -36,6 +36,7 @@ import type { GameRecordsErrorDto,
   PlayerProfileDto,
   RankingCardCatalog,
 } from "../lib/game-records";
+import { profileRegion } from "../lib/game-records";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
 import { formatDate } from "../lib/date-format";
@@ -156,7 +157,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       })
         .then(({ accounts }) => {
           this.linked = accounts.map((account) => ({
-            region: gameAccountRegion(account.region, this.locale),
+            region: gameAccountRegion(account.region, this.locale, account.playerUid),
             id: account.playerUid,
             name: account.displayName || account.playerUid,
           }));
@@ -299,6 +300,8 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   }
   private submitProfile(value: string) {
     const input = value.trim();
+    const detected = profileRegion(input);
+    if (detected) this.region = detected;
     const id = validPlayerProfileId(this.region, input) ? BigInt(input).toString() : input;
     if (!validPlayerProfileId(this.region, id)) {
       this.queryInvalid = true;

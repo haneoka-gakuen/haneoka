@@ -69,7 +69,7 @@ import {
 import { formatCommunityTime, isEdited } from "../lib/community-time";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 import { keyed } from "lit/directives/keyed.js";
-import { gameAccountRegion } from "./shared/game-records";
+import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -1558,11 +1558,7 @@ export class CommunityWorkspace extends LitElement {
     const summary = ((account.latestSnapshot as Value | null)?.summary ?? {}) as Value;
     const number = (value: unknown) => new Intl.NumberFormat(this.locale).format(Number(value));
     return [
-      account.region === "jp"
-        ? this.label("settings.labels.settingsJapan", "JP")
-        : account.region === "intl"
-          ? this.label("settings.labels.settingsGlobal", "Global")
-          : String(account.region || ""),
+      GAME_REGION_NAMES[gameAccountRegion(String(account.region), this.locale, String(account.playerUid))],
       account.displayName && account.playerUid
         ? this.label("community.page.gameAccountPlayerId", "Player ID {id}", { id: String(account.playerUid) })
         : "",
@@ -4726,7 +4722,7 @@ export class CommunityWorkspace extends LitElement {
                       ${gameAccounts.map(
                         (account) => html`
                           <li>
-                            <a class="list-item list-item--three-line list-item--interactive" href=${`/${this.locale}/player-profile/?region=${gameAccountRegion(String(account.region), this.locale)}&profileId=${account.playerUid}`}>
+                            <a class="list-item list-item--three-line list-item--interactive" href=${`/${this.locale}/player-profile/?region=${gameAccountRegion(String(account.region), this.locale, String(account.playerUid))}&profileId=${account.playerUid}`}>
                               <span class="list-item__avatar">${icon("sports_esports", 20)}</span>
                               <span class="list-item__body">
                                 <span class="list-item__headline">${String(account.displayName || account.playerUid || "")}</span>

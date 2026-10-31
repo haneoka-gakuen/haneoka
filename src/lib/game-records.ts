@@ -2,6 +2,11 @@ import type { CardGrowthIcons } from "./ui-marks";
 
 export type GameRecordsRegion = "jp" | "tw" | "en" | "kr";
 
+const PROFILE_REGIONS: Readonly<Record<string, GameRecordsRegion>> = { "2": "tw", "3": "en", "4": "kr", "5": "jp" };
+/** The game's player IDs are 11 digits and the first names the region. */
+export const profileRegion = (profileId: string): GameRecordsRegion | null =>
+  /^[2-5]\d{10}$/u.test(profileId) ? PROFILE_REGIONS[profileId[0]!]! : null;
+
 export interface GameProfileCardPageDto {
   page: number;
   imageUrl: string | null;

@@ -1,6 +1,6 @@
 import { clearContentAccess, refreshContentAccess } from "../lib/content-access";
 import { clientText } from "../i18n/client";
-import { gameAccountRegion } from "./shared/game-records";
+import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
 import { modal } from "./ui/modal";
 import { specList } from "./ui/spec";
@@ -1243,13 +1243,13 @@ ${
                     const region = String(account.region);
                     return html`
                       <li class="account-object">
-                        <a class="detail-object" href=${`/${locale}/player-profile/?region=${gameAccountRegion(region, locale)}&profileId=${account.playerUid}`}>
+                        <a class="detail-object" href=${`/${locale}/player-profile/?region=${gameAccountRegion(region, locale, String(account.playerUid))}&profileId=${account.playerUid}`}>
                           <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
                           <span>
                             ${String(account.displayName || account.playerUid)}
                             <small class="md-body-small">
                               ${[
-                                region === "jp" ? clientText(locale, "settings.labels.settingsJapan", "JP") : clientText(locale, "settings.labels.settingsGlobal", "Global"),
+                                GAME_REGION_NAMES[gameAccountRegion(region, locale, String(account.playerUid))],
                                 String(account.playerUid),
                                 typeof summary.rank === "number" ? clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(summary.rank) }) : "",
                                 typeof summary.rating === "number" ? clientText(locale, "account.page.gameRating", "Rating {value}", { value: number(summary.rating) }) : "",

@@ -1,6 +1,6 @@
 import { html } from "lit";
 import { clientText } from "../../i18n/client";
-import type { GameRecordsRegion } from "../../lib/game-records";
+import { profileRegion, type GameRecordsRegion } from "../../lib/game-records";
 import type { ReleaseServer } from "../../lib/release-server";
 import jpFlag from "circle-flags/flags/jp.svg?url";
 import hkFlag from "circle-flags/flags/hk.svg?url";
@@ -14,9 +14,11 @@ export const GAME_RECORDS_REGIONS = [
   { value: "kr", key: "regionKr", flag: krFlag },
 ] as const;
 
-/** A linked game account stores its release server; the records region follows the visitor's locale for intl. */
-export const gameAccountRegion = (server: string, locale: string): GameRecordsRegion =>
-  server === "jp" ? "jp" : defaultGameRecordsRegion("intl", locale);
+export const GAME_REGION_NAMES: Readonly<Record<GameRecordsRegion, string>> = { jp: "JP", tw: "TW/HK/MO", en: "EN Regions", kr: "KR" };
+
+/** A linked game account's region comes from its player ID; older non-numeric IDs follow the stored server. */
+export const gameAccountRegion = (server: string, locale: string, profileId = ""): GameRecordsRegion =>
+  profileRegion(profileId) ?? (server === "jp" ? "jp" : defaultGameRecordsRegion("intl", locale));
 
 export function defaultGameRecordsRegion(server: ReleaseServer, locale: string): GameRecordsRegion {
   if (server === "jp" || server === "jp-cbt") return "jp";

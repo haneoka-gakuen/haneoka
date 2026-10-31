@@ -3,6 +3,7 @@
 // Output: PKCE sign-in, same-session browser cookies and linked game accounts.
 // Pos: [Map](L2.md); native app account transport.
 // Effects/Dependencies: Better Auth, D1 sessions/codes and private account records.
+import { profileRegion } from "../src/lib/game-records";
 import { createAuth, getAuthSession } from "./auth";
 
 /**
@@ -298,10 +299,11 @@ const gameAccounts = async (request: Request, env: Env, url: URL): Promise<Respo
   }
   if (request.method !== "PUT" || rest.length) return error(405, "method_not_allowed", "Method not allowed");
   const body = await readJson(request);
-  const region = typeof body?.server === "string" ? body.server : "";
   const playerUid = typeof body?.profileId === "string" ? body.profileId : "";
-  if (!SERVERS.has(region) || !/^\d{1,20}$/u.test(playerUid))
-    return error(400, "invalid_player", "A server and player ID are required");
+  const gameRegion = profileRegion(playerUid);
+  const region = gameRegion ? (gameRegion === "jp" ? "jp" : "intl") : "";
+  if (!SERVERS.has(region) || (body?.server != null && body.server !== region))
+    return error(400, "invalid_player", "Send a valid player ID");
   const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0, 80) : null;
   const visibility = body?.visibility === "public" ? "public" : "private";
   const summary = summaryOf(body?.summary);
