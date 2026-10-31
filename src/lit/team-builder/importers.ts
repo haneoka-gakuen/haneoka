@@ -559,11 +559,6 @@ export class ImportController {
     const context = this.context();
     const view = this.host.view;
     if (!context || !view || !this.host.data) return;
-    if (!this.host.snapshot?.owner) {
-      this.host.notice = this.host.t("screenshotsNeedSignIn", "Screenshot recognition needs a signed-in account.");
-      this.host.requestUpdate();
-      return;
-    }
     this.dispose();
     this.screenshotBase = viewInventory(this.host, view);
     this.screenshotStore = this.host.store;

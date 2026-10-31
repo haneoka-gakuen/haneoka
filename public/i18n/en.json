@@ -2820,7 +2820,6 @@
       "bandItems": "Band items",
       "allBands": "All bands",
       "imported": "Imported {count} changes",
-      "screenshotsNeedSignIn": "Screenshot recognition needs a signed-in account.",
       "correctCard": "Choose the right card",
       "importFailed": "The import could not be applied.",
       "noSavedTeamsShort": "No saved teams",

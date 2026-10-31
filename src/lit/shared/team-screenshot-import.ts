@@ -95,7 +95,7 @@ export function renderScreenshotImportDialog(state: ScreenshotImportDialogState,
                 actions.files([...input.files ?? []]); input.value = ""; }} />
           </div>` : nothing}
         ${busy ? html`<p role="status">${t(state.phase, "Recognizing screenshots")}</p>` : nothing}
-        ${state.error ? html`<p class="team-builder__error" role="alert">${t(state.error.startsWith("image-") ? state.error : "failedMessage", "Screenshot recognition failed")}</p>` : nothing}
+        ${state.error ? html`<p class="team-builder__error" role="alert">${t(state.error.startsWith("image-") ? state.error : state.error === "recognition_reference_unavailable" ? "unavailable" : "failedMessage", "Screenshot recognition failed")}</p>` : nothing}
         ${state.preview ? html`
           ${segmented<"keep" | "overwrite" | "updates">({
             label: t("existingPolicy", "Existing cards"),

@@ -1,6 +1,7 @@
 import type { TeamBuilderData } from "./data";
 import { practiceRanges, type InventoryV1 } from "./inventory";
 import { createRecognitionClient, normalizeRecognitionResult, type RecognitionTransport } from "./recognition-client";
+import { localRecognitionTransport } from "./screenshot-recognition/client";
 import { previewScreenshotImportBatch, applyConfirmedScreenshotImport,
   type ScreenshotRecognitionResult, type ScreenshotReviewContext, type ScreenshotSelection } from "./screenshot-import";
 import type { ScreenshotImportDialogState } from "../../lit/shared/team-screenshot-import";
@@ -57,8 +58,7 @@ export async function createScreenshotCrops(file: Blob, result: ScreenshotRecogn
  */
 export function createScreenshotImportSession(options: ScreenshotImportSessionOptions) {
   const inventory = structuredClone(options.inventory), context = { ...options.context }, data = options.data;
-  if (!context.ownerId) throw new RangeError("recognition-sign-in-required");
-  const client = createRecognitionClient({ ...context, ownerId: context.ownerId }, options.transport);
+  const client = createRecognitionClient({ ...context, ownerId: context.ownerId || "local" }, options.transport ?? localRecognitionTransport);
   const revoke = options.revoke ?? URL.revokeObjectURL.bind(URL);
   let state: ScreenshotImportDialogState = { phase: "select", confirmations: [], crops: {}, error: null, canConfirm: false };
   let controller: AbortController | null = null, closed = false;
@@ -88,7 +88,7 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       const legal = practiceRanges(data, card.kind, card.cardId, inventory[card.kind].find(entry => entry.cardId === card.cardId)).level ?? [];
       return previous ? { ...previous, level: previous.level === "keep" && card.existingInstanceId !== null ? "keep" as const : typeof previous.level === "number" &&
         (previous.levelSource === "manual" ? legal : card.observedLevels).includes(previous.level) ? previous.level : undefined }
-        : { key: card.key, include: false };
+        : { key: card.key, include: card.observedLevels.length <= 1 };
     });
     state = { ...state, phase: "review", preview, results: [...results], confirmations,
       canConfirm: false, error: null }; refreshCanConfirm(); emit();
@@ -103,13 +103,12 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; run.abort(); }, 180_000);
       cleanupCrops(); results = []; selections = [];
-      state = { phase: "uploading", confirmations: [], crops: {}, error: null, canConfirm: false }; emit();
+      state = { phase: "processing", confirmations: [], crops: {}, error: null, canConfirm: false }; emit();
       try {
         // Sequential jobs stay below the private endpoint's active-job limit.
         for (const file of files) {
           run.signal.throwIfAborted();
           const id = crypto.randomUUID(); jobs.add(id);
-          state = { ...state, phase: "uploading" }; emit();
           let job = await client.submit(file, run.signal, id, options.onUploadProgress);
           while (job.state === "queued" || job.state === "processing") {
             state = { ...state, phase: job.state }; emit();
@@ -128,7 +127,8 @@ export function createScreenshotImportSession(options: ScreenshotImportSessionOp
           state = { ...state, crops: { ...state.crops, ...Object.fromEntries(Object.entries(crops).map(([index, url]) => [`${image}:${index}`, url])) } };
           results.push(result);
           for (const [observation, row] of result.observations.entries())
-            selections.push({ image, observation, cardId: row.cardId });
+            selections.push({ image, observation, cardId: row.cardId !== null &&
+              (row.kind === "members" ? data.members : data.snapshots)[String(row.cardId)] ? row.cardId : null });
           await client.cancel(id); jobs.delete(id);
         }
         run.signal.throwIfAborted();
