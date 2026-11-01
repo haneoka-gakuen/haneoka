@@ -2950,6 +2950,12 @@
       "topOrders": "前幾種順序",
       "orderRank": "排名",
       "orderGap": "與最佳差",
+      "timingBest": "凹分上限",
+      "timingEarly": "提前 {ms} ms",
+      "timingLate": "延後 {ms} ms",
+      "timingEarlyRange": "提前 {from}–{to} ms",
+      "timingLateRange": "延後 {from}–{to} ms",
+      "timingWindow": "{from}–{to} 秒",
       "maxLevel": "最高等級",
       "credit": "組隊演算法來自 Haneoka",
       "creditSource": "原始碼",
@@ -3244,7 +3250,12 @@
       "stepsLabel": "步驟",
       "stepCards": "匯入卡牌",
       "stepCardsDone": "{count} 張卡牌",
-      "stepSongs": "選擇樂曲"
+      "stepSongs": "選擇樂曲",
+      "editCompare": "換卡比較",
+      "pinBaseline": "設為比較基準",
+      "baseline": "比較基準",
+      "clearBaseline": "清除比較基準",
+      "maxScore": "最高"
     },
     "calendar": {
       "title": "日曆",

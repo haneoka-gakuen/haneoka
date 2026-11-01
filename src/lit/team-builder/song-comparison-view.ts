@@ -289,7 +289,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     catalog = host.catalog!,
     t = (key: keyof typeof COMPARISON_TEXT, params?: Record<string, string | number>) => scText(host, key, params);
   const format = (value: number, digits = 0) =>
-    new Intl.NumberFormat(host.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+    new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);
   const select = (
     id: string,
     label: string,

@@ -41,7 +41,7 @@ import type {
   GrowthResult,
 } from "../lib/team-builder/engine/api";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
-import { engineInputs, readBox, type BoxView } from "../lib/team-builder/sync/box-view";
+import { cardIdOf, engineInputs, readBox, type BoxView } from "../lib/team-builder/sync/box-view";
 import type { BoxValue } from "../lib/team-builder/sync/box-doc";
 import { rovingKeydown, segmented } from "./ui/controls";
 import { clearAppBarActions, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
@@ -59,7 +59,7 @@ import { renderBuildTab } from "./team-builder/build-tab";
 import { snackbar } from "../lib/snackbar";
 import { renderBoxTab, renderCardEditor, renderUndoAction } from "./team-builder/box-tab";
 import { renderAccountTab } from "./team-builder/account-tab";
-import { renderTeamsTab, renderManualTeamTab, renderSongComparisonTab } from "./team-builder/teams-tab";
+import { evaluate as evaluateManual, manualReady, renderTeamsTab, renderManualTeamTab, renderSongComparisonTab } from "./team-builder/teams-tab";
 import { renderSongPicker, type SongPickerState } from "./team-builder/song-picker";
 import { ImportController } from "./team-builder/importers";
 import { Catalog } from "./team-builder/catalog";
@@ -326,6 +326,11 @@ export class TeamBuilder extends LitElement {
   manualSuggestionsFor = "";
   manualSuggesting = -1;
   activeManualContext = "";
+  /** The formation the manual team is compared against, with its evaluation. */
+  manualBaseline: { team: ManualTeam; results: TeamEvaluation[]; conditions: string } | null = null;
+  /** The next manual evaluation becomes the baseline. */
+  manualPin = false;
+  private autoEvaluated = "";
   /** Training priorities for the searched goal: each owned card raised to full growth on its own. */
   growth: { context: string; done: number; total: number; result: GrowthResult | null } | null = null;
   manualBusy = false;
@@ -501,6 +506,13 @@ export class TeamBuilder extends LitElement {
     if (!this.isConnected) return;
     if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
       this.engine?.cancel();
+    if ((this.manualPin || this.manualBaseline) && this.tab === "build" && this.buildMode === "manual" && !this.task && !this.running) {
+      const context = this.manualContext();
+      if (this.manualResultsFor !== context && this.autoEvaluated !== context && manualReady(this)) {
+        this.autoEvaluated = context;
+        void evaluateManual(this);
+      }
+    }
     if (this.manualResults || this.task?.kind === "evaluation") {
       const context = this.manualContext();
       if (this.task?.kind === "evaluation" && this.activeManualContext && this.activeManualContext !== context)
@@ -845,16 +857,16 @@ export class TeamBuilder extends LitElement {
       ),
     };
   }
-  manualInputs() {
+  manualInputs(team = this.manual) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
     const theoretical = this.settings.scope === "theoretical";
-    const members = this.manual.members.flatMap((id) => {
+    const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
       if (row) return [row];
       const card = id === null ? undefined : this.master?.members.get(id);
       return card && theoretical ? [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }] : [];
     });
-    const snaps = this.manual.snaps.flatMap((id) => {
+    const snaps = team.snaps.flatMap((id) => {
       const row = owned.snaps.find((row) => row.cardId === id);
       if (row) return [row];
       const card = id === null ? undefined : this.master?.snaps.get(id);
@@ -876,6 +888,36 @@ export class TeamBuilder extends LitElement {
           : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 },
       challengeEventId: s.challengeRules ? s.eventId : null,
     };
+  }
+  /** Everything a manual evaluation depends on except the formation. */
+  manualConditions() {
+    return JSON.stringify([
+      this.snapshot?.owner,
+      this.data?.identity,
+      this.data?.crossServer?.identities,
+      this.view && engineInputs(this.view, true),
+      this.settings.scope,
+      this.settings.unknownPolicy,
+      this.manualGoal(),
+      this.songRules(this.manualGoal()),
+    ]);
+  }
+  /** Opens a result's formation in the manual editor and pins its evaluation as the baseline. */
+  compareTeam(hit: EngineHit) {
+    this.manual = {
+      members: hit.members.map(cardIdOf),
+      snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
+      leader: 0,
+    };
+    this.updateSettings({
+      ...(hit.song ? { songs: [hit.song] } : {}),
+      manualScoreMode: this.resultInputs?.goal.kind === "gekiso" ? "gekiso" : "score",
+    });
+    this.manualResults = null;
+    this.manualBaseline = null;
+    this.manualPin = true;
+    this.buildMode = "manual";
+    this.setTab("build");
   }
   manualContext() {
     return JSON.stringify([

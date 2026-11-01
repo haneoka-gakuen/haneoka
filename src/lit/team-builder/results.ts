@@ -11,7 +11,7 @@ import { actionMenu } from "../ui/action-menu";
 import { improvementPercent } from "../../lib/team-builder/engine/execution";
 /** Search results: ranked team cards, per-song rankings, plan summary, comparison. */
 import { html, nothing, render, type TemplateResult } from "lit";
-import type { EngineHit, SongRef, Timeline } from "../../lib/team-builder/engine/api";
+import type { EngineHit, OrderTiming, SongRef, Timeline, TimingShift } from "../../lib/team-builder/engine/api";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 import { downloadBlob } from "../../lib/canvas-capture";
 import { accordion } from "../ui/accordion";
@@ -190,7 +190,7 @@ function format(host: TeamBuilder, value: number, digits = 0) {
   const key = `${host.locale}:${digits}`;
   let formatter = numberFormats.get(key);
   if (!formatter) {
-    formatter = new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits });
+    formatter = new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits });
     numberFormats.set(key, formatter);
   }
   return formatter.format(value);
@@ -623,6 +623,16 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
         song: hit.song,
         eventOrder: ORDERS[index]!.map((slot) => hit.members[slot]!),
         play: "play" in request.goal ? request.goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
+        ...(request.goal.kind === "score" || request.goal.kind === "event"
+          ? {
+              timing: {
+                player: request.player,
+                play: request.goal.play,
+                challengeEventId:
+                  request.goal.kind === "score" ? request.goal.challengeEventId : request.goal.route === "challenge" ? request.goal.eventId : null,
+              },
+            }
+          : {}),
       })
       .then((timeline) => {
         if (host.ownsTask(task)) timelines.set(key, timeline);
@@ -648,25 +658,49 @@ function memberFace(host: TeamBuilder, hit: EngineHit, slot: number) {
   return { character, name: catalog.characterName(character), card: image, color: catalog.characterColor(character) };
 }
 
+/** An order as numbered character faces in firing order. */
 function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: readonly number[]) {
+  const names = firing.map((event) => memberFace(host, hit, ORDERS[index]![event]!).name);
   return html`
-    <span class="tb-order-faces">
-      ${firing.map((event) => {
+    <ol class="tb-order-faces" aria-label=${names.map((name, position) => `${position + 1} ${name}`).join(", ")}>
+      ${firing.map((event, position) => {
         const member = memberFace(host, hit, ORDERS[index]![event]!);
         return html`
-          <img
-            src=${member.card}
-            alt=${member.name}
-            title=${member.name}
-            width="28"
-            height="28"
-            loading="lazy"
-            decoding="async"
-            style=${`--member-color:${member.color}`}
-          />
+          <li title=${`${position + 1} / ${member.name}`} style=${`--member-color:${member.color}`}>
+            <img src=${host.catalog!.characterFace(member.character)} alt="" width="28" height="28" loading="lazy" decoding="async" />
+            <span aria-hidden="true">${position + 1}</span>
+          </li>
         `;
       })}
-    </span>
+    </ol>
+  `;
+}
+
+function timingShift(host: TeamBuilder, shift: TimingShift) {
+  const early = shift.offsetMs < 0;
+  const [from, to] = [Math.abs(shift.fromMs), Math.abs(shift.toMs)].sort((a, b) => a - b);
+  const exact = from === to || Math.sign(shift.fromMs) !== Math.sign(shift.toMs);
+  return exact
+    ? host.t(early ? "timingEarly" : "timingLate", early ? "{ms} ms early" : "{ms} ms late", { ms: Math.abs(shift.offsetMs) })
+    : host.t(early ? "timingEarlyRange" : "timingLateRange", early ? "{from}–{to} ms early" : "{from}–{to} ms late", { from, to });
+}
+/** The order's score with its best judgement timing, and the offsets that reach it. */
+function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined) {
+  if (!timing || timing.best <= timing.score) return nothing;
+  const moved = timing.windows.filter((window) => window.offsetMs !== 0);
+  const seconds = (ms: number) => format(host, ms / 1000, 1);
+  const how =
+    timing.uniform.score === timing.best
+      ? timingShift(host, timing.uniform)
+      : moved.map((window) => `${host.t("timingWindow", "{from}–{to} s", { from: seconds(window.startMs), to: seconds(window.endMs) })} ${timingShift(host, window)}`).join(" / ");
+  return html`
+    <div>
+      <dt>${host.t("timingBest", "Best timing")}</dt>
+      <dd>
+        ${format(host, timing.best)} <span class="tabular">+${format(host, timing.best - timing.score)}</span>
+        <small class="tb-timing">${how}</small>
+      </dd>
+    </div>
   `;
 }
 
@@ -776,6 +810,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
           <dt>${host.t("orderGap", "From best")}</dt>
           <dd>${gap(value)}</dd>
         </div>
+        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined)}
       </dl>
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
         ${
@@ -792,7 +827,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                     startMs: window.startMs,
                     endMs: window.endMs,
                     color: member.color,
-                    image: member.card,
+                    image: host.catalog!.characterFace(member.character),
                     label: member.name,
                     value: `+${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` / +${(window.extensionMs / 1000).toFixed(1)}s` : ""}`,
                   };
@@ -819,12 +854,14 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
               id: String(entry.index),
               title: member.name,
               subtitle: html`
-                <span class="tabular" title=${format(host, entry.value)}>${gap(entry.value)}</span>
+                <span class="tb-order-line">
+                  <span class="tabular" title=${format(host, entry.value)}>${gap(entry.value)}</span>
+                  ${orderFaces(host, hit, entry.index, firing)}
+                </span>
               `,
               media: html`
                 <img src=${member.card} alt="" width="42" height="56" decoding="async" />
               `,
-              trailing: orderFaces(host, hit, entry.index, firing),
               onOpen: () => choose(entry.index),
             };
           }),
@@ -1078,6 +1115,15 @@ export function renderHit(
                   }}
                 >
                   ${host.t("sc.useTeam", "Compare songs with this team")}
+                </button>
+              `
+        }
+        ${
+          resultSettings(host).arena || !hit.song || hit.aggregate || (usesPtResults(host) && !host.pt.job?.presentation)
+            ? nothing
+            : html`
+                <button class="button button--text" type="button" ?disabled=${stale || host.running} @click=${() => host.compareTeam(hit)}>
+                  ${host.t("editCompare", "Edit and compare")}
                 </button>
               `
         }

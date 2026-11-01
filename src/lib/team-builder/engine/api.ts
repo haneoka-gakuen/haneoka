@@ -958,6 +958,16 @@ export interface Timeline {
   fever: (readonly [number, number])[];
   windows: { member: string; event: number; startMs: number; endMs: number; percent: number; perfectPercent: number; extensionMs: number }[];
   score: number;
+  timing?: OrderTiming | null;
+}
+/** A timing offset that keeps every judgement (negative is early) and the offsets reaching the same score. */
+export interface TimingShift { offsetMs: number; fromMs: number; toMs: number }
+/** Best judgement timing of one order: cumulative snapshots count per delivered frame (`live::timing`). */
+export interface OrderTiming {
+  score: number;
+  best: number;
+  uniform: TimingShift & { score: number };
+  windows: (TimingShift & { events: number[]; startMs: number; endMs: number })[];
 }
 export async function explainTeam(
   master: EngineMaster,

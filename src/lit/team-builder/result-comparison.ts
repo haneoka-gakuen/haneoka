@@ -252,7 +252,7 @@ export class ResultComparison {
     if (!this.items.some((item) => item.id === this.candidate && item.id !== base.id))
       this.candidate = this.items.find((item) => item.id !== base.id)!.id;
     const format = (v: number, digits = 0) =>
-      new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(v);
+      new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(v);
     const close = () => {
       this.open = false;
       host.requestUpdate();

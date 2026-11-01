@@ -2950,6 +2950,12 @@
       "topOrders": "上位の順番",
       "orderRank": "順位",
       "orderGap": "最良との差",
+      "timingBest": "最適タイミング",
+      "timingEarly": "{ms} ms 早く",
+      "timingLate": "{ms} ms 遅く",
+      "timingEarlyRange": "{from}–{to} ms 早く",
+      "timingLateRange": "{from}–{to} ms 遅く",
+      "timingWindow": "{from}–{to} 秒",
       "maxLevel": "最大レベル",
       "credit": "編成アルゴリズム：Haneoka",
       "creditSource": "ソースコード",
@@ -3244,7 +3250,12 @@
       "stepsLabel": "手順",
       "stepCards": "カードをインポート",
       "stepCardsDone": "{count} 枚",
-      "stepSongs": "楽曲を選ぶ"
+      "stepSongs": "楽曲を選ぶ",
+      "editCompare": "編集して比較",
+      "pinBaseline": "比較の基準にする",
+      "baseline": "基準",
+      "clearBaseline": "基準を解除",
+      "maxScore": "最高"
     },
     "calendar": {
       "title": "カレンダー",

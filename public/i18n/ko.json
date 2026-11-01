@@ -2950,6 +2950,12 @@
       "topOrders": "상위 순서",
       "orderRank": "순위",
       "orderGap": "최적과 차이",
+      "timingBest": "최적 타이밍",
+      "timingEarly": "{ms}ms 빠르게",
+      "timingLate": "{ms}ms 늦게",
+      "timingEarlyRange": "{from}–{to}ms 빠르게",
+      "timingLateRange": "{from}–{to}ms 늦게",
+      "timingWindow": "{from}–{to}초",
       "maxLevel": "최대 레벨",
       "credit": "편성 알고리즘: Haneoka",
       "creditSource": "소스 코드",
@@ -3244,7 +3250,12 @@
       "stepsLabel": "단계",
       "stepCards": "카드 가져오기",
       "stepCardsDone": "{count}장",
-      "stepSongs": "곡 고르기"
+      "stepSongs": "곡 고르기",
+      "editCompare": "편집해서 비교",
+      "pinBaseline": "비교 기준으로 설정",
+      "baseline": "기준",
+      "clearBaseline": "기준 해제",
+      "maxScore": "최고"
     },
     "calendar": {
       "title": "달력",

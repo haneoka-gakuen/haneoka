@@ -19,8 +19,8 @@ import { compareHits } from "../../lib/team-builder/engine/merge";
 import type { TeamBuilder } from "../team-builder";
 
 const format = (host: TeamBuilder, value: number, digits = 0) =>
-  new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
-function manualReady(host: TeamBuilder) {
+  new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);
+export function manualReady(host: TeamBuilder) {
   const inputs = host.manualInputs();
   return (
     host.manual.members.every((id) => id !== null) &&
@@ -29,8 +29,8 @@ function manualReady(host: TeamBuilder) {
     new Set(host.manual.members.map((id) => host.catalog!.member(id!)?.characterId)).size === 5
   );
 }
-function teamSpec(host: TeamBuilder) {
-  const { members, snaps, leader } = host.manual;
+function teamSpec(host: TeamBuilder, team = host.manual) {
+  const { members, snaps, leader } = team;
   return {
     members: members.map((id) => `m${id}`),
     snaps: snaps.map((id) => (id === null ? null : `s${id}`)),
@@ -50,7 +50,8 @@ function manualSamplingReady(host: TeamBuilder): boolean {
   void host.focusInput(invalidSamples ? "tb-luck-samples" : "tb-just-window");
   return false;
 }
-async function evaluate(host: TeamBuilder) {
+/** Evaluates the manual team; a stale baseline is evaluated again under the same conditions. */
+export async function evaluate(host: TeamBuilder) {
   if (!manualReady(host) || !host.engine || !host.manualGoal().songs.length || host.running) return;
   if (!manualSamplingReady(host)) return;
   const task = host.acquireTask("evaluation");
@@ -60,21 +61,30 @@ async function evaluate(host: TeamBuilder) {
   host.manualBusy = true;
   host.requestUpdate();
   const goal = host.manualGoal();
-  try {
-    const results = await host.engine.evaluate({
-      ...host.manualInputs(),
+  const conditions = host.manualConditions();
+  const run = (team: typeof host.manual) =>
+    host.engine!.evaluate({
+      ...host.manualInputs(team),
       songRules: host.songRules(goal),
       player: host.view!.player,
-      team: teamSpec(host),
+      team: teamSpec(host, team),
       songs: goal.songs,
       play: goal.kind === "score" ? goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
       ...(goal.kind === "gekiso" ? { gekiso: { accuracy: goal.accuracy, rank: goal.rank, seeds: goal.seeds, minJustWindowMs: goal.minJustWindowMs } } : {}),
       challengeEventId: goal.kind === "score" ? goal.challengeEventId : null,
       event: null,
     });
+  try {
+    const results = await run(host.manual);
+    const baseline = host.manualBaseline;
+    const baselineResults =
+      baseline && baseline.conditions !== conditions && !host.manualPin ? await run(baseline.team) : null;
     if (host.ownsTask(task) && context === host.manualContext()) {
       host.manualResultsFor = context;
       host.manualResults = results;
+      if (host.manualPin) host.manualBaseline = { team: structuredClone(host.manual), results, conditions };
+      else if (baseline && baselineResults) host.manualBaseline = { ...baseline, results: baselineResults, conditions };
+      host.manualPin = false;
     }
   } catch (error) {
     if (host.ownsTask(task) && !(error instanceof DOMException && error.name === "AbortError"))
@@ -87,6 +97,48 @@ async function evaluate(host: TeamBuilder) {
     host.releaseTask(task);
     host.requestUpdate();
   }
+}
+/** The difference from the baseline, signed and coloured. */
+function delta(host: TeamBuilder, value: number | undefined, base: number | undefined) {
+  if (value === undefined || base === undefined) return nothing;
+  const change = value - base;
+  return html`
+    <small class="tb-delta" data-sign=${change > 0 ? "up" : change < 0 ? "down" : "same"}>
+      ${change > 0 ? "+" : change < 0 ? "−" : "±"}${format(host, Math.abs(change))}
+    </small>
+  `;
+}
+/** The pinned formation as faces, with the action that pins or clears it. */
+function baselineBar(host: TeamBuilder, ready: boolean) {
+  const baseline = host.manualBaseline;
+  const catalog = host.catalog!;
+  if (!baseline)
+    return html`
+      <button class="button button--text button--small" type="button" ?disabled=${!ready || host.running}
+        @click=${() => { host.manualPin = true; void evaluate(host); }}>
+        ${icon("push_pin", 18)}${host.t("pinBaseline", "Set as baseline")}
+      </button>
+    `;
+  const { members, snaps, leader } = baseline.team;
+  const order = [leader, ...[0, 1, 2, 3, 4].filter((index) => index !== leader)];
+  return html`
+    <div class="tb-baseline cluster">
+      <span class="tb-baseline__label">${host.t("baseline", "Baseline")}</span>
+      <span class="tb-baseline__faces">
+        ${order.map((index) => {
+          const card = members[index] === null ? undefined : catalog.member(members[index]!);
+          const snap = snaps[index] === null ? undefined : catalog.snap(snaps[index]!);
+          return html`
+            <span class="tb-baseline__slot" title=${card ? catalog.characterName(card.characterId) : ""}>
+              ${card ? html`<img src=${card.image || catalog.characterFace(card.characterId)} alt="" width="32" height="32" loading="lazy" decoding="async" />` : nothing}
+              ${snap ? html`<img class="tb-baseline__snap" src=${snap.image} alt="" width="20" height="20" loading="lazy" decoding="async" />` : nothing}
+            </span>
+          `;
+        })}
+      </span>
+      ${iconButton({ icon: "close", label: host.t("clearBaseline", "Clear baseline"), size: 18, onClick: () => { host.manualBaseline = null; host.requestUpdate(); } })}
+    </div>
+  `;
 }
 /** Best cards for one slot with the other four fixed (exact constrained search). */
 async function suggest(host: TeamBuilder, slot: number) {
@@ -207,6 +259,9 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
     ? [...results].sort((a, b) => b.score.mean - a.score.mean).map((row) => ({ song: row.song, row }))
     : host.manualGoal().songs.map((song) => ({ song, row: null }));
   const showJustWindow = rows.some(value => value.row?.justWindow);
+  const baseline = host.manualBaseline?.conditions === host.manualConditions() ? host.manualBaseline : null;
+  const baseOf = (song: { songId: number; difficulty: number }) =>
+    baseline?.results.find((row) => row.song.songId === song.songId && row.song.difficulty === song.difficulty);
   const suggestions = host.manualSuggestionsFor === host.manualSuggestionContext() ? host.manualSuggestions : null;
   const suggesting = host.manualSuggesting;
   const calculating = host.taskKind === "evaluation" || host.taskKind === "suggestion";
@@ -529,7 +584,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
             <div class="stack stack--loose">
               ${editor}
               <section class="surface stack tb-manual__scores">
-                ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
+                <div class="row row--between row--wrap">
+                  ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
+                  ${baselineBar(host, !!results && manualReady(host))}
+                </div>
                 <ul class="tb-eval-mobile">
                   ${rows.map(
                   ({ song, row }) => html`
@@ -541,10 +599,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                         </div>
                         ${specList(
                                       [
-                                        { label: host.t("power", "Power"), value: row ? format(host, row.power) : "—" },
+                                        { label: host.t("power", "Power"), value: row ? html`${format(host, row.power)} ${delta(host, row.power, baseOf(song)?.power)}` : "—" },
                                         {
                                           label: host.t("expectedScore", "Expected score"),
-                                          value: row ? format(host, row.score.mean) : "—",
+                                          value: row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, baseOf(song)?.score.mean)}` : "—",
                                         },
                                         {
                                           label: host.t("scoreRange", "Range"),
@@ -552,6 +610,9 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                             ? `${format(host, row.score.min)} – ${format(host, row.score.max)}`
                                             : "—",
                                         },
+                                        row && baseOf(song)
+                                          ? { label: host.t("maxScore", "Highest"), value: html`${format(host, row.score.max)} ${delta(host, row.score.max, baseOf(song)?.score.max)}` }
+                                          : null,
                                         row?.justWindow ? { label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, row.justWindow) } : null,
                                         showSkipScore
                                           ? {
@@ -601,10 +662,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                             ${catalog.songTitle(song.songId)}
                             <small>${catalog.difficultyLabel(song.songId, song.difficulty)}</small>
                           </th>
-                          <td class="is-numeric">${row ? format(host, row.power) : "—"}</td>
-                          <td class="is-numeric">${row ? format(host, row.score.mean) : "—"}</td>
+                          <td class="is-numeric">${row ? html`${format(host, row.power)} ${delta(host, row.power, baseOf(song)?.power)}` : "—"}</td>
+                          <td class="is-numeric">${row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, baseOf(song)?.score.mean)}` : "—"}</td>
                           <td class="is-numeric">
-                            ${row ? `${format(host, row.score.min)} – ${format(host, row.score.max)}` : "—"}
+                            ${row ? html`${format(host, row.score.min)} – ${format(host, row.score.max)} ${delta(host, row.score.max, baseOf(song)?.score.max)}` : "—"}
                           </td>
                           ${showJustWindow ? html`<td class="is-numeric">${row?.justWindow ? justWindowValue(host, row.justWindow) : "—"}</td>` : nothing}
                           ${

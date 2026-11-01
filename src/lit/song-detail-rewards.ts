@@ -92,7 +92,7 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
       : "—";
   const decimal = (value: unknown, digits = 0) =>
     value !== null && value !== undefined && Number.isFinite(Number(value))
-      ? Number(value).toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+      ? Number(value).toLocaleString(locale, { maximumFractionDigits: digits })
       : "—";
   const duration = (value: unknown) => {
     const seconds = Math.max(0, Math.round(Number(value || 0)));

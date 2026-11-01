@@ -67,7 +67,7 @@
 }
 .skill-timeline__events {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: var(--md-sys-spacing-1) var(--md-sys-spacing-3);
   margin: var(--md-sys-spacing-1) 0 0;
   padding: 0;
@@ -105,10 +105,12 @@
   text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
 }
 .skill-timeline__label {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .skill-timeline__time {
   color: var(--md-sys-color-on-surface-variant);
