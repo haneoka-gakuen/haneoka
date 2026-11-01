@@ -11,7 +11,7 @@ import { actionMenu } from "../ui/action-menu";
 import { improvementPercent } from "../../lib/team-builder/engine/execution";
 /** Search results: ranked team cards, per-song rankings, plan summary, comparison. */
 import { html, nothing, render, type TemplateResult } from "lit";
-import type { EngineHit, OrderTiming, SongRef, Timeline, TimingShift } from "../../lib/team-builder/engine/api";
+import type { EngineHit, OrderTiming, SongRef, Timeline, TimingWindow } from "../../lib/team-builder/engine/api";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 import { downloadBlob } from "../../lib/canvas-capture";
 import { accordion } from "../ui/accordion";
@@ -676,31 +676,71 @@ function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: re
   `;
 }
 
-function timingShift(host: TeamBuilder, shift: TimingShift) {
-  const early = shift.offsetMs < 0;
-  const [from, to] = [Math.abs(shift.fromMs), Math.abs(shift.toMs)].sort((a, b) => a - b);
-  const exact = from === to || Math.sign(shift.fromMs) !== Math.sign(shift.toMs);
-  return exact
-    ? host.t(early ? "timingEarly" : "timingLate", early ? "{ms} ms early" : "{ms} ms late", { ms: Math.abs(shift.offsetMs) })
-    : host.t(early ? "timingEarlyRange" : "timingLateRange", early ? "{from}–{to} ms early" : "{from}–{to} ms late", { from, to });
-}
-/** The order's score with its best judgement timing, and the offsets that reach it. */
+/** The order's score with the timed notes hit early. */
 function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined) {
   if (!timing || timing.best <= timing.score) return nothing;
-  const moved = timing.windows.filter((window) => window.offsetMs !== 0);
-  const seconds = (ms: number) => format(host, ms / 1000, 1);
-  const how =
-    timing.uniform.score === timing.best
-      ? timingShift(host, timing.uniform)
-      : moved.map((window) => `${host.t("timingWindow", "{from}–{to} s", { from: seconds(window.startMs), to: seconds(window.endMs) })} ${timingShift(host, window)}`).join(" / ");
   return html`
     <div>
       <dt>${host.t("timingBest", "Best timing")}</dt>
-      <dd>
-        ${format(host, timing.best)} <span class="tabular">+${format(host, timing.best - timing.score)}</span>
-        <small class="tb-timing">${how}</small>
-      </dd>
+      <dd>${format(host, timing.best)} <span class="tb-delta" data-sign="up">+${format(host, timing.best - timing.score)}</span></dd>
     </div>
+  `;
+}
+const chartClock = (ms: number) => {
+  const seconds = ms / 1000;
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+};
+/** One counting window as a strip of its counted notes, the step notes marked, then the step list. */
+function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: TimingWindow) {
+  const member = memberFace(host, hit, ORDERS[order]![window.event]!);
+  const span = Math.max(1, window.endMs - window.startMs);
+  const at = (ms: number) => `${(((ms - window.startMs) / span) * 100).toFixed(2)}%`;
+  const marked = new Set(window.steps.map((step) => step.timeMs));
+  return html`
+    <li class="tb-timing__window" style=${`--member-color:${member.color}`}>
+      <div class="tb-timing__head">
+        <img src=${host.catalog!.characterFace(member.character)} alt="" width="28" height="28" loading="lazy" decoding="async" />
+        <span>${member.name}</span>
+        <span class="tabular">${chartClock(window.startMs)} – ${chartClock(window.endMs)}</span>
+      </div>
+      <div class="tb-timing__strip" role="img" aria-label=${window.steps.map((step) => `${host.t("timingStep", "Step {step}", { step: step.step })} ${chartClock(step.timeMs)}`).join(", ")}>
+        ${[...new Set(window.notes)].map((ms) => marked.has(ms) ? nothing : html`<span class="tb-timing__note" style=${`inset-inline-start:${at(ms)}`}></span>`)}
+        ${window.steps.map(
+          (step) => html`
+            <span class="tb-timing__step" data-row=${step.step % 2} style=${`inset-inline-start:${at(step.timeMs)}`}><b>${step.step}</b></span>
+          `,
+        )}
+      </div>
+      <table class="tb-timing__steps">
+        <tbody>
+          ${window.steps.map(
+            (step) => html`
+              <tr>
+                <th scope="row"><span class="tb-timing__badge">${step.step}</span>${host.t("timingStep", "Step {step}", { step: step.step })}</th>
+                <td class="tabular">${chartClock(step.timeMs)}</td>
+                <td>${step.notes > 1 ? html`<span class="tb-timing__chord">${host.t("timingChord", "{count} together", { count: step.notes })}</span>` : nothing}</td>
+                <td class="tabular is-numeric">+${format(host, step.gain)}</td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
+    </li>
+  `;
+}
+/** Which notes to hit early: each step's notes, one frame early, per counting window. */
+function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined) {
+  if (!timing || timing.best <= timing.score) return nothing;
+  const windows = timing.windows.filter((window) => window.steps.length);
+  return html`
+    <section class="tb-timing stack stack--tight">
+      <div class="row row--between row--wrap">
+        <strong class="tb-subtitle">${host.t("timingNotes", "Notes to hit early")}</strong>
+        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing.advanceMs })}</span>
+      </div>
+      <ol class="tb-timing__windows" role="list">${windows.map((window) => timingWindow(host, hit, order, window))}</ol>
+      <small class="tb-timing__hint">${host.t("timingFirstNotes", "Hit the first notes after activation as usual")}</small>
+    </section>
   `;
 }
 
@@ -812,6 +852,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
         </div>
         ${timingRow(host, typeof requested === "object" ? requested.timing : undefined)}
       </dl>
+      ${timingDetails(host, hit, current, typeof requested === "object" ? requested.timing : undefined)}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
         ${
           typeof timeline === "object"

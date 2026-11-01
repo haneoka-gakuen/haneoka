@@ -960,14 +960,21 @@ export interface Timeline {
   score: number;
   timing?: OrderTiming | null;
 }
-/** A timing offset that keeps every judgement (negative is early) and the offsets reaching the same score. */
-export interface TimingShift { offsetMs: number; fromMs: number; toMs: number }
-/** Best judgement timing of one order: cumulative snapshots count per delivered frame (`live::timing`). */
+/** A cumulative snapshot's counting window: its counted notes and the steps whose notes are hit one frame early. */
+export interface TimingWindow {
+  event: number;
+  startMs: number;
+  endMs: number;
+  unit: number;
+  notes: number[];
+  steps: { step: number; timeMs: number; notes: number; gain: number }[];
+}
+/** Best judgement timing of one order for cumulative snapshots (`live::timing`). */
 export interface OrderTiming {
   score: number;
   best: number;
-  uniform: TimingShift & { score: number };
-  windows: (TimingShift & { events: number[]; startMs: number; endMs: number })[];
+  advanceMs: number;
+  windows: TimingWindow[];
 }
 export async function explainTeam(
   master: EngineMaster,
