@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 冻结的配队请求、结果、设置与目录。
-// Output: 排名卡片、指标、阵容、细节与含歌曲信息的导出上下文。
+// Output: 排名卡片、指标、阵容、细节、可折叠的提前击打谱面片段与含歌曲信息的导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 渲染 DOM、图表与对话框；图片装饰使用原结果的歌曲及完整成绩指标。
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
@@ -33,6 +33,8 @@ import type { ReleaseServer } from "../../lib/release-server";
 import type { Locale } from "../../i18n/locales";
 import { roomRequiredScore, teamPowerNeeded } from "../../lib/chart-rates";
 import { specList } from "../ui/spec";
+import { dataRows } from "../../lib/team-builder/data";
+import "../runtime/timing-chart-preview";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
 export const timelines = new Map<string, Timeline | "loading" | "error">();
@@ -696,6 +698,11 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
   const span = Math.max(1, window.endMs - window.startMs);
   const at = (ms: number) => `${(((ms - window.startMs) / span) * 100).toFixed(2)}%`;
   const marked = new Set(window.steps.map((step) => step.timeMs));
+  const previewKey = `${timelineKey(host, hit)}|timing|${order}|${window.event}`;
+  const expanded = host.expanded.has(previewKey);
+  const catalog = host.catalog!;
+  const song = hit.song!;
+  const difficulty = dataRows(catalog.data.songs[String(song.songId)]!.difficulty).find(row => Number(row.difficulty) === song.difficulty)!;
   return html`
     <li class="tb-timing__window" style=${`--member-color:${member.color}`}>
       <div class="tb-timing__head">
@@ -711,6 +718,22 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
           `,
         )}
       </div>
+      ${accordion({
+        id: `tb-timing-${previewKey.replace(/[^a-z0-9]/giu, "-")}`,
+        label: host.t("timingChart", "Chart excerpt"),
+        expanded,
+        onExpandedChange: (open) => {
+          if (open) host.expanded.add(previewKey);
+          else host.expanded.delete(previewKey);
+          host.requestUpdate();
+        },
+        content: html`<timing-chart-preview
+          .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
+          .window=${window} .active=${expanded} .locale=${host.locale}
+          .label=${window.steps.map(step => `${host.t("timingStep", "Step {step}", { step: step.step })} ${chartClock(step.timeMs)}`).join(", ")}
+          .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}
+        ></timing-chart-preview>`,
+      })}
       <table class="tb-timing__steps">
         <tbody>
           ${window.steps.map(

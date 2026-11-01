@@ -2952,6 +2952,8 @@
       "orderGap": "与最优差",
       "timingBest": "凹分上限",
       "timingNotes": "提前击打的音符",
+      "timingChart": "谱面片段",
+      "timingChartFailed": "谱面加载失败",
       "timingAdvance": "提前约 {ms} ms",
       "timingStep": "第 {step} 档",
       "timingChord": "{count} 键同时",

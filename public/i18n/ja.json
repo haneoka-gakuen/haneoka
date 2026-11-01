@@ -2952,6 +2952,8 @@
       "orderGap": "最良との差",
       "timingBest": "最適タイミング",
       "timingNotes": "早めに叩くノーツ",
+      "timingChart": "譜面の抜粋",
+      "timingChartFailed": "譜面を読み込めませんでした",
       "timingAdvance": "約 {ms} ms 早く",
       "timingStep": "{step}段目",
       "timingChord": "{count}個同時",

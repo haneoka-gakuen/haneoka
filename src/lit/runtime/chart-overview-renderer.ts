@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Parsed chart, native canvas skin, viewport height and optional highlighted time range.
+// Output: Full flat-chart overview or a clipped excerpt with numbered note outlines.
+// Pos: [Map](L2-2.md); shared flat rendering for the player and team-builder timing guide.
+// Effects/Dependencies: Draws the supplied canvas with Cassiopeia note, ribbon and lane primitives.
 import {
   interpolateNoteLine,
   isPairNoteOperateType,
@@ -83,12 +88,20 @@ export function drawDetailedChartOverview(
   chart: ChartDocument,
   skin: ChartCanvasSkin,
   viewportHeight: number,
+  excerpt?: {
+    startMs: number;
+    endMs: number;
+    highlights: readonly { timeMs: number; step: number }[];
+    color: string;
+  },
 ): void {
   const presentation = chartCanvasOverviewPresentation();
   const height = Math.max(360, viewportHeight);
   const panelDuration = (height / presentation.heightPerSecond) * 1000;
   const panelWidth = presentation.laneWidth * 13;
-  const panelCount = Math.max(1, Math.ceil(chart.durationMs / panelDuration));
+  const startMs = excerpt?.startMs ?? 0;
+  const endMs = excerpt?.endMs ?? chart.durationMs;
+  const panelCount = Math.max(1, Math.ceil((endMs - startMs) / panelDuration));
   const width = panelCount * panelWidth;
   const dpr = Math.max(1, Math.min(1.5, devicePixelRatio || 1));
   canvas.width = Math.round(width * dpr);
@@ -133,13 +146,18 @@ export function drawDetailedChartOverview(
     return { left: Math.min(a, b), right: Math.max(a, b), center: (a + b) / 2 };
   };
   const yAt = (timeMs: number, panel: number) =>
-    height - ((timeMs - panel * panelDuration) / 1000) * presentation.heightPerSecond;
+    height - ((timeMs - startMs - panel * panelDuration) / 1000) * presentation.heightPerSecond;
 
   for (let panel = 0; panel < panelCount; panel += 1) {
-    const panelStart = panel * panelDuration;
-    const panelEnd = (panel + 1) * panelDuration;
+    const panelStart = startMs + panel * panelDuration;
+    const panelEnd = excerpt ? Math.min(endMs, startMs + (panel + 1) * panelDuration) : (panel + 1) * panelDuration;
     context.save();
     context.translate(panel * panelWidth, 0);
+    if (excerpt) {
+      context.beginPath();
+      context.rect(0, 0, panelWidth, height);
+      context.clip();
+    }
     context.fillStyle = "#000";
     context.fillRect(0, 0, panelWidth, height);
     context.lineWidth = presentation.lineWidth;
@@ -274,6 +292,23 @@ export function drawDetailedChartOverview(
         scale: presentation.noteScale,
       });
     });
+    if (excerpt) {
+      context.strokeStyle = excerpt.color;
+      context.fillStyle = excerpt.color;
+      context.lineWidth = 2;
+      context.font = `bold ${presentation.laneWidth}px Arial`;
+      context.textAlign = "center";
+      for (const highlight of excerpt.highlights) {
+        const marked = notes.filter(note => note.timeMs === highlight.timeMs && note.timeMs >= panelStart && note.timeMs < panelEnd);
+        for (const note of marked) {
+          const box = bounds(note);
+          const y = yAt(note.timeMs, panel);
+          context.strokeRect(box.left - 4, y - presentation.laneWidth / 2 - 4,
+            box.right - box.left + 8, presentation.laneWidth + 8);
+        }
+        if (marked.length) context.fillText(String(highlight.step), right + 18, yAt(highlight.timeMs, panel));
+      }
+    }
     context.restore();
   }
 }

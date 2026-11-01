@@ -2952,6 +2952,8 @@
       "orderGap": "From best",
       "timingBest": "Best timing",
       "timingNotes": "Notes to hit early",
+      "timingChart": "Chart excerpt",
+      "timingChartFailed": "Chart could not be loaded",
       "timingAdvance": "About {ms} ms early",
       "timingStep": "Step {step}",
       "timingChord": "{count} together",

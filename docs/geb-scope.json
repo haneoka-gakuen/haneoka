@@ -316,6 +316,8 @@
     "src/lib/catalog-visuals.ts",
     "src/lib/cubism-runtime.ts",
     "src/lit/runtime/chart-image-export.ts",
+    "src/lit/runtime/chart-overview-renderer.ts",
+    "src/lit/runtime/timing-chart-preview.ts",
     "worker/chart-image.ts",
     "src/lit/team-builder/results.ts",
     "src/lib/team-builder/team-growth.ts",

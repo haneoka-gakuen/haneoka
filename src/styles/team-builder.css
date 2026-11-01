@@ -1,6 +1,18 @@
 @import "./components/selection-pane.css";
 
 @layer pages {
+  .team-builder .tb-timing__chart {
+    block-size: calc(360px + var(--md-sys-spacing-4));
+    max-inline-size: 100%;
+    overflow: auto;
+  }
+  .team-builder .tb-timing__chart canvas {
+    display: block;
+    max-inline-size: none;
+  }
+  .team-builder .tb-timing__chart canvas[hidden] {
+    display: none;
+  }
   .team-builder .tb-team-growth {
     width: min(1160px, calc(100vw - 32px));
     height: min(900px, calc(100dvh - 32px));
