@@ -304,9 +304,18 @@ class ArenaCollector:
             candidates.append((not unfinished, previous.get('updatedAtMs', 0) if previous else 0, int(band), band, thresholds, previous))
         return min(candidates) if candidates else None
 
-    def population(self):
+    def population(self, budget=None):
         if 'arena-population-v1' not in self.capabilities:
             return
+        deadline = self.deadline
+        if budget is not None:
+            self.deadline = min(deadline, time.time() + budget)
+        try:
+            self._population()
+        finally:
+            self.deadline = deadline
+
+    def _population(self):
         plan = self.population_plan()
         if not plan:
             return

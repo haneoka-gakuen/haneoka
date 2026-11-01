@@ -223,6 +223,11 @@ def run_job(job, origin):
                         failure_status, failure_info, retry_delay)
                     stage = 'arena_board'
                     arena_collector.top()
+                    # Tier counts take many windows; they come before the other boards,
+                    # with a share of the run, so every run moves one league forward.
+                    if final_status not in ('auth_paused', 'rate_limited'):
+                        stage = 'arena_population_callback'
+                        arena_collector.population(budget=max(0, (deadline - time.time()) * 0.6))
                 for kind, challenge in boards:
                     if (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
                         continue
@@ -299,9 +304,6 @@ def run_job(job, origin):
                     if stopped and failure_status(stopped) == 'rate_limited':
                         final_status, failure = 'rate_limited', failure_info(stage, RuntimeError('demand rejected'), stopped)
                         retry_after = retry_delay(stopped, 300)
-                if arena_collector and final_status not in ('auth_paused', 'rate_limited'):
-                    stage = 'arena_population_callback'
-                    arena_collector.population()
         except ArenaStopped as error:
             final_status, failure, retry_after = error.status, error.failure, error.retry_after
         except CallbackError as error:
