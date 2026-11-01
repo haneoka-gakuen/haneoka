@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: A bounded region job, private credentials and authenticated durable callbacks.
-# Output: Official catalog and immutable board observations acknowledged by the Worker.
+# Output: Fresh-version live/final observations and body-free authenticated demand failures acknowledged by the Worker.
 # Pos: [Map](../../L2.md); cloud adapter for the shared official protocol.
 # Effects/Dependencies: Official HTTPS/HTTP2 reads, temporary private files and Worker callbacks; no local history authority.
 from datetime import datetime
@@ -140,6 +140,61 @@ def validate_job(job):
     capabilities = job.get('capabilities', [])
     if not isinstance(capabilities, list) or len(capabilities) > 16 or any(not isinstance(value, str) for value in capabilities):
         raise ValueError('invalid capabilities')
+    if 'finalEvent' in job:
+        event, boards = job['finalEvent'], job.get('finalBoards')
+        windows = job.get('eventWindows', [])
+        if ('event-finals-v1' not in capabilities or job.get('mode') is not None
+                or 'arena-ranking-v1' in capabilities or not isinstance(event, dict)
+                or not isinstance(boards, list) or not 0 <= len(boards) <= 102
+                or not isinstance(windows, list) or len(windows) > 20 or not (boards or windows)):
+            raise ValueError('invalid final target')
+        starts = set()
+        for window in windows:
+            if (not isinstance(window, dict) or window.get('eventId') != event['id']
+                    or 'event-windows-v1' not in capabilities or not event['pointRankingEnabled']
+                    or event['endAtMs'] + event['aggregationSeconds'] * 1000 > time.time() * 1000):
+                raise ValueError('invalid final window')
+            start = window.get('startRank')
+            if (type(start) is not int or start < 1 or (start - 1) % 100 != 0
+                    or window.get('endRank') != start + 99 or start in starts):
+                raise ValueError('invalid final window')
+            starts.add(start)
+        seen = set()
+        for board in boards:
+            if not isinstance(board, dict):
+                raise ValueError('invalid final board')
+            kind, challenge = board.get('kind'), board.get('challengeId')
+            if kind == 'challenge':
+                target = next((row for row in event['challenges'] if row['id'] == challenge and row['enabled']), None)
+                end = target['endAtMs'] if target else None
+            elif kind in ('total', 'point') and challenge == '' and event[kind + 'RankingEnabled']:
+                end = event['endAtMs']
+            else:
+                end = None
+            if (end is None or end + event['aggregationSeconds'] * 1000 > time.time() * 1000
+                    or (kind, challenge) in seen):
+                raise ValueError('invalid final board')
+            seen.add((kind, challenge))
+    if 'finalArena' in job:
+        arena, windows, bands = job['finalArena'], job.get('arenaWindows', []), job.get('finalPopulationBands')
+        if ('arena-finals-v1' not in capabilities or 'arena-ranking-v1' not in capabilities
+                or 'finalEvent' in job or job.get('mode') is not None or not isinstance(arena, dict)
+                or arena['rankingEndAtMs'] > time.time() * 1000 or not isinstance(windows, list)
+                or len(windows) > 20 or not isinstance(bands, list) or len(bands) > 1 or not (windows or bands)):
+            raise ValueError('invalid final Arena target')
+        if bands and ('arena-population-v1' not in capabilities or any(
+                band not in arena['bandIds'] or not arena['thresholdsByBand'].get(band) for band in bands)):
+            raise ValueError('invalid final population')
+        seen = set()
+        for window in windows:
+            if (not isinstance(window, dict) or window.get('seasonId') != arena['seasonId']
+                    or window.get('bandId') not in arena['bandIds']):
+                raise ValueError('invalid final Arena window')
+            start = window.get('startRank')
+            if (type(start) is not int or start < 1 or (start - 1) % 100 != 0
+                    or window.get('endRank') != start + 99 or (window['bandId'], start) in seen):
+                raise ValueError('invalid final Arena window')
+            seen.add((window['bandId'], start))
 
 
 def run_lookup(job, origin):
@@ -163,7 +218,8 @@ def run_lookup(job, origin):
             sampler.version()
             stopped = Demand(job, sampler, updates, deadline).run()
             if stopped:
-                fields = {'status': failure_status(stopped)}
+                fields = {'status': failure_status(stopped),
+                          'failure': failure_info('demand', RuntimeError('demand rejected'), stopped)}
                 if fields['status'] == 'rate_limited':
                     fields['retryAfterSeconds'] = retry_delay(stopped, 300)
         except CallbackError:
@@ -201,11 +257,19 @@ def run_job(job, origin):
             provider = OfficialCatalog(master_config, root, '', job['clientVersion'], deadline=deadline,
                                       region=region, api_origin=auth['origin'], include_arena=include_arena)
             catalog = provider()
+            final_event = job.get('finalEvent')
+            if final_event is not None:
+                catalog['event'] = final_event
+                catalog.pop('arena', None)
+            if job.get('finalArena') is not None:
+                catalog['event'] = None
+                catalog['arena'] = job['finalArena']
             stage = 'catalog_callback'
             updates.send('catalog', catalog=catalog)
-            boards = targets(catalog, int(time.time() * 1000))
+            boards = ([(board['kind'], board['challengeId']) for board in job['finalBoards']]
+                      if final_event is not None else targets(catalog, int(time.time() * 1000)))
             arena_active = include_arena and catalog.get('arena') is not None
-            if boards or arena_active:
+            if boards or arena_active or final_event is not None and job.get('eventWindows'):
                 sampler = Sampler(SimpleNamespace(region=region, descriptors=Path(__file__).parent/configured.descriptor,
                     output=root/'receipts', client_version=job['clientVersion'], proxy='', connect_ip=None,
                     credentials=credentials, credential_identity=identity, stop_file=None, deadline=deadline,
@@ -224,7 +288,7 @@ def run_job(job, origin):
                     stage = 'arena_board'
                     arena_collector.top()
                 for kind, challenge in boards:
-                    if (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
+                    if final_event is None and (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
                         continue
                     if time.time() >= deadline:
                         if not include_arena:
@@ -242,7 +306,8 @@ def run_job(job, origin):
                     try:
                         window_end = event['endAtMs'] if kind != 'challenge' else next(
                             row['endAtMs'] for row in event['challenges'] if row['id'] == challenge)
-                        sampler.args.deadline = min(deadline, window_end/1000 + event['aggregationSeconds'])
+                        sampler.args.deadline = (deadline if final_event is not None else
+                                                 min(deadline, window_end/1000 + event['aggregationSeconds']))
                         method, fields = board_call(kind, event, challenge)
                         request = sampler.message('app.event.' + method + 'Request', fields)
                         receipt, response, _ = sampler.rpc('/app.event.EventService/' + method, request,
@@ -268,6 +333,8 @@ def run_job(job, origin):
                         observation['httpStatus'] = receipt.get('status') if receipt else None
                         observation['grpcStatus'] = receipt.get('grpc_status') if receipt else None
                         status = failure_status(receipt)
+                        if final_event is not None and receipt and (receipt.get('status') == 403 or str(receipt.get('grpc_status')) == '7'):
+                            status = 'failed'
                         observation['error'] = 'authentication_failed' if status == 'auth_paused' else type(error).__name__
                         if status == 'rate_limited':
                             retry_after = retry_delay(receipt, 300)
@@ -281,7 +348,7 @@ def run_job(job, origin):
                     if final_status in ('auth_paused', 'rate_limited'):
                         break
                 if (final_status not in ('auth_paused', 'rate_limited') and 'event-windows-v1' in job.get('capabilities', [])
-                        and ('point', '') in targets(catalog, int(time.time() * 1000))):
+                        and (final_event is not None or ('point', '') in targets(catalog, int(time.time() * 1000)))):
                     stage = 'event_window'
                     def window_provenance():
                         return dict(clientVersion=job['clientVersion'], masterVersion=sampler.master_version,
@@ -289,14 +356,18 @@ def run_job(job, origin):
                             catalogTableHashes=catalog.get('tableHashes'))
                     refused = EventWindows(job, catalog, sampler, updates, deadline, window_provenance).run()
                     # A refused window ends windows for this run; only a rate limit or a rejected login concerns the account.
-                    if refused and failure_status(refused) in ('auth_paused', 'rate_limited'):
+                    if refused and final_event is not None and (refused.get('status') == 403 or str(refused.get('grpc_status')) == '7'):
+                        final_status, failure = 'failed', failure_info('board', RuntimeError('event window rejected'), refused)
+                    elif refused and failure_status(refused) in ('auth_paused', 'rate_limited'):
                         final_status, failure = failure_status(refused), failure_info(stage, RuntimeError('event window rejected'), refused)
                         retry_after = retry_delay(refused, 300)
                 if final_status not in ('auth_paused', 'rate_limited') and 'player-demand-v1' in job.get('capabilities', []):
                     stage = 'demand'
                     stopped = Demand(job, sampler, updates, deadline).run()
-                    # A refused read ends demand for this run; it says nothing about the account.
-                    if stopped and failure_status(stopped) == 'rate_limited':
+                    if (stopped and failure_status(stopped) == 'auth_paused'
+                            and stopped.get('status') != 403 and str(stopped.get('grpc_status')) != '7'):
+                        final_status, failure = 'auth_paused', failure_info(stage, RuntimeError('demand authentication rejected'), stopped)
+                    elif stopped and failure_status(stopped) == 'rate_limited':
                         final_status, failure = 'rate_limited', failure_info(stage, RuntimeError('demand rejected'), stopped)
                         retry_after = retry_delay(stopped, 300)
                 if arena_collector and final_status not in ('auth_paused', 'rate_limited'):

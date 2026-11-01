@@ -1,4 +1,4 @@
-"""L3: server/L2.md; bounded Arena and event point windows and resumable, freshly witnessed population counts."""
+"""L3: server/L2.md; live/final Arena and event point windows and resumable, freshly witnessed population counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -113,6 +113,8 @@ class ArenaCollector:
         self.descriptor_digest = hashlib.sha256(Path(self.sampler.args.descriptors).read_bytes()).hexdigest()
 
     def active(self):
+        if self.job.get('finalArena') is not None:
+            return time.time() * 1000 >= self.arena['rankingEndAtMs']
         return self.arena['startAtMs'] <= time.time() * 1000 < self.arena['rankingEndAtMs']
 
     def room(self):
@@ -158,6 +160,8 @@ class ArenaCollector:
             observation.update(players=rows, maxRank=maximum, provenance=self.provenance())
         except Exception as error:
             status = self.failure_status(receipt)
+            if self.job.get('finalArena') is not None and receipt and (receipt.get('status') == 403 or str(receipt.get('grpc_status')) == '7'):
+                status = 'failed'
             observation.update(error='authentication_failed' if status == 'auth_paused' else type(error).__name__,
                                httpStatus=receipt.get('status') if receipt else None,
                                grpcStatus=receipt.get('grpc_status') if receipt else None)
@@ -183,6 +187,10 @@ class ArenaCollector:
 
     def top(self):
         try:
+            if self.job.get('finalArena') is not None:
+                for demand in self.job.get('arenaWindows', []):
+                    self.window(demand['bandId'], demand['startRank'])
+                return
             if 'arena-demand-v1' in self.capabilities:
                 demand_deadline = min(time.time() + 40, self.deadline - 22)
                 plan = self.population_plan() if 'arena-population-v1' in self.capabilities else None
@@ -294,6 +302,8 @@ class ArenaCollector:
     def population_plan(self):
         candidates = []
         for band in self.arena['bandIds']:
+            if self.job.get('finalArena') is not None and band not in self.job['finalPopulationBands']:
+                continue
             thresholds = self.arena['thresholdsByBand'][band]
             if not thresholds:
                 continue

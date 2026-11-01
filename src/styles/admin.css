@@ -9,6 +9,28 @@
     gap: 16px;
     overflow: auto;
   }
+  .admin-page :is(.admin-archive-dialog, .admin-archive-launch, .admin-platform-dialog, .admin-platform-launch, .admin-guest-dialog, .admin-guest-launch, .admin-sdk-dialog) {
+    --button-height: var(--md-comp-control-height-touch);
+  }
+  .admin-page .admin-archive-dialog {
+    block-size: 100dvh;
+  }
+  .admin-page .admin-archive-dialog[data-kind="final"] {
+    width: min(840px, calc(100vw - 48px));
+  }
+  .admin-page .admin-archive-dialog md-outlined-select {
+    inline-size: min(100%, 24rem);
+    min-inline-size: 0;
+  }
+  .admin-page .admin-platform-dialog {
+    block-size: 480px;
+  }
+  .admin-page .admin-guest-dialog {
+    block-size: 280px;
+  }
+  .admin-page .admin-sdk-dialog {
+    block-size: 480px;
+  }
   .admin-toolbar {
     display: flex;
     justify-content: flex-end;

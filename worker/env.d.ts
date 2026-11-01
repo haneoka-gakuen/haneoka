@@ -1,4 +1,7 @@
 interface Env {
+  OFFICIAL_ACCOUNT_ENCRYPTION_KEY?: string;
+  OFFICIAL_GLOBAL_LOGIN_CONFIG?: string;
+  OFFICIAL_JP_GUEST_CONFIG?: string;
   TOOLS_SERVICE_URL?: string;
   TOOLS_SERVICE_TOKEN?: string;
   ADMIN_PACKAGE_MAX_BYTES?: string;
@@ -22,6 +25,9 @@ interface Env {
 
 declare namespace Cloudflare {
   interface Env {
+    OFFICIAL_ACCOUNT_ENCRYPTION_KEY?: string;
+    OFFICIAL_GLOBAL_LOGIN_CONFIG?: string;
+    OFFICIAL_JP_GUEST_CONFIG?: string;
     TOOLS_SERVICE_URL?: string;
     TOOLS_SERVICE_TOKEN?: string;
     ADMIN_PACKAGE_MAX_BYTES?: string;

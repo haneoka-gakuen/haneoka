@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Staff session, administrative APIs, user actions and localized catalogues.
+// Output: Administrative collections, editors, account lifecycle states and private archive dialogs.
+// Pos: [Map](L2-2.md); browser administration workspace.
+// Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
 import { refreshContentAccess } from "../lib/content-access";
 import { USER_ROLES, isUserRole } from "../lib/user-roles";
 import { modal } from "./ui/modal";
@@ -23,6 +28,7 @@ import { beginLoading } from "../lib/loading-progress";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { communityExcerpt, communityMarkup } from "../lib/community-markup";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { keyed } from "lit/directives/keyed.js";
 import { segmented } from "./ui/controls";
 import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsOptions } from "./admin-analytics";
 import "./community-sticker";
@@ -32,6 +38,28 @@ import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import "./admin-comments";
 
 type Value = Record<string, unknown>;
+interface PlatformRole {
+  id: string; label: string; email: string; version: number; createdAtMs: number;
+  region: string; status: string; playerId: string | null; lastVerifiedAtMs: number | null; lastErrorCode: string | null;
+}
+interface SdkConflict {
+  id: string; revision: string;
+  accounts: Array<{ id: string; label: string; email: string; version: number }>;
+}
+interface GuestAccount {
+  id: string; label: string; version: number; status: string; playerId: string | null; profileId: string | null;
+  poolStatus: string | null;
+  createdAtMs: number; lastVerifiedAtMs: number | null; lastErrorCode: string | null;
+}
+const PLATFORM_ACTIVE = ["queued", "authenticating", "renewal_queued", "renewing"];
+const PLATFORM_FAILURES = new Set(["duplicate_sdk_identity", "sdk_identity_conflict", "sdk_identity_mismatch", "game_player_mismatch", "duplicate_player", "automatic_login_paused"]);
+const GUEST_DRAFT_KEY = "haneoka:admin:guest-draft";
+interface ArchiveState {
+  region: string; day: string; mode: "daily" | "final"; phase: "loading" | "ready" | "error";
+  targets: Array<{ kind: "event" | "arena"; id: string; total: number; completed: number }>;
+  selected: string;
+  snapshots: Array<{ boardKey: string; observedAtMs: number | null; dueAtMs?: number; state?: "waiting" | "pending" | "archived" }>;
+}
 const sections = ["overview", "comments", "reports", "appeals", "posts", "users", "forums", "operations"] as const;
 type Section = (typeof sections)[number];
 type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
@@ -70,6 +98,17 @@ export class AdminWorkspace extends LitElement {
     commentHistory: { state: true },
     resourceServers: { state: true },
     collectorPool: { state: true },
+    archive: { state: true },
+    platformRoles: { state: true },
+    platformConflicts: { state: true },
+    sdkResolution: { state: true },
+    platformForm: { state: true },
+    platformMissing: { state: true },
+    platformEdit: { state: true },
+    guestAccounts: { state: true },
+    guestJob: { state: true },
+    guestDraft: { state: true },
+    guestMissing: { state: true },
     resourceSources: { state: true },
     readyPackage: { state: true },
     packageProgress: { state: true },
@@ -130,6 +169,17 @@ export class AdminWorkspace extends LitElement {
   declare commentHistory: Value | null;
   declare resourceServers: Value[];
   declare collectorPool: Value[];
+  declare private archive: ArchiveState | null;
+  declare private platformRoles: PlatformRole[];
+  declare private platformConflicts: SdkConflict[];
+  declare private sdkResolution: { conflict: SdkConflict; accountId: string } | null;
+  declare private platformForm: boolean;
+  declare private platformMissing: string[];
+  declare private platformEdit: PlatformRole | null;
+  declare private guestAccounts: GuestAccount[];
+  declare private guestJob: { guestId: string } | null;
+  declare private guestDraft: { id: string; label: string } | null;
+  declare private guestMissing: boolean;
   declare resourceSources: Value[];
   declare readyPackage: Value | null;
   declare packageProgress: number;
@@ -188,6 +238,22 @@ export class AdminWorkspace extends LitElement {
   private readonly listRequests = new RequestScope();
   private readonly sourceRequests = new RequestScope();
   private readonly serverRequests = new RequestScope();
+  private readonly archiveRequests = new RequestScope();
+  private readonly poolRequests = new RequestScope();
+  private poolRefreshTimer?: number;
+  private readonly onPoolVisibility = () => {
+    window.clearTimeout(this.poolRefreshTimer);
+    if (!document.hidden && this.shouldPollCollectorPool()) this.pollCollectorPool();
+  };
+  private shouldPollCollectorPool() {
+    return !!this.guestJob || this.guestAccounts.some((guest) => !!guest.poolStatus || ["queued", "creating", "verifying"].includes(guest.status))
+      || this.platformRoles.some((role) => PLATFORM_ACTIVE.includes(role.status) || role.status === "renewal_waiting");
+  }
+  private readonly pollCollectorPool = () => {
+    void this.loadCollectorPool().catch((error) => {
+      if (this.isConnected && !this.privateAccess.signal.aborted) this.error = error instanceof Error ? error.message : String(error);
+    });
+  };
   private readonly historyRequests = new RequestScope();
   private readonly userRequests = new RequestScope();
   private readonly seriesRequests = new RequestScope();
@@ -215,6 +281,17 @@ export class AdminWorkspace extends LitElement {
     this.commentHistory = null;
     this.resourceServers = [];
     this.collectorPool = [];
+    this.archive = null;
+    this.platformRoles = [];
+    this.platformConflicts = [];
+    this.sdkResolution = null;
+    this.platformForm = false;
+    this.platformMissing = [];
+    this.platformEdit = null;
+    this.guestAccounts = [];
+    this.guestJob = null;
+    this.guestDraft = null;
+    this.guestMissing = false;
     this.resourceSources = [];
     this.readyPackage = null;
     this.packageProgress = 0;
@@ -317,6 +394,7 @@ export class AdminWorkspace extends LitElement {
     super.connectedCallback();
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     addEventListener("haneoka:locale-ready", this.onLocale);
+    document.addEventListener("visibilitychange", this.onPoolVisibility, { signal: this.lifetime.signal });
     void Promise.all([
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
@@ -418,7 +496,24 @@ export class AdminWorkspace extends LitElement {
     this.listRequests.cancel();
     this.sourceRequests.cancel();
     this.serverRequests.cancel();
+    this.poolRequests.cancel();
+    window.clearTimeout(this.poolRefreshTimer);
+    this.closeArchives();
+    this.platformRoles = [];
+    this.platformConflicts = [];
+    this.sdkResolution = null;
+    this.platformForm = false;
+    this.platformEdit = null;
+    this.platformMissing = [];
     this.closeReview();
+    this.guestAccounts = [];
+    this.guestJob = null;
+    this.guestDraft = null;
+    this.guestMissing = false;
+    if (error) {
+      sessionStorage.removeItem(GUEST_DRAFT_KEY);
+      sessionStorage.removeItem(`${GUEST_DRAFT_KEY}:label`);
+    }
     this.closeUserDetails();
     this.seriesRequests.cancel();
     this.geoRequests.cancel();
@@ -456,7 +551,9 @@ export class AdminWorkspace extends LitElement {
     this.busy = "";
     this.loadingMore = false;
     this.refreshing = false;
-    this.error = error?.message || "";
+    this.error = error && this.isAccessFailure(error)
+      ? error.status === 401 ? this.label("access.signInRequired", "Sign in again") : this.label("access.forbidden", "Administrator access required")
+      : error?.message || "";
     this.phase = error ? "error" : "loading";
   }
   private refresh() {
@@ -1031,9 +1128,119 @@ export class AdminWorkspace extends LitElement {
   }
 
   private loadCollectorPool = async () => {
-    const result = await this.request("/api/v1/admin/collector-pool");
-    this.collectorPool = Array.isArray(result.regions) ? (result.regions as Value[]) : [];
+    window.clearTimeout(this.poolRefreshTimer);
+    const signal = this.poolRequests.begin();
+    try {
+      const [result, platform, guests] = await Promise.all([
+        this.request("/api/v1/admin/collector-pool", { signal }),
+        this.request("/api/v1/admin/collector-platform-accounts", { signal }),
+        this.request("/api/v1/admin/collector-guest-accounts", { signal }),
+      ]);
+      if (!this.poolRequests.current(signal)) return;
+      this.platformRoles = platform.roles as PlatformRole[];
+      this.platformConflicts = platform.conflicts as SdkConflict[];
+      this.collectorPool = result.regions as Value[];
+      this.guestAccounts = guests.guests as GuestAccount[];
+      this.guestJob = guests.job as { guestId: string } | null;
+      if (!document.hidden && this.isConnected && this.shouldPollCollectorPool())
+        this.poolRefreshTimer = window.setTimeout(this.pollCollectorPool,
+          this.guestJob || this.guestAccounts.some((guest) => ["queued", "creating", "verifying"].includes(guest.status))
+            || this.platformRoles.some((role) => PLATFORM_ACTIVE.includes(role.status)) ? 5_000 : 30_000);
+    } catch (error) {
+      if (this.poolRequests.current(signal)) throw error;
+    }
   };
+  private openGuestForm() {
+    const id = sessionStorage.getItem(GUEST_DRAFT_KEY) ?? crypto.randomUUID();
+    sessionStorage.setItem(GUEST_DRAFT_KEY, id);
+    this.guestDraft = { id, label: sessionStorage.getItem(`${GUEST_DRAFT_KEY}:label`) ?? "" };
+    this.guestMissing = false;
+  }
+  private closeGuestForm = () => {
+    if (this.busy !== "guest:register") this.guestDraft = null;
+  };
+  private saveGuest(event: SubmitEvent) {
+    event.preventDefault();
+    const field = (event.currentTarget as HTMLFormElement).elements.namedItem("label") as HTMLElement & { value: string; checkValidity(): boolean };
+    this.guestMissing = !field.checkValidity() || !field.value.trim();
+    if (!this.guestMissing) this.queueGuest(this.guestDraft!);
+  }
+  private queueGuest(guest: { id: string; label: string; version?: number }, verify = false) {
+    void this.mutate(verify ? `guest:verify:${guest.id}` : "guest:register", async (assertCurrent) => {
+      let result: Value;
+      try {
+        result = await this.request(`/api/v1/admin/collector-guest-accounts${verify ? `/${guest.id}/verify` : ""}`, {
+          method: "POST", body: JSON.stringify(verify ? { expectedVersion: guest.version } : { guestId: guest.id, label: guest.label })
+        });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        const code = error instanceof JsonResponseError ? (error.body as { error?: { code?: string } } | null)?.error?.code : undefined;
+        const key = code === "version_conflict" ? "conflict" : code === "guest_not_found" ? "notFound"
+          : code === "guest_not_configured" ? "unavailable" : code === "guest_store_failed" ? "storageFailed" : code === "busy" ? "busy" : "queueFailed";
+        throw new Error(this.label(`guest.${key}`, key), { cause: error });
+      }
+      assertCurrent();
+      if (sessionStorage.getItem(GUEST_DRAFT_KEY) === guest.id) {
+        sessionStorage.removeItem(GUEST_DRAFT_KEY);
+        sessionStorage.removeItem(`${GUEST_DRAFT_KEY}:label`);
+      }
+      if (this.guestDraft?.id === guest.id) this.guestDraft = null;
+      await this.loadCollectorPool();
+      assertCurrent();
+      snackbar(result.status === "exists" ? this.label("guest.recorded", "Guest task recorded") : this.label("guest.queued", "Guest task queued"));
+    });
+  }
+  private renderGuestAccounts() {
+    return this.disclosure({ id: "admin-guest-accounts", className: "admin-resource-servers", label: this.label("guest.title", "JP guest accounts"),
+      content: html`<div class="stack">
+        <div><button class="button button--tonal admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.openGuestForm()}>${this.label("guest.create", "Create guest")}</button></div>
+        <div class="table-scroll"><table class="data-table">
+          <thead><tr><th>${this.label("pool.account", "Account")}</th><th>${this.label("pool.state", "State")}</th><th>${this.label("platform.playerId", "Player ID")}</th><th>${this.label("guest.profileId", "Profile ID")}</th><th>${this.label("guest.verified", "Verified")}</th><th>${this.label("actions.manage", "Manage")}</th></tr></thead>
+          <tbody>${this.guestAccounts.length ? this.guestAccounts.map((guest) => html`<tr>
+            <th scope="row">${guest.label}</th><td>${this.label(guest.poolStatus ? `pool.status.${guest.poolStatus}` : `guest.status.${guest.status}`, guest.poolStatus ?? guest.status)}</td><td>${guest.playerId ?? "—"}</td><td>${guest.profileId ?? "—"}</td><td>${guest.lastVerifiedAtMs ? this.date(guest.lastVerifiedAtMs) : "—"}</td>
+            <td>${guest.status === "uncertain" || ["created", "ready"].includes(guest.status) ? html`<button class="button button--text admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.queueGuest(guest, guest.status !== "uncertain")}>${guest.status === "uncertain" ? this.label("guest.recover", "Retrieve result") : this.label("guest.verify", "Verify")}</button>` : nothing}</td>
+          </tr>`) : html`<tr><td colspan="6">${this.label("guest.empty", "No guest accounts")}</td></tr>`}</tbody>
+        </table></div>
+      </div>` });
+  }
+  private renderGuestForm() {
+    const draft = this.guestDraft;
+    if (!draft) return nothing;
+    const saving = this.busy === "guest:register";
+    return html`<dialog class="dialog admin-guest-dialog" aria-labelledby="admin-guest-title" ${modal(this.closeGuestForm)}>
+      <header class="dialog__header"><h2 id="admin-guest-title">${this.label("guest.create", "Create guest")}</h2></header>
+      <div class="dialog__body"><form id="admin-guest-form" class="stack" novalidate @submit=${(event: SubmitEvent) => this.saveGuest(event)}>
+        <md-outlined-text-field id="admin-guest-label" name="label" required maxlength="80" ?disabled=${saving} ?error=${this.guestMissing} .value=${draft.label} label=${this.label("platform.label", "Label")} @input=${(event: Event) => {
+          const label = (event.target as HTMLElement & { value: string }).value;
+          this.guestDraft = { ...draft, label };
+          sessionStorage.setItem(`${GUEST_DRAFT_KEY}:label`, label);
+        }}></md-outlined-text-field>
+        <div class="cluster" role="status">${this.guestMissing ? html`<a href="#admin-guest-label" @click=${(event: Event) => {
+          event.preventDefault(); this.querySelector<HTMLElement>("#admin-guest-label")!.focus();
+        }}>${this.label("guest.labelRequired", "Enter a label")}</a>` : nothing}</div>
+      </form></div>
+      <footer class="dialog__actions"><button class="button button--text" ?disabled=${saving} @click=${this.closeGuestForm}>${this.label("history.close", "Close")}</button><button class="button" type="submit" form="admin-guest-form" ?disabled=${!!this.busy}>${saving ? this.label("guest.queuing", "Queuing") : this.label("guest.create", "Create guest")}</button></footer>
+    </dialog>`;
+  }
+  private loginPlatformRole(role: PlatformRole) {
+    void this.mutate(`platform:login:${role.id}:${role.region}`, async (assertCurrent) => {
+      try {
+        await this.request(`/api/v1/admin/collector-platform-accounts/${role.id}/roles/${role.region}/login`, {
+          method: "POST", body: JSON.stringify({ expectedVersion: role.version })
+        });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        const code = error instanceof JsonResponseError ? (error.body as { error?: { code?: string } } | null)?.error?.code : undefined;
+        const key = code === "version_conflict" ? "loginConflict" : code === "account_not_found" ? "notFound"
+          : code === "login_not_configured" ? "loginUnavailable" : code === "account_store_failed" ? "loginStorageFailed" : code === "busy" ? "loginBusy" : "loginFailed";
+        throw new Error(this.label(`platform.${key}`, key), { cause: error });
+      }
+      assertCurrent();
+      await this.loadCollectorPool();
+      assertCurrent();
+      snackbar(this.label("platform.loginQueued", "Login queued"));
+    });
+  }
   private poolAction(region: string, identity: string, action: string) {
     void this.mutate(`pool:${identity}:${action}`, async (assertCurrent) => {
       await this.request(`/api/v1/admin/collector-pool/${region}/${identity}`, { method: "POST", body: JSON.stringify({ action }) });
@@ -1052,6 +1259,221 @@ export class AdminWorkspace extends LitElement {
       await this.loadCollectorPool();
     });
   }
+  private closePlatformForm = () => {
+    if (this.busy !== "platform:save") {
+      this.platformForm = false;
+      this.platformMissing = [];
+      this.platformEdit = null;
+    }
+  };
+  private savePlatformAccount(event: SubmitEvent) {
+    event.preventDefault();
+    const form = event.currentTarget as HTMLFormElement;
+    this.platformMissing = ["label", "email", "password"].filter((name) => {
+      const field = form.elements.namedItem(name) as HTMLElement & { value: string; checkValidity(): boolean };
+      return !field.checkValidity() || name === "label" && !field.value.trim();
+    });
+    if (this.platformMissing.length) return;
+    const data = new FormData(form);
+    const editing = this.platformEdit;
+    const password = data.get("password") as string;
+    const body = { label: data.get("label"), ...editing ? { expectedVersion: editing.version, ...password ? { password } : {} } : { email: data.get("email"), password } };
+    void this.mutate("platform:save", async (assertCurrent) => {
+      try {
+        await this.request(`/api/v1/admin/collector-platform-accounts${editing ? `/${editing.id}` : ""}`, {
+          method: editing ? "PUT" : "POST",
+          body: JSON.stringify(body)
+        });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        const code = error instanceof JsonResponseError ? (error.body as { error?: { code?: string } } | null)?.error?.code : undefined;
+        if (code === "version_conflict") await this.loadCollectorPool();
+        const key = code === "version_conflict" ? "conflict" : code === "account_not_found" ? "notFound" : code === "account_vault_unavailable" ? "vaultUnavailable" : code === "platform_account_exists" ? "exists" : code === "invalid_platform_account" ? "invalid" : "saveFailed";
+        throw new Error(this.label(`platform.${key}`, key), { cause: error });
+      }
+      assertCurrent();
+      form.reset();
+      this.platformEdit = null;
+      this.platformMissing = [];
+      this.platformForm = false;
+      await this.loadCollectorPool();
+    });
+  }
+  private renderPlatformAccounts() {
+    const accounts = new Map<string, PlatformRole[]>();
+    for (const role of this.platformRoles) {
+      const roles = accounts.get(role.id) ?? [];
+      roles.push(role);
+      accounts.set(role.id, roles);
+    }
+    return this.disclosure({
+      id: "admin-platform-accounts",
+      className: "admin-resource-servers",
+      label: this.label("platform.title", "Global email accounts"),
+      content: html`<div class="stack">
+        <div><button class="button button--tonal admin-platform-launch" @click=${() => {
+        this.platformEdit = null;
+        this.platformMissing = [];
+        this.platformForm = true;
+      }}>${this.label("platform.add", "Add email account")}</button></div>
+        <div class="table-scroll"><table class="data-table">
+          <thead><tr><th>${this.label("pool.account", "Account")}</th><th>${this.label("platform.email", "Email")}</th><th>${this.label("platform.region", "Region")}</th><th>${this.label("pool.state", "State")}</th><th>${this.label("platform.playerId", "Player ID")}</th><th>${this.label("platform.login", "Sign in")}</th><th>${this.label("platform.edit", "Edit")}</th></tr></thead>
+          ${[...accounts.values()].map((roles) => {
+        const conflict = this.platformConflicts.find((group) => group.accounts.some((account) => account.id === roles[0]!.id));
+        return html`<tbody>${roles.map((role, index) => html`<tr>
+            ${index === 0 ? html`<th scope="rowgroup" rowspan=${roles.length}>${role.label}</th><td rowspan=${roles.length}>${role.email}</td>` : nothing}
+            <td>${role.region.toUpperCase()}</td><td>${["failed", "auth_required"].includes(role.status) && PLATFORM_FAILURES.has(role.lastErrorCode ?? "")
+              ? this.label(`platform.failure.${role.lastErrorCode}`, this.label(`pool.status.${role.status}`, role.status))
+              : this.label(`pool.status.${role.status}`, role.status)}</td><td>${role.playerId ?? "\u2014"}</td>
+            <td><button class="button button--text admin-platform-launch" ?disabled=${!!this.busy || !!conflict || PLATFORM_ACTIVE.includes(role.status)} @click=${() => this.loginPlatformRole(role)}>${this.label("platform.login", "Sign in")}</button></td>
+            ${index === 0 ? html`<td rowspan=${roles.length}><div class="stack"><button class="button button--text admin-platform-launch" @click=${() => {
+        this.platformEdit = role;
+        this.platformMissing = [];
+        this.platformForm = true;
+      }}>${this.label("platform.edit", "Edit")}</button>${conflict ? html`<button class="button button--text admin-platform-launch" ?disabled=${!!this.busy} @click=${() => {
+        this.sdkResolution = { conflict, accountId: "" };
+      }}>${this.label("platform.resolve", "Confirm owner")}</button>` : nothing}</div></td>` : nothing}
+          </tr>`)}</tbody>`;
+      })}
+          ${accounts.size ? nothing : html`<tbody><tr><td colspan="7">${this.label("platform.empty", "No email accounts")}</td></tr></tbody>`}
+        </table></div>
+      </div>`
+    });
+  }
+  private closeSdkResolution = () => {
+    if (this.busy !== "platform:resolve") this.sdkResolution = null;
+  };
+  private resolveSdkOwner() {
+    const { conflict, accountId } = this.sdkResolution!;
+    void this.mutate("platform:resolve", async (assertCurrent) => {
+      try {
+        await this.request(`/api/v1/admin/collector-platform-accounts/sdk-conflicts/${conflict.id}/resolve`, {
+          method: "POST", body: JSON.stringify({ accountId, expectedRevision: conflict.revision })
+        });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        const code = error instanceof JsonResponseError ? (error.body as { error?: { code?: string } } | null)?.error?.code : undefined;
+        if (["conflict_changed", "conflict_not_found", "account_not_candidate"].includes(code ?? "")) {
+          await this.loadCollectorPool();
+          assertCurrent();
+          const current = this.platformConflicts.find((group) => group.id === conflict.id);
+          this.sdkResolution = current ? { conflict: current, accountId: "" } : null;
+        }
+        throw new Error(this.label(code === "account_busy" ? "platform.resolveBusy" : code === "account_store_failed" ? "platform.loginStorageFailed"
+          : ["conflict_changed", "conflict_not_found", "account_not_candidate"].includes(code ?? "") ? "platform.resolveChanged" : "platform.resolveFailed",
+          "Refresh accounts and retry"), { cause: error });
+      }
+      assertCurrent();
+      this.sdkResolution = null;
+      await this.loadCollectorPool();
+      assertCurrent();
+      snackbar(this.label("platform.resolved", "Ownership confirmed"));
+    });
+  }
+  private renderSdkResolution() {
+    const draft = this.sdkResolution;
+    if (!draft) return nothing;
+    const saving = this.busy === "platform:resolve";
+    return html`<dialog class="dialog admin-sdk-dialog" aria-labelledby="admin-sdk-title" ${modal(this.closeSdkResolution)}>
+      <header class="dialog__header"><h2 id="admin-sdk-title">${this.label("platform.resolveTitle", "SDK account owner")}</h2></header>
+      <div class="dialog__body stack">
+        <dl class="spec-list"><div><dt>${this.label("platform.currentSessions", "Current sessions")}</dt><dd>${this.label("platform.clearSessions", "Clear")}</dd></div>
+          <div><dt>${this.label("platform.region", "Region")}</dt><dd>${this.label("platform.reverify", "Verification required")}</dd></div></dl>
+        <div class="list" role="radiogroup" aria-labelledby="admin-sdk-title">${draft.conflict.accounts.map((account) => html`
+          <label class="list-item list-item--three-line"><input type="radio" name="sdk-owner" value=${account.id} .checked=${draft.accountId === account.id} ?disabled=${saving}
+            @change=${() => { this.sdkResolution = { ...draft, accountId: account.id }; }}>
+            <span class="list-item__body"><span class="list-item__headline">${account.label}</span><span class="list-item__supporting">${account.email}</span></span>
+          </label>`)}</div>
+      </div>
+      <footer class="dialog__actions"><button class="button button--text" ?disabled=${saving} @click=${this.closeSdkResolution}>${this.label("history.close", "Close")}</button>
+        <button class="button" ?disabled=${!!this.busy || !draft.accountId} @click=${() => this.resolveSdkOwner()}>${this.label("platform.resolve", "Confirm owner")}</button></footer>
+    </dialog>`;
+  }
+  private renderPlatformForm() {
+    if (!this.platformForm) return nothing;
+    const saving = this.busy === "platform:save";
+    const editing = this.platformEdit;
+    return html`<dialog class="dialog admin-platform-dialog" aria-labelledby="admin-platform-title" ${modal(this.closePlatformForm)}>
+      <header class="dialog__header"><h2 id="admin-platform-title">${editing ? this.label("platform.edit", "Edit") : this.label("platform.add", "Add email account")}</h2></header>
+      <div class="dialog__body"><form id="admin-platform-form" class="stack" novalidate @submit=${(event: SubmitEvent) => this.savePlatformAccount(event)}>
+        <md-outlined-text-field ?disabled=${saving} id="admin-platform-label" name="label" .value=${editing?.label ?? ""} required ?error=${this.platformMissing.includes("label")} label=${this.label("platform.label", "Label")}></md-outlined-text-field>
+        <md-outlined-text-field ?disabled=${saving} id="admin-platform-email" name="email" .value=${editing?.email ?? ""} ?readonly=${!!editing} type="email" autocomplete="off" required ?error=${this.platformMissing.includes("email")} label=${this.label("platform.email", "Email")}></md-outlined-text-field>
+        <md-outlined-text-field ?disabled=${saving} id="admin-platform-password" name="password" type="password" autocomplete="new-password" ?required=${!editing} ?error=${this.platformMissing.includes("password")} label=${editing ? this.label("platform.newPassword", "New password (optional)") : this.label("platform.password", "Password")}></md-outlined-text-field>
+        <div class="cluster" role="status">${this.platformMissing.length ? html`<span>${this.label("platform.checkFields", "Check fields")}</span>${this.platformMissing.map((name) => html`<a href=${`#admin-platform-${name}`} @click=${(event: Event) => {
+      event.preventDefault();
+      this.querySelector<HTMLElement>(`#admin-platform-${name}`)!.focus();
+    }}>${this.label(`platform.${name}`, name)}</a>`)}` : nothing}</div>
+      </form></div>
+      <footer class="dialog__actions">
+        <button class="button button--text" ?disabled=${saving} @click=${this.closePlatformForm}>${this.label("history.close", "Close")}</button>
+        <button class="button" type="submit" form="admin-platform-form" ?disabled=${!!this.busy}>${saving ? this.label("platform.saving", "Saving") : this.label("platform.save", "Save")}</button>
+      </footer>
+    </dialog>`;
+  }
+  private closeArchives = () => {
+    this.archiveRequests.cancel();
+    this.archive = null;
+  };
+  private async loadArchives(region: string, options: { mode?: "daily" | "final"; day?: string; target?: string } = {}) {
+    const { mode = "daily", day = new Date(Date.now() + 9 * 36e5).toISOString().slice(0, 10), target = "" } = options;
+    const signal = this.archiveRequests.begin();
+    const targets = this.archive?.region === region && this.archive.mode === mode ? this.archive.targets : [];
+    this.archive = { region, day, mode, targets, selected: target, phase: "loading", snapshots: [] };
+    try {
+      const [kind, id] = target.split("/");
+      const path = mode === "daily" ? `collector-archives/${region}?day=${encodeURIComponent(day)}`
+        : `collector-final-archives/${region}${target ? `?kind=${kind}&id=${id}` : ""}`;
+      const result = await this.request(`/api/v1/admin/${path}`, { signal });
+      if (this.archiveRequests.current(signal)) {
+        const selected = result.selected as { kind: string; id: string } | null;
+        this.archive = { region, day, mode, targets: mode === "final" ? result.targets as ArchiveState["targets"] : [],
+          selected: selected ? `${selected.kind}/${selected.id}` : "", phase: "ready", snapshots: result.snapshots as ArchiveState["snapshots"] };
+      }
+    } catch {
+      if (this.archiveRequests.current(signal)) this.archive = { region, day, mode, targets, selected: target, phase: "error", snapshots: [] };
+    }
+  }
+  private archiveBoard(key: string) {
+    const [kind, id, board, start] = key.split("/");
+    const path = kind === "event" ? `archives.${board}` : `archives.${kind}`;
+    return this.label(path, path).replace("{id}", id).replace("{board}", board).replace("{start}", start);
+  }
+  private renderArchives() {
+    const archive = this.archive;
+    if (!archive) return nothing;
+    const time = new Intl.DateTimeFormat(preferredLocale(), { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Tokyo" });
+    return html`<dialog class="dialog admin-archive-dialog" data-kind=${archive.mode} aria-labelledby="admin-archive-title" ${modal(this.closeArchives)}>
+      <header class="dialog__header">
+        <h2 id="admin-archive-title">${archive.mode === "final" ? this.label("archives.final", "Final archives") : this.label("archives.title", "Daily archive")} · ${archive.region.toUpperCase()}</h2>
+      </header>
+      <div class="dialog__body stack">
+        <form class="cluster" @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget as HTMLFormElement);
+          void this.loadArchives(archive.region, { mode: archive.mode, day: String(form.get("day") ?? archive.day), target: String(form.get("target") ?? "") });
+        }}>
+          ${archive.mode === "daily" ? html`<md-outlined-text-field type="date" name="day" required .value=${archive.day}
+            label=${this.label("archives.day", "Date (Japan time)")}></md-outlined-text-field>`
+            : keyed(archive.targets, html`<md-outlined-select name="target" label=${this.label("archives.target", "Event / season")} .value=${archive.selected} ?disabled=${!archive.targets.length}>
+              ${archive.targets.map((target) => {
+                const label = this.label(`archives.${target.kind}Target`, target.kind);
+                const compact = target.id.length > 12 ? `${target.id.slice(0, 6)}…${target.id.slice(-4)}` : target.id;
+                return html`<md-select-option value=${`${target.kind}/${target.id}`} display-text=${label.replace("{id}", compact)} ?selected=${archive.selected === `${target.kind}/${target.id}`}><div slot="headline">${label.replace("{id}", target.id)} · ${target.completed}/${target.total}</div></md-select-option>`;
+              })}
+            </md-outlined-select>`)}
+          <button class="button button--tonal" type="submit">${this.label("archives.view", "View")}</button>
+        </form>
+        <div class="table-scroll" aria-busy=${archive.phase === "loading"}>
+          <table class="data-table">
+            <thead><tr><th>${this.label("archives.board", "Board")}</th>${archive.mode === "final" ? html`<th>${this.label("pool.state", "State")}</th><th>${this.label("archives.due", "Available (Japan time)")}</th>` : nothing}<th>${this.label("archives.observed", "Collected")}</th></tr></thead>
+            <tbody>${archive.phase !== "ready" || !archive.snapshots.length ? html`<tr><td colspan=${archive.mode === "final" ? 4 : 2} role="status">${archive.phase === "loading" ? this.label("loading", "Loading") : archive.phase === "error" ? this.label("archives.error", "Archive unavailable. Try again.") : archive.mode === "final" ? this.label("archives.noTargets", "No final targets") : this.label("archives.empty", "No snapshots")}</td></tr>` : archive.snapshots.map((snapshot) => html`<tr><td>${this.archiveBoard(snapshot.boardKey)}</td>${archive.mode === "final" ? html`<td>${this.label(`archives.${snapshot.state}`, snapshot.state!)}</td><td>${time.format(snapshot.dueAtMs!)}</td>` : nothing}<td>${snapshot.observedAtMs === null ? "—" : time.format(snapshot.observedAtMs)}</td></tr>`)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <footer class="dialog__actions"><button class="button button--text" @click=${this.closeArchives}>${this.label("history.close", "Close")}</button></footer>
+    </dialog>`;
+  }
   private renderCollectorPool() {
     const time = (value: unknown) => (value ? this.date(value) : "—");
     return html`
@@ -1060,6 +1482,8 @@ export class AdminWorkspace extends LitElement {
           <h2>${this.label("pool.title", "Account pool")}</h2>
           <button class="icon-button" aria-label=${this.label("pool.refresh", "Refresh")} @click=${this.loadCollectorPool}>${icon("refresh", 20)}</button>
         </header>
+        ${this.renderPlatformAccounts()}
+        ${this.renderGuestAccounts()}
         ${this.collectorPool.map((pool) => {
           const region = String(pool.region), accounts = (pool.accounts ?? []) as Value[];
           return this.disclosure({
@@ -1067,6 +1491,7 @@ export class AdminWorkspace extends LitElement {
             className: "admin-resource-servers",
             label: `${region.toUpperCase()} / ${this.label(`pool.status.${String(pool.status)}`, String(pool.status))} / ${accounts.filter((row) => row.status === "ready" || row.status === "working").length}/${accounts.length}`,
             content: html`
+              <div class="cluster"><button class="button button--tonal admin-archive-launch" @click=${() => void this.loadArchives(region)}>${this.label("archives.title", "Daily archive")}</button><button class="button button--tonal admin-archive-launch" @click=${() => void this.loadArchives(region, { mode: "final" })}>${this.label("archives.final", "Final archives")}</button></div>
               <div class="table-scroll"><table class="data-table">
                 <thead><tr>
                   <th>${this.label("pool.account", "Account")}</th><th>${this.label("pool.state", "State")}</th>
@@ -4401,7 +4826,7 @@ export class AdminWorkspace extends LitElement {
             }
           </main>
         </div>
-        ${this.renderUserDetails()}${this.renderHistory()}${this.renderCreation()}
+        ${this.renderUserDetails()}${this.renderHistory()}${this.renderCreation()}${this.renderArchives()}${this.renderPlatformForm()}${this.renderGuestForm()}${this.renderSdkResolution()}
       </section>
     `;
   }
