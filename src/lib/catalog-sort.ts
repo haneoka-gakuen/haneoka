@@ -31,7 +31,7 @@ const LIVE_DECK_FIELDS: readonly SortField[] = [
 export function catalogSortOptions(
   presentation: CatalogSortPresentation,
   label: (key: string, fallback: string, alias?: string) => string,
-  options: { nativeScore?: boolean; liveDeck?: boolean } = {},
+  options: { nativeScore?: boolean; liveDeck?: boolean; ranks?: boolean } = {},
 ): { value: string; label: string }[] {
   const fields: SortField[] = presentation === "song"
     ? [
@@ -50,6 +50,12 @@ export function catalogSortOptions(
         ["n", "catalog.analysis.fields.n", "Notes", "n"],
         ["nps", "catalog.analysis.fields.nps", "NPS", "nps"],
         ["sr", "catalog.analysis.fields.sr", "Skill ratio", "sr"],
+        ...(options.ranks
+          ? [
+              ...["C", "B", "A", "S", "SS"].map((rank): SortField => [`rank${rank}`, "catalog.analysis.fields.metaRankScore", "{rank} score"]),
+              ["deckPower", "catalog.analysis.fields.metaDeckPower", "Power needed", "metaDeckPower"] as const,
+            ]
+          : []),
         ["category", "common.fields.category", "Category", "category"],
         ["composer", "catalog.songs.fields.composer", "Composer", "composer"],
         ["lyrics", "catalog.songs.fields.lyrics", "Lyrics", "lyrics"],
@@ -70,7 +76,10 @@ export function catalogSortOptions(
             ] as const),
         RELEASE,
       ];
-  return fields.map(([value, key, fallback, alias]) => ({ value, label: label(key, fallback, alias) }));
+  return fields.map(([value, key, fallback, alias]) => ({
+    value,
+    label: /^rank(?:C|B|A|S|SS)$/u.test(value) ? label(key, fallback, alias).replace("{rank}", value.slice(4)) : label(key, fallback, alias),
+  }));
 }
 
 export function compareCatalogSort(

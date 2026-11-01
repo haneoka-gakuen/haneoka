@@ -2285,6 +2285,7 @@ export class CatalogScreen extends LitElement {
   }
   updated() {
     this.scheduleRelativeTimeRefresh();
+    this.loadSongChartRates();
     // Focus containment follows whichever overlay is on top: the detail pane
     // wins over the filter panel, and a docked filter panel is not an overlay
     // at all, so it is never trapped.
@@ -2989,6 +2990,7 @@ export class CatalogScreen extends LitElement {
       this.settings.locale,
       this.selectedSongDifficulty,
       this.settings.resource === "song-meta" ? `${this.metaMode}|${this.metaTier}|${this.metaBand}|${this.metaFrontier}` : "",
+      Object.keys(this.chartRates).join(","),
       JSON.stringify(this.facets),
     ].join("\u0000");
     if (this.resultCache?.key === key && this.resultCache.items.length <= this.expandedItems().length)
@@ -3331,7 +3333,7 @@ export class CatalogScreen extends LitElement {
     }
     return chart[key] === null || chart[key] === undefined ? Number.NaN : Number(chart[key]);
   }
-  private orderRateCache = new WeakMap<Item, { deck: Deck; rates: number[] }>();
+  private orderRateCache = new WeakMap<Item, { deck: Deck; rows: unknown; rates: number[] }>();
   private songTimingSegments(item: Item): Array<GekisoTimingSegment | undefined> {
     const song = this.itemSongMeta(item)?.[String(item.musicId)] as Item | undefined;
     const difficulty = song?.[String(item.__difficultyIndex ?? 0)] as Item | undefined;
@@ -3346,7 +3348,10 @@ export class CatalogScreen extends LitElement {
    * per unit of power in each skill order. */
   private deckChart(item: Item) {
     const rows = asItems(item.difficulty);
-    const difficulty = rows[0]?.difficulty ?? item.__difficultyIndex;
+    const difficulty = this.profile.perDifficulty
+      ? (rows[0]?.difficulty ?? item.__difficultyIndex)
+      : (rows.find((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty)?.difficulty ??
+        rows.findIndex((row, index) => difficultyKey(row, index) === this.selectedSongDifficulty));
     const table = this.chartRates[this.itemSourceServer(item) as OfficialCatalogServer];
     const rates = table?.charts[`${item.musicId}:${difficulty}`];
     if (!table || !rates) return null;
@@ -3355,11 +3360,30 @@ export class CatalogScreen extends LitElement {
       return !rank ? Number.NaN : this.metaMode === "gekisou" ? roomRequiredScore(rank[2], this.deck.room) : rank[1];
     };
     let cached = this.orderRateCache.get(item);
-    if (cached?.deck !== this.deck) {
-      cached = { deck: this.deck, rates: slotOrderRates(liveWeights(rates, this.deck.great / 100, table.greatFactor), this.deck.slots) };
+    if (cached?.deck !== this.deck || cached.rows !== rates) {
+      cached = { deck: this.deck, rows: rates, rates: slotOrderRates(liveWeights(rates, this.deck.great / 100, table.greatFactor), this.deck.slots) };
       this.orderRateCache.set(item, cached);
     }
     return { table, rates, required, orders: cached.rates };
+  }
+  private chartRatesRequested = new Set<string>();
+  /** The songs table's rank thresholds and power need the chart rates song analysis embeds; load them on demand. */
+  private loadSongChartRates() {
+    const server = this.dataServer() as OfficialCatalogServer;
+    if (
+      this.settings.resource !== "songs" || this.settings.entityContext || this.chartRates[server] ||
+      this.chartRatesRequested.has(server) || (this.view !== "table" && !DECK_METRICS.includes(this.sort)) ||
+      !OFFICIAL_CATALOG_SERVERS.includes(server)
+    ) return;
+    this.chartRatesRequested.add(server);
+    void fetch(`/data/chart-rates/${server}.json`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
+      .then((table: ChartRateTable) => {
+        this.chartRates = { ...this.chartRates, [server]: table };
+        this.metaView = { ...this.metaView };
+        this.requestUpdate();
+      })
+      .catch(() => this.chartRatesRequested.delete(server));
   }
   /** The chosen event, or the latest one that has started. */
   private deckEvent(table: ChartRateTable) {
@@ -5344,6 +5368,7 @@ export class CatalogScreen extends LitElement {
       return catalogSortOptions(presentation, (key, fallback, alias) => this.label(alias ?? key, fallback), {
         nativeScore: presentation === "song" && this.hasNativeMetaReference(),
         liveDeck: this.settings.resource === "song-meta" && this.metaMode === "live",
+        ranks: this.settings.resource === "songs",
       });
     const options: Record<Exclude<Presentation, CatalogSortPresentation>, Array<[string, string, string]>> = {
       character: [
