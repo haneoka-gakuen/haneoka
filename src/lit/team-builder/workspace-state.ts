@@ -6,7 +6,7 @@
 import { readSongRules } from "../../lib/team-builder/arena";
 import { legacyRewardPlan } from "../../lib/team-builder/reward-plan";
 import type { SongRef } from "../../lib/team-builder/engine/api";
-import { DEFAULT_FARMING, DEFAULT_SETTINGS, type BuildSettings, type FarmingSettings } from "./types";
+import { CUSTOM_ACCURACY, DEFAULT_FARMING, DEFAULT_SETTINGS, type BuildSettings, type FarmingSettings } from "./types";
 
 export const chartKey = (song: SongRef) => `${song.songId}:${song.difficulty}`;
 export const uniqueCharts = (songs: readonly SongRef[]): SongRef[] =>
@@ -34,6 +34,9 @@ export function resolveLuckSamples(settings: Pick<BuildSettings,
 
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
+  // Required cards hold for this visit only; custom accuracy is unavailable for now.
+  settings.required = { members: [], snaps: [] };
+  if (!CUSTOM_ACCURACY) settings.playMode = "ap";
   settings.gekisoSamplingMode = stored.gekisoSamplingMode === "manual" ? "manual" : "auto";
   settings.ptSamplingMode = stored.ptSamplingMode === "manual" ? "manual" : "auto";
   const { attribute, ...manualEvent } = settings.manualEvent as typeof settings.manualEvent & { attribute?: number | null };
@@ -51,7 +54,7 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): Build
       requireGrowth: !custom, includeMemory: custom,
     };
   }
-  settings.farming = { ...structuredClone(DEFAULT_FARMING), ...settings.farming };
+  settings.farming = { ...structuredClone(DEFAULT_FARMING), ...settings.farming, ...(CUSTOM_ACCURACY ? {} : { playMode: "ap" as const }) };
   if (settings.farming.weighted && !settings.farming.rewardPlan) settings.farming.rewardPlan = legacyRewardPlan(settings.farming);
   settings.rewardMode = mode === "plan" && !settings.manualEventEnabled ? "plan" : farmingSettings(settings).rewardMode;
   return settings;

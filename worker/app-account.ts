@@ -14,7 +14,8 @@ import { createAuth, getAuthSession } from "./auth";
  * captcha and providers), the page asks for a one-time code bound to that
  * challenge and hands it to the app's callback. The app exchanges the code
  * and its verifier for a session of its own, sent as a bearer token and
- * revocable like any other session.
+ * revocable like any other session. The app's web view exchanges the code with
+ * `cookie: true` and is signed in by the site's own session cookie instead.
  *
  * Game accounts: a signed-in reader links the Our Notes players they import
  * in the app (`community_game_account`, provider `our-notes`, region = the
@@ -182,7 +183,38 @@ const token = async (request: Request, env: Env): Promise<Response> => {
   const created = await context.internalAdapter.createSession(row.userId, false, {
     userAgent: (request.headers.get("User-Agent") || "Haneoka app").slice(0, 256),
   });
-  return json({ token: created.token, expiresAt: new Date(created.expiresAt).toISOString() });
+  const response = json({ token: created.token, expiresAt: new Date(created.expiresAt).toISOString() });
+  // The app's web view signs in as a page: same session, carried as the site's own cookie.
+  if (body?.cookie === true && sameOrigin(request))
+    response.headers.append("Set-Cookie", await sessionCookie(context, created.token, new Date(created.expiresAt)));
+  return response;
+};
+
+/** better-auth's signed session cookie: `token.base64(HMAC-SHA256(secret, token))`, URI-encoded. */
+const sessionCookie = async (
+  context: Awaited<ReturnType<typeof createAuth>["$context"]>,
+  value: string,
+  expiresAt: Date,
+): Promise<string> => {
+  const { name, attributes } = context.authCookies.sessionToken;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(context.secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
+  const parts = [
+    `${name}=${encodeURIComponent(`${value}.${btoa(String.fromCharCode(...signature))}`)}`,
+    `Max-Age=${Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))}`,
+    `Path=${attributes.path || "/"}`,
+  ];
+  if (attributes.domain) parts.push(`Domain=${attributes.domain}`);
+  if (attributes.httpOnly) parts.push("HttpOnly");
+  if (attributes.secure) parts.push("Secure");
+  if (attributes.sameSite) parts.push(`SameSite=${attributes.sameSite[0]!.toUpperCase()}${attributes.sameSite.slice(1)}`);
+  return parts.join("; ");
 };
 
 const webSession = async (request: Request, env: Env, url: URL): Promise<Response> => {

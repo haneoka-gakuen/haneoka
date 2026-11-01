@@ -23,6 +23,7 @@ import { selectionPane } from "../ui/selection-pane";
 import type { TeamBuilder } from "../team-builder";
 import { ANDROID_CHANNELS, readAndroidFiles } from "@haneoka/game-data-exporter";
 import { prepareScreenshot, FULL_SCREENSHOT, type ScreenshotCrop } from "../../lib/team-builder/screenshot-image";
+import { appCall, inApp } from "../../lib/app-bridge";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -673,6 +674,27 @@ export class ImportController {
     );
   }
 
+  /** A save the app's save page sent here: the import opens on it. */
+  async takePending() {
+    const pending = await appCall("pendingBoxImport", {}).catch(() => null);
+    if (!pending) return;
+    this.openBox();
+    if (this.box) await this.parse({ text: pending.text });
+  }
+
+  private async appAccount() {
+    if (!this.box?.server) return;
+    const generation = this.generation;
+    try {
+      const result = await appCall("boxAccount", { server: this.box.server });
+      if (result && generation === this.generation && this.box) await this.parse({ text: result.text });
+    } catch {
+      if (generation !== this.generation || !this.box) return;
+      this.box = { ...this.box, error: "device_read_failed" };
+      this.host.requestUpdate();
+    }
+  }
+
   render(): TemplateResult | typeof nothing {
     const host = this.host;
     if (this.box) {
@@ -692,7 +714,8 @@ export class ImportController {
             this.closeBox();
             location.assign(`/${host.locale}/gacha-history/`);
           },
-          appHref: `/${host.locale}/download/`,
+          appHref: inApp() ? undefined : `/${host.locale}/download/`,
+          appAccount: inApp() ? () => void this.appAccount() : undefined,
           folder: { open: (event) => void this.chooseFolder(event, "folder"), input: this.folderInput("folder") },
           backup: this.renderBackup(),
           sourceStatus: this.sourceStatus,
@@ -759,7 +782,7 @@ export class ImportController {
             if (files.length) void this.parse({ files });
           },
           screenshots: () => this.openScreenshots(),
-          android: () => void this.android(),
+          android: inApp() ? undefined : () => void this.android(),
           channel: (value) => {
             if (
               this.box &&

@@ -185,6 +185,14 @@
   color: var(--md-sys-color-on-surface);
   text-decoration: none;
 }
+button.detail-object {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  cursor: pointer;
+}
 .detail-object > img {
   width: 36px;
   height: 36px;

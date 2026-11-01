@@ -6,6 +6,7 @@
 import type { TeamBuilder } from "../team-builder";
 import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import type { EngineHit, SongRef } from "../../lib/team-builder/engine/api";
+import { CUSTOM_ACCURACY } from "./types";
 import { canonical } from "../../lib/team-builder/pt-recommendation";
 import {
   acceptComparisonResult,
@@ -56,6 +57,7 @@ export class SongComparison {
   }
   restore() {
     this.settings = readComparisonSettings(this.host.view?.prefs[PREF]);
+    if (!CUSTOM_ACCURACY && this.settings.mode === "custom") this.settings.mode = "ap";
     this.sync();
   }
   get effectiveSettings(): ComparisonSettings {

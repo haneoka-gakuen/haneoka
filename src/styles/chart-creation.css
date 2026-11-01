@@ -324,7 +324,7 @@
   }
 }
 @layer pages {
-  chart-creation-workspace:fullscreen {
+  chart-creation-workspace:is(:fullscreen, [data-app-fullscreen]) {
     block-size: 100dvh;
     inline-size: 100vw;
     background: var(--md-sys-color-surface);

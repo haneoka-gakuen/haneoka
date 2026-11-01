@@ -63,6 +63,7 @@ export interface SegmentOption<T extends string> {
   label: string;
   shortcut?: string;
   icon?: string;
+  disabled?: boolean;
 }
 
 /**
@@ -125,7 +126,9 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
       @keydown=${rovingKeydown(
         options.options.map((option) => option.value),
         options.value,
-        options.onSelect,
+        (value) => {
+          if (!options.options.find((option) => option.value === value)?.disabled) options.onSelect(value);
+        },
       )}
     >
       ${options.options.map(
@@ -137,6 +140,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
             aria-label=${options.iconOnly ? option.label : nothing}
             title=${option.shortcut ? `${option.label} (${option.shortcut})` : options.iconOnly ? option.label : nothing}
             tabindex=${option === tabStop ? "0" : "-1"}
+            ?disabled=${option.disabled}
             @click=${() => options.onSelect(option.value)}
           >
             ${option.icon ? icon(option.icon, 20) : nothing}

@@ -26,6 +26,7 @@ import { readCompanionHistory } from "../lib/gacha-history-device";
 import { downloadBlob } from "../lib/canvas-capture";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { formatDate } from "../lib/date-format";
+import { appCall, inApp } from "../lib/app-bridge";
 
 class GachaHistoryWorkspace extends HTMLElement {
   private records: StoredHistory[] = [];
@@ -84,6 +85,7 @@ class GachaHistoryWorkspace extends HTMLElement {
       void this.cloud.requestRefresh(accountKey);
     });
     this.on("gacha-import-source", ({ source }) => this.source(source));
+    this.on("gacha-refresh", ({ accountKey }) => void this.game(accountKey));
     this.on("gacha-catalog-retry", () => {
       void this.loadCatalog();
     });
@@ -158,8 +160,17 @@ class GachaHistoryWorkspace extends HTMLElement {
     } catch {
       /* Start with an empty conversion amount. */
     }
-    void this.reload().then(() => {
-      if (this.isConnected) this.cloud.start();
+    void this.reload().then(async () => {
+      if (!this.isConnected) return;
+      this.cloud.start();
+      // History the app's save page read from the game server.
+      if (!inApp()) return;
+      const pending = await appCall("pendingGachaHistory", {}).catch(() => null);
+      if (pending?.files.length)
+        await this.importFiles(
+          pending.files.map((file) => new File([file.text], file.name, { type: "application/json" })),
+          true,
+        );
     });
   }
   disconnectedCallback() {
@@ -192,6 +203,10 @@ class GachaHistoryWorkspace extends HTMLElement {
     }
     if (source === "adb") {
       void this.adb();
+      return;
+    }
+    if (source === "game") {
+      void this.game();
       return;
     }
     const input = document.createElement("input");
@@ -228,6 +243,20 @@ class GachaHistoryWorkspace extends HTMLElement {
       this.error = this.t("errorImportInvalid");
     } finally {
       this.busy = false;
+      if (this.isConnected) this.update();
+    }
+  }
+  private async game(key?: string) {
+    if (this.busy) return;
+    try {
+      const result = await appCall("gachaHistory", key ? { key } : {});
+      if (result?.files.length)
+        await this.importFiles(
+          result.files.map((file) => new File([file.text], file.name, { type: "application/json" })),
+          true,
+        );
+    } catch {
+      this.error = this.t("errorImportInvalid");
       if (this.isConnected) this.update();
     }
   }
@@ -345,13 +374,14 @@ class GachaHistoryWorkspace extends HTMLElement {
     view.error = this.error;
     view.canImport = true;
     view.canExport = !!snapshot;
-    view.canRefresh = false;
+    view.canRefresh = inApp() && !!snapshot;
     view.importSources = [
+      ...(inApp() ? ["game" as const] : []),
       ...(this.records.length ? ["saved" as const] : []),
       "files",
       ...(this.usb?.usbAvailable() ? ["adb" as const] : []),
     ];
-    view.showAppLink = true;
+    view.showAppLink = !inApp();
     view.catalogLoading = this.catalogRequests.has(server);
     view.catalogError =
       this.catalogErrors.get(server) || (snapshot?.batches.length && !catalog ? this.t("errorCatalogUnavailable") : "");

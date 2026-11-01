@@ -15,6 +15,7 @@ export function renderLocalSaveSourcePicker(options: {
 }) {
   const t = (key: string) => clientText(options.locale, `catalog.gachaHistory.${key}`, "");
   const sources = {
+    game: { label: t("gameSource"), icon: icon("sports_esports") },
     saved: { label: t("savedSource"), icon: icon("account_circle") },
     files: { label: t("filesSource"), icon: icon("folder_open") },
     adb: { label: t("adbSource"), icon: icon("usb") },
@@ -35,7 +36,7 @@ export function renderLocalSaveSourcePicker(options: {
                   <span class="list-item__body">
                     <span class="list-item__headline">${sources[source].label}</span>
                     ${
-                      options.historyGuidance && source !== "saved"
+                      options.historyGuidance && (source === "files" || source === "adb")
                         ? html`
                             <span class="list-item__supporting">
                               ${t(source === "adb" ? "usbHistoryHelp" : "historyFilesHelp")}

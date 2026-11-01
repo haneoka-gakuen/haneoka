@@ -11,6 +11,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TeamBuilder } from "../team-builder";
 import { accordion } from "../ui/accordion";
 import { sectionHeading } from "./catalog";
+import { CUSTOM_ACCURACY } from "./types";
 import { availableOnServer, songMetrics, type ComparisonRow } from "../../lib/team-builder/song-comparison";
 import { memberEventPercent, snapEventPercent } from "../../lib/team-builder/engine/power";
 import { resultSong } from "./results";
@@ -294,7 +295,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     id: string,
     label: string,
     value: string,
-    options: { value: string; label: string }[],
+    options: { value: string; label: string; disabled?: boolean }[],
     change: (value: string) => void,
   ) => html`
     <md-outlined-select
@@ -306,7 +307,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     >
       ${options.map(
         (option) => html`
-          <md-select-option .value=${option.value} ?selected=${value === option.value}>
+          <md-select-option .value=${option.value} ?selected=${value === option.value} ?disabled=${option.disabled}>
             <div slot="headline">${option.label}</div>
           </md-select-option>
         `,
@@ -471,7 +472,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
           [
             { value: "", label: t("select") },
             { value: "ap", label: t("ap") },
-            { value: "custom", label: t("custom") },
+            { value: "custom", label: t("custom"), disabled: !CUSTOM_ACCURACY },
           ],
           (value) => c.update({ mode: value === "ap" || value === "custom" ? value : null }),
         )}

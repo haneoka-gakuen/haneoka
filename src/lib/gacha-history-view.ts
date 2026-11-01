@@ -98,4 +98,4 @@ export interface GachaHistoryImageFile {
   filename: string;
 }
 
-export type GachaHistoryImportSource = "files" | "adb" | "saved";
+export type GachaHistoryImportSource = "game" | "files" | "adb" | "saved";

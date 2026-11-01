@@ -235,6 +235,10 @@
   color: var(--md-sys-color-on-secondary);
   background: var(--md-sys-color-secondary);
 }
+.segmented > button:disabled {
+  color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+}
 /* Compact toolbar controls keep their intrinsic width. */
 .segmented--icon,
 .segmented--compact {

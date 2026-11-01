@@ -120,7 +120,8 @@ function baselineBar(host: TeamBuilder, ready: boolean) {
       </button>
     `;
   const { members, snaps, leader } = baseline.team;
-  const order = [leader, ...[0, 1, 2, 3, 4].filter((index) => index !== leader)];
+  const order = [0, 1, 2, 3, 4].filter((index) => index !== leader);
+  order.splice(2, 0, leader);
   return html`
     <div class="tb-baseline cluster">
       <span class="tb-baseline__label">${host.t("baseline", "Baseline")}</span>
@@ -769,7 +770,11 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                   ${host.t("sc.useTeam", "Compare songs with this team")}
                                 </button>
                                 <div class="tb-saved__cards">
-                                  ${team.members.map((id) => {
+                                  ${[
+                                    ...team.members.filter((id) => id !== team.leader).slice(0, 2),
+                                    ...team.members.filter((id) => id === team.leader),
+                                    ...team.members.filter((id) => id !== team.leader).slice(2),
+                                  ].map((id) => {
                                     const options = catalog.cardOptions("members", id);
                                     return options
                                       ? html`

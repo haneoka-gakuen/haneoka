@@ -14,6 +14,7 @@ import { RequestScope } from "../lib/request-scope";
 import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 import { snackbar } from "../lib/snackbar";
+import { appCall, inApp, type DeviceSave } from "../lib/app-bridge";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
 
@@ -66,6 +67,7 @@ export class AccountWorkspace extends LitElement {
     accounts: { state: true },
     appeals: { state: true },
     games: { state: true },
+    deviceSaves: { state: true },
     relationships: { state: true },
     draft: { state: true },
     removing: { state: true },
@@ -92,6 +94,7 @@ export class AccountWorkspace extends LitElement {
   declare accounts: Value[];
   declare appeals: Value[];
   declare games: Value[];
+  declare deviceSaves: DeviceSave[];
   declare relationships: Value[];
   /** Unsaved name, handle and bio, shown in the public card preview. */
   declare draft: { name?: string; handle?: string; bio?: string };
@@ -128,6 +131,7 @@ export class AccountWorkspace extends LitElement {
     this.accounts = [];
     this.appeals = [];
     this.games = [];
+    this.deviceSaves = [];
     this.relationships = [];
     this.draft = {};
     this.removing = null;
@@ -164,10 +168,22 @@ export class AccountWorkspace extends LitElement {
     if (query.get("deleted") === "1") this.message = this.label("accountDeleted", "Account deleted.");
     if (query.get("linked") === "1") this.message = this.label("accountLinked", "Account linked.");
     void this.load();
+    if (inApp()) {
+      addEventListener("haneoka-app-accounts", this.loadDeviceSaves);
+      void this.loadDeviceSaves();
+    }
   }
+  private readonly loadDeviceSaves = async () => {
+    try {
+      this.deviceSaves = await appCall("gameAccounts", {});
+    } catch {
+      this.deviceSaves = [];
+    }
+  };
 
   private readonly onLocale = () => this.requestUpdate();
   disconnectedCallback() {
+    removeEventListener("haneoka-app-accounts", this.loadDeviceSaves);
     this.lifetime.abort();
     this.loadRequests.cancel();
     this.profileRequests.cancel();
@@ -457,6 +473,16 @@ export class AccountWorkspace extends LitElement {
   }
 
   private async social(provider: string) {
+    if (inApp()) {
+      const session = await this.action(async () => {
+        const grant = await appCall("signIn", { provider });
+        return grant
+          ? this.request("/api/v1/account/app/token", { method: "POST", body: JSON.stringify({ ...grant, cookie: true }) })
+          : null;
+      });
+      if (session?.token) location.assign(this.nextPath());
+      return;
+    }
     const data = await this.action(() =>
       this.request("/api/auth/sign-in/social", {
         method: "POST",
@@ -940,7 +966,7 @@ ${
               `
             : this.session
               ? this.renderAccount()
-              : this.renderAuth()
+              : html`${this.renderAuth()}${this.renderDeviceSaves()}`
         }
       </section>
     `;
@@ -1227,11 +1253,55 @@ ${
     `;
   }
 
+  /** In the app: the saves read on this device, which need no sign-in. */
+  private renderDeviceSaves() {
+    if (!inApp()) return nothing;
+    const locale = preferredLocale();
+    const number = (value: number) => new Intl.NumberFormat(locale).format(value);
+    return html`
+      <section class="surface account-block">
+        ${this.heading("save", this.label("deviceSaves", "Saves on this device"), this.deviceSaves.length)}
+        ${
+          this.deviceSaves.length
+            ? html`
+                <ul class="detail-object-list" role="list">
+                  ${this.deviceSaves.map(
+                    (save) => html`
+                      <li class="account-object">
+                        <button class="detail-object" type="button" @click=${() => void appCall("openGameAccount", { key: save.key })}>
+                          <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
+                          <span>
+                            ${save.name || save.profileId}
+                            <small class="md-body-small">
+                              ${[
+                                save.region ?? "",
+                                save.profileId,
+                                save.rank === null ? "" : clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(save.rank) }),
+                                save.savedAt === null ? "" : formatDate(locale, save.savedAt),
+                              ].filter(Boolean).join(" / ")}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    `,
+                  )}
+                </ul>
+              `
+            : nothing
+        }
+        <button class="button button--tonal" type="button" @click=${() => void appCall("addGameAccount", {})}>
+          ${icon("add", 18)}${this.label("addGameSave", "Read game save")}
+        </button>
+      </section>
+    `;
+  }
+
   private renderGames() {
     const locale = preferredLocale();
     const number = (value: unknown) => new Intl.NumberFormat(locale).format(Number(value));
     const removing = this.removing;
     return html`
+      ${this.renderDeviceSaves()}
       <section class="surface account-block">
         ${this.heading("sports_esports", this.label("gameAccounts", "Game accounts"), this.games.length)}
         ${

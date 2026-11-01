@@ -365,10 +365,12 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
   ].slice(0, 3);
 }
 
+/** Slot order with the leader (slot 0) in the centre, as in the game's formation screen. */
+export const centred = (length: number) => [1, 2, 0, 3, 4].filter((index) => index < length);
+
 export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const catalog = host.catalog!;
-  // The leader stands in the centre, as in the game's formation screen.
-  const order = [1, 2, 0, 3, 4].filter((index) => index < hit.members.length);
+  const order = centred(hit.members.length);
   return html`
     <ol class="tb-formation" aria-label=${host.t("formation", "Formation")}>
       ${order.map((index) => {

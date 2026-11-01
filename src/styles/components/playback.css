@@ -12,7 +12,7 @@
   display: none;
 }
 
-:is(vega-story-stage, chart-simulator):fullscreen .playback-controls {
+:is(vega-story-stage, chart-simulator):is(:fullscreen, [data-app-fullscreen]) .playback-controls {
   padding-bottom: env(safe-area-inset-bottom, 0px);
   background: var(--md-sys-color-surface-container-lowest);
 }

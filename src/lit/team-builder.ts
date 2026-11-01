@@ -70,6 +70,7 @@ import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { availableOnServer } from "../lib/team-builder/song-comparison";
 import { activeSongRules } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
+import { inApp } from "../lib/app-bridge";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -108,6 +109,8 @@ export class TeamBuilder extends LitElement {
   engine: EngineClient | null = null;
   farmResultMode: "recommendation" | "event" | null = null;
   imports: ImportController = new ImportController(this);
+  /** In the app, a save sent from its save page is imported once the Box is ready. */
+  private pendingImportChecked = false;
   pt = new PtController(this);
   songComparison = new SongComparison(this);
   teamGrowth = new TeamGrowthComparison(this);
@@ -346,6 +349,7 @@ export class TeamBuilder extends LitElement {
     facets: {},
   };
   slotFiltersOpen = false;
+  requiredPicker: "members" | "snaps" | null = null;
   notice = "";
   private readonly images = new LazyImages();
   private unsubscribe?: () => void;
@@ -503,6 +507,10 @@ export class TeamBuilder extends LitElement {
   }
   private releaseSearch?: () => void;
   protected updated() {
+    if (inApp() && !this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot) {
+      this.pendingImportChecked = true;
+      void this.imports.takePending();
+    }
     if (!this.isConnected) return;
     if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
       this.engine?.cancel();
@@ -730,7 +738,10 @@ export class TeamBuilder extends LitElement {
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
     this.engine?.prefetch(this.searchSettings.songs);
-    this.write([{ key: SETTINGS_KEY, value: this.settings as unknown as BoxValue }]);
+    if (Object.keys(patch).some((key) => key !== "required")) {
+      const { required: _required, ...stored } = this.settings;
+      this.write([{ key: SETTINGS_KEY, value: stored as unknown as BoxValue }]);
+    }
     this.requestUpdate();
     if (scopeChanged) {
       this.submitted = false;
@@ -833,6 +844,7 @@ export class TeamBuilder extends LitElement {
         ? []
         : [...this.view.members.values()].filter((row) => row.lock && row.use).map((row) => row.cardId)),
       ...s.bindings.map(([member]) => member),
+      ...s.required.members,
       ...(s.leader === null ? [] : [s.leader]),
     ]);
     const fixedSnaps = new Set([
@@ -840,6 +852,7 @@ export class TeamBuilder extends LitElement {
         ? []
         : [...this.view.snaps.values()].filter((row) => row.lock && row.use).map((row) => row.cardId)),
       ...s.bindings.flatMap(([, snap]) => (snap === null ? [] : [snap])),
+      ...s.required.snaps,
     ]);
     return {
       members: base.members.filter((row) =>
@@ -1316,12 +1329,16 @@ export class TeamBuilder extends LitElement {
       goal = { ...goal, eventId: s.manualEvent.templateId!, eventEffects: resolved.effects };
     }
     const theoretical = s.scope === "theoretical";
-    const locked = (kind: "m" | "s") =>
-      theoretical
-        ? []
-        : [...(kind === "m" ? this.view!.members : this.view!.snaps).values()]
-            .filter((row) => row.lock && row.use)
-            .map((row) => `${kind}${row.cardId}`);
+    const locked = (kind: "m" | "s") => [
+      ...new Set([
+        ...(theoretical
+          ? []
+          : [...(kind === "m" ? this.view!.members : this.view!.snaps).values()]
+              .filter((row) => row.lock && row.use)
+              .map((row) => `${kind}${row.cardId}`)),
+        ...(kind === "m" ? s.required.members : s.required.snaps).map((id) => `${kind}${id}`),
+      ]),
+    ];
     return singleSongRequest({
       songRules: this.songRules(goal),
       ...(s.aggregation === "mean" && this.tab !== "arena" && (goal.kind === "score" || goal.kind === "gekiso" || (goal.kind === "event" && goal.route !== "skip")) ? { aggregation: "mean" as const } : {}),

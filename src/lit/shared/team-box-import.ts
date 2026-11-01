@@ -52,6 +52,8 @@ export interface BoxImportDialogActions {
   sourceStatus?: string;
   screenshots?: () => void;
   android?: () => void;
+  /** In the Haneoka App: the game accounts the app reads natively. */
+  appAccount?: () => void;
   channel?: (value: string) => void;
   text: (key: string, fallback: string, params?: Record<string, string | number>) => string;
   card: (kind: "members" | "snapshots", id: number) => TileOptions | null;
@@ -85,6 +87,14 @@ function renderSources(state: BoxImportDialogState, actions: BoxImportDialogActi
   `;
   return html`
     ${group(t("groupSave", "Game save"), t("tagAll", "All progress"), html`
+      ${actions.appAccount
+        ? importSourceRow({
+            glyph: "sports_esports",
+            title: t("appAccount", "Game save"),
+            hint: t("appAccountHint", "This phone, a USB phone, a backup or files"),
+            onClick: actions.appAccount,
+          })
+        : nothing}
       ${importSourceRow({
         glyph: "upload_file",
         title: t("sourceFile", "Save or export file"),
@@ -106,7 +116,7 @@ function renderSources(state: BoxImportDialogState, actions: BoxImportDialogActi
             after: opened("box-backup") ? actions.backup : nothing,
           })
         : nothing}
-      ${importSourceRow({
+      ${actions.android ? importSourceRow({
         glyph: "usb",
         title: t("android", "Read Android phone"),
         hint: t(state.usbReady ? "androidHint" : "androidUnavailable", state.usbReady ? "Connect by USB with debugging on" : "Needs Chrome or Edge on a computer"),
@@ -122,7 +132,7 @@ function renderSources(state: BoxImportDialogState, actions: BoxImportDialogActi
                 <span slot="headline">${t(channel.packageId.endsWith(".official") ? "channelOfficial" : "channelPlay", channel.label)}</span>
               </md-select-option>`)}</md-outlined-select></div>`
           : nothing,
-      })}
+      }) : nothing}
       ${actions.folder
         ? importSourceRow({
             glyph: "folder_open",

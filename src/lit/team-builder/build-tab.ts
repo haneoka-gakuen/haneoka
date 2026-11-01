@@ -11,14 +11,16 @@ import { live } from "lit/directives/live.js";
 import "@material/web/progress/linear-progress.js";
 import type { SongRef } from "../../lib/team-builder/engine/api";
 import { cardRarityName } from "../shared/rarity-icon";
-import { filterChip, iconButton, rovingKeydown, segmented } from "../ui/controls";
+import { filterChip, iconButton, inputChip, rovingKeydown, segmented } from "../ui/controls";
+import { selectionPane } from "../ui/selection-pane";
+import { matchesCardFilters, renderCardFilters } from "./card-filters";
 import { accordion } from "../ui/accordion";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { sectionHeading } from "./catalog";
 import { renderResults } from "./results";
 import { SCORE_GOALS, scoreGoal, scoreText } from "./score-goal";
-import type { BuildSettings, GoalKind, LuckSamplingMode } from "./types";
+import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
 import { farmingConditions, missionSummary, parseOpponents } from "./workspace-state";
 import { ptField } from "./pt-fields";
@@ -418,7 +420,7 @@ export function playSection(
       value: s.playMode,
       options: [
         { value: "ap", label: host.t("playAp", "All Perfect"), icon: "workspace_premium" },
-        { value: "custom", label: host.t("playCustom", "My accuracy"), icon: "tune" },
+        { value: "custom", label: host.t("playCustom", "My accuracy"), icon: "tune", disabled: !CUSTOM_ACCURACY },
       ],
       onSelect: (playMode) => set({ playMode }),
     })}
@@ -484,6 +486,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         : []),
       ...s.bindings.map(([id]) => id),
       ...(s.leader === null ? [] : [s.leader]),
+      ...s.required.members,
     ]),
   ];
   const fixedSnaps = [
@@ -492,9 +495,26 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         ? [...view.snaps.values()].filter((row) => row.use && row.lock).map((row) => row.cardId)
         : []),
       ...s.bindings.flatMap(([, id]) => (id === null ? [] : [id])),
+      ...s.required.snaps,
     ]),
   ];
   const required = fixedMembers.length + fixedSnaps.length;
+  const addRequired = (kind: "members" | "snaps") => html`
+    <div class="tb-field">
+      <span class="tb-field__label">${host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps")}</span>
+      <div class="cluster">
+        <button class="button button--text button--small" type="button" @click=${() => { host.requiredPicker = kind; host.requestUpdate(); }}>
+          ${icon("add", 18)}${host.t("add", "Add card")}
+        </button>
+      </div>
+    </div>
+  `;
+  const fixedChip = (kind: "members" | "snaps", id: number) =>
+    s.required[kind].includes(id)
+      ? inputChip(catalog.cardName(kind, id), host.common("common.actions.remove", "Remove"), () =>
+          set({ required: { ...s.required, [kind]: s.required[kind].filter((item) => item !== id) } }),
+        )
+      : html`<span class="tb-chip">${catalog.cardName(kind, id)}</span>`;
   const ownedMembers = cards.members.map((row) => row.cardId);
   const bands = Object.keys(catalog.data.bands)
     .map(Number)
@@ -532,6 +552,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
           onSelect: (value) => set({ minRarity: Number(value) }),
         })}
       </div>
+      ${addRequired("members")}${s.noSnaps ? nothing : addRequired("snaps")}
       <md-outlined-select
         label=${host.t("leader", "Leader")}
         .value=${s.leader === null ? "" : String(s.leader)}
@@ -712,15 +733,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         required
           ? html`
               <div class="cluster">
-                ${fixedMembers.map(
-                  (id) => html`
-                    <span class="tb-chip">${catalog.cardName("members", id)}</span>
-                  `,
-                )}${fixedSnaps.map(
-                  (id) => html`
-                    <span class="tb-chip">${catalog.cardName("snaps", id)}</span>
-                  `,
-                )}
+                ${fixedMembers.map((id) => fixedChip("members", id))}${fixedSnaps.map((id) => fixedChip("snaps", id))}
               </div>
             `
           : nothing
@@ -739,7 +752,61 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         },
       })}
     </section>
+    ${requiredPicker(host)}
   `;
+}
+
+/** Adds and removes this search's required cards; the pane stays open for several. */
+function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
+  const kind = host.requiredPicker;
+  if (!kind) return nothing;
+  const catalog = host.catalog!;
+  const s = host.searchSettings;
+  const close = () => {
+    host.requiredPicker = null;
+    host.slotFilters = { ...host.slotFilters, query: "", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+    host.slotFiltersOpen = false;
+    host.requestUpdate();
+  };
+  const filters = { ...host.slotFilters, kind };
+  const setFilters = (patch: Partial<typeof filters>) => {
+    host.slotFilters = { ...filters, ...patch };
+    host.requestUpdate();
+  };
+  const owned = kind === "members" ? host.view!.members : host.view!.snaps;
+  const ids = (s.scope === "theoretical" ? Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number) : [...owned.keys()])
+    .filter((id) => matchesCardFilters(host, kind, id, filters))
+    .sort((a, b) => b - a);
+  const chosen = new Set(s.required[kind]);
+  return selectionPane({
+    id: "tb-required-picker",
+    title: host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
+    closeLabel: host.common("common.actions.close", "Close"),
+    close,
+    searchLabel: host.common("common.actions.search", "Search"),
+    filterLabel: host.t("filters", "Filters"),
+    filtersOpen: host.slotFiltersOpen,
+    toggleFilters: () => {
+      host.slotFiltersOpen = !host.slotFiltersOpen;
+      host.requestUpdate();
+    },
+    query: filters.query,
+    search: (value) => setFilters({ query: value }),
+    filterLayout: "facets",
+    filters: renderCardFilters(host, filters, setFilters),
+    kind: kind === "members" ? "member" : "support",
+    items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
+    selected: "",
+    selectedValues: new Set(s.required[kind].map(String)),
+    select: (value) => {
+      const id = Number(value);
+      const list = chosen.has(id) ? s.required[kind].filter((item) => item !== id) : [...s.required[kind], id];
+      host.updateSettings({ required: { ...s.required, [kind]: list } });
+    },
+    countLabel: host.t("cardCount", "{count} cards", { count: ids.length }),
+    emptyLabel: host.t("noMatches", "No cards match"),
+    preview: html``,
+  });
 }
 
 export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): TemplateResult {

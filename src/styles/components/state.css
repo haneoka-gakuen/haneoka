@@ -94,11 +94,11 @@
 }
 
 /* Disabled: Material's 38% on-surface, and no state layer at all. */
-:where(.button, .icon-button, .chip, .tab, .fab):is(:disabled, [aria-disabled="true"]) {
+:where(.button, .icon-button, .chip, .tab, .fab, .segmented > button):is(:disabled, [aria-disabled="true"]) {
   color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
   pointer-events: none;
 }
-:where(.button, .icon-button, .chip, .tab, .fab):is(:disabled, [aria-disabled="true"])::before {
+:where(.button, .icon-button, .chip, .tab, .fab, .segmented > button):is(:disabled, [aria-disabled="true"])::before {
   opacity: 0;
 }
 

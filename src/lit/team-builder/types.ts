@@ -60,6 +60,8 @@ export interface BuildSettings {
   leader: number | null;
   /** member card → snap card (null keeps it empty). */
   bindings: [number, number | null][];
+  /** Cards every team of this search includes, besides those locked in the Box. */
+  required: { members: number[]; snaps: number[] };
   noSnaps: boolean;
   minBonus: number | null;
   attributes: number[];
@@ -93,6 +95,7 @@ export const DEFAULT_FARMING: FarmingSettings = {
   requireGrowth: true, unknownPolicy: "min", includeMemory: false,
   fullRanking: false, k: 1, timeLimit: null, ptCycle: false,
 };
+export const CUSTOM_ACCURACY = false;
 export const DEFAULT_SETTINGS: BuildSettings = {
   aggregation: "individual",
   rewardMode: "recommendation",
@@ -138,6 +141,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   scope: "box",
   leader: null,
   bindings: [],
+  required: { members: [], snaps: [] },
   noSnaps: false,
   minBonus: null,
   attributes: [],
