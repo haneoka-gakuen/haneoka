@@ -2952,6 +2952,8 @@
       "orderGap": "최적과 차이",
       "timingBest": "최적 타이밍",
       "timingNotes": "빠르게 칠 노트",
+      "timingChart": "채보 구간",
+      "timingChartFailed": "채보를 불러올 수 없습니다",
       "timingAdvance": "약 {ms}ms 빠르게",
       "timingStep": "{step}단계",
       "timingChord": "{count}개 동시",
