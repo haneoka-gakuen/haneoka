@@ -28,7 +28,7 @@ import { cleanupUnverifiedAccounts } from "./account-lifecycle";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
-import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
+import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, atlasReferenceSource, atlasReferenceSprite, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
 import { handleEventPointRankingApi } from "./event-point-ranking";
 import { handleAdminRequest } from "./admin";
 import { applySiteSettings, readSiteSettings, testContentAllowed, isPublicResourceServer, restrictedResourceRequest, privateResourceResponse } from "./site-settings";
@@ -2827,6 +2827,16 @@ async function handleReleaseMedia(
     const atlas = await readReleaseJson(env, release, LIVE_ATLAS_SOURCE).catch(() => null) as { outputs?: { path: string }[] } | null;
     relative = renamedAtlasPage(relative, atlas?.outputs ?? []) ?? relative;
   }
+  let servedTree = tree;
+  const reference = tree === "assets" ? atlasReferenceSource(relative) : null;
+  if (reference && !(await releaseEntry(env, release, `assets/${relative}`))) {
+    const atlas = await readReleaseJson(env, release, reference.source).catch(() => null) as { outputs?: { path: string }[] } | null;
+    const sprite = atlasReferenceSprite(reference.name, atlas?.outputs ?? []);
+    if (sprite) {
+      servedTree = "runtime";
+      relative = sprite;
+    }
+  }
   if (stampDiagnostics && !(await testContentAllowed(request, env))) {
     const target = new URL(`/api/v1/servers/${server.slug}/stamps/textless`, request.url);
     target.searchParams.set("release", release.releaseId);
@@ -2853,7 +2863,7 @@ async function handleReleaseMedia(
   }
   const produce = async () => {
     let response: Response | null = null;
-    for (const candidate of localizedReleasePaths(`${tree}/${relative}`)) {
+    for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
       if (gzip) {
         response = await serveReleaseObject(env, request, release, `${candidate}.gz`, "application/octet-stream", {
           cacheControl,

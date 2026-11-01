@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: A Unity source path, object path or atlas page a published app asks for.
+// Input: A Unity source path, object path, atlas page or atlas reference image a published app asks for.
 // Output: Game data later client versions dropped or renamed, so installed apps keep playing.
 // Pos: [Map](L2.md); compatibility beside the release routes in index.ts.
 // Effects/Dependencies: Reads the release's atlas descriptor; the rest is embedded here.
@@ -26,3 +26,17 @@ export function renamedAtlasPage(relative: string, outputs: readonly { path: str
   return match ? match.path.slice("runtime/".length) : null;
 }
 export const LIVE_ATLAS_SOURCE = "metadata/sources/Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2.json";
+
+const ATLAS_REFERENCE = /^Assets\/RawData\/AtlasReferences\/([A-Za-z]+)\/([A-Za-z]+Atlas)\/(?:[^/]+\/)*([^/]+)\.png$/u;
+
+/** Atlas reference images some clients do not package; app profiles ask for them, the atlas has the same sprite. */
+export function atlasReferenceSource(relative: string): { source: string; name: string } | null {
+  const match = ATLAS_REFERENCE.exec(relative);
+  if (!match) return null;
+  const [, category, atlas, name] = match;
+  return { source: `metadata/sources/Assets/AddressableResources/${category}/Images/Atlas/${atlas}.spriteatlasv2.json`, name: name! };
+}
+export function atlasReferenceSprite(name: string, outputs: readonly { path: string }[]): string | null {
+  const match = outputs.find(({ path }) => path.startsWith("runtime/") && path.split("/").at(-1)!.startsWith(`${name}--Sprite-`));
+  return match ? match.path.slice("runtime/".length) : null;
+}
