@@ -2806,15 +2806,17 @@ async function handleReleaseMedia(
   if (releaseValues.length > 1 || (releaseValues[0] !== undefined && !RELEASE_ID_PATTERN.test(releaseValues[0]))) {
     return errorResponse(request, 400, "invalid_release", "Release must be a valid immutable release id");
   }
-  const requested = releaseValues[0];
+  let requested = releaseValues[0];
   let release: Release | null;
   try {
     release = requested ? await requestedRelease(env, server, requested) : await currentRelease(env, server);
   } catch (error) {
-    if (error instanceof ReleaseIdentityError) {
-      return errorResponse(request, error.status, error.code, error.message);
-    }
-    throw error;
+    if (!(error instanceof ReleaseIdentityError)) throw error;
+    // Published apps pinned another server's release to shared story frames;
+    // those files follow this server's current release instead.
+    if (error.code !== "release_identity_missing") return errorResponse(request, error.status, error.code, error.message);
+    requested = undefined;
+    release = await currentRelease(env, server);
   }
   if (!release) {
     return requested
