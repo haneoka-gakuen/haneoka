@@ -177,9 +177,10 @@ function validateFailure(value: unknown): asserts value is OfficialCollectorFail
     "catalog_arena_season", "catalog_arena_league", "catalog_arena_rank"].includes(String(failure.stage))
     || !["Error", "TimeoutError", "SSLError", "SSLCertVerificationError", "OSError", "URLError", "gaierror", "ValueError", "RuntimeError", "VersionError",
       "CatalogRequestError", "CallbackError", "ImportError", "ModuleNotFoundError", "FileNotFoundError", "PermissionError", "JSONDecodeError",
-      "ConnectionError", "ConnectionRefusedError", "ConnectionResetError", "ProtocolError", "H2Error", "http_error", "container_fetch_failed"].includes(String(failure.code))
+      "ConnectionError", "ConnectionRefusedError", "ConnectionResetError", "ProtocolError", "H2Error", "KeyError", "TypeError", "AttributeError", "http_error", "container_fetch_failed"].includes(String(failure.code))
     || failure.httpStatus !== undefined && (typeof failure.httpStatus !== "number" || !Number.isInteger(failure.httpStatus) || failure.httpStatus < 100 || failure.httpStatus > 599)
-    || failure.grpcStatus !== undefined && (typeof failure.grpcStatus !== "string" || !/^[0-9]{1,3}$/u.test(failure.grpcStatus))) throw new Error("invalid_failure");
+    || failure.grpcStatus !== undefined && (typeof failure.grpcStatus !== "string" || !/^[0-9]{1,3}$/u.test(failure.grpcStatus))
+    || failure.location !== undefined && (typeof failure.location !== "string" || !/^[A-Za-z0-9_.-]{1,100}:[1-9][0-9]{0,6}$/u.test(failure.location))) throw new Error("invalid_failure");
 }
 async function responseFailure(response: Response): Promise<OfficialCollectorFailure | null> {
   const reader = response.body?.getReader();
@@ -200,6 +201,7 @@ async function responseFailure(response: Response): Promise<OfficialCollectorFai
     const failure: unknown = object(JSON.parse(new TextDecoder().decode(bytes))).failure;
     validateFailure(failure);
     return { stage: failure.stage, code: failure.code,
+      ...(typeof failure.location === "string" && /^[A-Za-z0-9_.-]{1,100}:[1-9][0-9]{0,6}$/u.test(failure.location) ? { location: failure.location } : {}),
       ...(failure.httpStatus !== undefined ? { httpStatus: failure.httpStatus } : {}),
       ...(failure.grpcStatus !== undefined ? { grpcStatus: failure.grpcStatus } : {}) };
   } catch { return null; }
@@ -554,6 +556,8 @@ export class OfficialRankingCollector extends Container<Env> {
   }
 
   async renewPlatformSessions(region: PlatformRegion): Promise<void> {
+    if (this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG
+      && (JSON.parse(this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG) as { automaticRenewal?: boolean }).automaticRenewal === false) return;
     await this.serialized(async () => {
       if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) return;
       const state = await this.stateFor(region), pool = await this.poolFor(region), now = Date.now();
@@ -1972,6 +1976,7 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.failure !== undefined) validateFailure(update.failure);
           run.complete = true;
           state.lastFailure = update.failure ? { stage: update.failure.stage, code: update.failure.code,
+            ...(update.failure.location ? { location: update.failure.location } : {}),
             ...(update.failure.httpStatus !== undefined ? { httpStatus: update.failure.httpStatus } : {}),
             ...(update.failure.grpcStatus !== undefined ? { grpcStatus: update.failure.grpcStatus } : {}) } : null;
           state.status = state.blockedGeneration ? state.status : state.status === "rate_limited" ? "rate_limited" : update.status;

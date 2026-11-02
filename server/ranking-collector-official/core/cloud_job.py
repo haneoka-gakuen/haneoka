@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import tempfile
 import time
+import traceback
 from types import SimpleNamespace
 from urllib.request import build_opener, ProxyHandler, Request
 from urllib.error import HTTPError
@@ -37,9 +38,13 @@ def failure_info(stage, error, receipt=None):
     names={'TimeoutError','SSLError','SSLCertVerificationError','OSError','URLError','gaierror',
            'ValueError','RuntimeError','VersionError','CatalogRequestError','CallbackError',
            'ImportError','ModuleNotFoundError','FileNotFoundError','PermissionError','JSONDecodeError',
-           'ConnectionError','ConnectionRefusedError','ConnectionResetError','ProtocolError','H2Error'}
+           'ConnectionError','ConnectionRefusedError','ConnectionResetError','ProtocolError','H2Error',
+           'KeyError','TypeError','AttributeError'}
     code=receipt.get('error_type') or type(error).__name__
     result={'stage':stage,'code':code if code in names else 'Error'}
+    frames = traceback.extract_tb(error.__traceback__)
+    if frames:
+        result['location'] = f'{Path(frames[-1].filename).name}:{frames[-1].lineno}'
     status=receipt.get('status')
     if type(status) is int and 100<=status<=599:result['httpStatus']=status
     grpc=str(receipt.get('grpc_status',''))

@@ -256,6 +256,7 @@ export interface OfficialCollectorJob {
 export interface OfficialCollectorFailure {
   stage: string;
   code: string;
+  location?: string;
   httpStatus?: number;
   grpcStatus?: string;
 }

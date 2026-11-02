@@ -136,8 +136,9 @@ def serve():
             except CallbackError as error:
                 self.reply(502, {'error': 'callback_unavailable', 'failure': error.failure})
             except Exception as error:
-                report_failure(job['region'],failure_info('container',error))
-                self.reply(500, {'error': 'guest_job_failed' if guest_job else 'account_job_failed' if account_login else 'collection_failed'})
+                failure = failure_info('container', error)
+                report_failure(job['region'], failure)
+                self.reply(500, {'error': 'guest_job_failed' if guest_job else 'account_job_failed' if account_login else 'collection_failed', 'failure': failure})
             finally:
                 if private_job:
                     lookup_lock.release()
