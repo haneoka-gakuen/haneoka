@@ -54,6 +54,10 @@ release, select `apply_d1_migrations=true`. When Container source or dependencie
 change, also select `build_containers=true` so the sealed image comes from the
 same source as the Worker. These options belong to `deploy-cloudflare.yml`.
 
+Finish secret updates before starting the production publication. A secret
+update creates an active Worker version; keep secrets unchanged until the
+publication has completed its version checks.
+
 After rollout, verify a JP guest and each Global regional role separately;
 queue acceptance, a saved password and successful SDK login are intermediate
 states. The ready state requires successful ranking-permission verification.
@@ -482,9 +486,11 @@ Set the separate Worker secret `OFFICIAL_GLOBAL_LOGIN_CONFIG` with this shape:
 | `playerProfile` | `client_version`, `device_model`, `operating_system`, `client_package`, `global_channel_id`, `brand_id`, `area_id`; optional `initial_data_group` |
 | `masterConfigs` | Existing official Master configuration under `tw`, `en` and `kr` |
 | `apiOrigins` | Optional explicit allowlisted game origin per region |
+| `automaticRenewal` | Defaults to enabled; `false` suspends automatic account renewal while existing sessions continue serving reads |
 
-The saved platform account UUID supplies a stable `udid` and game `device_id` for
-that account across regions. The observed official SDK supports a cached random
+New accounts use their saved UUID as the stable `udid` and game `device_id`;
+migrated accounts retain their recorded SDK device ID across regions.
+The observed official SDK supports a cached random
 UUID when hardware identity is unavailable. Client/channel constants and the
 active email form must match the selected client; they are not borrowed from
 the guest or Google-channel defaults. The login configuration is not returned
