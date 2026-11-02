@@ -228,6 +228,7 @@ export class ChartSimulator extends LitElement {
     server: { type: String },
     locale: { type: String },
     phase: { state: true },
+    overviewPhase: { state: true },
     playing: { state: true },
     mode: { state: true },
     currentTime: { state: true },
@@ -272,7 +273,9 @@ export class ChartSimulator extends LitElement {
   declare label: string;
   declare server: string;
   declare locale: string;
+  /** 3D stage state; the 2D overview has its own `overviewPhase`. */
   declare phase: "loading" | "ready" | "error";
+  declare overviewPhase: "loading" | "ready" | "error";
   declare playing: boolean;
   declare mode: "simple" | "watch";
   declare currentTime: number;
@@ -402,6 +405,7 @@ export class ChartSimulator extends LitElement {
     this.server = "intl";
     this.locale = "ja";
     this.phase = "loading";
+    this.overviewPhase = "loading";
     this.playing = false;
     this.mode = "simple";
     this.liveMode = "normal";
@@ -800,6 +804,7 @@ export class ChartSimulator extends LitElement {
     const { signal } = controller;
     this.loadedKey = `${this.server}:${this.source}`;
     const playback = (this.loadedPlayback = this.playback);
+    this.overviewPhase = "loading";
     this.phase = "loading";
     await this.updateComplete;
     try {
@@ -827,13 +832,30 @@ export class ChartSimulator extends LitElement {
           : this.chartFormat === "community"
             ? this.communityChart(JSON.parse(source) as CommunityChartPlayback)
             : this.runtime().require(OUR_NOTES_RULES).parse(source);
-      if (this.liveMode === "gekisou" && this.gekisouMissionTypes?.length && !assets.particles.laneEffects.gekisou)
+      this.assets = assets;
+      const skin = await loadDetailedOverviewSkin(assets);
+      if (signal.aborted) {
+        skin.dispose();
+        return;
+      }
+      this.overviewSkin = skin;
+      this.overviewPhase = "ready";
+    } catch (error) {
+      if (signal.aborted) return;
+      console.error(error);
+      this.dispose();
+      this.overviewPhase = "error";
+      this.phase = "error";
+      return;
+    }
+    // The 3D stage loads on its own: its failure leaves the 2D overview in place.
+    try {
+      if (this.liveMode === "gekisou" && this.gekisouMissionTypes?.length && !this.assets.particles.laneEffects.gekisou)
         throw new Error("Original Gekisou lane source unavailable");
       this.gekisouPlan =
         this.liveMode === "gekisou" && this.chartFormat === "" && this.gekisouMissionTypes?.length
           ? new OurNotesGekisouPlan(this.chart, { enabled: true, missionTypes: this.gekisouMissionTypes })
           : undefined;
-      this.assets = assets;
       await this.initialize(signal);
       signal.throwIfAborted();
       this.phase = "ready";
@@ -843,7 +865,7 @@ export class ChartSimulator extends LitElement {
     } catch (error) {
       if (signal.aborted) return;
       console.error(error);
-      this.dispose();
+      this.disposeStage();
       this.phase = "error";
     }
   }
@@ -1072,13 +1094,7 @@ export class ChartSimulator extends LitElement {
       });
     this.renderer = renderer;
     applyRenderQuality(renderer, readRenderQuality());
-    await Promise.all([
-      loadDetailedOverviewSkin(this.assets).then((skin) => {
-        if (signal.aborted) skin.dispose();
-        else this.overviewSkin = skin;
-      }),
-      renderer.load(),
-    ]);
+    await renderer.load();
     signal.throwIfAborted();
     await this.applyStageBackground();
     signal.throwIfAborted();
@@ -1104,7 +1120,13 @@ export class ChartSimulator extends LitElement {
       if (!signal.aborted) console.warn("Unable to load chart note sounds", error);
     });
     this.attachSession();
-    if (this.hasNativeIntroSource()) await this.loadNativeIntro(signal, renderer);
+    if (this.hasNativeIntroSource())
+      await this.loadNativeIntro(signal, renderer).catch((error: unknown) => {
+        if (signal.aborted) throw error;
+        console.warn("Original live intro unavailable", error);
+        this.disposeNativeIntro();
+        renderer.setNativeIntroBackgroundScale([1, 1, 1]);
+      });
     signal.throwIfAborted();
     const introContext = this.introAudioContext;
     const ownsClock = () => this.clock === clock && !signal.aborted && this.introAudioContext === introContext;
@@ -1155,13 +1177,6 @@ export class ChartSimulator extends LitElement {
     const names = [
       "live_start_playable_timeline.prefab",
       "live_start_timeline_asset.playable",
-      "white_line_center.mat",
-      "white_line.mat",
-      "white_star.mat",
-      "white_line_antialiasing.png",
-      "ef_star_icon.png",
-      "white_square.png",
-      "live_game_white.png",
       "UILiveStartCanvas_hide.anim",
       "UILiveStartCanvas_show.anim",
       "live_game_view_in.anim",
@@ -1172,13 +1187,21 @@ export class ChartSimulator extends LitElement {
       "live_game_lane_effect_in.anim",
       "live_game_lane_effect_init.anim",
     ];
+    // Each band's prefab owns its materials and sprites (special_mygo, lane_star_color, ...);
+    // releases before per-band materials also share two LiveStartAnim materials.
+    const bandAssets = [...files].filter(
+      (path) => path.startsWith(prefix) && !path.includes("/", prefix.length) && /\.(?:mat|png)$/u.test(path),
+    );
+    const sharedMaterials = [
+      "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_line.mat",
+      "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_star.mat",
+    ].filter((path) => files.has(path));
     const paths = names
       .map((name) => `${prefix}${name}`)
-      .concat([
+      .concat(bandAssets.sort(), [
         "Assets/AddressableResources/Scene/Live.unity",
         "Assets/AddressableResources/Live/Images/NonAtlas/LiveStartAnim/lane_mesh.fbx",
-        "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_line.mat",
-        "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_star.mat",
+        ...sharedMaterials,
       ]);
     if (!files.has(paths[0]!)) return;
     const directorDescriptor = await this.descriptor(paths[0]!, signal);
@@ -1363,8 +1386,8 @@ export class ChartSimulator extends LitElement {
       this.intro = new NativeIntroPlayback(scene.timeline.duration);
       this.intro.setRate(this.playbackRate, performance.now());
       this.configureNativeIntroTitle();
-      renderer.attachNativeIntro(scene);
       await this.loadNativeIntroAudio(signal);
+      renderer.attachNativeIntro(scene);
     } finally {
       identityIndex.dispose();
     }
@@ -1747,7 +1770,7 @@ export class ChartSimulator extends LitElement {
   async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
     const chart = this.chart;
-    if (!canvas || this.phase !== "ready" || !chart) return;
+    if (!canvas || this.overviewPhase !== "ready" || !chart) return;
     this.drawOverview();
     const payload = completeChartOverviewMeta({ ...meta, locale: this.locale }, chart, key => this.ui(key));
     const blob = await composeChartOverviewImage(canvas, payload);
@@ -2156,6 +2179,13 @@ export class ChartSimulator extends LitElement {
     }
   }
   private dispose() {
+    this.loadAbort?.abort();
+    this.loadAbort = undefined;
+    this.overviewSkin?.dispose();
+    this.overviewSkin = undefined;
+    this.disposeStage();
+  }
+  private disposeStage() {
     ++this.backgroundRevision;
     this.backgroundLiveAtlas = undefined;
     ++this.liveModeRevision;
@@ -2167,8 +2197,6 @@ export class ChartSimulator extends LitElement {
     this.chartGpuProbe?.dispose();
     this.chartGpuProbe = undefined;
     this.chartGpuDiagnosticMs = 0;
-    this.loadAbort?.abort();
-    this.loadAbort = undefined;
     this.watchReplaySource = undefined;
     this.watchReplayTicks = undefined;
     this.noteSoundSwap?.controller.abort();
@@ -2190,7 +2218,17 @@ export class ChartSimulator extends LitElement {
     this.resizeObserver?.disconnect();
     this.clock?.destroy();
     this.noteSounds?.dispose();
-    this.overviewSkin?.dispose();
+    this.disposeNativeIntro();
+    this.renderer?.dispose();
+    this.renderer = undefined;
+    this.chartPerfProbe = undefined;
+    this.chartPerfWindowStartMs = undefined;
+    this.chartPerfWindowStartedAt = undefined;
+    this.chartPerfWindowPlayingOnly = true;
+    this.clock = undefined;
+    this.noteSounds = undefined;
+  }
+  private disposeNativeIntro() {
     this.introScene?.dispose();
     this.introScene = undefined;
     this.intro = undefined;
@@ -2207,15 +2245,6 @@ export class ChartSimulator extends LitElement {
     this.introCheerStarted = false;
     this.introSoundFadeStart = undefined;
     this.introRoleValues.clear();
-    this.renderer?.dispose();
-    this.renderer = undefined;
-    this.chartPerfProbe = undefined;
-    this.chartPerfWindowStartMs = undefined;
-    this.chartPerfWindowStartedAt = undefined;
-    this.chartPerfWindowPlayingOnly = true;
-    this.clock = undefined;
-    this.noteSounds = undefined;
-    this.overviewSkin = undefined;
   }
   private format(seconds: number) {
     const value = Math.max(0, Math.floor(seconds));
@@ -2497,20 +2526,21 @@ export class ChartSimulator extends LitElement {
     `;
   }
   render() {
+    const phase = this.mode === "simple" ? this.overviewPhase : this.phase;
     return html`
       <section class="chart-runtime">
         ${
-          this.phase === "loading"
+          phase === "loading"
             ? html`
                 ${loadingState(this.ui("loading"))}
               `
-            : this.phase === "error"
+            : phase === "error"
               ? html`
                   <div class="notice"><p>${this.ui("runtimeError")}</p></div>
                 `
               : nothing
         }
-        <div class="chart-simple-overview" ?hidden=${this.phase !== "ready" || this.mode !== "simple"}>
+        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"}>
           <canvas aria-label=${this.label}></canvas>
         </div>
         <div

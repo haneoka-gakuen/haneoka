@@ -56,7 +56,7 @@ export class NativeIntroScene implements NativeIntroBindingSink {
     }
     for (const value of values) {
       const object = record(value);
-      if (object.type !== "Transform") continue;
+      if (object.type !== "Transform" && object.type !== "RectTransform") continue;
       const data = record(object.data), id = object.pathId;
       if (typeof id !== "string" || this.nodes.has(id)) throw new Error("Native intro transform identity invalid");
       const gameObjectId = pointer(data.m_GameObject), gameObject = objects.get(gameObjectId);

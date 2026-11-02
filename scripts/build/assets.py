@@ -6,6 +6,7 @@ import ast
 import json
 import math
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -32,29 +33,23 @@ RUNTIME_PROJECTION_PREFIXES = (
     "Assets/AddressableResources/Effect/Live/",
 )
 RUNTIME_PROJECTION_TYPES = {"AnimationClip", "ParticleSystem", "Sprite", "SpriteAtlas", "SpriteRenderer"}
-# Exactly the four Sprite sources referenced by each original intro prefab.
-LIVE_INTRO_SPRITE_SOURCES = {
-    f"Assets/AddressableResources/Band/{band}/timeline/{asset}.png"
-    for band in range(6)
-    for asset in ("white_line_antialiasing", "ef_star_icon", "white_square", "live_game_white")
-}
 LIVE_INTRO_ANIMATION_SOURCES = {
     f"Assets/AddressableResources/Band/{band}/timeline/{name}.anim"
     for band in range(6)
     for name in ("UILiveStartCanvas_hide", "UILiveStartCanvas_show", "live_game_view_in", "live_game_view_init",
                  "camera_track", "moving_light_root", "live_background_view", "live_game_lane_effect_in", "live_game_lane_effect_init")
 }
+# Each band's intro prefab references its own timeline materials and sprites
+# (lane_line_color.mat, special_mygo.png, ...), so the whole directory is projected.
+BAND_TIMELINE_ASSET = re.compile(r"Assets/AddressableResources/Band/[0-9]+/timeline/[^/]+\.(mat|png)")
 # Original live intro data only. Shader programs are never projected here.
 LIVE_INTRO_RUNTIME_SOURCES = {
-    *LIVE_INTRO_SPRITE_SOURCES,
     *LIVE_INTRO_ANIMATION_SOURCES,
     "Assets/AddressableResources/Live/Images/NonAtlas/LiveStartAnim/lane_mesh.fbx",
-    "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_line.mat",
-    "Assets/AddressableResources/Live/Materials/LiveStartAnim/white_star.mat",
     *(
         f"Assets/AddressableResources/Band/{band}/timeline/{asset}"
         for band in range(6)
-        for asset in ("live_start_playable_timeline.prefab", "live_start_timeline_asset.playable", "white_line_center.mat", "white_line.mat", "white_star.mat")
+        for asset in ("live_start_playable_timeline.prefab", "live_start_timeline_asset.playable")
     ),
 }
 LIVE_INTRO_PROJECTION_TYPES = {
@@ -193,6 +188,12 @@ FX_SHARED_RUNTIME_SOURCES = frozenset({'Assets/AddressableResources/Effect/Live/
            'Assets/AddressableResources/Live/Fbx/tap_wall_effect.fbx'})
 LIVE_TAP_FADE_SOURCE = "Assets/AddressableResources/Scene/Live.unity"
 TYPED_DATA_RUNTIME_SOURCES = LIVE_INTRO_RUNTIME_SOURCES | FX_SHARED_RUNTIME_SOURCES | {LIVE_TAP_FADE_SOURCE}
+
+def _is_live_intro_source(source_path: str) -> bool:
+    return source_path in LIVE_INTRO_RUNTIME_SOURCES or BAND_TIMELINE_ASSET.fullmatch(source_path) is not None
+
+def _is_typed_data_source(source_path: str) -> bool:
+    return source_path in TYPED_DATA_RUNTIME_SOURCES or _is_live_intro_source(source_path)
 
 def _typed_data_projection_policy(source_path: str) -> str:
     if source_path == LIVE_TAP_FADE_SOURCE:
@@ -606,7 +607,7 @@ def _runtime_projections(
         if (
             source_path.startswith(RUNTIME_PROJECTION_PREFIXES)
             or source_path in HUD_FONT_RUNTIME_SOURCES
-            or source_path in TYPED_DATA_RUNTIME_SOURCES
+            or _is_typed_data_source(source_path)
         ):
             by_bundle[source["selectedBundle"]].append(source)
     output_count = 0
@@ -645,7 +646,7 @@ def _runtime_projections(
                     f"base descriptor does not match the recomputed source identity: "
                     f"{source['sourcePath']} ({field})"
                 )
-        if source["sourcePath"] in TYPED_DATA_RUNTIME_SOURCES and document.get("runtimeProjectionPolicy") != _typed_data_projection_policy(source["sourcePath"]):
+        if _is_typed_data_source(source["sourcePath"]) and document.get("runtimeProjectionPolicy") != _typed_data_projection_policy(source["sourcePath"]):
             return None
         expected_fx = fx_selection_documents.get(source["sourcePath"])
         if expected_fx is not None and document.get("sharedFxProjectionRecords") != expected_fx:
@@ -662,13 +663,13 @@ def _runtime_projections(
                 projections = adopt(source)
                 if projections is not None:
                     source["runtimeObjects"] = projections
-                    if source["sourcePath"] in TYPED_DATA_RUNTIME_SOURCES:
+                    if _is_typed_data_source(source["sourcePath"]):
                         source["runtimeProjectionPolicy"] = _typed_data_projection_policy(source["sourcePath"])
                     if source["sourcePath"] in fx_selection_documents:
                         source["sharedFxProjectionRecords"] = fx_selection_documents[source["sourcePath"]]
                     adopted_count += len(projections)
                     continue
-                if source["sourcePath"] not in TYPED_DATA_RUNTIME_SOURCES:
+                if not _is_typed_data_source(source["sourcePath"]):
                     raise ValueError(
                         f"base descriptor could not provide runtime projections: "
                         f"{source['sourcePath']}"
@@ -685,7 +686,7 @@ def _runtime_projections(
                 "refresh this real bundle's archive before rebuilding live intro projections"
             )
         for source in pending_sources:
-            if source["sourcePath"] not in TYPED_DATA_RUNTIME_SOURCES:
+            if not _is_typed_data_source(source["sourcePath"]):
                 continue
             declared = source["objectArchive"]
             if (
@@ -743,9 +744,9 @@ def _runtime_projections(
                     allowed = object_type == "MonoBehaviour"
                 elif source["sourcePath"] in LIVE_INTRO_ANIMATION_SOURCES:
                     allowed = object_type == "AnimationClip"
-                elif source["sourcePath"] in LIVE_INTRO_SPRITE_SOURCES:
+                elif source["sourcePath"].endswith(".png") and BAND_TIMELINE_ASSET.fullmatch(source["sourcePath"]):
                     allowed = object_type == "Sprite"
-                elif source["sourcePath"] in LIVE_INTRO_RUNTIME_SOURCES:
+                elif _is_live_intro_source(source["sourcePath"]):
                     allowed = object_type in LIVE_INTRO_PROJECTION_TYPES
                 if not allowed:
                     continue
@@ -757,10 +758,10 @@ def _runtime_projections(
                 output.parent.mkdir(parents=True, exist_ok=True)
                 projection_record = (
                     _intro_projection_value(record)
-                    if source["sourcePath"] in LIVE_INTRO_RUNTIME_SOURCES or tap_ids is not None or (declared_fx is not None and identity in declared_fx)
+                    if _is_live_intro_source(source["sourcePath"]) or tap_ids is not None or (declared_fx is not None and identity in declared_fx)
                     else record
                 )
-                if source["sourcePath"] in LIVE_INTRO_RUNTIME_SOURCES and object_type == "Material":
+                if _is_live_intro_source(source["sourcePath"]) and object_type == "Material":
                     shader_pointer = record.get("data", {}).get("m_Shader", {})
                     if shader_pointer.get("m_FileID") == 0:
                         shader_id = str(shader_pointer.get("m_PathID") or "")
@@ -786,7 +787,7 @@ def _runtime_projections(
                             "type": "Shader", "name": root_name or parsed_name,
                             "serializedFile": identity[0], "pathId": shader_id,
                         }
-                if source["sourcePath"] in TYPED_DATA_RUNTIME_SOURCES and object_type in {"Mesh", "Sprite"}:
+                if _is_typed_data_source(source["sourcePath"]) and object_type in {"Mesh", "Sprite"}:
                     geometry_data = projection_record.get("data", {})
                     if object_type == "Sprite":
                         geometry_data = geometry_data.get("m_RD", {})
@@ -808,7 +809,7 @@ def _runtime_projections(
                 )
                 output_count += 1
             source["runtimeObjects"] = projected
-            if source["sourcePath"] in TYPED_DATA_RUNTIME_SOURCES:
+            if _is_typed_data_source(source["sourcePath"]):
                 source["runtimeProjectionPolicy"] = _typed_data_projection_policy(source["sourcePath"])
             if source["sourcePath"] in fx_selection_documents:
                 source["sharedFxProjectionRecords"] = fx_selection_documents[source["sourcePath"]]
