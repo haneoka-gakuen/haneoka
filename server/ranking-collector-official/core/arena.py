@@ -1,4 +1,4 @@
-"""L3: server/L2.md; bounded Arena and event point windows and resumable population counts witnessed within five minutes."""
+"""L3: server/L2.md; live/final Arena and event point windows and resumable, freshly witnessed population counts."""
 from datetime import datetime
 import hashlib
 import json
