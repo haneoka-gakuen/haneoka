@@ -170,6 +170,19 @@ function textVariants(value: unknown): string[] {
   return isObject(value) ? Object.values(value).flatMap(textVariants) : [];
 }
 
+function readingTextVariants(value: string): string[] {
+  const annotations: string[] = [];
+  const text = value.replace(
+    /<(?:ruby|r)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^>]*))>([\s\S]*?)<\/(?:ruby|r)\s*>/giu,
+    (_match, doubleQuoted: string | undefined, singleQuoted: string | undefined, unquoted: string | undefined, base: string) => {
+      const annotation = (doubleQuoted ?? singleQuoted ?? unquoted ?? "").trim();
+      if (annotation) annotations.push(annotation);
+      return base;
+    },
+  );
+  return [text, ...annotations].filter(Boolean);
+}
+
 function songDescription(
   song: Record<string, unknown>,
   locales: readonly CatalogLocale[],
@@ -179,6 +192,7 @@ function songDescription(
     ...new Set(
       [song.ruby, song.phonetic, song.reading]
         .flatMap(textVariants)
+        .flatMap(readingTextVariants)
         .flatMap((reading) => isKana(reading)
           ? [reading, toHiragana(reading), toKatakana(reading), toRomaji(reading)]
           : [reading]),
@@ -653,7 +667,7 @@ export function projectPlaylistItem(
     levels: charts.map((chart) => chart.item),
     name: metadata.name,
     subtitle: metadata.artists,
-    tags: [],
+    tags: (first?.categories ?? []).map(({ title }) => ({ title })),
     title: metadata.title,
     version: 1,
   };
@@ -705,9 +719,10 @@ export function projectPlaylistList(
   };
 }
 
-export function projectPlaylistDetails(playlist: SonolusPlaylistItem): JsonObject {
+export function projectPlaylistDetails(playlist: SonolusPlaylistItem, description = ""): JsonObject {
   return {
     item: playlist,
+    description,
     actions: [],
     hasCommunity: false,
     leaderboards: [],

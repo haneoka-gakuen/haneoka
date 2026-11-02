@@ -31,5 +31,11 @@ values become the level's separate `preview` audio resource.
 Descriptions show lyricist, composer and arranger credits with Sonolus's
 `#LYRICIST`, `#COMPOSER`, `#ARRANGER` and `#SEPARATOR_COLON` interpolation keys.
 Ruby and phonetic readings also provide hiragana, katakana and romaji keywords.
+Game `<r=reading>text</r>` and `<ruby=reading>text</ruby>` markup contributes both
+the text and reading without displaying the markup.
 Search includes these readings, every credit translation and description text;
 it filters descriptors before preparing chart data.
+
+Song playlists display the same localized category tags and description as their
+levels, including credits and reading keywords. Difficulty tags remain on the
+embedded levels.

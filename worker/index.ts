@@ -3244,7 +3244,7 @@ async function handleSonolus(
     /^[a-f0-9]{64}$/u.test(payloadState.revision)
       ? payloadState.revision
       : "unversioned";
-  const ourNotesRevision = `identity-text-v7-descriptions-combo:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const ourNotesRevision = `identity-text-v8-playlists-ruby:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   let revision = isBestdoriCatalog
     ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
     : ourNotesRevision;

@@ -542,7 +542,11 @@ export class SonolusLevelService {
       if (!descriptor) return notFound();
       const [playlist] = await preparePlaylistRecords(snapshot, [descriptor], options);
       return playlist
-        ? document(200, projectPlaylistDetails(playlist.item), "public, max-age=600, stale-while-revalidate=86400")
+        ? document(
+            200,
+            projectPlaylistDetails(playlist.item, descriptor.charts[0]?.description ?? ""),
+            "public, max-age=600, stale-while-revalidate=86400",
+          )
         : notFound();
     }
 

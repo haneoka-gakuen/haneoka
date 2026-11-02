@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区谱面 HTTP、账户、D1、R2 和受信服务器素材解析。
-// Output: 私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与 Sonolus 关卡投影。
+// Output: 私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含作者简介／发布信息的 Sonolus 关卡投影。
 // Pos: [Map](L2.md)；社区谱面持久化、发布及访问控制所有者。
 // Effects/Dependencies: 认证／限流、D1 原子 CAS、R2 上传和谱面编译；列表与详情按需生成当前模型分析，模型升级期间保留旧版基础统计。
 import { getAuthSession } from "./auth";
@@ -816,6 +816,16 @@ export function communitySonolusProviders(
             title: r.title,
             artists: r.artist,
             author: r.charter || r.ownerName,
+            description: [
+              ...(r.summary ? [...r.summary.split("\n").map((line) => `##:${line}`), ""] : []),
+              ...[
+                ["#ARTISTS", r.artist],
+                ["#AUTHOR", r.charter || r.ownerName],
+                ["#OWNER", r.ownerName || `#${r.ownerUid}`],
+                ["#PUBLISHED", r.publishedAt === null ? "" : new Date(r.publishedAt).toISOString()],
+              ].flatMap(([label, value]) => value ? [`${label}:#SEPARATOR_COLON:##:${value}`] : []),
+            ].join("\n"),
+            searchKeywords: [r.summary, r.charter, r.ownerName],
             rating: Number.parseFloat(r.level) || 0,
             difficulty: r.difficulty,
             publishedAt: r.publishedAt ?? 0,
