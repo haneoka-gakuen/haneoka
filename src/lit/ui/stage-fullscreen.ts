@@ -54,7 +54,6 @@ export class StageFullscreen {
     try {
       if (doc.fullscreenEnabled && typeof element.requestFullscreen === "function") {
         await element.requestFullscreen({ navigationUI: "hide" });
-        this.lockLandscape();
         return;
       }
       if (doc.webkitFullscreenEnabled && typeof element.webkitRequestFullscreen === "function") {
@@ -105,14 +104,6 @@ export class StageFullscreen {
     remember(document.body, "overflow", "hidden");
     remember(document.body, "overscroll-behavior", "none");
     this.onChange(true);
-  }
-
-  private lockLandscape() {
-    if (!matchMedia("(pointer: coarse)").matches) return;
-    const orientation = screen.orientation as
-      | (ScreenOrientation & { lock?: (orientation: string) => Promise<void> })
-      | undefined;
-    orientation?.lock?.("landscape").catch(() => undefined);
   }
 
   private changed = () => {

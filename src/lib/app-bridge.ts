@@ -1,10 +1,9 @@
 // L3 — GEB
 // Input: Haneoka App 在文档开始时注入的 window.haneokaApp 与其 User-Agent 标记。
-// Output: 是否运行在 App 内，以及对原生方法的 Promise 调用。
+// Output: App 身份、平台与原生方法的 Promise 调用。
 // Pos: [Map](L2-2.md)；网页与 App 外壳之间的唯一接口。
-// Effects/Dependencies: 调用原生存档读取与存档页、游戏服务器读取和系统浏览器登录；浏览器中不存在时为 undefined。
+// Effects/Dependencies: 调用原生存档读取与存档页、游戏服务器读取、系统浏览器登录及全屏方向控制。
 
-/** Methods the app answers; each resolves null when the reader backs out. */
 export interface AppMethods {
   /** The chosen game account's card, character and band item progress as `ONPKG1:` text. */
   boxAccount: { args: { server: string }; result: { text: string } | null };
@@ -12,6 +11,7 @@ export interface AppMethods {
   gachaHistory: { args: { key?: string }; result: { files: { name: string; text: string }[] } | null };
   /** Provider sign-in in the system browser; the page exchanges the code for its session. */
   signIn: { args: { provider: string }; result: { code: string; verifier: string } | null };
+  orientation: { args: { orientation: "landscape" | "any" }; result: null };
   /** Game saves read on this device; `haneoka-app-accounts` fires on window when they change. */
   gameAccounts: { args: Record<string, never>; result: DeviceSave[] };
   /** The app's page for one save: progress, cards, clears, export and update. */
@@ -45,6 +45,10 @@ interface HaneokaApp {
 
 /** Synchronous, so the first render already knows; the bridge object arrives at document start. */
 export const inApp = (): boolean => typeof navigator !== "undefined" && /\bHaneokaApp\//u.test(navigator.userAgent);
+
+export function appPlatform(): string | undefined {
+  return (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.platform;
+}
 
 export function appCall<M extends keyof AppMethods>(method: M, args: AppMethods[M]["args"]): Promise<AppMethods[M]["result"]> {
   const app = (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp;

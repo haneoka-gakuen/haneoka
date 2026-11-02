@@ -62,6 +62,27 @@
 }
 
 @layer utilities {
+  body:has(:is([data-app-fullscreen], [data-story-fullscreen="true"], [data-stage-fullscreen])) {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .app-shell__main:has(:is([data-app-fullscreen], [data-story-fullscreen="true"], [data-stage-fullscreen])) {
+    z-index: var(--md-sys-z-index-overlay-dialog);
+    clip-path: none;
+    overflow: visible;
+  }
+  .app-shell:has(:is([data-app-fullscreen], [data-story-fullscreen="true"], [data-stage-fullscreen]))
+    :is(.top-app-bar, .app-shell__progress, .nav, .nav-scrim),
+  body:has(:is([data-app-fullscreen], [data-story-fullscreen="true"], [data-stage-fullscreen])) > audio-dock {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  :is(vega-story-stage, chart-simulator)[data-app-fullscreen] {
+    box-sizing: border-box;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    border-radius: 0;
+    background: var(--md-sys-color-surface-container-lowest);
+  }
   .collection {
     align-items: start;
   }

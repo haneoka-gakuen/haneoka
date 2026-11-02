@@ -246,9 +246,11 @@ const birthdays = (await themeCharacters("ja")).flatMap((character) =>
       import { refreshContentAccess } from "../lib/content-access";
       import { signedInHint } from "../lib/community-viewer";
       import { installUpdateCheck } from "../lib/update-check";
+      import { installFullscreen } from "../lib/fullscreen";
       installUiFonts();
       installI18nDom();
       installUpdateCheck();
+      installFullscreen();
       const refreshDocumentAccess = () => {
         if (signedInHint() || document.documentElement.dataset.contentAccess === "1") void refreshContentAccess();
       };

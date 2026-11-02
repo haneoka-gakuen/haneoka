@@ -112,6 +112,7 @@
     "src/lib/static-documents.ts",
     "src/lib/app-bar.ts",
     "src/lib/app-bridge.ts",
+    "src/lib/fullscreen.ts",
     "src/lib/song-puzzle/recognition.ts",
     "src/lib/song-puzzle/labels.ts",
     "src/lib/song-puzzle/constructive.ts",

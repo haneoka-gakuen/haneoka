@@ -811,15 +811,6 @@ export class VegaStoryStage extends LitElement {
       return this.syncFullscreenState();
     }
 
-    // Orientation is a hint. A failure here must not undo a native fullscreen
-    // session that the browser has already granted.
-    try {
-      const orientation = globalThis.screen?.orientation as
-        (ScreenOrientation & { lock?: (mode: string) => Promise<void> }) | undefined;
-      await orientation?.lock?.("landscape");
-    } catch {
-      /* Native fullscreen remains usable when the host declines the hint. */
-    }
     return this.syncFullscreenState();
   }
 
