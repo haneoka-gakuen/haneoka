@@ -5844,6 +5844,10 @@
         "population": "Season {id} · League {board} · Population"
       },
       "pool": {
+        "removeFailed": "Refresh the account and retry",
+        "removed": "Account removed",
+        "deleteStored": "Delete",
+        "confirmRemove": "Remove account?",
         "title": "Account pool",
         "refresh": "Refresh",
         "account": "Account",
@@ -5883,6 +5887,9 @@
         }
       },
       "guest": {
+        "adoptFailed": "Pool import failed",
+        "adopted": "Pool imported",
+        "adopt": "Import current pool",
         "title": "JP guest accounts",
         "create": "Create guest",
         "empty": "No guest accounts",

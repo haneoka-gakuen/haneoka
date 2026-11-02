@@ -107,8 +107,7 @@ export class AdminWorkspace extends LitElement {
     platformEdit: { state: true },
     guestAccounts: { state: true },
     guestJob: { state: true },
-    guestDraft: { state: true },
-    guestMissing: { state: true },
+    accountRemoval: { state: true },
     resourceSources: { state: true },
     readyPackage: { state: true },
     packageProgress: { state: true },
@@ -178,8 +177,7 @@ export class AdminWorkspace extends LitElement {
   declare private platformEdit: PlatformRole | null;
   declare private guestAccounts: GuestAccount[];
   declare private guestJob: { guestId: string } | null;
-  declare private guestDraft: { id: string; label: string } | null;
-  declare private guestMissing: boolean;
+  declare private accountRemoval: { kind: "guest" | "platform"; id: string; label: string; version: number } | null;
   declare resourceSources: Value[];
   declare readyPackage: Value | null;
   declare packageProgress: number;
@@ -290,8 +288,7 @@ export class AdminWorkspace extends LitElement {
     this.platformEdit = null;
     this.guestAccounts = [];
     this.guestJob = null;
-    this.guestDraft = null;
-    this.guestMissing = false;
+    this.accountRemoval = null;
     this.resourceSources = [];
     this.readyPackage = null;
     this.packageProgress = 0;
@@ -508,8 +505,7 @@ export class AdminWorkspace extends LitElement {
     this.closeReview();
     this.guestAccounts = [];
     this.guestJob = null;
-    this.guestDraft = null;
-    this.guestMissing = false;
+    this.accountRemoval = null;
     if (error) {
       sessionStorage.removeItem(GUEST_DRAFT_KEY);
       sessionStorage.removeItem(`${GUEST_DRAFT_KEY}:label`);
@@ -1150,27 +1146,17 @@ export class AdminWorkspace extends LitElement {
       if (this.poolRequests.current(signal)) throw error;
     }
   };
-  private openGuestForm() {
+  private createGuest() {
     const id = sessionStorage.getItem(GUEST_DRAFT_KEY) ?? crypto.randomUUID();
     sessionStorage.setItem(GUEST_DRAFT_KEY, id);
-    this.guestDraft = { id, label: sessionStorage.getItem(`${GUEST_DRAFT_KEY}:label`) ?? "" };
-    this.guestMissing = false;
-  }
-  private closeGuestForm = () => {
-    if (this.busy !== "guest:register") this.guestDraft = null;
-  };
-  private saveGuest(event: SubmitEvent) {
-    event.preventDefault();
-    const field = (event.currentTarget as HTMLFormElement).elements.namedItem("label") as HTMLElement & { value: string; checkValidity(): boolean };
-    this.guestMissing = !field.checkValidity() || !field.value.trim();
-    if (!this.guestMissing) this.queueGuest(this.guestDraft!);
+    this.queueGuest({ id, label: `JP-${id.slice(0, 8)}` });
   }
   private queueGuest(guest: { id: string; label: string; version?: number }, verify = false) {
     void this.mutate(verify ? `guest:verify:${guest.id}` : "guest:register", async (assertCurrent) => {
       let result: Value;
       try {
         result = await this.request(`/api/v1/admin/collector-guest-accounts${verify ? `/${guest.id}/verify` : ""}`, {
-          method: "POST", body: JSON.stringify(verify ? { expectedVersion: guest.version } : { guestId: guest.id, label: guest.label })
+          method: "POST", body: JSON.stringify(verify ? { expectedVersion: guest.version } : { guestId: guest.id })
         });
       } catch (error) {
         if (this.isAccessFailure(error)) throw error;
@@ -1184,7 +1170,6 @@ export class AdminWorkspace extends LitElement {
         sessionStorage.removeItem(GUEST_DRAFT_KEY);
         sessionStorage.removeItem(`${GUEST_DRAFT_KEY}:label`);
       }
-      if (this.guestDraft?.id === guest.id) this.guestDraft = null;
       await this.loadCollectorPool();
       assertCurrent();
       snackbar(result.status === "exists" ? this.label("guest.recorded", "Guest task recorded") : this.label("guest.queued", "Guest task queued"));
@@ -1193,33 +1178,64 @@ export class AdminWorkspace extends LitElement {
   private renderGuestAccounts() {
     return this.disclosure({ id: "admin-guest-accounts", className: "admin-resource-servers", label: this.label("guest.title", "JP guest accounts"),
       content: html`<div class="stack">
-        <div><button class="button button--tonal admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.openGuestForm()}>${this.label("guest.create", "Create guest")}</button></div>
+        <div class="cluster"><button class="button button--tonal admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.createGuest()}>${this.label("guest.create", "Create guest")}</button>
+          <button class="button button--text admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.adoptGuests()}>${this.label("guest.adopt", "Import current pool")}</button></div>
         <div class="table-scroll"><table class="data-table">
           <thead><tr><th>${this.label("pool.account", "Account")}</th><th>${this.label("pool.state", "State")}</th><th>${this.label("platform.playerId", "Player ID")}</th><th>${this.label("guest.profileId", "Profile ID")}</th><th>${this.label("guest.verified", "Verified")}</th><th>${this.label("actions.manage", "Manage")}</th></tr></thead>
           <tbody>${this.guestAccounts.length ? this.guestAccounts.map((guest) => html`<tr>
             <th scope="row">${guest.label}</th><td>${this.label(guest.poolStatus ? `pool.status.${guest.poolStatus}` : `guest.status.${guest.status}`, guest.poolStatus ?? guest.status)}</td><td>${guest.playerId ?? "—"}</td><td>${guest.profileId ?? "—"}</td><td>${guest.lastVerifiedAtMs ? this.date(guest.lastVerifiedAtMs) : "—"}</td>
-            <td>${guest.status === "uncertain" || ["created", "ready"].includes(guest.status) ? html`<button class="button button--text admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.queueGuest(guest, guest.status !== "uncertain")}>${guest.status === "uncertain" ? this.label("guest.recover", "Retrieve result") : this.label("guest.verify", "Verify")}</button>` : nothing}</td>
+            <td><div class="cluster">${guest.status === "uncertain" || ["created", "ready"].includes(guest.status) ? html`<button class="button button--text admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob} @click=${() => this.queueGuest(guest, guest.status !== "uncertain")}>${guest.status === "uncertain" ? this.label("guest.recover", "Retrieve result") : this.label("guest.verify", "Verify")}</button>` : nothing}
+              <button class="button button--text admin-guest-launch" ?disabled=${!!this.busy || !!this.guestJob || ["queued", "creating", "verifying"].includes(guest.status)} @click=${() => { this.accountRemoval = { kind: "guest", ...guest }; }}>${this.label("pool.remove", "Remove")}</button></div></td>
           </tr>`) : html`<tr><td colspan="6">${this.label("guest.empty", "No guest accounts")}</td></tr>`}</tbody>
         </table></div>
       </div>` });
   }
-  private renderGuestForm() {
-    const draft = this.guestDraft;
-    if (!draft) return nothing;
-    const saving = this.busy === "guest:register";
-    return html`<dialog class="dialog admin-guest-dialog" aria-labelledby="admin-guest-title" ${modal(this.closeGuestForm)}>
-      <header class="dialog__header"><h2 id="admin-guest-title">${this.label("guest.create", "Create guest")}</h2></header>
-      <div class="dialog__body"><form id="admin-guest-form" class="stack" novalidate @submit=${(event: SubmitEvent) => this.saveGuest(event)}>
-        <md-outlined-text-field id="admin-guest-label" name="label" required maxlength="80" ?disabled=${saving} ?error=${this.guestMissing} .value=${draft.label} label=${this.label("platform.label", "Label")} @input=${(event: Event) => {
-          const label = (event.target as HTMLElement & { value: string }).value;
-          this.guestDraft = { ...draft, label };
-          sessionStorage.setItem(`${GUEST_DRAFT_KEY}:label`, label);
-        }}></md-outlined-text-field>
-        <div class="cluster" role="status">${this.guestMissing ? html`<a href="#admin-guest-label" @click=${(event: Event) => {
-          event.preventDefault(); this.querySelector<HTMLElement>("#admin-guest-label")!.focus();
-        }}>${this.label("guest.labelRequired", "Enter a label")}</a>` : nothing}</div>
-      </form></div>
-      <footer class="dialog__actions"><button class="button button--text" ?disabled=${saving} @click=${this.closeGuestForm}>${this.label("history.close", "Close")}</button><button class="button" type="submit" form="admin-guest-form" ?disabled=${!!this.busy}>${saving ? this.label("guest.queuing", "Queuing") : this.label("guest.create", "Create guest")}</button></footer>
+  private adoptGuests() {
+    void this.mutate("guest:adopt", async (assertCurrent) => {
+      try {
+        await this.request("/api/v1/admin/collector-guest-accounts/adopt", { method: "POST", body: "{}" });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        throw new Error(this.label("guest.adoptFailed", "Pool import failed"), { cause: error });
+      }
+      assertCurrent();
+      await this.loadCollectorPool();
+      assertCurrent();
+      snackbar(this.label("guest.adopted", "Pool imported"));
+    });
+  }
+  private closeAccountRemoval = () => {
+    if (this.busy !== "account:remove") this.accountRemoval = null;
+  };
+  private removeCollectorAccount() {
+    const account = this.accountRemoval!;
+    void this.mutate("account:remove", async (assertCurrent) => {
+      try {
+        await this.request(`/api/v1/admin/collector-${account.kind}-accounts/${account.id}`, {
+          method: "DELETE", body: JSON.stringify({ expectedVersion: account.version })
+        });
+      } catch (error) {
+        if (this.isAccessFailure(error)) throw error;
+        await this.loadCollectorPool();
+        throw new Error(this.label("pool.removeFailed", "Refresh the account and retry"), { cause: error });
+      }
+      assertCurrent();
+      this.accountRemoval = null;
+      await this.loadCollectorPool();
+      assertCurrent();
+      snackbar(this.label("pool.removed", "Account removed"));
+    });
+  }
+  private renderAccountRemoval() {
+    const account = this.accountRemoval;
+    if (!account) return nothing;
+    return html`<dialog class="dialog admin-account-removal" aria-labelledby="admin-account-remove-title" ${modal(this.closeAccountRemoval)}>
+      <header class="dialog__header"><h2 id="admin-account-remove-title">${this.label("pool.confirmRemove", "Remove account?")}</h2></header>
+      <div class="dialog__body stack"><strong>${account.label}</strong>
+        <dl class="spec-list">${account.kind === "platform" ? html`<div><dt>${this.label("platform.password", "Password")}</dt><dd>${this.label("pool.deleteStored", "Delete")}</dd></div>` : nothing}
+          <div><dt>${this.label("platform.currentSessions", "Current sessions")}</dt><dd>${this.label("pool.deleteStored", "Delete")}</dd></div></dl></div>
+      <footer class="dialog__actions"><button class="button button--text" ?disabled=${!!this.busy} @click=${this.closeAccountRemoval}>${this.label("history.close", "Close")}</button>
+        <button class="button button--danger" ?disabled=${!!this.busy} @click=${() => this.removeCollectorAccount()}>${this.label("pool.remove", "Remove")}</button></footer>
     </dialog>`;
   }
   private loginPlatformRole(role: PlatformRole) {
@@ -1248,17 +1264,6 @@ export class AdminWorkspace extends LitElement {
       await this.loadCollectorPool();
     });
   }
-  private poolAdd(region: string, event: SubmitEvent) {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const text = String(new FormData(form).get("account") || "");
-    void this.mutate(`pool:add:${region}`, async (assertCurrent) => {
-      await this.request(`/api/v1/admin/collector-pool/${region}`, { method: "POST", body: JSON.stringify({ account: JSON.parse(text) }) });
-      assertCurrent();
-      form.reset();
-      await this.loadCollectorPool();
-    });
-  }
   private closePlatformForm = () => {
     if (this.busy !== "platform:save") {
       this.platformForm = false;
@@ -1269,7 +1274,7 @@ export class AdminWorkspace extends LitElement {
   private savePlatformAccount(event: SubmitEvent) {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
-    this.platformMissing = ["label", "email", "password"].filter((name) => {
+    this.platformMissing = (this.platformEdit ? ["label", "email", "password"] : ["email", "password"]).filter((name) => {
       const field = form.elements.namedItem(name) as HTMLElement & { value: string; checkValidity(): boolean };
       return !field.checkValidity() || name === "label" && !field.value.trim();
     });
@@ -1277,7 +1282,7 @@ export class AdminWorkspace extends LitElement {
     const data = new FormData(form);
     const editing = this.platformEdit;
     const password = data.get("password") as string;
-    const body = { label: data.get("label"), ...editing ? { expectedVersion: editing.version, ...password ? { password } : {} } : { email: data.get("email"), password } };
+    const body = { ...editing ? { label: data.get("label") } : {}, ...editing ? { expectedVersion: editing.version, ...password ? { password } : {} } : { email: data.get("email"), password } };
     void this.mutate("platform:save", async (assertCurrent) => {
       try {
         await this.request(`/api/v1/admin/collector-platform-accounts${editing ? `/${editing.id}` : ""}`, {
@@ -1317,25 +1322,24 @@ export class AdminWorkspace extends LitElement {
         this.platformForm = true;
       }}>${this.label("platform.add", "Add email account")}</button></div>
         <div class="table-scroll"><table class="data-table">
-          <thead><tr><th>${this.label("pool.account", "Account")}</th><th>${this.label("platform.email", "Email")}</th><th>${this.label("platform.region", "Region")}</th><th>${this.label("pool.state", "State")}</th><th>${this.label("platform.playerId", "Player ID")}</th><th>${this.label("platform.login", "Sign in")}</th><th>${this.label("platform.edit", "Edit")}</th></tr></thead>
+          <thead><tr><th>${this.label("pool.account", "Account")}</th><th>${this.label("platform.region", "Region")}</th><th>${this.label("pool.state", "State")}</th><th>${this.label("actions.manage", "Manage")}</th></tr></thead>
           ${[...accounts.values()].map((roles) => {
         const conflict = this.platformConflicts.find((group) => group.accounts.some((account) => account.id === roles[0]!.id));
         return html`<tbody>${roles.map((role, index) => html`<tr>
-            ${index === 0 ? html`<th scope="rowgroup" rowspan=${roles.length}>${role.label}</th><td rowspan=${roles.length}>${role.email}</td>` : nothing}
+            ${index === 0 ? html`<th scope="rowgroup" rowspan=${roles.length}><span class="stack stack--tight">${role.label}<small>${role.email}</small></span></th>` : nothing}
             <td>${role.region.toUpperCase()}</td><td>${["failed", "auth_required"].includes(role.status) && PLATFORM_FAILURES.has(role.lastErrorCode ?? "")
               ? this.label(`platform.failure.${role.lastErrorCode}`, this.label(`pool.status.${role.status}`, role.status))
-              : this.label(`pool.status.${role.status}`, role.status)}</td><td>${role.playerId ?? "\u2014"}</td>
-            <td><button class="button button--text admin-platform-launch" ?disabled=${!!this.busy || !!conflict || PLATFORM_ACTIVE.includes(role.status)} @click=${() => this.loginPlatformRole(role)}>${this.label("platform.login", "Sign in")}</button></td>
-            ${index === 0 ? html`<td rowspan=${roles.length}><div class="stack"><button class="button button--text admin-platform-launch" @click=${() => {
+              : this.label(`pool.status.${role.status}`, role.status)}</td>
+            ${index === 0 ? html`<td rowspan=${roles.length}><div class="stack"><button class="button button--tonal admin-platform-launch" ?disabled=${!!this.busy || !!conflict || roles.some((entry) => PLATFORM_ACTIVE.includes(entry.status))} @click=${() => this.loginPlatformRole(roles.find((entry) => entry.region === "tw")!)}>${this.label("platform.login", "Sign in")}</button><button class="button button--text admin-platform-launch" @click=${() => {
         this.platformEdit = role;
         this.platformMissing = [];
         this.platformForm = true;
-      }}>${this.label("platform.edit", "Edit")}</button>${conflict ? html`<button class="button button--text admin-platform-launch" ?disabled=${!!this.busy} @click=${() => {
+      }}>${this.label("platform.edit", "Edit")}</button><button class="button button--text admin-platform-launch" ?disabled=${!!this.busy || roles.some((entry) => PLATFORM_ACTIVE.includes(entry.status))} @click=${() => { this.accountRemoval = { kind: "platform", ...role }; }}>${this.label("pool.remove", "Remove")}</button>${conflict ? html`<button class="button button--text admin-platform-launch" ?disabled=${!!this.busy} @click=${() => {
         this.sdkResolution = { conflict, accountId: "" };
       }}>${this.label("platform.resolve", "Confirm owner")}</button>` : nothing}</div></td>` : nothing}
           </tr>`)}</tbody>`;
       })}
-          ${accounts.size ? nothing : html`<tbody><tr><td colspan="7">${this.label("platform.empty", "No email accounts")}</td></tr></tbody>`}
+          ${accounts.size ? nothing : html`<tbody><tr><td colspan="4">${this.label("platform.empty", "No email accounts")}</td></tr></tbody>`}
         </table></div>
       </div>`
     });
@@ -1396,7 +1400,7 @@ export class AdminWorkspace extends LitElement {
     return html`<dialog class="dialog admin-platform-dialog" aria-labelledby="admin-platform-title" ${modal(this.closePlatformForm)}>
       <header class="dialog__header"><h2 id="admin-platform-title">${editing ? this.label("platform.edit", "Edit") : this.label("platform.add", "Add email account")}</h2></header>
       <div class="dialog__body"><form id="admin-platform-form" class="stack" novalidate @submit=${(event: SubmitEvent) => this.savePlatformAccount(event)}>
-        <md-outlined-text-field ?disabled=${saving} id="admin-platform-label" name="label" .value=${editing?.label ?? ""} required ?error=${this.platformMissing.includes("label")} label=${this.label("platform.label", "Label")}></md-outlined-text-field>
+        ${editing ? html`<md-outlined-text-field ?disabled=${saving} id="admin-platform-label" name="label" .value=${editing?.label ?? ""} required ?error=${this.platformMissing.includes("label")} label=${this.label("platform.label", "Label")}></md-outlined-text-field>` : nothing}
         <md-outlined-text-field ?disabled=${saving} id="admin-platform-email" name="email" .value=${editing?.email ?? ""} ?readonly=${!!editing} type="email" autocomplete="off" required ?error=${this.platformMissing.includes("email")} label=${this.label("platform.email", "Email")}></md-outlined-text-field>
         <md-outlined-text-field ?disabled=${saving} id="admin-platform-password" name="password" type="password" autocomplete="new-password" ?required=${!editing} ?error=${this.platformMissing.includes("password")} label=${editing ? this.label("platform.newPassword", "New password (optional)") : this.label("platform.password", "Password")}></md-outlined-text-field>
         <div class="cluster" role="status">${this.platformMissing.length ? html`<span>${this.label("platform.checkFields", "Check fields")}</span>${this.platformMissing.map((name) => html`<a href=${`#admin-platform-${name}`} @click=${(event: Event) => {
@@ -1406,7 +1410,7 @@ export class AdminWorkspace extends LitElement {
       </form></div>
       <footer class="dialog__actions">
         <button class="button button--text" ?disabled=${saving} @click=${this.closePlatformForm}>${this.label("history.close", "Close")}</button>
-        <button class="button" type="submit" form="admin-platform-form" ?disabled=${!!this.busy}>${saving ? this.label("platform.saving", "Saving") : this.label("platform.save", "Save")}</button>
+        <button class="button" type="submit" form="admin-platform-form" ?disabled=${!!this.busy}>${saving ? this.label("platform.saving", "Saving") : editing ? this.label("platform.save", "Save") : this.label("platform.login", "Sign in")}</button>
       </footer>
     </dialog>`;
   }
@@ -1514,10 +1518,7 @@ export class AdminWorkspace extends LitElement {
                   </tr>`;
                 })}</tbody>
               </table></div>
-              <form class="resource-create" @submit=${(event: SubmitEvent) => this.poolAdd(region, event)}>
-                <md-outlined-text-field name="account" type="textarea" rows="3" label=${this.label("pool.addLabel", "Account JSON")} required></md-outlined-text-field>
-                <button class="button">${this.label("pool.add", "Add account")}</button>
-              </form>
+
             `,
           });
         })}
@@ -4826,7 +4827,7 @@ export class AdminWorkspace extends LitElement {
             }
           </main>
         </div>
-        ${this.renderUserDetails()}${this.renderHistory()}${this.renderCreation()}${this.renderArchives()}${this.renderPlatformForm()}${this.renderGuestForm()}${this.renderSdkResolution()}
+        ${this.renderUserDetails()}${this.renderHistory()}${this.renderCreation()}${this.renderArchives()}${this.renderPlatformForm()}${this.renderSdkResolution()}${this.renderAccountRemoval()}
       </section>
     `;
   }

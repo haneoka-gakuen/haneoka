@@ -5844,6 +5844,10 @@
         "population": "シーズン {id} · リーグ {board} · 人数"
       },
       "pool": {
+        "removeFailed": "アカウントを更新して再試行してください",
+        "removed": "アカウントを削除しました",
+        "deleteStored": "削除",
+        "confirmRemove": "アカウントを削除しますか？",
         "title": "アカウントプール",
         "refresh": "更新",
         "account": "アカウント",
@@ -5883,6 +5887,9 @@
         }
       },
       "guest": {
+        "adoptFailed": "プールの取り込みに失敗しました",
+        "adopted": "プールを取り込みました",
+        "adopt": "現在のプールを取り込む",
         "title": "日本版ゲストアカウント",
         "create": "ゲストを作成",
         "empty": "ゲストアカウントなし",

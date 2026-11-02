@@ -1,11 +1,11 @@
 // L3 — GEB
 // Input: Immutable JP creation identities, task leases, private credentials and verification results.
-// Output: Encrypted immutable request snapshots, created guests and redacted lifecycle state; verified guests join the pool.
+// Output: Encrypted request snapshots, imported/created guests, versioned removal and redacted lifecycle state; verified guests join the pool.
 // Pos: [Map](L2.md); one-time guest creation separate from Global email identities.
 // Effects/Dependencies: D1 and shared account vault key; no game requests or automatic registration replay.
 import { normalizeOfficialPlayerId, parseOfficialCollectorConfiguration } from "../src/lib/official-ranking";
 import { vaultKey, type OfficialPlatformBindings } from "./official-platform-accounts";
-import type { GuestConfiguration } from "./official-guest-jobs";
+import { guestConfiguration, type GuestConfiguration } from "./official-guest-jobs";
 
 export interface GuestLease { guestId: string; version: number; runId: string; deadlineMs: number }
 
@@ -54,8 +54,9 @@ export async function readGuestAccountState(env: OfficialPlatformBindings, id: s
 export async function createGuestAccount(env: OfficialPlatformBindings, lease: GuestLease, label: string, now = Date.now()): Promise<boolean> {
   await vaultKey(env);
   const result = await env.DB.prepare(`INSERT INTO official_guest_accounts
-    (id,label,version,status,run_id,deadline_ms,created_at_ms) VALUES (?,?,?,'queued',?,?,?)
-    ON CONFLICT(id) DO NOTHING`).bind(lease.guestId, label, lease.version, lease.runId, lease.deadlineMs, now).run();
+    (id,label,version,status,run_id,deadline_ms,created_at_ms)
+    SELECT ?,?,?,'queued',?,?,? WHERE NOT EXISTS (SELECT 1 FROM official_collector_removed_guests WHERE id=?)
+    ON CONFLICT(id) DO NOTHING`).bind(lease.guestId, label, lease.version, lease.runId, lease.deadlineMs, now, lease.guestId).run();
   return result.meta.changes === 1;
 }
 
@@ -166,4 +167,36 @@ export async function readReadyGuestAccounts(env: OfficialPlatformBindings) {
 export async function readGuestPlayerIds(env: OfficialPlatformBindings): Promise<Set<string>> {
   const { results } = await env.DB.prepare("SELECT player_id AS id FROM official_guest_accounts WHERE player_id IS NOT NULL").all<{ id: string }>();
   return new Set(results.map((row) => normalizeOfficialPlayerId(row.id)));
+}
+
+export async function adoptGuestAccount(env: OfficialPlatformBindings, label: string, configuration: Record<string, unknown>, verifiedAtMs?: number) {
+  const parsed = await parseOfficialCollectorConfiguration(JSON.stringify(configuration), "jp");
+  const account = parsed.accounts[0]!;
+  const credentials = account.credentials.credentials as Record<string, unknown>;
+  const playerId = normalizeOfficialPlayerId(String(credentials.player_id));
+  const id = crypto.randomUUID(), runId = crypto.randomUUID().replaceAll("-", "");
+  const box = await sealConfiguration(env, id, playerId, configuration);
+  const request = guestConfiguration(JSON.stringify({ clientVersion: account.clientVersion,
+    masterConfig: account.masterConfig, ...(credentials.device_id ? { deviceId: credentials.device_id } : {}) }));
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: requestContext(id, runId) },
+    await vaultKey(env), new TextEncoder().encode(JSON.stringify(request)));
+  const results = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO official_guest_accounts
+      (id,label,version,status,run_id,deadline_ms,player_id,configuration_box,created_at_ms,last_verified_at_ms)
+      SELECT ?,?,1,?,?,0,?,?,?,? WHERE NOT EXISTS (
+        SELECT 1 FROM official_collector_removed_players WHERE region='jp' AND player_id=?)
+      ON CONFLICT(player_id) DO NOTHING`).bind(id, label, verifiedAtMs ? "ready" : "created", runId, playerId, box, Date.now(), verifiedAtMs ?? null, playerId),
+    env.DB.prepare(`INSERT INTO official_guest_requests (guest_id,run_id,request_box)
+      SELECT id,run_id,? FROM official_guest_accounts WHERE id=?`)
+      .bind(`v1.${encode(nonce)}.${encode(new Uint8Array(sealed))}`, id),
+  ]);
+  return results[0]!.meta.changes === 1;
+}
+
+export async function removeGuestAccount(env: OfficialPlatformBindings, id: string, version: number) {
+  const result = await env.DB.prepare(`DELETE FROM official_guest_accounts WHERE id=? AND version=?
+    AND (status NOT IN ('queued','creating','verifying') OR deadline_ms<=?) RETURNING id`)
+    .bind(id, version, Date.now()).first<{ id: string }>();
+  return result !== null;
 }

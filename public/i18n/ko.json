@@ -5844,6 +5844,10 @@
         "population": "시즌 {id} · 리그 {board} · 인원"
       },
       "pool": {
+        "removeFailed": "계정을 새로고침하고 다시 시도하세요",
+        "removed": "계정을 삭제했습니다",
+        "deleteStored": "삭제",
+        "confirmRemove": "계정을 삭제할까요?",
         "title": "계정 풀",
         "refresh": "새로고침",
         "account": "계정",
@@ -5883,6 +5887,9 @@
         }
       },
       "guest": {
+        "adoptFailed": "풀을 가져오지 못했습니다",
+        "adopted": "풀을 가져왔습니다",
+        "adopt": "현재 풀 가져오기",
         "title": "일본 서버 게스트 계정",
         "create": "게스트 생성",
         "empty": "게스트 계정 없음",

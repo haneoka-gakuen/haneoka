@@ -49,7 +49,7 @@ secrets. Email addresses and passwords are entered through the admin account
 form after the Worker is deployed.
 
 Use the normal deployment workflow so pending D1 migrations run before the new
-Worker; this version requires migrations through 0064. For a manual Worker-only
+Worker; this version requires migrations through 0066. For a manual Worker-only
 release, select `apply_d1_migrations=true`. When Container source or dependencies
 change, also select `build_containers=true` so the sealed image comes from the
 same source as the Worker. These options belong to `deploy-cloudflare.yml`.
@@ -158,9 +158,9 @@ The admin operations page includes Global email-account entry and per-region
 initialization states. Its form clears the password after saving. The
 administrator-only `collector-platform-accounts` API stores Global email
 accounts separately from usable regional collector credentials. POST accepts
-`{label, email, password}` with an administrator session and an idempotency key;
-GET returns redacted per-region account rows. Saving creates `not_initialized`
-entries for `tw`, `en` and `kr` and performs no login or game request.
+`{email, password} (and an optional label)` with an administrator session and an idempotency key;
+GET returns redacted per-region account rows. Saving creates the three role records,
+then adopts configured active sessions or queues one shared account login.
 
 PUT `collector-platform-accounts/{id}` accepts `{label, expectedVersion, password?}`.
 The email remains fixed. Omitting the password preserves it; supplying a new one
@@ -442,8 +442,9 @@ migration: a code rollback does not restore the retired shared sessions.
 ### Platform role persistence and pool ownership
 
 Migration `0057_official_platform_login_jobs.sql` adds one current login lease per
-platform account, serializing its three regions. Claiming a role clears its
-previous session and verification marker. Completion checks the run, region,
+platform account, serializing its three regions. The initial SDK lease clears all three
+role sessions before draining in-flight work; subsequent role leases clear only
+their own session and verification marker. Completion checks the run, region,
 account version, deadline and existing player pin in the same D1 batch. A changed
 password invalidates all role sessions; an expired login displays
 `auth_uncertain`. These storage functions do not themselves send login requests.
@@ -593,3 +594,19 @@ renewal alarm is created. If that scheduling call fails, the next
 keeps its candidate and does not replay SDK/game work. Held candidates are
 skipped while other due accounts proceed; an ambiguous attempt is consumed
 without blocking the remaining candidates.
+
+### Existing pool migration and account removal
+
+In Admin → Operations → Account pool, use **Import current pool** to adopt the configured JP guests without registering replacements. Imported identities retain their credentials and start in the created state; verify each guest to admit it to collection. The import is repeatable and skips managed or removed players.
+
+Add Global accounts by entering email and password. Sign-in restores TW, EN and KR together. Passwords and sessions use the server vault. Lists and audit records contain no passwords.
+
+`DELETE /api/v1/admin/collector-{guest,platform}-accounts/{id}` accepts `{expectedVersion}` and the administrative idempotency key. Removal deletes encrypted credentials, saved requests, SDK sessions and login leases in the same transaction. Player tombstones suppress old secret/manual configurations; guest ID tombstones also prevent registration replay. Active JP creation/verification must finish before removal. Deleting a pool identity does not delete its game account.
+
+### Shared Global account login
+
+The admin form accepts email and password. A saved Global account owns TW, EN and KR roles together; the account-level sign-in queues one SDK authentication followed by three serial game-role logins. A D1 batch lease prevents overlapping login chains across regional objects. Before SDK authentication, stored roles leave selection and existing regional collection/lookup leases drain. Sibling regions reuse the verified SDK session directly; they do not authenticate the SDK again. Each verified role returns to the pool with its previous manual hold preserved. Deferred work, account versions and the batch deadline survive object restarts.
+
+For an existing pool, a temporary gzip/base64 `bootstrapAccounts` value in the private Global login configuration can supply verified SDK sessions, regional configurations and the original SDK device IDs. The normal email/password form matches its email, encrypts the supplied password and adopts those sessions without a game or SDK login. Clear the bootstrap value after both accounts are present and regional reads succeed. An unattended one-time migration may also supply the password in this private payload; remove the payload after verifying the encrypted database records. Imported SDK device IDs remain stable in `official_platform_devices`; new accounts use their account UUID.
+
+JP creation needs no form fields. `POST /api/v1/admin/collector-guest-accounts` accepts an empty JSON body with the normal administrative idempotency key, or a stable `guestId` for browser retry recovery. The server assigns the label.

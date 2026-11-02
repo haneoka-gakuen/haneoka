@@ -4,9 +4,10 @@ import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { decideModerationManually, resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
-import { readOfficialDailyArchives, readOfficialFinalArchives } from "./official-ranking-store";
-import { AccountVaultUnavailable, createPlatformAccount, listPlatformAccounts, listPlatformSdkConflicts, resolvePlatformSdkConflict, parsePlatformAccount, parsePlatformAccountUpdate, updatePlatformAccount } from "./official-platform-accounts";
-import { listGuestAccounts } from "./official-guest-accounts";
+import { officialDigest, readOfficialDailyArchives, readOfficialFinalArchives } from "./official-ranking-store";
+import { AccountVaultUnavailable, adoptPlatformSessions, createPlatformAccount, listPlatformAccounts, listPlatformSdkConflicts, resolvePlatformSdkConflict, parsePlatformAccount, parsePlatformAccountUpdate, platformSdkScopes, readPlatformBootstraps, savePlatformDeviceId, updatePlatformAccount, removePlatformAccount } from "./official-platform-accounts";
+import { globalLoginConfiguration } from "./official-account-jobs";
+import { listGuestAccounts, removeGuestAccount } from "./official-guest-accounts";
 import { listAdminCreations, readAdminCreation, removeAdminCreation, type CreationKind } from "./admin-creations";
 import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
 import { USER_ROLES, isUserRole, isStaffRole, type UserRole, type StaffRole, type StoredUserRole, type MemberTier } from "../src/lib/user-roles";
@@ -3312,6 +3313,40 @@ const putResourceServer = async (request: Request, env: Env, slug: string): Prom
 const POOL_REGIONS = ["jp", "tw", "en", "kr"] as const;
 type PoolRegion = (typeof POOL_REGIONS)[number];
 
+const adoptCollectorGuests = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const started = await startOperation(request, env, access, "collector.guest.adopt", "guest_account", "configured");
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  try {
+    const imported = await env.OFFICIAL_RANKING_COLLECTOR.getByName("jp").adoptConfiguredGuests();
+    const operation = await transitionOperation(env, started.operationId, "succeeded", { imported }, "configured", null);
+    return json(request, { operation: operationValue(operation), imported });
+  } catch (failure) {
+    await failOperation(env, started.operationId, "guest_store_failed");
+    return error(request, 503, failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "guest_store_failed", "Guest import failed");
+  }
+};
+
+const deleteCollectorAccount = async (request: Request, env: Env, kind: "guest" | "platform", id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  if (!version || version < 1) return error(request, 422, "invalid_account_version", "Enter the account version");
+  const started = await startOperation(request, env, access, `collector.${kind}.remove`, `${kind}_account`, id);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const removed = kind === "guest" ? await removeGuestAccount(env, id, version) : await removePlatformAccount(env, id, version);
+  if (!removed) {
+    await failOperation(env, started.operationId, "account_changed");
+    return error(request, 409, "account_changed", "Refresh the account and retry");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: id }, id, null);
+  return json(request, { operation: operationValue(operation) });
+};
+
 const getGuestAccounts = async (request: Request, env: Env): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
@@ -3330,8 +3365,12 @@ const postGuestAccount = async (request: Request, env: Env, verificationId?: str
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
   const body = await readJsonBody(request);
-  const id = verificationId ?? body?.guestId;
-  const label = typeof body?.label === "string" ? body.label.trim() : "";
+  let id = verificationId ?? body?.guestId;
+  if (id === undefined || id === null) {
+    const digest = await officialDigest(JSON.stringify(["official-guest-request/1", access.userId, request.headers.get("Idempotency-Key")]));
+    id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+  }
+  const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim() : `JP-${String(id).slice(0, 8)}`;
   const version = body && expectedVersion(body);
   if (typeof id !== "string" || !UUID_PATTERN.test(id)
     || (verificationId ? version === null || version === undefined || version < 1 : !label || label.length > 80))
@@ -3426,8 +3465,10 @@ const postPlatformAccount = async (request: Request, env: Env): Promise<Response
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
   let created: boolean;
+  const bootstrap = (await readPlatformBootstraps(env)).find((entry) => entry.email.toLowerCase() === input.email.toLowerCase());
+  const accountId = bootstrap?.id ?? started.operationId;
   try {
-    created = await createPlatformAccount(env, started.operationId, input);
+    created = await createPlatformAccount(env, accountId, input);
   } catch (failure) {
     const code = failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "account_store_failed";
     await failOperation(env, started.operationId, code);
@@ -3438,8 +3479,23 @@ const postPlatformAccount = async (request: Request, env: Env): Promise<Response
     await failOperation(env, started.operationId, "platform_account_exists");
     return error(request, 409, "platform_account_exists", "This email is already saved");
   }
-  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: started.operationId }, started.operationId, null);
-  return json(request, { operation: operationValue(operation), accountId: started.operationId });
+  let sessionsImported = false;
+  let loginQueued = false;
+  if (bootstrap) {
+    try {
+      await savePlatformDeviceId(env, accountId, bootstrap.deviceId);
+      const config = globalLoginConfiguration(env.OFFICIAL_GLOBAL_LOGIN_CONFIG, bootstrap.deviceId, "tw");
+      await adoptPlatformSessions(env, accountId, 1, bootstrap.sdkSession, bootstrap.configurations, await platformSdkScopes(config.sdkProfile));
+      sessionsImported = true;
+    } catch (failure) {
+      console.warn(JSON.stringify({ event: "official_account_adoption_failed", accountId, error: failure instanceof Error ? failure.name : "Error" }));
+    }
+  } else {
+    const queued = await env.OFFICIAL_RANKING_COLLECTOR.getByName("tw").requestPlatformLogin("tw", accountId, 1);
+    loginQueued = queued.kind === "queued";
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId, sessionsImported, loginQueued }, accountId, null);
+  return json(request, { operation: operationValue(operation), accountId, status: loginQueued ? "queued" : "saved" });
 };
 
 const putPlatformAccount = async (request: Request, env: Env, id: string): Promise<Response> => {
@@ -4792,6 +4848,13 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
   if (path.length === 1 && path[0] === "collector-guest-accounts") {
     if (method === "GET") return getGuestAccounts(request, env);
     if (method === "POST") return postGuestAccount(request, env);
+  }
+  if (method === "POST" && path.length === 2 && path[0] === "collector-guest-accounts" && path[1] === "adopt")
+    return adoptCollectorGuests(request, env);
+  if (method === "DELETE" && path.length === 2 && ["collector-guest-accounts", "collector-platform-accounts"].includes(path[0]!)) {
+    const id = path[1];
+    return id && UUID_PATTERN.test(id) ? deleteCollectorAccount(request, env, path[0] === "collector-guest-accounts" ? "guest" : "platform", id)
+      : error(request, 404, "account_not_found", "Account not found");
   }
   if (method === "POST" && path.length === 3 && path[0] === "collector-guest-accounts" && path[2] === "verify") {
     const id = path[1];

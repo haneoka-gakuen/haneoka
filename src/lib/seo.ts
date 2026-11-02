@@ -19,6 +19,7 @@ const PRIVATE_ROUTES = new Set([
   "/settings",
   "/community",
   "/community/mine",
+  "/community/following",
   "/community/bookmarks",
   "/community/notifications",
   "/community/activity",

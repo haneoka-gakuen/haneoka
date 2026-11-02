@@ -1,9 +1,10 @@
 // L3 — GEB
 // Input: Validated platform account input, a dedicated encryption key and private D1 storage.
-// Output: Encrypted passwords, scoped SDK identities/owners, explicit conflict resolution, shared SDK/role sessions, login leases and redacted state.
+// Output: Encrypted passwords, scoped SDK identities/owners, conflict resolution, shared SDK/role sessions, versioned removal and redacted state.
 // Pos: [Map](L2.md); platform identity storage alongside the regional collector pool.
 // Effects/Dependencies: D1 and AES-GCM; owner resolution atomically retires old sessions through a database trigger; no SDK/game requests.
 import { normalizeOfficialPlayerId, parseOfficialCollectorConfiguration } from "../src/lib/official-ranking";
+import { globalLoginConfiguration } from "./official-account-jobs";
 
 export interface OfficialPlatformBindings {
   DB: D1Database;
@@ -17,7 +18,8 @@ export class AccountVaultUnavailable extends Error {
 export interface PlatformAccountInput { label: string; email: string; password: string }
 
 export function parsePlatformAccount(value: Record<string, unknown>): PlatformAccountInput | null {
-  const { label, email, password } = value;
+  const { email, password } = value;
+  const label = value.label ?? (typeof email === "string" ? email.split("@")[0]!.slice(0, 100) : "");
   if (typeof label !== "string" || !label.trim() || label.length > 100
     || typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+$/u.test(email.trim())
     || typeof password !== "string" || !password.length || password.length > 1024) return null;
@@ -67,7 +69,7 @@ export async function createPlatformAccount(env: OfficialPlatformBindings, id: s
     env.DB.prepare(`INSERT INTO official_platform_accounts (id,label,email,password_box,created_at_ms)
       VALUES (?,?,?,?,?) ON CONFLICT(email) DO NOTHING`).bind(id, input.label, input.email, box, Date.now()),
     ...["tw", "en", "kr"].map((region) => env.DB.prepare(`INSERT INTO official_platform_roles (account_id,region)
-      SELECT id,? FROM official_platform_accounts WHERE id=?`).bind(region, id)),
+      SELECT id,? FROM official_platform_accounts WHERE id=? ON CONFLICT(account_id,region) DO NOTHING`).bind(region, id)),
   ]);
   return result[0]!.meta.changes === 1;
 }
@@ -94,17 +96,31 @@ export async function updatePlatformAccount(env: OfficialPlatformBindings, id: s
 
 export async function listPlatformAccounts(env: OfficialPlatformBindings) {
   const { results } = await env.DB.prepare(`SELECT a.id,a.label,a.email,a.version,a.created_at_ms AS createdAtMs,
-    r.region,CASE WHEN r.status='authenticating' AND NOT EXISTS (
+    r.region,CASE WHEN r.status IN ('auth_required','not_initialized') AND EXISTS (
+      SELECT 1 FROM official_platform_login_batches AS b WHERE b.account_id=a.id AND b.account_version=a.version AND b.deadline_ms>?
+    ) THEN 'queued' WHEN r.status='authenticating' AND NOT EXISTS (
       SELECT 1 FROM official_platform_login_jobs AS j WHERE j.account_id=a.id AND j.region=r.region
         AND j.account_version=a.version AND j.status='running' AND j.deadline_ms>?
     ) THEN 'auth_uncertain' ELSE r.status END AS status,
     r.player_id AS playerId,r.last_verified_at_ms AS lastVerifiedAtMs,r.last_error_code AS lastErrorCode
     FROM official_platform_accounts AS a JOIN official_platform_roles AS r ON r.account_id=a.id
-    ORDER BY a.created_at_ms,a.id,r.region`).bind(Date.now()).all<{
+    ORDER BY a.created_at_ms,a.id,r.region`).bind(Date.now(), Date.now()).all<{
       id: string; label: string; email: string; version: number; createdAtMs: number;
       region: string; status: string; playerId: string | null; lastVerifiedAtMs: number | null; lastErrorCode: string | null;
     }>();
   return results;
+}
+
+export async function removePlatformAccount(env: OfficialPlatformBindings, id: string, version: number) {
+  const result = await env.DB.prepare("DELETE FROM official_platform_accounts WHERE id=? AND version=? RETURNING id")
+    .bind(id, version).first<{ id: string }>();
+  return result !== null;
+}
+
+export async function readRemovedPlayerIds(env: OfficialPlatformBindings, region: string): Promise<Set<string>> {
+  const { results } = await env.DB.prepare("SELECT player_id AS id FROM official_collector_removed_players WHERE region=?")
+    .bind(region).all<{ id: string }>();
+  return new Set(results.map((row) => normalizeOfficialPlayerId(row.id)));
 }
 
 export async function readPlatformPassword(env: OfficialPlatformBindings, id: string): Promise<{ email: string; password: string } | null> {
@@ -123,8 +139,68 @@ export interface PlatformLoginLease {
   deadlineMs: number;
 }
 
+export async function claimPlatformBatch(env: OfficialPlatformBindings, accountId: string, version: number, batchId: string, deadlineMs: number) {
+  const row = await env.DB.prepare(`INSERT INTO official_platform_login_batches (account_id,batch_id,account_version,deadline_ms)
+    SELECT id,?,version,? FROM official_platform_accounts WHERE id=? AND version=?
+    ON CONFLICT(account_id) DO UPDATE SET batch_id=excluded.batch_id,account_version=excluded.account_version,deadline_ms=excluded.deadline_ms
+    WHERE official_platform_login_batches.deadline_ms<=? OR official_platform_login_batches.account_version!=excluded.account_version
+    RETURNING batch_id`).bind(batchId, deadlineMs, accountId, version, Date.now()).first();
+  return row !== null;
+}
+
+export async function platformBatchCurrent(env: OfficialPlatformBindings, accountId: string, version: number, batchId: string) {
+  return await env.DB.prepare(`SELECT 1 FROM official_platform_login_batches AS b JOIN official_platform_accounts AS a ON a.id=b.account_id
+    WHERE b.account_id=? AND b.account_version=? AND a.version=b.account_version AND b.batch_id=? AND b.deadline_ms>?`)
+    .bind(accountId, version, batchId, Date.now()).first() !== null;
+}
+
+export async function releasePlatformBatch(env: OfficialPlatformBindings, accountId: string, batchId: string) {
+  await env.DB.prepare("DELETE FROM official_platform_login_batches WHERE account_id=? AND batch_id=?").bind(accountId, batchId).run();
+}
+
+export async function platformDeviceId(env: OfficialPlatformBindings, accountId: string): Promise<string> {
+  const row = await env.DB.prepare("SELECT device_id AS deviceId FROM official_platform_devices WHERE account_id=?")
+    .bind(accountId).first<{ deviceId: string }>();
+  return row?.deviceId ?? accountId;
+}
+
+export async function savePlatformDeviceId(env: OfficialPlatformBindings, accountId: string, deviceId: string) {
+  await env.DB.prepare("INSERT INTO official_platform_devices (account_id,device_id) VALUES (?,?) ON CONFLICT(account_id) DO NOTHING")
+    .bind(accountId, deviceId).run();
+}
+
+interface PlatformBootstrapAccount {
+  id: string; deviceId: string; email: string; password?: string;
+  sdkSession: PlatformSdkSession; configurations: Record<PlatformRegion, Record<string, unknown>>;
+}
+type PlatformBootstrapBindings = OfficialPlatformBindings & { OFFICIAL_GLOBAL_LOGIN_CONFIG?: string };
+
+export async function readPlatformBootstraps(env: PlatformBootstrapBindings): Promise<PlatformBootstrapAccount[]> {
+  if (!env.OFFICIAL_GLOBAL_LOGIN_CONFIG) return [];
+  const packed = (JSON.parse(env.OFFICIAL_GLOBAL_LOGIN_CONFIG) as { bootstrapAccounts?: string }).bootstrapAccounts;
+  if (!packed) return [];
+  const bytes = Uint8Array.from(atob(packed), (character) => character.charCodeAt(0));
+  const entries = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).json() as PlatformBootstrapAccount[];
+  if (!Array.isArray(entries) || entries.length > 32 || entries.some((entry) => !/^[a-f0-9-]{36}$/u.test(entry.id)
+    || typeof entry.email !== "string" || typeof entry.deviceId !== "string")) throw new Error("invalid_bootstrap_accounts");
+  return entries;
+}
+
+export async function adoptConfiguredPlatformAccounts(env: PlatformBootstrapBindings): Promise<void> {
+  for (const entry of await readPlatformBootstraps(env)) {
+    if (!entry.password) continue;
+    const input = parsePlatformAccount({ email: entry.email, password: entry.password });
+    if (!input) throw new Error("invalid_bootstrap_account");
+    const created = await createPlatformAccount(env, entry.id, input);
+    if (!created) continue;
+    await savePlatformDeviceId(env, entry.id, entry.deviceId);
+    const config = globalLoginConfiguration(env.OFFICIAL_GLOBAL_LOGIN_CONFIG, entry.deviceId, "tw");
+    await adoptPlatformSessions(env, entry.id, 1, entry.sdkSession, entry.configurations, await platformSdkScopes(config.sdkProfile));
+  }
+}
+
 /** The caller must first drain this role's regional collection and lookup leases. */
-export async function claimPlatformLogin(env: OfficialPlatformBindings, lease: PlatformLoginLease, now = Date.now()): Promise<boolean> {
+export async function claimPlatformLogin(env: OfficialPlatformBindings, lease: PlatformLoginLease, now = Date.now(), invalidateAll = false): Promise<boolean> {
   await vaultKey(env);
   const results = await env.DB.batch([
     env.DB.prepare(`INSERT INTO official_platform_login_jobs
@@ -136,13 +212,46 @@ export async function claimPlatformLogin(env: OfficialPlatformBindings, lease: P
       WHERE (official_platform_login_jobs.status!='running' OR official_platform_login_jobs.deadline_ms<=?)
         AND official_platform_login_jobs.run_id!=excluded.run_id`)
       .bind(lease.region, lease.runId, now, lease.deadlineMs, lease.accountId, lease.accountVersion, now),
-    env.DB.prepare(`UPDATE official_platform_roles SET status=CASE WHEN region=? THEN 'authenticating' ELSE 'auth_uncertain' END,
+    env.DB.prepare(`UPDATE official_platform_roles SET status=CASE WHEN region=? THEN 'authenticating' ELSE 'auth_required' END,
       credential_box=NULL,last_verified_at_ms=NULL,last_error_code=NULL
-      WHERE account_id=? AND (region=? OR status='authenticating') AND EXISTS (
+      WHERE account_id=? AND (?=1 OR region=? OR status='authenticating') AND EXISTS (
         SELECT 1 FROM official_platform_login_jobs WHERE account_id=? AND run_id=? AND status='running'
-      )`).bind(lease.region, lease.accountId, lease.region, lease.accountId, lease.runId),
+      )`).bind(lease.region, lease.accountId, invalidateAll ? 1 : 0, lease.region, lease.accountId, lease.runId),
   ]);
   return results[0]!.meta.changes === 1;
+}
+
+export async function limitPlatformLoginLease(env: OfficialPlatformBindings, lease: PlatformLoginLease): Promise<void> {
+  await env.DB.prepare(`UPDATE official_platform_login_jobs SET deadline_ms=MIN(deadline_ms,?)
+    WHERE account_id=? AND run_id=? AND account_version=? AND status='running'`)
+    .bind(lease.deadlineMs, lease.accountId, lease.runId, lease.accountVersion).run();
+}
+
+export async function platformSdkScopes(profile: { origin: string; app_key: string; email_country_id?: number; one_sdk_version?: string; common_params: Record<string, string> }) {
+  const digest = async (value: unknown) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(JSON.stringify(value)))), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { sdkScope: await digest([profile.origin, profile.app_key, profile.email_country_id ?? null, profile.one_sdk_version ?? null,
+    Object.keys(profile.common_params).sort().map((key) => [key, profile.common_params[key]])]),
+    sdkIdentityScope: await digest(["official-sdk-identity/1",
+      ...["game_id", "server_id", "merchant_id", "channel_id", "platform", "platform_type"].map((key) => profile.common_params[key])]) };
+}
+
+export async function adoptPlatformSessions(env: OfficialPlatformBindings, accountId: string, accountVersion: number,
+  session: PlatformSdkSession, configurations: Record<PlatformRegion, Record<string, unknown>>, scopes: { sdkScope: string; sdkIdentityScope: string }) {
+  for (const region of ["tw", "en", "kr"] as const) {
+    const lease = { accountId, accountVersion, region, runId: crypto.randomUUID().replaceAll("-", ""), deadlineMs: Date.now() + 120_000 };
+    if (!await claimPlatformLogin(env, lease)) throw new Error("account_busy");
+    try {
+      if (!await bindPlatformSdkIdentity(env, lease, scopes.sdkIdentityScope, session.uid)
+        || await claimPlatformSdkOwner(env, lease, scopes.sdkIdentityScope, session.uid) !== "owned") throw new Error("sdk_identity_conflict");
+      await savePlatformSdkSession(env, lease, scopes.sdkScope, session);
+      const configuration = configurations[region];
+      const parsed = await parseOfficialCollectorConfiguration(JSON.stringify(configuration), region);
+      const credentials = parsed.accounts[0]!.credentials.credentials as Record<string, unknown>;
+      if (credentials.bid !== session.uid || !await finishPlatformLogin(env, lease, {
+        status: "ready", playerId: String(credentials.player_id), configuration })) throw new Error("game_player_mismatch");
+    } finally { await releasePlatformLogin(env, lease); }
+  }
 }
 
 export async function readPlatformLoginInput(env: OfficialPlatformBindings, lease: PlatformLoginLease) {

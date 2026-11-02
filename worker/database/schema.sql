@@ -2865,3 +2865,51 @@ BEGIN
   INSERT INTO official_observation_payload_gc (payload_key, region, snapshot_id)
     VALUES (OLD.payload_key, OLD.region, OLD.snapshot_id) ON CONFLICT(payload_key) DO NOTHING;
 END;
+CREATE TABLE IF NOT EXISTS official_collector_removed_players (
+  region TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  PRIMARY KEY (region, player_id)
+);
+CREATE TABLE IF NOT EXISTS official_collector_removed_guests (
+  id TEXT PRIMARY KEY NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS official_guest_account_removed
+BEFORE DELETE ON official_guest_accounts
+BEGIN
+  INSERT OR IGNORE INTO official_collector_removed_guests (id) VALUES (OLD.id);
+  INSERT OR IGNORE INTO official_collector_removed_players (region, player_id)
+    SELECT 'jp', OLD.player_id WHERE OLD.player_id IS NOT NULL;
+  DELETE FROM official_guest_requests WHERE guest_id=OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS official_platform_account_removed
+BEFORE DELETE ON official_platform_accounts
+BEGIN
+  INSERT OR IGNORE INTO official_collector_removed_players (region, player_id)
+    SELECT region, player_id FROM official_platform_roles
+    WHERE account_id=OLD.id AND player_id IS NOT NULL;
+  DELETE FROM official_platform_login_jobs WHERE account_id=OLD.id;
+  DELETE FROM official_platform_sdk_sessions WHERE account_id=OLD.id;
+  DELETE FROM official_platform_sdk_owners WHERE account_id=OLD.id;
+  DELETE FROM official_platform_sdk_identities WHERE account_id=OLD.id;
+  DELETE FROM official_platform_roles WHERE account_id=OLD.id;
+END;
+CREATE TABLE IF NOT EXISTS official_platform_login_batches (
+  account_id TEXT PRIMARY KEY NOT NULL REFERENCES official_platform_accounts(id),
+  batch_id TEXT NOT NULL UNIQUE,
+  account_version INTEGER NOT NULL,
+  deadline_ms INTEGER NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS official_platform_login_batch_removed
+BEFORE DELETE ON official_platform_accounts
+BEGIN
+  DELETE FROM official_platform_login_batches WHERE account_id=OLD.id;
+END;
+CREATE TABLE IF NOT EXISTS official_platform_devices (
+  account_id TEXT PRIMARY KEY NOT NULL REFERENCES official_platform_accounts(id),
+  device_id TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS official_platform_device_removed
+BEFORE DELETE ON official_platform_accounts
+BEGIN
+  DELETE FROM official_platform_devices WHERE account_id=OLD.id;
+END;

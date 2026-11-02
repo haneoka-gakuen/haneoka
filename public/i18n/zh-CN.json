@@ -5844,6 +5844,10 @@
         "population": "赛季 {id} · 联赛 {board} · 人数"
       },
       "pool": {
+        "removeFailed": "刷新账号后重试",
+        "removed": "账号已删除",
+        "deleteStored": "删除",
+        "confirmRemove": "删除账号？",
         "title": "号池",
         "refresh": "刷新",
         "account": "账号",
@@ -5883,6 +5887,9 @@
         }
       },
       "guest": {
+        "adoptFailed": "号池导入失败",
+        "adopted": "号池已导入",
+        "adopt": "导入现有号池",
         "title": "日服游客账号",
         "create": "创建游客",
         "empty": "暂无游客账号",

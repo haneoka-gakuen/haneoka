@@ -5844,6 +5844,10 @@
         "population": "賽季 {id} · 聯賽 {board} · 人數"
       },
       "pool": {
+        "removeFailed": "重新整理帳號後重試",
+        "removed": "帳號已刪除",
+        "deleteStored": "刪除",
+        "confirmRemove": "刪除帳號？",
         "title": "帳號池",
         "refresh": "重新整理",
         "account": "帳號",
@@ -5883,6 +5887,9 @@
         }
       },
       "guest": {
+        "adoptFailed": "帳號池匯入失敗",
+        "adopted": "帳號池已匯入",
+        "adopt": "匯入現有帳號池",
         "title": "日服訪客帳號",
         "create": "建立訪客",
         "empty": "尚無訪客帳號",

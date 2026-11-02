@@ -130,6 +130,7 @@
     "src/server/static-documents.ts",
     "src/server/provider-source-cache.ts",
     "src/server/static-build.ts",
+    "src/server/sitemap.ts",
     "src/server/web-build-identity.ts",
     "src/lit/shared/catalog.ts",
     "src/lit/shared/hydrate-workspace.ts",

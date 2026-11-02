@@ -9,7 +9,7 @@
     gap: 16px;
     overflow: auto;
   }
-  .admin-page :is(.admin-archive-dialog, .admin-archive-launch, .admin-platform-dialog, .admin-platform-launch, .admin-guest-dialog, .admin-guest-launch, .admin-sdk-dialog) {
+  .admin-page :is(.admin-archive-dialog, .admin-archive-launch, .admin-platform-dialog, .admin-platform-launch, .admin-guest-dialog, .admin-guest-launch, .admin-sdk-dialog, .admin-account-removal) {
     --button-height: var(--md-comp-control-height-touch);
   }
   .admin-page .admin-archive-dialog {
