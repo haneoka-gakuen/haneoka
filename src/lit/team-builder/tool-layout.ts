@@ -11,10 +11,11 @@ import type { TeamBuilder } from "../team-builder";
 
 export function conditionSummary(host: TeamBuilder) {
   const s = host.searchSettings;
+  const manual = host.tab === "teams" || host.tab === "build" && host.buildMode === "manual";
   const songs = host.tab === "song-comparison" ? host.songComparison.effectiveSettings.songs : s.songs;
-  const goal = host.goal();
+  const goal = manual ? host.manualGoal() : host.goal();
   const count =
-    host.tab === "song-comparison"
+    host.tab === "song-comparison" || manual
       ? songs.length
       : goal?.kind === "power"
         ? Number(!!goal.song)
@@ -25,7 +26,7 @@ export function conditionSummary(host: TeamBuilder) {
   if (host.tab === "arena")
     return `${host.catalog!.bandName(host.arena.bandId)} ${host.t("chartCount", "{count} charts", { count })}`;
   return [
-    host.tab === "song-comparison"
+    host.tab === "song-comparison" || manual
       ? host.t("manualTeam", "Build a team by hand")
       : s.scope === "box"
         ? host.t("scopeBox", "My cards")
@@ -35,19 +36,21 @@ export function conditionSummary(host: TeamBuilder) {
       ? [
           host.tab === "song-comparison"
             ? `${host.t("placementRank", "Specified placement")} ${host.songComparison.settings.rank ?? "—"}`
+            : manual
+              ? `${host.t("placementRank", "Specified placement")} ${s.gekisoRank}`
             : s.goal === "gekiso"
               ? s.gekisoPlacementMode === "opponents"
                 ? host.t("placementOpponents", "Opponent scores")
                 : `${host.t("placementRank", "Specified placement")} ${s.gekisoRank}`
               : `${host.t("placementRank", "Specified placement")} 1`,
-          ...(host.tab !== "song-comparison" && host.hasComboSongs() ? [`CB ≥ ×${s.minComboBonus}`] : []),
+          ...(host.tab !== "song-comparison" && !manual && host.hasComboSongs() ? [`CB ≥ ×${s.minComboBonus}`] : []),
         ]
       : []),
   ].join(" / ");
 }
 /** What is left before a first search: cards, songs, then the search itself. */
 function teamSteps(host: TeamBuilder) {
-  if (host.tab !== "build" || host.results) return nothing;
+  if (host.tab !== "build" || host.buildMode === "manual" || host.results) return nothing;
   const issues = new Set(host.inputIssues().map((issue) => issue.field));
   const cards = host.view?.members.size ?? 0;
   const cardsDone = !issues.has("tb-cards");

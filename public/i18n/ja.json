@@ -2983,6 +2983,8 @@
       "provenReach": "選択中のカードと条件で、到達率の最適性を確認済み",
       "unprovenReach": "到達率：現在見つかった最良の結果",
       "criterionCapped": "上限付き平均",
+      "selectedOrderScore": "選択したスキル順のスコア",
+      "replaceBaseline": "基準を更新",
       "criterionCappedHelp": "各スキル順のスコアを目標スコアまでとして平均で比較。",
       "cappedScore": "上限付き平均",
       "provenCapped": "選択中のカードと条件で、上限付き平均の最適性を確認済み",

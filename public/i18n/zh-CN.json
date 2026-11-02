@@ -2983,6 +2983,8 @@
       "provenReach": "当前卡池及条件下，达标率已证明最优",
       "unprovenReach": "达标率：目前找到的最佳结果",
       "criterionCapped": "封顶平均分",
+      "selectedOrderScore": "所选顺序分数",
+      "replaceBaseline": "更新对比基准",
       "criterionCappedHelp": "每种技能顺序的分数最多计到目标分数，按平均分排序。",
       "cappedScore": "封顶平均分",
       "provenCapped": "当前卡池及条件下，封顶平均分已证明最优",
