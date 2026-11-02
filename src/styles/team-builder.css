@@ -198,7 +198,11 @@
     margin: 0;
   }
   .team-builder__box-review .collection--member {
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+  }
+  .team-builder__box-review .team-builder__card-values {
+    color: var(--md-sys-color-on-surface-variant);
+    font-variant-numeric: tabular-nums;
   }
   .team-builder__box-review .team-builder__owned-card {
     padding: var(--md-sys-spacing-3);

@@ -5,14 +5,16 @@ import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch, clearAppBarSearch, setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { appCall, inApp } from "../lib/app-bridge";
+import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
 import { resourcePath } from "../lib/resource-route";
 import { songTitle } from "../lib/song-display";
 import { catalogUrl, currentReleaseServer, fetchJson, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { collectionTable } from "./ui/collection-view";
-import { filterChip, segmented } from "./ui/controls";
+import { filterChip, iconButton, segmented } from "./ui/controls";
 import { accordion } from "./ui/accordion";
 import { errorState, loadingState } from "./ui/state";
 import { clientText } from "../i18n/client";
@@ -101,6 +103,21 @@ export class SongProgress extends LitElement {
       label: uiText(this.locale, "common.actions.search"),
       onInput: value => { this.query = value.trim().toLowerCase(); },
     });
+    if (inApp())
+      setAppBarActions(
+        OWNER,
+        iconButton({ icon: "sports_esports", label: this.text("importSave", "Import from game save"), onClick: () => void this.importSave() }),
+      );
+  }
+  /** In the app: clear, full combo and all perfect from a game save. */
+  private async importSave(given?: Record<string, number>) {
+    const marks = given ?? (await appCall("songProgress", { server: this.server }).catch(() => null))?.marks;
+    if (!marks || !this.store) return;
+    const changes = this.charts
+      .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))
+      .map((chart) => ({ key: chart.key, value: marks[chart.key] || null }));
+    this.store.set(changes);
+    snackbar(this.text("imported", "Imported {count} charts").replace("{count}", String(changes.length)));
   }
   private start() {
     if (!this.isConnected) return;
@@ -115,10 +132,16 @@ export class SongProgress extends LitElement {
       this.requestUpdate();
     });
     void this.store.start();
-    void this.load();
+    void this.load().then(async () => {
+      // Progress the app's save page sent here.
+      if (!inApp() || !this.isConnected) return;
+      const pending = await appCall("pendingSongProgress", {}).catch(() => null);
+      if (pending) await this.importSave(pending.marks);
+    });
   }
   disconnectedCallback() {
     clearAppBarSearch(OWNER);
+    clearAppBarActions(OWNER);
     this.unsubscribe?.();
     this.store?.dispose();
     this.store = null;

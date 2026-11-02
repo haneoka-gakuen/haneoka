@@ -1236,6 +1236,8 @@
       "catalogFiltersUnavailable": "Additional card filters could not be loaded. Your cards are still available."
     },
     "songProgress": {
+      "importSave": "Import from game save",
+      "imported": "Imported {count} charts",
       "title": "Song progress",
       "notCleared": "Not cleared",
       "cleared": "Cleared",
@@ -2333,6 +2335,7 @@
         "listRowCheck": "Check the card ID, name, type and training values in this row.",
         "android": "Read Android phone",
         "appAccount": "Game save",
+        "adjust": "Adjust",
         "appAccountHint": "This phone, a USB phone, a backup or files",
         "channel": "Game channel",
         "channelOfficial": "Global · official",

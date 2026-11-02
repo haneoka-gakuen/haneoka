@@ -1236,6 +1236,8 @@
       "catalogFiltersUnavailable": "卡牌的額外篩選資訊載入失敗。現有卡牌仍然可以檢視。"
     },
     "songProgress": {
+      "importSave": "從遊戲存檔匯入",
+      "imported": "已匯入 {count} 個譜面",
       "title": "樂曲進度",
       "notCleared": "未通關",
       "cleared": "已通關",
@@ -2333,6 +2335,7 @@
         "listRowCheck": "請檢查這一行的卡牌ID、名稱、類型和練度。",
         "android": "從安卓手機讀取",
         "appAccount": "遊戲存檔",
+        "adjust": "調整",
         "appAccountHint": "本機、USB 手機、備份或檔案",
         "channel": "遊戲渠道",
         "channelOfficial": "Global / 官網",

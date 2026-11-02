@@ -1236,6 +1236,8 @@
       "catalogFiltersUnavailable": "追加のカード絞り込み情報を読み込めませんでした。カードは引き続き表示できます。"
     },
     "songProgress": {
+      "importSave": "セーブデータから読み込む",
+      "imported": "{count} 譜面を読み込みました",
       "title": "楽曲クリア状況",
       "notCleared": "未クリア",
       "cleared": "クリア",
@@ -2333,6 +2335,7 @@
         "listRowCheck": "この行のカードID・名前・種類・育成値を確認してください。",
         "android": "Androidから読み込む",
         "appAccount": "ゲームのセーブデータ",
+        "adjust": "調整",
         "appAccountHint": "この端末、USB の端末、バックアップ、ファイル",
         "channel": "配信チャネル",
         "channelOfficial": "Global・公式",

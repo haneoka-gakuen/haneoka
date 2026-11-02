@@ -389,6 +389,21 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
               <div class="collection collection--member">
                 ${model.cards.map((row) => {
           const options = actions.card(row.proposal.kind, row.proposal.cardId);
+          const key = row.proposal.key;
+          const toggle = () => actions.confirmation(setBoxCardIncluded(state.confirmation, key, !row.choice.include));
+          const adjustable = row.fields.some((value) => value.values.length);
+          const open = row.blocked || (actions.expanded?.(`box-card-${key}`) ?? false);
+          const chosen = state.confirmation.cards.find((choice) => choice.key === key)?.fields;
+          const summary = row.fields
+            .map((value) => {
+              const pick = chosen?.[value.field];
+              const shown =
+                pick === "keep"
+                  ? row.proposal.existing[value.field]
+                  : pick ?? (value.values.length ? value.defaultValue : value.value);
+              return `${actions.fieldName(value.field)} ${shown ?? "—"}`;
+            })
+            .join(" / ");
           return html`
             <div
               class="team-builder__owned-card"
@@ -403,30 +418,21 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                       ${tileMedia(options)}
                       <strong>${options.title}</strong>
                     `
-                  : tile({
-                      ...options,
-                      href: undefined,
-                      itemId: undefined,
-                      selected: row.choice.include,
-                      onOpen: () =>
-                        actions.confirmation(
-                          setBoxCardIncluded(state.confirmation, row.proposal.key, !row.choice.include),
-                        ),
-                    })
+                  : tile({ ...options, href: undefined, itemId: undefined, selected: row.choice.include, onOpen: toggle })
                 : nothing
             }
-              <label class="team-builder__check">
-                <md-checkbox
-                  .checked=${row.choice.include}
-                  ?disabled=${row.blocked && !row.choice.include}
-                  aria-label=${`${t("include", "Include")}: ${options?.label ?? t("review", "Needs review")}`}
-                  @change=${(event: Event) => actions.confirmation(setBoxCardIncluded(state.confirmation, row.proposal.key, (event.target as HTMLInputElement).checked))}
-                ></md-checkbox>
-                <span>${t("include", "Include")}</span>
-              </label>
-              <div class="team-builder__practice-control">
-                ${row.fields.map((value) => field(row.proposal.key, value))}
-              </div>
+              <small class="team-builder__card-values">${summary}</small>
+              ${
+              adjustable && open
+                ? html`<div class="team-builder__practice-control">${row.fields.map((value) => field(key, value))}</div>`
+                : adjustable
+                  ? html`
+                      <button class="button button--text button--small" type="button" @click=${() => actions.expand?.(`box-card-${key}`, true)}>
+                        ${icon("tune", 18)}${t("adjust", "Adjust")}
+                      </button>
+                    `
+                  : nothing
+            }
               ${
               row.blocked
                 ? html`
