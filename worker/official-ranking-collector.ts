@@ -1400,6 +1400,11 @@ export class OfficialRankingCollector extends Container<Env> {
       await harvestOfficialPlayers(this.env, region, update.players, update.observedAtMs);
       state.songInterests = (state.songInterests ?? []).filter((entry) => entry.id !== update.musicId);
     }
+    if (update.type === "player-profile" || update.type === "song-ranking") {
+      const run = state.lookup?.id === update.runId ? state.lookup : state.run;
+      const health = run?.accountIdentity ? state.accounts?.[run.accountIdentity] : undefined;
+      if (health) health.lastSuccessAtMs = Math.max(health.lastSuccessAtMs ?? 0, update.observedAtMs);
+    }
     return null;
   }
 
