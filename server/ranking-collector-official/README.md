@@ -597,7 +597,7 @@ without blocking the remaining candidates.
 
 ### Existing pool migration and account removal
 
-In Admin → Operations → Account pool, use **Import current pool** to adopt the configured JP guests without registering replacements. Imported identities retain their credentials and start in the created state; verify each guest to admit it to collection. The import is repeatable and skips managed or removed players.
+In Admin → Operations → Account pool, use **Import current pool** to adopt the configured JP guests without registering replacements. Imported identities retain their credentials. Guests with recorded successful collection keep their verified state; other guests await verification before joining collection. The import is repeatable and skips managed or removed players.
 
 Add Global accounts by entering email and password. Sign-in restores TW, EN and KR together. Passwords and sessions use the server vault. Lists and audit records contain no passwords.
 
