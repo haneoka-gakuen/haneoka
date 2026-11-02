@@ -10,7 +10,7 @@ import { appCall, inApp } from "../lib/app-bridge";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
 import { resourcePath } from "../lib/resource-route";
-import { songTitle } from "../lib/song-display";
+import { defaultJapaneseSongTitles, japaneseSongTitles, songTitle } from "../lib/song-display";
 import { catalogUrl, currentReleaseServer, fetchJson, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { collectionTable } from "./ui/collection-view";
@@ -91,6 +91,11 @@ export class SongProgress extends LitElement {
     this.phase = "ready";
   }
   protected update(changed: PropertyValues) {
+    if (this.hasAttribute("data-prerendered") && japaneseSongTitles(this.locale) !== defaultJapaneseSongTitles(this.locale)) {
+      // Built with the default song titles; the reader chose the other ones.
+      this.replaceChildren();
+      this.removeAttribute("data-prerendered");
+    }
     if (this.hasAttribute("data-prerendered")) {
       hydrate(this.render(), this, this.renderOptions);
       this.removeAttribute("data-prerendered");

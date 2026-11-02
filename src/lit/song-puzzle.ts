@@ -1,5 +1,6 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { disambiguateTitles } from "../lib/title-disambiguation";
+import { defaultJapaneseSongTitles, japaneseSongTitles, songTitle } from "../lib/song-display";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { LitElement, html, nothing } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -158,7 +159,7 @@ export class SongPuzzle extends LitElement {
       const cover = String(value.jacketUrl || value.jacketThumbUrl || "");
       return /^\d+$/u.test(id) && cover.startsWith("/assets/") && !cover.includes("\\")
         ? [{ id, row: value, title: value.musicTitle, labels: {} as Record<Locale, string>, band: value.bandName,
-          artist: value.artistName, name: localizedText(value.musicTitle, this.locale) || id, cover }]
+          artist: value.artistName, name: songTitle(value, this.locale).text, cover }]
         : [];
     });
     this.nameSongs();
@@ -168,6 +169,11 @@ export class SongPuzzle extends LitElement {
     this.coverReady = true;
   }
   protected override update(changed: import("lit").PropertyValues) {
+    if (this.hasAttribute("data-prerendered") && japaneseSongTitles(this.locale) !== defaultJapaneseSongTitles(this.locale)) {
+      // Built with the default song titles; the reader chose the other ones.
+      this.replaceChildren();
+      this.removeAttribute("data-prerendered");
+    }
     if (this.hasAttribute("data-prerendered")) {
       hydrate(this.render(), this, this.renderOptions);
       this.removeAttribute("data-prerendered");
@@ -389,7 +395,7 @@ export class SongPuzzle extends LitElement {
             labels: {} as Record<Locale, string>,
             band: value.bandName,
             artist: value.artistName,
-            name: localizedText(value.musicTitle, this.locale) || id,
+            name: songTitle(value, this.locale).text,
             cover: new URL(cover, location.origin).href,
           },
         ];

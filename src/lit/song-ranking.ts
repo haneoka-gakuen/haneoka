@@ -377,6 +377,7 @@ export class SongRanking extends GameRecordsCardsElement {
                 : html`
                     <ol
                       class="song-ranking__list"
+                      style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
                       aria-label=${this.rankingTitle || this.label("title", "Song ranking")}
                     >
                       ${visible.map((entry) => this.renderRow(entry))}

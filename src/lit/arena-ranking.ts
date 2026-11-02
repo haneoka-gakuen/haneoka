@@ -312,7 +312,10 @@ export class ArenaRanking extends GameRecordsCardsElement {
             : !rows.length && this.phase === "ready"
               ? emptyState({ title: this.label("empty", "No scores yet"), icon: "leaderboard" })
               : html`
-                  <ol class=${`song-ranking__list${this.limit ? " arena-ranking__list--compact" : ""}`}>
+                  <ol
+                    class=${`song-ranking__list${this.limit ? " arena-ranking__list--compact" : ""}`}
+                    style=${`--rank-digits: ${String(Math.max(0, ...rows.map((row) => Number(row.rank) || 0))).length}`}
+                  >
                     ${rows.map((row) => this.renderRow(row, observedAt))}
                   </ol>
                 `

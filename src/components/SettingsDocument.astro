@@ -560,7 +560,7 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
       setDifficultyEstimatesEnabled(estimatedDifficulty.selected);
     }, { signal });
     const japanese = settings.querySelector<HTMLElement & { selected: boolean }>("[data-japanese-titles]");
-    if (japanese) japanese.selected = japaneseSongTitles();
+    if (japanese) japanese.selected = japaneseSongTitles(document.documentElement.dataset.locale || "en");
     japanese?.addEventListener(
       "change",
       () => {

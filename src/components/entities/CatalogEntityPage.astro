@@ -20,6 +20,7 @@ import "../../styles/catalog.css";
 import { renderCatalogPage } from "../../server/render-catalog";
 import { catalogPageData } from "../../server/catalog-page-projector";
 import { serializePageData } from "../../lib/page-data";
+import { defaultSongTitle } from "../../lib/song-display";
 
 interface Props {
   page: SearchableCatalogPage;
@@ -68,9 +69,11 @@ const screenConfig = catalogConfig({
 });
 const rendered = await renderCatalogPage(screenConfig,payload,locale,section);
 const body = rendered.body;
+// The title bar shows a song as the reader's default does; search and SEO keep the local title.
+const displayTitle = page.resource === "songs" ? defaultSongTitle(page.titles, locale) : page.titles[locale];
 const entity = canonical
   ? {
-      title: page.titles[locale],
+      title: displayTitle,
       backHref,
       previous,
       next,
@@ -95,7 +98,7 @@ const entity = canonical
     locale={locale}
     route={page.route}
     server={server}
-    title={canonical ? page.titles[locale] : sectionTitle}
+    title={canonical ? displayTitle : sectionTitle}
     titleKey={canonical ? undefined : collectionRoute.titleKey}
     entity={entity}
     appBar={rendered.appBar}

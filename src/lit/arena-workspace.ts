@@ -38,6 +38,7 @@ import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import { filterChip, iconButton, rovingKeydown, segmented } from "./ui/controls";
 import "./arena-ranking";
+import { songTitle } from "../lib/song-display";
 import "../styles/settings.css";
 import "../styles/arena.css";
 import { formatDate, formatDateRange } from "../lib/date-format";
@@ -1025,7 +1026,7 @@ export class ArenaWorkspace extends LitElement {
                     height="40"
                     loading="lazy"
                   />
-                  <span>${this.name(song.musicTitle)}</span>
+                  <span>${songTitle(song, this.locale).text}</span>
                 </a>
               `,
               this.ruleMarks(

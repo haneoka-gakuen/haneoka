@@ -22,6 +22,7 @@ import { searchableModelPages, type SearchableModelPage } from "../../../../lib/
 import { searchableStoryPages, type SearchableStoryPage } from "../../../../lib/searchable-stories";
 import { skillCatalogPayload, skillPageId, type SkillCatalogPayload, type SkillCatalogEntry } from "../../../../server/skill-catalog";
 import { resolveLocalizedText } from "../../../../lib/localized-text";
+import { defaultSongTitle } from "../../../../lib/song-display";
 
 type SkillPage = { catalog: Omit<SkillCatalogPayload, "entries">; entry: SkillCatalogEntry };
 type RouteProps = {
@@ -57,7 +58,9 @@ export async function getStaticPaths() {
         entries.push({
           kind,
           id: page.id,
-          title: page.titles,
+          title: page.resource === "songs"
+            ? (Object.fromEntries(LOCALES.map((target) => [target, defaultSongTitle(page.titles, target)])) as Record<Locale, string>)
+            : page.titles,
           page,
           group: `catalog:${page.collection}`,
         });

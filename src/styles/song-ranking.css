@@ -50,14 +50,15 @@
   }
   .song-ranking__row {
     display: grid;
-    grid-template-columns: 44px 64px 32px minmax(96px, 1fr) minmax(76px, auto) 216px;
+    --rank-column: max(44px, calc(var(--rank-digits, 2) * 10px + 4px));
+    grid-template-columns: var(--rank-column) 64px 32px minmax(96px, 1fr) minmax(76px, auto) 216px;
     align-items: center;
     gap: 8px;
     padding: 2px 8px;
     min-width: 0;
   }
   .song-ranking__row.song-ranking__row--points {
-    grid-template-columns: 44px 64px 32px minmax(96px, 1fr) minmax(76px, auto);
+    grid-template-columns: var(--rank-column) 64px 32px minmax(96px, 1fr) minmax(76px, auto);
   }
   .song-ranking__rank {
     font: var(--md-sys-typescale-title-medium-weight)
@@ -384,12 +385,13 @@
   }
   @container (max-width:640px) {
     .song-ranking__row {
-      grid-template-columns: 24px 56px 32px minmax(0, 1fr) minmax(72px, auto);
+      --rank-column: max(24px, calc(var(--rank-digits, 2) * 10px));
+      grid-template-columns: var(--rank-column) 56px 32px minmax(0, 1fr) minmax(72px, auto);
       gap: 4px 8px;
       padding: 4px 8px;
     }
     .song-ranking__row.song-ranking__row--points {
-      grid-template-columns: 24px 56px 32px minmax(0, 1fr) minmax(72px, auto);
+      grid-template-columns: var(--rank-column) 56px 32px minmax(0, 1fr) minmax(72px, auto);
     }
     .song-ranking__avatar {
       width: 32px;
@@ -415,12 +417,13 @@
 @layer pages {
   @container (max-width:360px) {
     .song-ranking__row {
-      grid-template-columns: 20px 48px 28px minmax(0, 1fr) minmax(64px, auto);
+      --rank-column: max(20px, calc(var(--rank-digits, 2) * 9px));
+      grid-template-columns: var(--rank-column) 48px 28px minmax(0, 1fr) minmax(64px, auto);
       gap: 4px;
       padding-inline: 8px;
     }
     .song-ranking__row.song-ranking__row--points {
-      grid-template-columns: 20px 48px 28px minmax(0, 1fr) minmax(64px, auto);
+      grid-template-columns: var(--rank-column) 48px 28px minmax(0, 1fr) minmax(64px, auto);
     }
     .song-ranking__avatar {
       width: 28px;

@@ -358,7 +358,7 @@
 
   /* Leaderboard */
   .arena-ranking__list--compact .song-ranking__row--bare {
-    grid-template-columns: 32px 36px minmax(0, 1fr) minmax(88px, auto);
+    grid-template-columns: max(32px, calc(var(--rank-digits, 2) * 10px)) 36px minmax(0, 1fr) minmax(88px, auto);
   }
   .arena-ranking__tier {
     white-space: nowrap;
