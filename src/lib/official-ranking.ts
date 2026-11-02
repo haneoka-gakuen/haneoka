@@ -186,6 +186,8 @@ export interface OfficialArenaProgress {
   counts: Array<number | null>;
   cursor: number;
   pending?: { index: number; low: number; high: number };
+  /** When each count was last read off the board; recent ones stand without another read. */
+  witnessedAtMs?: Array<number | null>;
   updatedAtMs?: number;
 }
 

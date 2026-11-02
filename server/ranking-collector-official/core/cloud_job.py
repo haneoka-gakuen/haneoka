@@ -221,13 +221,14 @@ def run_job(job, origin):
                 if arena_active:
                     arena_collector = ArenaCollector(job, catalog, sampler, updates, deadline,
                         failure_status, failure_info, retry_delay)
+                    # Tier counts take many windows; they come before the other boards and
+                    # keep only about three seconds for each of those.
+                    board_seconds = 3 * (len(boards) + 1)
                     stage = 'arena_board'
-                    arena_collector.top()
-                    # Tier counts take many windows; they come before the other boards,
-                    # with a share of the run, so every run moves one league forward.
+                    arena_collector.top(board_seconds)
                     if final_status not in ('auth_paused', 'rate_limited'):
                         stage = 'arena_population_callback'
-                        arena_collector.population(budget=max(0, (deadline - time.time()) * 0.6))
+                        arena_collector.population(budget=max(0, deadline - time.time() - board_seconds))
                 for kind, challenge in boards:
                     if (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
                         continue

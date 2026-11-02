@@ -56,8 +56,8 @@ A board's freshness is its own `observedAtMs`, not the last success in `/status`
 | `observation` | One event board, or its failure |
 | `arena-observation` | One league window with `maxRank` and raw `players` |
 | `event-window` | One point window; `maxRank` only once the end is seen |
-| `arena-population` | `atLeast: [{threshold, count}]`, sent only after every boundary is verified |
-| `arena-progress` | `{seasonId, bandId, thresholds, maxRank, counts, cursor, pending?}` |
+| `arena-population` | `atLeast: [{threshold, count}]`, sent once every boundary was read in this run or the five minutes before; `observedAtMs` is the oldest read |
+| `arena-progress` | `{seasonId, bandId, thresholds, maxRank, counts, cursor, pending?, witnessedAtMs?}` |
 | `player-profile`, `song-ranking`, `card-image` | Demand results |
 | `complete` | Final status, with `failure: {stage, code, httpStatus?, grpcStatus?}` when it failed |
 

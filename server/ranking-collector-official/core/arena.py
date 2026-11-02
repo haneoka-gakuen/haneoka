@@ -1,12 +1,17 @@
-"""L3: server/L2.md; bounded Arena and event point windows and resumable, freshly witnessed population counts."""
+"""L3: server/L2.md; bounded Arena and event point windows and resumable population counts witnessed within five minutes."""
 from datetime import datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import time
 import uuid
 
 from google.protobuf import json_format
+
+
+# A count witnessed this recently stands in a published snapshot without another read.
+REUSE_MS = 300_000
 
 
 class ArenaDeferred(Exception):
@@ -107,6 +112,7 @@ class ArenaCollector:
         self.band = None
         self.thresholds, self.counts = [], []
         self.verified, self.eof = set(), {}
+        self.reused, self.witnessed = set(), []
         self.pending = None
         self.cursor = 0
         self.published = False
@@ -181,16 +187,11 @@ class ArenaCollector:
                     catalogSource='official-master', catalogTableHashes=self.catalog.get('tableHashes'),
                     descriptorSha256=self.descriptor_digest)
 
-    def top(self):
+    def top(self, reserve=0):
         try:
             if 'arena-demand-v1' in self.capabilities:
-                demand_deadline = min(time.time() + 40, self.deadline - 22)
-                plan = self.population_plan() if 'arena-population-v1' in self.capabilities else None
-                previous = plan[-1] if plan else None
-                if previous and all(value is not None for value in previous['counts']):
-                    pages = {1 + (position - 1) // 100 * 100 for count in previous['counts']
-                        for position in (count, count + 1) if 0 < position <= previous['maxRank']}
-                    demand_deadline = min(demand_deadline, self.deadline - 22 - 2 * len(pages - {1}))
+                # Tier counts and the reserved seconds come before the demanded and swept windows.
+                demand_deadline = min(time.time() + 40, self.deadline - 22 - reserve - self.population_seconds())
                 for demand in self.job.get('arenaWindows', [])[:20]:
                     if time.time() + 2 >= demand_deadline:
                         break
@@ -215,6 +216,8 @@ class ArenaCollector:
     def remember(self, index, count, eof=None):
         self.counts[index] = count
         self.verified.add(index)
+        self.reused.discard(index)
+        self.witnessed[index] = int(time.time() * 1000)
         if eof is None:
             self.eof.pop(index, None)
         else:
@@ -239,7 +242,16 @@ class ArenaCollector:
             return True
         return False
 
-    def solve(self, index, old_pending):
+    def narrow(self, index, position, lower, upper):
+        """Bounds the count by the window holding position; None once a window witnesses it."""
+        window = self.window(self.band, 1 + (position - 1) // 100 * 100)
+        if index in self.verified:
+            return None
+        if window['players'] and window['players'][0]['point'] < self.thresholds[index]:
+            return lower, min(upper, window['startRank'] - 1)
+        return max(lower, window['startRank'] - 1 + len(window['players'])), upper
+
+    def solve(self, index, old_pending, hint=None):
         threshold, maximum = self.thresholds[index], self.maxima[self.band]
         lower = max((self.counts[i] for i in self.verified if i > index), default=0)
         upper = min((self.counts[i] for i in self.verified if i < index), default=maximum)
@@ -258,21 +270,32 @@ class ArenaCollector:
         if index in self.verified:
             self.pending = None
             return
+        # A carried count moves by a window or two between runs: gallop out from it
+        # until the count is bracketed, then bisect what is left.
+        direction, probe, step = 0, hint, 100
+        while hint is not None and lower < upper:
+            position = min(max(probe, lower + 1), upper)
+            self.pending = dict(index=index, low=lower, high=upper)
+            bounds = self.narrow(index, position, lower, upper)
+            if bounds is None:
+                self.pending = None
+                return
+            lower, upper = bounds
+            if lower > upper:
+                raise ArenaChanged()
+            after = lower >= position
+            if direction and after != (direction > 0):
+                break
+            direction, probe, step = (1 if after else -1), position + (step if after else -step), step * 2
         while lower < upper:
             before = (lower, upper)
             self.pending = dict(index=index, low=lower, high=upper)
-            position = (lower + upper + 1) // 2
-            window = self.window(self.band, 1 + (position - 1) // 100 * 100)
-            if index in self.verified:
+            bounds = self.narrow(index, (lower + upper + 1) // 2, lower, upper)
+            if bounds is None:
                 self.pending = None
                 return
-            if window['players'] and window['players'][0]['point'] < threshold:
-                upper = min(upper, window['startRank'] - 1)
-            else:
-                lower = max(lower, window['startRank'] - 1 + len(window['players']))
-            if lower > upper:
-                raise ArenaChanged()
-            if (lower, upper) == before:
+            lower, upper = bounds
+            if lower > upper or (lower, upper) == before:
                 raise ArenaChanged()
         self.pending = dict(index=index, low=lower, high=upper)
         if not self.witness(index, lower):
@@ -285,11 +308,14 @@ class ArenaCollector:
         pending = self.pending
         if pending:
             pending = dict(index=pending['index'], low=min(pending['low'], maximum), high=min(pending['high'], maximum))
-        cursor = pending['index'] if pending else next((i for i in range(len(counts)) if i not in self.verified or counts[i] is None), len(counts))
+        done = self.verified | self.reused
+        cursor = pending['index'] if pending else next((i for i in range(len(counts)) if i not in done or counts[i] is None), len(counts))
         if cursor == len(counts) and not self.published:
             cursor = 0
+        witnessed = [at if count is not None else None for at, count in zip(self.witnessed, counts)]
         return dict(seasonId=self.arena['seasonId'], bandId=self.band, thresholds=self.thresholds,
-                    maxRank=maximum, counts=counts, cursor=cursor, **({'pending': pending} if pending else {}))
+                    maxRank=maximum, counts=counts, cursor=cursor, witnessedAtMs=witnessed,
+                    **({'pending': pending} if pending else {}))
 
     def population_plan(self):
         candidates = []
@@ -300,9 +326,26 @@ class ArenaCollector:
             progress = self.job.get('arenaProgress', []) if 'arena-progress-v1' in self.capabilities else []
             previous = next((entry for entry in progress if entry.get('seasonId') == self.arena['seasonId']
                 and entry.get('bandId') == band and entry.get('thresholds') == thresholds), None)
-            unfinished = previous is None or previous.get('cursor', 0) < len(thresholds) or any(value is None for value in previous.get('counts', []))
-            candidates.append((not unfinished, previous.get('updatedAtMs', 0) if previous else 0, int(band), band, thresholds, previous))
+            unknown = len(thresholds) if previous is None else sum(value is None for value in previous.get('counts', []))
+            unfinished = unknown > 0 or previous.get('cursor', 0) < len(thresholds)
+            # An unfinished league closest to done goes on while its counts are fresh;
+            # finished leagues take turns oldest first.
+            candidates.append((not unfinished, unknown if unfinished else 0, previous.get('updatedAtMs', 0) if previous else 0,
+                int(band), band, thresholds, previous))
         return min(candidates) if candidates else None
+
+    def population_seconds(self):
+        """About three seconds per window the next tier count reads, a full search per unknown count."""
+        plan = self.population_plan() if 'arena-population-v1' in self.capabilities else None
+        if not plan:
+            return 0
+        thresholds, previous = plan[-2], plan[-1]
+        known = [count for count in previous['counts'] if count is not None] if previous else []
+        maximum = previous['maxRank'] if previous else 10_000
+        pages = {1 + (position - 1) // 100 * 100 for count in known
+            for position in (count, count + 1) if 0 < position <= maximum}
+        search = max(1, math.ceil(math.log2(max(2, maximum / 100))))
+        return 3 * (len(pages - {1}) + (len(thresholds) - len(known)) * search)
 
     def population(self, budget=None):
         if 'arena-population-v1' not in self.capabilities:
@@ -319,8 +362,14 @@ class ArenaCollector:
         plan = self.population_plan()
         if not plan:
             return
-        _, _, _, self.band, self.thresholds, previous = plan
+        *_, self.band, self.thresholds, previous = plan
         self.counts = list(previous['counts']) if previous else [None] * len(self.thresholds)
+        witnessed = previous.get('witnessedAtMs') if previous else None
+        self.witnessed = list(witnessed) if isinstance(witnessed, list) and len(witnessed) == len(self.thresholds) else [None] * len(self.thresholds)
+        now = int(time.time() * 1000)
+        # Counts at the board's end follow every new player, so they are always read again.
+        self.reused = {index for index, (count, at) in enumerate(zip(self.counts, self.witnessed))
+            if count is not None and type(at) is int and 0 <= now - at <= REUSE_MS and count != previous['maxRank']}
         self.verified, self.eof = set(), {}
         self.pending = None
         self.published = False
@@ -348,14 +397,15 @@ class ArenaCollector:
                 order.remove(old_pending['index'])
                 order.insert(0, old_pending['index'])
             for index in order:
-                if index in self.verified:
+                if index in self.verified or index in self.reused:
                     continue
                 self.cursor = index
                 value = self.counts[index]
                 if value is not None and (self.witness(index, value) or index in self.verified):
                     continue
                 self.counts[index] = None
-                self.solve(index, old_pending)
+                self.witnessed[index] = None
+                self.solve(index, old_pending, value)
             maximum = self.maxima[self.band]
             for index, threshold in enumerate(self.thresholds):
                 if threshold == 0:
@@ -365,8 +415,11 @@ class ArenaCollector:
                     left < right for left, right in zip(self.counts, self.counts[1:])):
                 for index in invalid:
                     self.verified.discard(index)
+                for index in self.reused:
+                    self.witnessed[index] = None
                 raise ArenaChanged()
-            observed = min(window['observedAtMs'] for (band, _), window in self.windows.items() if band == self.band)
+            observed = min([window['observedAtMs'] for (band, _), window in self.windows.items() if band == self.band]
+                + [self.witnessed[index] for index in self.reused])
             self.stage = 'arena_population_callback'
             self.updates.send('arena-population', observation=dict(snapshotId=uuid.uuid4().hex, region=self.job['region'],
                 seasonId=self.arena['seasonId'], bandId=self.band, observedAtMs=observed, maxRank=maximum,

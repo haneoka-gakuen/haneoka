@@ -18,6 +18,8 @@ const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const LOOKUP_MS = 60_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
+/** The collector reuses counts read in the last five minutes; one more covers clock skew. */
+const ARENA_WITNESS_REUSE_MS = 360_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
@@ -304,6 +306,11 @@ function validateArenaProgress(value: unknown): asserts value is OfficialArenaPr
       throw new Error("invalid_arena_progress");
     }
     threshold = nextThreshold;
+  }
+  const counts = progress.counts, witnessed = progress.witnessedAtMs;
+  if (witnessed !== undefined && (!Array.isArray(witnessed) || witnessed.length !== counts.length
+    || witnessed.some((at, index) => at !== null && (!millis(at) || at > Date.now() + 60_000 || counts[index] === null)))) {
+    throw new Error("invalid_arena_progress");
   }
   if (progress.pending !== undefined) {
     const pending = object(progress.pending);
@@ -1164,7 +1171,8 @@ export class OfficialRankingCollector extends Container<Env> {
           state.arenaProgress[`${progress.seasonId}:${progress.bandId}`] = {
             seasonId: progress.seasonId, bandId: progress.bandId, thresholds: progress.thresholds,
             maxRank: progress.maxRank, counts: progress.counts, cursor: progress.cursor,
-            ...(progress.pending ? { pending: { index: progress.pending.index, low: progress.pending.low, high: progress.pending.high } } : {}), updatedAtMs: Date.now(),
+            ...(progress.pending ? { pending: { index: progress.pending.index, low: progress.pending.low, high: progress.pending.high } } : {}),
+            ...(progress.witnessedAtMs ? { witnessedAtMs: progress.witnessedAtMs } : {}), updatedAtMs: Date.now(),
           };
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
@@ -1172,7 +1180,7 @@ export class OfficialRankingCollector extends Container<Env> {
           validateArenaPopulation(update.observation, region);
           const arena = run.catalog?.arena;
           if (run.pendingAttempt || state.blockedGeneration || !arena || update.observation.seasonId !== arena.seasonId
-            || !arena.bandIds.includes(update.observation.bandId) || update.observation.observedAtMs < run.startedAtMs) {
+            || !arena.bandIds.includes(update.observation.bandId) || update.observation.observedAtMs < run.startedAtMs - ARENA_WITNESS_REUSE_MS) {
             return json({ error: "board_mismatch" }, 409);
           }
           const expected = arena.thresholdsByBand?.[update.observation.bandId];
