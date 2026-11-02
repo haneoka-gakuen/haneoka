@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 页面组、路由模式、参数列表及构建环境。
-// Output: 所选静态路径与构建覆盖登记。
+// Output: 所选页面／JSON／XML 静态路径与构建覆盖登记。
 // Pos: [Map](L2-2.md)；前端页面分组和物理路径记录。
 // Effects/Dependencies: 读取环境、创建目录并写路径记录；不代表页面内容已生成。
 import { createHash, randomUUID } from "node:crypto";
@@ -38,7 +38,7 @@ export function staticRenderPartitionForPath(pathname: string, count: number): n
 
 /** Matches Astro's parameter normalization before its directory-format output. */
 function physicalPath(sourcePattern: string, params: StaticBuildPath["params"]): string {
-  const endpoint = sourcePattern.endsWith(".json.ts");
+  const endpoint = sourcePattern.endsWith(".ts");
   const route = sourcePattern
     .replace(/^src\/pages\//u, "")
     .replace(/\.(?:astro|ts)$/u, "")
@@ -81,7 +81,7 @@ function recordPaths(sourcePattern: string, paths: readonly StaticBuildPath[]): 
     return {
       params: entry.params,
       locale: entry.params.locale ?? "ja",
-      type: sourcePattern.endsWith(".json.ts") ? "json" : "html",
+      type: sourcePattern.endsWith(".json.ts") ? "json" : sourcePattern.endsWith(".xml.ts") ? "xml" : "html",
       pathname: documentPath || astroPathname,
       astroPathname,
       packable: !!documentPath && !redirect,
