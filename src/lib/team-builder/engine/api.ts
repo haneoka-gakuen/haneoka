@@ -960,19 +960,22 @@ export interface Timeline {
   score: number;
   timing?: OrderTiming | null;
 }
-/** A cumulative snapshot's counting window: its counted notes and the steps whose notes are hit one frame early. */
+/** Counted notes and legal early inputs; noteIndices address the canonical judged-note stream. */
 export interface TimingWindow {
   event: number;
   startMs: number;
   endMs: number;
   unit: number;
   notes: number[];
-  steps: { step: number; timeMs: number; notes: number; gain: number }[];
+  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; gain: number }[];
 }
-/** Best judgement timing of one order for cumulative snapshots (`live::timing`). */
+/** Selected order's nominal score, legal timing extrema and attainable 17 ms input guide. */
 export interface OrderTiming {
   score: number;
   best: number;
+  /** Full base-judgement windows, with automatic inputs fixed. */
+  worst: number;
+  optimal: number;
   advanceMs: number;
   windows: TimingWindow[];
 }

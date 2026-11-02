@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 已载入的谱面与发布版每点综合力分数率。
-// Output: 音符构成、激奏段指标、技能位权重与可调场景下的得分。
+// Output: 音符构成、三个激奏段的最大 Just 数、技能位权重与可调场景得分。
 // Pos: [Map](L2-2.md)；歌曲详情的谱面分析。
 // Effects/Dependencies: 纯前端计算，不发请求。
 import { LitElement, html, nothing } from "lit";
@@ -104,7 +104,7 @@ export class SongChartAnalysis extends LitElement {
           <thead><tr>
             <th>${this.text("section", "Section")}</th>
             <th>${this.text("metric", "Ranked by")}</th><th>${this.text("sectionNotes", "Notes")}</th>
-            ${gekisou ? html`<th>Just</th>` : nothing}
+            ${gekisou ? html`<th>${this.text("maxJust", "Max Just")}</th>` : nothing}
             <th>${this.text("startCombo", "Starting combo")}</th><th>${this.text("seconds", "Length")}</th>
           </tr></thead>
           <tbody>${fever.map(([start, end], index) => html`<tr>

@@ -19,7 +19,7 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { sectionHeading } from "./catalog";
 import { renderResults } from "./results";
-import { SCORE_GOALS, scoreGoal, scoreText } from "./score-goal";
+import { renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
 import { farmingConditions, missionSummary, parseOpponents } from "./workspace-state";
@@ -865,32 +865,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 ${
                   s.goal === "score" || s.goal === "gekiso"
                     ? html`
-                        <md-outlined-select
-                          label=${host.t("criterion", "Score goal")}
-                          ?disabled=${s.aggregation === "mean"}
-                          .value=${scoreGoal(s)}
-                          @change=${(e: Event) => {
-                            const value = (e.target as HTMLInputElement).value as keyof typeof SCORE_GOALS;
-                            set(
-                              s.goal === "gekiso" && (value === "mean" || value === "max" || value === "min")
-                                ? { criterion: value }
-                                : value === "at-least" || value === "capped"
-                                  ? { scoreTarget: value, criterion: "mean" }
-                                  : { scoreTarget: "none", criterion: value },
-                            );
-                          }}
-                        >
-                          ${(s.goal === "score"
-                            ? (["mean", "max", "min", "at-least", "capped"] as const)
-                            : (["mean", "max", "min"] as const)
-                          ).map(
-                            (value) => html`
-                              <md-select-option value=${value}>
-                                <div slot="headline">${scoreText(host, SCORE_GOALS[value].label)}</div>
-                              </md-select-option>
-                            `,
-                          )}
-                        </md-outlined-select>
+                        ${renderScoreGoal(host, s, set)}
                         ${
                           scoreGoal(s) === "at-least" || scoreGoal(s) === "capped"
                             ? html`

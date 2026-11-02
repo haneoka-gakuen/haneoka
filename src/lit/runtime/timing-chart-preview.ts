@@ -10,6 +10,7 @@ import type { EngineChartSources } from "../../lib/team-builder/engine/protocol"
 import type { OurNotesCreationCanvasSkin } from "../../lib/chart-creation/native-canvas-skin";
 import { uiText } from "../shared/catalog";
 import { loadingState, errorState } from "../ui/state";
+import { runtimeChart } from "../../lib/team-builder/engine/runtime-chart";
 
 class TimingChartPreview extends LitElement {
   static properties = {
@@ -26,6 +27,7 @@ class TimingChartPreview extends LitElement {
   private sourceKey = "";
   private controller?: AbortController;
   private chart?: ChartDocument;
+  private geometry?: ReturnType<typeof runtimeChart>["geometry"];
   private skin?: OurNotesCreationCanvasSkin;
   private renderer?: typeof import("./chart-overview-renderer");
 
@@ -42,6 +44,7 @@ class TimingChartPreview extends LitElement {
     this.controller?.abort();
     this.sourceKey = "";
     this.chart = undefined;
+    this.geometry = undefined;
     this.skin = undefined;
     this.phase = "idle";
     super.disconnectedCallback();
@@ -52,6 +55,7 @@ class TimingChartPreview extends LitElement {
       this.controller?.abort();
       this.sourceKey = key;
       this.chart = undefined;
+      this.geometry = undefined;
       this.skin = undefined;
       this.phase = "idle";
     }
@@ -76,7 +80,9 @@ class TimingChartPreview extends LitElement {
           apiBase: new URL("/api/v1/", window.location.href).href }),
       ]);
       signal.throwIfAborted();
-      this.chart = buildChart(parseScore(raw));
+      const score = parseScore(raw);
+      this.chart = buildChart(score);
+      this.geometry = runtimeChart(raw, true).geometry;
       this.skin = skin;
       this.renderer = renderer;
       this.phase = "ready";
@@ -93,7 +99,9 @@ class TimingChartPreview extends LitElement {
     this.renderer!.drawDetailedChartOverview(canvas, this.chart!, this.skin!.skin, 360, {
       startMs: Math.max(0, this.window.startMs - 750),
       endMs: Math.min(this.chart!.durationMs, this.window.endMs + 750),
-      highlights: this.window.steps,
+      highlights: this.window.steps.map(step => ({
+        ...step, targets: step.noteIndices.map(index => this.geometry![index]!),
+      })),
       color: getComputedStyle(this).getPropertyValue("--md-sys-color-primary-fixed-dim").trim(),
     });
   }

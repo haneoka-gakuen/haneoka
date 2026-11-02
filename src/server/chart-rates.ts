@@ -1,4 +1,4 @@
-/** Build-time per-power score rates of every chart, from the team engine itself. */
+/** Build-time per-power rates and each range's maximum JUST count, independent of its original mission. */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -26,7 +26,7 @@ interface Exports {
   haneoka_context_json(input: number): number;
 }
 type Doc = Record<string, unknown>;
-type ReusableRates = ChartRateTable & { schema: "haneoka-chart-rates-v7"; sourceId: string; engineCommit: string };
+type ReusableRates = ChartRateTable & { schema: "haneoka-chart-rates-v9"; sourceId: string; engineCommit: string };
 
 async function publishedRates(server: ReleaseServer, engineCommit: string): Promise<ReusableRates | undefined> {
   const release = await staticCatalogRelease(server);
@@ -42,7 +42,7 @@ async function publishedRates(server: ReleaseServer, engineCommit: string): Prom
     if (!response.ok) return undefined;
     const value = (await response.json()) as ReusableRates;
     if (
-      value.schema !== "haneoka-chart-rates-v7" ||
+      value.schema !== "haneoka-chart-rates-v9" ||
       value.releaseId !== release.releaseId ||
       value.sourceId !== release.sourceId ||
       value.engineCommit !== engineCommit
@@ -144,7 +144,9 @@ export function gekisouRates(master: EngineMaster, source: Parameters<typeof gek
       base: base.map((value) => value / PROBE_POWER),
       events,
       notes: ranges.map((range) => chart.rangeOf.filter((value) => value === range).length),
-      just: ranges.map((range) => chart.rangeOf.filter((value, note) => value === range && context.judgement[note] === 6).length),
+      just: ranges.map((range) =>
+        chart.rangeOf.filter((value, note) => value === range && master.live.justTypes.has(chart.notes[note]!.judgementType)).length,
+      ),
     };
   });
   return {
@@ -240,7 +242,7 @@ async function compute(server: ReleaseServer, engineCommit: string): Promise<Reu
       };
     });
   return {
-    schema: "haneoka-chart-rates-v7",
+    schema: "haneoka-chart-rates-v9",
     sourceId: release.sourceId,
     engineCommit,
     releaseId: release.releaseId,
@@ -260,7 +262,7 @@ export function chartRates(server: ReleaseServer): Promise<ChartRateTable> {
     }).trim();
     value = staticCatalogRelease(server).then((release) =>
       staticBuildJson(
-        `chart-rates-v7:${server}:${release.releaseId}:${build}`,
+        `chart-rates-v9:${server}:${release.releaseId}:${build}`,
         "chart-rates",
         async () => (await publishedRates(server, build)) || compute(server, build),
       ),

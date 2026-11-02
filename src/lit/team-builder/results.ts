@@ -84,7 +84,9 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
       ? [
           Object.entries(input.goal.play)
             .map(([key, value]) =>
-              key === "missEvery"
+              key === "cumulativeTiming"
+                ? host.t(value === "best" ? "criterionMaxBestTiming" : "criterionMaxWorstTiming", value === "best" ? "Maximum score · best timing" : "Maximum score · worst timing")
+                : key === "missEvery"
                 ? `${host.t("missEvery", "Miss every N notes")}: ${value}`
                 : `${key.toUpperCase()} ${format(host, value * 100, 2)}%`,
             )
@@ -681,12 +683,18 @@ function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: re
 }
 
 /** The order's score with the timed notes hit early. */
-function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined) {
-  if (!timing || timing.best <= timing.score) return nothing;
+function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, reserve = false, fallback?: number) {
+  if (!timing && !reserve) return nothing;
+  const plain = timing === null ? fallback : undefined;
+  const text = (value: number | undefined) => value === undefined ? "—" : format(host, value);
+  const gain = timing ? timing.best - timing.worst : timing === null ? 0 : undefined;
   return html`
+    <div><dt>${host.t("worstTimingScore", "Worst-timing score")}</dt><dd>${text(timing?.worst ?? plain)}</dd></div>
+    <div><dt>${host.t("nominalTimingScore", "Nominal-timing score")}</dt><dd>${text(timing?.score ?? plain)}</dd></div>
+    <div><dt>${host.t("bestTimingScore", "Best-timing score")}</dt><dd>${text(timing?.optimal ?? plain)}</dd></div>
     <div>
-      <dt>${host.t("timingBest", "Best timing")}</dt>
-      <dd>${format(host, timing.best)} <span class="tb-delta" data-sign="up">+${format(host, timing.best - timing.score)}</span></dd>
+      <dt>${host.t("timingFramePlanScore", "17 ms plan")}</dt>
+      <dd>${text(timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>
     </div>
   `;
 }
@@ -695,7 +703,7 @@ const chartClock = (ms: number) => {
   return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 };
 /** One counting window as a strip of its counted notes, the step notes marked, then the step list. */
-function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: TimingWindow) {
+function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: TimingWindow, guideExpanded = true) {
   const member = memberFace(host, hit, ORDERS[order]![window.event]!);
   const span = Math.max(1, window.endMs - window.startMs);
   const at = (ms: number) => `${(((ms - window.startMs) / span) * 100).toFixed(2)}%`;
@@ -731,7 +739,7 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
         },
         content: html`<timing-chart-preview
           .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
-          .window=${window} .active=${expanded} .locale=${host.locale}
+          .window=${window} .active=${expanded && guideExpanded} .locale=${host.locale}
           .label=${window.steps.map(step => `${host.t("timingStep", "Step {step}", { step: step.step })} ${chartClock(step.timeMs)}`).join(", ")}
           .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}
         ></timing-chart-preview>`,
@@ -754,19 +762,31 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
   `;
 }
 /** Which notes to hit early: each step's notes, one frame early, per counting window. */
-function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined) {
-  if (!timing || timing.best <= timing.score) return nothing;
-  const windows = timing.windows.filter((window) => window.steps.length);
-  return html`
+function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, reserve = false) {
+  if ((!timing || timing.best <= timing.score) && !reserve) return nothing;
+  const windows = timing?.windows.filter((window) => window.steps.length) ?? [];
+  const key = `timing-guide:${timelineKey(host, hit)}:${order}`;
+  return accordion({
+    id: `tb-${key.replace(/[^a-z0-9]/giu, "-")}`,
+    label: host.t("timingGuide", "Timing guide"),
+    disabled: !timing || timing.best <= timing.score,
+    expanded: host.expanded.has(key),
+    onExpandedChange: (open) => {
+      if (open) host.expanded.add(key);
+      else host.expanded.delete(key);
+      host.requestUpdate();
+    },
+    content: html`
     <section class="tb-timing stack stack--tight">
       <div class="row row--between row--wrap">
         <strong class="tb-subtitle">${host.t("timingNotes", "Notes to hit early")}</strong>
-        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing.advanceMs })}</span>
+        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing?.advanceMs ?? 17 })}</span>
       </div>
-      <ol class="tb-timing__windows" role="list">${windows.map((window) => timingWindow(host, hit, order, window))}</ol>
+      <ol class="tb-timing__windows" role="list">${windows.map((window) => timingWindow(host, hit, order, window, host.expanded.has(key)))}</ol>
       <small class="tb-timing__hint">${host.t("timingFirstNotes", "Hit the first notes after activation as usual")}</small>
     </section>
-  `;
+  `,
+  });
 }
 
 function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
@@ -788,6 +808,12 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
     );
   const firing = firingOrder.get(key) ?? [0, 1, 2, 3, 4];
   const value = score.orders[current]!;
+  const inputs = resultInputs(host, hit);
+  const master = host.master;
+  const reserveTiming = inputs?.goal.kind === "score" && !!master && hit.snaps.some(key => {
+    const snap = inputs.snaps.find(row => row.key === key);
+    return snap && master.snaps.get(snap.cardId)?.supportSkillIds.some(id => master.supportSkills.get(id)?.some(row => row.type === 2001));
+  });
   const rank = score.orders.filter((other) => other > value).length + 1;
   const gap = (other: number) => (other === best.value ? "±0" : `−${format(host, best.value - other)}`);
   const choose = (index: number) => {
@@ -875,9 +901,9 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
           <dt>${host.t("orderGap", "From best")}</dt>
           <dd>${gap(value)}</dd>
         </div>
-        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined)}
+        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined, reserveTiming, value)}
       </dl>
-      ${timingDetails(host, hit, current, typeof requested === "object" ? requested.timing : undefined)}
+      ${timingDetails(host, hit, current, typeof requested === "object" ? requested.timing : undefined, reserveTiming)}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
         ${
           typeof timeline === "object"

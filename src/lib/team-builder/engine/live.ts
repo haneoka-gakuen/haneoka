@@ -10,6 +10,8 @@ const f = Math.fround;
 
 /** Simulate judgements: 6 Just, 5 Perfect, 4 Great, 3 Good, 2 Bad, 1 Miss. */
 export interface PlayModel {
+  /** Native cumulative-delivery optimization; absent keeps nominal timing. */
+  cumulativeTiming?: "best" | "worst";
   great: number;
   good: number;
   bad: number;
