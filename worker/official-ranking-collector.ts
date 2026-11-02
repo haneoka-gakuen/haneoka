@@ -4,7 +4,7 @@
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
-import { adoptConfiguredPlatformAccounts, bindPlatformSdkIdentity, claimPlatformBatch, claimPlatformSdkOwner, claimPlatformLogin, finishPlatformLogin, limitPlatformLoginLease, listPlatformAccounts, platformBatchCurrent, platformDeviceId, platformSdkScopes, readPlatformLoginInput, readPlatformPassword, readPlatformPlayerIds, readRemovedPlayerIds, readPlatformSdkIdentity, readPlatformSdkSession, readReadyPlatformAccounts, releasePlatformBatch, releasePlatformLogin, savePlatformSdkSession,
+import { adoptConfiguredPlatformAccounts, bindPlatformSdkIdentity, claimPlatformBatch, claimPlatformSdkOwner, claimPlatformLogin, finishPlatformLogin, limitPlatformLoginLease, listPlatformAccounts, platformBatchCurrent, platformDeviceId, platformSdkScopes, readPlatformLoginInput, readPlatformPassword, readPlatformPlayerIds, readPlatformBootstraps, readRemovedPlayerIds, readPlatformSdkIdentity, readPlatformSdkSession, readReadyPlatformAccounts, releasePlatformBatch, releasePlatformLogin, savePlatformSdkSession,
   type PlatformLoginLease, type PlatformLoginResult, type PlatformRegion } from "./official-platform-accounts";
 import { AccountJobContractError, globalLoginConfiguration, platformLoginResult, platformSdkResult } from "./official-account-jobs";
 import { adoptGuestAccount, claimGuestRegistration, claimGuestVerification, createGuestAccount, finishGuestRegistrationFailure, finishGuestVerification, listGuestAccounts,
@@ -94,6 +94,7 @@ interface CollectorState {
   failures: number;
   blockedGeneration: string | null;
   callbackProtocolVersion?: number;
+  accountBootstrapDigest?: string;
   accounts?: Record<string, OfficialCollectorAccountHealth>;
   permissionPause?: { identity: string; authGeneration: string } | null;
   legacyPermissionBlock?: string | null;
@@ -1568,6 +1569,24 @@ export class OfficialRankingCollector extends Container<Env> {
         state.nextAtMs = Date.now();
       }
       if (this.expireRun(state)) return;
+      const bootstrap = this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG
+        ? (JSON.parse(this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG) as { bootstrapAccounts?: string }).bootstrapAccounts : undefined;
+      if (region !== "jp" && bootstrap) {
+        const digest = await officialDigest(bootstrap);
+        const managed = pool.accounts.filter((account) => account.label.startsWith("platform:"));
+        const expected = (await readPlatformBootstraps(this.env)).length;
+        const active = [state.run, state.lookup].some((run) => run && !run.complete && run.deadlineMs + 15_000 > Date.now());
+        if (state.accountBootstrapDigest !== digest && expected > 0 && managed.length === expected && !active) {
+          for (const account of managed) {
+            const health = state.accounts?.[account.identity];
+            if (health) { health.blocked = {}; health.cooldownUntilMs = 0; health.failures = 0; health.rejections = 0; }
+          }
+          if (managed.some((account) => account.identity === state.permissionPause?.identity)) state.permissionPause = null;
+          state.accountBootstrapDigest = digest;
+          state.nextAtMs = Date.now();
+          if (["failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status)) state.status = "not_started";
+        }
+      }
       if (!this.accountFor(state, pool)) { await this.unavailablePool(state, pool); return; }
       state.blockedGeneration = null;
       await this.persist(state);
