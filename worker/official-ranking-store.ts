@@ -1,10 +1,10 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immutable R2 payloads, D1 indexes, numeric history cursors and board health; Arena league windows, event point windows and complete populations separately.
+// Output: Immutable R2 payloads, D1 indexes, daily/final archives and a durable queue for retired observation payloads.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
+import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
 
 export interface OfficialRankingStoreBindings {
   DB?: D1Database;
@@ -47,6 +47,8 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
   const { db, bucket } = storage(env);
   const previous = await readOfficialCatalog(env, catalog.region);
   if (previous && catalog.catalogObservedAtMs < previous.catalogObservedAtMs) throw new Error("official_catalog_regressed");
+  if (previous) await saveEventFinalTargets(db, previous);
+  if (previous) await saveArenaFinalTargets(db, previous);
   const highest = await db.prepare("SELECT highest_event_id, event_identity FROM official_ranking_catalogs WHERE region = ?")
     .bind(catalog.region).first<{ highest_event_id: string; event_identity: string }>();
   const eventId = catalog.event?.id;
@@ -72,6 +74,114 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
     .bind(catalog.region, eventId ?? highest?.highest_event_id ?? "0",
       catalog.event ? JSON.stringify(catalog.event.challenges.map((challenge) => `${challenge.id}:${challenge.musicId}`)) : highest?.event_identity ?? "[]",
       catalog.catalogObservedAtMs, key, hash).run();
+  await saveEventFinalTargets(db, catalog);
+  await saveArenaFinalTargets(db, catalog);
+}
+
+async function saveArenaFinalTargets(db: D1Database, catalog: OfficialCatalog): Promise<void> {
+  const arena = catalog.arena;
+  if (!arena) return;
+  const keys = new Set(arena.bandIds.map((band) => `arena/${arena.seasonId}/${band}/1`));
+  for (const band of arena.bandIds) if (arena.thresholdsByBand?.[band]?.length) keys.add(`population/${arena.seasonId}/${band}`);
+  const { results } = await db.prepare(`SELECT 'arena/' || season_id || '/' || band_id || '/' || start_rank AS board_key
+    FROM official_arena_window_metadata WHERE region=? AND season_id=? UNION
+    SELECT board_key FROM official_arena_finals WHERE region=? AND season_id=?`)
+    .bind(catalog.region, arena.seasonId, catalog.region, arena.seasonId).all<{ board_key: string }>();
+  for (const row of results) if (arena.bandIds.includes(row.board_key.split("/")[2]!)) keys.add(row.board_key);
+  if (!keys.size) return;
+  await db.batch([...keys].map((key) => db.prepare(`INSERT INTO official_arena_finals
+    (region,board_key,season_id,due_at_ms,arena_json,catalog_observed_at_ms) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(region,board_key) DO UPDATE SET due_at_ms=excluded.due_at_ms,
+      arena_json=excluded.arena_json,catalog_observed_at_ms=excluded.catalog_observed_at_ms,
+      progress_json=CASE WHEN official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.progress_json END,
+      snapshot_id=CASE WHEN official_arena_finals.observed_at_ms >= excluded.due_at_ms
+        AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.snapshot_id END,
+      observed_at_ms=CASE WHEN official_arena_finals.observed_at_ms >= excluded.due_at_ms
+        AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.observed_at_ms END,
+      payload_key=CASE WHEN official_arena_finals.observed_at_ms >= excluded.due_at_ms
+        AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.payload_key END,
+      payload_hash=CASE WHEN official_arena_finals.observed_at_ms >= excluded.due_at_ms
+        AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.payload_hash END
+    WHERE excluded.catalog_observed_at_ms >= official_arena_finals.catalog_observed_at_ms`)
+    .bind(catalog.region, key, arena.seasonId, arena.rankingEndAtMs, JSON.stringify(arena), catalog.catalogObservedAtMs)));
+}
+
+export async function saveOfficialFinalArenaProgress(env: OfficialRankingStoreBindings, region: GameRecordsRegion, progress: OfficialArenaProgress): Promise<void> {
+  const { db } = storage(env);
+  await db.prepare(`UPDATE official_arena_finals SET progress_json=? WHERE region=? AND board_key=? AND snapshot_id IS NULL`)
+    .bind(JSON.stringify(progress), region, `population/${progress.seasonId}/${progress.bandId}`).run();
+}
+
+async function saveEventFinalTargets(db: D1Database, catalog: OfficialCatalog): Promise<void> {
+  const event = catalog.event;
+  if (!event) return;
+  const boards = event.challenges.filter((row) => row.enabled).map((row) => ({ key: `event/${event.id}/challenge/${row.id}`, end: row.endAtMs }));
+  if (event.totalRankingEnabled) boards.push({ key: `event/${event.id}/total/`, end: event.endAtMs });
+  if (event.pointRankingEnabled) {
+    boards.push({ key: `event/${event.id}/point/`, end: event.endAtMs });
+    const { results } = await db.prepare(`SELECT 'event-window/' || event_id || '/' || start_rank AS board_key
+      FROM official_event_window_metadata WHERE region=? AND event_id=? UNION
+      SELECT board_key FROM official_ranking_finals WHERE region=? AND event_id=? AND board_key LIKE 'event-window/%'`)
+      .bind(catalog.region, event.id, catalog.region, event.id).all<{ board_key: string }>();
+    for (const row of results) boards.push({ key: row.board_key, end: event.endAtMs });
+  }
+  if (!boards.length) return;
+  await db.batch(boards.map((board) => db.prepare(`INSERT INTO official_ranking_finals
+    (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(region,board_key) DO UPDATE SET due_at_ms=excluded.due_at_ms,
+      event_json=excluded.event_json,catalog_observed_at_ms=excluded.catalog_observed_at_ms,
+      snapshot_id=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.snapshot_id END,
+      observed_at_ms=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.observed_at_ms END,
+      payload_key=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.payload_key END,
+      payload_hash=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.payload_hash END
+    WHERE excluded.catalog_observed_at_ms >= official_ranking_finals.catalog_observed_at_ms`)
+    .bind(catalog.region, board.key, event.id,
+      board.end + event.aggregationSeconds * 1000, JSON.stringify(event), catalog.catalogObservedAtMs)));
+}
+
+export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings, region: GameRecordsRegion, now: number) {
+  const { db } = storage(env);
+  const next = await db.prepare(`SELECT kind,id,definition FROM (
+    SELECT 'event' AS kind,event_id AS id,event_json AS definition,last_dispatch_at_ms,due_at_ms FROM official_ranking_finals
+    WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
+    UNION ALL SELECT 'arena',season_id,arena_json,last_dispatch_at_ms,due_at_ms FROM official_arena_finals
+    WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
+    ) ORDER BY last_dispatch_at_ms,due_at_ms,id,kind LIMIT 1`).bind(region, now, region, now)
+    .first<{ kind: string; id: string; definition: string }>();
+  if (!next) return null;
+  if (next.kind === "arena") {
+    await db.prepare(`UPDATE official_arena_finals SET last_dispatch_at_ms=?
+      WHERE region=? AND season_id=? AND arena_json=? AND snapshot_id IS NULL AND due_at_ms<=?`)
+      .bind(now, region, next.id, next.definition, now).run();
+    const { results } = await db.prepare(`SELECT board_key,progress_json FROM official_arena_finals
+      WHERE region=? AND season_id=? AND arena_json=? AND snapshot_id IS NULL AND due_at_ms<=? ORDER BY last_attempt_at_ms,board_key`)
+      .bind(region, next.id, next.definition, now).all<{ board_key: string; progress_json: string | null }>();
+    const populations = results.filter((row) => row.board_key.startsWith("population/")).slice(0, 1);
+    if (populations.length) await db.prepare(`UPDATE official_arena_finals SET last_attempt_at_ms=? WHERE region=? AND board_key=?`)
+      .bind(now, region, populations[0]!.board_key).run();
+    return { kind: "arena" as const, arena: JSON.parse(next.definition) as NonNullable<OfficialCatalog["arena"]>,
+      windows: results.filter((row) => row.board_key.startsWith("arena/")).slice(0, 20).map(({ board_key }) => {
+        const [, seasonId, bandId, rank] = board_key.split("/") as [string, string, string, string];
+        const startRank = Number(rank);
+        return { seasonId, bandId, startRank, endRank: startRank + 99 };
+      }), populationBands: populations.map((row) => row.board_key.split("/")[2]!),
+      progress: populations.filter((row) => row.progress_json !== null).map((row) => JSON.parse(row.progress_json!) as OfficialArenaProgress) };
+  }
+  const { results } = await db.prepare(`SELECT board_key FROM official_ranking_finals
+    WHERE region=? AND event_id=? AND event_json=? AND snapshot_id IS NULL AND due_at_ms<=? ORDER BY last_attempt_at_ms,board_key`)
+    .bind(region, next.id, next.definition, now).all<{ board_key: string }>();
+  await db.prepare(`UPDATE official_ranking_finals SET last_dispatch_at_ms=?,
+    last_attempt_at_ms=CASE WHEN board_key LIKE 'event/%' THEN ? ELSE last_attempt_at_ms END
+    WHERE region=? AND event_id=? AND event_json=? AND snapshot_id IS NULL AND due_at_ms<=?`)
+    .bind(now, now, region, next.id, next.definition, now).run();
+  return { kind: "event" as const, event: JSON.parse(next.definition) as NonNullable<OfficialCatalog["event"]>,
+    boards: results.filter(({ board_key }) => board_key.startsWith("event/")).map(({ board_key }) => {
+      const [, , kind, challengeId] = board_key.split("/") as [string, string, OfficialObservation["kind"], string];
+      return { kind, challengeId };
+    }), windows: results.filter(({ board_key }) => board_key.startsWith("event-window/")).slice(0, 20).map(({ board_key }) => {
+      const startRank = Number(board_key.split("/")[2]);
+      return { eventId: next.id, startRank, endRank: startRank + 99 };
+    }) };
 }
 
 export async function readOfficialCatalog(env: OfficialRankingStoreBindings, region: GameRecordsRegion): Promise<OfficialCatalog | null> {
@@ -84,6 +194,54 @@ export async function readOfficialCatalog(env: OfficialRankingStoreBindings, reg
   return catalog;
 }
 
+async function saveDailyObservation(db: D1Database, board: string,
+  observation: { region: string; snapshotId: string; observedAtMs: number }, key: string, hash: string): Promise<void> {
+  await db.prepare(`INSERT INTO official_ranking_daily
+    (region, board_key, day, observed_at_ms, snapshot_id, payload_key, payload_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, board_key, day) DO UPDATE SET
+    observed_at_ms=excluded.observed_at_ms, snapshot_id=excluded.snapshot_id,
+    payload_key=excluded.payload_key, payload_hash=excluded.payload_hash
+    WHERE excluded.observed_at_ms >= official_ranking_daily.observed_at_ms`)
+    .bind(observation.region, board, Math.floor((observation.observedAtMs + JST_MS) / 86_400_000),
+      observation.observedAtMs, observation.snapshotId, key, hash).run();
+  const finals = board.startsWith("arena/") || board.startsWith("population/") ? "official_arena_finals" : "official_ranking_finals";
+  await db.prepare(`UPDATE ${finals} SET snapshot_id=?,observed_at_ms=?,payload_key=?,payload_hash=?
+    WHERE region=? AND board_key=? AND snapshot_id IS NULL AND due_at_ms<=?`)
+    .bind(observation.snapshotId, observation.observedAtMs, key, hash, observation.region, board, observation.observedAtMs).run();
+}
+
+export async function readOfficialDailyArchives(env: OfficialRankingStoreBindings, region: GameRecordsRegion, day: number) {
+  const { db } = storage(env);
+  const { results } = await db.prepare(`SELECT board_key AS boardKey, snapshot_id AS snapshotId,
+    observed_at_ms AS observedAtMs, payload_hash AS payloadHash FROM official_ranking_daily
+    WHERE region = ? AND day = ? ORDER BY board_key`)
+    .bind(region, day).all<{ boardKey: string; snapshotId: string; observedAtMs: number; payloadHash: string }>();
+  return results;
+}
+
+export async function readOfficialFinalArchives(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  selection?: { kind: "event" | "arena"; id: string }) {
+  const { db } = storage(env);
+  const { results: targets } = await db.prepare(`SELECT 'event' AS kind,event_id AS id,MAX(due_at_ms) AS dueAtMs,
+    COUNT(*) AS total,SUM(snapshot_id IS NOT NULL) AS completed FROM official_ranking_finals WHERE region=? GROUP BY event_id
+    UNION ALL SELECT 'arena',season_id,MAX(due_at_ms),COUNT(*),SUM(snapshot_id IS NOT NULL)
+    FROM official_arena_finals WHERE region=? GROUP BY season_id ORDER BY dueAtMs DESC,kind,id`)
+    .bind(region, region).all<{ kind: "event" | "arena"; id: string; dueAtMs: number; total: number; completed: number }>();
+  const target = selection ? targets.find((row) => row.kind === selection.kind && row.id === selection.id) : targets[0];
+  if (!target) return selection ? null : { targets, selected: null, snapshots: [] };
+  const table = target.kind === "event" ? "official_ranking_finals" : "official_arena_finals";
+  const column = target.kind === "event" ? "event_id" : "season_id";
+  const { results: snapshots } = await db.prepare(`SELECT board_key AS boardKey,due_at_ms AS dueAtMs,
+    snapshot_id AS snapshotId,observed_at_ms AS observedAtMs,payload_hash AS payloadHash,
+    CASE WHEN snapshot_id IS NOT NULL THEN 'archived' WHEN due_at_ms<=? THEN 'pending' ELSE 'waiting' END AS state
+    FROM ${table} WHERE region=? AND ${column}=? ORDER BY due_at_ms,board_key`)
+    .bind(Date.now(), region, target.id).all<{
+      boardKey: string; dueAtMs: number; snapshotId: string | null; observedAtMs: number | null; payloadHash: string | null;
+      state: "archived" | "pending" | "waiting";
+    }>();
+  return { targets, selected: { kind: target.kind, id: target.id }, snapshots };
+}
+
 export async function saveOfficialObservation(env: OfficialRankingStoreBindings, observation: OfficialObservation): Promise<void> {
   const { db, bucket } = storage(env);
   const body = JSON.stringify(observation);
@@ -93,6 +251,7 @@ export async function saveOfficialObservation(env: OfficialRankingStoreBindings,
     .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
+    if (!observation.error) await saveDailyObservation(db, `event/${observation.eventId}/${observation.kind}/${observation.challengeId}`, observation, `official/1/${observation.region}/observations/${observation.snapshotId}/${hash}.json`, hash);
     return;
   }
   const key = `official/1/${observation.region}/observations/${observation.snapshotId}/${hash}.json`;
@@ -134,6 +293,8 @@ export async function saveOfficialObservation(env: OfficialRankingStoreBindings,
   const saved = await db.prepare("SELECT payload_hash FROM official_ranking_observations WHERE region = ? AND snapshot_id = ?")
     .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
   if (saved?.payload_hash !== hash) throw new Error("official_observation_conflict");
+  if (!observation.error) await saveDailyObservation(db,
+    `event/${observation.eventId}/${observation.kind}/${observation.challengeId}`, observation, key, hash);
 }
 
 // The board tables predate point boards; their CHECK keeps kinds to challenge and total.
@@ -218,6 +379,13 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
   }
   const key = `official/1/${observation.region}/arena/${observation.snapshotId}/${hash}.json`;
+  await db.prepare(`INSERT INTO official_arena_finals
+    (region,board_key,season_id,due_at_ms,arena_json,catalog_observed_at_ms,last_attempt_at_ms)
+    SELECT region,?,season_id,due_at_ms,arena_json,catalog_observed_at_ms,? FROM official_arena_finals
+    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
+      last_attempt_at_ms=MAX(official_arena_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
+    .bind(`arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation.observedAtMs,
+      observation.region, `arena/${observation.seasonId}/${observation.bandId}/1`).run();
   if (!previous) {
     await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
     await db.prepare(`INSERT INTO official_arena_ranking_observations
@@ -245,19 +413,23 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       .bind(observation.region, observation.seasonId, observation.bandId, observation.startRank, observation.endRank,
         observation.maxRank ?? null, observation.players.length, JSON.stringify(profiles), observation.snapshotId,
         observation.observedAtMs, key, hash).run();
+    await saveDailyObservation(db, `arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation, key, hash);
     if (replaced) await dropReplaced(env, "official_arena_ranking_observations", observation, replaced);
   }
 }
 
 interface ReplacedWindow { snapshot_id: string; payload_key: string; observed_at_ms: number }
 
-/** A window keeps only its latest snapshot; history has no reader. */
+/** Daily archives retain their payloads when the live window advances. */
 async function dropReplaced(env: OfficialRankingStoreBindings, table: string,
   observation: { region: string; snapshotId: string; observedAtMs: number }, replaced: ReplacedWindow) {
   if (replaced.snapshot_id === observation.snapshotId || replaced.observed_at_ms > observation.observedAtMs) return;
-  const { db, bucket } = storage(env);
-  await db.prepare(`DELETE FROM ${table} WHERE region = ? AND snapshot_id = ?`).bind(observation.region, replaced.snapshot_id).run();
-  await bucket.delete(replaced.payload_key);
+  const { db } = storage(env);
+  await db.prepare(`DELETE FROM ${table} WHERE region = ? AND snapshot_id = ?
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key = ?)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key = ?)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key = ?)`)
+    .bind(observation.region, replaced.snapshot_id, replaced.payload_key, replaced.payload_key, replaced.payload_key).run();
 }
 
 export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<void> {
@@ -268,6 +440,13 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
   const previous = await db.prepare("SELECT payload_hash FROM official_event_window_observations WHERE region = ? AND snapshot_id = ?")
     .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
   if (previous && previous.payload_hash !== hash) throw new Error("official_observation_conflict");
+  await db.prepare(`INSERT INTO official_ranking_finals
+    (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms,last_attempt_at_ms)
+    SELECT region,?,event_id,due_at_ms,event_json,catalog_observed_at_ms,? FROM official_ranking_finals
+    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
+      last_attempt_at_ms=MAX(official_ranking_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
+    .bind(`event-window/${observation.eventId}/${observation.startRank}`, observation.observedAtMs,
+      observation.region, `event/${observation.eventId}/point/`).run();
   const key = `official/1/${observation.region}/event-window/${observation.snapshotId}/${hash}.json`;
   if (!previous) {
     await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
@@ -295,6 +474,7 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
     WHERE excluded.observed_at_ms >= official_event_window_metadata.observed_at_ms`)
     .bind(observation.region, observation.eventId, observation.startRank, observation.endRank, observation.maxRank ?? null,
       observation.players.length, JSON.stringify(profiles), observation.snapshotId, observation.observedAtMs, key, hash).run();
+  await saveDailyObservation(db, `event-window/${observation.eventId}/${observation.startRank}`, observation, key, hash);
   if (replaced) await dropReplaced(env, "official_event_window_observations", observation, replaced);
 }
 
@@ -406,6 +586,7 @@ export async function saveOfficialArenaPopulation(env: OfficialRankingStoreBindi
     .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
+    await saveDailyObservation(db, `population/${observation.seasonId}/${observation.bandId}`, observation, `official/1/${observation.region}/arena-population/${observation.snapshotId}/${hash}.json`, hash);
     return;
   }
   const key = `official/1/${observation.region}/arena-population/${observation.snapshotId}/${hash}.json`;
@@ -415,6 +596,7 @@ export async function saveOfficialArenaPopulation(env: OfficialRankingStoreBindi
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
     .bind(observation.region, observation.snapshotId, observation.seasonId, observation.bandId, observation.maxRank,
       observation.observedAtMs, key, hash).run();
+  await saveDailyObservation(db, `population/${observation.seasonId}/${observation.bandId}`, observation, key, hash);
 }
 
 export async function readOfficialArenaPopulation(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
@@ -547,12 +729,37 @@ export function officialCardUrl(region: GameRecordsRegion, source: string): stri
 /** Raw observations stay whole for this long; older ones are thinned by {@link pruneOfficialObservations}. */
 export const OFFICIAL_KEEP_ALL_MS = 12 * 3_600_000;
 const JST_MS = 9 * 3_600_000;
+const PAYLOAD_DELETE_GRACE_MS = 300_000;
 
-/** Thins raw observations older than {@link OFFICIAL_KEEP_ALL_MS}: event boards keep the last snapshot of each
- * Japan-time day per board (the points event charts read); Arena and event windows keep only what each window's latest
- * metadata points at; population counts keep the latest per board. Deletes rows and payloads; returns how many. */
-export async function pruneOfficialObservations(env: OfficialRankingStoreBindings, limit = 200): Promise<number> {
+function archivePayloadUnreferenced(alias: "o" | "g"): string {
+  return `NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key=${alias}.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key=${alias}.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key=${alias}.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)
+    AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)`;
+}
+
+async function deleteRetiredPayloads(env: OfficialRankingStoreBindings, region: GameRecordsRegion, limit: number): Promise<void> {
   const { db, bucket } = storage(env);
+  const { results } = await db.prepare(`SELECT payload_key FROM official_observation_payload_gc AS g
+    WHERE g.region=? AND queued_at_ms<=? AND ${archivePayloadUnreferenced("g")}
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_ranking_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_event_window_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_population_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
+    ORDER BY queued_at_ms,payload_key LIMIT ?`).bind(region, Date.now() - PAYLOAD_DELETE_GRACE_MS, limit).all<{ payload_key: string }>();
+  if (!results.length) return;
+  await bucket.delete(results.map((row) => row.payload_key));
+  await db.batch(results.map((row) => db.prepare("DELETE FROM official_observation_payload_gc WHERE payload_key=?").bind(row.payload_key)));
+}
+
+/** Thins raw observations older than {@link OFFICIAL_KEEP_ALL_MS}: event boards keep the last successful snapshot and last attempt of each
+ * Japan-time day per board; final and daily archive references protect pinned payloads. Arena and event windows also keep their
+ * live metadata references; population counts also keep the latest per board. Retires rows atomically into a payload cleanup queue;
+ * unreferenced bodies are deleted after a five-minute grace period. Called inside the owning regional collector's serialized queue.
+ * Returns the number of retired observation rows. */
+export async function pruneOfficialObservations(env: OfficialRankingStoreBindings, region: GameRecordsRegion, limit = 50): Promise<number> {
+  const { db } = storage(env);
   const before = Date.now() - OFFICIAL_KEEP_ALL_MS, orphaned = Date.now() - 3_600_000;
   const doomed: { table: string; cursor: number; key: string }[] = [];
   const take = async (table: string, sql: string, ...values: unknown[]) => {
@@ -561,23 +768,33 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
     for (const row of results) doomed.push({ table, cursor: row.cursor, key: row.payload_key });
   };
   await take("official_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_ranking_observations AS o
-    WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_ranking_observations AS later
+    WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_finals AS f WHERE f.payload_key = o.payload_key) AND EXISTS (SELECT 1 FROM official_ranking_observations AS later
       WHERE later.region = o.region AND later.event_id = o.event_id AND later.board_kind = o.board_kind
         AND later.challenge_id = o.challenge_id AND (later.observed_at_ms, later.cursor) > (o.observed_at_ms, o.cursor)
+        AND (o.error IS NOT NULL OR later.error IS NULL)
         AND later.observed_at_ms < (CAST((o.observed_at_ms + ?) / 86400000 AS INTEGER) + 1) * 86400000 - ?)
-    ORDER BY o.observed_at_ms LIMIT ?`, before, JST_MS, JST_MS);
+    ORDER BY o.observed_at_ms LIMIT ?`, region, before, JST_MS, JST_MS);
   await take("official_arena_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_arena_ranking_observations AS o
-    WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
-      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, orphaned);
+    WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
+      (SELECT 1 FROM official_arena_finals AS f WHERE f.payload_key = o.payload_key) AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, region, orphaned);
   await take("official_event_window_observations", `SELECT o.cursor, o.payload_key FROM official_event_window_observations AS o
-    WHERE o.observed_at_ms < ? AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
-      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, orphaned);
+    WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_finals AS f WHERE f.payload_key = o.payload_key) AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
+      WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, region, orphaned);
   await take("official_arena_population_observations", `SELECT o.cursor, o.payload_key FROM official_arena_population_observations AS o
-    WHERE o.observed_at_ms < ? AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
+    WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
+      (SELECT 1 FROM official_arena_finals AS f WHERE f.payload_key = o.payload_key) AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
       WHERE later.region = o.region AND later.season_id = o.season_id AND later.band_id = o.band_id
-        AND later.observed_at_ms > o.observed_at_ms) ORDER BY o.observed_at_ms LIMIT ?`, before);
-  if (!doomed.length) return 0;
-  await bucket.delete(doomed.map((row) => row.key));
-  await db.batch(doomed.map((row) => db.prepare(`DELETE FROM ${row.table} WHERE cursor = ?`).bind(row.cursor)));
-  return doomed.length;
+        AND later.observed_at_ms > o.observed_at_ms) ORDER BY o.observed_at_ms LIMIT ?`, region, before);
+  const retired = doomed.length ? await db.batch<{ payload_key: string }>(doomed.map((row) => db.prepare(
+    `DELETE FROM ${row.table} AS o WHERE cursor=? AND payload_key=? AND ${archivePayloadUnreferenced("o")} RETURNING payload_key`)
+    .bind(row.cursor, row.key))) : [];
+  await deleteRetiredPayloads(env, region, limit);
+  return retired.reduce((count, result) => count + result.results.length, 0);
 }

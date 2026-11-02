@@ -63,6 +63,89 @@ A board's freshness is its own `observedAtMs`, not the last success in `/status`
 
 Failure fields use fixed stage and code lists. Exception text, headers, configuration and player data are never recorded.
 
+Demand-only and collection jobs report explicit authenticated demand rejection
+as `complete.status: "auth_paused"` with `failure.stage: "demand"` and the
+HTTP/gRPC status. Only a known authentication rejection produces this status
+for demand within collection; a permission refusal ends that demand without
+declaring the session expired. The Worker can queue managed Global session
+renewal from these fields. It never replays the failed demand.
+
+## Private account login
+
+`POST /account-sdk` and `POST /account-game` use the same Container bearer
+authentication as collection. They accept `haneoka:official-account-job/1` for
+`tw`, `en` or `kr`, with the matching action:
+
+```text
+{contract, action: "sdk" | "game", region, runId, deadlineMs, expectedPlayerId?, expectedSdkUid?,
+ sdkProfile, playerProfile, masterConfig, apiOrigin, sdkSession?}
+```
+
+The SDK action additionally requires `email` and `password`; the game action
+forbids both and requires `sdkSession` and its matching `expectedSdkUid`.
+Profiles are defined in the owning README. `sdkSession`, when present, contains
+`{uid, access_key, id_token, mid}`; `mid` may be null. It is an internal encrypted
+vault input, never a browser or public API field. Cached authentication uses
+`cache.login`; only an explicit expired-key response permits one password login.
+`expectedSdkUid` is the saved identity in the configured SDK namespace. A cached
+session must match it before any SDK request; a fresh SDK result must match it
+before PlayerLogin. A mismatch returns `auth_required` with
+`sdk_identity_mismatch`, without game login or a replacement SDK session.
+The SDK action loads a fresh catalogue before authentication, then returns
+`sdk_ready` with its private session and performs no game login. The Worker
+atomically confirms SDK ownership and persists the encrypted session before
+dispatching the game action. That action performs no SDK authentication and
+verifies every current ranking target before returning a ready role.
+
+The private response is `haneoka:official-account-result/1` with the same
+`action`, `region` and `runId`. SDK success is `sdk_ready` with `sdkSession`;
+game success is `ready` with `playerId` and `credentials`.
+Failures include a local `errorCode` and may preserve a known `playerId`.
+An expired SDK cache without replacement returns `sdkSession: null` in the SDK
+phase. Game responses omit SDK sessions; they cannot replace the SDK cache.
+
+Results travel only over the authenticated Container response. The Worker
+validates identity and stores SDK and role sessions under the active account
+version and lease. Collection and lookup jobs cannot overlap account login.
+An in-memory action/run-ID/exact-job-digest cache serves completed duplicate
+jobs. A started phase with an unknown result returns `run_uncertain` rather
+than reexecuting; changed payloads return `run_conflict`. Only `busy`, emitted
+before execution, permits one identical retry. The former `/account-login`
+route is absent, so mixed old/new deployments reject before SDK or game calls.
+
+## Private JP guest phases
+
+Authenticated `POST /guest-job` accepts:
+
+```text
+{contract: "haneoka:official-guest-job/1", action: "register" | "verify",
+ region: "jp", guestId, runId, deadlineMs, guestProfile, apiOrigin, masterConfig,
+ credentials?}
+```
+
+`guestProfile` supplies `client_version`, optional `device_id` and optional
+`initial_data_group`. Registration forbids `credentials`; verification requires
+the saved `{player_id, credential, device_id}`. Both actions load a fresh catalog.
+Only registration can create a player; it returns before ranking verification.
+
+`haneoka:official-guest-result/1` echoes action, region, guest ID and run ID.
+Register returns `created` with `playerId`, decimal-string `profileId` and private
+credentials, or `failed`/`uncertain` with a local `errorCode`. Verify returns
+`ready` with the saved player ID or `created` with an error code, preserving the
+previously stored identity. The Worker contract checks these bindings and rebuilds
+configuration from its trusted profile and Master inputs.
+
+Both phases exclude account login, collection and lookup work. Completed jobs
+are cached by action, run ID and exact job digest. The cache targets 16 entries;
+only entries whose job deadline has passed may be evicted, so newer jobs cannot
+erase the replay guard of a still-valid request. A started registration whose
+result was lost returns 409 `run_uncertain` on repeat; a changed payload conflicts.
+Authenticated `GET /guest-result/{runId}` reads only that in-memory registration
+result, including after the original deadline: 200 for a completed private result,
+202 `result_unavailable` for an incomplete execution, 404 `result_not_found` when
+absent. It performs no game request. Process restart or expired-entry eviction
+can remove the result; absence does not authorize another registration.
+
 ## Storage
 
 The regional Durable Object keeps the schedule, credential generation, checkpoints, pauses and queues. D1 keeps indexes, and private R2 keeps immutable bodies. The container's temporary directory is not used for recovery.

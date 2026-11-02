@@ -2,10 +2,16 @@
 !Dockerfile
 !requirements.txt
 !build-requirements.txt
+!account-requirements.txt
 !cloud.py
 !core/
 core/*
 !core/cloud_job.py
+!core/platform_login.py
+!core/player_login.py
+!core/guest_registration.py
+!core/guest_job.py
+!core/account_job.py
 !core/lifecycle.py
 !core/official_catalog.py
 !core/regions.py

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Official catalog identities, game protobuf observations and collector checkpoints.
-// Output: Shared wire contracts including Arena windows, complete populations, resumable hints and origin-bound account-pool parsing.
+// Output: Shared wire contracts including retained event/Arena final targets, windows, complete populations, resumable hints and origin-bound account-pool parsing.
 // Pos: [Map](L2-2.md); official ranking wire types alongside game-records DTOs.
 // Effects/Dependencies: Web Crypto digests; parses private configuration without logging or network access.
 import type { GameRecordsRegion } from "./game-records";
@@ -54,6 +54,9 @@ export function selectOfficialCollectorAccount(pool: OfficialCollectorPool, heal
       || left.identity.localeCompare(right.identity))[0] ?? null;
 }
 
+export const normalizeOfficialPlayerId = (id: string): string =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(id) ? id.toLowerCase() : id;
+
 export async function parseOfficialCollectorConfiguration(raw: string, region: GameRecordsRegion): Promise<OfficialCollectorPool> {
   const object = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_collector_config");
@@ -93,7 +96,7 @@ export async function parseOfficialCollectorConfiguration(raw: string, region: G
       || !Number.isSafeInteger(config.nextRequestAtMs) || config.nextRequestAtMs < 0 || config.nextRequestAtMs > 8_640_000_000_000_000))
       throw new Error("invalid_collector_config");
     const authentication = { player_id: auth.player_id, credential: auth.credential, device_id: deviceId, ...(bid ? { bid } : {}) };
-    const playerIdentity = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(auth.player_id) ? auth.player_id.toLowerCase() : auth.player_id;
+    const playerIdentity = normalizeOfficialPlayerId(auth.player_id);
     const identity = await digest({ region, player_id: playerIdentity });
     if (identities.has(identity)) throw new Error("duplicate_collector_account");
     identities.add(identity);
@@ -227,6 +230,11 @@ export interface OfficialCollectorJob {
   contract: "haneoka:official-ranking-job/1";
   /** `lookup` skips catalog and boards and only serves demand. */
   mode?: "lookup";
+  /** A retained event whose aggregation ended; independent of the current event. */
+  finalEvent?: NonNullable<OfficialCatalog["event"]>;
+  finalBoards?: Array<{ kind: OfficialObservation["kind"]; challengeId: string }>;
+  finalArena?: NonNullable<OfficialCatalog["arena"]>;
+  finalPopulationBands?: string[];
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;

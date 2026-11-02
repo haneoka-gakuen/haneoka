@@ -1,14 +1,21 @@
 // L3 — GEB
-// Input: Region configuration, container callbacks and scheduled collection work.
-// Output: Durable regional jobs/observations and read-only current collection availability.
+// Input: Regional configuration, account-login requests, container results and scheduled collection work.
+// Output: Regional observations, drained/serialized account jobs, explicit-authentication renewal, merged credential pools and redacted managed-account health.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
+import { bindPlatformSdkIdentity, claimPlatformSdkOwner, claimPlatformLogin, finishPlatformLogin, readPlatformLoginInput, readPlatformPassword, readPlatformPlayerIds, readPlatformSdkIdentity, readPlatformSdkSession, readReadyPlatformAccounts, releasePlatformLogin, savePlatformSdkSession,
+  type PlatformLoginLease, type PlatformLoginResult, type PlatformRegion } from "./official-platform-accounts";
+import { AccountJobContractError, globalLoginConfiguration, platformLoginResult, platformSdkResult } from "./official-account-jobs";
+import { claimGuestRegistration, claimGuestVerification, createGuestAccount, finishGuestRegistrationFailure, finishGuestVerification,
+  readGuestAccountState, readGuestConfiguration, readGuestPlayerIds, readGuestRequest, readGuestVerificationInput,
+  readReadyGuestAccounts, saveGuestRegistration, saveGuestRequest, type GuestLease } from "./official-guest-accounts";
+import { GuestJobContractError, guestConfiguration, guestPhaseResult, type GuestConfiguration, type GuestPhaseResult } from "./official-guest-jobs";
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
+import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { readOfficialCatalog, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+import { pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -39,6 +46,16 @@ const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
 const CALLBACK_ORIGIN = "https://haneoka.org";
 
 type JsonObject = Record<string, unknown>;
+interface PlatformRenewal {
+  accountId: string; accountVersion: number; identity: string;
+  generation: string; authGeneration: string; notBeforeMs: number;
+}
+interface PendingPlatformLogin extends PlatformLoginLease { started: boolean; automatic?: PlatformRenewal }
+interface PendingGuestJob extends GuestLease { action: "register" | "verify"; started: boolean; recovering?: boolean }
+interface PreparedGuestJob {
+  lease: GuestLease; action: "register" | "verify"; config: GuestConfiguration; token: string;
+  job?: JsonObject; playerId?: string;
+}
 interface CollectorRun {
   id: string;
   token: string;
@@ -53,6 +70,12 @@ interface CollectorRun {
   authStruck?: boolean;
   complete: boolean;
   catalog: OfficialCatalog | null;
+  finalEvent?: OfficialCollectorJob["finalEvent"];
+  finalBoards?: OfficialCollectorJob["finalBoards"];
+  finalWindows?: OfficialCollectorJob["eventWindows"];
+  finalArena?: OfficialCollectorJob["finalArena"];
+  finalArenaWindows?: OfficialCollectorJob["arenaWindows"];
+  finalPopulationBands?: string[];
   checkpoints: Record<string, string>;
   /** A lookup's requests: each gets one attempt, answered or not. */
   attempted?: { player: string[]; song: string[]; card: string[] };
@@ -90,6 +113,8 @@ interface CollectorState {
   cardInterests?: DemandInterest[];
   arenaPopulationAt?: Record<string, number>;
   arenaWarmupRuns?: number;
+  nextFinalAtMs?: number;
+  platformRenewals?: Record<string, PlatformRenewal>;
 }
 
 export function officialRegionEnabled(value: string | undefined, region: GameRecordsRegion): boolean {
@@ -123,9 +148,24 @@ function authRejected(observation: Pick<OfficialObservation, "httpStatus" | "grp
   return observation.httpStatus === 401 || observation.httpStatus === 403 || observation.grpcStatus === "7" || observation.grpcStatus === "16"
     || observation.grpcStatus === "2" && observation.error === "authentication_failed";
 }
+function sessionRejected(value: { httpStatus?: number | null; grpcStatus?: string | null; error?: string | null }): boolean {
+  return !permissionRejected(value) && !limited(value) && (value.httpStatus === 401 || value.grpcStatus === "16"
+    || value.grpcStatus === "2" && value.error === "authentication_failed");
+}
+function rejectedSessionFailure(update: Extract<OfficialCollectorUpdate, { type: "complete" }>): boolean {
+  const failure = update.failure;
+  return update.status === "auth_paused" && !!failure && ["board", "arena_board", "demand"].includes(failure.stage)
+    && sessionRejected({ ...failure, error: "authentication_failed" });
+}
 function limited(observation: Pick<OfficialObservation, "httpStatus" | "grpcStatus">): boolean { return observation.httpStatus === 429 || observation.grpcStatus === "8"; }
 function permissionRejected(value: { httpStatus?: number | null; grpcStatus?: string | null }): boolean {
   return value.httpStatus === 403 || value.grpcStatus === "7";
+}
+function poolAccountStatus(account: OfficialCollectorAccount, health: OfficialCollectorAccountHealth | undefined, now: number): string {
+  const blocked = health?.blocked[account.authGeneration] ?? account.initialPause;
+  return !account.enabled || !account.ready ? "disabled" : health?.held ? "held" : blocked ? blocked
+    : (health?.leaseUntilMs ?? 0) > now ? "working"
+    : Math.max(account.availableAtMs, health?.cooldownUntilMs ?? 0) > now ? "cooling_down" : "ready";
 }
 function validateFailure(value: unknown): asserts value is OfficialCollectorFailure {
   const failure = object(value);
@@ -367,6 +407,538 @@ export class OfficialRankingCollector extends Container<Env> {
   override pingEndpoint = "container/health";
   private mutations: Promise<void> = Promise.resolve();
 
+  async pruneObservations(region: GameRecordsRegion): Promise<number> {
+    return this.serialized(() => pruneOfficialObservations(this.env, region));
+  }
+
+  async platformLoginView(region: PlatformRegion) {
+    const pending = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+    return pending?.region === region && pending.deadlineMs + 15_000 > Date.now()
+      ? { accountId: pending.accountId, accountVersion: pending.accountVersion,
+        status: pending.started ? "authenticating" : "queued", deadlineMs: pending.deadlineMs } : null;
+  }
+
+  async platformAccountView(region: PlatformRegion) {
+    const state = await this.stateFor(region), now = Date.now();
+    const pending = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+    const job = pending?.region === region && pending.deadlineMs + (pending.started ? 15_000 : 0) > now
+      ? { accountId: pending.accountId, accountVersion: pending.accountVersion,
+        status: pending.automatic ? pending.started ? "renewing" : "renewal_queued" : pending.started ? "authenticating" : "queued" } : null;
+    let pool: OfficialCollectorPool | null;
+    try { pool = await this.poolFor(region); }
+    catch { return { job, status: "invalid_config", accounts: [] }; }
+    const accounts = (pool?.accounts ?? []).filter((account) => account.label.startsWith("platform:")).map((account) => {
+      const health = state.accounts?.[account.identity];
+      const renewal = state.platformRenewals?.[account.identity];
+      const status = poolAccountStatus(account, health, now);
+      return { accountId: account.label.slice("platform:".length),
+        playerId: normalizeOfficialPlayerId(String((account.credentials.credentials as JsonObject).player_id)),
+        status: status === "held" ? status : !officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region) ? "disabled"
+          : state.permissionPause || state.legacyPermissionBlock ? "auth_paused" : status,
+        renewal: renewal?.generation === account.generation && !state.permissionPause && !state.legacyPermissionBlock
+          ? { accountVersion: renewal.accountVersion } : null };
+    });
+    return { job, status: "ok", accounts };
+  }
+
+  async requestPlatformLogin(region: PlatformRegion, accountId: string, accountVersion: number): Promise<{ kind: string; runId?: string }> {
+    return this.serialized(() => this.queuePlatformLogin(region, accountId, accountVersion));
+  }
+
+  private async queuePlatformLogin(region: PlatformRegion, accountId: string, accountVersion: number, automatic?: PlatformRenewal): Promise<{ kind: string; runId?: string }> {
+    if (await this.platformLoginView(region)) return { kind: "busy" };
+    try { globalLoginConfiguration(this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG, accountId, region); }
+    catch { return { kind: "login_not_configured" }; }
+    if (!this.env.OFFICIAL_ACCOUNT_ENCRYPTION_KEY) return { kind: "login_not_configured" };
+    const account = await this.env.DB.prepare("SELECT version FROM official_platform_accounts WHERE id=?")
+      .bind(accountId).first<{ version: number }>();
+    if (!account) return { kind: "account_not_found" };
+    if (account.version !== accountVersion) return { kind: "version_conflict" };
+    try {
+      if (!await readPlatformPassword(this.env, accountId)) return { kind: "account_not_found" };
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "official_account_job_failed", region, code: "account_store_failed",
+        error: error instanceof Error ? error.name : "Error" }));
+      return { kind: "account_store_failed" };
+    }
+    const pending: PendingPlatformLogin = { accountId, accountVersion, region,
+      runId: crypto.randomUUID().replaceAll("-", ""), started: false, deadlineMs: Date.now() + 300_000,
+      ...(automatic ? { automatic } : {}) };
+    await this.ctx.storage.put("platformLogin", pending);
+    try { await this.schedule(new Date(Date.now() + 1_000), "runPlatformLogin", region); }
+    catch (error) {
+      const current = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+      if (current?.runId === pending.runId && !current.started) await this.ctx.storage.delete("platformLogin");
+      throw error;
+    }
+    return { kind: "queued", runId: pending.runId };
+  }
+
+  private async rememberPlatformRenewal(state: CollectorState, run: CollectorRun): Promise<void> {
+    if (state.region === "jp" || !run.accountIdentity || state.platformRenewals?.[run.accountIdentity]) return;
+    const pool = await this.poolFor(state.region);
+    const account = pool?.accounts.find((entry) => entry.identity === run.accountIdentity && entry.generation === run.generation);
+    const health = state.accounts?.[run.accountIdentity];
+    if (!account?.label.startsWith("platform:") || !account.enabled || account.initialPause || health?.held) return;
+    const accountId = account.label.slice("platform:".length);
+    const row = await this.env.DB.prepare(`SELECT a.version FROM official_platform_accounts AS a
+      JOIN official_platform_roles AS r ON r.account_id=a.id
+      WHERE a.id=? AND r.region=? AND r.status='ready' AND r.player_id=? AND r.credential_box IS NOT NULL`)
+      .bind(accountId, state.region, normalizeOfficialPlayerId(String((account.credentials.credentials as JsonObject).player_id)))
+      .first<{ version: number }>();
+    if (!row) return;
+    const notBeforeMs = Math.max(Date.now() + AUTH_RETRY_MS, health?.cooldownUntilMs ?? 0);
+    (state.platformRenewals ??= {})[run.accountIdentity] = { accountId, accountVersion: row.version,
+      identity: account.identity, generation: account.generation, authGeneration: account.authGeneration, notBeforeMs };
+    if (health) health.blocked[account.authGeneration] = "auth_paused";
+    await this.ctx.storage.put("collectorState", state);
+    await this.schedule(new Date(notBeforeMs), "renewPlatformSessions", state.region);
+  }
+
+  async renewPlatformSessions(region: PlatformRegion): Promise<void> {
+    await this.serialized(async () => {
+      if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) return;
+      const state = await this.stateFor(region), pool = await this.poolFor(region), now = Date.now();
+      let next = Infinity;
+      for (const renewal of Object.values(state.platformRenewals ?? {}).sort((a, b) => a.notBeforeMs - b.notBeforeMs)) {
+        const account = pool?.accounts.find((entry) => entry.identity === renewal.identity && entry.generation === renewal.generation);
+        if (!account) { delete state.platformRenewals![renewal.identity]; continue; }
+        const health = state.accounts?.[renewal.identity];
+        const due = Math.max(renewal.notBeforeMs, health?.cooldownUntilMs ?? 0, health?.leaseUntilMs ?? 0);
+        if (!account.enabled || account.initialPause || health?.held || state.permissionPause || state.legacyPermissionBlock) {
+          next = Math.min(next, now + AUTH_RETRY_MS);
+        } else if (due > now) next = Math.min(next, due);
+        else {
+          const result = await this.queuePlatformLogin(region, renewal.accountId, renewal.accountVersion, renewal);
+          if (result.kind !== "queued" && result.kind !== "busy") delete state.platformRenewals![renewal.identity];
+          else next = Math.min(next, now + 15_000);
+          if (result.kind === "queued" || result.kind === "busy") break;
+        }
+      }
+      await this.ctx.storage.put("collectorState", state);
+      if (Number.isFinite(next)) await this.schedule(new Date(next), "renewPlatformSessions", region);
+    });
+  }
+
+  async runPlatformLogin(region: PlatformRegion): Promise<void> {
+    let claimed: PlatformLoginLease | null = null;
+    let preparingRunId: string | null = null;
+    const resume = async () => {
+      await this.ctx.storage.delete("platformLogin");
+      await this.schedule(new Date(Date.now() + 1_000), "collectDue", region);
+    };
+    let prepared;
+    try {
+      prepared = await this.serialized(async () => {
+        const pending = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin"), now = Date.now();
+        if (!pending || pending.region !== region) return null;
+        preparingRunId = pending.runId;
+        if (pending.deadlineMs + (pending.started ? 15_000 : 0) <= now) { await resume(); return null; }
+        if (pending.started) {
+          await this.schedule(new Date(pending.deadlineMs + 15_001), "runPlatformLogin", region);
+          return null;
+        }
+        const account = await this.env.DB.prepare("SELECT version FROM official_platform_accounts WHERE id=?")
+          .bind(pending.accountId).first<{ version: number }>();
+        if (!account || account.version !== pending.accountVersion) { await resume(); return null; }
+        const state = await this.stateFor(region);
+        if (pending.automatic) {
+          const renewal = pending.automatic, pool = await this.poolFor(region);
+          const account = pool?.accounts.find((entry) => entry.identity === renewal.identity && entry.generation === renewal.generation);
+          const health = state.accounts?.[renewal.identity];
+          if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region) || !account || !account.enabled
+            || state.platformRenewals?.[renewal.identity]?.generation !== renewal.generation
+            || account.initialPause || health?.held || state.permissionPause || state.legacyPermissionBlock
+            || Math.max(renewal.notBeforeMs, health?.cooldownUntilMs ?? 0) > now) {
+            await this.schedule(new Date(now + AUTH_RETRY_MS), "renewPlatformSessions", region);
+            await resume();
+            return null;
+          }
+        }
+        if ([state.run, state.lookup].some((run) => run && !run.complete && run.deadlineMs + 15_000 > now)) {
+          await this.schedule(new Date(Math.min(pending.deadlineMs, now + 5_000)), "runPlatformLogin", region);
+          return null;
+        }
+        const config = globalLoginConfiguration(this.env.OFFICIAL_GLOBAL_LOGIN_CONFIG, pending.accountId, region);
+        const lease = { ...pending, deadlineMs: Math.min(pending.deadlineMs, now + JOB_MS) };
+        if (!await claimPlatformLogin(this.env, lease, now)) {
+          await this.schedule(new Date(Math.min(pending.deadlineMs, now + 15_000)), "runPlatformLogin", region);
+          return null;
+        }
+        claimed = lease;
+        const input = await readPlatformLoginInput(this.env, lease);
+        if (!input) { await releasePlatformLogin(this.env, lease); await resume(); return null; }
+        const sdkProfile = config.sdkProfile;
+        const sdkScope = await officialDigest(JSON.stringify([sdkProfile.origin, sdkProfile.app_key,
+          sdkProfile.email_country_id ?? null, sdkProfile.one_sdk_version ?? null,
+          Object.keys(sdkProfile.common_params).sort().map((key) => [key, sdkProfile.common_params[key]])]));
+        const sdkSession = await readPlatformSdkSession(this.env, lease, sdkScope);
+        const sdkIdentityScope = await officialDigest(JSON.stringify(["official-sdk-identity/1",
+          ...["game_id", "server_id", "merchant_id", "channel_id", "platform", "platform_type"].map((key) => sdkProfile.common_params[key])]));
+        const sdkIdentity = await readPlatformSdkIdentity(this.env, lease, sdkIdentityScope);
+        if (!sdkIdentity) throw new AccountJobContractError("account_lease_invalidated");
+        let expectedSdkUid = sdkIdentity.uid;
+        if (sdkSession) {
+          if (!await bindPlatformSdkIdentity(this.env, lease, sdkIdentityScope, sdkSession.uid)) throw new AccountJobContractError("sdk_identity_mismatch");
+          expectedSdkUid = sdkSession.uid;
+        }
+        await this.ctx.storage.put("platformLogin", { ...lease, started: true });
+        if (pending.automatic) {
+          delete state.platformRenewals?.[pending.automatic.identity];
+          await this.ctx.storage.put("collectorState", state);
+        }
+        await this.schedule(new Date(lease.deadlineMs + 15_001), "runPlatformLogin", region);
+        let token = await this.ctx.storage.get<string>("containerToken");
+        if (!token) { token = crypto.randomUUID() + crypto.randomUUID(); await this.ctx.storage.put("containerToken", token); }
+        this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+        return { lease, config, token, sdkScope, sdkIdentityScope, expectedSdkUid, job: { contract: "haneoka:official-account-job/1", action: "sdk", region, runId: lease.runId,
+          deadlineMs: lease.deadlineMs, email: input.email, password: input.password, expectedPlayerId: input.playerId, expectedSdkUid, sdkSession, ...config } };
+      });
+    } catch (error) {
+      const code = error instanceof AccountJobContractError ? error.message : "account_setup_failed";
+      console.warn(JSON.stringify({ event: "official_account_job_failed", region, code }));
+      await this.serialized(async () => {
+        if (claimed && !await finishPlatformLogin(this.env, claimed, { status: code === "sdk_identity_mismatch" ? "auth_required" : "failed", errorCode: code }))
+          await releasePlatformLogin(this.env, claimed);
+        const current = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+        if (current?.runId === preparingRunId) await resume();
+      });
+      return;
+    }
+    if (!prepared) return;
+    let result: PlatformLoginResult;
+    let verifiedSdkUid = prepared.expectedSdkUid;
+    let phase: "sdk" | "ownership" | "game" = "sdk";
+    try {
+      const dispatchPhase = async (action: "sdk" | "game", job: JsonObject) => {
+        const dispatch = async () => {
+          if (!await readPlatformSdkIdentity(this.env, prepared.lease, prepared.sdkIdentityScope))
+            throw new AccountJobContractError("account_lease_invalidated");
+          if (prepared.lease.automatic) {
+            const state = await this.stateFor(region);
+            if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)
+              || state.accounts?.[prepared.lease.automatic.identity]?.held || state.permissionPause || state.legacyPermissionBlock)
+              throw new AccountJobContractError("automatic_login_paused");
+          }
+          return this.containerFetch(`http://container/account-${action}`, { method: "POST",
+            headers: { Authorization: `Bearer ${prepared.token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(job), signal: AbortSignal.timeout(Math.max(1, prepared.lease.deadlineMs + 15_000 - Date.now())) });
+        };
+        let response = await dispatch();
+        let conflict: "account_container_busy" | "account_job_conflict" | "account_job_uncertain" | null = null;
+        if (response.status === 409) {
+          const reason = async (value: Response) => {
+            const code = object(await value.json()).error;
+            if (code !== "busy" && code !== "run_conflict" && code !== "run_uncertain") throw new AccountJobContractError("invalid_account_result");
+            return code;
+          };
+          let code = await reason(response);
+          if (code === "busy") {
+            // Busy is rejected before any SDK/game request; ambiguous failures are not replayed.
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+            response = await dispatch();
+            if (response.status === 409) code = await reason(response);
+          }
+          if (response.status === 409) conflict = code === "busy" ? "account_container_busy"
+            : code === "run_uncertain" ? "account_job_uncertain" : "account_job_conflict";
+        }
+        if (conflict) throw new AccountJobContractError(conflict);
+        if ([400, 403, 404].includes(response.status)) {
+          await response.body?.cancel();
+          throw new AccountJobContractError("account_container_rejected");
+        }
+        const raw = await response.text();
+        if (!response.ok || new TextEncoder().encode(raw).length > 65_536) throw new Error("account_container_failed");
+        return JSON.parse(raw) as unknown;
+      };
+      const sdk = platformSdkResult(await dispatchPhase("sdk", prepared.job), prepared.lease.runId, region, prepared.config, prepared.expectedSdkUid);
+      if (sdk.status !== "sdk_ready") result = sdk;
+      else {
+        verifiedSdkUid = sdk.sdkSession.uid;
+        phase = "ownership";
+        const ownership = await this.serialized(async () => {
+          const pending = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+          if (pending?.runId !== prepared.lease.runId) return "account_lease_invalidated";
+          if (!await bindPlatformSdkIdentity(this.env, prepared.lease, prepared.sdkIdentityScope, sdk.sdkSession.uid)) return "account_lease_invalidated";
+          const owner = await claimPlatformSdkOwner(this.env, prepared.lease, prepared.sdkIdentityScope, sdk.sdkSession.uid);
+          if (owner === "owned") await savePlatformSdkSession(this.env, prepared.lease, prepared.sdkScope, sdk.sdkSession);
+          return owner;
+        });
+        if (ownership !== "owned") result = { status: "failed", errorCode: ownership };
+        else {
+          phase = "game";
+          result = platformLoginResult(await dispatchPhase("game", { contract: "haneoka:official-account-job/1", action: "game", region,
+            runId: prepared.lease.runId, deadlineMs: prepared.lease.deadlineMs, expectedPlayerId: prepared.job.expectedPlayerId,
+            expectedSdkUid: sdk.sdkSession.uid, sdkSession: sdk.sdkSession, ...prepared.config }), prepared.lease.runId, region, prepared.config, sdk.sdkSession.uid);
+        }
+      }
+    } catch (error) {
+      const code = error instanceof AccountJobContractError ? error.message : error instanceof SyntaxError ? "account_result_invalid_json"
+        : phase === "ownership" ? "account_store_failed" : "account_container_failed";
+      result = { status: code === "sdk_identity_mismatch" ? "auth_required"
+        : phase === "game" && !["account_container_busy", "account_job_conflict", "account_container_rejected", "account_lease_invalidated", "automatic_login_paused"].includes(code) ? "auth_uncertain" : "failed", errorCode: code };
+      console.warn(JSON.stringify({ event: "official_account_job_failed", region, code }));
+    }
+    await this.serialized(async () => {
+      const pending = await this.ctx.storage.get<PendingPlatformLogin>("platformLogin");
+      if (pending?.runId !== prepared.lease.runId) return;
+      if (result.sdkSession === null) await savePlatformSdkSession(this.env, prepared.lease, prepared.sdkScope, null);
+      if (result.playerId && (await readPlatformPlayerIds(this.env, region, prepared.lease.accountId,
+        verifiedSdkUid ? { scope: prepared.sdkIdentityScope, uid: verifiedSdkUid } : undefined)).has(normalizeOfficialPlayerId(result.playerId)))
+        result = { status: "failed", errorCode: "duplicate_player" };
+      const saved = await finishPlatformLogin(this.env, prepared.lease, result);
+      if (saved && result.status === "ready" && prepared.lease.automatic) {
+        const state = await this.stateFor(region), renewal = prepared.lease.automatic;
+        const health = state.accounts?.[renewal.identity];
+        if (health) {
+          delete health.blocked[renewal.authGeneration];
+          health.cooldownUntilMs = 0;
+          health.rejections = 0;
+        }
+        if (state.blockedGeneration === renewal.generation) state.blockedGeneration = null;
+        await this.ctx.storage.put("collectorState", state);
+      }
+      if (!saved && !await finishPlatformLogin(this.env, prepared.lease, { status: "auth_required", errorCode: "game_player_mismatch" }))
+        await releasePlatformLogin(this.env, prepared.lease);
+      await resume();
+    });
+  }
+
+  async guestJobView() {
+    const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
+    return pending ? { guestId: pending.guestId, version: pending.version, action: pending.action,
+      status: pending.recovering ? "uncertain" : pending.started ? pending.action === "register" ? "creating" : "verifying" : "queued",
+      deadlineMs: pending.deadlineMs } : null;
+  }
+
+  async guestAccountView() {
+    const state = await this.stateFor("jp"), job = await this.guestJobView(), now = Date.now();
+    let pool: OfficialCollectorPool | null;
+    try { pool = await this.poolFor("jp"); }
+    catch { return { job, status: "invalid_config", accounts: [] }; }
+    const accounts = (pool?.accounts ?? []).filter((account) => account.label.startsWith("guest:")).map((account) => {
+      const status = poolAccountStatus(account, state.accounts?.[account.identity], now);
+      return { guestId: account.label.slice("guest:".length),
+        playerId: normalizeOfficialPlayerId(String((account.credentials.credentials as JsonObject).player_id)),
+        status: status === "held" ? status : !officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, "jp") ? "disabled"
+          : state.permissionPause || state.legacyPermissionBlock ? "auth_paused" : status };
+    });
+    return { job, status: "ok", accounts };
+  }
+
+  async requestGuestRegistration(guestId: string, label: string): Promise<{ kind: string; guestId?: string }> {
+    return this.serialized(async () => {
+      const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
+      if (pending) {
+        await this.schedule(new Date(Date.now() + 1_000), "runGuestJob", "jp");
+        return pending.guestId === guestId ? { kind: "queued", guestId } : { kind: "busy" };
+      }
+      let row = await readGuestAccountState(this.env, guestId);
+      if (row && (row.hasConfiguration || row.status === "failed")) return { kind: "exists", guestId };
+      const now = Date.now();
+      if (row?.status === "queued" && row.deadlineMs <= now) return { kind: "guest_expired", guestId };
+      try {
+        if (!row) {
+          const config = guestConfiguration(this.env.OFFICIAL_JP_GUEST_CONFIG);
+          const lease = { guestId, version: 1, runId: crypto.randomUUID().replaceAll("-", ""), deadlineMs: now + 300_000 };
+          await createGuestAccount(this.env, lease, label);
+          await saveGuestRequest(this.env, lease, config);
+          row = await readGuestAccountState(this.env, guestId);
+        } else if (!await readGuestRequest(this.env, guestId) && row.status === "queued") {
+          await saveGuestRequest(this.env, { guestId, version: row.version, runId: row.runId, deadlineMs: row.deadlineMs },
+            guestConfiguration(this.env.OFFICIAL_JP_GUEST_CONFIG));
+        }
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "official_guest_setup_failed", code: error instanceof GuestJobContractError ? error.message : "guest_store_failed" }));
+        return { kind: error instanceof GuestJobContractError ? "guest_not_configured" : "guest_store_failed" };
+      }
+      if (!row) return { kind: "guest_not_found" };
+      await this.ctx.storage.put("guestJob", { guestId, version: row.version, runId: row.runId, deadlineMs: row.deadlineMs,
+        action: "register", started: row.status !== "queued" } satisfies PendingGuestJob);
+      await this.schedule(new Date(now + 1_000), "runGuestJob", "jp");
+      return { kind: "queued", guestId };
+    });
+  }
+
+  async requestGuestVerification(guestId: string, expectedVersion: number): Promise<{ kind: string }> {
+    return this.serialized(async () => {
+      if (await this.guestJobView()) return { kind: "busy" };
+      const row = await readGuestAccountState(this.env, guestId);
+      if (!row) return { kind: "guest_not_found" };
+      if (row.version !== expectedVersion) return { kind: "version_conflict" };
+      if (!row.hasConfiguration) return { kind: "guest_not_created" };
+      if (row.status === "verifying" && row.deadlineMs > Date.now()) return { kind: "busy" };
+      try {
+        if (!await readGuestConfiguration(this.env, guestId) || !await readGuestRequest(this.env, guestId)) return { kind: "guest_not_created" };
+      } catch { return { kind: "guest_store_failed" }; }
+      await this.queueGuestVerification(guestId, expectedVersion);
+      return { kind: "queued" };
+    });
+  }
+
+  private async queueGuestVerification(guestId: string, version: number) {
+    await this.ctx.storage.put("guestJob", { guestId, version, runId: crypto.randomUUID().replaceAll("-", ""),
+      deadlineMs: Date.now() + 300_000, action: "verify", started: false } satisfies PendingGuestJob);
+    await this.schedule(new Date(Date.now() + 1_000), "runGuestJob", "jp");
+  }
+
+  private async finishGuestWork(lease: GuestLease) {
+    const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
+    if (pending?.guestId !== lease.guestId || pending.runId !== lease.runId) return;
+    await this.ctx.storage.delete("guestJob");
+    await this.schedule(new Date(Date.now() + 1_000), "collectDue", "jp");
+  }
+
+  private async guestToken() {
+    let token = await this.ctx.storage.get<string>("containerToken");
+    if (!token) { token = crypto.randomUUID() + crypto.randomUUID(); await this.ctx.storage.put("containerToken", token); }
+    this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+    return token;
+  }
+
+  async runGuestJob(region: "jp"): Promise<void> {
+    let preparing: PendingGuestJob | null = null;
+    let prepared: PreparedGuestJob | null;
+    try {
+      prepared = await this.serialized(async (): Promise<PreparedGuestJob | null> => {
+        const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob"), now = Date.now();
+        if (!pending) return null;
+        preparing = pending;
+        const row = await readGuestAccountState(this.env, pending.guestId);
+        if (!row) { await this.finishGuestWork(pending); return null; }
+        if (pending.action === "register" && row.hasConfiguration) {
+          if (row.status === "created" || row.status === "ready") await this.queueGuestVerification(row.id, row.version);
+          else await this.finishGuestWork(pending);
+          return null;
+        }
+        const config = await readGuestRequest(this.env, pending.guestId);
+        if (!config) throw new GuestJobContractError("guest_request_missing");
+        if (pending.started || row.runId === pending.runId && (row.status === "creating" || row.status === "verifying")) {
+          const lease = { guestId: row.id, version: row.version, runId: row.runId, deadlineMs: row.deadlineMs };
+          if (row.runId !== pending.runId) { await this.finishGuestWork(pending); return null; }
+          await this.ctx.storage.put("guestJob", { ...pending, ...lease, started: true } satisfies PendingGuestJob);
+          if (now < lease.deadlineMs + 15_000) {
+            await this.schedule(new Date(lease.deadlineMs + 15_001), "runGuestJob", region);
+            return null;
+          }
+          if (pending.action === "verify") {
+            if (row.playerId) await finishGuestVerification(this.env, lease, row.playerId, false, "guest_verification_incomplete");
+            await this.finishGuestWork(pending); return null;
+          }
+          return { lease, action: "register", config, token: await this.guestToken() };
+        }
+        if (pending.deadlineMs <= now) {
+          if (pending.action === "register") await finishGuestRegistrationFailure(this.env, pending, "failed", "guest_queue_expired");
+          await this.finishGuestWork(pending); return null;
+        }
+        const state = await this.stateFor(region);
+        if ([state.run, state.lookup].some((run) => run && !run.complete && run.deadlineMs + 15_000 > now)) {
+          await this.schedule(new Date(Math.min(pending.deadlineMs, now + 5_000)), "runGuestJob", region);
+          return null;
+        }
+        let lease = { ...pending, deadlineMs: Math.min(pending.deadlineMs, now + JOB_MS) };
+        if (pending.action === "register") {
+          if (!await claimGuestRegistration(this.env, lease, now)) { await this.finishGuestWork(pending); return null; }
+        } else {
+          const claimed = await claimGuestVerification(this.env, pending.guestId, pending.version, pending.runId, lease.deadlineMs, now);
+          if (!claimed) { await this.finishGuestWork(pending); return null; }
+          lease = { ...pending, ...claimed };
+        }
+        await this.ctx.storage.put("guestJob", { ...lease, started: true });
+        await this.schedule(new Date(lease.deadlineMs + 15_001), "runGuestJob", region);
+        const configuration = pending.action === "verify" ? await readGuestVerificationInput(this.env, lease) : null;
+        if (pending.action === "verify" && !configuration) throw new GuestJobContractError("guest_lease_invalidated");
+        const credentials = configuration ? object(object(configuration.credentials).credentials) : undefined;
+        return { lease, action: pending.action, config, token: await this.guestToken(),
+          ...(credentials ? { playerId: credentials.player_id as string } : {}),
+          job: { contract: "haneoka:official-guest-job/1", action: pending.action, region, guestId: lease.guestId,
+            runId: lease.runId, deadlineMs: lease.deadlineMs, ...config, ...(credentials ? { credentials } : {}) } };
+      });
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "official_guest_job_failed", code: error instanceof GuestJobContractError ? error.message : "guest_setup_failed" }));
+      await this.serialized(async () => {
+        const lease = preparing as PendingGuestJob | null;
+        if (!lease) return;
+        const row = await readGuestAccountState(this.env, lease.guestId);
+        if (row?.runId === lease.runId) {
+          const current = { guestId: row.id, version: row.version, runId: row.runId, deadlineMs: row.deadlineMs };
+          if (lease.action === "register") await finishGuestRegistrationFailure(this.env, current, lease.started ? "uncertain" : "failed", "guest_setup_failed");
+          else if (row.playerId) await finishGuestVerification(this.env, current, row.playerId, false, "guest_setup_failed");
+        }
+        await this.finishGuestWork(lease);
+      });
+      return;
+    }
+    if (!prepared) return;
+    if (!prepared.job) { await this.recoverGuestRegistration(prepared); return; }
+    try {
+      const response = await this.containerFetch("http://container/guest-job", { method: "POST",
+        headers: { Authorization: `Bearer ${prepared.token}`, "Content-Type": "application/json" }, body: JSON.stringify(prepared.job),
+        signal: AbortSignal.timeout(Math.max(1, prepared.lease.deadlineMs + 15_000 - Date.now())) });
+      if (!response.ok) { await response.body?.cancel(); throw new GuestJobContractError("guest_container_failed"); }
+      const raw = await response.text();
+      if (new TextEncoder().encode(raw).length > 65_536) throw new GuestJobContractError("invalid_guest_result");
+      await this.acceptGuestResult(prepared, guestPhaseResult(JSON.parse(raw), prepared.action, prepared.lease, prepared.config, prepared.playerId));
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "official_guest_job_failed", code: error instanceof GuestJobContractError ? error.message : "guest_container_failed" }));
+      if (prepared.action === "register") await this.recoverGuestRegistration(prepared);
+      else await this.serialized(async () => {
+        if (prepared.playerId) await finishGuestVerification(this.env, prepared.lease, prepared.playerId, false, "guest_verification_incomplete");
+        await this.finishGuestWork(prepared.lease);
+      });
+    }
+  }
+
+  private async acceptGuestResult(prepared: PreparedGuestJob, result: GuestPhaseResult) {
+    await this.serialized(async () => {
+      if (result.action === "register" && result.status === "created") {
+        const saved = await saveGuestRegistration(this.env, prepared.lease, result.playerId, result.profileId, result.configuration);
+        const row = await readGuestAccountState(this.env, prepared.lease.guestId);
+        if (!saved && row?.runId === prepared.lease.runId && row.version === prepared.lease.version && !row.hasConfiguration)
+          await finishGuestRegistrationFailure(this.env, prepared.lease, "uncertain", "guest_identity_conflict");
+        const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
+        if (row?.hasConfiguration && row.status === "created" && (!pending || pending.guestId === prepared.lease.guestId && pending.runId === prepared.lease.runId)) {
+          await this.queueGuestVerification(row.id, row.version);
+          return;
+        }
+      } else if (result.action === "register") {
+        await finishGuestRegistrationFailure(this.env, prepared.lease, result.status, result.errorCode);
+      } else {
+        const saved = await finishGuestVerification(this.env, prepared.lease, result.playerId, result.status === "ready", result.status === "created" ? result.errorCode : null);
+        if (!saved && Date.now() >= prepared.lease.deadlineMs)
+          await finishGuestVerification(this.env, prepared.lease, result.playerId, false, "guest_verification_incomplete");
+      }
+      await this.finishGuestWork(prepared.lease);
+    });
+  }
+
+  private async recoverGuestRegistration(prepared: PreparedGuestJob) {
+    try {
+      const response = await this.containerFetch(`http://container/guest-result/${prepared.lease.runId}`, {
+        headers: { Authorization: `Bearer ${prepared.token}` }, signal: AbortSignal.timeout(10_000) });
+      if (response.status === 200) {
+        const raw = await response.text();
+        if (new TextEncoder().encode(raw).length > 65_536) throw new GuestJobContractError("invalid_guest_result");
+        await this.acceptGuestResult(prepared, guestPhaseResult(JSON.parse(raw), "register", prepared.lease, prepared.config));
+        return;
+      }
+      await response.body?.cancel();
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "official_guest_recovery_failed", code: error instanceof GuestJobContractError ? error.message : "guest_result_unavailable" }));
+    }
+    await this.serialized(async () => {
+      const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
+      if (pending?.guestId !== prepared.lease.guestId || pending.runId !== prepared.lease.runId) return;
+      if (Date.now() < prepared.lease.deadlineMs + 15_000) {
+        await this.ctx.storage.put("guestJob", { ...pending, recovering: true });
+        await this.schedule(new Date(prepared.lease.deadlineMs + 15_001), "runGuestJob", "jp");
+      } else {
+        await finishGuestRegistrationFailure(this.env, prepared.lease, "uncertain", "guest_result_unavailable");
+        await this.finishGuestWork(prepared.lease);
+      }
+    });
+  }
+
   private expediteArena(state: CollectorState) {
     if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration || state.status !== "ok" && state.status !== "not_started") return;
     const next = Math.max(Date.now() + 1_000, (state.lastRunAtMs ?? 0) + ARENA_DEMAND_INTERVAL_MS);
@@ -510,16 +1082,29 @@ export class OfficialRankingCollector extends Container<Env> {
     });
   }
 
-  /** The secret's pool plus accounts added from the admin panel. */
+  /** Secret/manual entries and verified regional platform sessions share selection and health. */
   private async poolFor(region: GameRecordsRegion): Promise<OfficialCollectorPool | null> {
     const extra = await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? [];
-    if (!extra.length) return configFor(this.env, region);
+    const [managed, ownedPlayers] = region === "jp"
+      ? await Promise.all([readReadyGuestAccounts(this.env), readGuestPlayerIds(this.env)])
+      : await Promise.all([readReadyPlatformAccounts(this.env, region), readPlatformPlayerIds(this.env, region)]);
+    if (!extra.length && !managed.length && !ownedPlayers.size) return configFor(this.env, region);
     const secret = this.env[`OFFICIAL_RANKING_${region.toUpperCase()}_CONFIG` as "OFFICIAL_RANKING_JP_CONFIG"];
     const base = secret?.trim() ? object(JSON.parse(secret)) : null;
     const accounts = base?.contract === "haneoka:official-ranking-account-pool/1" ? base.accounts as unknown[]
       : base ? [{ ...base, id: "default", enabled: true, state: "ready" }] : [];
-    return parseOfficialCollectorConfiguration(JSON.stringify({ ...(base?.contract ? base : {}),
-      contract: "haneoka:official-ranking-account-pool/1", region, accounts: [...accounts, ...extra] }), region);
+    const manual = accounts.length || extra.length ? await parseOfficialCollectorConfiguration(JSON.stringify({ ...(base?.contract ? base : {}),
+      contract: "haneoka:official-ranking-account-pool/1", region, accounts: [...accounts, ...extra] }), region) : null;
+    const manualAccounts = manual?.accounts.filter((account) =>
+      !ownedPlayers.has(normalizeOfficialPlayerId(String((account.credentials.credentials as JsonObject).player_id)))) ?? [];
+    const preferredIdentity = manualAccounts.some((account) => account.identity === manual?.preferredIdentity) ? manual!.preferredIdentity : null;
+    if (!managed.length) return { accounts: manualAccounts, preferredIdentity };
+    const automatic = await parseOfficialCollectorConfiguration(JSON.stringify({
+      contract: "haneoka:official-ranking-account-pool/1", region, accounts: managed }), region);
+    const combined = [...manualAccounts, ...automatic.accounts.map((account) => ({ ...account,
+      enabled: manual?.accounts.find((entry) => entry.identity === account.identity)?.enabled ?? account.enabled }))];
+    return { accounts: combined,
+      preferredIdentity: combined.some((account) => account.identity === manual?.preferredIdentity) ? manual!.preferredIdentity : null };
   }
 
   /** Redacted per-account state for the admin panel; never credentials. */
@@ -534,10 +1119,7 @@ export class OfficialRankingCollector extends Container<Env> {
       queued: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).length,
       accounts: pool.accounts.map((account) => {
         const health = state.accounts?.[account.identity];
-        const blocked = health?.blocked[account.authGeneration] ?? account.initialPause;
-        const status = !account.enabled || !account.ready ? "disabled" : health?.held ? "held" : blocked ? blocked
-          : (health?.leaseUntilMs ?? 0) > now ? "working"
-          : Math.max(account.availableAtMs, health?.cooldownUntilMs ?? 0) > now ? "cooling_down" : "ready";
+        const status = poolAccountStatus(account, health, now);
         return { label: account.label, identity: account.identity, status, removable: extra.has(account.label),
           preferred: account.identity === pool!.preferredIdentity, clientVersion: account.clientVersion,
           lastUsedAtMs: health?.lastUsedAtMs || null, lastSuccessAtMs: health?.lastSuccessAtMs ?? null,
@@ -563,6 +1145,7 @@ export class OfficialRankingCollector extends Container<Env> {
       } else if (action === "hold") health.held = true;
       else if (action === "release") health.held = false;
       else {
+        delete state.platformRenewals?.[identity];
         health.blocked = {};
         health.cooldownUntilMs = 0;
         health.failures = 0;
@@ -595,6 +1178,7 @@ export class OfficialRankingCollector extends Container<Env> {
   /** Starts a demand-only job on a free account, if one is needed and possible. */
   private async runLookup(region: GameRecordsRegion): Promise<void> {
     const job = await this.serialized(async (): Promise<OfficialCollectorJob | null> => {
+      if (region === "jp" ? await this.guestJobView() : await this.platformLoginView(region)) return null;
       const state = await this.stateFor(region), now = Date.now();
       if (state.lookup && !state.lookup.complete && now <= state.lookup.deadlineMs + 15_000) return null;
       const live = (entries?: DemandInterest[], limit = 16) =>
@@ -685,13 +1269,23 @@ export class OfficialRankingCollector extends Container<Env> {
       if (!lookup || lookup.id !== runId || update.contract !== "haneoka:official-ranking-update/1"
         || update.region !== region || update.runId !== runId || update.credentialGeneration !== lookup.generation) return json({ error: "run_mismatch" }, 409);
       if (update.type === "complete") {
+        if (!["ok", "failed", "auth_paused", "rate_limited"].includes(update.status)) return json({ error: "invalid_update" }, 400);
+        if (update.failure !== undefined) {
+          try { validateFailure(update.failure); } catch { return json({ error: "invalid_update" }, 400); }
+        }
+        if (lookup.complete) return json({ ok: true });
         lookup.complete = true;
         const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
         if (health) {
           health.leaseUntilMs = 0;
           if (update.status === "rate_limited") health.cooldownUntilMs = Date.now() + retryMs(update.retryAfterSeconds);
           if (update.status === "ok") health.failures = 0;
+          if (rejectedSessionFailure(update)) {
+            health.rejections = (health.rejections ?? 0) + 1;
+            health.cooldownUntilMs = Math.max(health.cooldownUntilMs, Date.now() + AUTH_RETRY_MS * health.rejections);
+          }
         }
+        if (rejectedSessionFailure(update)) await this.rememberPlatformRenewal(state, lookup);
       } else if (["player-profile", "song-ranking", "card-image"].includes(update.type)) {
         const refused = await this.applyDemand(state, region, update);
         if (refused) return refused;
@@ -831,6 +1425,9 @@ export class OfficialRankingCollector extends Container<Env> {
       catch { state.status = "invalid_config"; await this.persist(state, false); return; }
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return; }
       this.synchronizePool(state, pool);
+      const renewals = Object.values(state.platformRenewals ?? {});
+      if (region !== "jp" && renewals.length)
+        await this.schedule(new Date(Math.max(Date.now() + 1_000, Math.min(...renewals.map((entry) => entry.notBeforeMs)))), "renewPlatformSessions", region);
       if (state.callbackProtocolVersion !== 2 && ["failed", "invalid_config", "not_configured"].includes(state.status) && state.run?.complete
         && !state.run.catalog && !state.run.pendingAttempt && !state.blockedGeneration && !state.permissionPause && !state.legacyPermissionBlock
         && state.lastFailure?.stage === "catalog_callback" && state.lastFailure.code === "CallbackError"
@@ -884,6 +1481,7 @@ export class OfficialRankingCollector extends Container<Env> {
 
   async collectDue(region: GameRecordsRegion): Promise<void> {
     const job = await this.serialized(async (): Promise<OfficialCollectorJob | null> => {
+      if (region === "jp" ? await this.guestJobView() : await this.platformLoginView(region)) return null;
       const state = await this.stateFor(region);
       if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) { state.status = "disabled"; await this.persist(state, false); return null; }
       let pool: OfficialCollectorPool | null;
@@ -898,9 +1496,15 @@ export class OfficialRankingCollector extends Container<Env> {
       const now = Date.now();
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const runId = crypto.randomUUID().replaceAll("-", "");
+      const final = now >= (state.nextFinalAtMs ?? 0) ? await takeOfficialFinalTarget(this.env, region, now) : null;
+      const eventFinal = final?.kind === "event" ? final : null;
+      const arenaFinal = final?.kind === "arena" ? final : null;
+      if (final) state.nextFinalAtMs = now + 2 * INTERVAL_MS;
       state.run = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
         authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + JOB_MS,
-        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {} };
+        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {},
+        ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards, finalWindows: eventFinal.windows } : {}),
+        ...(arenaFinal ? { finalArena: arenaFinal.arena, finalArenaWindows: arenaFinal.windows, finalPopulationBands: arenaFinal.populationBands } : {}) };
       const health = this.runHealth(state);
       if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + JOB_MS + 15_000; }
       state.status = "collecting";
@@ -916,19 +1520,23 @@ export class OfficialRankingCollector extends Container<Env> {
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
-      const eventWindows = [...eventDemand, ...(await this.eventSweep(state, region, now))
+      const eventWindows = final ? eventFinal?.windows ?? [] : [...eventDemand, ...(await this.eventSweep(state, region, now))
         .filter((row) => !eventDemand.some((entry) => entry.eventId === row.eventId && entry.startRank === row.startRank))];
-      const arenaWindows = [...demanded, ...await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length))];
+      const arenaWindows = final ? arenaFinal?.windows ?? [] : [...demanded, ...await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length))];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
-        capabilities: ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "player-demand-v1"],
+        capabilities: eventFinal ? ["event-finals-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
+          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1"]
+            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "player-demand-v1"],
+        ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards } : {}),
+        ...(arenaFinal ? { finalArena: arenaFinal.arena, finalPopulationBands: arenaFinal.populationBands } : {}),
         playerLookups: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 16).map((entry) => entry.id),
         songRankings: (state.songInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 4).map((entry) => entry.id),
         cardImages: (state.cardInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 32).map((entry) => entry.id),
-        arenaProgress: Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
+        arenaProgress: arenaFinal ? arenaFinal.progress : Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
         arenaWindows,
         eventWindows,
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
@@ -1011,9 +1619,13 @@ export class OfficialRankingCollector extends Container<Env> {
           validateCatalog(update.catalog, region);
           if (run.apiOrigin && update.catalog.apiOrigin !== run.apiOrigin) return json({ error: "catalog_origin_mismatch" }, 409);
           if (run.pendingAttempt) return json({ error: "attempt_pending" }, 409);
-          await saveOfficialCatalog(this.env, update.catalog);
+          if (run.finalEvent) {
+            if (canonical(update.catalog.event) !== canonical(run.finalEvent) || update.catalog.arena != null) return json({ error: "final_target_mismatch" }, 409);
+          } else if (run.finalArena) {
+            if (canonical(update.catalog.arena) !== canonical(run.finalArena) || update.catalog.event !== null) return json({ error: "final_target_mismatch" }, 409);
+          } else await saveOfficialCatalog(this.env, update.catalog);
           run.catalog = update.catalog;
-          if (update.catalog.arena !== undefined) {
+          if (!run.finalArena && update.catalog.arena !== undefined) {
             const arena = update.catalog.arena, previous = state.arenaCatalog;
             const sameSeason = arena?.seasonId === previous?.seasonId;
             if (!arena || !sameSeason || arena?.bandIds.length !== previous?.bandIds.length
@@ -1064,13 +1676,17 @@ export class OfficialRankingCollector extends Container<Env> {
           if (run.pendingAttempt !== update.observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           const event = run.catalog?.event;
           if (!event || update.observation.eventId !== event.id || update.observation.observedAtMs < run.startedAtMs
+            || run.finalBoards && !run.finalBoards.some((board) => board.kind === update.observation.kind && board.challengeId === update.observation.challengeId)
             || (update.observation.kind === "total" ? !event.totalRankingEnabled
               : update.observation.kind === "point" ? !event.pointRankingEnabled
               : !event.challenges.some((challenge) => challenge.id === update.observation.challengeId && challenge.enabled))) {
             return json({ error: "board_mismatch" }, 409);
           }
           run.resolvedAttempt = true;
-          if (authRejected(update.observation)) this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
+          if (authRejected(update.observation) && !(run.finalEvent && permissionRejected(update.observation))) {
+            this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
+          }
+          if (sessionRejected(update.observation)) await this.rememberPlatformRenewal(state, run);
           if (limited(update.observation)) {
             state.status = "rate_limited";
             state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(update.observation.retryAfterSeconds));
@@ -1101,8 +1717,13 @@ export class OfficialRankingCollector extends Container<Env> {
           const observation = update.observation;
           if (run.pendingAttempt !== observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           if (observation.eventId !== run.catalog?.event?.id || observation.observedAtMs < run.startedAtMs) return json({ error: "board_mismatch" }, 409);
+          if (run.finalEvent && !run.finalWindows?.some((window) => window.eventId === observation.eventId
+            && window.startRank === observation.startRank && window.endRank === observation.endRank)) return json({ error: "board_mismatch" }, 409);
           run.resolvedAttempt = true;
-          if (authRejected(observation)) this.pauseRun(state, "auth_paused", permissionRejected(observation));
+          if (authRejected(observation) && !(run.finalEvent && permissionRejected(observation))) {
+            this.pauseRun(state, "auth_paused", permissionRejected(observation));
+          }
+          if (sessionRejected(observation)) await this.rememberPlatformRenewal(state, run);
           if (limited(observation)) {
             state.status = "rate_limited";
             state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(observation.retryAfterSeconds));
@@ -1132,8 +1753,14 @@ export class OfficialRankingCollector extends Container<Env> {
             || update.observation.observedAtMs < run.startedAtMs) {
             return json({ error: "board_mismatch" }, 409);
           }
+          if (run.finalArena && !run.finalPopulationBands?.includes(update.observation.bandId)
+            && !run.finalArenaWindows?.some((window) => window.bandId === update.observation.bandId
+              && window.startRank === update.observation.startRank && window.endRank === update.observation.endRank)) return json({ error: "board_mismatch" }, 409);
           run.resolvedAttempt = true;
-          if (authRejected(update.observation)) this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
+          if (authRejected(update.observation) && !(run.finalArena && permissionRejected(update.observation))) {
+            this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
+          }
+          if (sessionRejected(update.observation)) await this.rememberPlatformRenewal(state, run);
           if (limited(update.observation)) {
             state.status = "rate_limited";
             state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(update.observation.retryAfterSeconds));
@@ -1167,13 +1794,18 @@ export class OfficialRankingCollector extends Container<Env> {
             || progress.seasonId !== arena.seasonId || !arena.bandIds.includes(progress.bandId)) return json({ error: "board_mismatch" }, 409);
           const expected = arena.thresholdsByBand?.[progress.bandId];
           if (expected && !sameThresholds(expected, progress.thresholds)) return json({ error: "board_mismatch" }, 409);
-          state.arenaProgress ??= {};
-          state.arenaProgress[`${progress.seasonId}:${progress.bandId}`] = {
+          if (run.finalArena && !run.finalPopulationBands?.includes(progress.bandId)) return json({ error: "board_mismatch" }, 409);
+          const stored: OfficialArenaProgress = {
             seasonId: progress.seasonId, bandId: progress.bandId, thresholds: progress.thresholds,
             maxRank: progress.maxRank, counts: progress.counts, cursor: progress.cursor,
             ...(progress.pending ? { pending: { index: progress.pending.index, low: progress.pending.low, high: progress.pending.high } } : {}),
             ...(progress.witnessedAtMs ? { witnessedAtMs: progress.witnessedAtMs } : {}), updatedAtMs: Date.now(),
           };
+          if (run.finalArena) await saveOfficialFinalArenaProgress(this.env, region, stored);
+          else {
+            state.arenaProgress ??= {};
+            state.arenaProgress[`${progress.seasonId}:${progress.bandId}`] = stored;
+          }
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "arena-population") {
@@ -1185,9 +1817,12 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           const expected = arena.thresholdsByBand?.[update.observation.bandId];
           if (expected && !sameThresholds(expected, update.observation.atLeast.map((row) => row.threshold))) return json({ error: "board_mismatch" }, 409);
+          if (run.finalArena && !run.finalPopulationBands?.includes(update.observation.bandId)) return json({ error: "board_mismatch" }, 409);
           await saveOfficialArenaPopulation(this.env, update.observation);
-          state.arenaPopulationAt ??= {};
-          state.arenaPopulationAt[`${update.observation.seasonId}:${update.observation.bandId}`] = update.observation.observedAtMs;
+          if (!run.finalArena) {
+            state.arenaPopulationAt ??= {};
+            state.arenaPopulationAt[`${update.observation.seasonId}:${update.observation.bandId}`] = update.observation.observedAtMs;
+          }
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "complete") {
@@ -1200,9 +1835,10 @@ export class OfficialRankingCollector extends Container<Env> {
           state.status = state.blockedGeneration ? state.status : state.status === "rate_limited" ? "rate_limited" : update.status;
           state.failures = update.status === "ok" ? 0 : state.failures + 1;
           if (update.status === "auth_paused") this.pauseRun(state, "auth_paused", update.failure ? permissionRejected(update.failure) : false);
+          if (rejectedSessionFailure(update)) await this.rememberPlatformRenewal(state, run);
           if (update.status === "rate_limited") state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(update.retryAfterSeconds));
           if (update.status === "failed") state.nextAtMs = Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
-          const arena = run.catalog?.arena === undefined ? null : state.arenaCatalog;
+          const arena = run.finalArena || run.catalog?.arena === undefined ? null : state.arenaCatalog;
           const cold = arena && Date.now() < arena.rankingEndAtMs && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
             && !state.arenaPopulationAt?.[`${arena.seasonId}:${id}`]);
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {

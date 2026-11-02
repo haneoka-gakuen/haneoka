@@ -4,6 +4,9 @@ import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { decideModerationManually, resolveModerationAppeal } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
+import { readOfficialDailyArchives, readOfficialFinalArchives } from "./official-ranking-store";
+import { AccountVaultUnavailable, createPlatformAccount, listPlatformAccounts, listPlatformSdkConflicts, resolvePlatformSdkConflict, parsePlatformAccount, parsePlatformAccountUpdate, updatePlatformAccount } from "./official-platform-accounts";
+import { listGuestAccounts } from "./official-guest-accounts";
 import { listAdminCreations, readAdminCreation, removeAdminCreation, type CreationKind } from "./admin-creations";
 import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
 import { USER_ROLES, isUserRole, isStaffRole, type UserRole, type StaffRole, type StoredUserRole, type MemberTier } from "../src/lib/user-roles";
@@ -3309,6 +3312,187 @@ const putResourceServer = async (request: Request, env: Env, slug: string): Prom
 const POOL_REGIONS = ["jp", "tw", "en", "kr"] as const;
 type PoolRegion = (typeof POOL_REGIONS)[number];
 
+const getGuestAccounts = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const [guests, view] = await Promise.all([listGuestAccounts(env), env.OFFICIAL_RANKING_COLLECTOR.getByName("jp").guestAccountView()]);
+  const pending = view.job;
+  return json(request, { job: pending ? { guestId: pending.guestId, version: pending.version, action: pending.action,
+    status: pending.status, deadlineMs: pending.deadlineMs } : null, guests: guests.map((guest) => {
+    if (pending && pending.deadlineMs > Date.now() && pending.guestId === guest.id && pending.version === guest.version)
+      return { ...guest, status: pending.status, poolStatus: null };
+    const account = guest.status === "ready" ? view.accounts.find((entry) => entry.guestId === guest.id && entry.playerId === guest.playerId) : null;
+    return { ...guest, poolStatus: guest.status !== "ready" ? null : view.status === "invalid_config" ? "invalid_config" : account?.status ?? null };
+  }) });
+};
+
+const postGuestAccount = async (request: Request, env: Env, verificationId?: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const id = verificationId ?? body?.guestId;
+  const label = typeof body?.label === "string" ? body.label.trim() : "";
+  const version = body && expectedVersion(body);
+  if (typeof id !== "string" || !UUID_PATTERN.test(id)
+    || (verificationId ? version === null || version === undefined || version < 1 : !label || label.length > 80))
+    return error(request, 422, "invalid_guest_account", verificationId ? "expectedVersion is required" : "Enter a guest ID and label");
+  const action = verificationId ? "verify" : "register";
+  const started = await startOperation(request, env, access, `collector.guest.${action}.queue`, "guest_account", id);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName("jp");
+  const result = verificationId ? await collector.requestGuestVerification(id, version!) : await collector.requestGuestRegistration(id, label);
+  if (result.kind !== "queued" && result.kind !== "exists") {
+    await failOperation(env, started.operationId, result.kind, { guestId: id });
+    return error(request, result.kind === "guest_not_found" ? 404 : ["guest_not_configured", "guest_store_failed"].includes(result.kind) ? 503 : 409,
+      result.kind, "The guest task could not be queued");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { guestId: id, action }, id, null);
+  return json(request, { operation: operationValue(operation), guestId: id, status: result.kind === "queued" ? "queued" : "exists" }, result.kind === "queued" ? 202 : 200);
+};
+
+const getPlatformAccounts = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const [roles, conflicts] = await Promise.all([listPlatformAccounts(env), listPlatformSdkConflicts(env)]);
+  const views = await Promise.all((["tw", "en", "kr"] as const).map((region) =>
+    env.OFFICIAL_RANKING_COLLECTOR.getByName(region).platformAccountView(region)));
+  return json(request, { conflicts, roles: roles.map((role) => {
+    const view = views[["tw", "en", "kr"].indexOf(role.region)]!;
+    if (view.job?.accountId === role.id && view.job.accountVersion === role.version) return { ...role, status: view.job.status };
+    if (role.status !== "ready") return role;
+    if (view.status === "invalid_config") return { ...role, status: "invalid_config" };
+    const account = view.accounts.find((entry) => entry.accountId === role.id && entry.playerId === role.playerId);
+    if (!account) return role;
+    const waiting = account.renewal?.accountVersion === role.version && !["held", "disabled"].includes(account.status);
+    return { ...role, status: waiting ? "renewal_waiting" : account.status };
+  }) });
+};
+
+const postPlatformSdkResolution = async (request: Request, env: Env, id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  if (!body || typeof body.accountId !== "string" || !UUID_PATTERN.test(body.accountId)
+    || typeof body.expectedRevision !== "string" || !/^[a-f0-9]{64}$/u.test(body.expectedRevision))
+    return error(request, 422, "invalid_sdk_resolution", "Choose an account from the current conflict");
+  const started = await startOperation(request, env, access, "collector.platform.resolve", "sdk_conflict", `${id}:${body.accountId}`);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  let result: Awaited<ReturnType<typeof resolvePlatformSdkConflict>>;
+  try { result = await resolvePlatformSdkConflict(env, id, body.accountId, body.expectedRevision); }
+  catch (failure) { await failOperation(env, started.operationId, "account_store_failed"); throw failure; }
+  if (result !== "resolved") {
+    await failOperation(env, started.operationId, result);
+    return error(request, result === "conflict_not_found" ? 404 : 409, result, "Refresh accounts before choosing ownership");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: body.accountId }, body.accountId, null);
+  return json(request, { operation: operationValue(operation), accountId: body.accountId });
+};
+
+const postPlatformLogin = async (request: Request, env: Env, id: string, region: "tw" | "en" | "kr"): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  if (version === null || version === undefined || version < 1) return error(request, 422, "invalid_version", "expectedVersion is required");
+  const started = await startOperation(request, env, access, "collector.platform.login.queue", "platform_role", `${id}:${region}`);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName(region);
+  let result: Awaited<ReturnType<typeof collector.requestPlatformLogin>>;
+  try { result = await collector.requestPlatformLogin(region, id, version); }
+  catch (failure) {
+    await failOperation(env, started.operationId, "account_queue_failed", { accountId: id, region });
+    console.warn(JSON.stringify({ event: "official_account_queue_failed", region, error: failure instanceof Error ? failure.name : "Error" }));
+    return error(request, 503, "account_queue_failed", "The login task could not be queued");
+  }
+  if (result.kind !== "queued") {
+    await failOperation(env, started.operationId, result.kind, { accountId: id, region });
+    return error(request, result.kind === "account_not_found" ? 404 : ["login_not_configured", "account_store_failed"].includes(result.kind) ? 503 : 409,
+      result.kind, "The login task could not be queued");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: id, region, runId: result.runId! }, id, null);
+  return json(request, { operation: operationValue(operation), status: "queued" }, 202);
+};
+
+const postPlatformAccount = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const input = body && parsePlatformAccount(body);
+  if (!input) return error(request, 422, "invalid_platform_account", "Enter a label, email and password");
+  const started = await startOperation(request, env, access, "collector.platform.create", "platform_account", "new");
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  let created: boolean;
+  try {
+    created = await createPlatformAccount(env, started.operationId, input);
+  } catch (failure) {
+    const code = failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "account_store_failed";
+    await failOperation(env, started.operationId, code);
+    if (failure instanceof AccountVaultUnavailable) return error(request, 503, code, "Configure the account encryption key");
+    throw failure;
+  }
+  if (!created) {
+    await failOperation(env, started.operationId, "platform_account_exists");
+    return error(request, 409, "platform_account_exists", "This email is already saved");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: started.operationId }, started.operationId, null);
+  return json(request, { operation: operationValue(operation), accountId: started.operationId });
+};
+
+const putPlatformAccount = async (request: Request, env: Env, id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const input = body && parsePlatformAccountUpdate(body);
+  if (!input) return error(request, 422, "invalid_platform_account", "Enter a label and account version");
+  const started = await startOperation(request, env, access, "collector.platform.update", "platform_account", id);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  let result: Awaited<ReturnType<typeof updatePlatformAccount>>;
+  try {
+    result = await updatePlatformAccount(env, id, input);
+  } catch (failure) {
+    const code = failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "account_store_failed";
+    await failOperation(env, started.operationId, code);
+    if (failure instanceof AccountVaultUnavailable) return error(request, 503, code, "Configure the account encryption key");
+    throw failure;
+  }
+  if (result !== "ok") {
+    await failOperation(env, started.operationId, result);
+    return error(request, result === "account_not_found" ? 404 : 409, result, "Refresh the account before editing");
+  }
+  const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId: id, passwordChanged: input.password !== undefined }, id, null);
+  return json(request, { operation: operationValue(operation), accountId: id });
+};
+
+const getCollectorArchives = async (request: Request, env: Env, url: URL, region: PoolRegion): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const date = url.searchParams.get("day") ?? "";
+  const timestamp = /^\d{4}-\d{2}-\d{2}$/u.test(date) ? Date.parse(`${date}T00:00:00Z`) : NaN;
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date
+    || url.searchParams.getAll("day").length !== 1 || [...url.searchParams.keys()].some((key) => key !== "day"))
+    return error(request, 400, "invalid_day", "Select a valid date");
+  const snapshots = await readOfficialDailyArchives(env, region, timestamp / 86_400_000);
+  return json(request, { region, day: date, timeZone: "Asia/Tokyo", snapshots });
+};
+
+const getCollectorFinalArchives = async (request: Request, env: Env, url: URL, region: PoolRegion): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const params = url.searchParams, kind = params.get("kind"), id = params.get("id");
+  if ([...params.keys()].some((key) => key !== "kind" && key !== "id")
+    || params.size !== 0 && (params.size !== 2 || params.getAll("kind").length !== 1 || params.getAll("id").length !== 1
+      || kind !== "event" && kind !== "arena" || !id || !/^[1-9][0-9]{0,18}$/u.test(id)))
+    return error(request, 400, "invalid_archive_target", "Select an event or season");
+  const archive = await readOfficialFinalArchives(env, region, kind && id ? { kind: kind as "event" | "arena", id } : undefined);
+  return archive ? json(request, { region, timeZone: "Asia/Tokyo", ...archive })
+    : error(request, 404, "archive_target_not_found", "Archive target not found");
+};
+
 const getCollectorPool = async (request: Request, env: Env): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
@@ -4605,6 +4789,38 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
       : error(request, 404, "user_not_found", "User not found");
   }
   if (method === "GET" && path.length === 1 && path[0] === "collector-pool") return getCollectorPool(request, env);
+  if (path.length === 1 && path[0] === "collector-guest-accounts") {
+    if (method === "GET") return getGuestAccounts(request, env);
+    if (method === "POST") return postGuestAccount(request, env);
+  }
+  if (method === "POST" && path.length === 3 && path[0] === "collector-guest-accounts" && path[2] === "verify") {
+    const id = path[1];
+    return id && UUID_PATTERN.test(id) ? postGuestAccount(request, env, id) : error(request, 404, "guest_not_found", "Guest not found");
+  }
+  if (path.length === 1 && path[0] === "collector-platform-accounts") {
+    if (method === "GET") return getPlatformAccounts(request, env);
+    if (method === "POST") return postPlatformAccount(request, env);
+  }
+  if (method === "POST" && path.length === 4 && path[0] === "collector-platform-accounts" && path[1] === "sdk-conflicts" && path[3] === "resolve") {
+    return /^[a-f0-9]{64}$/u.test(path[2]!) ? postPlatformSdkResolution(request, env, path[2]!) : error(request, 404, "conflict_not_found", "Conflict not found");
+  }
+  if (method === "PUT" && path.length === 2 && path[0] === "collector-platform-accounts") {
+    const id = path[1];
+    return id && UUID_PATTERN.test(id) ? putPlatformAccount(request, env, id) : error(request, 404, "account_not_found", "Account not found");
+  }
+  if (method === "POST" && path.length === 5 && path[0] === "collector-platform-accounts" && path[2] === "roles" && path[4] === "login") {
+    const region = (["tw", "en", "kr"] as const).find((value) => value === path[3]);
+    return path[1] && UUID_PATTERN.test(path[1]) && region ? postPlatformLogin(request, env, path[1], region)
+      : error(request, 404, "account_not_found", "Account not found");
+  }
+  if (method === "GET" && path.length === 2 && path[0] === "collector-archives") {
+    const region = POOL_REGIONS.find((value) => value === path[1]);
+    return region ? getCollectorArchives(request, env, url, region) : error(request, 404, "region_not_found", "Region not found");
+  }
+  if (method === "GET" && path.length === 2 && path[0] === "collector-final-archives") {
+    const region = POOL_REGIONS.find((value) => value === path[1]);
+    return region ? getCollectorFinalArchives(request, env, url, region) : error(request, 404, "region_not_found", "Region not found");
+  }
   if (method === "POST" && (path.length === 2 || path.length === 3) && path[0] === "collector-pool") {
     const region = POOL_REGIONS.find((value) => value === path[1]);
     const identity = path[2] ?? null;

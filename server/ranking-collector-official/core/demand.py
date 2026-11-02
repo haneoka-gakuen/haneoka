@@ -2,7 +2,7 @@
 # Input: A job's bounded player and song demand, its sampler and the update channel.
 # Output: Player profiles and song rankings sent as durable callbacks.
 # Pos: [Map](../../L2.md); on-demand reads that share a run with ranking collection.
-# Effects/Dependencies: Authenticated game RPCs at the sampler's pace. A rejected read ends demand, never the account.
+# Effects/Dependencies: Authenticated game RPCs at the sampler's pace; a rejected read ends demand and returns its receipt for caller classification.
 import base64
 import re
 import time
@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from google.protobuf import json_format
 
 from transport import pool_from_file
+from lifecycle import authentication_failed
 
 # Only the JP descriptor set carries these services; the messages they share with intl are identical.
 DESCRIPTORS = Path(__file__).parent / 'total-descriptors.pb'
@@ -71,6 +72,8 @@ class Demand:
                 favorite = self.body(status).get('total_favorite', '0')
         self.updates.send('player-profile', profileId=profile_id, found=True, profile=profile, totalFavorite=favorite,
                           observedAtMs=self.observed(favorite_status or receipt))
+        if favorite_status and authentication_failed(favorite_status):
+            raise DemandStopped(favorite_status)
 
     def song(self, music_id):
         receipt, response = self.read('livemusic.LiveMusicService', 'GetRanking', {'music_id': music_id},

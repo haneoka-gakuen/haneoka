@@ -2692,3 +2692,176 @@ CREATE TABLE IF NOT EXISTS official_event_window_metadata (
 );
 CREATE INDEX IF NOT EXISTS official_event_window_snapshot
   ON official_event_window_metadata (region, snapshot_id);
+
+CREATE TABLE IF NOT EXISTS official_ranking_daily (
+  region TEXT NOT NULL CHECK (region IN ('jp', 'tw', 'en', 'kr')),
+  board_key TEXT NOT NULL,
+  day INTEGER NOT NULL,
+  observed_at_ms INTEGER NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  payload_key TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  PRIMARY KEY (region, board_key, day)
+);
+CREATE INDEX IF NOT EXISTS official_ranking_daily_payload
+  ON official_ranking_daily (payload_key);
+
+CREATE TABLE IF NOT EXISTS official_platform_accounts (
+  id TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_box TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_platform_roles (
+  account_id TEXT NOT NULL REFERENCES official_platform_accounts(id),
+  region TEXT NOT NULL CHECK (region IN ('tw', 'en', 'kr')),
+  status TEXT NOT NULL DEFAULT 'not_initialized',
+  player_id TEXT,
+  credential_box TEXT,
+  last_verified_at_ms INTEGER,
+  last_error_code TEXT,
+  PRIMARY KEY (account_id, region)
+);
+
+CREATE TABLE IF NOT EXISTS official_ranking_finals (
+  region TEXT NOT NULL,
+  board_key TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  due_at_ms INTEGER NOT NULL,
+  event_json TEXT NOT NULL,
+  catalog_observed_at_ms INTEGER NOT NULL,
+  last_dispatch_at_ms INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at_ms INTEGER NOT NULL DEFAULT 0,
+  snapshot_id TEXT,
+  observed_at_ms INTEGER,
+  payload_key TEXT,
+  payload_hash TEXT,
+  PRIMARY KEY (region, board_key)
+);
+CREATE INDEX IF NOT EXISTS official_ranking_finals_pending
+  ON official_ranking_finals (region, last_dispatch_at_ms, due_at_ms) WHERE snapshot_id IS NULL;
+CREATE INDEX IF NOT EXISTS official_ranking_finals_payload ON official_ranking_finals (payload_key);
+
+CREATE TABLE IF NOT EXISTS official_arena_finals (
+  region TEXT NOT NULL,
+  board_key TEXT NOT NULL,
+  season_id TEXT NOT NULL,
+  due_at_ms INTEGER NOT NULL,
+  arena_json TEXT NOT NULL,
+  catalog_observed_at_ms INTEGER NOT NULL,
+  last_dispatch_at_ms INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at_ms INTEGER NOT NULL DEFAULT 0,
+  progress_json TEXT,
+  snapshot_id TEXT,
+  observed_at_ms INTEGER,
+  payload_key TEXT,
+  payload_hash TEXT,
+  PRIMARY KEY (region, board_key)
+);
+CREATE INDEX IF NOT EXISTS official_arena_finals_pending
+  ON official_arena_finals (region, last_dispatch_at_ms, due_at_ms) WHERE snapshot_id IS NULL;
+CREATE INDEX IF NOT EXISTS official_arena_finals_payload ON official_arena_finals (payload_key);
+CREATE TABLE IF NOT EXISTS official_platform_login_jobs (
+  account_id TEXT PRIMARY KEY NOT NULL REFERENCES official_platform_accounts(id),
+  region TEXT NOT NULL CHECK (region IN ('tw', 'en', 'kr')),
+  run_id TEXT NOT NULL UNIQUE,
+  account_version INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+  started_at_ms INTEGER NOT NULL,
+  deadline_ms INTEGER NOT NULL,
+  completed_at_ms INTEGER
+);
+CREATE TABLE IF NOT EXISTS official_platform_sdk_sessions (
+  account_id TEXT PRIMARY KEY NOT NULL REFERENCES official_platform_accounts(id),
+  profile_scope TEXT NOT NULL,
+  session_box TEXT NOT NULL,
+  stored_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_guest_accounts (
+  id TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL CHECK (status IN ('queued','creating','created','verifying','ready','failed','uncertain')),
+  run_id TEXT NOT NULL UNIQUE,
+  deadline_ms INTEGER NOT NULL,
+  player_id TEXT UNIQUE,
+  profile_id TEXT,
+  configuration_box TEXT,
+  created_at_ms INTEGER NOT NULL,
+  last_verified_at_ms INTEGER,
+  last_error_code TEXT
+);
+CREATE TABLE IF NOT EXISTS official_guest_requests (
+  guest_id TEXT PRIMARY KEY NOT NULL REFERENCES official_guest_accounts(id),
+  run_id TEXT NOT NULL,
+  request_box TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS official_platform_sdk_identities (
+  account_id TEXT NOT NULL REFERENCES official_platform_accounts(id),
+  identity_scope TEXT NOT NULL,
+  sdk_uid TEXT NOT NULL,
+  bound_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (account_id, identity_scope)
+);
+CREATE TABLE IF NOT EXISTS official_platform_sdk_owners (
+  identity_scope TEXT NOT NULL,
+  sdk_uid TEXT NOT NULL,
+  account_id TEXT REFERENCES official_platform_accounts(id),
+  bound_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (identity_scope, sdk_uid)
+);
+
+CREATE TRIGGER IF NOT EXISTS official_platform_sdk_owner_resolved
+AFTER UPDATE OF account_id ON official_platform_sdk_owners
+WHEN OLD.account_id IS NULL AND NEW.account_id IS NOT NULL
+BEGIN
+  UPDATE official_platform_accounts SET version=version+1 WHERE id IN (
+    SELECT account_id FROM official_platform_sdk_identities
+    WHERE identity_scope=NEW.identity_scope AND sdk_uid=NEW.sdk_uid
+  );
+  DELETE FROM official_platform_sdk_sessions WHERE account_id IN (
+    SELECT account_id FROM official_platform_sdk_identities
+    WHERE identity_scope=NEW.identity_scope AND sdk_uid=NEW.sdk_uid
+  );
+  UPDATE official_platform_roles SET credential_box=NULL,last_verified_at_ms=NULL,
+    status=iif(account_id=NEW.account_id,iif(player_id IS NULL,'not_initialized','auth_required'),'failed'),
+    last_error_code=iif(account_id=NEW.account_id,NULL,'duplicate_sdk_identity')
+    WHERE account_id IN (SELECT account_id FROM official_platform_sdk_identities
+      WHERE identity_scope=NEW.identity_scope AND sdk_uid=NEW.sdk_uid);
+END;
+
+CREATE TABLE IF NOT EXISTS official_observation_payload_gc (
+  payload_key TEXT PRIMARY KEY NOT NULL,
+  region TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  queued_at_ms INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+CREATE INDEX IF NOT EXISTS official_observation_payload_gc_due
+  ON official_observation_payload_gc (queued_at_ms, payload_key);
+
+CREATE TRIGGER IF NOT EXISTS official_ranking_observation_retired
+AFTER DELETE ON official_ranking_observations
+BEGIN
+  INSERT INTO official_observation_payload_gc (payload_key, region, snapshot_id)
+    VALUES (OLD.payload_key, OLD.region, OLD.snapshot_id) ON CONFLICT(payload_key) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS official_arena_observation_retired
+AFTER DELETE ON official_arena_ranking_observations
+BEGIN
+  INSERT INTO official_observation_payload_gc (payload_key, region, snapshot_id)
+    VALUES (OLD.payload_key, OLD.region, OLD.snapshot_id) ON CONFLICT(payload_key) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS official_event_window_retired
+AFTER DELETE ON official_event_window_observations
+BEGIN
+  INSERT INTO official_observation_payload_gc (payload_key, region, snapshot_id)
+    VALUES (OLD.payload_key, OLD.region, OLD.snapshot_id) ON CONFLICT(payload_key) DO NOTHING;
+END;
+CREATE TRIGGER IF NOT EXISTS official_arena_population_retired
+AFTER DELETE ON official_arena_population_observations
+BEGIN
+  INSERT INTO official_observation_payload_gc (payload_key, region, snapshot_id)
+    VALUES (OLD.payload_key, OLD.region, OLD.snapshot_id) ON CONFLICT(payload_key) DO NOTHING;
+END;
