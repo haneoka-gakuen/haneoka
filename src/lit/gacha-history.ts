@@ -43,7 +43,7 @@ import { icon } from "./ui/icon";
 import { accordion } from "./ui/accordion";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { gachaPrizeCard } from "./shared/gacha-prize-card";
-import { LazyImages } from "./ui/lazy-images";
+import { LazyImages, localeTaggedCandidates } from "./ui/lazy-images";
 import type { GachaHistoryReport, GachaHistoryReportCard } from "../lib/gacha-history-image";
 import { emptyState, loadingState } from "./ui/state";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
@@ -354,6 +354,19 @@ export class GachaHistory extends LitElement {
         (!query || poolMatches || prize.name.normalize("NFKC").toLocaleLowerCase(this.locale).includes(query)),
     );
   }
+  /** Pools by their period, newest first; a pool without one by its latest draw. */
+  private newestPoolsFirst<T extends { poolId: string | null }>(pools: readonly T[], batches: readonly GachaHistoryBatch[]): T[] {
+    const latest = new Map<string | null, string>();
+    for (const batch of batches) {
+      const key = batch.poolId || null;
+      if (batch.pulledAt && (latest.get(key) ?? "") < batch.pulledAt) latest.set(key, batch.pulledAt);
+    }
+    const at = (pool: T) => {
+      const start = this.poolMap.get(pool.poolId ?? "")?.startAt;
+      return start ? Date.parse(start) : Date.parse(latest.get(pool.poolId || null) ?? "") || 0;
+    };
+    return [...pools].sort((a, b) => at(b) - at(a));
+  }
   private poolName(poolId: string | null) {
     return this.poolMap.get(poolId ?? "")?.name || poolId || this.t("unknown");
   }
@@ -364,14 +377,21 @@ export class GachaHistory extends LitElement {
           pool?.imageUrl
             ? html`
                 <img
-                  src=${pool.imageUrl}
+                  src=${localeTaggedCandidates(pool.imageUrl, this.locale)[0]}
+                  data-candidates=${JSON.stringify(localeTaggedCandidates(pool.imageUrl, this.locale))}
                   width="96"
                   height="48"
                   loading="lazy"
                   decoding="async"
                   alt=""
                   @error=${(event: Event) => {
-                    (event.currentTarget as HTMLImageElement).hidden = true;
+                    const image = event.currentTarget as HTMLImageElement;
+                    const candidates = JSON.parse(image.dataset.candidates || "[]") as string[];
+                    const next = Number(image.dataset.candidateIndex || 0) + 1;
+                    if (candidates[next]) {
+                      image.dataset.candidateIndex = String(next);
+                      image.src = candidates[next];
+                    } else image.hidden = true;
                   }}
                 />
               `
@@ -1158,7 +1178,7 @@ export class GachaHistory extends LitElement {
     return html`
       <div class="stack stack--loose">
         ${repeat(
-          stats.pools,
+          this.newestPoolsFirst(stats.pools, scoped),
           (pool) => pool.poolId ?? "unknown",
           (pool) => {
             const view = this.poolMap.get(pool.poolId ?? "");
