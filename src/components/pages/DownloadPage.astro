@@ -14,7 +14,7 @@ const platforms = [
   { id: "ios", name: "iOS / iPadOS", system: "iOS 15+ / ARM64", groups: ["arm64"], preferred: "-ios-unsigned.ipa" },
   { id: "windows", name: "Windows", system: "Windows 10+", groups: ["x64", "arm64"], preferred: "-windows-x64-setup.exe" },
   { id: "macos", name: "macOS", system: "macOS 12+", groups: ["arm64", "x64"], preferred: "-macos-arm64.dmg" },
-  { id: "linux", name: "Linux", system: "Linux / glibc", groups: ["x64", "arm64"], preferred: "-linux-x64.AppImage" },
+  { id: "linux", name: "Linux", system: "Linux / WebKitGTK 4.1", groups: ["x64", "arm64"], preferred: "-linux-x64.flatpak" },
 ];
 const groupLabel = (platform: string, arch: string) => arch === "universal" ? text("universal") : platform === "macos" ? (arch === "arm64" ? "Apple Silicon / ARM64" : "Intel / x64") : ({ "arm64-v8a": "ARM64 / arm64-v8a", "armeabi-v7a": "ARM32 / armeabi-v7a", "x86_64": "x86-64", "arm64": "ARM64", "x64": "x64" }[arch] ?? arch);
 const packages = release.assets.filter((a) => /\.(apk|aab|ipa|tipa|exe|msi|msix|zip|dmg|pkg|AppImage|deb|rpm|flatpak|snap|zst|gz)$/.test(a.name));
