@@ -1,7 +1,8 @@
 /** The client's chart conversion (SsMusicScoreConverter → MusicScoreNoteCreator), reduced to what
  * scoring reads: every runtime note's operate type, judgement type and time, in enumeration order,
  * plus skill events and fevers. Ported from nnnotes `score.py`, which reproduces the client's notes
- * exactly; binary32 steps and .NET rounding are kept where they decide a note's time or existence. */
+ * exactly; binary32 steps and .NET rounding are kept where they decide a note's time or existence.
+ * Optional geometry follows the canonical judged-note indices for timing-guide outlines. */
 import type { ChartSource } from "./chart";
 
 const f = Math.fround;
@@ -362,6 +363,7 @@ interface RuntimeNote {
   pos: Pos;
   op: number;
   crit: boolean;
+  geometry?: { pos: number; size: number };
   slideAlong: boolean;
   lineIds: number[];
   viewNotes: RuntimeNote[];
@@ -390,7 +392,10 @@ function* eighths(segStart: Pos, segEnd: Pos, bpmEvents: [number, Pos][], barEve
   }
 }
 
-export function runtimeChart(root: unknown): ChartSource & { enumeration: { op: number; timeMs: number; judgementType: number }[] } {
+export function runtimeChart(root: unknown, includeGeometry = false): ChartSource & {
+  enumeration: { op: number; timeMs: number; judgementType: number }[];
+  geometry?: ({ timeMs: number; pos: number; size: number } | null)[];
+} {
   const score = (root as { score?: Record<string, unknown> })?.score;
   if (!score || typeof score !== "object") throw new Error("ss score");
   const events = (score.events && typeof score.events === "object" ? score.events : {}) as Record<string, unknown>;
@@ -420,6 +425,7 @@ export function runtimeChart(root: unknown): ChartSource & { enumeration: { op: 
     pos,
     op,
     crit: info.crit,
+    ...(includeGeometry ? { geometry: { pos: info.lane, size: info.width } } : {}),
     slideAlong: info.slideAlong,
     lineIds,
     viewNotes: [],
@@ -553,7 +559,8 @@ export function runtimeChart(root: unknown): ChartSource & { enumeration: { op: 
   }
   const enumeration = [...byKey.values()].flat();
   const positional = [...byKey.keys()].sort((a, b) => a - b).flatMap((key) => byKey.get(key)!);
-  const ordered = positional.map((note) => ({
+  const chronological = [...positional].sort((a, b) => a.pos.ms - b.pos.ms);
+  const ordered = chronological.map((note) => ({
     timeMs: note.pos.ms,
     operateType: note.op,
     judgementType: note.op === 123 ? 0 : judgementTypeOf(note.op, note.crit),
@@ -561,7 +568,9 @@ export function runtimeChart(root: unknown): ChartSource & { enumeration: { op: 
   }));
   return {
     durationMs: Math.max(0, ...positional.map((note) => note.pos.ms)) + 1000,
-    notes: ordered.sort((a, b) => a.timeMs - b.timeMs),
+    notes: ordered,
+    ...(includeGeometry ? { geometry: chronological.filter(note => isJudgementNote(note.op)).map(note =>
+      note.geometry ? { timeMs: note.pos.ms, ...note.geometry } : null) } : {}),
     skillTimesMs: skill.map((tick) => makePosition(tick, tc).ms),
     feverMs: fevers.map(([start, end]) => [start.ms, end.ms] as const),
     enumeration: enumeration.map((note) => ({ op: note.op, timeMs: note.pos.ms, judgementType: note.op === 123 ? 0 : judgementTypeOf(note.op, note.crit) })),

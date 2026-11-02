@@ -1,3 +1,4 @@
+import { html, type TemplateResult } from "lit";
 import type { EngineHit, EngineRequest } from "../../lib/team-builder/engine/api";
 import { manualEventFromEffects } from "../../lib/team-builder/manual-event";
 import { DEFAULT_SETTINGS, type BuildSettings } from "./types";
@@ -15,6 +16,20 @@ export const SCORE_GOALS = {
     label: ["criterionMax", "Single-run maximum (ranking)"],
     help: ["criterionMaxHelp", "Rank by the best skill order for repeated attempts at a high score."],
     metric: ["bestScore", "Best-order score"],
+    proven: ["provenMax", "Single-run maximum proven optimal within this search"],
+    unproven: ["unprovenMax", "Single-run maximum: best found so far"],
+  },
+  "max-best-timing": {
+    label: ["criterionMaxBestTiming", "Maximum score · best timing"],
+    help: ["criterionMaxBestTiming", "Maximum score · best timing"],
+    metric: ["bestTimingScore", "Best-timing score"],
+    proven: ["provenMax", "Single-run maximum proven optimal within this search"],
+    unproven: ["unprovenMax", "Single-run maximum: best found so far"],
+  },
+  "max-worst-timing": {
+    label: ["criterionMaxWorstTiming", "Maximum score · worst timing"],
+    help: ["criterionMaxWorstTiming", "Maximum score · worst timing"],
+    metric: ["worstTimingScore", "Worst-timing score"],
     proven: ["provenMax", "Single-run maximum proven optimal within this search"],
     unproven: ["unprovenMax", "Single-run maximum: best found so far"],
   },
@@ -41,9 +56,44 @@ export const SCORE_GOALS = {
   },
 } as const;
 
+export function renderScoreGoal(host: TeamBuilder, s: BuildSettings, set: (patch: Partial<BuildSettings>) => void): TemplateResult {
+  return html`
+    <md-outlined-select
+      label=${host.t("criterion", "Score goal")}
+      ?disabled=${s.aggregation === "mean"}
+      .value=${scoreGoal(s)}
+      @change=${(e: Event) => {
+        const value = (e.target as HTMLInputElement).value as keyof typeof SCORE_GOALS;
+        set(
+          value === "max-best-timing" || value === "max-worst-timing"
+            ? { scoreTiming: value === "max-best-timing" ? "best" : "worst", criterion: "max", scoreTarget: "none" }
+            : s.goal === "gekiso" && (value === "mean" || value === "max" || value === "min")
+            ? { criterion: value }
+            : value === "at-least" || value === "capped"
+              ? { scoreTarget: value, criterion: "mean", scoreTiming: "nominal" }
+              : { scoreTarget: "none", criterion: value, scoreTiming: "nominal" },
+        );
+      }}
+    >
+      ${(s.goal === "score"
+        ? (["mean", "max", "max-best-timing", "max-worst-timing", "min", "at-least", "capped"] as const)
+        : (["mean", "max", "min"] as const)
+      ).map(
+        (value) => html`
+          <md-select-option value=${value}>
+            <div slot="headline">${scoreText(host, SCORE_GOALS[value].label)}</div>
+          </md-select-option>
+        `,
+      )}
+    </md-outlined-select>
+  `;
+}
+
 /** The score goal's ranking: a target when one is set, otherwise the criterion. */
 export const scoreGoal = (s: BuildSettings) =>
-  s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget : s.criterion;
+  s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget
+    : s.goal === "score" && s.criterion === "max" && s.scoreTiming === "best" ? "max-best-timing"
+    : s.goal === "score" && s.criterion === "max" && s.scoreTiming === "worst" ? "max-worst-timing" : s.criterion;
 
 export const usesPtResults = (host: TeamBuilder) =>
   host.tab === "pt" &&

@@ -91,7 +91,7 @@ export function drawDetailedChartOverview(
   excerpt?: {
     startMs: number;
     endMs: number;
-    highlights: readonly { timeMs: number; step: number }[];
+    highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[] }[];
     color: string;
   },
 ): void {
@@ -299,7 +299,7 @@ export function drawDetailedChartOverview(
       context.font = `bold ${presentation.laneWidth}px Arial`;
       context.textAlign = "center";
       for (const highlight of excerpt.highlights) {
-        const marked = notes.filter(note => note.timeMs === highlight.timeMs && note.timeMs >= panelStart && note.timeMs < panelEnd);
+        const marked = highlight.targets.filter(note => note.timeMs >= panelStart && note.timeMs < panelEnd);
         for (const note of marked) {
           const box = bounds(note);
           const y = yAt(note.timeMs, panel);

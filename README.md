@@ -15,7 +15,7 @@ Unofficial database, tools and community for *BanG Dream! Our Notes*, at [haneok
 - Searchable catalogue in five languages, for every server
 - Audio, video, comic, Live2D, Spine and story viewers
 - Chart and story players, with Sonolus-compatible engines
-- Team builder with separate server inventories, event planning and card import
+- Team builder with separate server inventories, event planning, card import and best/worst cumulative-timing score goals
 - Chart editor with cloud drafts, version history, publishing and remixes
 - Gekiso Arena schedule, rankings, song rules and team building
 - Event trackers, player lookup, song rankings and calendars

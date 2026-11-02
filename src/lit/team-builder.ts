@@ -1249,7 +1249,7 @@ export class TeamBuilder extends LitElement {
           kind: "score",
           songs: s.songs,
           criterion: s.criterion,
-          play,
+          play: { ...play, ...(s.criterion === "max" && s.scoreTarget === "none" && s.scoreTiming !== "nominal" ? { cumulativeTiming: s.scoreTiming } : {}) },
           challengeEventId: challengeId,
           ...(s.scoreTarget !== "none" ? { target: { kind: s.scoreTarget, score: s.targetScore! } } : {}),
         };

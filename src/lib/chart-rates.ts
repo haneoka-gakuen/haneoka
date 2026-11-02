@@ -57,7 +57,7 @@ export interface GekisouRates {
   events: [number[][], number[][]];
   /** Judged notes in each range. */
   notes: number[];
-  /** Just judgements in each range at every Just. */
+  /** Just-eligible inputs in each range, including its end boundary, independent of the original mission. */
   just: number[];
 }
 /** Per-power Gekisou score at a rank in each range, a Just share, a general score factor (Great share) and the

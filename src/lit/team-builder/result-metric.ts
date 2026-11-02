@@ -85,7 +85,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
         scoreText(host, SCORE_GOALS[goal].metric),
         orders.reduce((sum, v) => sum + Math.min(v, target), 0) / orders.length,
       );
-    return metric(s.criterion, scoreText(host, SCORE_GOALS[s.criterion].metric), hit.score[s.criterion]);
+    return metric(goal, scoreText(host, SCORE_GOALS[goal].metric), hit.score[s.criterion]);
   }
   return metric("power", host.t("power", "Power"), hit.power);
 }
