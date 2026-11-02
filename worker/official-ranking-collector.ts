@@ -188,13 +188,15 @@ async function responseFailure(response: Response): Promise<OfficialCollectorFai
   try {
     const chunks: Uint8Array[] = [];
     let size = 0;
+    let oversized = false;
     while (true) {
       const next = await reader.read();
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > 1024) return null;
-      chunks.push(next.value);
+      if (size > 1024) { oversized = true; chunks.length = 0; }
+      if (!oversized) chunks.push(next.value);
     }
+    if (oversized) return null;
     const bytes = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
@@ -205,7 +207,7 @@ async function responseFailure(response: Response): Promise<OfficialCollectorFai
       ...(failure.httpStatus !== undefined ? { httpStatus: failure.httpStatus } : {}),
       ...(failure.grpcStatus !== undefined ? { grpcStatus: failure.grpcStatus } : {}) };
   } catch { return null; }
-  finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+  finally { reader.releaseLock(); }
 }
 function json(body: unknown, status = 200): Response {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -410,6 +412,22 @@ export class OfficialRankingCollector extends Container<Env> {
   override enableInternet = true;
   override pingEndpoint = "container/health";
   private mutations: Promise<void> = Promise.resolve();
+
+  constructor(ctx: ConstructorParameters<typeof Container<Env>>[0], env: Env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      let token = await ctx.storage.get<string>("containerToken");
+      if (!token) {
+        token = crypto.randomUUID() + crypto.randomUUID();
+        await ctx.storage.put("containerToken", token);
+      }
+      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+    });
+  }
+
+  collectorRuntimeInfo() {
+    return { interfaceVersion: 2, serviceAuthReady: Boolean(this.envVars?.OFFICIAL_COLLECTOR_TOKEN) };
+  }
 
   async pruneObservations(region: GameRecordsRegion): Promise<number> {
     return this.serialized(() => pruneOfficialObservations(this.env, region));
@@ -722,7 +740,7 @@ export class OfficialRankingCollector extends Container<Env> {
         }
         if (conflict) throw new AccountJobContractError(conflict);
         if ([400, 403, 404].includes(response.status)) {
-          await response.body?.cancel();
+          await responseFailure(response);
           throw new AccountJobContractError("account_container_rejected");
         }
         const raw = await response.text();
@@ -991,7 +1009,7 @@ export class OfficialRankingCollector extends Container<Env> {
       const response = await this.containerFetch("http://container/guest-job", { method: "POST",
         headers: { Authorization: `Bearer ${prepared.token}`, "Content-Type": "application/json" }, body: JSON.stringify(prepared.job),
         signal: AbortSignal.timeout(Math.max(1, prepared.lease.deadlineMs + 15_000 - Date.now())) });
-      if (!response.ok) { await response.body?.cancel(); throw new GuestJobContractError("guest_container_failed"); }
+      if (!response.ok) { await responseFailure(response); throw new GuestJobContractError("guest_container_failed"); }
       const raw = await response.text();
       if (new TextEncoder().encode(raw).length > 65_536) throw new GuestJobContractError("invalid_guest_result");
       await this.acceptGuestResult(prepared, guestPhaseResult(JSON.parse(raw), prepared.action, prepared.lease, prepared.config, prepared.playerId));
@@ -1038,7 +1056,8 @@ export class OfficialRankingCollector extends Container<Env> {
         await this.acceptGuestResult(prepared, guestPhaseResult(JSON.parse(raw), "register", prepared.lease, prepared.config));
         return;
       }
-      await response.body?.cancel();
+      if (response.ok) await response.arrayBuffer();
+      else await responseFailure(response);
     } catch (error) {
       console.warn(JSON.stringify({ event: "official_guest_recovery_failed", code: error instanceof GuestJobContractError ? error.message : "guest_result_unavailable" }));
     }
@@ -1336,7 +1355,8 @@ export class OfficialRankingCollector extends Container<Env> {
         headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(job), signal: AbortSignal.timeout(LOOKUP_MS + 15_000) });
       failed = !response.ok;
-      await response.body?.cancel();
+      if (response.ok) await response.arrayBuffer();
+      else await responseFailure(response);
     } catch { failed = true; }
     const again = await this.serialized(async () => {
       const state = await this.stateFor(region), lookup = state.lookup;
@@ -1695,8 +1715,12 @@ export class OfficialRankingCollector extends Container<Env> {
       const response = await this.containerFetch("http://container/collect", { method: "POST",
         headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(job), signal: AbortSignal.timeout(JOB_MS + 15_000) });
-      if (!response.ok) failure = await responseFailure(response) ?? { stage: "container", code: "http_error", httpStatus: response.status };
-      else await response.body?.cancel();
+      if (!response.ok) {
+        const detail = await responseFailure(response);
+        failure = detail ? { ...detail, httpStatus: detail.httpStatus ?? response.status }
+          : { stage: "container", code: "http_error", httpStatus: response.status };
+      }
+      else await response.arrayBuffer();
     } catch (error) {
       failure = { stage: "container", code: error instanceof Error && error.name === "TimeoutError" ? "TimeoutError" : "container_fetch_failed" };
     }
@@ -1707,10 +1731,14 @@ export class OfficialRankingCollector extends Container<Env> {
       state.run.complete = true;
       state.lastFailure = failure ?? { stage: "container", code: "container_fetch_failed" };
       state.failures += 1;
-      state.nextAtMs = Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
+      const serviceFailure = failure?.stage === "container" && (failure.httpStatus ?? 0) >= 500;
+      state.nextAtMs = Math.max(state.nextAtMs, Date.now() + (serviceFailure ? 15_000 : Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1))));
       const health = this.runHealth(state);
-      if (health) { health.leaseUntilMs = 0; health.failures += 1; health.cooldownUntilMs = state.nextAtMs; }
-      if (state.run.pendingAttempt && !state.run.resolvedAttempt && !state.blockedGeneration) {
+      if (health) {
+        health.leaseUntilMs = 0;
+        if (!serviceFailure) { health.failures += 1; health.cooldownUntilMs = state.nextAtMs; }
+      }
+      if (!serviceFailure && state.run.pendingAttempt && !state.run.resolvedAttempt && !state.blockedGeneration) {
         this.pauseRun(state, "auth_uncertain");
       }
       else if (!state.blockedGeneration && state.status !== "rate_limited") state.status = "failed";
