@@ -1692,15 +1692,16 @@ export class OfficialRankingCollector extends Container<Env> {
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return; }
       this.synchronizePool(state, pool);
       if (state.readRecoveryVersion !== 3) {
+        const rateLimited = state.status === "rate_limited" || Boolean(state.lastFailure && limited(state.lastFailure));
         for (const account of pool.accounts) {
           const health = state.accounts?.[account.identity];
-          if (!health || health.held || health.rejections || health.blocked[account.authGeneration] === "auth_paused") continue;
+          if (rateLimited || !health || health.held || health.rejections || health.blocked[account.authGeneration] === "auth_paused") continue;
           if (health.blocked[account.authGeneration] === "auth_uncertain") delete health.blocked[account.authGeneration];
           health.cooldownUntilMs = 0;
           health.failures = 0;
           if (state.blockedGeneration === account.generation) state.blockedGeneration = null;
         }
-        if (state.run?.complete && transientCollectorFailure(state.lastFailure) && !state.permissionPause && !state.legacyPermissionBlock) {
+        if (!rateLimited && state.run?.complete && transientCollectorFailure(state.lastFailure) && !state.permissionPause && !state.legacyPermissionBlock) {
           state.nextAtMs = Date.now();
           if (["failed", "no_available_account", "auth_uncertain"].includes(state.status)) state.status = "not_started";
         }
@@ -1827,7 +1828,8 @@ export class OfficialRankingCollector extends Container<Env> {
       const eventSwept = final ? [] : await this.eventSweep(state, region, now);
       const arena = state.arenaCatalog;
       const populationDue = arena && now >= arena.startAtMs && now < arena.rankingEndAtMs
-        && arena.bandIds.some((id) => now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
+        && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
+          && now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
       const swept = final || populationDue ? [] : await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length));
       state.run.eventSweepWindows = eventSwept;
       state.run.sweepWindows = swept;
