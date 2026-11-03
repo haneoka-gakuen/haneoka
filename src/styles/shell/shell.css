@@ -296,6 +296,10 @@
   background: var(--md-sys-color-surface);
   scrollbar-gutter: stable;
 }
+.app-shell__main--contained {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
 
 /* ---------- compact ---------- */
 @media (max-width: 599px) {

@@ -14,11 +14,9 @@ import { prepareNativeSourceMap, type NativeCreationSourceMap } from "./native-s
 import { compileAuthorNativeSpeedPlan } from "./native-speed-plan";
 import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-notes";
 
-/** This opt-in target uses the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
+/** Canonical imported and authored projects use the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
 export function compileOurNotesCreation(project: Project) {
   assertValidProject(project);
-  if (project.meta.source && !["ss", "authored"].includes(project.meta.source))
-    throw new Error("our_notes_source_mismatch");
   const ss = serializeSs(project), root = parseScore(ss), sources = prepareNativeSourceMap(project, root),
     chart = buildChart(root, sources.observer);
   const ids = new Set(chart.notes.map((note) => note.id));

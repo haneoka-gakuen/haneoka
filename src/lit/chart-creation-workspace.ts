@@ -2,7 +2,7 @@
 // Input: 本地／云端工程、GBP 歌曲导入地址、歌曲资料、音频与原生素材 release 身份。
 // Output: 谱面与滑条结构编辑、入门与工具提示、精确定位、路标与游戏事件、图案／键位配置、编辑音频及原生统计、保存及社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
-// Effects/Dependencies: IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
+// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -42,6 +42,7 @@ import { localizedFallbacks } from "../lib/localized-text";
 import { beginLoading } from "../lib/loading-progress";
 import { downloadBlob } from "../lib/canvas-capture";
 import { iconButton, segmented } from "./ui/controls";
+import { actionMenu } from "./ui/action-menu";
 import { icon } from "./ui/icon";
 import { trapFocus } from "../lib/overlay";
 import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
@@ -179,7 +180,9 @@ interface SelectionGesture {
   endY: number;
   tick: number;
   lane: number;
-  kind: "move" | "box" | "resize-left" | "resize-right" | "brush";
+  kind: "move" | "box" | "resize-left" | "resize-right" | "brush" | "create" | "erase";
+  placement?: CreationPlacement;
+  result?: PlacementResult;
   error?: string;
   resizeDelta?: number;
   resizeId?: string;
@@ -188,12 +191,47 @@ interface SelectionGesture {
   ids: Set<string>;
   previous: string[];
   primary: string;
+  previousPrimary?: string;
   additive: boolean;
   moved: boolean;
   candidate?: Project;
   deltaTick: number;
   deltaLane: number;
   mergeKey: string;
+}
+interface PlacementPoint { tick: number; lane: number; size: number }
+interface CreationPlacement {
+  tool: string;
+  start: PlacementPoint;
+  anchor?: PlacementPoint;
+  lineId?: string;
+  target?: { lineId: string; lane: number; size: number };
+  id: string;
+  headId: string;
+  tailId: string;
+  critical: boolean;
+  direction: "left" | "up" | "right";
+}
+interface PlacementResult {
+  project?: Project;
+  pending?: PlacementPoint;
+  lineId?: string;
+  ids: string[];
+  width?: number;
+}
+interface TouchViewport {
+  ids: [number, number];
+  rect: DOMRect;
+  first: { x: number; y: number };
+  second: { x: number; y: number };
+  start: number;
+  span: number;
+  lane: number;
+  laneSpan: number;
+  zoom: number;
+  zoomX: boolean;
+  zoomY: boolean;
+  moved: boolean;
 }
 
 let chartCreationOwnerSequence = 0;
@@ -246,7 +284,7 @@ export class ChartCreationWorkspace extends LitElement {
     catch { this.error = this.t("creation.invalid_edit"); return false; }
   };
   private readonly changeCollectionScope = (scope: ChartCollectionScope) => {
-    this.cancelGesture(); this.cancelWidth(); this.pending = undefined;
+    this.cancelGesture(); this.cancelWidth(); this.pending = undefined; this.continuingLine = "";
     this.collectionScope = scope; this.pruneSelection(); this.paint();
   };
   private readonly selectCollectionMembers = (ids: string[]) => { this.setSelection(ids); this.pruneSelection(); this.paint(); };
@@ -280,7 +318,6 @@ export class ChartCreationWorkspace extends LitElement {
   private conflict = false;
   private activeRevision = 0;
   private projectExpanded = true;
-  private toolExpanded = true;
   private store = new CreationStore();
   private patternStore = new ChartPatternStore();
   declare private pastePlacement: PastePlacement | undefined;
@@ -302,6 +339,7 @@ export class ChartCreationWorkspace extends LitElement {
   private previewIdentity?: HaneokaReleaseIdentity;
   private pageData?: PublicSongsPageData;
   private canvasTheme?: OurNotesCreationCanvasSkin;
+  private toolArtCache = new WeakMap<HTMLCanvasElement, { theme: OurNotesCreationCanvasSkin; kind: string }>();
   private canvasThemeKey = "";
   private canvasController?: AbortController;
   private flatChart?: { project:Project; value?:ReturnType<typeof compileOurNotesCreation> };
@@ -370,6 +408,14 @@ export class ChartCreationWorkspace extends LitElement {
   declare private selectedIds: Set<string>;
   declare private multiPick: boolean;
   private gesture?: SelectionGesture;
+  private continuingLine = "";
+  private continuingProject = "";
+  private continuationPreview?: { base: Project; key: string; project?: Project };
+  private inspectorTab = "tool";
+  private collectionsExpanded = false;
+  private preciseOpen = false;
+  private touchPoints = new Map<number, { x: number; y: number }>();
+  private touchViewport?: TouchViewport;
   private gestureFrame = 0;
   private pan?: { pointer: number; x: number; y: number; start: number; laneStart: number };
   private direction: "left" | "up" | "right" = "up";
@@ -396,7 +442,7 @@ export class ChartCreationWorkspace extends LitElement {
   private readonly toolbarOwner = `chart-creation-${++chartCreationOwnerSequence}`;
   private mediaChanged = () => {
     this.narrow = this.panelMedia?.matches ?? false;
-    this.leftOpen = this.stageMode === "edit" && !this.pastePlacement && !this.narrow && innerWidth >= 1280;
+    this.leftOpen = false;
     this.rightOpen = this.stageMode === "edit" && !this.pastePlacement && !this.narrow;
   };
   constructor() {
@@ -431,7 +477,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.revisions = [];
     this.windowStart = 0;
     this.leftOpen = false;
-    this.rightOpen = false;
+    this.rightOpen = true;
     this.narrow = false;
   }
   createRenderRoot() {
@@ -450,9 +496,6 @@ export class ChartCreationWorkspace extends LitElement {
     if (this.projectSnapshot?.revision !== this.history.revision)
       this.projectSnapshot = { revision: this.history.revision, value: this.history.value };
     return this.projectSnapshot.value;
-  }
-  private get nativeChart() {
-    return !this.chart.meta.source || ["ss", "authored"].includes(this.chart.meta.source);
   }
   private get previewPlayer() {
     return this.querySelector<ChartSimulator>("chart-simulator");
@@ -509,6 +552,7 @@ export class ChartCreationWorkspace extends LitElement {
       this.observer ??= new ResizeObserver(() => this.paint());
       this.observer.observe(this.querySelector(".chart-creation__editor")!);
       this.rebuildPreview();
+      void this.ensureCanvasSkin();
       this.paint();
     });
     void this.run(async (signal) => {
@@ -548,6 +592,7 @@ export class ChartCreationWorkspace extends LitElement {
     await library.show("bestdori", undefined, { region, songId, difficulty });
   }
   disconnectedCallback() {
+    this.touchPoints.clear(); this.touchViewport = undefined;
     clearTimeout(this.autosaveTimer);
     document.removeEventListener("fullscreenchange", this.fullscreenChanged);
     this.panelMedia?.removeEventListener("change", this.mediaChanged);
@@ -581,6 +626,7 @@ export class ChartCreationWorkspace extends LitElement {
     super.disconnectedCallback();
   }
   private statusShown = "";
+  private errorShown = "";
   protected updated() {
     if (!this.isConnected) return;
     if (this.dirty && this.audio && !this.busy && !this.pastePlacement && !this.conflict && !this.autosaveTimer) {
@@ -596,11 +642,16 @@ export class ChartCreationWorkspace extends LitElement {
         }
       }, 2000);
     }
+    if (this.error !== this.errorShown) {
+      this.errorShown = this.error;
+      if (this.error) snackbar(this.error);
+    }
     if (this.status !== this.statusShown) {
       this.statusShown = this.status;
       if (this.status) snackbar(this.status);
     }
     this.paint();
+    this.paintToolIcons();
     setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
     const panel = this.narrow ? this.querySelector<HTMLElement>(".chart-studio__panel:not([hidden])") : null;
     if (panel !== (this.focusedPanel ?? null)) {
@@ -820,7 +871,7 @@ export class ChartCreationWorkspace extends LitElement {
       : this.previewIdentity?.server === readReleaseServer() ? this.previewIdentity : undefined;
   }
   private async ensureCanvasSkin(force = false) {
-    if (!this.audio || !this.isConnected) return;
+    if (!this.isConnected) return;
     const identity = this.resourceIdentity(), skin = this.canvasSkin;
     const requested=JSON.stringify([identity??readReleaseServer(),skin]);
     if(!force&&this.canvasThemeKey===requested&&(this.canvasTheme||this.canvasLoading))return;
@@ -843,9 +894,7 @@ export class ChartCreationWorkspace extends LitElement {
   private flatProjection(project:Project) {
     if(this.flatChart?.project!==project){
       try {
-        const native = !project.meta.source || ["ss", "authored"].includes(project.meta.source)
-          ? project : { ...project, meta: { ...project.meta, source: "authored" } };
-        this.flatChart={project,value:compileOurNotesCreation(native)};
+        this.flatChart={project,value:compileOurNotesCreation(project)};
       }
       catch { this.flatChart={project}; }
     }
@@ -1167,6 +1216,7 @@ export class ChartCreationWorkspace extends LitElement {
       const text = binary ? Array.from(bytes, byte => String.fromCharCode(byte)).join("") : new TextDecoder().decode(bytes),
         imported = importChart(binary ? bytes : text);
       signal.throwIfAborted();
+      compileOurNotesCreation(imported.project);
       readAuthorCollections(imported.project);
       this.collectionScope = {}; this.deletingProject = false;
       this.history.reset(imported.project);
@@ -1219,7 +1269,7 @@ export class ChartCreationWorkspace extends LitElement {
           (node) =>
             node instanceof HTMLElement &&
             (node.matches(
-              "input,textarea,select,[role=combobox],[role=slider],[role=switch],[role=option],[role=textbox]",
+              "input,textarea,select,md-menu,md-menu-item,[role=menu],[role=menuitem],[role=combobox],[role=slider],[role=switch],[role=option],[role=textbox]",
             ) ||
               node.matches("md-outlined-text-field,md-outlined-select,md-slider,md-checkbox,md-switch") ||
               node.isContentEditable),
@@ -1260,9 +1310,7 @@ export class ChartCreationWorkspace extends LitElement {
   };
   private executeShortcut(command: string): boolean {
     if (command.startsWith("tool:")) {
-      this.tool = command.slice(5);
-      this.pending = undefined;
-      this.requestUpdate();
+      this.selectPaletteTool(command === "tool:flick" ? "flick_up" : command.slice(5));
       return true;
     }
     if (command.startsWith("grid:")) {
@@ -1276,11 +1324,12 @@ export class ChartCreationWorkspace extends LitElement {
         const redo = command === "redo";
         if (redo ? !this.history.canRedo : !this.history.canUndo) break;
         if (redo) this.history.redo(); else this.history.undo();
+        this.pending = undefined; this.continuingLine = "";
         this.pruneSelection(); this.dirty = true; this.rebuildPreview(); this.requestUpdate();
         break;
       }
       case "play": this.togglePlayback(); break;
-      case "cancel": this.pending = undefined; this.setSelection([]); this.requestUpdate(); break;
+      case "cancel": this.pending = undefined; this.continuingLine = ""; this.setSelection([]); this.requestUpdate(); break;
       case "confirm": {
         if (!this.audio || this.canvasLoading || !this.canvasTheme || !this.cursor
           || !["tap", "flick", "trace", "hold", "guide", "node"].includes(this.tool)) return false;
@@ -1294,8 +1343,7 @@ export class ChartCreationWorkspace extends LitElement {
         break;
       }
       case "flick_left": case "flick_right":
-        this.tool = "flick"; this.direction = command === "flick_left" ? "left" : "right";
-        this.pending = undefined; this.requestUpdate(); break;
+        this.selectPaletteTool(command); break;
       case "help": this.showGuide(); break;
       case "select_all": this.setSelection(this.selectionNodes().map(item => item.note.id)); break;
       case "cut": this.cutSelection(); break;
@@ -1599,6 +1647,10 @@ export class ChartCreationWorkspace extends LitElement {
     if (!this.gesture && !this.pan) this.clearCursor();
   }
   private panMove(event: PointerEvent) {
+    if (this.touchPoints.has(event.pointerId)) {
+      this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.touchViewport) { this.moveTouchViewport(); return; }
+    }
     if (this.pastePlacement) { if (event.isPrimary) this.movePasteToClient(event); return; }
     this.trackCursor(event);
     if (this.gesture?.pointer === event.pointerId) {
@@ -1622,6 +1674,15 @@ export class ChartCreationWorkspace extends LitElement {
     );
   }
   private panEnd(event: PointerEvent) {
+    if (event.type !== "lostpointercapture") this.touchPoints.delete(event.pointerId);
+    if (this.touchViewport) {
+      if (!this.touchPoints.size) {
+        if (!this.touchViewport.moved) { this.setSelection([]); this.pending = undefined; this.continuingLine = ""; }
+        this.touchViewport = undefined;
+        this.requestUpdate(); this.paint();
+      }
+      return;
+    }
     if (this.pastePlacement) {
       const canvas = event.currentTarget as HTMLCanvasElement;
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -1640,9 +1701,49 @@ export class ChartCreationWorkspace extends LitElement {
     const canvas = event.currentTarget as HTMLCanvasElement;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
   }
+  private beginTouchViewport(canvas: HTMLCanvasElement) {
+    if (this.touchViewport) {
+      for (const id of this.touchPoints.keys()) if (!canvas.hasPointerCapture(id)) canvas.setPointerCapture(id);
+      return;
+    }
+    this.cancelGesture(); this.cancelWidth(); this.pan = undefined; this.pausePlayback();
+    for (const id of this.touchPoints.keys()) if (!canvas.hasPointerCapture(id)) canvas.setPointerCapture(id);
+    const [[firstId, first], [secondId, second]] = [...this.touchPoints];
+    this.touchViewport = {
+      ids: [firstId, secondId], first: { ...first }, second: { ...second }, rect: canvas.getBoundingClientRect(),
+      start: this.windowStart, span: this.secondsPerScreen, lane: this.laneStart, laneSpan: this.laneSpan(),
+      zoom: this.zoomX, zoomX: false, zoomY: false, moved: false,
+    };
+  }
+  private moveTouchViewport() {
+    const gesture = this.touchViewport;
+    if (!gesture) return;
+    const first = this.touchPoints.get(gesture.ids[0]), second = this.touchPoints.get(gesture.ids[1]);
+    if (!first || !second) return;
+    const before = { x: (gesture.first.x + gesture.second.x) / 2, y: (gesture.first.y + gesture.second.y) / 2 };
+    const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    const initialX = Math.abs(gesture.first.x - gesture.second.x), initialY = Math.abs(gesture.first.y - gesture.second.y);
+    const nextX = Math.abs(first.x - second.x), nextY = Math.abs(first.y - second.y);
+    gesture.zoomX ||= initialX > 24 && Math.abs(nextX - initialX) > 12;
+    gesture.zoomY ||= initialY > 24 && Math.abs(nextY - initialY) > 12;
+    gesture.moved ||= gesture.zoomX || gesture.zoomY || Math.hypot(center.x - before.x, center.y - before.y) > 5;
+    if (!gesture.moved) return;
+    this.zoomX = Math.max(1, Math.min(8, gesture.zoom * (gesture.zoomX ? nextX / initialX : 1)));
+    this.secondsPerScreen = Math.max(.5, Math.min(16, gesture.span / (gesture.zoomY ? nextY / initialY : 1)));
+    const time = gesture.start + (1 - (before.y - gesture.rect.top) / gesture.rect.height) * gesture.span;
+    const lane = gesture.lane + (before.x - gesture.rect.left) / gesture.rect.width * gesture.laneSpan;
+    this.windowStart = this.clampStart(time - (1 - (center.y - gesture.rect.top) / gesture.rect.height) * this.secondsPerScreen);
+    this.laneStart = this.clampLaneStart(lane - (center.x - gesture.rect.left) / gesture.rect.width * this.laneSpan());
+    this.paint(); this.requestUpdate();
+  }
   private hit(event: PointerEvent) {
-    if (this.busy || !this.audio || this.canvasLoading || !this.canvasTheme || this.gesture || this.pan || ![0, 2].includes(event.button) || !event.isPrimary) return;
+    if (this.busy || !this.audio || this.canvasLoading || !this.canvasTheme || ![0, 1, 2].includes(event.button)) return;
     const canvas = event.currentTarget as HTMLCanvasElement;
+    if (event.pointerType === "touch") {
+      this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.touchPoints.size > 1) { this.beginTouchViewport(canvas); return; }
+    }
+    if (this.gesture || this.pan || !event.isPrimary || this.touchViewport) return;
     canvas.focus();
     if (this.pastePlacement) {
       this.pastePlacement.pointer = event.pointerId;
@@ -1651,116 +1752,75 @@ export class ChartCreationWorkspace extends LitElement {
       return;
     }
     this.trackCursor(event);
-    if (this.tool === "pan" && event.button === 0) {
-      this.pan = {
-        pointer: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-        start: this.windowStart,
-        laneStart: this.laneStart,
-      };
+    this.preview?.pause();
+    if (this.tool === "pan" && event.button === 0 || event.button === 1) {
+      event.preventDefault();
+      this.pan = { pointer: event.pointerId, x: event.clientX, y: event.clientY, start: this.windowStart, laneStart: this.laneStart };
       canvas.setPointerCapture(event.pointerId);
       return;
     }
-    const rect = canvas.getBoundingClientRect(),
-      chart = this.chart,
-      map = this.map();
+    const rect = canvas.getBoundingClientRect(), chart = this.chart, map = this.map();
     const seconds = this.windowStart + (1 - (event.clientY - rect.top) / rect.height) * this.secondsPerScreen;
     const laneSpan = this.laneSpan(chart);
     const pointerLane = viewportXToAuthoredLane(event.clientX - rect.left, rect.width, this.laneView(chart));
-    const tick = Math.max(0, this.gridTick(map.secondsToTick(seconds))),
-      lane = Math.round(pointerLane);
+    const tick = Math.max(0, this.gridTick(map.secondsToTick(seconds))), lane = Math.round(pointerLane);
     const edgeTolerance = ((event.pointerType === "touch" ? 14 : 8) / rect.width) * laneSpan;
-    if (this.tool === "node" && event.button === 0) { this.insertNodeAt(tick, pointerLane, edgeTolerance); return; }
+    const creating = ["tap", "flick", "trace", "hold", "guide"].includes(this.tool);
     const selectedEdge = (item: ReturnType<typeof chartSelectionNodes>[number]) =>
-      this.selectedIds.has(item.note.id) &&
-      Math.min(Math.abs(pointerLane - item.lane), Math.abs(pointerLane - item.lane - item.size)) <= edgeTolerance;
-    const hitNode = this.selectionNodes(chart)
-      .filter(
-        (item) =>
-          Math.abs(map.tickToSeconds(item.note.tick) - seconds) <=
-            Math.max(0.04, (12 * this.secondsPerScreen) / rect.height) &&
-          pointerLane >= item.lane - edgeTolerance &&
-          pointerLane <= item.lane + Math.max(item.size, 0.6) + edgeTolerance,
-      )
-      .sort(
-        (a, b) =>
-          Number(selectedEdge(b)) - Number(selectedEdge(a)) ||
-          Math.abs(map.tickToSeconds(a.note.tick) - seconds) - Math.abs(map.tickToSeconds(b.note.tick) - seconds),
-      )[0];
+      this.selectedIds.has(item.note.id) && Math.min(Math.abs(pointerLane - item.lane), Math.abs(pointerLane - item.lane - item.size)) <= edgeTolerance;
+    const hitNode = this.selectionNodes(chart).filter(item =>
+      Math.abs(map.tickToSeconds(item.note.tick) - seconds) <= Math.max(.04, 12 * this.secondsPerScreen / rect.height)
+      && pointerLane >= item.lane - edgeTolerance && pointerLane <= item.lane + Math.max(item.size, .6) + edgeTolerance)
+      .sort((a, b) => Number(selectedEdge(b)) - Number(selectedEdge(a))
+        || Math.abs(map.tickToSeconds(a.note.tick) - seconds) - Math.abs(map.tickToSeconds(b.note.tick) - seconds))[0];
     const nearby = hitNode?.note;
-    const leftDistance = hitNode ? Math.abs(pointerLane - hitNode.lane) : Infinity;
-    const rightDistance = hitNode ? Math.abs(pointerLane - hitNode.lane - hitNode.size) : Infinity;
-    const resizeEdge =
-      nearby &&
-      this.selectedIds.has(nearby.id) &&
-      Math.min(leftDistance, rightDistance) <= edgeTolerance
-        ? leftDistance < rightDistance
-          ? "resize-left"
-          : "resize-right"
-        : undefined;
-    if ((this.tool === "select" || this.tool === "brush") && event.button === 0) {
+    const previous = [...this.selectedIds], primary = this.selected;
+    const additive = this.multiPick || event.shiftKey || event.ctrlKey || event.metaKey;
+    const begin = (kind: SelectionGesture["kind"], ids: Set<string>, resizeId?: string, placement?: CreationPlacement) => {
+      this.gesture = {
+        pointer: event.pointerId, base: chart, rect, map, startSeconds: this.windowStart, span: this.secondsPerScreen,
+        laneStart: this.laneStart, laneSpan, x: event.clientX, y: event.clientY, endX: event.clientX, endY: event.clientY,
+        tick: map.secondsToTick(seconds), lane: pointerLane, kind, ids, resizeId, previous, primary: this.selected || primary,
+        additive, moved: kind === "brush", deltaTick: 0, deltaLane: 0, mergeKey: createProjectId("gesture"), placement, previousPrimary: primary,
+      };
+      canvas.setPointerCapture(event.pointerId);
+      this.requestUpdate();
+      if (["create", "erase", "brush"].includes(kind)) this.applyGesture();
+    };
+    if (this.tool === "erase" || event.button === 2) {
+      begin("erase", new Set(nearby ? [nearby.id] : []));
+      return;
+    }
+    if ((this.tool === "select" || this.tool === "brush" || creating && nearby && !this.pending) && event.button === 0) {
       if (this.tool === "brush" && !nearby) return;
-      const previous = [...this.selectedIds],
-        primary = this.selected,
-        additive = this.multiPick || event.shiftKey || event.ctrlKey || event.metaKey;
+      const leftDistance = hitNode ? Math.abs(pointerLane - hitNode.lane) : Infinity;
+      const rightDistance = hitNode ? Math.abs(pointerLane - hitNode.lane - hitNode.size) : Infinity;
+      const resizeEdge = nearby && (creating || this.selectedIds.has(nearby.id)) && Math.min(leftDistance, rightDistance) <= edgeTolerance
+        ? leftDistance < rightDistance ? "resize-left" : "resize-right" : undefined;
       if (nearby) {
         const ids = new Set(this.selectedIds);
         if (additive && !resizeEdge) {
-          if (ids.has(nearby.id)) ids.delete(nearby.id);
-          else ids.add(nearby.id);
+          if (ids.has(nearby.id)) ids.delete(nearby.id); else ids.add(nearby.id);
           this.setSelection([...ids], nearby.id);
         } else if (!ids.has(nearby.id)) this.setSelection([nearby.id], nearby.id);
         else this.selected = nearby.id;
         if (!this.selectedIds.has(nearby.id)) return;
-      } else if (!additive) this.setSelection([]);
-      this.preview?.pause();
-      this.gesture = {
-        pointer: event.pointerId,
-        base: chart,
-        rect,
-        map,
-        startSeconds: this.windowStart,
-        span: this.secondsPerScreen,
-        laneStart: this.laneStart,
-        laneSpan,
-        x: event.clientX,
-        y: event.clientY,
-        endX: event.clientX,
-        endY: event.clientY,
-        tick: map.secondsToTick(seconds),
-        lane: pointerLane,
-        kind: this.tool === "brush" ? "brush" : nearby ? (resizeEdge ?? "move") : "box",
-        resizeId: nearby?.id,
-        ids: new Set(this.selectedIds),
-        previous,
-        primary,
-        additive,
-        moved: this.tool === "brush",
-        deltaTick: 0,
-        deltaLane: 0,
-        mergeKey: createProjectId("gesture"),
-      };
-      canvas.setPointerCapture(event.pointerId);
-      this.requestUpdate();
-      if (this.tool === "brush") this.applyGesture();
+        const line = chart.lines.find(item => item.points.at(-1)?.id === nearby.id
+          && item.kind === (this.tool === "guide" ? "guide" : "long"));
+        this.continuingLine = ["hold", "guide"].includes(this.tool) ? line?.id ?? "" : "";
+        this.continuingProject = this.projectId;
+      } else if (!additive) { this.setSelection([]); this.continuingLine = ""; }
+      begin(this.tool === "brush" ? "brush" : nearby ? resizeEdge ?? "move" : "box", new Set(this.selectedIds), nearby?.id);
       return;
     }
-    if (this.tool === "erase" || event.button === 2) {
-      if (nearby)
-        this.edit((p) => {
-          p.singles = p.singles.filter((n) => n.id !== nearby.id);
-          p.lines = p.lines.filter((l) => !l.points.some((n) => n.id === nearby.id));
-        });
-      return;
-    }
-    this.place(tick, lane);
+    if (creating || this.tool === "node") begin("create", new Set(), undefined, this.preparePlacement(tick, lane, pointerLane, edgeTolerance));
   }
   private setSelection(ids: string[], primary = ids[0] ?? "") {
     const unique = [...new Set(ids)];
     if (unique.length !== this.selectedIds?.size || unique.some((id) => !this.selectedIds.has(id)))
       this.selectedIds = new Set(unique);
     this.selected = this.selectedIds.has(primary) ? primary : (ids[0] ?? "");
+    if (unique.length) this.inspectorTab = "selection";
   }
   private gridTick(tick: number, mode: SnapMode = "nearest") {
     return snapTick(tick, this.snap, mode, this.chart.resolution * 4);
@@ -1796,11 +1856,34 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private applyGesture() {
     const g = this.gesture;
-    if (!g || !g.moved) return;
+    if (!g || !g.moved && g.kind !== "create" && g.kind !== "erase") return;
     const seconds = g.startSeconds + (1 - (g.endY - g.rect.top) / g.rect.height) * g.span;
     const tick = g.map.secondsToTick(seconds),
       lane = g.laneStart + ((g.endX - g.rect.left) / g.rect.width) * g.laneSpan;
-    if (g.kind === "brush") {
+    if (g.kind === "create" && g.placement) {
+      try {
+        const finalTick = Math.max(0, this.gridTick(tick)), finalLane = Math.round(lane);
+        const horizontalDrag = g.moved && Math.abs(g.endX - g.x) >= 5;
+        g.result = this.placementResult(g.base, g.placement, finalTick,
+          ["tap", "flick", "trace"].includes(g.placement.tool) && !horizontalDrag ? g.placement.start.lane : finalLane,
+          ["tap", "flick", "trace"].includes(g.placement.tool) ? horizontalDrag : g.moved);
+        if (g.result.project) g.result.project = this.scopeNewEntities(g.base, g.result.project);
+        g.candidate = g.result.project;
+        g.error = "";
+      } catch (error) {
+        g.candidate = undefined; g.result = undefined;
+        g.error = this.t(`creation.${error instanceof Error ? error.message : "invalid_edit"}`);
+      }
+    } else if (g.kind === "erase") {
+      for (const item of this.selectionNodes(g.base)) {
+        if (Math.abs(g.map.tickToSeconds(item.note.tick) - seconds) <= Math.max(.04, 16 * g.span / g.rect.height)
+          && lane >= item.lane - .25 && lane <= item.lane + Math.max(item.size, .6) + .25) g.ids.add(item.note.id);
+      }
+      const candidate = structuredClone(g.base);
+      candidate.singles = candidate.singles.filter(item => !g.ids.has(item.id));
+      candidate.lines = candidate.lines.filter(line => !line.points.some(point => g.ids.has(point.id)));
+      g.candidate = candidate;
+    } else if (g.kind === "brush") {
       const node = this.selectionNodes(g.base).find(
         (item) =>
           Math.abs(g.map.tickToSeconds(item.note.tick) - seconds) < Math.max(0.04, (12 * g.span) / g.rect.height) &&
@@ -1867,7 +1950,7 @@ export class ChartCreationWorkspace extends LitElement {
     cancelAnimationFrame(this.gestureFrame);
     this.gestureFrame = 0;
     this.gesture = undefined;
-    this.setSelection(g.previous, g.primary);
+    this.setSelection(g.previous, g.previousPrimary ?? g.primary);
     this.requestUpdate();
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
     if (canvas?.hasPointerCapture(g.pointer)) canvas.releasePointerCapture(g.pointer);
@@ -1888,57 +1971,114 @@ export class ChartCreationWorkspace extends LitElement {
     if (this.gesture !== g) return;
     this.gesture = undefined;
     if (g.error) this.error = g.error;
-    if (g.kind !== "box" && g.candidate) {
-      if (!this.commitProject(g.candidate, g.mergeKey) && this.error) this.setSelection(g.previous, g.primary);
+    if (g.kind === "create" && g.result) this.acceptPlacement(g.result);
+    else if (g.kind !== "box" && g.candidate) {
+      if (!this.commitProject(g.candidate, g.mergeKey) && this.error) this.setSelection(g.previous, g.previousPrimary ?? g.primary);
     }
     const canvas = event.currentTarget as HTMLCanvasElement;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     this.paint();
     this.requestUpdate();
   }
-  private place(tick: number, lane: number) {
-    const chart = this.chart;
-    if (this.tool === "node") { this.insertNodeAt(tick); return; }
-    if (readAuthorCollections(chart).layers.some(layer => layer.id === this.collectionScope.layerId && !layer.visible)) {
-      this.error = this.t("creation.invalid_edit"); return;
+  private activeLine() {
+    return this.chart.lines.find(line => this.continuingProject === this.projectId && line.id === this.continuingLine
+      && line.kind === (this.tool === "guide" ? "guide" : "long")
+      && ["hold", "guide"].includes(this.tool));
+  }
+  private preparePlacement(tick: number, lane: number, pointerLane?: number, tolerance = 0): CreationPlacement {
+    const line = !this.pending ? this.activeLine() : undefined;
+    const tail = line?.points.at(-1);
+    const extending = tail && tick > tail.tick;
+    const target = !this.pending && !extending && (this.tool === "node" || ["hold", "guide"].includes(this.tool))
+      ? this.nodeTarget(tick, pointerLane, tolerance, this.tool === "node" ? undefined : this.tool === "guide" ? "guide" : "long") : undefined;
+    const matching = target && (this.tool === "node" || this.chart.lines.find(item => item.id === target.lineId)?.kind === (this.tool === "guide" ? "guide" : "long"));
+    return {
+      tool: matching ? "node" : this.tool,
+      start: { tick, lane, size: this.defaultWidth },
+      anchor: this.pending,
+      lineId: extending ? line!.id : undefined,
+      target: matching ? target : undefined,
+      id: createProjectId("line"), headId: createProjectId("note"), tailId: createProjectId("note"),
+      critical: this.critical, direction: this.direction,
+    };
+  }
+  private placementResult(base: Project, placement: CreationPlacement, tick: number, lane: number, dragged: boolean): PlacementResult {
+    if (placement.tool === "node") {
+      if (!placement.target) throw new Error("node_missing");
+      const result = insertLinePoint(base, placement.target.lineId, placement.start.tick, { mode: this.nodeMode, shape: placement.target });
+      return { project: result.project, ids: [result.id] };
     }
-    if (!authoredSpanInBounds(lane, this.defaultWidth, chart.laneBasis)) {
-      this.error = this.t("creation.invalid_edit"); return;
+    const project = structuredClone(base);
+    if (readAuthorCollections(project).layers.some(layer => layer.id === this.collectionScope.layerId && !layer.visible)) throw new Error("invalid_edit");
+    const note = (point: PlacementPoint, id: string): SingleNote => {
+      if (!authoredSpanInBounds(point.lane, point.size, project.laneBasis)) throw new Error("invalid_edit");
+      return { ...createAuthoredNote(project, {
+        ...point, type: placement.tool === "flick" ? "flick" : placement.tool === "trace" ? "trace" : "tap",
+        direction: placement.tool === "flick" ? placement.direction : "none", critical: placement.critical, placement: "stage",
+      }), id };
+    };
+    if (["hold", "guide"].includes(placement.tool)) {
+      const end = { tick, lane, size: placement.start.size };
+      const line = project.lines.find(item => item.id === placement.lineId);
+      if (line) {
+        if (tick <= line.points.at(-1)!.tick) throw new Error("line_order");
+        line.points.push({ ...note(end, placement.tailId), ease: { left: "linear", right: "linear" } });
+        return { project, ids: [placement.tailId], lineId: line.id };
+      }
+      if (!placement.anchor && !dragged) return { pending: placement.start, ids: [] };
+      const start = placement.anchor ?? placement.start;
+      if (tick === start.tick || placement.anchor && tick < start.tick) throw new Error("line_order");
+      const points = [note(start, placement.headId), note(end, placement.tailId)]
+        .sort((a, b) => a.tick - b.tick).map(item => ({ ...item, ease: { left: "linear" as const, right: "linear" as const } }));
+      project.lines.push({ id: placement.id, kind: placement.tool === "guide" ? "guide" : "long", critical: placement.critical, points });
+      return { project, ids: [points.at(-1)!.id], lineId: placement.id };
     }
-    const base = (at: number, position: number, size = this.defaultWidth): SingleNote =>
-      createAuthoredNote(chart, {
-        tick: at,
-        lane: position,
-        size,
-        type: this.tool === "flick" ? "flick" : this.tool === "trace" ? "trace" : "tap",
-        direction: this.tool === "flick" ? this.direction : "none",
-        critical: this.critical,
-        placement: "stage",
-      });
-    if (this.tool === "hold" || this.tool === "guide") {
-      if (!this.pending) {
-        this.pending = { tick, lane, size: this.defaultWidth };
-        this.requestUpdate();
-        return;
-      }
-      const start = this.pending;
-      if (tick <= start.tick) {
-        this.error = this.t("creation.line_order");
-        return;
-      }
+    const width = dragged ? Math.abs(lane - placement.start.lane) + 1 : placement.start.size;
+    const left = dragged ? Math.min(lane, placement.start.lane) : lane;
+    const item = note({ tick, lane: left, size: width }, placement.tailId);
+    project.singles.push(item);
+    return { project, ids: [item.id], width: dragged ? width : undefined };
+  }
+  private acceptPlacement(result: PlacementResult) {
+    if (result.project) {
+      const changed = this.commitProject(result.project);
+      if (!changed && this.error) return;
+      this.setSelection(result.ids);
+      this.inspectorTab = "selection";
       this.pending = undefined;
-      this.edit((p) =>
-        p.lines.push({
-          id: createProjectId("line"),
-          kind: this.tool === "guide" ? "guide" : "long",
-          critical: this.critical,
-          points: [base(start.tick, start.lane, start.size), base(tick, lane)].map((n) => ({
-            ...n,
-            ease: { left: "linear", right: "linear" },
-          })),
-        }),
-      );
-    } else this.edit((p) => p.singles.push(base(tick, lane)));
+      this.continuingLine = result.lineId ?? "";
+      this.continuingProject = this.projectId;
+      if (result.width !== undefined) this.setDefaultWidth(result.width);
+    } else {
+      this.pending = result.pending;
+      this.continuingLine = "";
+      this.setSelection([]);
+    }
+    this.requestUpdate();
+    this.paint();
+  }
+  private place(tick: number, lane: number) {
+    try { this.acceptPlacement(this.placementResult(this.chart, this.preparePlacement(tick, lane), tick, lane, false)); }
+    catch (error) { this.error = this.t(`creation.${error instanceof Error ? error.message : "invalid_edit"}`); this.requestUpdate(); }
+  }
+  private continuationCandidate(canvas: HTMLCanvasElement) {
+    const anchor = this.pending ?? this.activeLine()?.points.at(-1);
+    if (!anchor || !this.cursor || this.gesture || this.pan || this.touchViewport || this.stageMode !== "edit") return;
+    const rect = canvas.getBoundingClientRect(), point = this.cursor;
+    if (point.clientX < rect.left || point.clientX > rect.right || point.clientY < rect.top || point.clientY > rect.bottom) return;
+    const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.windowStart + (1 - (point.clientY - rect.top) / rect.height) * this.secondsPerScreen)));
+    if (tick <= anchor.tick) return;
+    const lane = Math.round(viewportXToAuthoredLane(point.clientX - rect.left, rect.width, this.laneView()));
+    const key = JSON.stringify([tick, lane, this.pending, this.continuingLine, this.defaultWidth, this.critical, this.tool, this.collectionScope]);
+    if (this.continuationPreview?.base !== this.chart || this.continuationPreview.key !== key) {
+      let project: Project | undefined;
+      try {
+        project = this.placementResult(this.chart, this.preparePlacement(tick, lane), tick, lane, false).project;
+        if (project) project = this.scopeNewEntities(this.chart, project);
+      } catch { /* The pointer can cross invalid placements while extending a line. */ }
+      this.continuationPreview = { base: this.chart, key, project };
+    }
+    return this.continuationPreview.project;
   }
   private paint() {
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
@@ -1961,7 +2101,7 @@ export class ChartCreationWorkspace extends LitElement {
     if (!ctx || !width || !height) return;
     const style = getComputedStyle(this),
       color = (name: string) => style.getPropertyValue(`--md-sys-color-${name}`).trim();
-    const chart = this.pastePlacement?.candidate ?? this.gesture?.candidate ?? this.widthSession?.candidate ?? this.chart,
+    const chart = this.pastePlacement?.candidate ?? this.gesture?.candidate ?? this.widthSession?.candidate ?? this.continuationCandidate(canvas) ?? this.chart,
       map = this.map(),
       laneSpan = this.laneSpan(chart),
       x = (lane: number) => authoredLaneToViewportX(lane, width, this.laneView(chart)),
@@ -2168,14 +2308,20 @@ export class ChartCreationWorkspace extends LitElement {
       const lane = edited?.lane ?? Math.round(viewportXToAuthoredLane(cursorX, width, this.laneView(chart)));
       const cursorLane = action?.kind === "resize-right" && edited ? lane + edited.size : lane;
       const at = y(tick);
-      const nodeTarget = !action && !this.widthSession && this.tool === "node" ? this.nodeTarget(tick, viewportXToAuthoredLane(cursorX, width, this.laneView(chart)), 14 / width * laneSpan) : undefined;
+      const hovered = !action && !this.pending ? this.selectionNodes(this.chart).find(item =>
+        Math.abs(y(item.note.tick) - cursorY) <= 12 && cursorX >= x(item.lane) - 8 && cursorX <= x(item.lane + item.size) + 8) : undefined;
+      const lineTail = this.activeLine()?.points.at(-1);
+      const lineTool = ["hold", "guide"].includes(this.tool);
+      const nodeTarget = !action && !this.widthSession && (this.tool === "node" || lineTool && !this.pending && !hovered && (!lineTail || tick <= lineTail.tick))
+        ? this.nodeTarget(tick, viewportXToAuthoredLane(cursorX, width, this.laneView(chart)), 14 / width * laneSpan,
+          this.tool === "node" ? undefined : this.tool === "guide" ? "guide" : "long") : undefined;
       if (nodeTarget) {
         ctx.save();
         ctx.strokeStyle = color("primary"); ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
         ctx.strokeRect(x(nodeTarget.lane) - 2, at - 14, Math.max(4, w(nodeTarget.size)) + 4, 28);
         ctx.restore();
       }
-      if (!action && !this.pan && ["tap", "flick", "trace", "hold", "guide"].includes(this.tool)) {
+      if (!action && !this.pan && !hovered && !nodeTarget && ["tap", "flick", "trace", "hold", "guide"].includes(this.tool)) {
         const valid = authoredSpanInBounds(lane, this.defaultWidth, chart.laneBasis);
         ctx.save();
         if (valid && skin) {
@@ -2202,8 +2348,10 @@ export class ChartCreationWorkspace extends LitElement {
       const nearby = this.selectionNodes(chart).find(item => this.selectedIds.has(item.note.id) &&
         Math.abs(y(item.note.tick) - cursorY) <= 12 &&
         Math.min(Math.abs(x(item.lane) - cursorX), Math.abs(x(item.lane + item.size) - cursorX)) <= 8);
-      canvas.style.cursor = this.tool === "pan" ? (this.pan ? "grabbing" : "grab") :
-        this.tool === "select" && nearby ? "ew-resize" : this.tool === "node" ? nodeTarget ? "copy" : "not-allowed" : "crosshair";
+      const editing = ["select", "tap", "flick", "trace", "hold", "guide"].includes(this.tool);
+      canvas.style.cursor = this.pan || action?.kind === "move" ? "grabbing" : this.tool === "pan" ? "grab"
+        : editing && (nearby || action?.kind.startsWith("resize")) ? "ew-resize" : editing && hovered ? "grab"
+        : nodeTarget ? "copy" : this.tool === "node" ? "not-allowed" : "crosshair";
       if (this.tool === "node" && cursorOutput && !nodeTarget) cursorOutput.textContent = this.t("creation.node_missing");
     } else canvas.style.cursor = this.tool === "pan" ? "grab" : "crosshair";
     if (this.pastePlacement) {
@@ -2237,21 +2385,24 @@ export class ChartCreationWorkspace extends LitElement {
       });
     }
   }
-  private commitProject(candidate: Project, mergeKey?: string): boolean {
-    if (this.busy || this.gesture || this.pastePlacement) return false;
-    this.cancelWidth();
-    try {
-      candidate = reconcileAuthorEdit(this.chart, candidate);
-      const previousIds = authorEntityIds(this.chart), state = readAuthorCollections(candidate);
+  private scopeNewEntities(base: Project, candidate: Project) {
+      const previousIds = authorEntityIds(base), state = readAuthorCollections(candidate);
       const added = new Set([...authorEntityIds(candidate)].filter(id => !previousIds.has(id)));
       if (state.groups.some(group => group.id === this.collectionScope.groupId))
         candidate = assignAuthorSelection(candidate, new Set([...added].filter(id => !state.members[id]?.groupId)), { groupId: this.collectionScope.groupId });
       if (state.layers.some(layer => layer.id === this.collectionScope.layerId))
         candidate = assignAuthorSelection(candidate, new Set([...added].filter(id => !state.members[id]?.layerId)), { layerId: this.collectionScope.layerId });
+    return candidate;
+  }
+  private commitProject(candidate: Project, mergeKey?: string): boolean {
+    if (this.busy || this.gesture || this.pastePlacement) return false;
+    this.cancelWidth();
+    try {
+      candidate = reconcileAuthorEdit(this.chart, candidate);
+      candidate = this.scopeNewEntities(this.chart, candidate);
       assertValidProject(candidate); readAuthorCollections(candidate);
       assertEditedChartSpans(this.chart, candidate);
-      const compiled = !candidate.meta.source || ["ss", "authored"].includes(candidate.meta.source)
-        ? compileOurNotesCreation(candidate) : undefined;
+      const compiled = compileOurNotesCreation(candidate);
       const revision = this.history.revision;
       this.history.replace(candidate, mergeKey ? { mergeKey } : {});
       this.history.endMerge();
@@ -2543,7 +2694,59 @@ export class ChartCreationWorkspace extends LitElement {
     this.requestUpdate();
   }
   private toolLabel(tool: string) {
-    return this.t(tool === "brush" ? "creation.brush" : tool);
+    return this.t(tool.startsWith("flick_") ? `shortcuts.${tool}` : tool === "brush" ? "creation.brush" : tool);
+  }
+  private paletteTool() { return this.tool === "flick" ? `flick_${this.direction}` : this.tool; }
+  private paletteShortcut(tool: string) { return this.shortcutLabel(tool === "flick_up" ? "tool:flick" : tool.startsWith("flick_") ? tool : `tool:${tool}`); }
+  private selectPaletteTool(tool: string) {
+    if (this.busy) return;
+    this.selectTool(tool.startsWith("flick_") ? "flick" : tool);
+    if (tool.startsWith("flick_")) this.direction = tool.slice(6) as typeof this.direction;
+    if (this.narrow) this.closePanels();
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      if (this.isConnected) this.querySelector<HTMLCanvasElement>(".chart-creation__editor")?.focus({ preventScroll: true });
+    });
+  }
+  private renderToolArt(tool: string) {
+    return ["tap", "flick", "trace", "hold", "guide"].includes(tool) || tool.startsWith("flick_")
+      ? html`<canvas class="chart-studio__note-icon" data-tool-art=${tool} width="72" height="56" aria-hidden="true"></canvas>`
+      : tool === "select" ? icon("arrow_selector_tool", 20) : tool === "erase" ? icon("ink_eraser", 20)
+        : tool === "pan" ? icon("pan_tool", 20) : tool === "brush" ? icon("format_paint", 20) : icon("add", 20);
+  }
+  private paintToolIcons() {
+    const theme = this.canvasTheme;
+    if (!theme) return;
+    const skin = theme.skin;
+    for (const canvas of this.querySelectorAll<HTMLCanvasElement>("canvas[data-tool-art]")) {
+      const tool = canvas.dataset.toolArt!;
+      const direction = tool.startsWith("flick_") ? tool.slice(6) : this.direction;
+      const flick = tool === "flick" || tool.startsWith("flick_");
+      const kind: RenderNoteKind = flick ? direction === "left" ? "flick-left" : direction === "right" ? "flick-right" : "flick"
+        : tool === "hold" ? "slide-start" : tool === "guide" ? "guide" : tool === "trace" ? "trace" : "tap";
+      const previous = this.toolArtCache.get(canvas);
+      if (previous?.theme === theme && previous.kind === kind) continue;
+      const context = canvas.getContext("2d");
+      if (!context) continue;
+      context.setTransform(2, 0, 0, 2, 0, 0); context.clearRect(0, 0, 36, 28);
+      const stageWidth = 180, scale = skin.scaleForFlatNoteBodyHeight(stageWidth, tool === "hold" || tool === "guide" ? 5 : 8);
+      if (tool === "hold" || tool === "guide") {
+        const style = createChartCanvasRibbonStyle(context, tool === "guide" ? "guide" : "slide", 16, 8, 6, skin.slideLineStyle);
+        drawChartCanvasRibbon(context, [{ left: 5, right: 23, y: 23 }, { left: 13, right: 31, y: 6 }], style, .8);
+        for (const [centerX, centerY] of [[14, 23], [22, 6]]) skin.drawFlatNote(context, { kind, direction: "none", centerX, centerY, width: 22, laneSpan: 4, stageWidth, scale });
+      } else skin.drawFlatNote(context, { kind, direction: flick ? direction as "left" | "up" | "right" : "none", centerX: 18, centerY: flick ? 22 : 16, width: 30, laneSpan: 4, stageWidth, scale });
+      this.toolArtCache.set(canvas, { theme, kind });
+    }
+  }
+  private selectTool(tool: string) {
+    if (this.busy) return;
+    this.cancelGesture(); this.cancelWidth();
+    this.tool = tool; this.pending = undefined; this.continuingLine = ""; this.inspectorTab = "tool";
+    this.requestUpdate();
+  }
+  private finishLine() {
+    this.pending = undefined; this.continuingLine = ""; this.setSelection([]);
+    this.requestUpdate(); this.paint();
   }
   private renderGuide() {
     if (!this.guideOpen) return nothing;
@@ -2638,7 +2841,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.setDefaultWidth(node.size);
     this.critical = node.note.critical;
     this.direction = node.note.direction === "none" ? "up" : node.note.direction;
-    this.tool = "brush";
+    this.tool = "brush"; this.inspectorTab = "tool"; this.continuingLine = "";
   }
   private generateSelectedNodes() {
     if (this.busy || this.gesture) return;
@@ -2801,11 +3004,12 @@ export class ChartCreationWorkspace extends LitElement {
       return shape;
     };
   }
-  private nodeTarget(tick: number, lane?: number, tolerance = 0) {
+  private nodeTarget(tick: number, lane?: number, tolerance = 0, kind?: "long" | "guide") {
     const project = this.chart, selected = this.selectedConnectorIds();
     const display = this.editingProject(project), sample = this.lineSampler(display);
     const candidates: { lineId: string; lane: number; size: number }[] = [];
     for (const line of display.lines) {
+      if (kind && line.kind !== kind) continue;
       const shape = sample(line, tick);
       if (!shape || lane === undefined && !selected.has(line.id)) continue;
       if (lane !== undefined && (lane < shape.lane - tolerance || lane > shape.lane + shape.size + tolerance)) continue;
@@ -2828,7 +3032,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.cancelGesture();
     this.cancelWidth();
     this.pending = undefined;
-    this.tool = "node";
+    this.tool = "node"; this.inspectorTab = "tool"; this.continuingLine = "";
     this.closePanels();
     void this.updateComplete.then(() => this.querySelector<HTMLElement>(".chart-creation__editor")?.focus({ preventScroll: true }));
   }
@@ -3068,7 +3272,8 @@ export class ChartCreationWorkspace extends LitElement {
     this.cancelGesture();
     this.cancelWidth();
     this.rightOpen = true;
-    if (this.narrow) this.leftOpen = false;
+    this.inspectorTab = "view";
+    this.leftOpen = false;
     await this.updateComplete;
     const field = this.querySelector<HTMLElement>("[data-grid-division]");
     field?.scrollIntoView({ block: "nearest" });
@@ -3079,17 +3284,29 @@ export class ChartCreationWorkspace extends LitElement {
     this.cancelWidth();
     if (side === "left") {
       this.leftOpen = !this.leftOpen;
-      if (this.narrow) this.rightOpen = false;
+      this.rightOpen = false;
     } else {
       this.rightOpen = !this.rightOpen;
-      if (this.narrow) this.leftOpen = false;
+      this.leftOpen = false;
     }
+  }
+  private renderGuideButton() {
+    return html`      <button class="button button--text chart-studio__guide-button" data-app-bar-keep type="button"
+        aria-label=${this.t("help.open")} title=${`${this.t("help.title")} (${this.shortcutLabel("help")})`}
+        ?disabled=${this.busy} @click=${() => this.showGuide()}>${icon("help", 20)}<span>${this.t("help.open")}</span></button>`;
   }
   private renderAppActions() {
     if (this.pastePlacement) return html`
       <span data-app-bar-keep>${iconButton({ label: this.c("cancel"), icon: "close", onClick: () => this.cancelPaste() })}</span>
       <button class="button button--filled" data-app-bar-keep type="button" ?disabled=${!!this.pastePlacement.error || !this.pastePlacement.candidate}
         @click=${() => this.confirmPaste()}>${icon("check", 20)}${this.t("patterns.place")}</button>`;
+    if (this.stageMode === "edit" && (this.pending || this.activeLine())) return html`
+      ${iconButton({ label: this.t("undo"), icon: "undo", disabled: this.busy || !this.history.canUndo,
+        onClick: () => this.executeShortcut("undo") })}
+      <button class="button button--tonal" data-app-bar-keep type="button" @click=${() => this.finishLine()}>
+        ${icon("check", 20)}${this.t("interaction.finish_line")}
+      </button>
+      ${this.renderGuideButton()}`;
     return html`
       <span class="chart-studio__wide-actions" ?hidden=${this.stageMode === "preview"}>
         ${iconButton({ label: this.t("project"), icon: "folder_open", toggle: true, pressed: this.leftOpen, onClick: () => this.togglePanel("left") })}
@@ -3121,13 +3338,11 @@ export class ChartCreationWorkspace extends LitElement {
             this.requestUpdate();
           },
         })}
-        ${iconButton({ label: this.t("selection"), icon: "tune", toggle: true, pressed: this.rightOpen, onClick: () => this.togglePanel("right") })}
+        ${iconButton({ label: this.t("inspector"), icon: "tune", toggle: true, pressed: this.rightOpen, onClick: () => this.togglePanel("right") })}
       </span>
       ${this.busy ? iconButton({ label: this.c("cancel"), icon: "close", onClick: () => this.cancelOperation() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("patterns.title"), icon: "widgets", disabled: this.busy, onClick: () => void this.showPatterns() }) : nothing}
-      <button class="button button--text chart-studio__guide-button" data-app-bar-keep type="button"
-        aria-label=${this.t("help.open")} title=${`${this.t("help.title")} (${this.shortcutLabel("help")})`}
-        ?disabled=${this.busy} @click=${() => this.showGuide()}>${icon("help", 20)}<span>${this.t("help.open")}</span></button>
+      ${this.renderGuideButton()}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("shortcuts.title"), icon: "keyboard", disabled: this.busy, onClick: () => this.showShortcuts() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("audio.title"), icon: "volume_up", disabled: this.busy, onClick: () => void this.showAudioSettings() }) : nothing}
       ${iconButton({ label: this.t("creation.save"), shortcut: this.shortcutLabel("save"), className: "chart-studio__header-save", icon: "save", disabled: this.busy || !this.audio || !this.dirty, onClick: () => void this.run(() => this.save()) })}
@@ -3269,8 +3484,13 @@ export class ChartCreationWorkspace extends LitElement {
           : nothing
       }
     `;
+    const collectionsPanel = accordion({
+      id: "chart-inspector-collections", label: this.t("collections.title"), expanded: this.collectionsExpanded,
+      onExpandedChange: expanded => { this.collectionsExpanded = expanded; this.requestUpdate(); },
+      content: html`<chart-creation-collections .locale=${this.locale} .project=${chart} .selection=${this.selectedIds} .scope=${this.collectionScope} .busy=${this.busy || !!this.gesture || !!this.widthSession || !this.audio} .forceSpeedAvailable=${true} .globalNoteSpeed=${DEFAULT_RENDER_SETTINGS.noteSpeed} .onOperation=${this.collectionOperation} .onScope=${this.changeCollectionScope} .onSelect=${this.selectCollectionMembers}></chart-creation-collections>`,
+    });
     const selectionPanel = html`
-      <chart-creation-collections .locale=${this.locale} .project=${chart} .selection=${this.selectedIds} .scope=${this.collectionScope} .busy=${this.busy || !!this.gesture || !!this.widthSession || !this.audio} .forceSpeedAvailable=${this.nativeChart} .globalNoteSpeed=${DEFAULT_RENDER_SETTINGS.noteSpeed} .onOperation=${this.collectionOperation} .onScope=${this.changeCollectionScope} .onSelect=${this.selectCollectionMembers}></chart-creation-collections>
+
       ${
         selection
           ? html`
@@ -3554,22 +3774,29 @@ export class ChartCreationWorkspace extends LitElement {
       })}
     `;
     const defaultsPanel = html`
-      ${accordion({
-        id: "chart-creation-tool",
-        label: this.t("currentTool"),
-        expanded: this.toolExpanded,
-        onExpandedChange: (value) => {
-          this.toolExpanded = value;
-          this.requestUpdate();
-        },
-        content: html`
+      <h3 class="detail-section-title">${this.toolLabel(this.paletteTool())}</h3>
           <div class="chart-creation__form">
             ${this.tool === "node" ? html`
               ${this.renderNodeMode(this.nodeMode, mode => { this.nodeMode = mode; }, "creation.new_node_mode")}
               <button class="button" type="button" ?disabled=${this.busy || !this.audio || !this.selectedConnectorIds().size}
                 @click=${() => this.insertNodeAt(Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds))))}>${this.t("creation.insert_node_here")}</button>
-            ` : html`
+            ` : ["tap", "flick", "trace", "hold", "guide"].includes(this.tool) ? html`
             ${this.widthControl(this.defaultWidth)}
+            <label>
+              <md-checkbox
+                aria-label=${this.t("defaultCritical")}
+                .checked=${this.critical}
+                ?disabled=${this.busy}
+                @change=${(e: Event) => {
+                  this.critical = (e.target as HTMLInputElement).checked;
+                }}
+              ></md-checkbox>
+              ${this.t("defaultCritical")}
+            </label>
+            ${accordion({ id: "chart-tool-precise", label: this.t("interaction.precise"), expanded: this.preciseOpen,
+              onExpandedChange: expanded => { this.preciseOpen = expanded; this.requestUpdate(); },
+              content: html`<div class="chart-creation__form">
+                ${this.beatField(Math.round(this.map().secondsToTick(this.seconds)), tick => this.seekPlayback(this.map().tickToSeconds(tick), true))}
             ${this.field(
               "lane",
               this.insertLane,
@@ -3588,37 +3815,11 @@ export class ChartCreationWorkspace extends LitElement {
             >
               ${this.t("creation.add_note")}
             </button>
-            <label>
-              <md-checkbox
-                aria-label=${this.t("defaultCritical")}
-                .checked=${this.critical}
-                ?disabled=${this.busy}
-                @change=${(e: Event) => {
-                  this.critical = (e.target as HTMLInputElement).checked;
-                }}
-              ></md-checkbox>
-              ${this.t("defaultCritical")}
-            </label>
-            <md-outlined-select
-              label=${this.t("defaultDirection")}
-              .value=${this.direction}
-              ?disabled=${this.busy}
-              @change=${(e: Event) => {
-                this.direction = (e.target as HTMLSelectElement).value as typeof this.direction;
-              }}
-            >
-              ${["left", "up", "right"].map(
-                (value) => html`
-                  <md-select-option value=${value}>
-                    <div slot="headline">${this.t(`direction${value[0].toUpperCase()}${value.slice(1)}`)}</div>
-                  </md-select-option>
-                `,
-              )}
-            </md-outlined-select>
-            `}
+              </div>`,
+            })}
+            ` : this.tool === "brush" ? html`<button class="button button--tonal" type="button" ?disabled=${this.busy || !this.selectedIds.size}
+              @click=${() => this.copyBrush()}>${this.t("creation.copy_brush")}</button>` : html`<p>${this.t("interaction.no_settings")}</p>`}
           </div>
-        `,
-      })}
     `;
     const warningsPanel = html`${(["errors", "warnings"] as const).map(kind => this.exportValidation()[kind].length
       ? html`<ul aria-label=${this.t(kind)}>${this.exportValidation()[kind].map(issue => html`
@@ -3889,7 +4090,7 @@ export class ChartCreationWorkspace extends LitElement {
             void this.run(async () => {
               await this.save();
               const chart = this.chart;
-              if (this.exportFormat === "ss" && (!chart.meta.source || ["ss", "authored"].includes(chart.meta.source))) compileOurNotesCreation(chart);
+              if (this.exportFormat === "ss") compileOurNotesCreation(chart);
               const content =
                 this.exportFormat === "ss"
                   ? serializeSsForTarget(chart)
@@ -3916,7 +4117,7 @@ export class ChartCreationWorkspace extends LitElement {
           if (file) this.loadAudio(file);
         }}
       />
-      <input hidden data-chart type="file" accept=".mmws,.ccmmws,.ucmmws,.json,.sus,.ss,.usc" @change=${(e: Event) => this.importFile(e)} />
+      <input hidden data-chart type="file" accept=".mmws,.ccmmws,.ucmmws,.json,.sus,.txt,.ss,.usc" @change=${(e: Event) => this.importFile(e)} />
       <input hidden data-backup type="file" accept=".zip" @change=${(e: Event) => this.importFile(e, true)} />
       ${
         this.conflict
@@ -3940,13 +4141,12 @@ export class ChartCreationWorkspace extends LitElement {
         .locale=${this.locale as HaneokaLocale}
         .onImport=${this.libraryImport}
       ></chart-creation-library>
-      <div class="chart-studio" data-stage=${this.stageMode} data-left=${String(this.leftOpen)} data-right=${String(this.rightOpen)}>
+      <div class="chart-studio" data-stage=${this.stageMode} data-narrow=${String(this.narrow)} data-left=${String(this.leftOpen)} data-right=${String(this.rightOpen)}>
         <div class="chart-studio__toolbar">
           ${
             this.fullscreen
               ? html`
                   <div class="chart-studio__fullscreen-actions">
-                    <span class="md-label-small">Beta</span>
                     ${this.renderAppActions()}
                   </div>
                 `
@@ -3968,8 +4168,8 @@ export class ChartCreationWorkspace extends LitElement {
             aria-label=${`${this.t("creation.default_width")} ${this.defaultWidth}`}
             @click=${() => {
             this.rightOpen = true;
-            this.toolExpanded = true;
-            if (this.narrow) this.leftOpen = false;
+            this.inspectorTab = "tool";
+            this.leftOpen = false;
             void this.updateComplete.then(() =>
               requestAnimationFrame(() => this.querySelector<HTMLElement>('[data-width-kind="default"] md-slider')?.focus()),
             );
@@ -3990,38 +4190,26 @@ export class ChartCreationWorkspace extends LitElement {
             @click=${() => void this.openGridSettings()}>1/${this.snap}</button>
           <div class="chart-studio__tools">
             <div class="chart-creation__actions">
-              ${segmented({
+              ${this.narrow ? html`<span class="chart-studio__tool-picker">${actionMenu({
+                id: "chart-tool-picker", label: html`${this.renderToolArt(this.paletteTool())}<span>${this.toolLabel(this.paletteTool())}</span>${icon("arrow_drop_down", 18)}`,
+                items: creationTools.flatMap(tool => tool === "flick" ? ["flick_up", "flick_left", "flick_right"] : [tool]).map(tool => ({ label: `${this.toolLabel(tool)} (${this.paletteShortcut(tool)})`,
+                  leading: this.renderToolArt(tool), run: () => this.selectPaletteTool(tool) })),
+              })}</span>` : html`${segmented({
           label: this.t("currentTool"),
-          value: this.tool,
-          options: creationTools.map(value => ({
-            shortcut: this.shortcutLabel(`tool:${value}`),
-            value,
-            label: this.t(value === "brush" ? "creation.brush" : value),
-            icon: (
-              {
-                brush: "format_paint",
-                node: "add",
-                select: "center_focus_strong",
-                tap: "music_note",
-                flick: "north_east",
-                trace: "circle",
-                hold: "horizontal_rule",
-                guide: "trending_up",
-                erase: "delete",
-                pan: "pan_tool",
-              } as Record<string, string>
-            )[value],
+          value: this.paletteTool(),
+          options: ["select", "tap", "flick_up", "flick_left", "flick_right", "hold", "erase"].map(value => ({
+            shortcut: this.paletteShortcut(value), value, label: this.toolLabel(value), leading: this.renderToolArt(value),
           })),
-          iconOnly: true,
           showShortcuts: true,
-          onSelect: (value) => {
-            if (!this.busy) {
-              this.cancelGesture();
-              this.tool = value;
-              this.pending = undefined;
-            }
-          },
+          iconOnly: true,
+          grow: false,
+          onSelect: value => this.selectPaletteTool(value),
         })}
+        ${actionMenu({ id: "chart-tool-more", label: html`${this.t("interaction.more_tools")}${icon("arrow_drop_down", 18)}`,
+          items: creationTools.filter(tool => !["select", "tap", "flick", "hold", "erase"].includes(tool)).map(tool => ({
+            label: `${this.toolLabel(tool)} (${this.shortcutLabel(`tool:${tool}`)})`, leading: this.renderToolArt(tool), run: () => this.selectPaletteTool(tool),
+          })) })}
+        `}
               ${iconButton({
           label: this.t("creation.multi_select"),
           icon: "checklist",
@@ -4067,16 +4255,14 @@ export class ChartCreationWorkspace extends LitElement {
           },
         })}
             </div>
-            <button
-              class="button"
-              ?disabled=${this.busy || !this.hasClipboard || !this.audio}
-              @click=${() => this.pasteSelection()}
-            >
-              ${this.t("creation.paste")}
-            </button>
-            <button class="button button--text" type="button"
-              ?disabled=${this.busy || !this.hasClipboard || !this.audio}
-              @click=${() => this.pasteSelection(true)}>${this.t("creation.paste_mirrored")}</button>
+            ${actionMenu({ id: "chart-edit-menu", label: html`${this.t("edit")}${icon("arrow_drop_down", 18)}`,
+              items: [{ label: this.t("creation.multi_select"), icon: this.multiPick ? "check" : "checklist",
+                run: () => { this.multiPick = !this.multiPick; } }, ...["cut", "copy", "paste", "paste_mirrored", "duplicate", "flip", "delete", "select_all"].map(id => ({
+                label: this.shortcutCommandLabel(chartShortcutCommands.find(command => command.id === id)!),
+                disabled: this.busy || !this.audio || (id.startsWith("paste") ? !this.hasClipboard : id === "select_all" ? false : !this.selectedIds.size),
+                run: () => { this.executeShortcut(id); this.requestUpdate(); },
+              }))],
+            })}
           </div>
           <button
             class="icon-button chart-studio__drawer-button"
@@ -4088,16 +4274,6 @@ export class ChartCreationWorkspace extends LitElement {
           >
             ${icon("tune")}
           </button>
-        </div>
-        <div class="chart-studio__messages">
-          ${
-          this.error
-            ? html`
-                <p role="alert">${this.error}</p>
-              `
-            : nothing
-        }
-
         </div>
         <div class="chart-studio__body">
           ${
@@ -4156,7 +4332,7 @@ export class ChartCreationWorkspace extends LitElement {
               role="img"
               aria-label=${this.t("edit")}
               tabindex="0"
-              style=${this.pastePlacement || ["pan", "select", "brush"].includes(this.tool) ? "touch-action:none" : "touch-action:manipulation"}
+              style="touch-action:none"
               @pointerdown=${this.hit}
               @pointermove=${this.panMove}
               @pointerleave=${this.leaveCursor}
@@ -4165,6 +4341,7 @@ export class ChartCreationWorkspace extends LitElement {
               @lostpointercapture=${this.panEnd}
               @wheel=${this.wheel}
               @contextmenu=${(event: MouseEvent) => { if (this.audio) event.preventDefault(); }}
+              @auxclick=${(event: MouseEvent) => { if (event.button === 1) event.preventDefault(); }}
             ></canvas>
             ${this.audio && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
             <output class="chart-studio__cursor" data-cursor aria-live="off" hidden></output>
@@ -4237,26 +4414,26 @@ export class ChartCreationWorkspace extends LitElement {
               </strong>
               ${iconButton({ label: this.c("close"), icon: "close", onClick: () => this.togglePanel("right") })}
             </header>
+            ${segmented({ label: this.t("inspector"), value: this.inspectorTab,
+              options: [
+                { value: "selection", label: this.t("selection") },
+                { value: "tool", label: this.t("interaction.tool") },
+                { value: "view", label: this.t("interaction.view") },
+              ], onSelect: value => { this.inspectorTab = value; this.requestUpdate(); },
+            })}
             <div class="chart-studio__panel-content">
-              ${
-                html`
-                      ${selectionPanel}${defaultsPanel}${viewControls}
-                      ${this.beatField(Math.round(this.map().secondsToTick(this.seconds)), tick => {
-                this.seekPlayback(this.map().tickToSeconds(tick), true);
-              })}
-                      <button
-                        class="button button--text"
-                        type="button"
-                        aria-pressed=${String(this.followPlayback)}
-                        @click=${() => {
-                this.followPlayback = !this.followPlayback;
-                this.windowStart = this.clampStart(this.seconds - this.secondsPerScreen * 0.25);
-              }}
-                      >
-                        ${this.t("creation.follow")}
-                      </button>
-                    `
-              }
+              <div ?hidden=${this.inspectorTab !== "selection"}>
+                ${selectionPanel}
+                ${!selection ? html`<p>${this.t("interaction.select_note")}</p>` : nothing}
+                ${collectionsPanel}
+              </div>
+              <div ?hidden=${this.inspectorTab !== "tool"}>${defaultsPanel}</div>
+              <div ?hidden=${this.inspectorTab !== "view"}>
+                ${viewControls}
+                ${this.beatField(Math.round(this.map().secondsToTick(this.seconds)), tick => this.seekPlayback(this.map().tickToSeconds(tick), true))}
+                <button class="button button--text" type="button" aria-pressed=${String(this.followPlayback)}
+                  @click=${() => { this.followPlayback = !this.followPlayback; this.windowStart = this.clampStart(this.seconds - this.secondsPerScreen * .25); }}>${this.t("creation.follow")}</button>
+              </div>
             </div>
           </aside>
         </div>

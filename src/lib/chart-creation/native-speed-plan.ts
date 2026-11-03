@@ -41,8 +41,6 @@ export function compileAuthorNativeSpeedPlan(
   mapping: NativeCreationSourceMap,
 ): AuthorNativeSpeedPlan | undefined {
   assertValidProject(project);
-  if (project.meta.source && !["ss", "authored"].includes(project.meta.source))
-    throw new Error("our_notes_source_mismatch");
   const collections = readAuthorCollections(project);
   if (!collections.groups.some(group => group.forceNoteSpeed !== undefined)) return undefined;
   const groups = new Map(collections.groups.map(group => [group.id, group]));

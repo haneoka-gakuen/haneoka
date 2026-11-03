@@ -155,7 +155,7 @@ const barLengthsFromLines = (lines: readonly SusLine[], warnings: FormatWarning[
   const byMeasure = new Map<number, BarLength>();
   byMeasure.set(0, { measure: 0, length: 4, line: 0 });
   for (const line of lines) {
-    if (line.header.length !== 5 || !line.header.endsWith("02")) continue;
+    if (!/^\d{3}02$/u.test(line.header)) continue;
     const localMeasure = Number(line.header.slice(0, 3));
     const length = Number(line.data);
     const measure = localMeasure + line.measureBase;

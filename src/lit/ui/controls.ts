@@ -63,6 +63,7 @@ export interface SegmentOption<T extends string> {
   label: string;
   shortcut?: string;
   icon?: string;
+  leading?: TemplateResult;
   disabled?: boolean;
 }
 
@@ -145,8 +146,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
             ?disabled=${option.disabled}
             @click=${() => options.onSelect(option.value)}
           >
-            ${option.icon ? icon(option.icon, 20) : nothing}
-            ${options.showShortcuts && option.shortcut ? html`<kbd>${option.shortcut.split(" / ")[0]}</kbd>` : nothing}
+            ${option.leading ?? (option.icon ? icon(option.icon, 20) : nothing)}
             ${
               options.iconOnly
                 ? nothing
@@ -154,6 +154,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
                     <span>${option.label}</span>
                   `
             }
+            ${options.showShortcuts && option.shortcut ? html`<kbd>${option.shortcut.split(" / ")[0]}</kbd>` : nothing}
           </button>
         `,
       )}

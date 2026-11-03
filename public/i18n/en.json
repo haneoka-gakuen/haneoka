@@ -3544,7 +3544,7 @@
       "newProjectConfirm": "Discard the current project and create a new one?",
       "importChartConfirm": "Importing will replace the current chart. Continue?",
       "file": "File",
-      "importLocalChart": "Import local chart",
+      "importLocalChart": "Import chart (Our Notes / SEKAI)",
       "importLocalAudio": "Load local audio",
       "serverLibrary": "Server library",
       "importGbp": "Import GBP chart",
@@ -3778,7 +3778,8 @@
         "export_meterRatioNormalized": "SUS retains measure duration; meter ratios are normalized",
         "export_coincidentNotesMerged": "SUS merges simultaneous notes at the same lane",
         "sus_size": "SUS file exceeds 2 MiB; reduce the subdivision",
-        "export_autoVisibilityUnsupported": "MMW automatic middle nodes become hidden"
+        "export_autoVisibilityUnsupported": "MMW automatic middle nodes become hidden",
+        "usc_group_speed_unsupported": "Group speed changes cannot be converted to Our Notes"
       },
       "shortcuts": {
         "title": "Keyboard shortcuts",
@@ -3809,8 +3810,9 @@
         "page_down": "Page down",
         "home": "Go to beginning",
         "end": "Go to end",
-        "flick_left": "Left Flick tool",
-        "flick_right": "Right Flick tool"
+        "flick_left": "Left Flick",
+        "flick_right": "Right Flick",
+        "flick_up": "Up Flick"
       },
       "statistics": {
         "title": "Statistics",
@@ -3916,27 +3918,37 @@
         "step_audio": "Choose audio",
         "start_audio": "Load local audio or choose a song from Server library. You can start with the practice chart.",
         "step_place": "Place notes",
-        "start_place": "Choose a note tool, then click a lane. For a Hold or Guide, click the start and then a later end.",
+        "start_place": "Choose a note tool. Click to place a note, or drag empty space to set its width. Click or drag a Hold, then continue adding points until Finish line.",
         "step_select": "Select and edit",
-        "start_select": "Use Select to drag a box around notes, move them, or resize their edges. Copy and paste a selection to repeat it.",
+        "start_select": "Drag notes directly to move them and drag their edges to resize. Use Select to drag a box, then copy or transform the selection.",
         "step_play": "Listen and save",
         "start_play": "Play the chart, undo anything you want to change, then save a version. Edit and Preview switch between writing and playback.",
         "tool_select": "Drag empty space to select notes. Drag selected notes to move them, or their edges to resize. Shift adds to the selection.",
-        "tool_tap": "Click a lane to place a Tap. Right-click a note to erase it.",
-        "tool_flick": "Click a lane to place a Flick. Set its direction in Properties.",
-        "tool_trace": "Click a lane to place a Trace.",
-        "tool_hold": "Click the start, then a later position to finish the Hold.",
-        "tool_guide": "Click the start, then a later position to finish the Guide.",
-        "tool_erase": "Click a note to delete it. Right-click also erases while using other tools.",
+        "tool_tap": "Click empty space to add a Tap. Drag empty space to set width. Drag an existing note to move it, or its edge to resize.",
+        "tool_flick": "Choose Up, Left or Right Flick, then click to place. Existing notes can be selected, moved and resized with the same tool.",
+        "tool_trace": "Click to add a Trace, or drag to set its width. Existing notes can be selected, moved and resized.",
+        "tool_hold": "Click two points or drag to draw a Hold. Keep clicking to extend it. Click its curve to add a node; Finish line ends the path.",
+        "tool_guide": "Click two points or drag to draw a Guide. Keep clicking to extend it. Click its curve to add a node; Finish line ends the path.",
+        "tool_erase": "Click or drag across notes to erase. Right-click uses the eraser temporarily. One drag is one undo step.",
         "tool_pan": "Drag the canvas to move through time and across the lanes.",
         "tool_brush": "Copy a selected note’s properties with the brush action, then drag over notes to apply them.",
         "tool_node": "Click a Hold or Guide line to add a node. Set its visibility and curve in Properties.",
         "line_end": "Click a later position to finish the line. Cancel clears the first point.",
         "paste": "Move the preview with the pointer or arrow keys. Click or confirm to place it; cancel to discard it.",
-        "navigate": "Scroll to move through time. Ctrl/⌘ + scroll zooms; Shift + scroll pans across lanes.",
+        "navigate": "Scroll to move through time; middle-drag pans. Ctrl/⌘ + scroll zooms; Shift + scroll pans across lanes. Two fingers pan or pinch to zoom.",
         "grid": "The grid divides a whole note: 1/16 is four steps per beat.",
         "place_at_pointer": "Place at pointer / Confirm paste",
         "place": "Place"
+      },
+      "interaction": {
+        "more_tools": "More tools",
+        "view": "View",
+        "tool": "Tool",
+        "select_note": "Select a note to edit its properties.",
+        "finish_line": "Finish line",
+        "continue_line": "Click to extend the line. Finish to start a new one.",
+        "precise": "Precise placement",
+        "no_settings": "No tool settings"
       }
     },
     "story": {

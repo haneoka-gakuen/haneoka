@@ -15,6 +15,7 @@ interface Props {
   titleKey?: string;
   server?: ReleaseServer;
   appBar?: { actions: string; identity: string; search: string };
+  contained?: boolean;
   entity?: {
     title: string;
     titleLanguage?: string;
@@ -24,7 +25,7 @@ interface Props {
     next?: { href: string; title?: string };
   };
 }
-const { locale, route, title, titleKey, server, entity, appBar } = Astro.props;
+const { locale, route, title, titleKey, server, entity, appBar, contained = false } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
 const itemActive = (target: string) => target === "/community" ? ["/community", "/community/feeds"].includes(route) : isRouteActive(target, route);
@@ -368,7 +369,7 @@ const publicForumsDataId = "shell-public-forums";
       <span class="app-shell__progress-fallback" data-page-progress-fallback aria-hidden="true"></span>
       <span class="app-shell__progress-status" data-page-progress-status role="status" aria-live="polite"></span>
     </div>
-    <main class="app-shell__main page-stage" id="main-content" tabindex="-1" data-pagefind-body={searchIndexable ? "" : undefined}>
+    <main class:list={["app-shell__main page-stage", { "app-shell__main--contained": contained }]} id="main-content" tabindex="-1" data-pagefind-body={searchIndexable ? "" : undefined}>
       <slot />
     </main>
   </div>

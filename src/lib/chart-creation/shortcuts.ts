@@ -61,7 +61,7 @@ export const chartShortcutCommands: readonly ShortcutCommand[] = [
   { id: "audio_settings", label: "audio.title", defaults: [] },
   { id: "note_sounds", label: "labels.noteSound", defaults: [] },
   { id: "metronome", label: "audio.metronome", defaults: [] },
-  ...chartCreationTools.map((tool, index) => ({ id: `tool:${tool}`, label: tool === "brush" ? "creation.brush" : tool,
+  ...chartCreationTools.map((tool, index) => ({ id: `tool:${tool}`, label: tool === "flick" ? "shortcuts.flick_up" : tool === "brush" ? "creation.brush" : tool,
     defaults: [...(toolLetters[tool] ?? []), `Digit${(index + 1) % 10}`] })),
   ...chartSnapDivisions.map((division, index) => ({ id: `grid:${division}`, label: `1/${division}`, defaults: [`Shift+Digit${index + 1}`] })),
 ];

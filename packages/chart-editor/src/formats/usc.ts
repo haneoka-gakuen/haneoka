@@ -23,6 +23,7 @@ import {
   type FormatWarning,
   type ImportResult,
 } from "./shared";
+import { COLLECTIONS_KEY, type AuthorCollections } from "../creation/collections";
 
 export type UscDirection = "left" | "up" | "right";
 export type UscEase = "in" | "linear" | "out";
@@ -224,6 +225,7 @@ const parseSlide = (
     throw new ChartFormatError("usc", "Slide requires a connections array", `$.objects[${objectIndex}].connections`);
   }
   const points: LinePoint[] = [];
+  const compoundEases = new Map<string, "inout" | "outin">();
   for (const [connectionIndex, raw] of object.connections.entries()) {
     const path = `$.objects[${objectIndex}].connections[${connectionIndex}]`;
     if (!isRecord(raw) || !["start", "tick", "end", "ignore", "hidden", "attach"].includes(String(raw.type))) {
@@ -249,16 +251,19 @@ const parseSlide = (
       continue;
     }
     const dir = direction(raw.direction);
-    const trace = raw.trace === true;
+    const trace = raw.trace === true || raw.judgeType === "trace";
     const type: NoteType = trace ? "trace" : dir !== "none" ? "flick" : "tap";
+    const id = importedId("usc", "line", objectIndex, "point", connectionIndex);
+    if ((raw.ease === "inout" || raw.ease === "outin") && raw.easeL === undefined && raw.easeR === undefined) compoundEases.set(id, raw.ease);
     points.push({
-      id: importedId("usc", "line", objectIndex, "point", connectionIndex),
+      id,
       tick: normalizedTick(raw.beat, `${path}.beat`, warnings),
       ...shape,
       type,
-      critical: raw.critical === true,
+      critical: typeof raw.critical === "boolean" ? raw.critical : object.critical === true,
       direction: type === "flick" && dir === "none" ? "up" : dir,
-      visible: raw.type !== "ignore" && raw.type !== "hidden" && raw.type !== "attach",
+      visible: raw.type !== "ignore" && raw.type !== "hidden" && raw.type !== "attach"
+        && raw.judgeType !== "none" && !(raw.type === "tick" && raw.critical === undefined && !Object.hasOwn(raw, "trace")),
       ease: pointEase(raw),
     });
   }
@@ -270,11 +275,28 @@ const parseSlide = (
     });
     return undefined;
   }
+  const sorted = points.sort((a, b) => a.tick - b.tick), expanded: LinePoint[] = [];
+  for (const [index, point] of sorted.entries()) {
+    expanded.push(point);
+    const compound = compoundEases.get(point.id), tail = sorted[index + 1];
+    if (!compound || !tail) continue;
+    const tick = Math.round((point.tick + tail.tick) / 2);
+    if (tick <= point.tick || tick >= tail.tick) {
+      warnings.push({ code: "usc.ease.tickResolution", path: `$.objects[${objectIndex}]`, message: "Curve midpoint is below one tick" });
+      continue;
+    }
+    if ((point.tick + tail.tick) % 2) warnings.push({ code: "usc.ease.midpointRounded", path: `$.objects[${objectIndex}]`, message: "Curve midpoint was aligned to an integer tick" });
+    const first: EaseType = compound === "inout" ? "in" : "out", second: EaseType = compound === "inout" ? "out" : "in";
+    point.ease = { left: first, right: first };
+    expanded.push({ id: importedId("usc", "line", objectIndex, "curve", index), tick,
+      lane: ((point.lane as number) + (tail.lane as number)) / 2, size: (point.size + tail.size) / 2,
+      type: "tap", critical: point.critical, direction: "none", visible: false, ease: { left: second, right: second } });
+  }
   return {
     id: importedId("usc", "line", objectIndex),
     kind: object.active === false ? ("guide" as const) : ("long" as const),
     critical: object.critical === true,
-    points: points.sort((a, b) => a.tick - b.tick),
+    points: expanded,
   };
 };
 
@@ -287,8 +309,41 @@ export const importUsc = (input: string | Uint8Array | unknown, options: { laneB
   const laneBasis = options.laneBasis ?? 24;
   if (!Number.isFinite(laneBasis) || laneBasis <= 0) throw new ChartFormatError("usc", "Lane basis must be positive");
   const warnings: FormatWarning[] = [];
+  const speedGroups = usc.objects.filter((object): object is Record<string, unknown> => isRecord(object) && object.type === "timeScaleGroup");
+  const groupTimelines = speedGroups.map((group, groupIndex) => {
+    if (!Array.isArray(group.changes)) throw new ChartFormatError("usc", "Missing group speed changes", `$.timeScaleGroups[${groupIndex}]`);
+    const events = new Map<number, number>([[0, 1]]);
+    for (const [index, change] of group.changes.entries()) {
+      if (!isRecord(change) || typeof change.timeScale !== "number" || !Number.isFinite(change.timeScale))
+        throw new ChartFormatError("usc", "usc_group_speed_unsupported");
+      events.set(normalizedTick(change.beat, `$.timeScaleGroups[${groupIndex}].changes[${index}].beat`, warnings), change.timeScale);
+    }
+    return [...events].sort((a, b) => a[0] - b[0]).filter((event, index, all) => index === 0 || event[1] !== all[index - 1]![1]);
+  });
+  const usedGroups = new Set<number>();
+  const groupOf = (object: Record<string, unknown>) => {
+    const index = object.timeScaleGroup ?? 0;
+    if (!Number.isInteger(index) || (index as number) < 0 || speedGroups.length && (index as number) >= speedGroups.length)
+      throw new ChartFormatError("usc", "Invalid time-scale group");
+    usedGroups.add(index as number);
+    return importedId("usc", "group", index as number);
+  };
+  if (speedGroups.length) for (const object of usc.objects) {
+    if (!isRecord(object)) continue;
+    if (object.type === "single") groupOf(object);
+    for (const point of (Array.isArray(object.connections) ? object.connections : Array.isArray(object.midpoints) ? object.midpoints : []))
+      if (isRecord(point)) groupOf(point);
+  }
+  const used = [...usedGroups];
+  const commonTimeline = used.length ? groupTimelines[used[0]!] : undefined;
+  if (used.some(index => groupTimelines[index]!.some(([, scale]) => scale <= 0) || JSON.stringify(groupTimelines[index]) !== JSON.stringify(commonTimeline)))
+    throw new ChartFormatError("usc", "usc_group_speed_unsupported");
+  const collections: AuthorCollections = { schema: "haneoka.authoring.collections", version: 1,
+    groups: used.sort((a, b) => a - b).map(index => ({ id: importedId("usc", "group", index), name: String(index + 1) })),
+    layers: [], members: {}, sourceContexts: {},
+  };
   const tempos = [];
-  const timeScales = [];
+  const timeScales = (commonTimeline ?? []).map(([tick, scale], index) => ({ id: importedId("usc", "group-speed", index), tick, scale }));
   const singles: SingleNote[] = [];
   const lines = [];
   const sourceOrder: string[] = [];
@@ -314,15 +369,28 @@ export const importUsc = (input: string | Uint8Array | unknown, options: { laneB
         scale: finiteNumber(rawObject.timeScale, 0),
       });
       sourceOrder.push(id);
+    } else if (rawObject.type === "timeScaleGroup") {
+      continue;
     } else if (rawObject.type === "single") {
       const single = parseSingle(rawObject, index, laneBasis, warnings);
       singles.push(single);
       sourceOrder.push(single.id);
-    } else if (rawObject.type === "slide") {
-      const line = parseSlide(rawObject, index, laneBasis, warnings);
+      if (speedGroups.length) collections.members[single.id] = { groupId: groupOf(rawObject) };
+    } else if (rawObject.type === "slide" || rawObject.type === "guide") {
+      if (rawObject.type === "guide" && (rawObject.color !== undefined || rawObject.fade !== undefined && rawObject.fade !== "none"))
+        warnings.push({ code: "usc.guide.presentation", path, message: "Guide uses the native Our Notes appearance; source-only color and fade are not converted" });
+      const connections = rawObject.type === "guide" && Array.isArray(rawObject.midpoints)
+        ? rawObject.midpoints.map(point => isRecord(point) ? { ...point, type: "ignore" } : point) : rawObject.connections;
+      const line = parseSlide(rawObject.type === "guide" ? { ...rawObject, active: false, connections } : rawObject, index, laneBasis, warnings);
       if (line) {
         lines.push(line);
         sourceOrder.push(line.id);
+        if (speedGroups.length && Array.isArray(connections)) for (const [pointIndex, point] of connections.entries()) {
+          const id = importedId("usc", "line", index, "point", pointIndex);
+          if (isRecord(point) && line.points.some(item => item.id === id)) collections.members[id] = { groupId: groupOf(point) };
+        }
+        const memberships = new Set(line.points.map(point => collections.members[point.id]?.groupId).filter(Boolean));
+        if (memberships.size === 1) collections.members[line.id] = { groupId: [...memberships][0]! };
       }
     } else {
       warnings.push({
@@ -342,6 +410,7 @@ export const importUsc = (input: string | Uint8Array | unknown, options: { laneB
     singles,
     lines,
     sourceOrder,
+    ...(speedGroups.length ? { extensions: { [COLLECTIONS_KEY]: collections as unknown as import("../model").JsonValue } } : {}),
   });
   return finishImport("usc", project, warnings);
 };

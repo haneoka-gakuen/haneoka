@@ -3,7 +3,7 @@
 // Output: Material menu with native keyboard navigation and focus handoff.
 // Pos: [Map](L2-2.md); shared optional action menu.
 // Effects/Dependencies: Material Web menu; actions run after its close lifecycle.
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import "@material/web/menu/menu.js";
 import "@material/web/menu/menu-item.js";
 import { CloseReason, type CloseMenuEvent } from "@material/web/menu/internal/controllers/shared.js";
@@ -11,8 +11,8 @@ import { icon } from "./icon";
 
 export function actionMenu(options: {
   id: string;
-  label: string;
-  items: { label: string; icon?: string; href?: string; disabled?: boolean; run?: () => void }[];
+  label: string | TemplateResult;
+  items: { label: string; icon?: string; leading?: TemplateResult; href?: string; disabled?: boolean; run?: () => void }[];
 }) {
   return html`
     <span class="action-menu">
@@ -54,9 +54,9 @@ export function actionMenu(options: {
               }}
             >
               ${
-                item.icon
+                item.leading || item.icon
                   ? html`
-                      <span slot="start">${icon(item.icon, 20)}</span>
+                      <span slot="start">${item.leading ?? icon(item.icon!, 20)}</span>
                     `
                   : nothing
               }

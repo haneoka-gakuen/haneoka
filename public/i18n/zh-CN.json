@@ -3544,7 +3544,7 @@
       "newProjectConfirm": "要丢弃当前工程并新建吗？",
       "importChartConfirm": "导入会替换当前谱面，是否继续？",
       "file": "文件",
-      "importLocalChart": "从本地导入谱面",
+      "importLocalChart": "导入谱面（Our Notes / SEKAI）",
       "importLocalAudio": "从本地载入音乐",
       "serverLibrary": "服务器曲库",
       "importGbp": "导入 GBP 谱面",
@@ -3778,7 +3778,8 @@
         "export_meterRatioNormalized": "SUS 保留小节时长，拍号比例会被转换",
         "export_coincidentNotesMerged": "SUS 会合并同时位于相同轨道的音符",
         "sus_size": "SUS 文件超过 2 MiB，请降低细分精度",
-        "export_autoVisibilityUnsupported": "MMW 的自动中间节点将隐藏"
+        "export_autoVisibilityUnsupported": "MMW 的自动中间节点将隐藏",
+        "usc_group_speed_unsupported": "分组变速无法转换为 Our Notes"
       },
       "shortcuts": {
         "title": "快捷键",
@@ -3809,8 +3810,9 @@
         "page_down": "向下翻页",
         "home": "移至开头",
         "end": "移至末尾",
-        "flick_left": "左划键工具",
-        "flick_right": "右划键工具"
+        "flick_left": "左滑",
+        "flick_right": "右滑",
+        "flick_up": "上滑"
       },
       "statistics": {
         "title": "统计",
@@ -3916,27 +3918,37 @@
         "step_audio": "选择音频",
         "start_audio": "导入本地音频，或从服务器曲库选择歌曲。也可以先打开练习谱面。",
         "step_place": "放置音符",
-        "start_place": "选择音符工具，再点击轨道。长条和引导线先点起点，再点更晚的终点。",
+        "start_place": "选择音符工具，点击放置，或在空白处拖动调整宽度。长条可点击两点或拖出，继续接点，最后完成连线。",
         "step_select": "选择与编辑",
-        "start_select": "使用选择工具拖出选框、移动音符或拖动边缘调整宽度。复制并粘贴选区即可重复片段。",
+        "start_select": "直接拖动音符以移动，拖动边缘调整宽度。选择工具可框选，再复制或变换选区。",
         "step_play": "试听与保存",
         "start_play": "播放谱面，随时撤销修改，完成后保存版本。编辑与预览可切换制作和播放视图。",
         "tool_select": "在空白处拖动框选；拖动选中的音符以移动，拖动边缘以调整宽度。Shift 可追加选择。",
-        "tool_tap": "点击轨道放置点击音符。右键点击音符可直接删除。",
-        "tool_flick": "点击轨道放置划键；方向可在属性中设置。",
-        "tool_trace": "点击轨道放置跟踪音符。",
-        "tool_hold": "先点击起点，再点击时间更晚的位置完成长条。",
-        "tool_guide": "先点击起点，再点击时间更晚的位置完成引导线。",
-        "tool_erase": "点击音符删除。使用其他工具时也可右键删除。",
+        "tool_tap": "点击空白处放置 Tap，拖动空白处设置宽度。拖动已有音符以移动，拖动边缘调整宽度。",
+        "tool_flick": "选择上滑、左滑或右滑，再点击放置。同一工具也可选择、移动已有音符或调整宽度。",
+        "tool_trace": "点击放置 Trace，或拖动设置宽度；也可直接选择、移动已有音符或调整宽度。",
+        "tool_hold": "点击两点或拖出长条，继续点击可接点。点击曲线添加节点，完成连线后开始新路径。",
+        "tool_guide": "点击两点或拖出引导线，继续点击可接点。点击曲线添加节点，完成连线后开始新路径。",
+        "tool_erase": "点击或拖过音符以删除；右键可临时使用橡皮。一次拖动可一次撤销。",
         "tool_pan": "拖动画布，移动时间和轨道视野。",
         "tool_brush": "先用笔刷操作复制所选音符的属性，再拖过音符以应用。",
         "tool_node": "点击长条或引导线添加节点；在属性中设置显示方式和曲线。",
         "line_end": "点击时间更晚的位置完成连线；取消可清除起点。",
         "paste": "移动指针或按方向键调整预览，点击或确认后放置；取消则放弃粘贴。",
-        "navigate": "滚轮移动时间；Ctrl/⌘＋滚轮缩放，Shift＋滚轮横向移动。",
+        "navigate": "滚轮移动时间，中键拖动平移；Ctrl/⌘＋滚轮缩放，Shift＋滚轮横向移动。双指平移或捏合缩放。",
         "grid": "网格按全音符细分：1/16 表示每拍四格。",
         "place_at_pointer": "在指针处放置／确认粘贴",
         "place": "放置"
+      },
+      "interaction": {
+        "more_tools": "更多工具",
+        "view": "视图",
+        "tool": "工具",
+        "select_note": "选择音符以编辑属性。",
+        "finish_line": "完成连线",
+        "continue_line": "继续点击可延长连线；完成后可开始新连线。",
+        "precise": "精确放置",
+        "no_settings": "当前工具无设置"
       }
     },
     "story": {

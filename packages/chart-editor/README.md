@@ -58,6 +58,29 @@ preserving endpoints, same-tick controls and connector group/layer ownership.
 `setLinePointMode` changes selected interior controls using their resolved source
 geometry. Automatic controls keep the authored interpolation marker.
 
+SEKAI imports use the same Our Notes project and renderer. SUS text assets may use
+`.sus` or `.txt`; USC accepts legacy connections and the v2 `guide`, `judgeType`
+and compatible `timeScaleGroup` forms. Uniform group timelines become the native
+global speed timeline; group membership remains editable. Independent group
+speed timelines, stopped/reversed visual time and engine-specific stage effects
+are outside the current Our Notes conversion and are not flattened into a false
+equivalent. In-Out and Out-In curves use two native quadratic segments with a
+hidden midpoint; sub-tick midpoints are reported. Import warnings retain the
+existing conversion diagnostics for non-spatial attached controls.
+
+| Converted feature | Our Notes editing and playback |
+| --- | --- |
+| Tap, three flick directions, Trace, critical notes | Native note types and original artwork |
+| Holds, guides, variable widths and left/right curves | Editable nodes and native connector geometry |
+| Hidden and automatic nodes | Existing visibility and interpolation modes |
+| BPM, meter, audio offset and positive global speed changes | Shared timeline and media clock |
+| Fixed speed groups and layer visibility | Native source-ID visual profiles and collection controls |
+| Skill, FEVER and CALL markers | Existing native event editing |
+
+Project JSON and project backups retain the complete converted project. Raw SS,
+SUS and USC exports keep their existing format-specific diagnostics; selecting a
+format does not make it carry fields absent from that format.
+
 Project JSON optionally carries `waypoints` with stable IDs, names and integer
 ticks. Older projects without waypoints remain valid. These author navigation
 markers are separate from gameplay skill, fever and call events.

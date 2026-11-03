@@ -11,13 +11,13 @@ import { serializePageData } from "../../../lib/page-data";
 export function getStaticPaths() { return staticBuildPaths("src/pages/[locale]/chart-editor/create.astro", LOCALES.map(locale => ({ params: { locale }, props: { locale } }))); }
 const { locale } = Astro.props as { locale: Locale };
 const titleKey = "editors.chart.creation.title";
-const title = t(locale, titleKey, `${t(locale, "navigation.chartEditor", "Chart Editor")} / Beta`);
+const title = t(locale, titleKey, t(locale, "navigation.chartEditor", "Chart Editor"));
 const route = "/chart-editor/create";
 const payload = await publicSongsPageData("intl");
 const page = await renderChartCreationPage(payload, locale);
 ---
 <Base locale={locale} route={route} title={title} titleKey={titleKey}>
-  <AppShell locale={locale} route={route} title={title} titleKey={titleKey} appBar={page.appBar}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey} appBar={page.appBar} contained>
     <chart-creation-workspace locale={locale} data-page-data="chart-creation-page" data-prerendered set:html={page.body}></chart-creation-workspace>
     <script id="chart-creation-page" type="application/json" set:html={serializePageData(payload)}></script>
   </AppShell>
