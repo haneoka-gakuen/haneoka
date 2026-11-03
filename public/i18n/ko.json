@@ -4794,6 +4794,7 @@
       "emptyList": "아직 없습니다"
     },
     "charts": {
+      "recommendedFeed": "추천",
       "title": "커뮤니티 채보",
       "publishToCommunity": "커뮤니티에 게시",
       "publish": "게시",
@@ -4847,6 +4848,7 @@
       "original": "원본 채보",
       "restore": "버전 복원",
       "errors": {
+        "invalid_query": "정렬 매개변수가 올바르지 않습니다",
         "service_unavailable": "채보를 불러올 수 없습니다",
         "authentication_required": "로그인이 필요합니다",
         "email_verification_required": "이메일 인증이 필요합니다",

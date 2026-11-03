@@ -1,7 +1,56 @@
+// L3 — GEB
+// Input: published community candidates, viewer, ranking time and seed.
+// Output: shared post/chart recommendation score SQL, candidate pools and diversified order.
+// Pos: [Map](L2.md); community recommendation ranking owner.
+// Effects/Dependencies: D1 feature refresh; score construction and diversification are pure.
 import { forumAdminSql } from "./community-forums";
 
 export const COMMUNITY_RANKING_CRON = "*/5 * * * *";
 const VERSION = "community-engagement-v3";
+const WEIGHTS = { like: 5, comment: 8, bookmark: 3, hour: 80, day: 50, week: 20, author: 120, tag: 70, seen: 90 } as const;
+
+export function recommendationScoreSql(options: {
+  kind: "post" | "chart";
+  userId: string | null;
+  asOf: number;
+  seed: number;
+}): { sql: string; values: Array<string | number> } {
+  const chart = options.kind === "chart";
+  const author = chart ? "candidate.ownerId" : "candidate.authorId";
+  const created = chart ? "candidate.rankingCreatedAt" : "candidate.createdAt";
+  const likes = chart ? "candidate.rankingLikeCount" : "candidate.likeCount";
+  const post = chart ? "candidate.threadId" : "candidate.id";
+  const impression = chart ? "community_chart_impression" : "community_feed_impression";
+  const impressionId = chart ? "chart_id" : "post_id";
+  const values: Array<string | number> = [options.asOf - 3_600_000, options.asOf - 86_400_000, options.asOf - 7 * 86_400_000, options.seed];
+  let personal = "";
+  if (options.userId) {
+    personal = `
+      + CASE WHEN EXISTS(SELECT 1 FROM community_user_follow AS score_follow
+          WHERE score_follow.follower_user_id=? AND score_follow.followed_user_id=${author}) THEN ${WEIGHTS.author} ELSE 0 END
+      + CASE WHEN EXISTS(SELECT 1 FROM community_post_tag AS score_post_tag
+          JOIN community_tag_preference AS score_tag_preference ON score_tag_preference.tag_id=score_post_tag.tag_id
+          AND score_tag_preference.user_id=? AND score_tag_preference.kind='follow'
+          WHERE score_post_tag.post_id=${post}) THEN ${WEIGHTS.tag} ELSE 0 END
+      - CASE WHEN EXISTS(SELECT 1 FROM ${impression} AS score_impression
+          WHERE score_impression.user_id=? AND score_impression.${impressionId}=candidate.id
+          AND score_impression.first_seen_at<?) THEN ${WEIGHTS.seen} ELSE 0 END`;
+    values.push(options.userId, options.userId, options.userId, options.asOf);
+  }
+  return {
+    sql: `(${likes}*${WEIGHTS.like} + candidate.commentCount*${WEIGHTS.comment}
+      + (SELECT COUNT(*) FROM community_bookmark AS rank_bookmark
+          JOIN community_profile AS rank_bookmark_owner ON rank_bookmark_owner.user_id=rank_bookmark.user_id
+          AND rank_bookmark_owner.status<>'deleted' AND rank_bookmark_owner.display_name IS NOT NULL
+          WHERE rank_bookmark.post_id=${post})*${WEIGHTS.bookmark}
+      + CASE WHEN ${created}>=? THEN ${WEIGHTS.hour} WHEN ${created}>=? THEN ${WEIGHTS.day}
+          WHEN ${created}>=? THEN ${WEIGHTS.week} ELSE 0 END
+      + (((?*1103515245 + unicode(substr(candidate.id,1,1))*104729
+          + unicode(substr(candidate.id,2,1))*13007 + unicode(substr(candidate.id,3,1))*1543
+          + unicode(substr(candidate.id,4,1))*193)&2147483647)%13) ${personal})`,
+    values,
+  };
+}
 const published = (alias: string) => `${alias}.status='published' AND ${alias}.deleted_at IS NULL
   AND ${alias}.moderation_status='allow'
   AND NOT EXISTS(SELECT 1 FROM community_entity_thread AS ranking_entity WHERE ranking_entity.post_id=${alias}.id)`;
@@ -10,7 +59,7 @@ const published = (alias: string) => `${alias}.status='published' AND ${alias}.d
 export async function refreshCommunityRanking(env: Env): Promise<void> {
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO community_post_rank(post_id,base_score,algorithm_version,calculated_at)
-      SELECT post.id, COALESCE(likes.total,0)*5 + COALESCE(comments.total,0)*8 + COALESCE(bookmarks.total,0)*3, ?, ?
+      SELECT post.id, COALESCE(likes.total,0)*${WEIGHTS.like} + COALESCE(comments.total,0)*${WEIGHTS.comment} + COALESCE(bookmarks.total,0)*${WEIGHTS.bookmark}, ?, ?
       FROM community_post AS post
       LEFT JOIN (
         SELECT reaction.post_id, COUNT(*) AS total FROM community_reaction AS reaction

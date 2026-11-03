@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区谱面目录／详情、语言与账户可见状态。
-// Output: 三种集合视图、共用歌曲详情摘要／统计与推荐难度、歌曲播放、2D／3D 谱面页和 Sonolus 入口。
+// Output: 默认社区推荐排序、三种集合视图、歌曲详情摘要／推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
 import "@material/web/select/outlined-select.js";
@@ -103,7 +103,7 @@ export class CommunityCharts extends LitElement {
     this.mine = false;
     this.filtersOpen = false;
     this.difficulties = [];
-    this.sort = "new";
+    this.sort = "feed";
     this.busy = false;
     this.confirming = null;
     this.versionsExpanded = false;
@@ -138,6 +138,7 @@ export class CommunityCharts extends LitElement {
         ).href;
     }
     this.mine = url.searchParams.get("scope") === "mine";
+    if (this.mine) this.sort = "new";
     this.unlocale = initializeI18nClient().subscribe((catalog) => {
       this.locale = catalog.locale;
       this.requestUpdate();
@@ -165,12 +166,13 @@ export class CommunityCharts extends LitElement {
   }
   protected override willUpdate() {
     if (this.sort === "recommended" && !this.matchingCharts().some((row) => this.recommendation(row) !== undefined))
-      this.sort = "new";
+      this.sort = this.mine ? "new" : "feed";
   }
-  private async load() {
+  private async load(refresh = false) {
+    const keepResults = refresh && this.phase === "ready" && this.items.length > 0;
     this.controller?.abort();
     const controller = (this.controller = new AbortController());
-    this.phase = "loading";
+    if (!keepResults) this.phase = "loading";
     try {
       if (this.chartId) {
         const selection = new URLSearchParams({ draft: "1" });
@@ -201,18 +203,22 @@ export class CommunityCharts extends LitElement {
             })
           ).revisions;
       } else {
+        const query = new URLSearchParams({ order: this.sort === "feed" && !this.mine ? "recommended" : "latest" });
+        if (this.mine) query.set("scope", "mine");
         const { charts } = await chartRequest<{ charts: CommunityChartItem[] }>(
-          `${CHART_API}${this.mine ? "?scope=mine" : ""}`,
+          `${CHART_API}?${query}`,
           { signal: controller.signal },
         );
+        controller.signal.throwIfAborted();
         this.items = charts;
       }
       controller.signal.throwIfAborted();
       this.phase = "ready";
     } catch (error) {
       if (!controller.signal.aborted) {
-        this.phase = "error";
         this.error = this.t(`errors.${error instanceof Error ? error.message : "service_unavailable"}`);
+        if (keepResults) snackbar(this.error);
+        else this.phase = "error";
       }
     }
   }
@@ -404,6 +410,7 @@ export class CommunityCharts extends LitElement {
           ? html`
               <a
                 class="icon-button"
+                data-astro-reload
                 href=${`/${this.locale}/chart-editor/create/?community=${row.id}`}
                 aria-label=${this.t(row.canEdit ? "edit" : "remixAction")}
               >
@@ -525,6 +532,7 @@ export class CommunityCharts extends LitElement {
                                 <li>
                                   <a
                                     class="list-item list-item--two-line list-item--interactive"
+                                    data-astro-reload
                                     href=${`/${this.locale}/chart-editor/create/?community=${row.id}&revision=${version.revision}`}
                                   >
                                     <span class="list-item__body">
@@ -688,7 +696,7 @@ export class CommunityCharts extends LitElement {
             : nothing;
     const rows = this.matchingCharts();
     const hasRecommendation = rows.some((row) => this.recommendation(row) !== undefined);
-    rows.sort((a, b) =>
+    if (this.sort !== "feed") rows.sort((a, b) =>
       this.sort === "recommended"
         ? (this.recommendation(a) ?? Infinity) - (this.recommendation(b) ?? Infinity) || b.updatedAt - a.updatedAt
         : this.sort === "popular"
@@ -813,7 +821,8 @@ export class CommunityCharts extends LitElement {
         },
         onReset: () => {
           this.difficulties = [];
-          this.sort = "new";
+          this.sort = this.mine ? "new" : "feed";
+          if (!this.mine) void this.load(true);
         },
         body: html`
           ${facet(
@@ -836,8 +845,10 @@ export class CommunityCharts extends LitElement {
             .value=${this.sort}
             @change=${(e: Event) => {
               this.sort = (e.currentTarget as HTMLElement & { value: string }).value as typeof this.sort;
+              if (this.sort === "feed") void this.load(true);
             }}
           >
+            ${!this.mine ? html`<md-select-option value="feed" ?selected=${this.sort === "feed"}><div slot="headline">${this.t("recommendedFeed")}</div></md-select-option>` : nothing}
             <md-select-option value="new" ?selected=${this.sort === "new"}><div slot="headline">${this.t("newest")}</div></md-select-option>
             <md-select-option value="popular" ?selected=${this.sort === "popular"}><div slot="headline">${this.t("popular")}</div></md-select-option>
             <md-select-option value="recommended" ?disabled=${!hasRecommendation} ?selected=${this.sort === "recommended"}>

@@ -180,6 +180,7 @@
     "worker/user-roles.ts",
     "worker/content-access.ts",
     "worker/community.ts",
+    "worker/community-ranking.ts",
     "worker/d1-session.ts",
     "worker/community-edge-cache.ts",
     "worker/community-media.ts",

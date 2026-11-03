@@ -2,7 +2,7 @@
 // Input: 社区谱面 HTTP、账户、D1、R2 和受信服务器素材解析。
 // Output: 私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含作者简介／发布信息的 Sonolus 关卡投影。
 // Pos: [Map](L2.md)；社区谱面持久化、发布及访问控制所有者。
-// Effects/Dependencies: 认证／限流、D1 原子 CAS、R2 上传和谱面编译；列表与详情按需生成当前模型分析，模型升级期间保留旧版基础统计。
+// Effects/Dependencies: 认证／限流、D1 CAS、R2／编译；推荐读取偏好并记录曝光，列表与详情按模型版本缓存分析。
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
@@ -23,6 +23,9 @@ import type { Project } from "../packages/chart-editor/src/model";
 import type { ChartCatalogProvider, ChartDataProvider, ChartDescriptor } from "@haneoka/sonolus-core";
 
 import { preserveChartMedia, chartMediaSnapshot, type ChartMediaResolver } from "./community-chart-media";
+import { diversifyRecommendationPage, recommendationScoreSql } from "./community-ranking";
+import { forumDiscoveryPostSql } from "./community-forums";
+import { backgroundWork } from "./request-work";
 
 const PREFIX = "/api/v1/community/charts";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -249,6 +252,64 @@ export async function communityChartRows(env: Env): Promise<Row[]> {
       .bind("")
       .all<Row>()
   ).results;
+}
+
+function communityChartRecommendationQuery(userId: string | null, seed: number, asOf: number) {
+  const ranking = recommendationScoreSql({ kind: "chart", userId, seed, asOf });
+  const thread = `SELECT entity.post_id FROM community_entity_thread AS entity
+    JOIN community_post AS discussion ON discussion.id=entity.post_id
+    WHERE entity.entity_type='community-charts' AND entity.original_id=c.id
+      AND ${forumDiscoveryPostSql("discussion", "NULLIF(?1,'')")}`;
+  const preferences = userId ? `WHERE
+    NOT EXISTS(SELECT 1 FROM community_user_mute WHERE muter_user_id=?1 AND muted_user_id=charts.ownerId)
+    AND NOT EXISTS(SELECT 1 FROM community_user_block WHERE
+      (blocker_user_id=?1 AND blocked_user_id=charts.ownerId) OR (blocker_user_id=charts.ownerId AND blocked_user_id=?1))
+    AND NOT EXISTS(SELECT 1 FROM community_post_feedback WHERE user_id=?1 AND post_id=charts.threadId)
+    AND NOT EXISTS(SELECT 1 FROM community_post_tag AS muted_post_tag
+      JOIN community_tag_preference AS muted_tag ON muted_tag.tag_id=muted_post_tag.tag_id
+      WHERE muted_post_tag.post_id=charts.threadId AND muted_tag.user_id=?1 AND muted_tag.kind='mute')` : "";
+  const sql = `WITH charts AS (
+      SELECT ${columns}, c.created_at AS rankingCreatedAt, (${thread}) AS threadId,
+        (SELECT COUNT(*) FROM community_chart_like AS reaction
+         JOIN community_profile AS reaction_owner ON reaction_owner.user_id=reaction.user_id
+         WHERE reaction.chart_id=c.id AND reaction_owner.status<>'deleted'
+           AND reaction_owner.display_name IS NOT NULL) AS rankingLikeCount
+      ${joined} WHERE c.deleted_at IS NULL AND c.visibility='public'
+        AND r.revision=c.published_revision AND ${activeOwner} AND ${availableCover}
+    ), candidate AS (
+      SELECT charts.*, (SELECT COUNT(*) FROM community_comment AS comment
+        JOIN community_profile AS comment_owner ON comment_owner.user_id=comment.author_id
+        WHERE comment.post_id=charts.threadId AND comment.deleted_at IS NULL AND comment.hidden_at IS NULL
+          AND comment.moderation_status='allow' AND comment_owner.status<>'deleted'
+          AND comment_owner.display_name IS NOT NULL) AS commentCount FROM charts ${preferences}
+    ), ranked AS (SELECT candidate.*, ${ranking.sql} AS rankScore FROM candidate)
+    SELECT * FROM ranked ORDER BY rankScore DESC, rankingCreatedAt DESC, id DESC`;
+  return { sql, values: [userId ?? "", ...ranking.values] };
+}
+
+async function recommendedCharts(env: Env, userId: string | null, seed: number, asOf: number): Promise<Row[]> {
+  const query = communityChartRecommendationQuery(userId, seed, asOf);
+  const rows = (await env.DB.prepare(query.sql).bind(...query.values).all<Row>()).results;
+  return diversifyRecommendationPage(rows, (row) => row.ownerId, (row) => row.upstreamId ?? row.id);
+}
+
+async function recordChartRecommendations(env: Env, rows: Row[], userId: string, seed: number, asOf: number) {
+  const ids = rows.slice(0, 20).map((row) => row.id);
+  if (!ids.length) return;
+  await backgroundWork(`community-chart-impression:${userId}:${seed}`, async () => {
+    try {
+      await env.DB.prepare(`WITH selected(id) AS (VALUES ${ids.map(() => "(?)").join(",")})
+        INSERT INTO community_chart_impression(user_id,chart_id,first_seen_at,last_seen_at,seen_count)
+        SELECT ?,c.id,?,?,1 FROM selected JOIN community_chart AS c ON c.id=selected.id
+        JOIN community_chart_revision AS r ON r.chart_id=c.id AND r.revision=c.published_revision
+        WHERE c.deleted_at IS NULL AND c.visibility='public' AND ${activeOwner} AND ${availableCover}
+        ON CONFLICT(user_id,chart_id) DO UPDATE SET
+          last_seen_at=MAX(community_chart_impression.last_seen_at,excluded.last_seen_at),
+          seen_count=community_chart_impression.seen_count+1`).bind(...ids, userId, asOf, asOf).run();
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "community.chart_recommendation_impression_failed", error: error instanceof Error ? error.name : "UnknownError" }));
+    }
+  });
 }
 function mediaRef(value: unknown): ChartMediaRef | null {
   if (value === null || value === undefined) return null;
@@ -655,6 +716,13 @@ export async function handleCommunityChartRequest(
       if (!id && method === "GET") {
         const mine = url.searchParams.get("scope") === "mine";
         if (mine && !owner) return fail(request, 401, "authentication_required");
+        const order = url.searchParams.get("order") ?? (mine ? "latest" : "recommended");
+        const seedValue = url.searchParams.get("seed");
+        if (!["latest", "recommended"].includes(order) ||
+          (seedValue !== null && (!/^\d+$/u.test(seedValue) || Number(seedValue) > 2_147_483_647)))
+          return fail(request, 400, "invalid_query");
+        const seed = seedValue === null ? crypto.getRandomValues(new Uint32Array(1))[0]! & 0x7fffffff : Number(seedValue);
+        const rankedAt = Date.now();
         const rows = mine
           ? (
               await primary.DB.prepare(
@@ -663,10 +731,14 @@ export async function handleCommunityChartRequest(
                 .bind(owner)
                 .all<Row>()
             ).results
-          : await communityChartRows(primary);
+          : order === "recommended"
+            ? await recommendedCharts(primary, user?.id ?? null, seed, rankedAt)
+            : await communityChartRows(primary);
         for (let index = 0; index < rows.length; index += 2)
           await Promise.all(rows.slice(index, index + 2).map((row) => ensureAnalysis(primary, row)));
-        return json(request, { charts: rows.map((r) => item(r, owner)) });
+        if (!mine && order === "recommended" && owner && request.method !== "HEAD")
+          await recordChartRecommendations(primary, rows, owner, seed, rankedAt);
+        return json(request, { charts: rows.map((r) => item(r, owner)), ...(!mine && order === "recommended" ? { seed, rankedAt } : {}) });
       }
       if (!UUID.test(id ?? "") || extra !== undefined) return fail(request, 404, "chart_missing");
       if (!action && method === "PUT") return await saveChart(request, primary, owner, id!, resolve);

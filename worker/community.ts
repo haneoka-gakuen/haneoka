@@ -6,7 +6,7 @@
 import type { UserRole } from "../src/lib/user-roles";
 import { measureCommunityRead } from "./community-read-timing";
 import { communitySearchCondition, communitySearchScore } from "./community-search-query";
-import { recommendationPostPool, diversifyRecommendationPage } from "./community-ranking";
+import { recommendationPostPool, diversifyRecommendationPage, recommendationScoreSql } from "./community-ranking";
 import { backgroundWork } from "./request-work";
 import { orderedEligible } from "./ordered-read";
 import { entityThreadForPost, entityCommentTextOnly, entityThreadSql } from "./community-entity-guard";
@@ -1449,42 +1449,13 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
     if (recommendationSeed === null || recommendationRankAsOf === null) {
       throw new Error("A recommendation request has no stable ranking context");
     }
-    const scoreBindings: BindValue[] = [
-      recommendationRankAsOf - HOUR_MS,
-      recommendationRankAsOf - DAY_MS,
-      recommendationRankAsOf - 7 * DAY_MS,
-      recommendationSeed,
-    ];
-    let impressionScore = "";
-    let personalizedScore = "";
+    const ranking = recommendationScoreSql({ kind: "post", userId, asOf: recommendationRankAsOf, seed: recommendationSeed });
+    const scoreBindings: BindValue[] = [...ranking.values];
     let reasonExpression = `CASE
       WHEN candidate.likeCount + candidate.commentCount >= 5 THEN 'popular'
       ELSE 'recent'
     END`;
     if (userId) {
-      personalizedScore = `
-        + CASE WHEN EXISTS (
-            SELECT 1 FROM community_user_follow AS score_follow
-            WHERE score_follow.follower_user_id = ? AND score_follow.followed_user_id = candidate.authorId
-          ) THEN 120 ELSE 0 END
-        + CASE WHEN EXISTS (
-            SELECT 1
-            FROM community_post_tag AS score_post_tag
-            JOIN community_tag_preference AS score_tag_preference
-              ON score_tag_preference.tag_id = score_post_tag.tag_id
-             AND score_tag_preference.user_id = ?
-             AND score_tag_preference.kind = 'follow'
-            WHERE score_post_tag.post_id = candidate.id
-          ) THEN 70 ELSE 0 END`;
-      scoreBindings.push(userId, userId);
-      impressionScore = `
-        - CASE WHEN EXISTS (
-            SELECT 1 FROM community_feed_impression AS score_impression
-            WHERE score_impression.user_id = ?
-              AND score_impression.post_id = candidate.id
-              AND score_impression.first_seen_at < ?
-          ) THEN 90 ELSE 0 END`;
-      scoreBindings.push(userId, recommendationRankAsOf);
       reasonExpression = `CASE
         WHEN EXISTS (
           SELECT 1 FROM community_user_follow AS reason_follow
@@ -1529,30 +1500,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
          ${candidateSql}
        ), ranked AS (
          SELECT candidate.*,
-           (
-             candidate.likeCount * 5
-             + candidate.commentCount * 8
-             + (SELECT COUNT(*)
-                FROM community_bookmark AS rank_bookmark
-                JOIN community_profile AS rank_bookmark_owner
-                  ON rank_bookmark_owner.user_id = rank_bookmark.user_id
-                 AND rank_bookmark_owner.status <> 'deleted'
-                 AND rank_bookmark_owner.display_name IS NOT NULL
-                WHERE rank_bookmark.post_id = candidate.id) * 3
-             + CASE
-                 WHEN candidate.createdAt >= ? THEN 80
-                 WHEN candidate.createdAt >= ? THEN 50
-                 WHEN candidate.createdAt >= ? THEN 20
-                 ELSE 0
-               END
-             + (((? * 1103515245
-                 + unicode(substr(candidate.id, 1, 1)) * 104729
-                 + unicode(substr(candidate.id, 2, 1)) * 13007
-                 + unicode(substr(candidate.id, 3, 1)) * 1543
-                 + unicode(substr(candidate.id, 4, 1)) * 193) & 2147483647) % 13)
-             ${personalizedScore}
-             ${impressionScore}
-           ) AS rankScore,
+           ${ranking.sql} AS rankScore,
            ${reasonExpression} AS recommendationReason
          FROM candidate
        ) SELECT * FROM ranked`;

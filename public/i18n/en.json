@@ -4794,6 +4794,7 @@
       "emptyList": "Nothing here yet"
     },
     "charts": {
+      "recommendedFeed": "For you",
       "title": "Community Charts",
       "publishToCommunity": "Post to community",
       "publish": "Publish",
@@ -4847,6 +4848,7 @@
       "original": "Original chart",
       "restore": "Restore version",
       "errors": {
+        "invalid_query": "Invalid sorting parameters",
         "service_unavailable": "Charts could not be loaded",
         "authentication_required": "Sign in to continue",
         "email_verification_required": "Verify your email",

@@ -4794,6 +4794,7 @@
       "emptyList": "まだありません"
     },
     "charts": {
+      "recommendedFeed": "おすすめ",
       "title": "コミュニティ譜面",
       "publishToCommunity": "コミュニティに投稿",
       "publish": "公開",
@@ -4847,6 +4848,7 @@
       "original": "元の譜面",
       "restore": "このバージョンを復元",
       "errors": {
+        "invalid_query": "並び順の指定が無効です",
         "service_unavailable": "譜面を読み込めませんでした",
         "authentication_required": "ログインしてください",
         "email_verification_required": "メールアドレスを確認してください",
