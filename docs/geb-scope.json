@@ -334,6 +334,7 @@
     "src/lit/runtime/timing-chart-preview.ts",
     "worker/chart-image.ts",
     "src/lit/team-builder/results.ts",
+    "src/lit/team-builder/manual-results.ts",
     "src/lib/team-builder/team-growth.ts",
     "src/lit/team-builder/team-growth.ts",
     "src/lib/arena.ts",

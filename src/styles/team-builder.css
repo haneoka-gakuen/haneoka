@@ -972,27 +972,37 @@
   .tb-baseline {
     gap: 8px;
     min-width: 0;
+    flex-wrap: nowrap;
+  }
+  .tb .tb-manual__metrics .spec-list dd {
+    min-block-size: calc(2 * var(--md-sys-typescale-body-large-line-height));
+  }
+  .tb .tb-manual__metrics .tb-delta {
+    display: block;
   }
   .tb-baseline__label {
     color: var(--md-sys-color-on-surface-variant);
+    white-space: nowrap;
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .tb-baseline__faces {
     display: flex;
-    gap: 6px;
+    gap: 4px;
   }
   .tb-baseline__slot {
     position: relative;
     display: block;
     flex: 0 0 auto;
-    width: 32px;
-    height: 32px;
+    width: clamp(24px, 4vw, 32px);
+    height: clamp(24px, 4vw, 32px);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-high);
   }
   .tb-baseline__slot > img:first-child {
     display: block;
-    width: 32px;
-    height: 32px;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
     object-position: 50% 20%;
     border-radius: var(--md-sys-shape-corner-small);
@@ -1247,9 +1257,7 @@
     max-width: min(260px, 100%);
   }
   .tb-compare__table th,
-  .tb-compare__table td,
-  .tb-eval th,
-  .tb-eval td {
+  .tb-compare__table td {
     white-space: nowrap;
   }
 
@@ -1623,16 +1631,16 @@
   .team-builder .tb-manual__progress {
     min-height: var(--md-sys-spacing-1);
   }
-  .team-builder .tb-eval tbody th {
-    min-width: 12rem;
-    white-space: normal;
-  }
-  .team-builder .tb-eval small {
-    display: block;
-    color: var(--md-sys-color-on-surface-variant);
-  }
 
   @media (max-width: 599px) {
+    .team-builder .tb-baseline {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+    }
+    .team-builder .tb-baseline__label {
+      flex-basis: 100%;
+    }
     .team-builder #sc-formation {
       --surface-padding: 12px;
     }
@@ -1887,21 +1895,6 @@
   }
   .tb .tb-tabs {
     min-width: 0;
-  }
-  .tb .tb-eval-mobile {
-    display: none;
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    gap: var(--md-sys-spacing-4);
-  }
-  @media (max-width: 600px) {
-    .tb .tb-eval-desktop {
-      display: none;
-    }
-    .tb .tb-eval-mobile {
-      display: grid;
-    }
   }
   .tb .tb-picker-footer .tb-action-menu > div {
     inset-block-end: 100%;

@@ -1,8 +1,8 @@
 // L3 — GEB
-// Input: 冻结的配队请求、结果、设置与目录。
-// Output: 排名卡片、指标、阵容、细节、可折叠的提前击打谱面片段与含歌曲信息的导出上下文。
+// Input: 冻结的自动／手动配队请求、结果、设置与目录。
+// Output: 排名卡片、共用评分详情、所选技能顺序、可折叠谱面片段与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 渲染 DOM、图表与对话框；图片装饰使用原结果的歌曲及完整成绩指标。
+// Effects/Dependencies: 按请求隔离时间线缓存；渲染 DOM、图表与对话框，导出沿用原结果的歌曲及成绩。
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
 import { resultMetric } from "./result-metric";
@@ -24,7 +24,7 @@ import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { sectionHeading } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof } from "./score-goal";
+import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof, manualResultSource, resultOrderIndex, setResultOrder } from "./score-goal";
 import { resolveBox } from "../../lib/team-builder/engine/box";
 import { effectPercent, resolveSlotSkill } from "../../lib/team-builder/engine/skills";
 import { memberEventPercent, snapEventPercent } from "../../lib/team-builder/engine/power";
@@ -37,7 +37,6 @@ import { dataRows } from "../../lib/team-builder/data";
 import "../runtime/timing-chart-preview";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
-export const timelines = new Map<string, Timeline | "loading" | "error">();
 export function justWindowValue(host: TeamBuilder, window: NonNullable<EngineHit["justWindow"]>): TemplateResult {
   const before = format(host, window.beforeMs, 2), after = format(host, window.afterMs, 2);
   return html`<span class="cluster"><span class="tabular">${before === after ? `±${before} ms` : `−${before} / +${after} ms`}</span>
@@ -134,9 +133,8 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
   ];
 }
 
-export function resultSong(host: TeamBuilder, song: SongRef): TemplateResult {
+export function resultSong(host: TeamBuilder, song: SongRef, rule: { musicType?: number } | null = resultSettings(host).arena ?? resultInputs(host)?.songRules ?? null): TemplateResult {
   const catalog = host.catalog!;
-  const rule = resultSettings(host).arena ?? resultInputs(host)?.songRules;
   const attribute = rule?.musicType || Number(catalog.song(song.songId).musicType);
   const attributeIcon = catalog.attributeIcon(attribute);
   const title = catalog.songTitle(song.songId);
@@ -523,7 +521,7 @@ function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): 
     .sort((a, b) => b.rank - a.rank);
   if (!ranks.length) return html``;
   const need = (target: number) => teamPowerNeeded(target, score.orders, hit.power, notes);
-  const gekisou = resultSettings(host).goal === "gekiso";
+  const gekisou = resultSettings(host, hit).goal === "gekiso";
   const players = [1, 2, 3, 4, 5];
   return html`
     <div
@@ -587,30 +585,30 @@ function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): 
 }
 
 const ORDER_INDEX = new Map(ORDERS.map((order, index) => [order.join(","), index]));
-/** The order chosen in each result's skill-order editor, and the position picked for a swap. */
-const orderChoice = new Map<string, number>();
-const swapPick = new Map<string, number>();
-/** Chart skill events in firing order, learned from the first timeline of each result. */
-const firingOrder = new Map<string, number[]>();
-/** The timeline on screen, kept while the next order's timeline loads. */
-const shownTimeline = new Map<string, Timeline>();
-let timelineInputs: ReturnType<typeof resultInputs> = null;
+interface DetailState {
+  id: number;
+  swapPick: Map<string, number>;
+  firingOrder: Map<string, number[]>;
+  shownTimeline: Map<string, Timeline>;
+  timelines: Map<string, Timeline | "loading" | "error">;
+}
+const detailStates = new WeakMap<object, DetailState>();
 let timelineEpoch = 0;
-function timelineKey(host: TeamBuilder, hit: EngineHit) {
-  const inputs = resultInputs(host);
-  if (inputs !== timelineInputs) {
-    timelineInputs = inputs;
-    timelineEpoch++;
-    timelines.clear();
-    orderChoice.clear();
-    swapPick.clear();
-    firingOrder.clear();
-    shownTimeline.clear();
+function detailState(host: TeamBuilder, hit: EngineHit): DetailState {
+  const source = manualResultSource(hit)?.input ?? resultInputs(host) ?? host;
+  let state = detailStates.get(source);
+  if (!state) {
+    state = { id: ++timelineEpoch, swapPick: new Map(), firingOrder: new Map(), shownTimeline: new Map(), timelines: new Map() };
+    detailStates.set(source, state);
   }
-  return `${timelineEpoch}|${hitKey(hit)}`;
+  return state;
+}
+function timelineKey(host: TeamBuilder, hit: EngineHit) {
+  return `${detailState(host, hit).id}|${resultSettings(host, hit).route}|${hitKey(hit)}`;
 }
 
 function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
+  const { timelines } = detailState(host, hit);
   const key = `${timelineKey(host, hit)}|${index}`;
   const value = timelines.get(key);
   if (value) return value;
@@ -793,11 +791,12 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const score = hit.score;
   if (!hit.song || !score?.orders?.length) return html``;
   const key = timelineKey(host, hit);
+  const { swapPick, firingOrder, shownTimeline } = detailState(host, hit);
   const ranked = score.orders
     .map((value, index) => ({ value, index }))
     .sort((a, b) => b.value - a.value || a.index - b.index);
   const best = ranked[0]!;
-  const current = orderChoice.get(key) ?? best.index;
+  const current = resultOrderIndex(host, hit);
   const requested = orderTimeline(host, hit, current);
   if (typeof requested === "object") shownTimeline.set(key, requested);
   const timeline = typeof requested === "object" ? requested : (shownTimeline.get(key) ?? requested);
@@ -817,7 +816,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const rank = score.orders.filter((other) => other > value).length + 1;
   const gap = (other: number) => (other === best.value ? "±0" : `−${format(host, best.value - other)}`);
   const choose = (index: number) => {
-    orderChoice.set(key, index);
+    setResultOrder(host, hit, index);
     swapPick.delete(key);
     host.requestUpdate();
   };
@@ -984,6 +983,23 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
         ),
       })}
     </section>
+  `;
+}
+
+export function renderResultDetails(host: TeamBuilder, hit: EngineHit): TemplateResult {
+  return html`
+    <div class="tb-hit__detail stack">
+      ${host.results && !usesPtResults(host) && !manualResultSource(hit)
+        ? html`<span class="tb-results__meta">
+            ${host.results.results.some((result) => result.stats.exact > 0)
+              ? host.t("resultMeta", "{ms} ms / {exact} teams simulated exactly", { ms: format(host, host.results.elapsedMs), exact: host.results.results.reduce((total, result) => total + result.stats.exact, 0) })
+              : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
+          </span>` : nothing}
+      <div class="cluster">${chips(host, hit)}</div>
+      ${eventBonusDetails(host, hit)}
+      ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
+      ${distribution(host, hit, hit.song)} ${powerNeeded(host, hit, hit.song)} ${skillOrderView(host, hit)}
+    </div>
   `;
 }
 
@@ -1265,21 +1281,7 @@ export function renderHit(
         content: cache(
           expanded
             ? html`
-                <div class="tb-hit__detail stack">
-                  ${
-                    host.results && !usesPtResults(host)
-                      ? html`
-                          <span class="tb-results__meta">
-                            ${host.results.results.some((result) => result.stats.exact > 0) ? host.t("resultMeta", "{ms} ms / {exact} teams simulated exactly", { ms: format(host, host.results.elapsedMs), exact: host.results.results.reduce((total, result) => total + result.stats.exact, 0) }) : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
-                          </span>
-                        `
-                      : nothing
-                  }
-                  <div class="cluster">${chips(host, hit)}</div>
-                  ${eventBonusDetails(host, hit)}
-                  ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
-                  ${distribution(host, hit, hit.song)} ${powerNeeded(host, hit, hit.song)} ${skillOrderView(host, hit)}
-                </div>
+                ${renderResultDetails(host, hit)}
               `
             : nothing,
         ),

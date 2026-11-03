@@ -12,7 +12,8 @@ import { modal } from "../ui/modal";
 import { iconButton, inputChip } from "../ui/controls";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { resultRequest, resultSettings, usesPtResults } from "./score-goal";
+import { resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
+import { manualResultHit } from "./manual-results";
 import { resultMetric, type ResultMetric } from "./result-metric";
 
 export interface ComparisonEntry {
@@ -26,6 +27,7 @@ export interface ComparisonEntry {
   listed: boolean;
   proven: boolean;
   placements?: number[];
+  selectedOrder?: number;
 }
 export function formationDifference(base: ComparisonEntry, candidate: ComparisonEntry) {
   const a = base.hit,
@@ -67,12 +69,12 @@ export function metricDelta(base: ComparisonEntry, candidate: ComparisonEntry) {
     relative: base.metric.value > 0 && candidate.metric.relative ? (absolute / base.metric.value) * 100 : null,
   };
 }
-function entryId(hit: EngineHit, source: string, input: EngineRequest, session: string, settings: BuildSettings) {
+function entryId(hit: EngineHit, source: string, input: EngineRequest, session: string, settings: BuildSettings, selectedOrder?: number) {
   const growth = [
     hit.members.map((key) => input.members.find((row) => row.key === key)),
     hit.snaps.map((key) => input.snaps.find((row) => row.key === key)),
   ];
-  return canonical([session, source, settings.route, settings.measure, hit.song, hit.members, hit.snaps, growth]);
+  return canonical([session, source, settings.route, settings.measure, hit.song, hit.members, hit.snaps, growth, selectedOrder]);
 }
 function entry(
   host: TeamBuilder,
@@ -86,8 +88,9 @@ function entry(
   const goal = { ...input.goal } as Record<string, unknown>;
   if (!hit.aggregate) delete goal.songs;
   const identity = hit.song ? host.catalog!.songIdentity(hit.song.songId) : host.data!.identity;
+  const selectedOrder = hit.score?.orders.length ? resultOrderIndex(host, hit) : undefined;
   return {
-    id: entryId(hit, source, input, session, settings),
+    id: entryId(hit, source, input, session, settings, selectedOrder),
     source,
     hit: structuredClone(hit),
     settings: structuredClone(settings),
@@ -101,20 +104,19 @@ function entry(
       input.aggregation,
       input.unknownPolicy,
       result.placements,
-      settings.route,
-      settings.measure,
-      settings.boosts,
-      settings.challengePoints,
-      usesPtResults(host) ? host.pt.job?.cycle : settings.ptCycle,
+      ...(goal.kind === "event" || goal.kind === "plan" ? [settings.route, settings.measure, settings.boosts,
+        settings.challengePoints, usesPtResults(host) ? host.pt.job?.cycle : settings.ptCycle] : []),
     ]),
     metric: resultMetric(host, hit, settings),
     listed: true,
     proven: result.proven,
     placements: result.placements?.slice(),
+    selectedOrder,
   };
 }
 export class ResultComparison {
   session = "";
+  private scope = "";
   items: ComparisonEntry[] = [];
   baseline = "";
   candidate = "";
@@ -122,10 +124,17 @@ export class ResultComparison {
   sync(host: TeamBuilder) {
     const pt = usesPtResults(host),
       session = pt ? (host.pt.job?.id ?? "") : host.resultSession;
-    if (session !== this.session) {
-      this.session = session;
+    const scope = canonical([host.snapshot?.owner, host.data?.identity, host.data?.crossServer?.identities]);
+    if (scope !== this.scope) {
       this.items = [];
-      this.baseline = "";
+    } else if (session !== this.session) {
+      this.items = this.items.filter((item) => item.source === "manual");
+    }
+    if (session !== this.session || scope !== this.scope) {
+      this.session = session;
+      this.scope = scope;
+      if (!this.items.some((item) => item.id === this.baseline)) this.baseline = this.items[0]?.id ?? "";
+      this.candidate = "";
       this.open = false;
     }
     if (!this.items.length) return;
@@ -160,15 +169,27 @@ export class ResultComparison {
     const input = challenge ? resultRequest(host, challenge) : null;
     const converted = challenge && input && selected.has(identity("cp-challenge", challenge))
       ? [entry(host, challenge, "cp-challenge", { proven: true }, input, host.resultSession)] : [];
-    return host.resultInputs
-      ? [...converted, ...(host.results?.results.flatMap((result) =>
+    const manual = host.manualResultsFor === host.manualContext() ? (host.manualResults ?? [])
+      .map(manualResultHit)
+      .filter((hit) => selected.has(identity("manual", hit)))
+      .map((hit) => {
+        const source = manualResultSource(hit)!;
+        return entry(host, hit, "manual", { proven: false }, source.input, source.session, source.settings);
+      }) : [];
+    return [...manual, ...converted, ...(host.resultInputs ? (host.results?.results.flatMap((result) =>
           result.hits
             .filter((hit) => selected.has(identity("build", hit)))
             .map((hit) => entry(host, hit, "build", result, host.resultInputs!, host.resultSession)),
-        ) ?? [])]
-      : [];
+        ) ?? []) : [])];
   }
-  private source(host: TeamBuilder, hit: EngineHit) {
+  private source(host: TeamBuilder, hit: EngineHit): {
+    input: EngineRequest; settings: BuildSettings; source: string; session?: string;
+    result: Pick<SongResult, "proven" | "placements">;
+  } | null {
+    const manual = manualResultSource(hit);
+    if (manual) return host.manualResultsFor === host.manualContext() && host.manualResults?.some((row) => manualResultHit(row) === hit)
+      ? { input: manual.input, settings: manual.settings, session: manual.session, source: "manual", result: { proven: false } }
+      : null;
     if (hit === host.results?.cpChallenge) {
       const input = resultRequest(host, hit);
       return input ? { result: { proven: true }, input, source: "cp-challenge", settings: resultSettings(host, hit) } : null;
@@ -188,11 +209,12 @@ export class ResultComparison {
   }
   idFor(host: TeamBuilder, hit: EngineHit) {
     const source = this.source(host, hit);
-    return source ? entryId(hit, source.source, source.input, this.session, source.settings) : null;
+    return source ? entryId(hit, source.source, source.input, source.session ?? this.session, source.settings,
+      hit.score?.orders.length ? resultOrderIndex(host, hit) : undefined) : null;
   }
   find(host: TeamBuilder, hit: EngineHit) {
     const source = this.source(host, hit);
-    return source ? entry(host, hit, source.source, source.result, source.input, this.session, source.settings) : null;
+    return source ? entry(host, hit, source.source, source.result, source.input, source.session ?? this.session, source.settings) : null;
   }
   toggle(host: TeamBuilder, hit: EngineHit) {
     this.sync(host);
@@ -290,7 +312,7 @@ export class ResultComparison {
           ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
         </header>
         ${
-          (usesPtResults(host) ? host.pt.stale : host.stale)
+          this.items.some((item) => item.source !== "manual") && (usesPtResults(host) ? host.pt.stale : host.stale)
             ? html`
                 <span role="status">${host.t("stale", "Conditions changed")}</span>
               `
@@ -346,7 +368,8 @@ export class ResultComparison {
                 (item) => html`
                   <span>${item.metric.label}</span>
                   <small>
-                    ${host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
+                    ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
+                      : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
                   </small>
                 `,
               )}
@@ -379,6 +402,13 @@ export class ResultComparison {
                   : "—";
               })}
               ${row(host.t("power", "Power"), (item) => format(item.hit.power))}
+              ${this.items.some((item) => item.selectedOrder !== undefined) ? row(host.t("selectedOrderScore", "Selected-order score"), (item) => {
+                const value = item.selectedOrder === undefined ? undefined : item.hit.score?.orders[item.selectedOrder];
+                const before = base.selectedOrder === undefined ? undefined : base.hit.score?.orders[base.selectedOrder];
+                return value === undefined ? "—" : html`<span>${format(value)}</span>
+                  ${before !== undefined && item.conditions === base.conditions
+                    ? html`<small class=${value === before ? "tb-equal" : "tb-difference"}>${signed(value - before)}</small>` : nothing}`;
+              }) : nothing}
               ${this.items.some((item) => item.hit.comboBonus != null) ? row(host.t("comboBonus", "Base COMBO BONUS"), (item) => (item.hit.comboBonus == null ? "—" : `×${format(item.hit.comboBonus, 2)}`)) : nothing}
               ${(["members", "snaps", "bindings", "growth"] as const).map((key) =>
                 row(host.t(`diff${key}`, key), (item) => {
@@ -436,12 +466,13 @@ export class ResultComparison {
                       : nothing
                   }
                   <span>
-                    ${item.settings.scope === "theoretical" ? host.t("scopeAll", "All cards, full growth") : host.t("scopeBox", "My cards")}
+                    ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
+                      : item.settings.scope === "theoretical" ? host.t("scopeAll", "All cards, full growth") : host.t("scopeBox", "My cards")}
                     /
                     ${item.input.unknownPolicy === "max" ? host.t("unknownMax", "Count as max") : host.t("unknownMin", "Count as minimum")}
                   </span>
                   ${
-                    !item.listed
+                    !item.listed && item.source !== "manual"
                       ? html`
                           <span>${host.t("outsideRanking", "Outside current ranking")}</span>
                         `

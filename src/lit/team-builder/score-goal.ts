@@ -4,6 +4,39 @@ import { manualEventFromEffects } from "../../lib/team-builder/manual-event";
 import { DEFAULT_SETTINGS, type BuildSettings } from "./types";
 import type { TeamBuilder } from "../team-builder";
 
+export interface ManualResultSource {
+  input: EngineRequest;
+  settings: BuildSettings;
+  session: string;
+  selectedOrder: number;
+  onOrderChange?: (index: number) => void;
+}
+const manualSources = new WeakMap<EngineHit, ManualResultSource>();
+const selectedOrders = new WeakMap<object, Map<string, number>>();
+export const manualResultSource = (hit: EngineHit) => manualSources.get(hit);
+export const registerManualResult = (hit: EngineHit, source: ManualResultSource) => manualSources.set(hit, source);
+function orderContext(host: TeamBuilder, hit: EngineHit) {
+  const source = manualResultSource(hit)?.input ?? resultRequest(host) ?? host;
+  const key = JSON.stringify([hit.song, hit.members, hit.snaps, resultSettings(host, hit).route]);
+  let choices = selectedOrders.get(source);
+  if (!choices) selectedOrders.set(source, choices = new Map());
+  return { choices, key };
+}
+export function resultOrderIndex(host: TeamBuilder, hit: EngineHit) {
+  const { choices, key } = orderContext(host, hit);
+  return manualResultSource(hit)?.selectedOrder ?? choices.get(key)
+    ?? hit.score?.orders.reduce((best, value, index, values) => value > values[best]! ? index : best, 0) ?? 0;
+}
+export function setResultOrder(host: TeamBuilder, hit: EngineHit, index: number) {
+  const { choices, key } = orderContext(host, hit);
+  choices.set(key, index);
+  const source = manualResultSource(hit);
+  if (source) {
+    source.selectedOrder = index;
+    source.onOrderChange?.(index);
+  }
+}
+
 export const SCORE_GOALS = {
   mean: {
     label: ["criterionMean", "Average score"],
@@ -100,6 +133,8 @@ export const usesPtResults = (host: TeamBuilder) =>
   host.settings.rewardMode !== "plan" &&
   (host.farmResultMode ?? host.settings.rewardMode) === "recommendation";
 export const resultRequest = (host: TeamBuilder, hit?: EngineHit): EngineRequest | null => {
+  const manual = hit && manualResultSource(hit);
+  if (manual) return manual.input;
   const input = usesPtResults(host) ? (host.pt.job?.request ?? null) : host.resultInputs;
   if (!input || !hit || hit !== host.results?.cpChallenge || input.goal.kind !== "event") return input;
   const auto = input.goal.rewardPlan?.autoCp;
@@ -117,6 +152,8 @@ export const resultSettings = (
   hit?: EngineHit,
   source?: Pick<BuildSettings, "route" | "measure">,
 ): BuildSettings => {
+  const manual = hit && manualResultSource(hit);
+  if (manual) return manual.settings;
   if (usesPtResults(host)) {
     const job = host.pt.job,
       request = job?.request,

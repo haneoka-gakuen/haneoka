@@ -1,6 +1,7 @@
 /** Saved teams, a manual formation and its evaluation across songs, with swap suggestions. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
+import { cache } from "lit/directives/cache.js";
 import type { EngineHit } from "../../lib/team-builder/engine/api";
 import { cardIdOf, engineInputs, type SavedTeam } from "../../lib/team-builder/sync/box-view";
 import { iconButton } from "../ui/controls";
@@ -9,7 +10,10 @@ import { tileMedia } from "../ui/tile";
 import { specList } from "../ui/spec";
 import { sectionHeading } from "./catalog";
 import { songRulesControl } from "./song-rules";
-import { justWindowValue, saveTeam } from "./results";
+import { renderResultDetails, resultSong, saveTeam } from "./results";
+import { accordion } from "../ui/accordion";
+import { attachManualResults, clearManualOrders, manualOrderScore, manualResultHit, manualResultRequest, manualResultSettings, snapshotManualResults } from "./manual-results";
+import { resultRequest } from "./score-goal";
 import { renderSongComparison } from "./song-comparison-view";
 import { toolLayout } from "./tool-layout";
 import { eventSection, gekisoSamplingAdvanced, justWindowControl, playConditions, songList } from "./build-tab";
@@ -62,11 +66,15 @@ export async function evaluate(host: TeamBuilder) {
   host.requestUpdate();
   const goal = host.manualGoal();
   const conditions = host.manualConditions();
-  const run = (team: typeof host.manual) =>
-    host.engine!.evaluate({
-      ...host.manualInputs(team),
-      songRules: host.songRules(goal),
-      player: host.view!.player,
+  const settings = manualResultSettings(host, goal);
+  const run = async (team: typeof host.manual, previous?: NonNullable<typeof host.manualResults>) => {
+    const input = manualResultRequest(host, team, goal);
+    const rows = await host.engine!.evaluate({
+      members: input.members,
+      snaps: input.snaps,
+      player: input.player,
+      unknownPolicy: input.unknownPolicy,
+      songRules: input.songRules,
       team: teamSpec(host, team),
       songs: goal.songs,
       play: goal.kind === "score" ? goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
@@ -74,16 +82,18 @@ export async function evaluate(host: TeamBuilder) {
       challengeEventId: goal.kind === "score" ? goal.challengeEventId : null,
       event: null,
     });
+    return attachManualResults(host, rows, team, input, settings, previous);
+  };
   try {
     const results = await run(host.manual);
     const baseline = host.manualBaseline;
     const baselineResults =
-      baseline && baseline.conditions !== conditions && !host.manualPin ? await run(baseline.team) : null;
+      baseline && baseline.conditions !== conditions && !host.manualPin ? await run(baseline.team, baseline.results) : null;
     if (host.ownsTask(task) && context === host.manualContext()) {
       host.manualResultsFor = context;
       host.manualResults = results;
-      if (host.manualPin) host.manualBaseline = { team: structuredClone(host.manual), results, conditions };
-      else if (baseline && baselineResults) host.manualBaseline = { ...baseline, results: baselineResults, conditions };
+      if (host.manualPin) host.manualBaseline = { team: structuredClone(host.manual), results: snapshotManualResults(results), conditions };
+      else if (baseline && baselineResults && host.manualBaseline === baseline) host.manualBaseline = { ...baseline, results: baselineResults, conditions };
       host.manualPin = false;
     }
   } catch (error) {
@@ -112,14 +122,16 @@ function delta(host: TeamBuilder, value: number | undefined, base: number | unde
 function baselineBar(host: TeamBuilder, ready: boolean) {
   const baseline = host.manualBaseline;
   const catalog = host.catalog!;
-  if (!baseline)
-    return html`
-      <button class="button button--text button--small" type="button" ?disabled=${!ready || host.running}
-        @click=${() => { host.manualPin = true; void evaluate(host); }}>
-        ${icon("push_pin", 18)}${host.t("pinBaseline", "Set as baseline")}
-      </button>
-    `;
-  const { members, snaps, leader } = baseline.team;
+  const pin = () => {
+    host.manualBaseline = {
+      team: structuredClone(host.manual),
+      results: snapshotManualResults(host.manualResults!),
+      conditions: host.manualConditions(),
+    };
+    host.manualPin = false;
+    host.requestUpdate();
+  };
+  const { members, snaps, leader } = baseline?.team ?? { members: [null, null, null, null, null], snaps: [null, null, null, null, null], leader: 2 };
   const order = [0, 1, 2, 3, 4].filter((index) => index !== leader);
   order.splice(2, 0, leader);
   return html`
@@ -137,7 +149,11 @@ function baselineBar(host: TeamBuilder, ready: boolean) {
           `;
         })}
       </span>
-      ${iconButton({ icon: "close", label: host.t("clearBaseline", "Clear baseline"), size: 18, onClick: () => { host.manualBaseline = null; host.requestUpdate(); } })}
+      <button class="icon-button" type="button" ?disabled=${!ready || host.running || host.manualBusy}
+        aria-label=${host.t(baseline ? "replaceBaseline" : "pinBaseline", baseline ? "Update baseline" : "Set as baseline")}
+        title=${host.t(baseline ? "replaceBaseline" : "pinBaseline", baseline ? "Update baseline" : "Set as baseline")}
+        @click=${pin}>${icon("push_pin", 20)}</button>
+      ${iconButton({ icon: "close", label: host.t("clearBaseline", "Clear baseline"), size: 18, disabled: !baseline, onClick: () => { host.manualBaseline = null; host.manualPin = false; host.requestUpdate(); } })}
     </div>
   `;
 }
@@ -256,10 +272,8 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
   const duplicate = characters.some((id, index) => id !== null && characters.indexOf(id) !== index);
   const context = host.manualContext();
   const results = host.manualResultsFor === context ? host.manualResults : null;
-  const rows = results
-    ? [...results].sort((a, b) => b.score.mean - a.score.mean).map((row) => ({ song: row.song, row }))
-    : host.manualGoal().songs.map((song) => ({ song, row: null }));
-  const showJustWindow = rows.some(value => value.row?.justWindow);
+  const rows = host.manualGoal().songs.map((song) => ({ song,
+    row: results?.find((result) => result.song.songId === song.songId && result.song.difficulty === song.difficulty) ?? null }));
   const baseline = host.manualBaseline?.conditions === host.manualConditions() ? host.manualBaseline : null;
   const baseOf = (song: { songId: number; difficulty: number }) =>
     baseline?.results.find((row) => row.song.songId === song.songId && row.song.difficulty === song.difficulty);
@@ -298,6 +312,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
             class="button button--text button--small"
             type="button"
             @click=${() => {
+              clearManualOrders(host);
               host.manual = {
                 members: [null, null, null, null, null],
                 snaps: [null, null, null, null, null],
@@ -589,100 +604,46 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                   ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
                   ${baselineBar(host, !!results && manualReady(host))}
                 </div>
-                <ul class="tb-eval-mobile">
-                  ${rows.map(
-                  ({ song, row }) => html`
-                    <li class="card card--outlined">
-                      <div class="card__body stack">
-                        <div>
-                          <strong>${catalog.songTitle(song.songId)}</strong>
-                          <div class="card__supporting">${catalog.difficultyLabel(song.songId, song.difficulty)}</div>
+                <div class="stack stack--loose">
+                  ${rows.map(({ song, row }) => {
+                    const hit = row ? manualResultHit(row) : null;
+                    const key = `manual:${song.songId}:${song.difficulty}`;
+                    const expanded = host.expanded.has(key);
+                    const base = baseOf(song);
+                    const reference = hit ? host.comparison.idFor(host, hit) : null;
+                    const compared = !!reference && host.comparison.items.some((item) => item.id === reference);
+                    return html`
+                      <article class="card card--outlined tb-hit">
+                        ${resultSong(host, song, (hit ? resultRequest(host, hit)?.songRules : host.songRules(host.manualGoal())) ?? null)}
+                        <div class="card__body stack">
+                          <div class="tb-manual__metrics">${specList([
+                            { label: host.t("expectedScore", "Average score"), value: row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, base?.score.mean)}` : "—" },
+                            { label: host.t("selectedOrderScore", "Selected-order score"), value: row ? html`${format(host, manualOrderScore(row)!)} ${delta(host, manualOrderScore(row), base ? manualOrderScore(base) : undefined)}` : "—" },
+                            { label: host.t("power", "Power"), value: row ? html`${format(host, row.power)} ${delta(host, row.power, base?.power)}` : "—" },
+                            { label: host.t("scoreRange", "Range"), value: row ? `${format(host, row.score.min)} – ${format(host, row.score.max)}` : "—" },
+                          ], { numeric: true })}</div>
+                          ${row && hit ? html`
+                            <div class="cluster">
+                              <button class="button button--tonal" type="button" ?disabled=${host.running}
+                                @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>
+                              <button class="button button--text" type="button" aria-pressed=${compared}
+                                @click=${() => host.comparison.toggle(host, hit)}>${host.t(compared ? "comparisonAdded" : "addComparison", compared ? "Added to comparison" : "Add to comparison")}</button>
+                            </div>
+                            ${accordion({
+                              id: `tb-${key.replaceAll(":", "-")}`,
+                              label: host.t("moreDetail", "Details"),
+                              expanded,
+                              onExpandedChange: (open) => {
+                                if (open) host.expanded.add(key); else host.expanded.delete(key);
+                                host.requestUpdate();
+                              },
+                              content: cache(expanded ? renderResultDetails(host, hit) : nothing),
+                            })}
+                          ` : nothing}
                         </div>
-                        ${specList(
-                                      [
-                                        { label: host.t("power", "Power"), value: row ? html`${format(host, row.power)} ${delta(host, row.power, baseOf(song)?.power)}` : "—" },
-                                        {
-                                          label: host.t("expectedScore", "Expected score"),
-                                          value: row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, baseOf(song)?.score.mean)}` : "—",
-                                        },
-                                        {
-                                          label: host.t("scoreRange", "Range"),
-                                          value: row
-                                            ? `${format(host, row.score.min)} – ${format(host, row.score.max)}`
-                                            : "—",
-                                        },
-                                        row && baseOf(song)
-                                          ? { label: host.t("maxScore", "Highest"), value: html`${format(host, row.score.max)} ${delta(host, row.score.max, baseOf(song)?.score.max)}` }
-                                          : null,
-                                        row?.justWindow ? { label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, row.justWindow) } : null,
-                                        showSkipScore
-                                          ? {
-                                              label: host.t("skipScore", "Skip score"),
-                                              value: row ? format(host, row.skipScore) : "—",
-                                            }
-                                          : null,
-                                      ],
-                                      { numeric: true },
-                                    )}
-                        ${row ? html`<button class="button button--tonal" type="button" ?disabled=${host.running}
-                          @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
-                      </div>
-                    </li>
-                  `,
-                )}
-                </ul>
-                <div
-                  class="table-scroll tb-eval-desktop"
-                  role="region"
-                  tabindex="0"
-                  aria-label=${showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score")}
-                >
-                  <table class="data-table tb-eval">
-                    <thead>
-                      <tr>
-                        <th scope="col">${host.t("song", "Song")}</th>
-                        <th scope="col" class="is-numeric">${host.t("power", "Power")}</th>
-                        <th scope="col" class="is-numeric">${host.t("expectedScore", "Expected score")}</th>
-                        <th scope="col" class="is-numeric">${host.t("scoreRange", "Range")}</th>
-                        ${showJustWindow ? html`<th scope="col" class="is-numeric">${host.t("justWindowActual", "JUST tap window")}</th>` : nothing}
-                        ${
-                        showSkipScore
-                          ? html`
-                              <th scope="col" class="is-numeric">${host.t("skipScore", "Skip score")}</th>
-                            `
-                          : nothing
-                      }
-                        <th scope="col">${host.t("tg.title", "Team growth comparison")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${rows.map(
-                      ({ song, row }) => html`
-                        <tr>
-                          <th scope="row">
-                            ${catalog.songTitle(song.songId)}
-                            <small>${catalog.difficultyLabel(song.songId, song.difficulty)}</small>
-                          </th>
-                          <td class="is-numeric">${row ? html`${format(host, row.power)} ${delta(host, row.power, baseOf(song)?.power)}` : "—"}</td>
-                          <td class="is-numeric">${row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, baseOf(song)?.score.mean)}` : "—"}</td>
-                          <td class="is-numeric">
-                            ${row ? html`${format(host, row.score.min)} – ${format(host, row.score.max)} ${delta(host, row.score.max, baseOf(song)?.score.max)}` : "—"}
-                          </td>
-                          ${showJustWindow ? html`<td class="is-numeric">${row?.justWindow ? justWindowValue(host, row.justWindow) : "—"}</td>` : nothing}
-                          ${
-                                        showSkipScore
-                                          ? html`
-                                              <td class="is-numeric">${row ? format(host, row.skipScore) : "—"}</td>
-                                            `
-                                          : nothing
-                                      }
-                          <td>${row ? html`<button class="button button--text" type="button" ?disabled=${host.running}
-                            @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}</td>
-                        </tr>
-                      `,
-                    )}
-                    </tbody>
-                  </table>
+                      </article>
+                    `;
+                  })}
                 </div>
               </section>
             </div>
@@ -731,6 +692,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                     icon: "edit",
                                     label: host.t("loadTeam", "Open in the editor"),
                                     onClick: () => {
+                                      clearManualOrders(host);
                                       host.buildMode = "manual";
                                       host.setTab("build");
                                       host.manual = savedFormation(team);

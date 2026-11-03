@@ -2983,6 +2983,8 @@
       "provenReach": "Reach rate proven optimal for these cards and conditions",
       "unprovenReach": "Reach rate: best found so far",
       "criterionCapped": "Capped average",
+      "selectedOrderScore": "Selected-order score",
+      "replaceBaseline": "Update baseline",
       "criterionCappedHelp": "Rank by the average score, counting each order up to the target score.",
       "cappedScore": "Capped average",
       "provenCapped": "Capped average proven optimal for these cards and conditions",

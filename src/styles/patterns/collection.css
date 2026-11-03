@@ -504,7 +504,7 @@
   display: none;
   pointer-events: none;
 }
-.media-loading:has(img[data-src]:not([data-cancelled]):not(.is-error), img[data-loading]) > .media-loading__progress {
+.media-loading:has(img[data-loading]) > .media-loading__progress {
   display: grid;
 }
 .media-loading img.is-loaded {

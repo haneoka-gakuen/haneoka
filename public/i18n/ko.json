@@ -2983,6 +2983,8 @@
       "provenReach": "선택한 카드와 조건에서 달성률 최적성 확인",
       "unprovenReach": "달성률: 현재까지 찾은 최선의 결과",
       "criterionCapped": "상한 평균",
+      "selectedOrderScore": "선택한 스킬 순서 점수",
+      "replaceBaseline": "기준 갱신",
       "criterionCappedHelp": "각 스킬 순서의 점수를 목표 점수까지만 세어 평균으로 비교합니다.",
       "cappedScore": "상한 평균",
       "provenCapped": "선택한 카드와 조건에서 상한 평균 최적성 확인",

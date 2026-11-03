@@ -10,6 +10,7 @@ import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
+import { clearManualOrders, seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, render, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -759,6 +760,7 @@ export class TeamBuilder extends LitElement {
   }
   openSongComparison(formation?: typeof this.manual) {
     if (formation) {
+      clearManualOrders(this);
       this.manual = structuredClone(formation);
       this.manualResults = null;
     }
@@ -917,6 +919,7 @@ export class TeamBuilder extends LitElement {
   }
   /** Opens a result's formation in the manual editor and pins its evaluation as the baseline. */
   compareTeam(hit: EngineHit) {
+    seedManualOrder(this, hit);
     this.manual = {
       members: hit.members.map(cardIdOf),
       snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
