@@ -528,19 +528,15 @@ const publicForumsDataId = "shell-public-forums";
     // Material top app bar: the container switches to the "on scroll" surface once content scrolls under it.
     const bar = host.querySelector<HTMLElement>("[data-top-app-bar]");
     const main = host.querySelector<HTMLElement>("#main-content");
-    let frame = 0;
-    main?.addEventListener(
-      "scroll",
-      (event) => {
-        if (frame) return;
-        const target = event.target as HTMLElement;
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          bar?.classList.toggle("is-scrolled", target.scrollTop > 2);
-        });
-      },
-      { capture: true, passive: true },
-    );
+    let scrolled: boolean | undefined;
+    const syncScrollSurface = () => {
+      const next = (main?.scrollTop ?? 0) > 2;
+      if (next === scrolled) return;
+      scrolled = next;
+      bar?.classList.toggle("is-scrolled", next);
+    };
+    main?.addEventListener("scroll", syncScrollSurface, { passive: true });
+    syncScrollSurface();
 
     // The trailing row overflows its lowest-priority actions into a menu
     // when they do not fit beside the title. Lit replaces this subtree as

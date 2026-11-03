@@ -1,6 +1,7 @@
 import { LitElement, html } from "lit";
 import type { Material, Mesh, Object3D } from "three";
 import { loadingIndicator } from "../ui/loading-indicator";
+import { ViewportRenderLoop } from "./viewport-render-loop";
 
 export class ModelPreviewStage extends LitElement {
   static properties = { src: { type: String }, phase: { state: true }, error: { state: true } };
@@ -66,7 +67,7 @@ export class ModelPreviewStage extends LitElement {
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.screenSpacePanning = true;
-      let frame = 0;
+      const lifecycle: { loop?: ViewportRenderLoop; resize?: ResizeObserver } = {};
       let mixer: InstanceType<typeof THREE.AnimationMixer> | null = null;
       const disposeObject = (root: Object3D) => {
         root.traverse((object) => {
@@ -87,8 +88,9 @@ export class ModelPreviewStage extends LitElement {
       dispose = () => {
         if (disposed) return;
         disposed = true;
-        cancelAnimationFrame(frame);
-        observer?.disconnect();
+        lifecycle.loop?.dispose();
+        lifecycle.resize?.disconnect();
+        if (lifecycle.loop) controls.removeEventListener("change", lifecycle.loop.request);
         controls.dispose();
         mixer?.stopAllAction();
         if (mixer) mixer.uncacheRoot(mixer.getRoot());
@@ -97,7 +99,6 @@ export class ModelPreviewStage extends LitElement {
         renderer.forceContextLoss();
         renderer.domElement.remove();
       };
-      let observer: ResizeObserver | undefined;
       this.disposeRuntime = dispose;
       const gltf = await new GLTFLoader().loadAsync(src);
       if (generation !== this.generation) {
@@ -126,19 +127,21 @@ export class ModelPreviewStage extends LitElement {
         renderer.setSize(width, height, false);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        lifecycle.loop?.request();
       };
-      observer = new ResizeObserver(resize);
-      observer.observe(host);
+      lifecycle.resize = new ResizeObserver(resize);
+      lifecycle.resize.observe(host);
       resize();
       let previousTime = performance.now();
-      const render = (time = performance.now()) => {
+      const render = (time: number) => {
         mixer?.update(Math.min((time - previousTime) / 1000, 0.05));
         previousTime = time;
-        controls.update();
+        const changed = controls.update();
         renderer.render(scene, camera);
-        frame = requestAnimationFrame(render);
+        return !!mixer || changed;
       };
-      render();
+      lifecycle.loop = new ViewportRenderLoop(host, render);
+      controls.addEventListener("change", lifecycle.loop.request);
       this.phase = "ready";
     } catch (error) {
       dispose?.();

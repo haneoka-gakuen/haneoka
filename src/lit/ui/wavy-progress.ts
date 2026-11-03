@@ -12,7 +12,6 @@ export interface WavyProgressOptions {
 const clamp01 = (value: number) => (Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
 const positive = (value: number | undefined, fallback: number) =>
   value !== undefined && Number.isFinite(value) ? Math.max(0, value) : fallback;
-let sequence = 0;
 
 export function rampedAmplitude(progress: number): number {
   const value = clamp01(progress);
@@ -37,8 +36,12 @@ class WavyProgress extends LitElement {
   declare options: WavyProgressOptions;
   declare width: number;
   declare reduced: boolean;
-  private readonly clip = `haneoka-wave-${++sequence}`;
   private observer?: ResizeObserver;
+  private intersections?: IntersectionObserver;
+  private inViewport = true;
+  private readonly syncAnimation = () => {
+    this.toggleAttribute("data-wave-suspended", !this.inViewport || document.hidden);
+  };
   private media?: MediaQueryList;
   private shapeKey = "";
   private shapePath = "";
@@ -62,12 +65,23 @@ class WavyProgress extends LitElement {
       if (Math.abs(width - this.width) > 0.1) this.width = width;
     });
     this.observer.observe(this);
+    if (typeof IntersectionObserver !== "undefined") {
+      this.intersections = new IntersectionObserver(([entry]) => {
+        this.inViewport = entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0;
+        this.syncAnimation();
+      });
+      this.intersections.observe(this);
+    }
+    document.addEventListener("visibilitychange", this.syncAnimation);
+    this.syncAnimation();
     this.media = matchMedia("(prefers-reduced-motion: reduce)");
     this.onMotion();
     this.media.addEventListener("change", this.onMotion);
   }
   disconnectedCallback() {
     this.observer?.disconnect();
+    this.intersections?.disconnect();
+    document.removeEventListener("visibilitychange", this.syncAnimation);
     this.media?.removeEventListener("change", this.onMotion);
     super.disconnectedCallback();
   }
@@ -101,19 +115,22 @@ class WavyProgress extends LitElement {
         aria-valuenow=${label ? String(value * 100) : nothing}
       >
         ${svg`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
-          <defs><clipPath id=${this.clip}><rect x="0" y="0" width=${active} height=${height} rx=${thickness / 2} /></clipPath></defs>
           ${track < width && value < 1 ? svg`<path class="wavy-progress__track" d="M ${track} ${middle} L ${width - thickness / 2} ${middle}" />` : nothing}
-          ${
-            active > 0
-              ? svg`<g clip-path=${`url(#${this.clip})`}><g transform="translate(0 ${middle})">
-            <g class="wavy-progress__amplitude" style=${`transform:scaleY(${Math.max(0.001, amplitude)})`}>
-              <path class="wavy-progress__wave" d=${this.shapePath} />
-            </g>
-          </g></g>`
-              : nothing
-          }
           ${value < 1 ? svg`<circle class="wavy-progress__stop" cx=${width - 2} cy=${middle} r="2" />` : nothing}
         </svg>`}
+        ${active > 0 ? html`
+          <span class="wavy-progress__clip" style=${`width:${active}px;border-radius:${thickness / 2}px`} aria-hidden="true">
+            <span class="wavy-progress__travel" style=${`width:${width + wavelength * 2}px`}>
+              ${svg`<svg viewBox="0 0 ${width + wavelength * 2} ${height}" preserveAspectRatio="none">
+                <g transform="translate(0 ${middle})">
+                  <g class="wavy-progress__amplitude" style=${`transform:scaleY(${Math.max(0.001, amplitude)})`}>
+                    <path class="wavy-progress__wave" d=${this.shapePath} />
+                  </g>
+                </g>
+              </svg>`}
+            </span>
+          </span>
+        ` : nothing}
       </div>
     `;
   }

@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 共享编译后的 WASM 模块和四张固定谱面的下载，允许预取已选谱面并与 Worker 初始化并行；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 共享编译后的 WASM 模块和四张固定谱面的下载，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -321,12 +321,12 @@ export class EngineClient {
   prefetch(songs: readonly SongRef[]) {
     if (songs.length <= 4) for (const song of songs) void this.downloads.load(song).catch(() => {});
   }
-  /** Warm the pool after the first Worker is ready. */
-  warm() {
+  /** Warm the requested part of the pool after the first Worker is ready. */
+  warm(count = this.pool.length) {
     // The others compile once the first is ready, so the first search can use every Worker.
     const generation = this.generation;
     void this.pool[0]?.warm().then(() => {
-      if (generation === this.generation) for (const worker of this.pool.slice(1)) void worker.warm();
+      if (generation === this.generation) for (const worker of this.pool.slice(1, count)) void worker.warm();
     });
   }
   /** The idlest Worker, preferring one that has already compiled the release. */
