@@ -3780,7 +3780,9 @@
         "page_up": "Page up",
         "page_down": "Page down",
         "home": "Go to beginning",
-        "end": "Go to end"
+        "end": "Go to end",
+        "flick_left": "Left Flick tool",
+        "flick_right": "Right Flick tool"
       },
       "statistics": {
         "title": "Statistics",
@@ -3875,7 +3877,39 @@
         "rhythm": "CALL rhythm (0 / 1)"
       },
       "formatSus": "SUS",
-      "formatMmws": "MMW project (CCMMWS v6)"
+      "formatMmws": "MMW project (CCMMWS v6)",
+      "help": {
+        "open": "Guide",
+        "title": "Chart editor guide",
+        "welcome": "Create your first chart",
+        "practice": "Open practice chart",
+        "customize": "Customize shortcuts",
+        "find_command": "Find a command or key",
+        "step_audio": "Choose audio",
+        "start_audio": "Load local audio or choose a song from Server library. You can start with the practice chart.",
+        "step_place": "Place notes",
+        "start_place": "Choose a note tool, then click a lane. For a Hold or Guide, click the start and then a later end.",
+        "step_select": "Select and edit",
+        "start_select": "Use Select to drag a box around notes, move them, or resize their edges. Copy and paste a selection to repeat it.",
+        "step_play": "Listen and save",
+        "start_play": "Play the chart, undo anything you want to change, then save a version. Edit and Preview switch between writing and playback.",
+        "tool_select": "Drag empty space to select notes. Drag selected notes to move them, or their edges to resize. Shift adds to the selection.",
+        "tool_tap": "Click a lane to place a Tap. Right-click a note to erase it.",
+        "tool_flick": "Click a lane to place a Flick. Set its direction in Properties.",
+        "tool_trace": "Click a lane to place a Trace.",
+        "tool_hold": "Click the start, then a later position to finish the Hold.",
+        "tool_guide": "Click the start, then a later position to finish the Guide.",
+        "tool_erase": "Click a note to delete it. Right-click also erases while using other tools.",
+        "tool_pan": "Drag the canvas to move through time and across the lanes.",
+        "tool_brush": "Copy a selected note’s properties with the brush action, then drag over notes to apply them.",
+        "tool_node": "Click a Hold or Guide line to add a node. Set its visibility and curve in Properties.",
+        "line_end": "Click a later position to finish the line. Cancel clears the first point.",
+        "paste": "Move the preview with the pointer or arrow keys. Click or confirm to place it; cancel to discard it.",
+        "navigate": "Scroll to move through time. Ctrl/⌘ + scroll zooms; Shift + scroll pans across lanes.",
+        "grid": "The grid divides a whole note: 1/16 is four steps per beat.",
+        "place_at_pointer": "Place at pointer / Confirm paste",
+        "place": "Place"
+      }
     },
     "story": {
       "visual": "Visual",

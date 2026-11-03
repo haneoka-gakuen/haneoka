@@ -1,28 +1,34 @@
 // L3 — GEB
-// Input: 编辑器命令、浏览器按键及用户键位覆盖。
+// Input: 编辑器命令、Bestdori 常用单键、浏览器按键及用户键位覆盖。
 // Output: 统一键位显示、命令匹配与冲突检查。
 // Pos: [Map](../L2-2.md)；创作工作区快捷键配置。
 // Effects/Dependencies: 本地 localStorage 保存覆盖；不捕获输入框或注册全局事件。
 export const chartCreationTools = ["select", "tap", "flick", "trace", "hold", "guide", "erase", "pan", "brush", "node"] as const;
 export const chartSnapDivisions = [4, 8, 12, 16, 24, 32, 48, 64] as const;
+const toolLetters: Partial<Record<typeof chartCreationTools[number], string[]>> = {
+  select: ["KeyR"], tap: ["KeyF"], flick: ["KeyG"], erase: ["KeyT"],
+};
 interface ShortcutCommand { id: string; label: string; defaults: readonly string[] }
 export const chartShortcutCommands: readonly ShortcutCommand[] = [
   { id: "save", label: "creation.save", defaults: ["Mod+KeyS"] },
-  { id: "undo", label: "undo", defaults: ["Mod+KeyZ"] },
-  { id: "redo", label: "redo", defaults: ["Mod+Shift+KeyZ", "Mod+KeyY"] },
+  { id: "undo", label: "undo", defaults: ["KeyZ", "Mod+KeyZ"] },
+  { id: "redo", label: "redo", defaults: ["KeyY", "Mod+Shift+KeyZ", "Mod+KeyY"] },
   { id: "play", label: "shortcuts.play", defaults: ["Space"] },
   { id: "cancel", label: "shortcuts.cancel", defaults: ["Escape"] },
-  { id: "confirm", label: "patterns.place", defaults: ["Enter"] },
+  { id: "confirm", label: "help.place_at_pointer", defaults: ["Enter"] },
   { id: "select_all", label: "shortcuts.select_all", defaults: ["Mod+KeyA"] },
-  { id: "cut", label: "creation.cut", defaults: ["Mod+KeyX"] },
-  { id: "copy", label: "creation.copy", defaults: ["Mod+KeyC"] },
+  { id: "cut", label: "creation.cut", defaults: ["KeyX", "Mod+KeyX"] },
+  { id: "copy", label: "creation.copy", defaults: ["KeyC", "Mod+KeyC"] },
   { id: "copy_segments", label: "creation.copy_segments", defaults: [] },
-  { id: "paste", label: "creation.paste", defaults: ["Mod+KeyV"] },
+  { id: "paste", label: "creation.paste", defaults: ["KeyV", "Mod+KeyV"] },
   { id: "paste_mirrored", label: "creation.paste_mirrored", defaults: ["Mod+Shift+KeyV"] },
   { id: "duplicate", label: "creation.duplicate", defaults: ["Mod+KeyD"] },
   { id: "duplicate_mirrored", label: "creation.duplicate_mirrored", defaults: ["Mod+Shift+KeyD"] },
   { id: "delete", label: "deleteSelection", defaults: ["Delete", "Backspace"] },
-  { id: "flip", label: "creation.flip", defaults: ["Mod+KeyF"] },
+  { id: "flip", label: "creation.flip", defaults: ["KeyQ", "Mod+KeyF"] },
+  { id: "flick_left", label: "shortcuts.flick_left", defaults: ["KeyS"] },
+  { id: "flick_right", label: "shortcuts.flick_right", defaults: ["KeyD"] },
+  { id: "help", label: "help.title", defaults: ["F1", "Shift+Slash"] },
   { id: "join", label: "creation.join_lines", defaults: [] },
   { id: "split", label: "creation.split_line", defaults: [] },
   { id: "repeat", label: "creation.repeat_nodes", defaults: [] },
@@ -55,7 +61,8 @@ export const chartShortcutCommands: readonly ShortcutCommand[] = [
   { id: "audio_settings", label: "audio.title", defaults: [] },
   { id: "note_sounds", label: "labels.noteSound", defaults: [] },
   { id: "metronome", label: "audio.metronome", defaults: [] },
-  ...chartCreationTools.map((tool, index) => ({ id: `tool:${tool}`, label: tool === "brush" ? "creation.brush" : tool, defaults: [`Digit${(index + 1) % 10}`] })),
+  ...chartCreationTools.map((tool, index) => ({ id: `tool:${tool}`, label: tool === "brush" ? "creation.brush" : tool,
+    defaults: [...(toolLetters[tool] ?? []), `Digit${(index + 1) % 10}`] })),
   ...chartSnapDivisions.map((division, index) => ({ id: `grid:${division}`, label: `1/${division}`, defaults: [`Shift+Digit${index + 1}`] })),
 ];
 export type ChartShortcutOverrides = Record<string, string[]>;
@@ -66,7 +73,8 @@ export function shortcutForEvent(event: KeyboardEvent): string | undefined {
   return validBinding.test(binding) ? binding : undefined;
 }
 export function chartShortcutBindings(overrides: ChartShortcutOverrides, id: string): readonly string[] {
-  return overrides[id] ?? chartShortcutCommands.find(command => command.id === id)?.defaults ?? [];
+  return overrides[id] ?? (chartShortcutCommands.find(command => command.id === id)?.defaults ?? [])
+    .filter(binding => !Object.entries(overrides).some(([other, bindings]) => other !== id && bindings.includes(binding)));
 }
 export function matchChartShortcut(overrides: ChartShortcutOverrides, event: KeyboardEvent): string | undefined {
   const binding = shortcutForEvent(event);

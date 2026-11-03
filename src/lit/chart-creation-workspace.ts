@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 本地／云端工程、GBP 歌曲导入地址、歌曲资料、音频与原生素材 release 身份。
-// Output: 谱面与滑条结构编辑、精确定位、路标与游戏事件、图案／键位配置、编辑音频及原生统计、保存及社区发布；预览复用 chart-simulator。
+// Output: 谱面与滑条结构编辑、入门与工具提示、精确定位、路标与游戏事件、图案／键位配置、编辑音频及原生统计、保存及社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
 // Effects/Dependencies: IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -360,6 +360,8 @@ export class ChartCreationWorkspace extends LitElement {
   private statisticsSnapshot?: { project: Project; audio: CreationAudio | undefined; locale: string; facts: [string, string | number][] };
   private shortcutOverrides: ChartShortcutOverrides = {};
   private shortcutsOpen = false;
+  private shortcutSearch = "";
+  private guideOpen = false;
   private recordingShortcut?: { id: string; index: number };
   private shortcutError = "";
   private exportFormat: ExportFormat = "project";
@@ -1013,7 +1015,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.requestUpdate();
   }
   private loadAudio(file: File, example = false) {
-    void this.run(async (signal) => {
+    return this.run(async (signal) => {
       const audio = await decodeCreationAudio(file, signal);
       await this.save();
       this.preview?.dispose();
@@ -1045,6 +1047,13 @@ export class ChartCreationWorkspace extends LitElement {
       this.windowStart = 0;
       this.rebuildPreview(0);
     });
+  }
+  private async startPractice() {
+    this.guideOpen = false;
+    this.closePanels();
+    await this.loadAudio(createExampleAudio(), true);
+    await this.updateComplete;
+    this.querySelector<HTMLCanvasElement>(".chart-creation__editor")?.focus({ preventScroll: true });
   }
   private async openCommunity(id: string, signal: AbortSignal) {
     const requestedRevision = Number(new URL(location.href).searchParams.get("revision"));
@@ -1191,13 +1200,15 @@ export class ChartCreationWorkspace extends LitElement {
     }
   };
   private keydown = (event: KeyboardEvent) => {
-    if (!this.isConnected || this.busy || event.defaultPrevented || event.isComposing || event.repeat) return;
+    if (!this.isConnected || this.busy || event.defaultPrevented || event.isComposing) return;
     const path = event.composedPath();
-    if (!path.some(node => node === this || node instanceof HTMLElement && node.dataset.appBarOwner === this.toolbarOwner)) return;
+    const pageFocused = document.activeElement === document.body || document.activeElement === document.documentElement;
+    if (!pageFocused && !path.some(node => node === this || node instanceof HTMLElement && node.dataset.appBarOwner === this.toolbarOwner)) return;
     if (document.querySelector("dialog[open]")) return;
     const shortcut = matchChartShortcut(this.shortcutOverrides, event);
     if (shortcut === "save") {
       event.preventDefault();
+      if (event.repeat) return;
       (document.activeElement as HTMLElement | null)?.blur();
       void this.run(() => this.save());
       return;
@@ -1217,6 +1228,11 @@ export class ChartCreationWorkspace extends LitElement {
       return;
     if ([" ", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)
       && path.some(node => node instanceof HTMLElement && node.matches("button,a[href],[role=button],[role=radio],[role=checkbox]"))) return;
+    if (event.repeat && shortcut && !/^(pan_|page_|nudge_|tick_|width_|zoom_)/u.test(shortcut)
+      && !(this.pastePlacement && event.code.startsWith("Arrow"))) {
+      event.preventDefault();
+      return;
+    }
     if (this.pastePlacement) {
       const placement = this.pastePlacement;
       if (shortcut === "cancel" || shortcut === "undo") this.cancelPaste();
@@ -1265,7 +1281,22 @@ export class ChartCreationWorkspace extends LitElement {
       }
       case "play": this.togglePlayback(); break;
       case "cancel": this.pending = undefined; this.setSelection([]); this.requestUpdate(); break;
-      case "confirm": return false;
+      case "confirm": {
+        if (!this.audio || this.canvasLoading || !this.canvasTheme || !this.cursor
+          || !["tap", "flick", "trace", "hold", "guide", "node"].includes(this.tool)) return false;
+        const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
+        if (!canvas) return false;
+        const rect = canvas.getBoundingClientRect(), { clientX, clientY } = this.cursor;
+        if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+        const seconds = this.windowStart + (1 - (clientY - rect.top) / rect.height) * this.secondsPerScreen;
+        this.place(Math.max(0, this.gridTick(this.map().secondsToTick(seconds))),
+          Math.round(viewportXToAuthoredLane(clientX - rect.left, rect.width, this.laneView(this.chart))));
+        break;
+      }
+      case "flick_left": case "flick_right":
+        this.tool = "flick"; this.direction = command === "flick_left" ? "left" : "right";
+        this.pending = undefined; this.requestUpdate(); break;
+      case "help": this.showGuide(); break;
       case "select_all": this.setSelection(this.selectionNodes().map(item => item.note.id)); break;
       case "cut": this.cutSelection(); break;
       case "copy": this.clipboard = copyAuthorSelection(this.chart, this.selectedIds); this.requestUpdate(); break;
@@ -1610,7 +1641,7 @@ export class ChartCreationWorkspace extends LitElement {
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
   }
   private hit(event: PointerEvent) {
-    if (this.busy || !this.audio || this.canvasLoading || !this.canvasTheme || this.gesture || this.pan || event.button !== 0 || !event.isPrimary) return;
+    if (this.busy || !this.audio || this.canvasLoading || !this.canvasTheme || this.gesture || this.pan || ![0, 2].includes(event.button) || !event.isPrimary) return;
     const canvas = event.currentTarget as HTMLCanvasElement;
     canvas.focus();
     if (this.pastePlacement) {
@@ -1620,7 +1651,7 @@ export class ChartCreationWorkspace extends LitElement {
       return;
     }
     this.trackCursor(event);
-    if (this.tool === "pan") {
+    if (this.tool === "pan" && event.button === 0) {
       this.pan = {
         pointer: event.pointerId,
         x: event.clientX,
@@ -1640,7 +1671,7 @@ export class ChartCreationWorkspace extends LitElement {
     const tick = Math.max(0, this.gridTick(map.secondsToTick(seconds))),
       lane = Math.round(pointerLane);
     const edgeTolerance = ((event.pointerType === "touch" ? 14 : 8) / rect.width) * laneSpan;
-    if (this.tool === "node") { this.insertNodeAt(tick, pointerLane, edgeTolerance); return; }
+    if (this.tool === "node" && event.button === 0) { this.insertNodeAt(tick, pointerLane, edgeTolerance); return; }
     const selectedEdge = (item: ReturnType<typeof chartSelectionNodes>[number]) =>
       this.selectedIds.has(item.note.id) &&
       Math.min(Math.abs(pointerLane - item.lane), Math.abs(pointerLane - item.lane - item.size)) <= edgeTolerance;
@@ -1668,7 +1699,7 @@ export class ChartCreationWorkspace extends LitElement {
           ? "resize-left"
           : "resize-right"
         : undefined;
-    if (this.tool === "select" || this.tool === "brush") {
+    if ((this.tool === "select" || this.tool === "brush") && event.button === 0) {
       if (this.tool === "brush" && !nearby) return;
       const previous = [...this.selectedIds],
         primary = this.selected,
@@ -1715,7 +1746,7 @@ export class ChartCreationWorkspace extends LitElement {
       if (this.tool === "brush") this.applyGesture();
       return;
     }
-    if (this.tool === "erase") {
+    if (this.tool === "erase" || event.button === 2) {
       if (nearby)
         this.edit((p) => {
           p.singles = p.singles.filter((n) => n.id !== nearby.id);
@@ -2502,8 +2533,74 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private showShortcuts() {
     this.cancelGesture(); this.cancelWidth(); this.closePanels();
+    this.shortcutSearch = "";
     this.recordingShortcut = undefined; this.shortcutError = ""; this.shortcutsOpen = true;
     this.requestUpdate();
+  }
+  private showGuide() {
+    this.cancelGesture(); this.cancelWidth(); this.closePanels();
+    this.guideOpen = true;
+    this.requestUpdate();
+  }
+  private toolLabel(tool: string) {
+    return this.t(tool === "brush" ? "creation.brush" : tool);
+  }
+  private renderGuide() {
+    if (!this.guideOpen) return nothing;
+    return html`<dialog class="dialog chart-studio__guide" aria-label=${this.t("help.title")}
+      ${modal(() => { this.guideOpen = false; this.requestUpdate(); })}>
+      <header class="dialog__header"><h2>${this.t("help.title")}</h2></header>
+      <div class="dialog__body"><div class="stack">
+        <div class="cluster">
+          <button class="button button--tonal" type="button" ?disabled=${this.busy} @click=${() => void this.startPractice()}>${this.t("help.practice")}</button>
+          <button class="button button--text" type="button" @click=${() => { this.guideOpen = false; this.showShortcuts(); }}>${this.t("help.customize")}</button>
+        </div>
+        <ol class="chart-studio__steps">
+          ${["audio", "place", "select", "play"].map(step => html`<li>
+            <strong>${this.t(`help.step_${step}`)}</strong><p>${this.t(`help.start_${step}`)}</p>
+          </li>`)}
+        </ol>
+        <h3 class="detail-section-title">${this.t("currentTool")}</h3>
+        <dl class="spec-list">
+          ${creationTools.map(tool => html`<div>
+            <dt>${this.toolLabel(tool)} <kbd>${chartShortcutBindings(this.shortcutOverrides, `tool:${tool}`).map(displayChartShortcut).join(" / ")}</kbd></dt>
+            <dd>${this.t(`help.tool_${tool}`)}</dd>
+          </div>`)}
+        </dl>
+        <h3 class="detail-section-title">${this.t("shortcuts.title")}</h3>
+        <dl class="spec-list">
+          ${["flick_left", "flick_right", "undo", "redo", "cut", "copy", "paste", "flip", "save", "play", "confirm", "cancel"].map(id => {
+            const command = chartShortcutCommands.find(item => item.id === id)!;
+            return html`<div><dt>${this.shortcutCommandLabel(command)}</dt><dd><kbd>${this.shortcutLabel(id)}</kbd></dd></div>`;
+          })}
+        </dl>
+        <p>${this.t("help.navigate")}</p>
+        <p>${this.t("help.grid")}</p>
+
+      </div></div>
+      <footer class="dialog__actions"><button class="button button--text" type="button"
+        @click=${() => { this.guideOpen = false; this.requestUpdate(); }}>${this.c("close")}</button></footer>
+    </dialog>`;
+  }
+  private renderToolHint() {
+    const placing = Boolean(this.pastePlacement),
+      command = placing ? "confirm" : `tool:${this.tool}`,
+      binding = chartShortcutBindings(this.shortcutOverrides, command)[0];
+    return html`<div class="chart-studio__tool-help" ?hidden=${this.stageMode !== "edit"}>
+      <div>
+        <strong>${placing ? this.t("patterns.place") : this.toolLabel(this.tool)}${!placing && this.tool === "flick"
+          ? ` · ${this.t(`direction${this.direction[0].toUpperCase()}${this.direction.slice(1)}`)}` : ""}</strong>
+        ${binding ? html`<kbd>${displayChartShortcut(binding)}</kbd>` : nothing}
+        ${!placing && ["tap", "flick", "trace", "hold", "guide", "node"].includes(this.tool)
+          && chartShortcutBindings(this.shortcutOverrides, "confirm").length ? html`<span class="chart-studio__place-key">
+            <kbd>${displayChartShortcut(chartShortcutBindings(this.shortcutOverrides, "confirm")[0])}</kbd> ${this.t("help.place")}
+          </span>` : nothing}
+        <p id="chart-studio-tool-help">${this.t(!this.audio ? "help.start_audio" : placing ? "help.paste" : this.pending ? "help.line_end" : `help.tool_${this.tool}`)}</p>
+      </div>
+      <button class="button button--text" type="button" @click=${() => this.showGuide()}>
+        ${icon("help", 20)}${this.t("help.open")}
+      </button>
+    </div>`;
   }
   private renderShortcuts() {
     if (!this.shortcutsOpen) return nothing;
@@ -2514,8 +2611,13 @@ export class ChartCreationWorkspace extends LitElement {
       ${modal(() => { this.shortcutsOpen = false; this.recordingShortcut = undefined; this.requestUpdate(); })}>
       <header class="dialog__header"><h2>${this.t("shortcuts.title")}</h2><output class="chart-studio__dialog-status" role="status">${this.shortcutError}</output></header>
       <div class="dialog__body">
+        <md-outlined-text-field class="md3-textfield" label=${this.t("help.find_command")} type="search"
+          .value=${this.shortcutSearch} @input=${(event: Event) => {
+            this.shortcutSearch = (event.target as HTMLInputElement).value; this.requestUpdate();
+          }}></md-outlined-text-field>
         <div class="stack">
-          ${chartShortcutCommands.map(command => {
+          ${chartShortcutCommands.filter(command => `${this.shortcutCommandLabel(command)} ${this.shortcutLabel(command.id)}`
+            .toLocaleLowerCase(this.locale).includes(this.shortcutSearch.trim().toLocaleLowerCase(this.locale))).map(command => {
             const bindings = chartShortcutBindings(this.shortcutOverrides, command.id), label = this.shortcutCommandLabel(command);
             const bindingButton = (binding: string | undefined, index: number) => html`<button class="button button--tonal" type="button"
               aria-label=${`${label} / ${binding ? displayChartShortcut(binding) : this.t("shortcuts.add")}`}
@@ -3849,6 +3951,7 @@ export class ChartCreationWorkspace extends LitElement {
 
       ${this.renderPatterns()}
       ${this.renderShortcuts()}
+      ${this.renderGuide()}
       <chart-creation-library
         .pageData=${this.pageData}
         .locale=${this.locale as HaneokaLocale}
@@ -3927,6 +4030,7 @@ export class ChartCreationWorkspace extends LitElement {
             )[value],
           })),
           iconOnly: true,
+          showShortcuts: true,
           onSelect: (value) => {
             if (!this.busy) {
               this.cancelGesture();
@@ -4002,6 +4106,7 @@ export class ChartCreationWorkspace extends LitElement {
             ${icon("tune")}
           </button>
         </div>
+        ${this.renderToolHint()}
         <div class="chart-studio__messages">
           ${
           this.error
@@ -4068,6 +4173,7 @@ export class ChartCreationWorkspace extends LitElement {
               ?hidden=${this.stageMode !== "edit"}
               role="img"
               aria-label=${this.t("edit")}
+              aria-describedby="chart-studio-tool-help"
               tabindex="0"
               style=${this.pastePlacement || ["pan", "select", "brush"].includes(this.tool) ? "touch-action:none" : "touch-action:manipulation"}
               @pointerdown=${this.hit}
@@ -4077,6 +4183,7 @@ export class ChartCreationWorkspace extends LitElement {
               @pointercancel=${this.panEnd}
               @lostpointercapture=${this.panEnd}
               @wheel=${this.wheel}
+              @contextmenu=${(event: MouseEvent) => { if (this.audio) event.preventDefault(); }}
             ></canvas>
             ${this.audio && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
             <output class="chart-studio__cursor" data-cursor aria-live="off" hidden></output>
@@ -4100,7 +4207,7 @@ export class ChartCreationWorkspace extends LitElement {
                       <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary()}>
                         ${icon("library_music")}${this.t("serverLibrary")}
                       </button>
-                      <strong>${this.t("project")}</strong>
+                      <strong>${this.t("help.welcome")}</strong>
                       <button
                         class="button button--filled"
                         ?disabled=${this.busy}
@@ -4111,9 +4218,12 @@ export class ChartCreationWorkspace extends LitElement {
                       <button
                         class="button button--text"
                         ?disabled=${this.busy}
-                        @click=${() => this.loadAudio(createExampleAudio(), true)}
+                        @click=${() => void this.startPractice()}
                       >
-                        ${this.t("creation.example")}
+                        ${this.t("help.practice")}
+                      </button>
+                      <button class="button button--text" type="button" @click=${() => this.showGuide()}>
+                        ${icon("help", 20)}${this.t("help.title")}
                       </button>
                     </div>
                   `

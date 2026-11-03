@@ -104,6 +104,8 @@ export interface SegmentedOptions<T extends string> {
   onSelect: (value: T) => void;
   /** Icon-only segments keep their label in the accessibility tree. */
   iconOnly?: boolean;
+  /** Show each option's primary binding beside its icon. */
+  showShortcuts?: boolean;
   /** Text segments fill available space by default; false opts into a compact group. */
   grow?: boolean;
 }
@@ -144,6 +146,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
             @click=${() => options.onSelect(option.value)}
           >
             ${option.icon ? icon(option.icon, 20) : nothing}
+            ${options.showShortcuts && option.shortcut ? html`<kbd>${option.shortcut.split(" / ")[0]}</kbd>` : nothing}
             ${
               options.iconOnly
                 ? nothing
