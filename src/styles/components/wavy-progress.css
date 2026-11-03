@@ -4,17 +4,29 @@ haneoka-wavy-progress {
   min-width: 0;
 }
 .wavy-progress {
+  position: relative;
   display: block;
   width: 100%;
   min-width: 0;
   /* Tall enough for the wave's peaks plus a full stroke of headroom. */
   height: var(--wavy-height, 20px);
 }
-.wavy-progress > svg {
+.wavy-progress svg {
   display: block;
   width: 100%;
   height: 100%;
   overflow: hidden;
+}
+.wavy-progress__clip {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+}
+.wavy-progress__travel {
+  display: block;
+  height: 100%;
+  animation: wavy-progress-travel 1s linear infinite;
+  will-change: transform;
 }
 .wavy-progress path,
 .wavy-progress circle {
@@ -38,7 +50,6 @@ haneoka-wavy-progress {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: var(--wavy-thickness, 4px);
-  animation: wavy-progress-travel 1s linear infinite;
 }
 .wavy-progress__stop {
   fill: var(--md-sys-color-primary);
@@ -51,12 +62,18 @@ haneoka-wavy-progress {
 }
 /* Paused, or reduced motion: a flat line. The wave means "playing", so a
  * still wave would be decoration. */
-.wavy-progress.is-still .wavy-progress__wave {
+.wavy-progress.is-still .wavy-progress__travel {
   animation: none;
+  will-change: auto;
+}
+haneoka-wavy-progress[data-wave-suspended] .wavy-progress__travel {
+  animation-play-state: paused;
+  will-change: auto;
 }
 @media (prefers-reduced-motion: reduce) {
-  .wavy-progress__wave {
+  .wavy-progress__travel {
     animation: none;
+    will-change: auto;
   }
   .wavy-progress__amplitude {
     transition: none;

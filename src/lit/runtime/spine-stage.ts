@@ -1,6 +1,7 @@
 import type * as Spine from "@esotericsoftware/spine-threejs";
 import type * as THREE from "three";
 import { viewerBufferSize } from "./viewer-resolution";
+import { ViewportRenderLoop } from "./viewport-render-loop";
 
 type Value = Record<string, unknown>;
 type Resource = { name?: string; url?: string };
@@ -56,6 +57,8 @@ export function installPainterOrder(mesh: Spine.SkeletonMesh, spine: typeof Spin
   const internals = mesh as unknown as { nextBatch(): Batcher };
   const next = internals.nextBatch.bind(mesh);
   const configured = new WeakSet<Batcher>();
+  const assignments = new WeakMap<THREE.Material, { texture: THREE.Texture; blend: unknown }>();
+  const blendSettings = new Map<Spine.BlendMode, ReturnType<typeof spine.ThreeJsTexture.toThreeJsBlending>>();
   internals.nextBatch = () => {
     const batch = next();
     if (configured.has(batch)) return batch;
@@ -71,9 +74,20 @@ export function installPainterOrder(mesh: Spine.SkeletonMesh, spine: typeof Spin
       const material =
         (batch.material[index] as (THREE.Material & { map: THREE.Texture | null }) | undefined) ?? batch.newMaterial();
       if (!batch.material[index]) batch.material.push(material);
+      const mode = blend as Spine.BlendMode;
+      let blending = blendSettings.get(mode);
+      if (!blending) {
+        blending = spine.ThreeJsTexture.toThreeJsBlending(mode);
+        blendSettings.set(mode, blending);
+      }
+      const previous = assignments.get(material);
+      // MeshBatcher.clear resets map/blending before every geometry update.
       material.map = texture;
-      Object.assign(material, spine.ThreeJsTexture.toThreeJsBlending(blend as Spine.BlendMode));
-      material.needsUpdate = true;
+      Object.assign(material, blending);
+      if (!previous || previous.texture !== texture || previous.blend !== blend) {
+        material.needsUpdate = true;
+        assignments.set(material, { texture, blend });
+      }
       return index;
     };
     return batch;
@@ -83,7 +97,7 @@ export function installPainterOrder(mesh: Spine.SkeletonMesh, spine: typeof Spin
 export class SpineStage {
   private active?: Loaded;
   private request?: AbortController;
-  private frame = 0;
+  private renderLoop?: ViewportRenderLoop;
   private lastFrame = 0;
   private observer?: ResizeObserver;
   private paused = false;
@@ -201,7 +215,8 @@ export class SpineStage {
       this.observer.observe(this.host);
       this.resize();
       if (!this.fit || !this.captureFrame()) throw new Error("Spine model has no renderable frame");
-      this.frame = requestAnimationFrame(this.render);
+      this.renderLoop = new ViewportRenderLoop(this.host, this.render);
+      renderer.domElement.addEventListener("webglcontextrestored", this.contextRestored);
     } catch (error) {
       controller.abort();
       if (!committed) this.releaseResources(partial);
@@ -267,6 +282,7 @@ export class SpineStage {
     this.background = color;
     const stage = this.active;
     if (stage) this.applyBackground(stage.renderer, stage.three);
+    this.renderLoop?.request();
   }
   setTransform(transform: SpineTransform): SpineTransform {
     this.transform = {
@@ -282,6 +298,8 @@ export class SpineStage {
   }
   setPaused(value: boolean) {
     this.paused = value;
+    this.lastFrame = 0;
+    this.renderLoop?.request();
   }
   seek(seconds: number) {
     const stage = this.active;
@@ -299,12 +317,15 @@ export class SpineStage {
       this.active.mesh.state.setAnimation(0, this.animation, value);
       this.applyPlaybackRate(this.active.mesh.state);
     }
+    this.renderLoop?.request();
   }
   replay() {
     if (this.active && this.animation) {
       this.active.mesh.state.setAnimation(0, this.animation, this.loop);
       this.applyPlaybackRate(this.active.mesh.state);
       this.paused = false;
+      this.lastFrame = 0;
+      this.renderLoop?.request();
     }
   }
   play(name: string) {
@@ -313,6 +334,8 @@ export class SpineStage {
     this.active.mesh.state.setAnimation(0, name, this.loop);
     this.applyPlaybackRate(this.active.mesh.state);
     this.paused = false;
+    this.lastFrame = 0;
+    this.renderLoop?.request();
     return true;
   }
   private resize() {
@@ -345,22 +368,26 @@ export class SpineStage {
   }
   private render = (now: number) => {
     const stage = this.active;
-    if (!stage) return;
+    if (!stage) return false;
     const delta = this.lastFrame ? Math.min((now - this.lastFrame) / 1000, 0.1) : 0;
     this.lastFrame = now;
     if (!this.paused) stage.mesh.update(delta);
     if (stage.renderer.getContext().isContextLost()) {
-      this.frame = requestAnimationFrame(this.render);
-      return;
+      return false;
     }
     stage.renderer.render(stage.scene, stage.camera);
-    this.frame = requestAnimationFrame(this.render);
+    return !this.paused && !!this.animation;
+  };
+  private readonly contextRestored = () => {
+    this.lastFrame = 0;
+    this.resize();
+    this.renderLoop?.request();
   };
   dispose() {
     this.request?.abort();
     this.request = undefined;
-    cancelAnimationFrame(this.frame);
-    this.frame = 0;
+    this.renderLoop?.dispose();
+    this.renderLoop = undefined;
     this.lastFrame = 0;
     this.observer?.disconnect();
     this.fit = undefined;
@@ -369,6 +396,7 @@ export class SpineStage {
     this.skin = "";
     const stage = this.active;
     this.active = undefined;
+    stage?.renderer.domElement.removeEventListener("webglcontextrestored", this.contextRestored);
     if (stage) this.releaseResources(stage);
   }
 
@@ -416,5 +444,6 @@ export class SpineStage {
     stage.camera.position.set(centerX, centerY, 10);
     stage.camera.lookAt(centerX, centerY, 0);
     stage.camera.updateProjectionMatrix();
+    this.renderLoop?.request();
   }
 }

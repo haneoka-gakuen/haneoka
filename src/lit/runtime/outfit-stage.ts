@@ -1,4 +1,5 @@
 import { installPainterOrder } from "./spine-stage";
+import { ViewportRenderLoop } from "./viewport-render-loop";
 
 type Value = Record<string, unknown>;
 type Part = { modelId?: string; order?: number };
@@ -9,7 +10,7 @@ type LoadedPart = {
 };
 
 export class OutfitStage {
-  private frame = 0;
+  private renderLoop?: ViewportRenderLoop;
   private last = 0;
   private generation = 0;
   private resizeObserver?: ResizeObserver;
@@ -122,7 +123,7 @@ export class OutfitStage {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.host);
     this.resize();
-    this.frame = requestAnimationFrame(this.render);
+    this.renderLoop = new ViewportRenderLoop(this.host, this.render);
   }
   private resize() {
     const stage = this.active;
@@ -148,15 +149,16 @@ export class OutfitStage {
     stage.camera.position.set(center.x, center.y, 10);
     stage.camera.lookAt(center.x, center.y, 0);
     stage.camera.updateProjectionMatrix();
+    this.renderLoop?.request();
   }
   private render = (now: number) => {
     const stage = this.active;
-    if (!stage) return;
+    if (!stage) return false;
     const delta = this.last ? Math.min((now - this.last) / 1000, 0.1) : 0;
     this.last = now;
     stage.parts.forEach((part) => part.mesh.update(delta));
     stage.renderer.render(stage.scene, stage.camera);
-    this.frame = requestAnimationFrame(this.render);
+    return stage.parts.some(part => part.mesh.state.getCurrent(0) !== null);
   };
   private disposeParts(parts: LoadedPart[]) {
     for (const part of parts) {
@@ -167,8 +169,8 @@ export class OutfitStage {
   }
   dispose(preserveFrame = false) {
     this.generation += 1;
-    cancelAnimationFrame(this.frame);
-    this.frame = 0;
+    this.renderLoop?.dispose();
+    this.renderLoop = undefined;
     this.last = 0;
     this.resizeObserver?.disconnect();
     if (this.active) {

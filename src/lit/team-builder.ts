@@ -651,8 +651,10 @@ export class TeamBuilder extends LitElement {
       this.engine?.dispose();
       this.engine = new EngineClient(data, () => this.requestUpdate());
       this.engine.prefetch(this.searchSettings.songs);
-      // Compile the release in every Worker while the reader sets up the search.
-      const warm = () => this.engine?.warm();
+      const engine = this.engine;
+      const warm = () => {
+        if (this.isConnected && this.engine === engine && !loadController.signal.aborted) engine.warm(1);
+      };
       if ("requestIdleCallback" in window) requestIdleCallback(warm, { timeout: 2000 });
       else setTimeout(warm, 500);
       this.unsubscribe?.();
