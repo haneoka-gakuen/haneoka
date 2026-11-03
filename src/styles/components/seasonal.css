@@ -1,23 +1,21 @@
 @layer components {
-  /* The brand mark sits in a tonal container cut to the season's shape, with its ornament on the corner. */
-  :root[data-season] .nav__brand img {
+  :root[data-season]:not([data-season="birthday"]) .nav__brand img {
     box-sizing: border-box;
     padding: 3px;
     background: var(--md-sys-color-primary-container);
     clip-path: var(--season-shape, var(--shape-circle));
   }
+  .nav__brand img[data-birthday] {
+    border-radius: var(--md-sys-shape-corner-full);
+    object-fit: cover;
+  }
+  :root[data-season="birthday"] :is(.season-layer, .season-celebration) {
+    --md-sys-color-tertiary: var(--md-sys-color-primary);
+    --md-sys-color-tertiary-container: var(--md-sys-color-primary-container);
+  }
   :root[data-season="april-fools"] .nav__brand img { rotate: 180deg; }
   :root[data-season="april-fools"] .nav__brand > span { display: none; }
   :root[data-season="april-fools"] .nav__brand::after { content: "hanasakigawa"; }
-  .season-ornament {
-    position: absolute;
-    top: 0;
-    left: 0;
-    display: grid;
-    color: var(--md-sys-color-tertiary);
-    rotate: -18deg;
-    pointer-events: none;
-  }
 
   .season-layer {
     position: fixed;
@@ -140,5 +138,10 @@
     :root[data-season-layer] :not(.nav-modal-open) > .nav { background: transparent; }
   }
   :root[data-season-layer] .app-shell__main { background: color-mix(in srgb, var(--md-sys-color-surface) 55%, transparent); }
-  :root[data-season-layer] .top-app-bar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 55%, transparent); }
+  :root[data-season-layer] .top-app-bar { background: transparent; }
+  @media (max-width: 599px) {
+    :root[data-season-layer] .top-app-bar {
+      background: color-mix(in srgb, var(--md-sys-color-surface-container) 55%, transparent);
+    }
+  }
 }

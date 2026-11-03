@@ -344,6 +344,23 @@
   "home": {
     "dashboard": {
       "overview": "Home overview",
+      "greetings": {
+        "birthday": "Happy Birthday, {name}!",
+        "newYear": "Happy New Year!",
+        "setsubun": "Fortune in, demons out!",
+        "lunarNewYear": "Happy Lunar New Year!",
+        "valentine": "Happy Valentine's Day!",
+        "hinamatsuri": "Happy Hinamatsuri!",
+        "whiteDay": "Happy White Day!",
+        "hanami": "The cherry blossoms are here!",
+        "aprilFools": "Happy April Fools’ Day!",
+        "childrensDay": "Happy Children’s Day!",
+        "tanabata": "Happy Tanabata!",
+        "obon": "Wishing you a peaceful Obon.",
+        "midAutumn": "Happy Mid-Autumn Festival!",
+        "halloween": "Happy Halloween!",
+        "christmas": "Merry Christmas!"
+      },
       "purpose": "BanG Dream! Our Notes archive and community",
       "description": "A public dashboard for BanG Dream! Our Notes events, archive data, and community updates.",
       "archiveOverview": "Archive overview",
@@ -367,7 +384,7 @@
       "characterAndCast": "Characters / cast",
       "cast": "Cast",
       "character": "Character",
-      "birthdayGreeting": "Happy birthday",
+      "birthdayGreeting": "Happy Birthday",
       "today": "Today",
       "daysAway": "{count} days",
       "communityTitle": "Trending community",

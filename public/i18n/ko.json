@@ -344,6 +344,23 @@
   "home": {
     "dashboard": {
       "overview": "홈 개요",
+      "greetings": {
+        "birthday": "{name}, 생일 축하해!",
+        "newYear": "새해 복 많이 받으세요!",
+        "setsubun": "귀신은 밖으로, 복은 안으로!",
+        "lunarNewYear": "즐거운 설날 보내세요!",
+        "valentine": "해피 밸런타인데이!",
+        "hinamatsuri": "즐거운 히나마쓰리 보내세요!",
+        "whiteDay": "해피 화이트데이!",
+        "hanami": "벚꽃이 피었어요!",
+        "aprilFools": "즐거운 만우절!",
+        "childrensDay": "행복한 어린이날!",
+        "tanabata": "칠석 소원이 이루어지길!",
+        "obon": "마음 평온한 오봉 보내세요.",
+        "midAutumn": "행복한 중추절 보내세요!",
+        "halloween": "해피 핼러윈!",
+        "christmas": "메리 크리스마스!"
+      },
       "purpose": "BanG Dream! Our Notes 자료 아카이브와 커뮤니티",
       "description": "BanG Dream! Our Notes 이벤트, 아카이브 자료와 커뮤니티 소식을 모은 공개 대시보드입니다.",
       "archiveOverview": "아카이브 개요",

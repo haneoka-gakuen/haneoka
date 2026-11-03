@@ -23,8 +23,8 @@ const read = <T>(key: string): T | null => {
 
 /** Characters with a birthday, as the layout embeds them. */
 function characters(): ThemeCharacter[] {
-  const rows = JSON.parse(document.getElementById("haneoka-birthdays")?.textContent || "[]") as [number, string, number, number][];
-  return rows.map(([id, color, month, day]) => ({ id, bandId: 0, color, face: "", name: "", birthday: [month, day] }));
+  const rows = JSON.parse(document.getElementById("haneoka-birthdays")?.textContent || "[]") as [number, string, number, number, string][];
+  return rows.map(([id, color, month, day, face]) => ({ id, bandId: 0, color, face, name: "", birthday: [month, day] }));
 }
 
 /** Today's theme: a birthday (the reader's own character first), else the latest-opening season. */

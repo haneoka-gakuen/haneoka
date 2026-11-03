@@ -24,6 +24,7 @@ import type { Locale } from "../i18n/locales";
 import { ARENA_PROJECTION, arenaBoundaries, arenaContains, arenaCurrentRule, arenaPeriods, arenaRuleMarkNames, compactArenaCatalog, type ArenaCatalog } from "../lib/arena";
 import { arenaAttribute, arenaMission, arenaRuleText, type ArenaRuleContext, type ArenaRuleView } from "./shared/arena-rule";
 import { clientText } from "../i18n/client";
+import { japanDay, openSeasons } from "../lib/themes";
 import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { variants as githubVariants } from "@thesvg/icons/github";
@@ -62,7 +63,6 @@ import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry }
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { resolveRelationshipText } from "../lib/localized-text";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
-import { segmented } from "./ui/controls";
 import {
   BIRTHDAY_UTC_OFFSET,
   BIRTHDAY_DAY_MS,
@@ -391,6 +391,7 @@ export class HomeDashboard extends LitElement {
     super.disconnectedCallback();
   }
   protected updated(changed: PropertyValues) {
+    this.syncGreeting();
     if (
       this.birthdaySelection &&
       !birthdayCharacterChoices(this.birthdays().filter((item) => item.kind === "character")).some(
@@ -458,10 +459,19 @@ export class HomeDashboard extends LitElement {
         gap = parseFloat(style.columnGap) || 0;
       const available = list.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
       const minimum = parseFloat(style.getPropertyValue("--home-item-min")) || 132;
-      const count = Math.min(
-        list.children.length,
-        Math.max(list.hasAttribute("data-home-tiles") ? 2 : 1, Math.floor((available + gap) / (minimum + gap))),
-      );
+      let count = Math.min(list.children.length, Math.max(2, Math.floor((available + gap) / (minimum + gap))));
+      if (list.hasAttribute("data-home-avatars")) {
+        let used = 0;
+        count = 0;
+        for (const child of list.children) {
+          const item = child as HTMLElement;
+          item.hidden = false;
+          const needed = item.getBoundingClientRect().width + (count ? gap : 0);
+          if (count && used + needed > available + 0.5) break;
+          used += needed;
+          count++;
+        }
+      }
       list.dataset.fitReady = "";
       list.style.setProperty("--home-item-count", String(count));
       [...list.children].forEach((child, index) => {
@@ -612,6 +622,27 @@ export class HomeDashboard extends LitElement {
   }
   private count(value: number) {
     return value.toLocaleString(this.locale);
+  }
+
+  private syncGreeting() {
+    const title = this.closest(".app-shell")?.querySelector<HTMLElement>(".top-app-bar > h1");
+    if (!title) return;
+    const day = japanDay();
+    const birthday = this.birthdays().find((character) => {
+      if (character.kind !== "character" || !character.characterId) return false;
+      const birthday = japanDay(new Date(character.nextAt));
+      return birthday.month === day.month && birthday.day === day.day;
+    });
+    const season = openSeasons().at(-1);
+    const key = birthday ? "birthday" : season?.key;
+    const greeting = key
+      ? clientText(this.locale, `home.dashboard.greetings.${key}`, undefined, {
+          name: birthday?.name ?? "",
+        })
+      : this.text("overview", "haneoka");
+    title.dataset.homeGreeting = String(!!key);
+    title.lang = this.locale;
+    if (title.textContent !== greeting) title.textContent = greeting;
   }
 
   /* ---------- top app bar action ---------- */
@@ -1865,13 +1896,13 @@ export class HomeDashboard extends LitElement {
     const items = this.birthdays();
     const choices = birthdayCharacterChoices(items.filter((item) => item.kind === "character"));
     const featured = choices.find((item) => this.birthdayChoiceKey(item) === this.birthdaySelection) || choices[0];
+    const nextFeatured = featured && choices.length > 1 ? choices[(choices.indexOf(featured) + 1) % choices.length] : undefined;
     const recruitment = featured ? this.birthdayRecruitment(featured) : undefined;
-    const recruitmentStatus =
-      recruitment && recruitment.start > Date.now()
-        ? this.text("upcoming", "Upcoming")
-        : recruitment?.end && recruitment.end > Date.now()
-          ? this.text("ongoing", "Ongoing")
-          : "";
+    const recruitmentStatus = recruitment
+      ? this.text(recruitment.start > Date.now() ? "upcoming" : recruitment.end && recruitment.end <= Date.now() ? "ended" : "ongoing", "")
+      : "";
+    const recruitmentTime = recruitment ? this.eventPhrase(recruitment.start, recruitment.end) : "";
+    const recruitmentLabel = [recruitmentStatus, recruitmentTime !== recruitmentStatus ? recruitmentTime : ""].filter(Boolean).join(" / ");
     const story = featured ? this.birthdayStory(featured) : undefined;
     const card = featured ? this.birthdayCard(featured) : undefined;
     const sourceCard = card ? (this.seed?.documents.cards?.[String(card.cardId)] as JsonRecord | undefined) : undefined;
@@ -1975,7 +2006,6 @@ export class HomeDashboard extends LitElement {
                         : nothing
                     }
                   </span>
-                  <span class="home-birthday-avatar-name">${item.name}</span>
                   <span class="home-birthday-avatar-days tabular">${this.birthdayShortCountdown(item)}</span>
                 `;
                 return html`
@@ -1996,16 +2026,8 @@ export class HomeDashboard extends LitElement {
         `
       : nothing;
     return html`
-      <section class="home-card home-info home-birthdays" aria-labelledby="home-birthdays-title">
+      <section class="home-card home-info home-birthdays" data-recruitment=${!!recruitment} aria-labelledby="home-birthdays-title">
         <h2 class="sr-only" id="home-birthdays-title">${this.text("birthdaysTitle", "Birthday countdown")}</h2>
-        <a
-          class="icon-button home-birthday-calendar"
-          href=${resourceCollectionHref("/calendar", this.sourceServer(), this.locale as Locale)}
-          aria-label=${clientText(this.locale, "tools.calendar.title", "Calendar")}
-          title=${clientText(this.locale, "tools.calendar.title", "Calendar")}
-        >
-          ${icon("event", 20)}
-        </a>
         ${
           featured
             ? html`
@@ -2026,9 +2048,6 @@ export class HomeDashboard extends LitElement {
                         `
                   }
                   <div class="home-birthday-copy">
-                    <span class="home-birthday-eyebrow">
-                      ${icon("cake", 16)}${this.text("birthdaysTitle", "Birthday countdown")}
-                    </span>
                     ${
                       featured.characterId
                         ? html`
@@ -2070,27 +2089,6 @@ export class HomeDashboard extends LitElement {
                             </strong>
                           `
                     }
-                    ${
-                      featured.bandName
-                        ? html`
-                            <span class="home-birthday-band">
-                              ${
-                                featured.bandIcon
-                                  ? html`
-                                      <img
-                                        src=${localizedAssetUrl(featured.bandIcon, this.locale)}
-                                        width="16"
-                                        height="16"
-                                        alt=""
-                                      />
-                                    `
-                                  : nothing
-                              }
-                              <span>${featured.bandName}</span>
-                            </span>
-                          `
-                        : nothing
-                    }
                     <span class="home-birthday-due">
                       <b class="tabular" aria-label=${this.birthdayCountdown(featured)}>
                         ${
@@ -2099,71 +2097,28 @@ export class HomeDashboard extends LitElement {
                             : this.birthdayCountdown(featured)
                         }
                       </b>
-                      <time datetime=${new Date(featured.nextAt + BIRTHDAY_UTC_OFFSET).toISOString().slice(0, 10)}>
-                        ${this.formatDate(featured.nextAt, true, "Asia/Tokyo")}
-                      </time>
                     </span>
-                    ${
-                      recruitment
-                        ? html`
-                            <span class="home-birthday-recruitment-time">
-                              ${
-                                recruitment.end || recruitment.start > Date.now()
-                                  ? this.eventPhrase(recruitment.start, recruitment.end)
-                                  : this.formatDate(recruitment.start, true, "Asia/Tokyo")
-                              }
-                            </span>
-                          `
-                        : nothing
-                    }
                   </div>
                 </div>
+                ${recruitment ? html`<span class="home-birthday-recruitment">${recruitmentLabel}</span>` : nothing}
                 <div class="home-birthday-bottom">
-                  ${
-                    choices.length > 1
-                      ? html`
-                          <div style="min-width:0;max-width:100%;overflow-x:auto">
-                            <div style="display:flex;align-items:center;gap:var(--md-sys-spacing-2);width:max-content">
-                              ${segmented({
-                                label: `${this.text("birthdaysTitle", "Birthday countdown")} / ${uiText(this.locale, "navigation.gacha")}`,
-                                value: this.birthdayChoiceKey(featured),
-                                options: choices.map((item) => {
-                                  const pool = this.birthdayRecruitment(item);
-                                  const status =
-                                    pool?.start && pool.start > Date.now()
-                                      ? this.text("upcoming", "Upcoming")
-                                      : pool?.end && pool.end > Date.now()
-                                        ? this.text("ongoing", "Ongoing")
-                                        : "";
-                                  return {
-                                    value: this.birthdayChoiceKey(item),
-                                    label: [item.name, status].filter(Boolean).join(" / "),
-                                  };
-                                }),
-                                onSelect: (value) => {
-                                  this.birthdaySelection = value;
-                                },
-                              })}
-                              ${avatars}
-                            </div>
-                          </div>
-                        `
-                      : avatars
-                  }
+                  ${avatars}
                   <nav class="home-birthday-actions" aria-label=${this.text("birthdaysTitle", "Birthday countdown")}>
-                    ${
-                      choices.length === 1 && featured.nextAt >= birthdayDayStart() && recruitmentStatus
-                        ? html`
-                            <span
-                              class="home-birthday-recruitment-time"
-                              style="display:inline"
-                              aria-label=${`${uiText(this.locale, "navigation.gacha")}: ${recruitmentStatus}`}
-                            >
-                              ${recruitmentStatus}
-                            </span>
-                          `
-                        : nothing
-                    }
+                    <a
+                      class="icon-button"
+                      href=${resourceCollectionHref("/calendar", this.sourceServer(), this.locale as Locale)}
+                      aria-label=${clientText(this.locale, "tools.calendar.title", "Calendar")}
+                      title=${clientText(this.locale, "tools.calendar.title", "Calendar")}
+                    >${icon("event", 20)}</a>
+                    ${nextFeatured ? html`
+                      <button
+                        class="icon-button"
+                        type="button"
+                        aria-label=${`${clientText(this.locale, "common.actions.next", "Next")}: ${nextFeatured.name}`}
+                        title=${nextFeatured.name}
+                        @click=${() => { this.birthdaySelection = this.birthdayChoiceKey(nextFeatured); }}
+                      >${icon("chevron_right", 20)}</button>
+                    ` : nothing}
                     ${
                       story
                         ? html`

@@ -344,6 +344,23 @@
   "home": {
     "dashboard": {
       "overview": "ホーム概要",
+      "greetings": {
+        "birthday": "{name}、お誕生日おめでとう！",
+        "newYear": "あけましておめでとう！",
+        "setsubun": "鬼は外、福は内！",
+        "lunarNewYear": "春節おめでとう！",
+        "valentine": "ハッピーバレンタイン！",
+        "hinamatsuri": "桃の節句、おめでとう！",
+        "whiteDay": "ハッピーホワイトデー！",
+        "hanami": "桜が咲いたよ！",
+        "aprilFools": "今日はエイプリルフール！",
+        "childrensDay": "こどもの日、おめでとう！",
+        "tanabata": "七夕の願いが叶いますように！",
+        "obon": "心穏やかなお盆を。",
+        "midAutumn": "今夜はお月見！",
+        "halloween": "ハッピーハロウィン！",
+        "christmas": "メリークリスマス！"
+      },
       "purpose": "BanG Dream! Our Notes の資料アーカイブとコミュニティ",
       "description": "BanG Dream! Our Notes のイベント、資料、コミュニティをまとめた公開ダッシュボードです。",
       "archiveOverview": "アーカイブ概要",

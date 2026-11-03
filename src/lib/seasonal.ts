@@ -1,6 +1,5 @@
-/** The decoration of a seasonal theme: a background of its motif behind the page, an ornament on the brand mark, and
- * a burst of the motif where the theme was picked. The background holds still with reduced motion; the reader can turn
- * it off and keep the ornament and the brand shape. */
+/** Seasonal backgrounds, birthday brand avatars and a burst where the theme was picked.
+ * Reduced motion holds the background still; disabling effects keeps the brand treatment. */
 import { html, nothing, render, type TemplateResult } from "lit";
 import { icon } from "../lit/ui/icon";
 import { SEASON_AUTO_KEY, SEED_CSS_KEY, type SeasonMark } from "./tuning";
@@ -138,8 +137,14 @@ function follow(element: HTMLElement | null) {
 /** Brings the page's decoration in line with the current seed. */
 export function syncSeason() {
   const season = mark();
-  const brand = document.querySelector<HTMLElement>(".nav__brand");
-  brand?.querySelector(".season-ornament")?.remove();
+  const brand = document.querySelector<HTMLImageElement>(".nav__brand img");
+  if (brand) {
+    const rows = JSON.parse(document.getElementById("haneoka-birthdays")?.textContent || "[]") as [number, string, number, number, string][];
+    const id = Number(document.documentElement.dataset.seed?.slice("birthday-".length));
+    const face = season?.id === "birthday" ? rows.find(([character]) => character === id)?.[4] : undefined;
+    brand.setAttribute("src", face || "/favicon.svg");
+    brand.toggleAttribute("data-birthday", !!face);
+  }
   let host = document.querySelector<HTMLElement>("body > .season-layer");
   if (!season) {
     document.documentElement.style.removeProperty("--season-shape");
@@ -149,13 +154,6 @@ export function syncSeason() {
     return;
   }
   document.documentElement.style.setProperty("--season-shape", `var(${season.shape})`);
-  if (brand) {
-    const ornament = document.createElement("span");
-    ornament.className = "season-ornament";
-    ornament.setAttribute("aria-hidden", "true");
-    render(ornamentIcon(season.ornament), ornament);
-    brand.append(ornament);
-  }
   if (!effectsEnabled()) {
     delete document.documentElement.dataset.seasonLayer;
     follow(null);
@@ -172,42 +170,6 @@ export function syncSeason() {
   host.setAttribute("aria-hidden", "true");
   render(layer(season.motif), host);
   document.body.prepend(host);
-}
-
-/** The ornament names, written out for the icon sprite builder. */
-function ornamentIcon(name: string) {
-  switch (name) {
-    case "skull":
-      return icon("skull", 16);
-    case "celebration":
-      return icon("celebration", 16);
-    case "mood_bad":
-      return icon("mood_bad", 16);
-    case "festival":
-      return icon("festival", 16);
-    case "favorite":
-      return icon("favorite", 16);
-    case "filter_vintage":
-      return icon("filter_vintage", 16);
-    case "redeem":
-      return icon("redeem", 16);
-    case "local_florist":
-      return icon("local_florist", 16);
-    case "sentiment_very_satisfied":
-      return icon("sentiment_very_satisfied", 16);
-    case "toys":
-      return icon("toys", 16);
-    case "auto_awesome":
-      return icon("auto_awesome", 16);
-    case "candle":
-      return icon("candle", 16);
-    case "bedtime":
-      return icon("bedtime", 16);
-    case "featured_seasonal_and_gifts":
-      return icon("featured_seasonal_and_gifts", 16);
-    default:
-      return icon("cake", 16);
-  }
 }
 
 /** A burst of the motif from where a seasonal theme was picked. */

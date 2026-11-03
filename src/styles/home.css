@@ -7,6 +7,12 @@
     display: block;
     min-width: 0;
   }
+  .app-shell:has(home-dashboard) .top-app-bar > h1[data-home-greeting="true"] {
+    min-width: min(18ch, 42vw);
+    white-space: normal;
+    font-size: var(--md-sys-typescale-title-medium-size);
+    line-height: var(--md-sys-typescale-title-medium-line-height);
+  }
   .home {
     display: grid;
     width: min(100%, var(--content-max));
@@ -536,7 +542,7 @@
 
   /* A real linked birthday image leads; the lower row keeps people and destinations together. */
   .home-birthdays {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     padding: 12px;
     gap: 8px;
@@ -544,9 +550,18 @@
   .home-birthday-feature {
     grid-column: 1;
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
     gap: 16px;
     min-height: 0;
+  }
+  .home-birthdays[data-recruitment="true"] {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+  .home-birthday-recruitment {
+    min-width: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
   .home-birthday-art {
     display: grid;
@@ -578,13 +593,6 @@
     justify-content: center;
     gap: 5px;
   }
-  .home-birthday-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--md-sys-color-primary);
-    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
-  }
   .home-birthday-name {
     display: inline-flex;
     align-items: center;
@@ -609,45 +617,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .home-birthday-band {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    max-width: 100%;
-    gap: 5px;
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
-  }
-  .home-birthday-band img {
-    flex: none;
-    border-radius: var(--md-sys-shape-corner-full);
-  }
-  .home-birthday-band > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .home-birthday-due {
     display: flex;
     align-items: baseline;
     gap: 8px;
     flex-wrap: wrap;
+    min-width: 0;
   }
   .home-birthday-due b {
     font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) / var(--md-sys-typescale-headline-small-line-height) var(--app-font);
     color: var(--md-sys-color-primary);
-  }
-  .home-birthday-due time,
-  .home-birthday-recruitment-time {
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
-  }
-  .home-birthday-calendar {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: start;
-    justify-self: end;
+    text-wrap: balance;
   }
   .home-birthday-bottom {
     grid-column: 1 / -1;
@@ -658,10 +638,10 @@
     min-width: 0;
   }
   .home-birthday-avatars {
-    --home-item-min: 52px;
-    --home-item-count: 6;
+    --home-item-count: 2;
     display: grid;
-    grid-template-columns: repeat(var(--home-item-count), minmax(0, 1fr));
+    grid-template-columns: repeat(var(--home-item-count), max-content);
+    justify-content: start;
     gap: 8px;
     padding: 0;
     margin: 0;
@@ -670,16 +650,22 @@
   }
   .home-birthday-avatars li {
     min-width: 0;
+    width: max-content;
   }
   .home-birthday-avatars li > :is(a, span) {
     display: grid;
+    grid-template-columns: max-content;
+    grid-template-rows: auto auto;
+    align-content: center;
+    align-items: center;
     justify-items: center;
-    gap: 3px;
+    row-gap: 2px;
     min-width: 0;
+    min-height: 48px;
     color: inherit;
     text-decoration: none;
   }
-  .home-birthday-avatars:not([data-fit-ready]) > li:nth-child(n + 7) {
+  .home-birthday-avatars:not([data-fit-ready]) > li:nth-child(n + 3) {
     display: none;
   }
   .home-birthday-portrait {
@@ -691,6 +677,7 @@
     border-radius: var(--md-sys-shape-corner-full);
     color: var(--md-sys-color-on-primary);
     background: var(--member, var(--md-sys-color-primary));
+    grid-row: 1;
   }
   .home-birthday-portrait__main {
     width: 100%;
@@ -708,16 +695,12 @@
     border: 2px solid var(--md-sys-color-surface-container-low);
     border-radius: var(--md-sys-shape-corner-full);
   }
-  .home-birthday-avatar-name {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
-  }
   .home-birthday-avatar-days {
-    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / var(--md-sys-typescale-label-small-line-height) var(--app-font);
+    grid-column: 1;
+    align-self: start;
     color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+      var(--md-sys-typescale-label-small-line-height) var(--app-font);
     white-space: nowrap;
   }
   .home-birthday-actions {
@@ -896,6 +879,9 @@
     .home-board {
       gap: 12px;
     }
+    .home-birthdays {
+      padding: 8px;
+    }
   }
   @container (max-width: 559px) {
     .home-event__body {
@@ -939,23 +925,12 @@
       font-size: 18px;
       line-height: 22px;
     }
-    .home-birthday-eyebrow {
-      display: none;
-    }
-    .home-birthday-recruitment-time {
-      display: none;
-    }
-    .home-birthday-band {
-      font-size: 11px;
-      line-height: 14px;
-    }
     .home-birthday-due b {
       font-size: 20px;
       line-height: 24px;
     }
     .home-birthday-avatars {
-      --home-item-min: 42px;
-      gap: 5px;
+      gap: 12px;
     }
     .home-birthday-portrait {
       width: 32px;
@@ -964,9 +939,6 @@
     .home-birthday-portrait__role {
       width: 15px;
       height: 15px;
-    }
-    .home-birthday-avatar-name {
-      display: none;
     }
     .home-info__body:not([data-fit-ready]) > li:nth-child(n + 3) {
       display: none;
@@ -1041,36 +1013,21 @@
       font-size: 14px;
       line-height: 18px;
     }
-    .home-birthday-band {
-      font-size: var(--md-sys-typescale-label-small-size);
-      line-height: 12px;
-      gap: 3px;
-    }
-    .home-birthday-band img {
-      width: 12px;
-      height: 12px;
-    }
     .home-birthday-due {
       gap: 4px;
-      flex-wrap: nowrap;
     }
     .home-birthday-due b {
       font-size: 16px;
       line-height: 20px;
     }
-    .home-birthday-due time {
-      font-size: var(--md-sys-typescale-label-small-size);
-      line-height: 14px;
-    }
     .home-birthday-bottom {
       gap: 4px;
     }
     .home-birthday-avatars {
-      --home-item-min: 34px;
-      --home-item-count: 4;
-      gap: 4px;
+      --home-item-count: 1;
+      gap: 12px;
     }
-    .home-birthday-avatars:not([data-fit-ready]) > li:nth-child(n + 5) {
+    .home-birthday-avatars:not([data-fit-ready]) > li:nth-child(n + 2) {
       display: none;
     }
     .home-birthday-portrait {
@@ -1082,10 +1039,6 @@
       width: 12px;
       height: 12px;
       border-width: 1px;
-    }
-    .home-birthday-avatar-days {
-      font-size: var(--md-sys-typescale-label-small-size);
-      line-height: 12px;
     }
     .home-info .list-item {
       padding: 4px 6px;
@@ -1475,9 +1428,12 @@
       height: 28px;
     }
     .home-birthday-due b {
-      font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-title-large-size) /
-        var(--md-sys-typescale-title-large-line-height) var(--app-font);
-      white-space: nowrap;
+      max-width: 100%;
+      min-width: 0;
+      font: var(--md-sys-typescale-emphasized-headline-weight)
+        clamp(var(--md-sys-typescale-title-medium-size), 4.8cqi, var(--md-sys-typescale-title-large-size)) /
+        1.25 var(--app-font);
+      white-space: normal;
     }
   }
 }

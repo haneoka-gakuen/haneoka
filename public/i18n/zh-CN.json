@@ -344,6 +344,23 @@
   "home": {
     "dashboard": {
       "overview": "首页概览",
+      "greetings": {
+        "birthday": "生日快乐，{name}！",
+        "newYear": "新年快乐！",
+        "setsubun": "鬼怪出门，福气进门！",
+        "lunarNewYear": "新春快乐！",
+        "valentine": "情人节快乐！",
+        "hinamatsuri": "女儿节快乐！",
+        "whiteDay": "白色情人节快乐！",
+        "hanami": "樱花开了，一起赏花吧！",
+        "aprilFools": "愚人节快乐！",
+        "childrensDay": "儿童节快乐！",
+        "tanabata": "愿七夕的心愿成真！",
+        "obon": "灯火相迎，思念常在。",
+        "midAutumn": "中秋快乐！",
+        "halloween": "万圣节快乐！",
+        "christmas": "圣诞快乐！"
+      },
       "purpose": "BanG Dream! Our Notes 资料档案与社区",
       "description": "汇集 BanG Dream! Our Notes 活动、资料档案与社区动态的公开信息首页。",
       "archiveOverview": "资料库概览",

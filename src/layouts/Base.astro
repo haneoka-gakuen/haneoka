@@ -61,9 +61,9 @@ const structuredData = JSON.stringify(
   pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute),
 ).replaceAll("<", "\\u003c");
 const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed());
-// Birthdays the automatic seasonal theme reads, as [character, colour, month, day].
-const birthdays = (await themeCharacters("ja")).flatMap((character) =>
-  character.birthday ? [[character.id, character.color, ...character.birthday]] : [],
+// Birthday themes read [character, colour, month, day, avatar].
+const birthdays = (await themeCharacters(locale)).flatMap((character) =>
+  character.birthday ? [[character.id, character.color, ...character.birthday, character.face]] : [],
 );
 ---
 
@@ -339,7 +339,7 @@ const birthdays = (await themeCharacters("ja")).flatMap((character) =>
         }
       });
       const syncSeason = () => {
-        if (document.documentElement.dataset.season || document.querySelector(".season-layer"))
+        if (document.documentElement.dataset.season || document.querySelector(".season-layer, .nav__brand img[data-birthday]"))
           void import("../lib/seasonal").then((module) => module.syncSeason());
       };
       syncSeason();

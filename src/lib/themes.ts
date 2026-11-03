@@ -4,7 +4,7 @@
  * which applies them before first paint.
  */
 
-/** A seasonal theme's decoration: the motif of its effect layer, brand ornament and shape. */
+/** Seasonal effect motifs. */
 export type Motif = "bats" | "beans" | "confetti" | "fireworks" | "hearts" | "lanterns" | "moon" | "petals" | "snow" | "sparkles" | "stars";
 
 export interface Season {
@@ -13,7 +13,7 @@ export interface Season {
   key: string;
   label: string;
   motif: Motif;
-  /** Ornament on the brand mark, a Material Symbols name. */
+  /** Material symbol in the theme picker. */
   ornament: string;
   /** Shape token (shapes.css) for the brand mark's container. */
   shape: string;

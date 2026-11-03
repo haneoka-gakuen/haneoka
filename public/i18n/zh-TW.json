@@ -344,6 +344,23 @@
   "home": {
     "dashboard": {
       "overview": "首頁概覽",
+      "greetings": {
+        "birthday": "生日快樂，{name}！",
+        "newYear": "新年快樂！",
+        "setsubun": "鬼怪出門，福氣進門！",
+        "lunarNewYear": "新春快樂！",
+        "valentine": "情人節快樂！",
+        "hinamatsuri": "女兒節快樂！",
+        "whiteDay": "白色情人節快樂！",
+        "hanami": "櫻花開了，一起賞花吧！",
+        "aprilFools": "愚人節快樂！",
+        "childrensDay": "兒童節快樂！",
+        "tanabata": "願七夕的心願成真！",
+        "obon": "燈火相迎，思念常在。",
+        "midAutumn": "中秋快樂！",
+        "halloween": "萬聖節快樂！",
+        "christmas": "聖誕快樂！"
+      },
       "purpose": "BanG Dream! Our Notes 資料檔案與社群",
       "description": "整合 BanG Dream! Our Notes 活動、資料檔案與社群動態的公開資訊首頁。",
       "archiveOverview": "資料庫概覽",
