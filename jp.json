@@ -13,28 +13,34 @@
     "masterdata.tar.gz": {
       "bytes": 625337,
       "sha256": "45c4bb90da9c1c8c47da519565f4d1f12fd58a0769df56ba1bf9bad3234e2f4e",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1fcd96c6cd1e90c63556/masterdata.tar.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-3d4b8341/masterdata.tar.gz"
     },
     "resources.json.gz": {
       "bytes": 7527804,
       "sha256": "3402ff3a99ed43240445922cbd0381bf7a808e91df778860f41dc39008671142",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1fcd96c6cd1e90c63556/resources.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-3d4b8341/resources.json.gz"
     },
     "spine.json.gz": {
       "bytes": 113359,
       "sha256": "436b15bde35581bde9572280061abb72cea27db41e6db236e0cc3f8b737cb1df",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1fcd96c6cd1e90c63556/spine.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-3d4b8341/spine.json.gz"
+    },
+    "stories-jp.tar.gz": {
+      "bytes": 627380,
+      "sha256": "4ab86604f30f04625a8654f6cddf25905d4b6c8235e9872a8b6189adcd1c168b",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-3d4b8341/stories-jp.tar.gz"
     },
     "tables.json.gz": {
       "bytes": 44998,
       "sha256": "5c96e4132db3e6d966f108817fc97d8c38c3b04dd0a30e521db2665645021f7b",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1fcd96c6cd1e90c63556/tables.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-3d4b8341/tables.json.gz"
     }
   },
+  "masterHash": "8be74134b87dacf7ce1f38967cd66745",
   "masterSha256": "45c4bb90da9c1c8c47da519565f4d1f12fd58a0769df56ba1bf9bad3234e2f4e",
-  "masterVersion": "1.1.0.200/8be74134b87dacf7ce1f38967cd66745",
+  "masterVersion": "1.1.0.200",
   "models": {
-    "input": "35387dca5fd600114f7858d71de4446eb138eace34dc084c0c8e16911fb80d12",
+    "input": "1792d7a90c9bc698e8d40b3d84909d272117d1a799d12ba02e4ef9389a4e3dc0",
     "metadata": {
       "files": 18341,
       "sha256": "03553b7a2bfd6ec6ac472a3cc21692fc0d8d2087ed9cd4050fcf649afc6c3133"
@@ -44,7 +50,22 @@
       "live2d-jp.tar.gz.part001"
     ]
   },
+  "publishedMaster": {
+    "hash": "8be74134b87dacf7ce1f38967cd66745",
+    "version": "1.1.0.200"
+  },
   "releaseId": "r-e261e5c71807bf57801b",
   "server": "jp",
-  "tag": "feed-jp-1fcd96c6cd1e90c63556"
+  "stories": {
+    "input": "de51f91ba3f5f451b7e28602cdea06617aea97fc42ab5e7af24b3bbdbbd5a05d",
+    "metadata": {
+      "files": 1012,
+      "sha256": "8cfd065c19147905c0d94780259104e00c16c30bf8921d59d3d6503cc2a8a086"
+    },
+    "parts": [
+      "stories-jp.tar.gz"
+    ]
+  },
+  "tag": "feed-jp-1.1.0.200-3d4b8341",
+  "versionSchema": 2
 }
