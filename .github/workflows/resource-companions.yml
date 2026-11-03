@@ -28,7 +28,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 concurrency:
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: haneoka-gakuen/ournotes-data-pipeline
-          ref: 1d36517f47f56dbbf7fcd9bf33d216ad0cc4e0f0
+          ref: 0dcf0fdae8e50aa002bad09e9238b0c70a62560a
           path: companion-pipeline
           persist-credentials: false
       - uses: actions/setup-python@v7
@@ -79,7 +79,6 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: "true"
-          DATA_PUBLISH_TOKEN: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           SERVER: ${{ matrix.server }}
           EVENT: ${{ github.event_name }}
@@ -89,5 +88,5 @@ jobs:
           extra=()
           if [[ "$RETRY" == "true" ]]; then extra+=(--retry); fi
           if [[ "$NO_DISPATCH" == "true" ]]; then extra+=(--no-dispatch); fi
-          python companion-pipeline/sync.py --server "$SERVER" --event "$EVENT" \
+          python companion-pipeline/feed.py --server "$SERVER" --event "$EVENT" \
             --workspace "$RUNNER_TEMP/companion-data" "${extra[@]}"
