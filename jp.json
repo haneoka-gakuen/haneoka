@@ -1,1 +1,29 @@
-{}
+{
+  "assets": {
+    "masterdata.tar.gz": {
+      "bytes": 625337,
+      "sha256": "45c4bb90da9c1c8c47da519565f4d1f12fd58a0769df56ba1bf9bad3234e2f4e",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-abd9edc92368a18f078b/masterdata.tar.gz"
+    },
+    "resources.json.gz": {
+      "bytes": 7527804,
+      "sha256": "3402ff3a99ed43240445922cbd0381bf7a808e91df778860f41dc39008671142",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-abd9edc92368a18f078b/resources.json.gz"
+    },
+    "spine.json.gz": {
+      "bytes": 113359,
+      "sha256": "436b15bde35581bde9572280061abb72cea27db41e6db236e0cc3f8b737cb1df",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-abd9edc92368a18f078b/spine.json.gz"
+    },
+    "tables.json.gz": {
+      "bytes": 44998,
+      "sha256": "5c96e4132db3e6d966f108817fc97d8c38c3b04dd0a30e521db2665645021f7b",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-abd9edc92368a18f078b/tables.json.gz"
+    }
+  },
+  "masterSha256": "45c4bb90da9c1c8c47da519565f4d1f12fd58a0769df56ba1bf9bad3234e2f4e",
+  "masterVersion": "1.1.0.200/8be74134b87dacf7ce1f38967cd66745",
+  "releaseId": "r-e261e5c71807bf57801b",
+  "server": "jp",
+  "tag": "feed-jp-abd9edc92368a18f078b"
+}
