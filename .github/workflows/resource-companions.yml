@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: haneoka-gakuen/ournotes-data-pipeline
-          ref: c4665f6e3455ba5bc46d3a82e963976ee64149d4
+          ref: fe1a6f8382ee160041cf804096af676c1ecd934b
           path: companion-pipeline
           persist-credentials: false
       - uses: actions/setup-python@v7
@@ -69,14 +69,6 @@ jobs:
         uses: ./.github/actions/setup-jp-api-egress
         with:
           subscription_url: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
-      - name: Trust GitHub SSH host keys
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/known_hosts"
       - name: Synchronize the selected production server
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.server == 'all' || inputs.server == matrix.server }}
         env:
@@ -86,7 +78,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: "true"
-          DATA_DEPLOY_KEYS: ${{ secrets.DATA_DEPLOY_KEYS }}
+          DATA_PUBLISH_TOKEN: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           SERVER: ${{ matrix.server }}
           EVENT: ${{ github.event_name }}
@@ -98,6 +90,3 @@ jobs:
           if [[ "$NO_DISPATCH" == "true" ]]; then extra+=(--no-dispatch); fi
           python companion-pipeline/sync.py --server "$SERVER" --event "$EVENT" \
             --workspace "$RUNNER_TEMP/companion-data" "${extra[@]}"
-      - name: Remove ephemeral deploy keys
-        if: always()
-        run: rm -rf "$RUNNER_TEMP/companion-data/keys"
