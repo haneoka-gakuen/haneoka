@@ -1,0 +1,92 @@
+# Input: Production resource environments, successful resource runs and external version signals.
+# Output: Complete companion data snapshots and coalesced resource refresh requests.
+# Pos: [Automation map](../L2.md); additive companion publication runner.
+# Effects/Dependencies: R2 reads, companion Git pushes and same-repository workflow dispatch.
+name: Companion data synchronization
+
+on:
+  schedule:
+    - cron: "7,27,47 * * * *"
+  workflow_run:
+    workflows: ["Resource pipeline"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      server:
+        type: choice
+        options: [all, jp, intl]
+        default: all
+        required: true
+      retry:
+        description: Reset the retry budget for the current content key
+        type: boolean
+        default: false
+      no_dispatch:
+        description: Synchronize companion data without requesting a resource build
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: companion-data-synchronization
+  cancel-in-progress: false
+
+jobs:
+  synchronize:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        server: [jp, intl]
+    environment: resource-${{ matrix.server }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: haneoka-gakuen/ournotes-data-pipeline
+          ref: fe1a6f8382ee160041cf804096af676c1ecd934b
+          path: companion-pipeline
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install the existing small Master and R2 dependency closure
+        run: |
+          python scripts/publish/reference_postpin.py --bootstrap "$RUNNER_TEMP/companion-dependencies"
+          python -m pip install --disable-pip-version-check --require-hashes \
+            --requirement "$RUNNER_TEMP/companion-dependencies/requirements.txt"
+      - name: Start the existing JP API egress
+        if: ${{ matrix.server == 'jp' && github.event_name != 'workflow_run' }}
+        uses: ./.github/actions/setup-jp-api-egress
+        with:
+          subscription_url: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
+      - name: Synchronize the selected production server
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.server == 'all' || inputs.server == matrix.server }}
+        env:
+          PYTHONPATH: scripts
+          RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          DATA_PUBLISH_TOKEN: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          SERVER: ${{ matrix.server }}
+          EVENT: ${{ github.event_name }}
+          RETRY: ${{ inputs.retry }}
+          NO_DISPATCH: ${{ inputs.no_dispatch }}
+        run: |
+          extra=()
+          if [[ "$RETRY" == "true" ]]; then extra+=(--retry); fi
+          if [[ "$NO_DISPATCH" == "true" ]]; then extra+=(--no-dispatch); fi
+          python companion-pipeline/sync.py --server "$SERVER" --event "$EVENT" \
+            --workspace "$RUNNER_TEMP/companion-data" "${extra[@]}"
