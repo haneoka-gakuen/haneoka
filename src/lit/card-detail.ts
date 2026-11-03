@@ -3,9 +3,25 @@ import { html, nothing } from "lit";
 import "../styles/card-detail.css";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import "./character-voices";
 
 type Item = Record<string, unknown>;
 type Controller = Record<string, any>;
+
+function renderCardVoice(c: Controller, item: Item) {
+  const voice = c.detailAux.gachaVoice as Item | undefined;
+  if (c.profile.presentation !== "member" || !voice) return nothing;
+  return html`
+    <character-voices
+      compact
+      .entries=${[voice]}
+      .characters=${c.characters}
+      .characterId=${Number(item.characterId)}
+      locale=${c.contentLocale}
+      .server=${c.contentServer}
+    ></character-voices>
+  `;
+}
 
 export function cardControlData(c: Controller, item: Item) {
   const selectValue = (values: number[], current: unknown) => {
@@ -200,6 +216,7 @@ export function renderCardRelations(c: Controller, item: Item) {
               `;
             })}
           </div>
+          ${renderCardVoice(c, item)}
         </section>
       `
     : nothing;

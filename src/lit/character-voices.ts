@@ -57,6 +57,7 @@ export class CharacterVoices extends LitElement {
     locale: {},
     server: {},
     characterId: { type: Number },
+    compact: { type: Boolean },
     activeClipKey: { state: true },
     expandedGroups: { state: true },
   };
@@ -65,6 +66,7 @@ export class CharacterVoices extends LitElement {
   declare locale: string;
   declare server: ReleaseServer;
   declare characterId: number;
+  declare compact: boolean;
   declare activeClipKey: string;
   declare private expandedGroups: Set<VoiceTab>;
   private audio?: HTMLAudioElement;
@@ -85,6 +87,7 @@ export class CharacterVoices extends LitElement {
     this.locale = "ja";
     this.server = "intl";
     this.characterId = 0;
+    this.compact = false;
     this.activeClipKey = "";
     this.expandedGroups = new Set<VoiceTab>(["comment"]);
   }
@@ -283,13 +286,14 @@ export class CharacterVoices extends LitElement {
     const active = this.activeClipKey === key;
     const playing = active && status.state === "playing";
     const loading = active && status.state === "loading";
-    const label = loading
-      ? `${this.v("loading")} / ${speaker}`
+    const action = loading
+      ? this.v("loading")
       : playing
-        ? `${this.v("stop")} / ${speaker}`
+        ? this.v("stop")
         : status.state === "error"
-          ? `${this.t("retry")} / ${speaker}`
-          : `${this.v("playLine")} / ${speaker}`;
+          ? this.t("retry")
+          : this.v("playLine");
+    const label = this.compact ? action : `${action} / ${speaker}`;
     return html`
       <button
         class="icon-button dialogue-row__play"
@@ -326,12 +330,12 @@ export class CharacterVoices extends LitElement {
     return dialogueRow({
       key,
       className: `voice-line voice-line--${voiceGroup(entry)}`,
-      avatar: image
+      avatar: this.compact ? nothing : image
         ? html`
             <img src=${image} alt="" loading="lazy" width="48" height="48" />
           `
         : icon("person", 24),
-      speaker,
+      speaker: this.compact ? "" : speaker,
       speakerContent: html`
         ${speaker}
         ${entry.sourcesComplete ? serverAvailabilityBadge((entry.sourceServers as string[] | undefined) || [], this.locale) : nothing}
@@ -396,7 +400,7 @@ export class CharacterVoices extends LitElement {
         data-master-type=${String(entry.masterType ?? "")}
       >
         ${
-          showHeading
+          showHeading && !this.compact
             ? html`
                 <header class="voice-entry__header">
                   <div class="voice-entry__identity">
@@ -461,6 +465,17 @@ export class CharacterVoices extends LitElement {
   }
 
   render() {
+    if (this.compact) {
+      return html`
+        <div class="character-voices" aria-label=${this.v("gacha")}>
+          ${repeat(
+            preferredVoiceRecordings(this.entries).sort(compareVoices),
+            (entry) => this.voiceKey(entry),
+            (entry) => this.renderEntry(entry),
+          )}
+        </div>
+      `;
+    }
     const groups = this.grouped();
     return html`
       <section class="character-voices" aria-label=${this.v("title")}>

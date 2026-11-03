@@ -667,6 +667,13 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
 
     if (resource === "cards" || resource === "support-cards") {
       aux = cardAux(graph, item, resource === "support-cards");
+      if (resource === "cards" && Number(item.rarity) === 4) {
+        const voice = graph.voices.find(([, entry]) => Number(entry.cardId) === Number(item.cardId))?.[1]
+          ?? asRecord((await fetchOptionalStaticCatalog(`voices/member-card:${id}`, server, graph.release)).value);
+        if (voice) aux.gachaVoice = Object.values(mergeCharacterVoices([
+          { identity: { ...graph.release, server }, entries: [voice] },
+        ], server))[0];
+      }
     } else if (resource === "band-items") {
       const group = Number(item.resourceGroupId || 0);
       aux = {
@@ -926,7 +933,7 @@ export async function catalogEntityData(
   const pin = await staticCatalogRelease(server);
   const identity = { schema: "haneoka-base-page-v1", server, sourceId: pin.sourceId, releaseId: pin.releaseId, resource, id };
   const record = await staticBuildJson(`base-page:${JSON.stringify(identity)}`, "entity-projection", async () => {
-    if (resource === "characters") {
+    if (resource === "characters" || (import.meta.env.DEV && isEntityPayloadResource(resource))) {
       const payloads = await buildEntityPayloads(server, resource, [id]);
       return { ...identity, payload: payloads.get(id) ?? null };
     }

@@ -1,4 +1,5 @@
 import "./character-voices";
+import { characterSignatures } from "../config/character-signatures";
 import { modelTile } from "./ui/model-tile";
 import { resolveLocalizedText } from "../lib/localized-text";
 import type { SongPerformer } from "../lib/song-performer";
@@ -399,6 +400,7 @@ export class CharacterDetailArchive extends LitElement {
             catchCopy: c.localized(item.catchCopy),
             voiceActor: c.localized(item.voiceActor),
             alternateName: c.localized(item.englishName),
+            signature: characterSignatures[String(item.characterKey || "")],
             bandLogo: String(c.band(Number(item.bandId || 0))?.logo || ""),
             gallery: c.renderDetailMedia(item),
             fields: this.fields

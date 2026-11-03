@@ -1,6 +1,7 @@
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { html, nothing } from "lit";
 import "../../styles/character-profile.css";
+import type { CharacterSignature } from "../../config/character-signatures";
 
 type Item = Record<string, unknown>;
 export function characterProfile(options: {
@@ -13,6 +14,7 @@ export function characterProfile(options: {
   voiceActor: string;
   alternateName: string;
   bandLogo?: string;
+  signature?: CharacterSignature;
   gallery: unknown;
   fields: Array<{ label: string; value: string; language?: string }>;
 }) {
@@ -24,9 +26,31 @@ export function characterProfile(options: {
       <div class="character-profile__visual">${options.gallery}</div>
       <div class="character-profile__body">
         ${
-          options.bandLogo
+          options.signature || options.bandLogo
             ? html`
-                <img class="character-profile__band" src=${options.bandLogo} alt="" />
+                <div class="character-profile__marks">
+                  ${
+                    options.signature
+                      ? html`
+                          <img
+                            class="character-profile__signature"
+                            src=${options.signature.image}
+                            alt=""
+                            width=${options.signature.width}
+                            height=${options.signature.height}
+                            loading="lazy"
+                          />
+                        `
+                      : nothing
+                  }
+                  ${
+                    options.bandLogo
+                      ? html`
+                          <img class="character-profile__band" src=${options.bandLogo} alt="" />
+                        `
+                      : nothing
+                  }
+                </div>
               `
             : nothing
         }

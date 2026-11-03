@@ -4738,7 +4738,7 @@ export class CatalogScreen extends LitElement {
     if (relations) void import("./character-detail-archive");
     const card = ["member", "support"].includes(this.profile.presentation);
     try {
-      const [viewResults, relationResults, progression, skillReference, skillText, cardDetail, gameSystemDetail] =
+      const [viewResults, relationResults, progression, skillReference, skillText, cardDetail, gameSystemDetail, gachaVoice] =
         await Promise.all([
           Promise.all(
             views.map(async (view) => {
@@ -4784,6 +4784,11 @@ export class CatalogScreen extends LitElement {
           card ? import("./shared/skill-text") : undefined,
           card ? import("./card-detail") : undefined,
           this.profile.presentation === "system" ? import("./game-system-detail") : undefined,
+          this.profile.presentation === "member" && !this.isProvider() && !payload
+            ? fetch(growthSourceUrl("voices", `member-card:${id}`), { signal }).then(async (response) =>
+                response.ok ? await response.json() : undefined,
+              )
+            : undefined,
         ]);
       if (this.detailRequests.current(signal) && this.selectedId === id) {
         this.skillText = skillText;
@@ -4795,6 +4800,7 @@ export class CatalogScreen extends LitElement {
           : {
               ...Object.fromEntries([...viewResults, ...relationResults]),
               progression,
+              gachaVoice,
               "skill-reference": skillReference,
               ...(growthPin ? { growthIdentity: { ...growthPin } } : {}),
             };

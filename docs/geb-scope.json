@@ -105,6 +105,7 @@
     "src/server/high-score-rating-page-data.ts",
     "astro.config.mjs",
     "src/middleware.ts",
+    "src/config/character-signatures.ts",
     "src/lib/resource-route.ts",
     "src/lib/community-chart-route.ts",
     "src/lib/static-catalog-source.ts",

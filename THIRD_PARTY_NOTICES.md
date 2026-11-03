@@ -169,6 +169,7 @@ Run `pnpm licenses list --prod --json` after an exact install to inventory produ
 The following material is not covered by Haneoka's MPL-2.0 license, and the repository does not claim redistribution rights merely because it records a source or processing workflow:
 
 - `packages/sonolus/assets/original/` contains original-game audio, textures, and engine-facing derivatives prepared by the documented scripts;
+- `public/images/character-signatures/` contains character signature artwork from BanG Dream! Wikia on Fandom and Moegirlpedia. Per-image source pages and dimensions are recorded in `src/config/character-signatures.ts`; the artwork retains its original rights;
 - assets, runtime media, metadata, source indexes, and object trees generated under `data/` or published to object storage originate from operator-supplied packages and retain the rights and restrictions of their sources.
 
 Online availability, source attribution, a checksum, or inclusion in a checkout does not place material in the public domain or grant further use. Operators must use inputs they are authorized to access and independently determine whether their intended processing, display, storage, or distribution is permitted. Haneoka provides no third-party credentials or license to game content.
