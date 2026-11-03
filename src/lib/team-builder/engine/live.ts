@@ -8,8 +8,10 @@ export { ORDERS } from "./order-equivalence";
 
 const f = Math.fround;
 
+export type FrameRate = 30 | 60 | 90 | 120;
 /** Simulate judgements: 6 Just, 5 Perfect, 4 Great, 3 Good, 2 Bad, 1 Miss. */
 export interface PlayModel {
+  frameRate?: FrameRate;
   /** Native cumulative-delivery optimization; absent keeps nominal timing. */
   cumulativeTiming?: "best" | "worst";
   great: number;
@@ -364,9 +366,6 @@ export function scoreOrdersPlay(
   for (const orderIndex of orderPlan.representatives) {
     const order = ORDERS[orderIndex]!;
     const lives = orderLives(prepared, judgements, slots, order);
-    let combo = 0,
-      pendingCombo = 0,
-      lastTime = -1;
     const channel = new Float32Array(7);
     // Active windows: end time, channel, delta, converting slot.
     const active: { end: number; channel: number; delta: number }[] = [];
@@ -418,10 +417,6 @@ export function scoreOrdersPlay(
       }
       if (i === n) break;
       expire(time);
-      if (time !== lastTime) {
-        combo = pendingCombo;
-        lastTime = time;
-      }
       let judgement = judgements[i]!;
       for (let c = 0; c < converts.length; c++) {
         const conv = converts[c]!;
@@ -442,7 +437,6 @@ export function scoreOrdersPlay(
       if (life <= 0) x = Math.floor(f(onus * x));
       if (assist !== 1) x = Math.floor(f(assist * x));
       score += x;
-      pendingCombo = judgement <= 2 ? 0 : pendingCombo + 1;
     }
     scores[orderIndex] = score;
   }

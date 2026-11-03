@@ -452,6 +452,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   request = singleSongRequest(request);
   if (request.songRules) throw new Error("song-rules-native-required");
   if (request.aggregation === "mean") throw new Error("shared-native-required");
+  if ("play" in request.goal && request.goal.play.frameRate && request.goal.play.frameRate !== 60) throw new Error("frame-rate-native-required");
   const placementGoal = request.goal;
   if (placementGoal.kind === "gekiso" && placementGoal.ranks?.some(rank => rank !== placementGoal.rank)) throw new Error("range-ranks-native-required");
   if (request.goal.kind === "gekiso" && request.goal.arena) throw new Error("arena-native-required");
@@ -901,6 +902,7 @@ export async function evaluateTeam(
   charts: ChartCache,
   request: { members: MemberInput[]; snaps: SnapInput[]; player: PlayerInput; unknownPolicy: UnknownPolicy; team: TeamSpec; songs: SongRef[]; play: PlayModel; challengeEventId: number | null; event: { eventId: number; route: "live" | "challenge"; consumption: number; eventEffects?: readonly import("./master").EventEffectRow[] } | null },
 ): Promise<TeamEvaluation[]> {
+  if (request.play.frameRate && request.play.frameRate !== 60) throw new Error("frame-rate-native-required");
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const player = playerState(master, request.player);
   const order = [request.team.leader, ...request.team.members.filter((key) => key !== request.team.leader)];
@@ -988,6 +990,7 @@ export async function explainTeam(
   charts: ChartCache,
   request: { members: MemberInput[]; snaps: SnapInput[]; unknownPolicy: UnknownPolicy; team: TeamSpec; song: SongRef; eventOrder: string[]; play: PlayModel },
 ): Promise<Timeline> {
+  if (request.play.frameRate && request.play.frameRate !== 60) throw new Error("frame-rate-native-required");
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const chart = await charts.chart(request.song);
   const density = new Array<number>(Math.ceil((chart.lastNoteMs + 1000) / 500)).fill(0);

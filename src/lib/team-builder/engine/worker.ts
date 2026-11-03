@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // L3 — GEB
 // Input: EngineCall、已序列化 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
-// Output: EngineReply、进度、快照、计算结果或错误；私有补分请求保留最终待评分候选，公开进度只含完整评分。
+// Output: EngineReply、进度、快照、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
 // Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的标量／奖励排序下界，JSPI 暂停期间实时接收下界，逐请求清空排序状态，持有句柄和完整评分缓存并发送消息。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
@@ -211,11 +211,15 @@ async function execute(call: EngineCall) {
     } else if (call.type === "explain") {
       const request: ExplainRequest = call.request;
       const rows = await charts([request.song], call.loadedCharts);
-      const order = request.eventOrder.map((key) => request.team.members.indexOf(key));
+      const leader = request.team.members.indexOf(request.team.leader);
+      const slots = [leader, ...request.team.members.map((_, index) => index).filter(index => index !== leader)];
+      const memberKeys = slots.map(index => request.team.members[index]!);
+      const snapKeys = slots.map(index => request.team.snaps[index] ?? null);
+      const order = request.eventOrder.map((key) => memberKeys.indexOf(key));
       const result = await invoke({
         op: "timeline",
         handle,
-        request: { ...request, memberKeys: request.team.members, snapKeys: request.team.snaps, order: order.filter((slot) => slot >= 0) },
+        request: { ...request, memberKeys, snapKeys, order: order.filter((slot) => slot >= 0) },
         charts: rows,
       });
       post({ type: "result", id: call.id, result: { ...(result as unknown as Timeline), score: 0 }, cachedCharts: cached });

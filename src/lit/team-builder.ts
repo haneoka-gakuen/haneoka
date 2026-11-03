@@ -919,10 +919,10 @@ export class TeamBuilder extends LitElement {
       kind: "score",
       songs: s.songs,
       criterion: "mean",
-      play:
+      play: { frameRate: s.frameRate, ...(
         s.playMode === "ap"
           ? { great: 0, good: 0, bad: 0, miss: 0 }
-          : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 },
+          : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 }) },
       challengeEventId: s.challengeRules ? s.eventId : null,
     };
   }
@@ -1262,10 +1262,10 @@ export class TeamBuilder extends LitElement {
   }
   goal(): Goal | null {
     const s = this.searchSettings;
-    const play =
+    const play = { frameRate: s.frameRate, ...(
       s.playMode === "ap"
         ? { great: 0, good: 0, bad: 0, miss: 0 }
-        : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 };
+        : { great: s.great / 100, good: s.good / 100, bad: 0, miss: s.miss / 100, missEvery: s.missEvery || 0 }) };
     const challengeId = s.challengeRules && s.eventId !== null ? s.eventId : null;
     if ((s.goal === "score" || s.goal === "power") && s.challengeRules && challengeId === null) return null;
     switch (s.goal) {

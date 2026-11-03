@@ -1,5 +1,6 @@
 import type { ArenaGoal, SongRef } from "../../lib/team-builder/engine/api";
 import type { Criterion } from "../../lib/team-builder/engine/objectives";
+import type { FrameRate } from "../../lib/team-builder/engine/live";
 import type { RewardPlan } from "../../lib/team-builder/reward-plan";
 import { emptyManualEvent, type ManualEventDraft } from "../../lib/team-builder/manual-event";
 
@@ -23,6 +24,7 @@ export interface BuildSettings {
   songs: SongRef[];
   criterion: Criterion;
   scoreTiming: "nominal" | "best" | "worst";
+  frameRate: FrameRate;
   /** Score goal only: rank by the share of orders reaching targetScore, or the average capped at it. */
   scoreTarget: "none" | "at-least" | "capped";
   targetScore: number | null;
@@ -113,6 +115,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   songs: [],
   criterion: "mean",
   scoreTiming: "nominal",
+  frameRate: 60,
   scoreTarget: "none",
   targetScore: null,
   playMode: "ap",

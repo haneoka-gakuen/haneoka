@@ -86,6 +86,8 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
             .map(([key, value]) =>
               key === "cumulativeTiming"
                 ? host.t(value === "best" ? "criterionMaxBestTiming" : "criterionMaxWorstTiming", value === "best" ? "Maximum score · best timing" : "Maximum score · worst timing")
+                : key === "frameRate"
+                ? `${host.t("frameRate", "Game frame rate (FPS)")}: ${value}`
                 : key === "missEvery"
                 ? `${host.t("missEvery", "Miss every N notes")}: ${value}`
                 : `${key.toUpperCase()} ${format(host, value * 100, 2)}%`,
@@ -682,17 +684,17 @@ function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: re
 }
 
 /** The order's score with the timed notes hit early. */
-function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, reserve = false, fallback?: number) {
+function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, reserve = false, fallback?: number, advanceMs = 17) {
   if (!timing && !reserve) return nothing;
   const plain = timing === null ? fallback : undefined;
   const text = (value: number | undefined) => value === undefined ? "—" : format(host, value);
-  const gain = timing ? timing.best - timing.worst : timing === null ? 0 : undefined;
+  const gain = timing ? timing.best - timing.score : timing === null ? 0 : undefined;
   return html`
     <div><dt>${host.t("worstTimingScore", "Worst-timing score")}</dt><dd>${text(timing?.worst ?? plain)}</dd></div>
     <div><dt>${host.t("nominalTimingScore", "Nominal-timing score")}</dt><dd>${text(timing?.score ?? plain)}</dd></div>
     <div><dt>${host.t("bestTimingScore", "Best-timing score")}</dt><dd>${text(timing?.optimal ?? plain)}</dd></div>
     <div>
-      <dt>${host.t("timingFramePlanScore", "17 ms plan")}</dt>
+      <dt>${host.t("timingFramePlanScore", "{ms} ms plan", { ms: timing?.advanceMs ?? advanceMs })}</dt>
       <dd>${text(timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>
     </div>
   `;
@@ -779,7 +781,7 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
     <section class="tb-timing stack stack--tight">
       <div class="row row--between row--wrap">
         <strong class="tb-subtitle">${host.t("timingNotes", "Notes to hit early")}</strong>
-        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing?.advanceMs ?? 17 })}</span>
+        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing?.advanceMs ?? Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)) })}</span>
       </div>
       <ol class="tb-timing__windows" role="list">${windows.map((window) => timingWindow(host, hit, order, window, host.expanded.has(key)))}</ol>
       <small class="tb-timing__hint">${host.t("timingFirstNotes", "Hit the first notes after activation as usual")}</small>
@@ -901,7 +903,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
           <dt>${host.t("orderGap", "From best")}</dt>
           <dd>${gap(value)}</dd>
         </div>
-        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined, reserveTiming, value)}
+        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined, reserveTiming, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
       </dl>
       ${timingDetails(host, hit, current, typeof requested === "object" ? requested.timing : undefined, reserveTiming)}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>

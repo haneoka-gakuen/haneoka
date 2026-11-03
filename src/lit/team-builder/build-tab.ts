@@ -421,6 +421,15 @@ export function playSection(
       ],
       onSelect: (playMode) => set({ playMode }),
     })}
+    ${s.goal === "score" ? html`<div class="tb-field">
+      <span class="tb-field__label">${host.t("frameRate", "Game frame rate (FPS)")}</span>
+      ${segmented({
+        label: host.t("frameRate", "Game frame rate (FPS)"),
+        value: String(s.frameRate),
+        options: [30, 60, 90, 120].map(value => ({ value: String(value), label: String(value) })),
+        onSelect: value => set({ frameRate: Number(value) as BuildSettings["frameRate"] }),
+      })}
+    </div>` : nothing}
     ${
       s.goal === "gekiso"
         ? html`
