@@ -121,8 +121,8 @@ queued for another batch. Players and songs precede card downloads, with a
 bounded player batch. Transient service failures retry after 15–120 seconds;
 read-only job expiration does not invalidate an account session.
 
-Population snapshots have a twenty-minute background freshness target. While a
-snapshot exceeds it, unrequested deep-page sweeps yield their budget to complete
+Population snapshots have a twenty-minute background freshness target. Five
+minutes before it, unrequested deep-page sweeps yield their budget to complete
 counts and bounded catch-up rounds run sooner. Top boards and requested windows
 keep their priority. Catch-up stops after twenty rounds or when all counts are
 fresh; no population warm-up runs before the season opens.

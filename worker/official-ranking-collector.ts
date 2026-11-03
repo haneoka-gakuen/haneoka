@@ -28,6 +28,7 @@ const ARENA_DEMAND_INTERVAL_MS = 60_000;
 /** The collector reuses counts read in the last five minutes; one more covers clock skew. */
 const ARENA_WITNESS_REUSE_MS = 360_000;
 const ARENA_POPULATION_TARGET_MS = 1_200_000;
+const ARENA_POPULATION_CATCHUP_MS = ARENA_POPULATION_TARGET_MS - INTERVAL_MS;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
@@ -1781,6 +1782,7 @@ export class OfficialRankingCollector extends Container<Env> {
       lastFailure: state.lastFailure ?? null,
       sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
         populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000,
+        populationCatchupSeconds: ARENA_POPULATION_CATCHUP_MS / 1000,
         populationProgress: Object.entries(state.arenaProgress ?? {}).map(([key, progress]) => ({
           bandId: progress.bandId, lastWorkedAtMs: progress.updatedAtMs ?? null,
           publishedAtMs: state.arenaPopulationAt?.[key] ?? null, unknown: progress.counts.filter((value) => value === null).length,
@@ -1841,7 +1843,7 @@ export class OfficialRankingCollector extends Container<Env> {
         && state.populationWorkKey === `${arena!.seasonId}:${populationOrder[0]}`) populationOrder.push(populationOrder.shift()!);
       const populationDue = arena && now >= arena.startAtMs && now < arena.rankingEndAtMs
         && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
-          && now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
+          && now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_CATCHUP_MS);
       const swept = final || populationDue ? [] : await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length));
       state.run.eventSweepWindows = eventSwept;
       state.run.sweepWindows = swept;
@@ -2192,7 +2194,7 @@ export class OfficialRankingCollector extends Container<Env> {
           const arena = run.finalArena || run.catalog?.arena === undefined ? null : state.arenaCatalog;
           const cold = arena && Date.now() >= arena.startAtMs && Date.now() < arena.rankingEndAtMs
             && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
-              && Date.now() - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
+              && Date.now() - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_CATCHUP_MS);
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
