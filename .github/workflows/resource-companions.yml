@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: haneoka-gakuen/ournotes-data-pipeline
-          ref: fe1a6f8382ee160041cf804096af676c1ecd934b
+          ref: 1d36517f47f56dbbf7fcd9bf33d216ad0cc4e0f0
           path: companion-pipeline
           persist-credentials: false
       - uses: actions/setup-python@v7
@@ -72,6 +72,7 @@ jobs:
       - name: Synchronize the selected production server
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.server == 'all' || inputs.server == matrix.server }}
         env:
+          PYTHONUNBUFFERED: "1"
           PYTHONPATH: scripts
           RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
