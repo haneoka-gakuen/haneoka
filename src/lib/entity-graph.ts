@@ -667,7 +667,7 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
 
     if (resource === "cards" || resource === "support-cards") {
       aux = cardAux(graph, item, resource === "support-cards");
-      if (resource === "cards" && Number(item.rarity) === 4) {
+      if (resource === "cards") {
         const voice = graph.voices.find(([, entry]) => Number(entry.cardId) === Number(item.cardId))?.[1]
           ?? asRecord((await fetchOptionalStaticCatalog(`voices/member-card:${id}`, server, graph.release)).value);
         if (voice) aux.gachaVoice = Object.values(mergeCharacterVoices([
