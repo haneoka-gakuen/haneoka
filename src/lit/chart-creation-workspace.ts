@@ -2582,26 +2582,6 @@ export class ChartCreationWorkspace extends LitElement {
         @click=${() => { this.guideOpen = false; this.requestUpdate(); }}>${this.c("close")}</button></footer>
     </dialog>`;
   }
-  private renderToolHint() {
-    const placing = Boolean(this.pastePlacement),
-      command = placing ? "confirm" : `tool:${this.tool}`,
-      binding = chartShortcutBindings(this.shortcutOverrides, command)[0];
-    return html`<div class="chart-studio__tool-help" ?hidden=${this.stageMode !== "edit"}>
-      <div>
-        <strong>${placing ? this.t("patterns.place") : this.toolLabel(this.tool)}${!placing && this.tool === "flick"
-          ? ` · ${this.t(`direction${this.direction[0].toUpperCase()}${this.direction.slice(1)}`)}` : ""}</strong>
-        ${binding ? html`<kbd>${displayChartShortcut(binding)}</kbd>` : nothing}
-        ${!placing && ["tap", "flick", "trace", "hold", "guide", "node"].includes(this.tool)
-          && chartShortcutBindings(this.shortcutOverrides, "confirm").length ? html`<span class="chart-studio__place-key">
-            <kbd>${displayChartShortcut(chartShortcutBindings(this.shortcutOverrides, "confirm")[0])}</kbd> ${this.t("help.place")}
-          </span>` : nothing}
-        <p id="chart-studio-tool-help">${this.t(!this.audio ? "help.start_audio" : placing ? "help.paste" : this.pending ? "help.line_end" : `help.tool_${this.tool}`)}</p>
-      </div>
-      <button class="button button--text" type="button" @click=${() => this.showGuide()}>
-        ${icon("help", 20)}${this.t("help.open")}
-      </button>
-    </div>`;
-  }
   private renderShortcuts() {
     if (!this.shortcutsOpen) return nothing;
     const recording = (id: string, index: number) => {
@@ -3145,6 +3125,9 @@ export class ChartCreationWorkspace extends LitElement {
       </span>
       ${this.busy ? iconButton({ label: this.c("cancel"), icon: "close", onClick: () => this.cancelOperation() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("patterns.title"), icon: "widgets", disabled: this.busy, onClick: () => void this.showPatterns() }) : nothing}
+      <button class="button button--text chart-studio__guide-button" data-app-bar-keep type="button"
+        aria-label=${this.t("help.open")} title=${`${this.t("help.title")} (${this.shortcutLabel("help")})`}
+        ?disabled=${this.busy} @click=${() => this.showGuide()}>${icon("help", 20)}<span>${this.t("help.open")}</span></button>
       ${this.stageMode === "edit" ? iconButton({ label: this.t("shortcuts.title"), icon: "keyboard", disabled: this.busy, onClick: () => this.showShortcuts() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("audio.title"), icon: "volume_up", disabled: this.busy, onClick: () => void this.showAudioSettings() }) : nothing}
       ${iconButton({ label: this.t("creation.save"), shortcut: this.shortcutLabel("save"), className: "chart-studio__header-save", icon: "save", disabled: this.busy || !this.audio || !this.dirty, onClick: () => void this.run(() => this.save()) })}
@@ -4106,7 +4089,6 @@ export class ChartCreationWorkspace extends LitElement {
             ${icon("tune")}
           </button>
         </div>
-        ${this.renderToolHint()}
         <div class="chart-studio__messages">
           ${
           this.error
@@ -4173,7 +4155,6 @@ export class ChartCreationWorkspace extends LitElement {
               ?hidden=${this.stageMode !== "edit"}
               role="img"
               aria-label=${this.t("edit")}
-              aria-describedby="chart-studio-tool-help"
               tabindex="0"
               style=${this.pastePlacement || ["pan", "select", "brush"].includes(this.tool) ? "touch-action:none" : "touch-action:manipulation"}
               @pointerdown=${this.hit}
@@ -4221,9 +4202,6 @@ export class ChartCreationWorkspace extends LitElement {
                         @click=${() => void this.startPractice()}
                       >
                         ${this.t("help.practice")}
-                      </button>
-                      <button class="button button--text" type="button" @click=${() => this.showGuide()}>
-                        ${icon("help", 20)}${this.t("help.title")}
                       </button>
                     </div>
                   `
