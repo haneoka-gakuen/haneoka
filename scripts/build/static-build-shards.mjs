@@ -2,7 +2,7 @@
 // Input: 固定输入、构建分组／分片及产物记录。
 // Output: 分片归属、覆盖／摘要校验及组合产物。
 // Pos: [Map](L2-2.md)；完整静态前端的分片收尾与验证。
-// Effects/Dependencies: 读取和写入本地产物，解压并校验身份／覆盖；不能混用不同输入的分片。
+// Effects/Dependencies: 读取和写入本地产物，解压并校验身份／覆盖；consumeParts 在逐片验证后移除输入副本，不能混用不同输入的分片。
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -615,7 +615,9 @@ export async function partitionPublication({ root, planFile, output }) {
   }
   return { locales: LOCALES.length, documents: publication.reference.documents, parts: output };
 }
-export async function mergeShards({ planFile, partsRoot, output, inputsManifest }) {
+export async function mergeShards({ planFile, partsRoot, output, inputsManifest, consumeParts = false }) {
+  if (consumeParts && (path.resolve(output) === path.resolve(partsRoot) || path.resolve(output).startsWith(path.resolve(partsRoot) + path.sep)))
+    throw new Error("Consumed shard inputs must not contain the merged output");
   const { plan, sha256: planSha256 } = readPlan(planFile);
   if (fs.existsSync(output)) throw new Error("Merged publication destination already exists");
   const commonAssets = frozenCommonAssets(plan, inputsManifest);
@@ -722,6 +724,7 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest 
       languageOrder = part.searchLanguageOrder;
     }
     languages.set(SEARCH_LANG[locale], entries[SEARCH_LANG[locale]]);
+    if (consumeParts) fs.rmSync(partRoot, { recursive: true });
   }
   if (records.size !== planned.size) throw new Error("Merged static path coverage differs");
   assert.deepEqual([...languageOrder].sort(), Object.values(SEARCH_LANG).sort());
@@ -812,6 +815,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       routes: { type: "string" },
       locale: { type: "string" },
       partition: { type: "string" },
+      "consume-parts": { type: "boolean", default: false },
     },
   });
   const mode = positionals[0];
@@ -879,6 +883,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         partsRoot: values.parts,
         output: path.resolve(values.output),
         inputsManifest: values.inputs,
+        consumeParts: values["consume-parts"],
       }),
     );
   else

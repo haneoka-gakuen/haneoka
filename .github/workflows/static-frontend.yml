@@ -327,6 +327,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Reclaim unused hosted runner runtimes
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /opt/ghc
+          df -h /
       - run: corepack enable
       - uses: actions/setup-node@v7
         with:
@@ -351,8 +356,10 @@ jobs:
           for locale in en ja ko zh-CN zh-TW; do
             mv ".output/static-parts/static-part-${{ needs.prepare.outputs.inputs_sha }}-${locale}" ".output/static-parts/${locale}"
           done
-          node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-merged
-          cp -a .output/static-merged/.output/. .output/
+          node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-merged --consume-parts
+          rm -rf .output/public .output/static-documents
+          mv .output/static-merged/.output/public .output/public
+          mv .output/static-merged/.output/static-documents .output/static-documents
           pnpm runtime:cubism:verify-output
           for entry in core vega cassiopeia home-spot vega-theme api-client; do
             test -s ".output/public/embed/${entry}.js"

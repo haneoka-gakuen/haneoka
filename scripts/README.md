@@ -17,6 +17,19 @@ sealing emits the original fully carried v1 transport. A merge rejects mixed
 transport versions. To roll back transport, omit `--inputs` from both render
 commands and regenerate every partition; never publish an unverified sparse part.
 
+Final `merge --consume-parts` is for disposable copies of completed language
+parts. It retains linked output content, verifies each part's ownership, assets
+and search receipt, then removes that input directory. A later failure may leave
+previous parts consumed; restore them from their immutable artifacts before
+retrying. Omit the flag when preserving local investigation inputs. Output must
+be outside the consumed input tree.
+
+The final GitHub-hosted merge job removes its unused Android/Haskell runtimes
+before restoring artifacts, consumes verified language parts and moves the two
+completed output directories into place. It does not keep a second byte copy of
+the completed publication beside the delivery tree. Coverage and digest checks
+remain mandatory.
+
 Prepare captures base entity/story payloads individually in the existing input
 store. Frozen rendering reads those records directly and fails on a missing or
 mismatched record. Old captures do not contain these records and must be prepared
