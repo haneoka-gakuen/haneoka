@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immutable R2 payloads, D1 indexes, daily/final archives and a durable queue for retired observation payloads.
+// Output: Reused catalog payloads, immutable observations, D1 indexes, daily/final archives and durable retired-payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import type { GameRecordsRegion } from "../src/lib/game-records";
@@ -47,10 +47,12 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
   const { db, bucket } = storage(env);
   const previous = await readOfficialCatalog(env, catalog.region);
   if (previous && catalog.catalogObservedAtMs < previous.catalogObservedAtMs) throw new Error("official_catalog_regressed");
-  if (previous) await saveEventFinalTargets(db, previous);
-  if (previous) await saveArenaFinalTargets(db, previous);
-  const highest = await db.prepare("SELECT highest_event_id, event_identity FROM official_ranking_catalogs WHERE region = ?")
-    .bind(catalog.region).first<{ highest_event_id: string; event_identity: string }>();
+  const eventChanged = JSON.stringify(previous?.event) !== JSON.stringify(catalog.event);
+  const arenaChanged = JSON.stringify(previous?.arena) !== JSON.stringify(catalog.arena);
+  if (previous && eventChanged) await saveEventFinalTargets(db, previous);
+  if (previous && arenaChanged) await saveArenaFinalTargets(db, previous);
+  const highest = await db.prepare("SELECT highest_event_id, event_identity, payload_key, payload_hash FROM official_ranking_catalogs WHERE region = ?")
+    .bind(catalog.region).first<Pick<ObservationRow, "payload_key" | "payload_hash"> & { highest_event_id: string; event_identity: string }>();
   const eventId = catalog.event?.id;
   if (eventId && highest && BigInt(eventId) < BigInt(highest.highest_event_id)) throw new Error("official_event_regressed");
   if (eventId && highest?.highest_event_id === eventId) {
@@ -61,9 +63,15 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
   }
   const body = JSON.stringify(catalog);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_catalog_too_large");
-  const hash = await officialDigest(body);
-  const key = `official/1/${catalog.region}/catalogs/${hash}.json`;
-  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  let hash: string, key: string;
+  if (previous && highest && JSON.stringify({ ...previous, catalogObservedAtMs: 0 }) === JSON.stringify({ ...catalog, catalogObservedAtMs: 0 })) {
+    hash = highest.payload_hash;
+    key = highest.payload_key;
+  } else {
+    hash = await officialDigest(body);
+    key = `official/1/${catalog.region}/catalogs/${hash}.json`;
+    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  }
   await db.prepare(`INSERT INTO official_ranking_catalogs
     (region, highest_event_id, event_identity, observed_at_ms, payload_key, payload_hash)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -74,8 +82,8 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
     .bind(catalog.region, eventId ?? highest?.highest_event_id ?? "0",
       catalog.event ? JSON.stringify(catalog.event.challenges.map((challenge) => `${challenge.id}:${challenge.musicId}`)) : highest?.event_identity ?? "[]",
       catalog.catalogObservedAtMs, key, hash).run();
-  await saveEventFinalTargets(db, catalog);
-  await saveArenaFinalTargets(db, catalog);
+  if (eventChanged) await saveEventFinalTargets(db, catalog);
+  if (arenaChanged) await saveArenaFinalTargets(db, catalog);
 }
 
 async function saveArenaFinalTargets(db: D1Database, catalog: OfficialCatalog): Promise<void> {
@@ -102,7 +110,8 @@ async function saveArenaFinalTargets(db: D1Database, catalog: OfficialCatalog): 
         AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.payload_key END,
       payload_hash=CASE WHEN official_arena_finals.observed_at_ms >= excluded.due_at_ms
         AND official_arena_finals.arena_json=excluded.arena_json THEN official_arena_finals.payload_hash END
-    WHERE excluded.catalog_observed_at_ms >= official_arena_finals.catalog_observed_at_ms`)
+    WHERE excluded.catalog_observed_at_ms >= official_arena_finals.catalog_observed_at_ms
+      AND (excluded.arena_json != official_arena_finals.arena_json OR excluded.due_at_ms != official_arena_finals.due_at_ms)`)
     .bind(catalog.region, key, arena.seasonId, arena.rankingEndAtMs, JSON.stringify(arena), catalog.catalogObservedAtMs)));
 }
 
@@ -134,7 +143,8 @@ async function saveEventFinalTargets(db: D1Database, catalog: OfficialCatalog): 
       observed_at_ms=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.observed_at_ms END,
       payload_key=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.payload_key END,
       payload_hash=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.payload_hash END
-    WHERE excluded.catalog_observed_at_ms >= official_ranking_finals.catalog_observed_at_ms`)
+    WHERE excluded.catalog_observed_at_ms >= official_ranking_finals.catalog_observed_at_ms
+      AND (excluded.event_json != official_ranking_finals.event_json OR excluded.due_at_ms != official_ranking_finals.due_at_ms)`)
     .bind(catalog.region, board.key, event.id,
       board.end + event.aggregationSeconds * 1000, JSON.stringify(event), catalog.catalogObservedAtMs)));
 }
@@ -186,12 +196,12 @@ export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings,
 
 export async function readOfficialCatalog(env: OfficialRankingStoreBindings, region: GameRecordsRegion): Promise<OfficialCatalog | null> {
   const { db, bucket } = storage(env);
-  const row = await db.prepare("SELECT payload_key, payload_hash FROM official_ranking_catalogs WHERE region = ?")
-    .bind(region).first<ObservationRow>();
+  const row = await db.prepare("SELECT payload_key, payload_hash, observed_at_ms FROM official_ranking_catalogs WHERE region = ?")
+    .bind(region).first<Pick<ObservationRow, "payload_key" | "payload_hash"> & { observed_at_ms: number }>();
   if (!row) return null;
   const catalog = await readPayload<OfficialCatalog>(bucket, row.payload_key, row.payload_hash);
   if (catalog.region !== region) throw new Error("official_region_mismatch");
-  return catalog;
+  return { ...catalog, catalogObservedAtMs: row.observed_at_ms };
 }
 
 async function saveDailyObservation(db: D1Database, board: string,

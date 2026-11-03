@@ -102,6 +102,13 @@ region, board and Japan-time day, including Arena windows, event point windows
 and population counts. Window replacement and scheduled pruning preserve these
 payloads. Each window retains its own observation time and coverage.
 
+Each observation writes a separate R2 object. Thinning older observations limits
+retained storage; it does not undo the operations already incurred. Unchanged
+catalog content reuses its R2 object while D1 records the latest observation
+time. Event and Arena final targets are registered when their definitions change;
+new rank windows register their own targets as they are saved. Repeated target
+registrations with the same definition and cutoff do not rewrite existing rows.
+
 Migration 0064 records retired payloads in a durable D1 cleanup queue through
 the four observation tables' delete triggers. Index removal and queue creation
 commit together; R2 deletion happens after a five-minute grace period and another
