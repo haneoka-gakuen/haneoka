@@ -1,32 +1,39 @@
+// Input: Cubism source URL, loader, cancellation and progress options.
+// Output: Portable model ZIP with standard motion groups and WebGAL usage notes.
+// Pos: [Shared logic](L2-2.md); browser model-package export boundary.
+// Effects/Dependencies: Downloads model resources and builds a ZIP in memory.
 import { exportCubismModel, type ExportCubismModelOptions } from "@haneoka/vega-plugin-cubism/export";
 import { unzipSync, zipSync, type Zippable } from "fflate";
 
 type Motion = Record<string, unknown>;
 
-/**
- * One motion group per motion, named after its file, plus an Idle group.
- * Still a standard model3.json; it lets WebGAL (and other pixi-live2d-display
- * hosts, which play a motion by group name) reach every motion, and idles
- * the figure on load.
- */
+/** Expose individual motion names while retaining the source's standard groups. */
 function webgalMotionGroups(descriptor: Record<string, unknown>) {
   const references = descriptor.FileReferences as Record<string, unknown> | undefined;
   const motions = references?.Motions;
   if (!motions || typeof motions !== "object" || Array.isArray(motions)) return;
-  const groups: Record<string, Motion[]> = {};
+  const groups = Object.fromEntries(Object.entries(motions).filter(([, list]) => Array.isArray(list))) as Record<
+    string,
+    Motion[]
+  >;
   const idle: Motion[] = [];
   for (const [group, list] of Object.entries(motions as Record<string, unknown>)) {
     if (!Array.isArray(list)) continue;
     for (const motion of list as Motion[]) {
       const file = typeof motion.File === "string" ? motion.File : "";
-      const stem = file.split(/[?#]/u, 1)[0]!.split("/").pop()!.replace(/\.motion3\.json$/iu, "") || group;
+      const stem =
+        file
+          .split(/[?#]/u, 1)[0]!
+          .split("/")
+          .pop()!
+          .replace(/\.motion3\.json$/iu, "") || group;
       let name = stem;
       for (let suffix = 2; Object.hasOwn(groups, name); suffix += 1) name = `${stem}-${suffix}`;
       groups[name] = [motion];
       if (/idle/iu.test(stem) || /^idle$/iu.test(group)) idle.push(motion);
     }
   }
-  references!.Motions = idle.length ? { Idle: idle, ...groups } : groups;
+  references!.Motions = idle.length && !groups.Idle ? { Idle: idle, ...groups } : groups;
 }
 
 export class Live2DExportError extends Error {
@@ -63,7 +70,10 @@ export async function exportLive2DModel(options: ExportCubismModelOptions) {
       if (controller.signal.aborted) throw abortReason;
       if (options.load) bytes = await options.load(url, controller.signal);
       else {
-        const response = await fetch(url, { signal: controller.signal });
+        const requestURL = new URL(url);
+        if (typeof location !== "undefined" && requestURL.origin === location.origin)
+          requestURL.searchParams.set("download", "1");
+        const response = await fetch(requestURL, { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
         bytes = new Uint8Array(await response.arrayBuffer());
       }
@@ -129,7 +139,34 @@ export async function exportLive2DModel(options: ExportCubismModelOptions) {
   // One top-level folder, so the archive unpacks as a single figure directory.
   const folder = result.fileName.replace(/\.zip$/iu, "");
   const files: Zippable = {};
-  for (const [path, data] of Object.entries(unzipSync(result.bytes)))
+  const sourceFiles = unzipSync(result.bytes);
+  for (const [path, data] of Object.entries(sourceFiles))
     files[`${folder}/${path}`] = [data, { level: /\.(?:png|ogg|mp3|webm)$/iu.test(path) ? 0 : 6 }];
+  const descriptor = Object.keys(sourceFiles).find((path) => /\.(?:model3|model)\.json$/iu.test(path));
+  if (descriptor) {
+    const settings = JSON.parse(new TextDecoder().decode(sourceFiles[descriptor]!)) as Record<string, unknown>;
+    const references = (settings.FileReferences || settings) as Record<string, unknown>;
+    const motions = (references.Motions || references.motions || {}) as Record<string, unknown>;
+    const motion = Object.keys(motions).find((name) => name && name !== "Idle");
+    const expressions = (references.Expressions || references.expressions || []) as Record<string, unknown>[];
+    const expression = expressions[0]?.Name || expressions[0]?.name;
+    const figure = `${folder}/${descriptor}`;
+    const example = `changeFigure:${figure}${motion ? ` -motion=${motion}` : ""}${expression ? ` -expression=${expression}` : ""};`;
+    const readme = [
+      "WebGAL",
+      "",
+      "Extract this complete folder into game/figure, then call its model descriptor:",
+      "",
+      `changeFigure:${figure};`,
+      "",
+      "Motion and expression example:",
+      example,
+      "",
+      "Terre's ordinary asset uploader saves files; unzip this package first.",
+      "Live2D runtime setup: https://docs.openwebgal.com/en/live2D.html",
+      "",
+    ].join("\n");
+    files[`${folder}/README.txt`] = new TextEncoder().encode(readme);
+  }
   return { ...result, bytes: zipSync(files) };
 }
