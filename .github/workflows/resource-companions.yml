@@ -1,7 +1,7 @@
 # Input: Production resource environments, successful resource runs and external version signals.
-# Output: Complete companion data snapshots and coalesced resource refresh requests.
+# Output: Sealed public companion inputs and bounded resource refresh requests.
 # Pos: [Automation map](../L2.md); additive companion publication runner.
-# Effects/Dependencies: R2 reads, companion Git pushes and same-repository workflow dispatch.
+# Effects/Dependencies: R2 reads/control-state writes, feed publication and resource workflow dispatch.
 name: Companion data synchronization
 
 on:
