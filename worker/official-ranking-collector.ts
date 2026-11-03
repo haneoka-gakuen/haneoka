@@ -98,6 +98,8 @@ interface CollectorState {
   failures: number;
   arenaProbeReads?: number;
   arenaStoredReads?: number;
+  populationWorkKey?: string;
+  populationWorkStreak?: number;
   blockedGeneration: string | null;
   callbackProtocolVersion?: number;
   accountBootstrapDigest?: string;
@@ -352,6 +354,8 @@ function validateEventWindow(value: unknown, region: GameRecordsRegion): asserts
 }
 
 function validateArenaProgress(value: unknown): asserts value is OfficialArenaProgress {
+  const reason = object(value).deferredReason;
+  if (reason !== undefined && reason !== "budget" && reason !== "changed") throw new Error("invalid_population_progress");
   const progress = object(value);
   if (!decimal(progress.seasonId) || !decimal(progress.bandId) || typeof progress.maxRank !== "number"
     || !Number.isSafeInteger(progress.maxRank) || progress.maxRank < 0 || !Array.isArray(progress.thresholds)
@@ -1776,7 +1780,11 @@ export class OfficialRankingCollector extends Container<Env> {
       ageMs: age, stale: age === null || age < 0 || age > 2 * INTERVAL_MS, pollAfterSeconds: unavailable ? 300 : 30,
       lastFailure: state.lastFailure ?? null,
       sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
-        populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000 },
+        populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000,
+        populationProgress: Object.entries(state.arenaProgress ?? {}).map(([key, progress]) => ({
+          bandId: progress.bandId, lastWorkedAtMs: progress.updatedAtMs ?? null,
+          publishedAtMs: state.arenaPopulationAt?.[key] ?? null, unknown: progress.counts.filter((value) => value === null).length,
+          reason: progress.deferredReason ?? null })) },
       demand: { queued: [...state.playerInterests ?? [], ...state.songInterests ?? [], ...state.cardInterests ?? []]
           .filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).length,
         retryAtMs: (state.lookupNextAtMs ?? 0) > now ? state.lookupNextAtMs : null, lastFailure: state.lookupLastFailure ?? null },
@@ -1827,6 +1835,10 @@ export class OfficialRankingCollector extends Container<Env> {
         .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
       const eventSwept = final ? [] : await this.eventSweep(state, region, now);
       const arena = state.arenaCatalog;
+      const populationOrder = [...(arena?.bandIds ?? [])].filter((id) => arena?.thresholdsByBand?.[id]?.length !== 0)
+        .sort((left, right) => (state.arenaPopulationAt?.[`${arena!.seasonId}:${left}`] ?? 0) - (state.arenaPopulationAt?.[`${arena!.seasonId}:${right}`] ?? 0));
+      if (populationOrder.length > 1 && (state.populationWorkStreak ?? 0) >= 3
+        && state.populationWorkKey === `${arena!.seasonId}:${populationOrder[0]}`) populationOrder.push(populationOrder.shift()!);
       const populationDue = arena && now >= arena.startAtMs && now < arena.rankingEndAtMs
         && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
           && now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
@@ -1842,11 +1854,12 @@ export class OfficialRankingCollector extends Container<Env> {
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
         capabilities: eventFinal ? ["event-finals-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
-          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-probes-v1"]
-            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "arena-probes-v1"],
+          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-probes-v1", "population-priority-v1"]
+            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "arena-probes-v1", "population-priority-v1"],
         ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards } : {}),
         ...(arenaFinal ? { finalArena: arenaFinal.arena, finalPopulationBands: arenaFinal.populationBands } : {}),
         playerLookups: [], songRankings: [], cardImages: [],
+        populationOrder,
         arenaProgress: arenaFinal ? arenaFinal.progress : Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
         arenaWindows,
         eventWindows,
@@ -2130,12 +2143,16 @@ export class OfficialRankingCollector extends Container<Env> {
             seasonId: progress.seasonId, bandId: progress.bandId, thresholds: progress.thresholds,
             maxRank: progress.maxRank, counts: progress.counts, cursor: progress.cursor,
             ...(progress.pending ? { pending: { index: progress.pending.index, low: progress.pending.low, high: progress.pending.high } } : {}),
+            ...(progress.deferredReason ? { deferredReason: progress.deferredReason } : {}),
             ...(progress.witnessedAtMs ? { witnessedAtMs: progress.witnessedAtMs } : {}), updatedAtMs: Date.now(),
           };
           if (run.finalArena) await saveOfficialFinalArenaProgress(this.env, region, stored);
           else {
             state.arenaProgress ??= {};
-            state.arenaProgress[`${progress.seasonId}:${progress.bandId}`] = stored;
+            const key = `${progress.seasonId}:${progress.bandId}`;
+            state.arenaProgress[key] = stored;
+            state.populationWorkStreak = progress.deferredReason ? state.populationWorkKey === key ? (state.populationWorkStreak ?? 0) + 1 : 1 : 0;
+            state.populationWorkKey = key;
           }
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);

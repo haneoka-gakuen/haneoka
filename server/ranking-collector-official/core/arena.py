@@ -117,6 +117,7 @@ class ArenaCollector:
         self.cursor = 0
         self.published = False
         self.probing = False
+        self.deferred_reason = None
         self.descriptor_digest = hashlib.sha256(Path(self.sampler.args.descriptors).read_bytes()).hexdigest()
 
     def active(self):
@@ -328,10 +329,12 @@ class ArenaCollector:
         witnessed = [at if count is not None else None for at, count in zip(self.witnessed, counts)]
         return dict(seasonId=self.arena['seasonId'], bandId=self.band, thresholds=self.thresholds,
                     maxRank=maximum, counts=counts, cursor=cursor, witnessedAtMs=witnessed,
+                    **({'deferredReason': self.deferred_reason} if self.deferred_reason and 'population-priority-v1' in self.capabilities else {}),
                     **({'pending': pending} if pending else {}))
 
     def population_plan(self):
         candidates = []
+        priority = self.job.get('populationOrder', []) if 'population-priority-v1' in self.capabilities else []
         for band in self.arena['bandIds']:
             if self.job.get('finalArena') is not None and band not in self.job['finalPopulationBands']:
                 continue
@@ -343,9 +346,8 @@ class ArenaCollector:
                 and entry.get('bandId') == band and entry.get('thresholds') == thresholds), None)
             unknown = len(thresholds) if previous is None else sum(value is None for value in previous.get('counts', []))
             unfinished = unknown > 0 or previous.get('cursor', 0) < len(thresholds)
-            # An unfinished league closest to done goes on while its counts are fresh;
-            # finished leagues take turns oldest first.
-            candidates.append((not unfinished, unknown if unfinished else 0, previous.get('updatedAtMs', 0) if previous else 0,
+            candidates.append((priority.index(band) if band in priority else len(priority),
+                not unfinished, unknown if unfinished else 0, previous.get('updatedAtMs', 0) if previous else 0,
                 int(band), band, thresholds, previous))
         return min(candidates) if candidates else None
 
@@ -390,6 +392,7 @@ class ArenaCollector:
         self.verified, self.eof = set(), {}
         self.pending = None
         self.published = False
+        self.deferred_reason = None
         save_progress = False
         try:
             head = self.window(self.band)
@@ -444,7 +447,8 @@ class ArenaCollector:
                 provenance=dict(self.provenance(), sourceThreshold='MasterArenaRank._lp')))
             self.published = True
             save_progress = True
-        except (ArenaDeferred, ArenaChanged):
+        except (ArenaDeferred, ArenaChanged) as deferred:
+            self.deferred_reason = 'budget' if isinstance(deferred, ArenaDeferred) else 'changed'
             save_progress = True
         finally:
             if save_progress and self.band in self.maxima and 'arena-progress-v1' in self.capabilities:

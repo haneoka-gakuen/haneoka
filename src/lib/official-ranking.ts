@@ -182,6 +182,7 @@ export interface OfficialArenaPopulationObservation {
 
 /** Resumable search hints; published population counts require fresh boundary probes. */
 export interface OfficialArenaProgress {
+  deferredReason?: "budget" | "changed";
   seasonId: string;
   bandId: string;
   thresholds: number[];
@@ -237,6 +238,7 @@ export interface OfficialCollectorJob {
   finalPopulationBands?: string[];
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
+  populationOrder?: string[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
   eventWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
   playerLookups?: string[];
