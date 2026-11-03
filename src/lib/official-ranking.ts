@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Official catalog identities, game protobuf observations and collector checkpoints.
-// Output: Shared wire contracts including retained event/Arena final targets, windows, complete populations, resumable hints and origin-bound account-pool parsing.
+// Output: Shared contracts for retained windows, transient Arena probes, complete populations, demand progress and origin-bound account pools.
 // Pos: [Map](L2-2.md); official ranking wire types alongside game-records DTOs.
 // Effects/Dependencies: Web Crypto digests; parses private configuration without logging or network access.
 import type { GameRecordsRegion } from "./game-records";
@@ -270,12 +270,13 @@ export type OfficialCollectorUpdate = {
   | { type: "catalog"; catalog: OfficialCatalog }
   | { type: "attempt"; snapshotId: string }
   | { type: "observation"; observation: OfficialObservation }
-  | { type: "arena-observation"; observation: OfficialArenaObservation }
+  | { type: "arena-observation" | "arena-probe"; observation: OfficialArenaObservation }
   | { type: "event-window"; observation: OfficialEventWindow }
   | { type: "arena-population"; observation: OfficialArenaPopulationObservation }
   | { type: "arena-progress"; checkpointId: string; progress: OfficialArenaProgress }
   | { type: "player-profile"; profileId: string; found: boolean; profile?: unknown; totalFavorite?: string | null; observedAtMs: number }
   | { type: "card-image"; file: string; data: string }
   | { type: "song-ranking"; musicId: string; players: unknown[]; observedAtMs: number }
-  | { type: "complete"; status: "ok" | "failed" | "auth_paused" | "rate_limited"; retryAfterSeconds?: number; failure?: OfficialCollectorFailure }
+  | { type: "complete"; status: "ok" | "failed" | "auth_paused" | "rate_limited"; retryAfterSeconds?: number; failure?: OfficialCollectorFailure;
+      processedDemand?: { player: string[]; song: string[]; card: string[] } }
 );

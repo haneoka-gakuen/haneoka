@@ -78,7 +78,10 @@ interface CollectorRun {
   finalArenaWindows?: OfficialCollectorJob["arenaWindows"];
   finalPopulationBands?: string[];
   checkpoints: Record<string, string>;
-  /** A lookup's requests: each gets one attempt, answered or not. */
+  arenaProbes?: boolean;
+  sweepWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
+  eventSweepWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
+  /** Admitted requests; progress narrows these to the subset actually attempted. */
   attempted?: { player: string[]; song: string[]; card: string[] };
 }
 interface DemandInterest {
@@ -92,9 +95,12 @@ interface CollectorState {
   lastSuccessfulObservationAtMs: number | null;
   lastRunAtMs: number | null;
   failures: number;
+  arenaProbeReads?: number;
+  arenaStoredReads?: number;
   blockedGeneration: string | null;
   callbackProtocolVersion?: number;
   accountBootstrapDigest?: string;
+  readRecoveryVersion?: number;
   accounts?: Record<string, OfficialCollectorAccountHealth>;
   permissionPause?: { identity: string; authGeneration: string } | null;
   legacyPermissionBlock?: string | null;
@@ -102,6 +108,9 @@ interface CollectorState {
   run: CollectorRun | null;
   /** The short demand-only job, separate from collection so a lookup never waits for one. */
   lookup?: CollectorRun | null;
+  lookupFailures?: number;
+  lookupNextAtMs?: number;
+  lookupLastFailure?: OfficialCollectorFailure | null;
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
   /** Next window past the top 100 that each `season:band` board refreshes, and the band whose turn it is. */
@@ -177,11 +186,17 @@ function validateFailure(value: unknown): asserts value is OfficialCollectorFail
     "catalog_arena_season", "catalog_arena_league", "catalog_arena_rank"].includes(String(failure.stage))
     || !["Error", "TimeoutError", "SSLError", "SSLCertVerificationError", "OSError", "URLError", "gaierror", "ValueError", "RuntimeError", "VersionError",
       "CatalogRequestError", "CallbackError", "ImportError", "ModuleNotFoundError", "FileNotFoundError", "PermissionError", "JSONDecodeError",
-      "ConnectionError", "ConnectionRefusedError", "ConnectionResetError", "ProtocolError", "H2Error", "KeyError", "TypeError", "AttributeError", "http_error", "container_fetch_failed"].includes(String(failure.code))
+      "ConnectionError", "ConnectionRefusedError", "ConnectionResetError", "ProtocolError", "H2Error", "KeyError", "TypeError", "AttributeError", "InterruptedError", "http_error", "container_fetch_failed"].includes(String(failure.code))
     || failure.httpStatus !== undefined && (typeof failure.httpStatus !== "number" || !Number.isInteger(failure.httpStatus) || failure.httpStatus < 100 || failure.httpStatus > 599)
     || failure.grpcStatus !== undefined && (typeof failure.grpcStatus !== "string" || !/^[0-9]{1,3}$/u.test(failure.grpcStatus))
     || failure.location !== undefined && (typeof failure.location !== "string" || !/^[A-Za-z0-9_.-]{1,100}:[1-9][0-9]{0,6}$/u.test(failure.location))) throw new Error("invalid_failure");
 }
+function transientCollectorFailure(failure: OfficialCollectorFailure | null | undefined): boolean {
+  if (!failure) return true;
+  if (failure.stage === "container" || failure.stage.startsWith("catalog") || failure.stage === "version" || failure.stage.endsWith("_callback")) return true;
+  return ![401, 403, 429].includes(failure.httpStatus ?? 0) && !["7", "8", "16"].includes(failure.grpcStatus ?? "");
+}
+const recoveryDelay = (failures: number): number => Math.min(120_000, 15_000 * 2 ** Math.min(3, Math.max(0, failures - 1)));
 async function responseFailure(response: Response): Promise<OfficialCollectorFailure | null> {
   const reader = response.body?.getReader();
   if (!reader) return null;
@@ -426,7 +441,7 @@ export class OfficialRankingCollector extends Container<Env> {
   }
 
   collectorRuntimeInfo() {
-    return { interfaceVersion: 2, serviceAuthReady: Boolean(this.envVars?.OFFICIAL_COLLECTOR_TOKEN) };
+    return { interfaceVersion: 3, serviceAuthReady: Boolean(this.envVars?.OFFICIAL_COLLECTOR_TOKEN) };
   }
 
   async pruneObservations(region: GameRecordsRegion): Promise<number> {
@@ -1086,11 +1101,13 @@ export class OfficialRankingCollector extends Container<Env> {
     const arena = state.arenaCatalog;
     if (!arena || count <= 0 || now < arena.startAtMs || now >= arena.rankingEndAtMs || !arena.bandIds.length) return [];
     const sweep = state.arenaSweep ??= { band: 0, next: {} };
+    let band = sweep.band;
+    const next = { ...sweep.next };
     const maxima = new Map<string, number | null>();
     const windows: { seasonId: string; bandId: string; startRank: number; endRank: number }[] = [];
     for (let turn = 0; windows.length < count && turn < 2 * count + arena.bandIds.length; turn++) {
-      const bandId = arena.bandIds[sweep.band % arena.bandIds.length]!;
-      sweep.band = (sweep.band + 1) % arena.bandIds.length;
+      const bandId = arena.bandIds[band % arena.bandIds.length]!;
+      band = (band + 1) % arena.bandIds.length;
       if (!maxima.has(bandId))
         maxima.set(bandId, (await readOfficialArenaMetadata(this.env, region, arena.seasonId, bandId).catch(() => null))?.maxRank ?? null);
       const maxRank = maxima.get(bandId);
@@ -1098,9 +1115,9 @@ export class OfficialRankingCollector extends Container<Env> {
       const deep = turn % 4 === 3 && maxRank > ARENA_NEAR_RANKS;
       const key = `${arena.seasonId}:${bandId}${deep ? ":deep" : ""}`;
       const first = deep ? ARENA_NEAR_RANKS + 1 : 101, last = deep ? maxRank : Math.min(maxRank, ARENA_NEAR_RANKS);
-      let startRank = sweep.next[key] ?? first;
+      let startRank = next[key] ?? first;
       if (startRank > last) startRank = first;
-      sweep.next[key] = startRank + 100;
+      next[key] = startRank + 100;
       windows.push({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 });
     }
     sweep.next = Object.fromEntries(Object.entries(sweep.next).filter(([key]) => key.startsWith(`${arena.seasonId}:`)));
@@ -1118,13 +1135,14 @@ export class OfficialRankingCollector extends Container<Env> {
     if (!event) return [];
     if (state.eventSweep?.eventId !== event.id) state.eventSweep = { eventId: event.id, next: 101, maxRank: null };
     const sweep = state.eventSweep, starts = [1];
+    let next = sweep.next;
     for (let turn = 0; turn < EVENT_SWEEP_WINDOWS; turn++) {
-      if (sweep.maxRank !== null && sweep.next > sweep.maxRank) {
-        sweep.next = 101;
+      if (sweep.maxRank !== null && next > sweep.maxRank) {
+        next = 101;
         if (sweep.maxRank <= 100) break;
       }
-      starts.push(sweep.next);
-      sweep.next += 100;
+      starts.push(next);
+      next += 100;
     }
     return [...new Set(starts)].map((startRank) => ({ eventId: event.id, startRank, endRank: startRank + 99 }));
   }
@@ -1208,10 +1226,17 @@ export class OfficialRankingCollector extends Container<Env> {
       const field = kind === "player" ? "playerInterests" : kind === "song" ? "songInterests" : "cardInterests";
       const queue = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
       const missing = ids.filter((id) => !queue.some((entry) => entry.id === id));
-      if (!missing.length) return { kind: "pending", retryAfter: 30 };
+      if (!missing.length) {
+        if (!state.lookup || state.lookup.complete || state.lookup.deadlineMs + 15_000 < now) {
+          await this.queueLookup(region, now + 1_000);
+          this.ctx.waitUntil(this.runLookup(region));
+        }
+        return { kind: "pending", retryAfter: 3 };
+      }
       if (queue.length + missing.length > DEMAND_LIMITS[kind]) return { kind: "queue_full", retryAfter: 60 };
       state[field] = [...queue, ...missing.map((id) => ({ id, requestedAtMs: now }))];
       await this.ctx.storage.put("collectorState", state);
+      await this.queueLookup(region, now + 1_000);
       this.ctx.waitUntil(this.runLookup(region));
       return { kind: "pending", retryAfter: 3 };
     });
@@ -1314,22 +1339,57 @@ export class OfficialRankingCollector extends Container<Env> {
     });
   }
 
-  /** Starts a demand-only job on a free account, if one is needed and possible. */
-  private async runLookup(region: GameRecordsRegion): Promise<void> {
+  private async queueLookup(region: GameRecordsRegion, atMs: number): Promise<void> {
+    this.deleteSchedules("runLookup");
+    await this.schedule(new Date(Math.ceil(atMs / 1000) * 1000), "runLookup", region);
+  }
+
+  async runLookup(region: GameRecordsRegion): Promise<void> {
     const job = await this.serialized(async (): Promise<OfficialCollectorJob | null> => {
-      if (region === "jp" ? await this.guestJobView() : await this.platformLoginView(region)) return null;
+      if (!officialRegionEnabled(this.env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) {
+        this.deleteSchedules("runLookup");
+        return null;
+      }
+      if (region === "jp" ? await this.guestJobView() : await this.platformLoginView(region)) {
+        await this.queueLookup(region, Date.now() + 5_000);
+        return null;
+      }
       const state = await this.stateFor(region), now = Date.now();
-      if (state.lookup && !state.lookup.complete && now <= state.lookup.deadlineMs + 15_000) return null;
+      if ((state.lookupNextAtMs ?? 0) > now) {
+        await this.queueLookup(region, state.lookupNextAtMs!);
+        return null;
+      }
+      if (state.lookup && !state.lookup.complete && now <= state.lookup.deadlineMs + 15_000) {
+        await this.queueLookup(region, state.lookup.deadlineMs + 15_001);
+        return null;
+      }
       const live = (entries?: DemandInterest[], limit = 16) =>
         (entries ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, limit).map((entry) => entry.id);
+      const hadRequests = Boolean(state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length);
+      for (const field of ["playerInterests", "songInterests", "cardInterests"] as const)
+        state[field] = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
       const playerLookups = live(state.playerInterests), songRankings = live(state.songInterests, 4), cardImages = live(state.cardInterests, 32);
-      if (!playerLookups.length && !songRankings.length && !cardImages.length) return null;
+      if (!playerLookups.length && !songRankings.length && !cardImages.length) {
+        this.deleteSchedules("runLookup");
+        if (hadRequests) await this.ctx.storage.put("collectorState", state);
+        return null;
+      }
       let pool: OfficialCollectorPool | null;
       try { pool = await this.poolFor(region); } catch { return null; }
       if (!pool) return null;
       this.synchronizePool(state, pool);
       const config = this.accountFor(state, pool);
-      if (!config) { await this.ctx.storage.put("collectorState", state); return null; }
+      if (!config) {
+        const available = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause && !state.accounts?.[account.identity]?.held
+          && !state.accounts?.[account.identity]?.blocked[account.authGeneration]);
+        if (available.length && !state.permissionPause && !state.legacyPermissionBlock) {
+          const next = Math.min(...available.map((account) => Math.max(account.availableAtMs,
+            state.accounts?.[account.identity]?.cooldownUntilMs ?? 0, state.accounts?.[account.identity]?.leaseUntilMs ?? 0)));
+          await this.queueLookup(region, Math.max(now + 3_000, next + 1));
+        }
+        await this.ctx.storage.put("collectorState", state);
+        return null;
+      }
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const runId = crypto.randomUUID().replaceAll("-", "");
       state.lookup = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
@@ -1342,13 +1402,16 @@ export class OfficialRankingCollector extends Container<Env> {
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.ctx.storage.put("collectorState", state);
+      await this.queueLookup(region, now + LOOKUP_MS + 15_001);
       return { contract: "haneoka:official-ranking-job/1", mode: "lookup", region, runId, credentialGeneration: config.generation,
-        capabilities: ["player-demand-v1"], playerLookups, songRankings, cardImages, arenaProgress: [], arenaWindows: [],
+        capabilities: ["player-demand-v1", "demand-progress-v1"], playerLookups, songRankings, cardImages, arenaProgress: [], arenaWindows: [],
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
         callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + LOOKUP_MS };
     });
     if (!job) return;
     let failed = false;
+    let busy = false;
+    let failure: OfficialCollectorFailure | null = null;
     try {
       const serviceToken = await this.ctx.storage.get<string>("containerToken");
       const response = await this.containerFetch("http://container/collect", { method: "POST",
@@ -1356,18 +1419,31 @@ export class OfficialRankingCollector extends Container<Env> {
         body: JSON.stringify(job), signal: AbortSignal.timeout(LOOKUP_MS + 15_000) });
       failed = !response.ok;
       if (response.ok) await response.arrayBuffer();
-      else await responseFailure(response);
-    } catch { failed = true; }
+      else if (response.status === 409) {
+        busy = object(await response.json()).error === "busy";
+        if (!busy) failure = { stage: "container", code: "http_error", httpStatus: response.status };
+      } else failure = await responseFailure(response) ?? { stage: "container", code: "http_error", httpStatus: response.status };
+    } catch (error) {
+      failed = true;
+      failure = { stage: "container", code: error instanceof Error && error.name === "TimeoutError" ? "TimeoutError" : "container_fetch_failed" };
+    }
     const again = await this.serialized(async () => {
       const state = await this.stateFor(region), lookup = state.lookup;
       if (!lookup || lookup.id !== job.runId) return false;
       if (!lookup.complete) {
         lookup.complete = true;
+        if (busy) {
+          delete lookup.attempted;
+          state.lookupNextAtMs = Date.now() + 1_000;
+        } else if (failed) {
+          state.lookupFailures = (state.lookupFailures ?? 0) + 1;
+          state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);
+          state.lookupLastFailure = failure;
+        }
         const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
-        if (health) { health.leaseUntilMs = 0; if (failed) health.failures += 1; }
+        if (health && health.leaseUntilMs <= lookup.deadlineMs + 15_000) health.leaseUntilMs = 0;
       }
-      // What a lookup could not answer (a missing card image, a failed read) is not retried in a loop: the page asks
-      // again if it still needs it. Only requests that arrived during the job start another one.
+      // Without a completion acknowledgement, retire the admitted requests once.
       const tried = lookup.attempted;
       if (tried) {
         const drop = (entries: DemandInterest[] | undefined, ids: string[]) => (entries ?? []).filter((entry) => !ids.includes(entry.id));
@@ -1377,6 +1453,9 @@ export class OfficialRankingCollector extends Container<Env> {
         delete lookup.attempted;
       }
       await this.ctx.storage.put("collectorState", state);
+      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)
+        await this.queueLookup(region, Math.max(Date.now() + 1_000, state.lookupNextAtMs ?? 0));
+      else this.deleteSchedules("runLookup");
       return !failed;
     });
     if (again) await this.runLookup(region);
@@ -1419,7 +1498,25 @@ export class OfficialRankingCollector extends Container<Env> {
           try { validateFailure(update.failure); } catch { return json({ error: "invalid_update" }, 400); }
         }
         if (lookup.complete) return json({ ok: true });
+        if (update.processedDemand && lookup.attempted) {
+          const processed = update.processedDemand;
+          for (const kind of ["player", "song", "card"] as const) {
+            if (!Array.isArray(processed[kind]) || processed[kind].length > lookup.attempted[kind].length
+              || processed[kind].some((id) => typeof id !== "string" || !lookup.attempted![kind].includes(id))) return json({ error: "invalid_update" }, 400);
+          }
+          if (update.status === "ok" || processed.player.length + processed.song.length + processed.card.length > 0)
+            lookup.attempted = processed;
+        }
         lookup.complete = true;
+        if (update.status === "ok") {
+          state.lookupFailures = 0;
+          state.lookupNextAtMs = 0;
+          state.lookupLastFailure = null;
+        } else if (update.status === "failed" && transientCollectorFailure(update.failure)) {
+          state.lookupFailures = (state.lookupFailures ?? 0) + 1;
+          state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);
+          state.lookupLastFailure = update.failure ?? null;
+        }
         const health = lookup.accountIdentity ? state.accounts?.[lookup.accountIdentity] : undefined;
         if (health) {
           health.leaseUntilMs = 0;
@@ -1431,6 +1528,14 @@ export class OfficialRankingCollector extends Container<Env> {
           }
         }
         if (rejectedSessionFailure(update)) await this.rememberPlatformRenewal(state, lookup);
+        const tried = lookup.attempted;
+        if (tried) {
+          const drop = (entries: DemandInterest[] | undefined, ids: string[]) => (entries ?? []).filter((entry) => !ids.includes(entry.id));
+          state.playerInterests = drop(state.playerInterests, tried.player);
+          state.songInterests = drop(state.songInterests, tried.song);
+          state.cardInterests = drop(state.cardInterests, tried.card);
+          delete lookup.attempted;
+        }
       } else if (["player-profile", "song-ranking", "card-image"].includes(update.type)) {
         const refused = await this.applyDemand(state, region, update);
         if (refused) return refused;
@@ -1534,10 +1639,15 @@ export class OfficialRankingCollector extends Container<Env> {
     const run = state.run;
     if (!run || run.complete) return false;
     if (Date.now() <= run.deadlineMs + 15_000) return true;
-    if (run.pendingAttempt && !run.resolvedAttempt) this.pauseRun(state, "auth_uncertain");
     run.complete = true;
+    if (!state.blockedGeneration && !state.permissionPause && !state.legacyPermissionBlock) {
+      state.status = "failed";
+      state.lastFailure = { stage: "container", code: "TimeoutError" };
+      state.failures += 1;
+      state.nextAtMs = Math.min(state.nextAtMs || Date.now(), Date.now() + recoveryDelay(state.failures));
+    }
     const health = this.runHealth(state);
-    if (health) health.leaseUntilMs = 0;
+    if (health && health.leaseUntilMs <= run.deadlineMs + 15_000) health.leaseUntilMs = 0;
     return false;
   }
 
@@ -1573,11 +1683,28 @@ export class OfficialRankingCollector extends Container<Env> {
         await this.persist(state, false);
         return;
       }
+      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)
+        await this.queueLookup(region, Date.now() + 1_000);
       let pool: OfficialCollectorPool | null;
       try { pool = await this.poolFor(region); }
       catch { state.status = "invalid_config"; await this.persist(state, false); return; }
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return; }
       this.synchronizePool(state, pool);
+      if (state.readRecoveryVersion !== 3) {
+        for (const account of pool.accounts) {
+          const health = state.accounts?.[account.identity];
+          if (!health || health.held || health.rejections || health.blocked[account.authGeneration] === "auth_paused") continue;
+          if (health.blocked[account.authGeneration] === "auth_uncertain") delete health.blocked[account.authGeneration];
+          health.cooldownUntilMs = 0;
+          health.failures = 0;
+          if (state.blockedGeneration === account.generation) state.blockedGeneration = null;
+        }
+        if (state.run?.complete && transientCollectorFailure(state.lastFailure) && !state.permissionPause && !state.legacyPermissionBlock) {
+          state.nextAtMs = Date.now();
+          if (["failed", "no_available_account", "auth_uncertain"].includes(state.status)) state.status = "not_started";
+        }
+        state.readRecoveryVersion = 3;
+      }
       const renewals = Object.values(state.platformRenewals ?? {});
       if (region !== "jp" && renewals.length)
         await this.schedule(new Date(Math.max(Date.now() + 1_000, Math.min(...renewals.map((entry) => entry.notBeforeMs)))), "renewPlatformSessions", region);
@@ -1646,6 +1773,10 @@ export class OfficialRankingCollector extends Container<Env> {
       samplingIntervalSeconds: INTERVAL_MS / 1000, lastSuccessfulObservationAtMs: state.lastSuccessfulObservationAtMs,
       ageMs: age, stale: age === null || age < 0 || age > 2 * INTERVAL_MS, pollAfterSeconds: unavailable ? 300 : 30,
       lastFailure: state.lastFailure ?? null,
+      sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0 },
+      demand: { queued: [...state.playerInterests ?? [], ...state.songInterests ?? [], ...state.cardInterests ?? []]
+          .filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).length,
+        retryAtMs: (state.lookupNextAtMs ?? 0) > now ? state.lookupNextAtMs : null, lastFailure: state.lookupLastFailure ?? null },
       pool: counts,
       nextAttemptAtMs: unavailable || !canSchedule ? null : state.nextAtMs || null, catalogProvider: "official-master" };
   }
@@ -1673,7 +1804,7 @@ export class OfficialRankingCollector extends Container<Env> {
       if (final) state.nextFinalAtMs = now + 2 * INTERVAL_MS;
       state.run = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
         authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + JOB_MS,
-        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {},
+        pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {}, arenaProbes: true,
         ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards, finalWindows: eventFinal.windows } : {}),
         ...(arenaFinal ? { finalArena: arenaFinal.arena, finalArenaWindows: arenaFinal.windows, finalPopulationBands: arenaFinal.populationBands } : {}) };
       const health = this.runHealth(state);
@@ -1691,22 +1822,24 @@ export class OfficialRankingCollector extends Container<Env> {
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
-      const eventWindows = final ? eventFinal?.windows ?? [] : [...eventDemand, ...(await this.eventSweep(state, region, now))
+      const eventSwept = final ? [] : await this.eventSweep(state, region, now);
+      const swept = final ? [] : await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length));
+      state.run.eventSweepWindows = eventSwept;
+      state.run.sweepWindows = swept;
+      const eventWindows = final ? eventFinal?.windows ?? [] : [...eventDemand, ...eventSwept
         .filter((row) => !eventDemand.some((entry) => entry.eventId === row.eventId && entry.startRank === row.startRank))];
-      const arenaWindows = final ? arenaFinal?.windows ?? [] : [...demanded, ...await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length))];
+      const arenaWindows = final ? arenaFinal?.windows ?? [] : [...demanded, ...swept];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
         capabilities: eventFinal ? ["event-finals-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
-          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1"]
-            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "player-demand-v1"],
+          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-probes-v1"]
+            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "arena-probes-v1"],
         ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards } : {}),
         ...(arenaFinal ? { finalArena: arenaFinal.arena, finalPopulationBands: arenaFinal.populationBands } : {}),
-        playerLookups: (state.playerInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 16).map((entry) => entry.id),
-        songRankings: (state.songInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 4).map((entry) => entry.id),
-        cardImages: (state.cardInterests ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).slice(0, 32).map((entry) => entry.id),
+        playerLookups: [], songRankings: [], cardImages: [],
         arenaProgress: arenaFinal ? arenaFinal.progress : Object.values(state.arenaProgress ?? {}).sort((a, b) => (a.updatedAtMs ?? 0) - (b.updatedAtMs ?? 0)),
         arenaWindows,
         eventWindows,
@@ -1736,11 +1869,12 @@ export class OfficialRankingCollector extends Container<Env> {
       state.run.complete = true;
       state.lastFailure = failure ?? { stage: "container", code: "container_fetch_failed" };
       state.failures += 1;
-      const serviceFailure = failure?.stage === "container" && (failure.httpStatus ?? 0) >= 500;
-      state.nextAtMs = Math.max(state.nextAtMs, Date.now() + (serviceFailure ? 15_000 : Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1))));
+      const serviceFailure = transientCollectorFailure(failure);
+      state.nextAtMs = serviceFailure ? Date.now() + recoveryDelay(state.failures)
+        : Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
       const health = this.runHealth(state);
       if (health) {
-        health.leaseUntilMs = 0;
+        if (health.leaseUntilMs <= state.run.deadlineMs + 15_000) health.leaseUntilMs = 0;
         if (!serviceFailure) { health.failures += 1; health.cooldownUntilMs = state.nextAtMs; }
       }
       if (!serviceFailure && state.run.pendingAttempt && !state.run.resolvedAttempt && !state.blockedGeneration) {
@@ -1775,7 +1909,7 @@ export class OfficialRankingCollector extends Container<Env> {
       if (update.type === "catalog" || update.type === "complete") checkpoint = update.type;
       else if (update.type === "attempt") checkpoint = `attempt:${update.snapshotId}`;
       else if (update.type === "observation") checkpoint = `observation:${update.observation?.snapshotId}`;
-      else if (update.type === "arena-observation") checkpoint = `arena:${update.observation?.snapshotId}`;
+      else if (update.type === "arena-observation" || update.type === "arena-probe") checkpoint = `${update.type === "arena-probe" ? "probe" : "arena"}:${update.observation?.snapshotId}`;
       else if (update.type === "event-window") checkpoint = `event-window:${update.observation?.snapshotId}`;
       else if (update.type === "arena-population") checkpoint = `arena-population:${update.observation?.snapshotId}`;
       else if (update.type === "arena-progress") checkpoint = `arena-progress:${update.checkpointId}`;
@@ -1915,6 +2049,8 @@ export class OfficialRankingCollector extends Container<Env> {
             state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.eventId !== observation.eventId || entry.startRank !== observation.startRank);
             const sweep = state.eventSweep;
             if (sweep?.eventId === observation.eventId) {
+              if (observation.startRank > 1 && run.eventSweepWindows?.some((window) => window.startRank === observation.startRank))
+                sweep.next = observation.startRank + 100;
               const last = observation.maxRank ?? null;
               // A full window past the known end means the board grew.
               if (last !== null) sweep.maxRank = Math.min(sweep.maxRank ?? last, last);
@@ -1924,7 +2060,9 @@ export class OfficialRankingCollector extends Container<Env> {
           run.pendingAttempt = null;
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
-        } else if (update.type === "arena-observation") {
+        } else if (update.type === "arena-observation" || update.type === "arena-probe") {
+          const retained = update.type === "arena-observation";
+          if (!retained && !run.arenaProbes) return json({ error: "capability_mismatch" }, 409);
           validateArenaObservation(update.observation, region);
           if (run.pendingAttempt !== update.observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           const arena = run.catalog?.arena;
@@ -1946,19 +2084,26 @@ export class OfficialRankingCollector extends Container<Env> {
             const health = this.runHealth(state);
             if (health) health.cooldownUntilMs = state.nextAtMs;
           }
-          await this.ctx.storage.put("collectorState", state);
-          await saveOfficialArenaObservation(this.env, update.observation);
-          if (!update.observation.error) {
+          if (retained) await this.ctx.storage.put("collectorState", state);
+          if (retained) await saveOfficialArenaObservation(this.env, update.observation);
+          if (retained && !update.observation.error) {
             const observation = update.observation;
             state.arenaInterests = (state.arenaInterests ?? []).filter((entry) => entry.seasonId !== observation.seasonId
               || entry.bandId !== observation.bandId || entry.startRank !== observation.startRank
               || observation.endRank < Math.min(entry.endRank, observation.maxRank ?? entry.endRank)
               || observation.players!.length < Math.max(0, Math.min(entry.endRank, observation.maxRank ?? entry.endRank) - entry.startRank + 1));
+            if (state.arenaSweep && run.sweepWindows?.some((window) => window.bandId === observation.bandId && window.startRank === observation.startRank)) {
+              const key = `${observation.seasonId}:${observation.bandId}${observation.startRank > ARENA_NEAR_RANKS ? ":deep" : ""}`;
+              state.arenaSweep.next[key] = observation.startRank + 100;
+              state.arenaSweep.band = (arena.bandIds.indexOf(observation.bandId) + 1) % arena.bandIds.length;
+            }
           }
           run.pendingAttempt = null;
           run.checkpoints[checkpoint] = updateHash;
           if (!update.observation.error) {
-            state.lastSuccessfulObservationAtMs = Math.max(state.lastSuccessfulObservationAtMs ?? 0, update.observation.observedAtMs);
+            if (retained) state.lastSuccessfulObservationAtMs = Math.max(state.lastSuccessfulObservationAtMs ?? 0, update.observation.observedAtMs);
+            if (retained) state.arenaStoredReads = (state.arenaStoredReads ?? 0) + 1;
+            else state.arenaProbeReads = (state.arenaProbeReads ?? 0) + 1;
             const health = this.runHealth(state);
             if (health) {
               health.rejections = 0;
@@ -2017,7 +2162,9 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.status === "auth_paused") this.pauseRun(state, "auth_paused", update.failure ? permissionRejected(update.failure) : false);
           if (rejectedSessionFailure(update)) await this.rememberPlatformRenewal(state, run);
           if (update.status === "rate_limited") state.nextAtMs = Math.max(state.nextAtMs, Date.now() + retryMs(update.retryAfterSeconds));
-          if (update.status === "failed") state.nextAtMs = Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
+          const serviceFailure = update.status === "failed" && transientCollectorFailure(update.failure);
+          if (update.status === "failed") state.nextAtMs = serviceFailure ? Date.now() + recoveryDelay(state.failures)
+            : Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
           const arena = run.finalArena || run.catalog?.arena === undefined ? null : state.arenaCatalog;
           const cold = arena && Date.now() < arena.rankingEndAtMs && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
             && !state.arenaPopulationAt?.[`${arena.seasonId}:${id}`]);
@@ -2028,9 +2175,10 @@ export class OfficialRankingCollector extends Container<Env> {
           this.ctx.waitUntil(this.runLookup(region));
           const health = this.runHealth(state);
           if (health) {
-            health.leaseUntilMs = 0;
-            health.failures = update.status === "ok" ? 0 : health.failures + 1;
-            if (update.status === "failed" || update.status === "rate_limited") health.cooldownUntilMs = Math.max(health.cooldownUntilMs, state.nextAtMs);
+            if (health.leaseUntilMs <= run.deadlineMs + 15_000) health.leaseUntilMs = 0;
+            health.failures = update.status === "ok" ? 0 : serviceFailure ? health.failures : health.failures + 1;
+            if (update.status === "rate_limited" || update.status === "failed" && !serviceFailure)
+              health.cooldownUntilMs = Math.max(health.cooldownUntilMs, state.nextAtMs);
           }
           run.checkpoints[checkpoint] = updateHash;
           await this.persist(state, !state.permissionPause && !state.legacyPermissionBlock);

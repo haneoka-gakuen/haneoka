@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: A job's bounded player and song demand, its sampler and the update channel.
-# Output: Player profiles and song rankings sent as durable callbacks.
+# Output: Player profiles, song rankings and the subset of demand actually attempted, sent as durable callbacks.
 # Pos: [Map](../../L2.md); on-demand reads that share a run with ranking collection.
 # Effects/Dependencies: Authenticated game RPCs at the sampler's pace; a rejected read ends demand and returns its receipt for caller classification.
 import base64
@@ -36,6 +36,8 @@ class Demand:
     def __init__(self, job, sampler, updates, deadline):
         self.job, self.sampler, self.updates = job, sampler, updates
         lookup = job.get('mode') == 'lookup'
+        self.lookup = lookup
+        self.attempted = dict(player=[], song=[], card=[])
         self.budget = deadline if lookup else min(time.time() + 40, deadline - 30)
 
     def room(self, requests):
@@ -56,6 +58,7 @@ class Demand:
         return int(datetime.fromisoformat(receipt['received_at']).timestamp() * 1000)
 
     def player(self, profile_id):
+        self.attempted['player'].append(profile_id)
         receipt, response = self.read('friend.FriendService', 'FindByProfileID',
                                       {'player_profile_id': profile_id}, 'player-' + profile_id)
         if response is None:
@@ -76,6 +79,7 @@ class Demand:
             raise DemandStopped(favorite_status)
 
     def song(self, music_id):
+        self.attempted['song'].append(str(music_id))
         receipt, response = self.read('livemusic.LiveMusicService', 'GetRanking', {'music_id': music_id},
                                       'song-%d' % music_id)
         if response is None:
@@ -101,6 +105,7 @@ class Demand:
         match = CARD_FILE.fullmatch(file)
         if not match:
             return
+        self.attempted['card'].append(file)
         url = '%s/operation/profilecard/%s/%s' % (CARD_ORIGIN, match.group(1), file)
         with urlopen(Request(url, headers={'Authorization': authorization}), timeout=CARD_SECONDS * 3) as response:
             body = response.read(CARD_BYTES + 1)
@@ -115,8 +120,10 @@ class Demand:
         try:
             authorization = self.cdn_authorization()
         except Exception:
+            self.attempted['card'].extend(files)
             return
         if not authorization:
+            self.attempted['card'].extend(files)
             return
         stop = min(time.time() + CARD_BUDGET_SECONDS, self.budget)
         for file in files:
@@ -135,12 +142,14 @@ class Demand:
                 if not self.room(1):
                     return None
                 self.song(int(music_id))
-            # Cards go first: a full player queue would otherwise spend the whole budget every run.
-            self.cards()
-            for profile_id in self.job.get('playerLookups', [])[:16]:
+            if not self.lookup:
+                self.cards()
+            for profile_id in self.job.get('playerLookups', [])[:8 if self.lookup else 16]:
                 if not self.room(PLAYER_RPCS):
-                    return None
+                    break
                 self.player(profile_id)
+            if self.lookup:
+                self.cards()
         except DemandStopped as stopped:
             return stopped.receipt
         finally:

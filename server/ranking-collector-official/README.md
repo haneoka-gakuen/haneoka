@@ -109,6 +109,18 @@ time. Event and Arena final targets are registered when their definitions change
 new rank windows register their own targets as they are saved. Repeated target
 registrations with the same definition and cutoff do not rewrite existing rows.
 
+Live event boards run before Arena work, and Arena top windows precede extra
+windows and population searches. Work reserves twenty seconds for completion
+callbacks. With `arena-probes-v1`, intermediate population-search pages only
+acknowledge their checkpoints; complete counts and retained rank windows are
+still stored. Background sweep cursors advance after successful window storage.
+
+Demand-only jobs have durable wake-ups and advertise `demand-progress-v1`.
+Completion reports the IDs actually attempted, so budget-deferred requests stay
+queued for another batch. Players and songs precede card downloads, with a
+bounded player batch. Transient service failures retry after 15–120 seconds;
+read-only job expiration does not invalidate an account session.
+
 Migration 0064 records retired payloads in a durable D1 cleanup queue through
 the four observation tables' delete triggers. Index removal and queue creation
 commit together; R2 deletion happens after a five-minute grace period and another

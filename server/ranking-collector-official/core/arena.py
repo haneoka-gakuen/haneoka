@@ -1,4 +1,4 @@
-"""L3: server/L2.md; live/final Arena and event point windows and resumable, freshly witnessed population counts."""
+"""L3: server/L2.md; live/final rank windows, transient population probes and resumable, freshly witnessed counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -116,6 +116,7 @@ class ArenaCollector:
         self.pending = None
         self.cursor = 0
         self.published = False
+        self.probing = False
         self.descriptor_digest = hashlib.sha256(Path(self.sampler.args.descriptors).read_bytes()).hexdigest()
 
     def active(self):
@@ -174,9 +175,13 @@ class ArenaCollector:
             retry = self.retry_delay(receipt, 300) if status == 'rate_limited' else None
             if retry is not None:
                 observation['retryAfterSeconds'] = retry
-            stopped = ArenaStopped(status, self.failure_info('arena_board', error, receipt), retry)
+            exhausted = isinstance(error, InterruptedError) or (receipt and receipt.get('error_type') in ('InterruptedError', 'TimeoutError')
+                and time.time() >= self.deadline)
+            stopped = (ArenaDeferred() if self.probing and exhausted
+                       else ArenaStopped(status, self.failure_info('arena_board', error, receipt), retry))
         self.stage = 'arena_observation_callback'
-        self.updates.send('arena-observation', observation=observation)
+        probe = self.probing and start > 1 and 'arena-probes-v1' in self.capabilities
+        self.updates.send('arena-probe' if probe else 'arena-observation', observation=observation)
         if stopped:
             raise stopped
         self.windows[key] = observation
@@ -197,9 +202,10 @@ class ArenaCollector:
                 for demand in self.job.get('arenaWindows', []):
                     self.window(demand['bandId'], demand['startRank'])
                 return
+            for band in self.arena['bandIds']:
+                self.window(band)
             if 'arena-demand-v1' in self.capabilities:
-                # Tier counts and the reserved seconds come before the demanded and swept windows.
-                demand_deadline = min(time.time() + 40, self.deadline - 22 - reserve - self.population_seconds())
+                demand_deadline = min(time.time() + 30, self.deadline - 3 - reserve - min(25, self.population_seconds()))
                 for demand in self.job.get('arenaWindows', [])[:20]:
                     if time.time() + 2 >= demand_deadline:
                         break
@@ -207,10 +213,9 @@ class ArenaCollector:
                             and type(demand['startRank']) is int and demand['startRank'] > 0
                             and (demand['startRank'] - 1) % 100 == 0 and demand['endRank'] == demand['startRank'] + 99):
                         self.window(demand['bandId'], demand['startRank'])
-            for band in self.arena['bandIds']:
-                self.window(band)
         except ArenaDeferred:
-            pass
+            if self.job.get('finalArena') is None and self.active() and any((band, 1) not in self.windows for band in self.arena['bandIds']):
+                raise ArenaStopped('failed', self.failure_info('arena_board', TimeoutError()), None)
 
     def point(self, position):
         if position < 1:
@@ -364,8 +369,10 @@ class ArenaCollector:
         if budget is not None:
             self.deadline = min(deadline, time.time() + budget)
         try:
+            self.probing = True
             self._population()
         finally:
+            self.probing = False
             self.deadline = deadline
 
     def _population(self):

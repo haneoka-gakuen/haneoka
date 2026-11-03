@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: A bounded region job, private credentials and authenticated durable callbacks.
-# Output: Fresh-version live/final observations and body-free authenticated demand failures acknowledged by the Worker.
+# Output: Priority live/final observations, transient Arena probes and acknowledged demand progress with body-free failures.
 # Pos: [Map](../../L2.md); cloud adapter for the shared official protocol.
 # Effects/Dependencies: Official HTTPS/HTTP2 reads, temporary private files and Worker callbacks; no local history authority.
 from datetime import datetime
@@ -39,8 +39,10 @@ def failure_info(stage, error, receipt=None):
            'ValueError','RuntimeError','VersionError','CatalogRequestError','CallbackError',
            'ImportError','ModuleNotFoundError','FileNotFoundError','PermissionError','JSONDecodeError',
            'ConnectionError','ConnectionRefusedError','ConnectionResetError','ProtocolError','H2Error',
-           'KeyError','TypeError','AttributeError'}
+           'KeyError','TypeError','AttributeError','InterruptedError'}
     code=receipt.get('error_type') or type(error).__name__
+    if code == 'InterruptedError':
+        code = 'TimeoutError'
     result={'stage':stage,'code':code if code in names else 'Error'}
     frames = traceback.extract_tb(error.__traceback__)
     if frames:
@@ -214,14 +216,16 @@ def run_lookup(job, origin):
         credentials = root / 'credentials.json'
         private_json(credentials, job['credentials'])
         identity, _, auth = read_credentials(credentials, region)
-        deadline = job['deadlineMs'] / 1000 - 2
+        deadline = job['deadlineMs'] / 1000 - 10
+        demand = None
         try:
             sampler = Sampler(SimpleNamespace(region=region, descriptors=Path(__file__).parent/configured.descriptor,
                 output=root/'receipts', client_version=job['clientVersion'], proxy='', connect_ip=None,
                 credentials=credentials, credential_identity=identity, stop_file=None, deadline=deadline,
                 api_origin=auth['origin']))
             sampler.version()
-            stopped = Demand(job, sampler, updates, deadline).run()
+            demand = Demand(job, sampler, updates, deadline)
+            stopped = demand.run()
             if stopped:
                 fields = {'status': failure_status(stopped),
                           'failure': failure_info('demand', RuntimeError('demand rejected'), stopped)}
@@ -232,6 +236,8 @@ def run_lookup(job, origin):
         except Exception as error:
             fields = {'status': 'failed', 'failure': failure_info('demand', error)}
             report_failure(region, fields['failure'])
+        if demand is not None and 'demand-progress-v1' in job.get('capabilities', []):
+            fields['processedDemand'] = demand.attempted
         updates.send('complete', **fields)
     return {'runId': job['runId'], 'status': fields['status']}
 
@@ -257,7 +263,7 @@ def run_job(job, origin):
         private_json(credentials, job['credentials'])
         private_json(master_config, job['masterConfig'])
         identity, _, auth = read_credentials(credentials, region)
-        deadline = job['deadlineMs'] / 1000 - (12 if include_arena else 2)
+        deadline = job['deadlineMs'] / 1000 - 20
         try:
             provider = OfficialCatalog(master_config, root, '', job['clientVersion'], deadline=deadline,
                                       region=region, api_origin=auth['origin'], include_arena=include_arena)
@@ -287,24 +293,12 @@ def run_job(job, origin):
                         or catalog.get('resourceVersion') != sampler.resource_version
                         or catalog['apiOrigin'] != sampler.origin):
                     raise RuntimeError('catalog version changed')
-                if arena_active:
-                    arena_collector = ArenaCollector(job, catalog, sampler, updates, deadline,
-                        failure_status, failure_info, retry_delay)
-                    # Tier counts take many windows; they come before the other boards and
-                    # keep only about three seconds for each of those.
-                    board_seconds = 3 * (len(boards) + 1)
-                    stage = 'arena_board'
-                    arena_collector.top(board_seconds)
-                    if final_status not in ('auth_paused', 'rate_limited'):
-                        stage = 'arena_population_callback'
-                        arena_collector.population(budget=max(0, deadline - time.time() - board_seconds))
                 for kind, challenge in boards:
                     if final_event is None and (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
                         continue
                     if time.time() >= deadline:
-                        if not include_arena:
-                            final_status = 'failed'
-                            failure = failure_info('board',TimeoutError())
+                        final_status = 'failed'
+                        failure = failure_info('board',TimeoutError())
                         break
                     snapshot = uuid.uuid4().hex
                     stage = 'attempt_callback'
@@ -372,6 +366,13 @@ def run_job(job, origin):
                     elif refused and failure_status(refused) in ('auth_paused', 'rate_limited'):
                         final_status, failure = failure_status(refused), failure_info(stage, RuntimeError('event window rejected'), refused)
                         retry_after = retry_delay(refused, 300)
+                if arena_active and final_status not in ('auth_paused', 'rate_limited'):
+                    arena_collector = ArenaCollector(job, catalog, sampler, updates, deadline,
+                        failure_status, failure_info, retry_delay)
+                    stage = 'arena_board'
+                    arena_collector.top()
+                    stage = 'arena_population_callback'
+                    arena_collector.population(budget=max(0, deadline - time.time() - 3))
                 if final_status not in ('auth_paused', 'rate_limited') and 'player-demand-v1' in job.get('capabilities', []):
                     stage = 'demand'
                     stopped = Demand(job, sampler, updates, deadline).run()
