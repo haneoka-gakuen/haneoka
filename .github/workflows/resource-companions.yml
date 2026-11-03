@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: haneoka-gakuen/ournotes-data-pipeline
-          ref: 0dcf0fdae8e50aa002bad09e9238b0c70a62560a
+          ref: 9f25e53c9fc46bad35a166097b0484b388368e9d
           path: companion-pipeline
           persist-credentials: false
       - uses: actions/setup-python@v7
