@@ -32,11 +32,9 @@ def enrich_story_birthdays(
         character = characters.get(character_id)
         if (
             not chapter
-            or chapter.get("_isSpecialStory") is not True
             or not native_episode
             or native_episode.get("_chapterId") != chapter_id
             or not character
-            or character_id not in chapter.get("_mainCharacterIds", [])
         ):
             continue
         story_id = adv_stories.get(native_episode.get("_advId"))

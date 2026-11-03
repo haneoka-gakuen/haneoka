@@ -192,7 +192,8 @@ export class CharacterDetailArchive extends LitElement {
     this.lazyImages.disconnect();
     super.disconnectedCallback();
   }
-  private storyCategory(entry: Item): "band" | "link" | "home" | "afterlive" | "tutorial" {
+  private storyCategory(entry: Item): "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial" {
+    if (entry.storyCategory === "birthday") return "birthday";
     const key = String(entry.chapterKey || "").toLocaleLowerCase();
     if (key.includes("linkstory")) return "link";
     if (key.includes("asset_home")) return "home";
@@ -201,7 +202,7 @@ export class CharacterDetailArchive extends LitElement {
     return "band";
   }
   private storyCategoryOrder(entry: Item) {
-    return ["band", "link", "home", "afterlive", "tutorial"].indexOf(this.storyCategory(entry));
+    return ["band", "link", "birthday", "home", "afterlive", "tutorial"].indexOf(this.storyCategory(entry));
   }
   private storyChapter(entry: Item) {
     const chapters = values(this.controller.detailAux.stories, "chapters");
@@ -233,10 +234,11 @@ export class CharacterDetailArchive extends LitElement {
     const band = this.controller.band(bandId);
     return { category, image, logo: String(band?.logo || band?.icon || "") };
   }
-  private storyLabel(category: "band" | "link" | "home" | "afterlive" | "tutorial") {
+  private storyLabel(category: "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial") {
     const labels = {
       band: this.controller.label("bandStories", "Band Stories"),
       link: this.controller.label("linkStories", "Bond Stories"),
+      birthday: this.controller.label("story.labels.birthdayStory", "Birthday Stories"),
       home: this.controller.label("homeStories", "Home Stories"),
       afterlive: this.controller.label("afterliveStories", "Afterlive Stories"),
       tutorial: this.controller.label("tutorialStories", "Tutorial Stories"),
@@ -244,7 +246,7 @@ export class CharacterDetailArchive extends LitElement {
     return labels[category];
   }
   private storyGroups(entries: Item[]) {
-    return (["band", "link", "home", "afterlive", "tutorial"] as const).flatMap((category) => {
+    return (["band", "link", "birthday", "home", "afterlive", "tutorial"] as const).flatMap((category) => {
       const items = entries.filter((entry) => this.storyCategory(entry) === category);
       return items.length ? [{ category, label: this.storyLabel(category), items }] : [];
     });
