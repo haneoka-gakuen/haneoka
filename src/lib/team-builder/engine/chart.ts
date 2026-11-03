@@ -2,10 +2,19 @@
 import type { EngineMaster, Song, SongDifficulty } from "./master";
 
 const f = Math.fround;
+export interface NativeNoteInput {
+  judgementAreaOffsetType: number;
+  lane: number;
+  width: number;
+  direction: number;
+  ease: number;
+  easeRight: number;
+  lines: readonly number[];
+}
 export interface ChartSource {
   durationMs: number;
   /** Runtime notes sorted by time. */
-  notes: readonly { timeMs: number; operateType: number; judgementType: number; judged: boolean }[];
+  notes: readonly { timeMs: number; operateType: number; judgementType: number; judged: boolean; input?: NativeNoteInput }[];
   skillTimesMs: readonly number[];
   feverMs: readonly (readonly [number, number])[];
   /** The client's note enumeration order, which decides the skip score's last counted frame. */

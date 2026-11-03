@@ -5,6 +5,7 @@ import type { ChartSource } from "../chart";
 import { ceilToI32, f } from "./num";
 import type { GekisouSetup, LiveNote, PlayFrame } from "./model";
 import { comboOpening } from "../../gekiso-timing";
+import { nativeJudgement } from "../live";
 
 export const FPS = 60;
 export const TAIL_MS = 2000;
@@ -116,7 +117,8 @@ export function judgementStream(master: EngineMaster, chart: FullChart, gekisou:
   });
   const total = rows.length;
   const grade = rows.map(() => 5);
-  chooseEvenly(total, Math.round(total * accuracy.great), (i) => (grade[i] = 4));
+  const greatEligible = rows.flatMap((row, i) => nativeJudgement(row.note.judgementType, 4) === 4 ? [i] : []);
+  chooseEvenly(greatEligible.length, Math.min(greatEligible.length, Math.round(total * accuracy.great)), (k) => (grade[greatEligible[k]!] = 4));
   const eligible = rows.map((_, i) => i).filter((i) => grade[i] !== 4 && rows[i]!.best === 6);
   chooseEvenly(eligible.length, Math.round(eligible.length * accuracy.just), (k) => (grade[eligible[k]!] = 6));
   const every = Math.floor(accuracy.missEvery ?? 0);

@@ -12,7 +12,7 @@ export type TeamBuilderRuntimeMasterReader = RuntimeMasterReader;
 export type TeamBuilderNativeRuleEvidenceReader = (identity: Parameters<RuntimeMasterReader>[0]) => Promise<unknown | null>;
 
 /** Bump whenever data/response.ts changes the DTO, so edge copies built by older code are not served. */
-const DTO_CACHE_VERSION = "3";
+const DTO_CACHE_VERSION = "4";
 /** A release's DTO never changes; the edge keeps it a day so a cold colo rebuilds it at most daily. */
 const EDGE_TTL_SECONDS = 86400;
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS", "Access-Control-Expose-Headers": "X-Haneoka-Release-Id, X-Haneoka-Source-Id" };

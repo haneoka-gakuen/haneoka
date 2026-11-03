@@ -99,6 +99,8 @@ export const nativeRow = (value: unknown): DataRow => {
     ...Object.fromEntries(Object.entries(row).filter(([key]) => key !== "raw")),
   };
 };
+export const nativeInputAreaOffsets = (options: unknown): DataRow[] =>
+  dataRows(objectRow(options).judgementAreaOffsets).map(nativeRow);
 const map = (value: unknown): Record<string, DataRow> =>
   Object.fromEntries(Object.entries(objectRow(value)).map(([key, row]) => [key, objectRow(row)]));
 const pick = (row: DataRow, fields: readonly string[]): DataRow =>
@@ -257,6 +259,7 @@ export function adaptTeamBuilderData(
       "gekisouRankingScoreBonuses", "gekisouLuckBasePoints", "gekisouLuckBonusLots",
     ]),
   ) as DataRow;
+  liveTools.judgementAreaOffsets = nativeInputAreaOffsets(documents.options);
   const gekisoRules = compactNative(objectRow(documents.gekisou)) as DataRow;
   const gekiso = adaptGekisoTimelineTables(identity, objectRow(documents["runtime-rules"]).gekisoTables, liveTools, gekisoRules);
   const arena = adaptArenaCatalog(identity, objectRow(documents["runtime-rules"]).arenaTables);

@@ -1,4 +1,4 @@
-import { adaptTeamBuilderData, objectRow, type TeamBuilderData } from "../data";
+import { adaptTeamBuilderData, nativeInputAreaOffsets, objectRow, type TeamBuilderData } from "../data";
 import { hydrateRuntimeDocuments } from "./complete";
 import { withNativeRuleEvidence } from "./native-rule-evidence";
 
@@ -49,7 +49,7 @@ export async function fetchTeamBuilderData(
   // visit is served from the browser cache.
   const current = await fetchCurrentTeamBuilderIdentity(server, signal, fetcher).catch(() => null);
   const compact = await fetcher(
-    `/api/v1/team-builder/${encodeURIComponent(server)}${current ? `?release=${encodeURIComponent(current.releaseId)}&v=3` : "?v=3"}`,
+    `/api/v1/team-builder/${encodeURIComponent(server)}${current ? `?release=${encodeURIComponent(current.releaseId)}&v=4` : "?v=4"}`,
     current ? { signal } : { cache: "no-store", signal },
   );
   if (compact.ok) {
@@ -62,6 +62,14 @@ export async function fetchTeamBuilderData(
       data.identity.sourceId !== identity.sourceId
     )
       throw new Error("Team data DTO identity mismatch");
+    if (!Object.hasOwn(data.liveTools, "judgementAreaOffsets")) {
+      const response = await fetcher(`${prefix}options?release=${encodeURIComponent(identity.releaseId)}`, { signal });
+      if (!response.ok) throw new Error(`Native input options unavailable: ${response.status}`);
+      const optionsIdentity = responseIdentity(response, server);
+      if (optionsIdentity.releaseId !== identity.releaseId || optionsIdentity.sourceId !== identity.sourceId)
+        throw new Error("Native input options release mismatch");
+      data.liveTools = { ...data.liveTools, judgementAreaOffsets: nativeInputAreaOffsets(await response.json()) };
+    }
     data.identity = withNativeRuleEvidence(data.identity);
     signal?.throwIfAborted();
     return data;
@@ -84,6 +92,7 @@ export async function fetchTeamBuilderData(
     "gekisou-support-skills",
     "skill-reference",
     "live-tools",
+    "options",
     "gekisou",
   ];
   const documents: Record<string, unknown> = {};

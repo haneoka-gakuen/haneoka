@@ -61,7 +61,7 @@ export interface LiveContext extends Shared {
   settings?: LiveSettings;
 }
 function liveCore(context: LiveContext) {
-  const judgements = isAllPerfect(context.play) ? null : playJudgements(context.live.chart.count, context.play);
+  const judgements = isAllPerfect(context.play) ? null : playJudgements(context.live.chart.count, context.play, context.live.chart.judgementTypes);
   // The all-Perfect play bounds every play from above; the played pattern without conversions or
   // recoveries bounds it from below.
   const slotSkill = slotSkillCache(context);
