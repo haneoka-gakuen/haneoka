@@ -29,6 +29,7 @@ export async function teamBuilderDataResponse(catalog: TeamDataCatalog): Promise
     "gekisou-support-skills",
     "skill-reference",
     "live-tools",
+    "options",
     "gekisou",
   ];
   const documents: Record<string, unknown> = {};

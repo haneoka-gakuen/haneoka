@@ -1040,6 +1040,9 @@ export class TeamBuilder extends LitElement {
   }
   errorReason(error: unknown): string {
     const reason = error instanceof Error ? error.message : String(error);
+    if (reason.startsWith("native input word search budget exceeded") || reason === "native timing search budget exceeded") return this.t("timingIncomplete", "Timing calculation did not finish");
+    if (reason.startsWith("unreachable native judgement") || reason === "unreachable native input sequence") return this.t("timingUnreachable", "The judgement pattern cannot be reached");
+    if (reason.startsWith("missing native")) return this.t("timingDataMissing", "Timing data is missing");
     if (reason === "just-window-input") return this.t("invalidCombo", "Enter a positive integer");
     if (reason === "just-window-timing") return this.t("justWindowTiming", "JUST tap timing data is missing");
     if (reason === "just-window-random") return this.t("justWindowRandom", "Window targets are unavailable for this random skill");

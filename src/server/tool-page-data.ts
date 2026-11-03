@@ -7,7 +7,7 @@ import {
   staticCatalogRelease,
   type StaticCatalogRelease,
 } from "../lib/static-catalog-source";
-import { adaptTeamBuilderData, objectRow, type TeamBuilderData } from "../lib/team-builder/data";
+import { adaptTeamBuilderData, nativeInputAreaOffsets, objectRow, type TeamBuilderData } from "../lib/team-builder/data";
 import { hydrateRuntimeDocuments } from "../lib/team-builder/data/complete";
 import { readRuntimeRulesDocument } from "../lib/team-builder/data/runtime-rules";
 import type { fetchCatalogVisuals } from "../lib/catalog-visuals";
@@ -173,6 +173,7 @@ const resources = [
   "gekisou-support-skills",
   "skill-reference",
   "live-tools",
+  "options",
   "gekisou",
 ];
 const sourceData = new Map<string, Promise<TeamBuilderData>>();
@@ -183,7 +184,7 @@ export function teamSource(server: string): Promise<TeamBuilderData> {
       const identity = await staticCatalogRelease(server);
       if (!hasLocalStaticCatalog(server)) {
         const data = (await fetchStaticApplicationJson(
-          `/api/v1/team-builder/${encodeURIComponent(server)}?v=3`,
+          `/api/v1/team-builder/${encodeURIComponent(server)}?v=4`,
           identity,
         )) as TeamBuilderData;
         if (
@@ -193,6 +194,12 @@ export function teamSource(server: string): Promise<TeamBuilderData> {
           data.identity.sourceId !== identity.sourceId
         )
           throw new Error("Static team data projection identity mismatch");
+        if (!Object.hasOwn(data.liveTools, "judgementAreaOffsets")) {
+          data.liveTools = {
+            ...data.liveTools,
+            judgementAreaOffsets: nativeInputAreaOffsets(await fetchStaticCatalog("options", server, identity)),
+          };
+        }
         return data;
       }
       const read = (resource: string) => fetchStaticCatalog(resource, server, identity);

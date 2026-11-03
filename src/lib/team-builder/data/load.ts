@@ -28,6 +28,7 @@ export async function loadTeamBuilderData(server: ReleaseServer, signal?: AbortS
     "gekisou-support-skills",
     "skill-reference",
     "live-tools",
+    "options",
     "gekisou",
   ];
   const documents: Record<string, unknown> = {};

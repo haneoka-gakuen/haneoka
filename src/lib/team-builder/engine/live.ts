@@ -34,14 +34,16 @@ function chooseEvenly(n: number, count: number, select: (i: number) => void) {
   }
 }
 
-/** Judgements of a stated play in chart order, built like the native accuracy builder: `round(n·great)` Greats
- * spread evenly over all notes, then Good, Bad and Miss shares spread over the notes still Perfect, then the
- * pattern's every-Nth Miss. Matches full/play.ts `judgementStream` for Gekisou-off plays. */
-export function playJudgements(count: number, play: PlayModel): Int8Array {
+export function nativeJudgement(kind: number, grade: number): number {
+  return (kind === 2 || kind === 15 || kind === 21 || kind === 22) && grade >= 2 && grade <= 4 ? 5 : grade;
+}
+
+/** Distribute judgement shares in canonical order over the native grade-eligible notes. */
+export function playJudgements(count: number, play: PlayModel, judgementTypes?: ArrayLike<number>): Int8Array {
   const out = new Int8Array(count).fill(5);
   const clamp = (x: number) => Math.max(0, Math.min(1, x));
-  chooseEvenly(count, Math.round(clamp(play.great) * count), (i) => (out[i] = 4));
   for (const [judgement, fraction] of [
+    [4, play.great],
     [3, play.good],
     [2, play.bad],
     [1, play.miss],
@@ -49,7 +51,7 @@ export function playJudgements(count: number, play: PlayModel): Int8Array {
     const wanted = Math.round(clamp(fraction) * count);
     if (!wanted) continue;
     const open: number[] = [];
-    for (let i = 0; i < count; i++) if (out[i] === 5) open.push(i);
+    for (let i = 0; i < count; i++) if (out[i] === 5 && (!judgementTypes || nativeJudgement(judgementTypes[i]!, judgement) === judgement)) open.push(i);
     chooseEvenly(open.length, Math.min(wanted, open.length), (k) => (out[open[k]!] = judgement));
   }
   const every = Math.floor(play.missEvery ?? 0);
