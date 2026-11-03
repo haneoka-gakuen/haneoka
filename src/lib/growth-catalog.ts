@@ -39,8 +39,9 @@ export const growthActions = (kind: GrowthCard["kind"]): GrowthAction[] =>
   kind === "member" ? ["level", "training", "awakening", "live", "gekisou"] : ["level", "break"];
 export const growthField = (action: GrowthAction) =>
   ({ level: "lvl", training: "awk", awakening: "rnk", live: "sk", gekisou: "gsk", break: "rnk" })[action];
+/** Training and awakening read 1–5 as in the game; limit break counts breaks from 0. */
 export const stageDisplay = (action: GrowthAction, value: number): number =>
-  ["training", "awakening", "break"].includes(action) ? value - 1 : value;
+  action === "break" ? value - 1 : value;
 export function ownedGrowth(card: GrowthCatalogCard, owned: OwnedMember | OwnedSnap): GrowthState {
   return card.kind === "support"
     ? { level: owned.level, break: owned.rank }

@@ -98,7 +98,7 @@ export function renderCardPicker(host: TeamBuilder): TemplateResult | typeof not
       const id = Number(value);
       if (growthSource) {
         const row = growthSource.input[kind].find(row => row.cardId === id)!;
-        host.teamGrowth.select({ kind, key: row.key, action: "level" });
+        host.teamGrowth.select({ kind, key: row.key, actions: ["level"], target: "next" });
         close();
         return;
       }

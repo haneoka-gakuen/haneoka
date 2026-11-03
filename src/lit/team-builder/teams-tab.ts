@@ -414,21 +414,33 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                       `
                 }
               </button>
-              <span class="row row--wrap tb-slot__tools">
-                ${iconButton({
-                  icon: "star",
-                  label: leader ? host.t("leader", "Leader") : host.t("makeLeader", "Leader"),
-                  toggle: true,
-                  pressed: leader,
-                  disabled: member === null,
-                  onClick: () => {
+              <span class="tb-slot__tools">
+                <button
+                  class=${`chip tb-slot__leader${leader ? " is-selected" : ""}`}
+                  type="button"
+                  aria-pressed=${String(leader)}
+                  ?disabled=${member === null}
+                  @click=${() => {
                     host.manual = { ...host.manual, leader: slot };
                     host.manualResults = null;
                     host.requestUpdate();
-                  },
-                })}
-                ${!comparison ? iconButton({ icon: "auto_fix_high", label: host.t("suggestSlot", "Best card for this slot"), size: 18, disabled: host.running || !manualReady(host) || suggesting >= 0 || !host.manualGoal().songs.length, onClick: () => void suggest(host, slot) }) : nothing}
-              </span>
+                  }}
+                >
+                  ${icon(leader ? "star" : "star_outline", 18)}<span class="chip__label">${host.t("leader", "Leader")}</span>
+                </button>
+                ${
+                  !comparison
+                    ? html`<button
+                        class="button button--text button--small tb-slot__suggest"
+                        type="button"
+                        title=${host.t("suggestSlot", "Best card for this slot")}
+                        ?disabled=${host.running || !manualReady(host) || suggesting >= 0 || !host.manualGoal().songs.length}
+                        @click=${() => void suggest(host, slot)}
+                      >
+                        ${icon("auto_fix_high", 18)}<span>${host.t("suggestShort", "Suggest")}</span>
+                      </button>`
+                    : nothing
+                }
             </li>
           `;
         })}
@@ -660,16 +672,19 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
         mode === "teams"
           ? html`
               <section class="surface stack">
-                ${sectionHeading({ icon: "bookmarks", label: host.t("savedTeams", "Saved teams"), count: view.teams.length || undefined })}
-                <button
-                  class="button button--tonal"
-                  @click=${() => {
-                    host.buildMode = "manual";
-                    host.setTab("build");
-                  }}
-                >
-                  ${host.t("manualTeam", "Build a team by hand")}
-                </button>
+                <div class="row row--between row--wrap">
+                  ${sectionHeading({ icon: "bookmarks", label: host.t("savedTeams", "Saved teams"), count: view.teams.length || undefined })}
+                  <button
+                    class="button button--tonal"
+                    type="button"
+                    @click=${() => {
+                      host.buildMode = "manual";
+                      host.setTab("build");
+                    }}
+                  >
+                    ${icon("add", 18)}${host.t("manualTeam", "Build a team by hand")}
+                  </button>
+                </div>
                 ${
                   view.teams.length
                     ? html`
@@ -677,18 +692,54 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                           ${view.teams.map(
                             (team) => html`
                               <article class="card card--outlined tb-saved__team">
-                                <div class="row row--wrap">
+                                <div class="tb-saved__head">
                                   <md-outlined-text-field
                                     class="tb-saved__name"
                                     label=${host.t("teamName", "Name")}
                                     .value=${live(team.name)}
                                     @change=${(e: Event) => host.write([{ key: `team.${team.id}`, value: { ...team, name: (e.target as HTMLInputElement).value.slice(0, 80) } }])}
                                   ></md-outlined-text-field>
-                                  <span class="row__spacer"></span>
                                   ${iconButton({
-                                    icon: "edit",
-                                    label: host.t("loadTeam", "Open in the editor"),
+                                    icon: "delete",
+                                    label: host.t("delete", "Delete"),
                                     onClick: () => {
+                                      host.write([{ key: `team.${team.id}`, value: null }]);
+                                      host.notice = host.t("deletedTeam", "Team deleted");
+                                      host.requestUpdate();
+                                    },
+                                  })}
+                                </div>
+                                <ol class="tb-saved__cards" aria-label=${host.t("formation", "Formation")}>
+                                  ${[
+                                    ...team.members.filter((id) => id !== team.leader).slice(0, 2),
+                                    ...team.members.filter((id) => id === team.leader),
+                                    ...team.members.filter((id) => id !== team.leader).slice(2),
+                                  ].map((id) => {
+                                    const options = catalog.cardOptions("members", id);
+                                    return options
+                                      ? html`
+                                          <li class=${`tb-saved__card${team.leader === id ? " is-leader" : ""}`} title=${options.label}>
+                                            ${tileMedia({ ...options, marks: [] })}
+                                          </li>
+                                        `
+                                      : nothing;
+                                  })}
+                                </ol>
+                                ${
+                                  team.song
+                                    ? html`
+                                        <span class="tb-saved__song">
+                                          ${icon("music_note", 18)}${catalog.songTitle(team.song.songId)}
+                                          <small>${catalog.difficultyLabel(team.song.songId, team.song.difficulty)}</small>
+                                        </span>
+                                      `
+                                    : nothing
+                                }
+                                <div class="tb-saved__actions">
+                                  <button
+                                    class="button button--tonal"
+                                    type="button"
+                                    @click=${() => {
                                       clearManualOrders(host);
                                       host.buildMode = "manual";
                                       host.setTab("build");
@@ -705,65 +756,28 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                       )
                                         host.updateSettings({ songs: [...host.settings.songs, team.song] });
                                       host.requestUpdate();
-                                      window.scrollTo({ top: 0, behavior: "smooth" });
-                                    },
-                                  })}
-                                  ${iconButton({
-                                    icon: "delete",
-                                    label: host.t("delete", "Delete"),
-                                    onClick: () => {
-                                      host.write([{ key: `team.${team.id}`, value: null }]);
-                                      host.notice = host.t("deletedTeam", "Team deleted");
-                                      host.requestUpdate();
-                                    },
-                                  })}
+                                    }}
+                                  >
+                                    ${icon("edit", 18)}${host.t("loadTeam", "Open in the editor")}
+                                  </button>
+                                  <button
+                                    class="button button--text"
+                                    type="button"
+                                    @click=${() => {
+                                      host.manualSuggestions = null;
+                                      host.openSongComparison(savedFormation(team));
+                                    }}
+                                  >
+                                    ${host.t("sc.useTeam", "Compare songs with this team")}
+                                  </button>
                                 </div>
-                                <button
-                                  class="button button--text"
-                                  type="button"
-                                  @click=${() => {
-                                    host.manualSuggestions = null;
-                                    host.openSongComparison(savedFormation(team));
-                                  }}
-                                >
-                                  ${host.t("sc.useTeam", "Compare songs with this team")}
-                                </button>
-                                <div class="tb-saved__cards">
-                                  ${[
-                                    ...team.members.filter((id) => id !== team.leader).slice(0, 2),
-                                    ...team.members.filter((id) => id === team.leader),
-                                    ...team.members.filter((id) => id !== team.leader).slice(2),
-                                  ].map((id) => {
-                                    const options = catalog.cardOptions("members", id);
-                                    return options
-                                      ? html`
-                                          <span
-                                            class=${`tb-saved__card${team.leader === id ? " is-leader" : ""}`}
-                                            title=${options.label}
-                                          >
-                                            ${tileMedia({ ...options, marks: [] })}
-                                          </span>
-                                        `
-                                      : nothing;
-                                  })}
-                                </div>
-                                ${
-                                  team.song
-                                    ? html`
-                                        <span class="card__supporting">
-                                          ${catalog.songTitle(team.song.songId)}
-                                          ${catalog.difficultyLabel(team.song.songId, team.song.difficulty)}
-                                        </span>
-                                      `
-                                    : nothing
-                                }
                               </article>
                             `,
                           )}
                         </div>
                       `
                     : html`
-                        <p class="card__supporting">${host.t("noSavedTeamsShort", "No saved teams")}</p>
+                        <div class="state"><span class="state__icon">${icon("bookmarks", 40)}</span><p class="state__title">${host.t("noSavedTeamsShort", "No saved teams")}</p></div>
                       `
                 }
               </section>

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Existing task form, action and result templates.
-// Output: Desktop settings column or immediate-save mobile conditions dialog.
+// Output: Wide settings panel or narrow full-screen conditions sheet, and the first-run checklist.
 // Pos: [Map](../L2-2.md); team workspace layout only.
 // Effects/Dependencies: Native modal lifecycle; calculation stays with controllers.
 import { html, nothing } from "lit";
@@ -48,46 +48,81 @@ export function conditionSummary(host: TeamBuilder) {
       : []),
   ].join(" / ");
 }
-/** What is left before a first search: cards, songs, then the search itself. */
-function teamSteps(host: TeamBuilder) {
-  if (host.tab !== "build" || host.buildMode === "manual" || host.results) return nothing;
-  const issues = new Set(host.inputIssues().map((issue) => issue.field));
-  const cards = host.view?.members.size ?? 0;
-  const cardsDone = !issues.has("tb-cards");
-  const songsDone = !issues.has("tb-songs");
-  const step = (index: number, done: boolean, active: boolean, label: string, onClick: () => void) => html`
-    <li class=${`tb-step${done ? " is-done" : ""}${active ? " is-active" : ""}`}>
-      <button type="button" @click=${onClick} ?disabled=${!done && !active} aria-current=${active ? "step" : nothing}>
-        <span class="tb-step__mark">${done ? icon("check", 18) : index}</span>
-        <span class="tb-step__label">${label}</span>
-      </button>
+/** What is left before a first calculation: cards, then each missing condition, each with the control that fixes it. */
+export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
+  const cards = host.view ? host.view.members.size : 0;
+  const cardIssue = issues.find((issue) => issue.field === "tb-cards");
+  const emptyBox = !!cardIssue && host.searchSettings.scope === "box" && !cards;
+  const rest = issues.filter((issue) => issue.field !== "tb-cards");
+  const row = (done: boolean, index: number, title: string, supporting: string, action?: { label: string; run: () => void; primary?: boolean }) => html`
+    <li class=${`list-item list-item--two-line tb-check-row${done ? " is-done" : ""}`}>
+      <span class="list-item__leading tb-check-row__mark" aria-hidden="true">${done ? icon("check", 20) : index}</span>
+      <span class="list-item__body">
+        <strong class="list-item__headline">${title}</strong>
+        <span class="list-item__supporting">${supporting}</span>
+      </span>
+      ${action
+        ? html`<span class="list-item__trailing"><button class=${`button ${action.primary ? "button--tonal" : "button--text"}`} type="button" @click=${action.run}>${action.label}</button></span>`
+        : nothing}
     </li>
   `;
   return html`
-    <ol class="tb-steps" aria-label=${host.t("stepsLabel", "Steps")}>
-      ${step(1, cardsDone, !cardsDone, cards ? host.t("stepCardsDone", "{count} cards", { count: cards }) : host.t("stepCards", "Import cards"),
-        () => host.imports.openBox())}
-      ${step(2, songsDone, cardsDone && !songsDone, songsDone ? host.t("chartCount", "{count} charts", { count: host.searchSettings.songs.length }) : host.t("stepSongs", "Choose songs"),
-        () => void host.focusInput("tb-songs"))}
-      ${step(3, false, cardsDone && songsDone, host.t("findTeams", "Find teams"), () => void host.run())}
-    </ol>
+    <section class="surface tb-results tb-checklist">
+      <h2 class="detail-section-title detail-section-title--h2">
+        <span class="detail-section-title__icon" aria-hidden="true">${icon("checklist", 18)}</span>
+        <span class="detail-section-title__label">${host.t("stepsLabel", "Steps")}</span>
+      </h2>
+      <ol class="list">
+        ${row(
+          !cardIssue,
+          1,
+          host.t("tabBox", "My cards"),
+          cardIssue ? (emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : cardIssue.message) : host.t("stepCardsDone", "{count} cards", { count: cards }),
+          emptyBox
+            ? { label: host.t("importMyCards", "Import my cards"), run: () => host.imports.openBox(), primary: true }
+            : cardIssue
+              ? { label: host.t("adjustCardRange", "Adjust card range"), run: () => void host.focusInput("tb-cards") }
+              : { label: host.t("manageCards", "Manage"), run: () => host.setTab("box") },
+        )}
+        ${rest.length
+          ? rest.map((issue, index) =>
+              row(false, index + 2, issue.message, host.t("stepRequired", "Required"), {
+                label: host.t("pt.fixInput", "Edit"),
+                run: async () => {
+                  await host.focusInput(issue.field);
+                  if (issue.field === "tb-songs" || issue.field === "tb-challenge-songs")
+                    host.querySelector<HTMLButtonElement>(`#${issue.field} .tb-songs__add`)?.click();
+                },
+                primary: !cardIssue && index === 0,
+              }),
+            )
+          : row(true, 2, host.t("conditionsTitle", "Conditions"), conditionSummary(host))}
+        ${row(false, rest.length + 2, host.t("readyToCalculate", "Ready to calculate"), issues.length ? host.t("stepWaiting", "Complete the steps above") : host.t("stepRun", "Start from the settings"))}
+      </ol>
+    </section>
   `;
 }
 
 export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown) {
   const summary = conditionSummary(host);
+  const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
   const footer = html`
     <div class="tb-operation">${actions}${host.renderCompareTray()}</div>
   `;
   return html`
-    <div class=${`tb-build tb-tool${host.compactConditions ? " tb-tool--compact" : " tb-tool--desktop"}`}>
+    <div class=${`tb-tool${host.compactConditions ? " tb-tool--compact" : " tb-tool--desktop"}`}>
       ${
         host.compactConditions
           ? html`
-              <section class="surface tb-condition-summary">
-                <span>${summary}</span>
-                <button id="tb-adjust" class="button button--text" @click=${() => host.openConditions()}>
-                  ${host.t("adjustConditions", "Adjust conditions")}
+              <section class="tb-condition-summary">
+                ${mode}
+                <button id="tb-adjust" class="tb-condition-summary__open" type="button" @click=${() => host.openConditions()}>
+                  ${icon("tune", 20)}
+                  <span class="tb-condition-summary__text">
+                    <strong>${host.t("conditionsTitle", "Conditions")}</strong>
+                    <span>${summary}</span>
+                  </span>
+                  ${icon("chevron_right", 20)}
                 </button>
               </section>
               ${
@@ -97,11 +132,11 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
                         class="dialog tb-conditions"
                         data-managed-modal
                         ${modal(() => host.closeConditions())}
-                        aria-label=${host.t("adjustConditions", "Adjust conditions")}
+                        aria-labelledby="tb-conditions-title"
                       >
-                        <header class="row row--between">
-                          <strong>${host.t("adjustConditions", "Adjust conditions")}</strong>
+                        <header class="tb-conditions__header">
                           ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: () => host.closeConditions() })}
+                          <h2 id="tb-conditions-title">${host.t("conditionsTitle", "Conditions")}</h2>
                         </header>
                         <div class="tb-config-body stack">${body}</div>
                         ${footer}
@@ -111,13 +146,13 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
               }
             `
           : html`
-              <aside class="tb-config">
-                <div class="tb-config-body stack">${body}</div>
+              <aside class="tb-config" aria-label=${host.t("conditionsTitle", "Conditions")}>
+                <div class="tb-config-body stack">${mode}${body}</div>
                 ${footer}
               </aside>
             `
       }
-      <div class="tb-results-column" id="tb-progress" tabindex="-1">${teamSteps(host)}${results}</div>
+      <div class="tb-results-column" id="tb-progress" tabindex="-1">${results}</div>
       ${
         host.compactConditions && !host.conditionsOpen
           ? html`

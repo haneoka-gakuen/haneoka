@@ -541,7 +541,6 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         ${segmented({
           label: host.t("minRarity", "Minimum rarity"),
           value: String(s.minRarity),
-          grow: false,
           options: [
             { value: "0", label: host.common("common.states.all", "All") },
             ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
@@ -672,7 +671,6 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
                 ${segmented({
                   label: host.t("unknownPolicy", "Growth not entered"),
                   value: s.unknownPolicy,
-                  grow: false,
                   options: [
                     { value: "max", label: host.t("unknownMax", "Count as max") },
                     { value: "min", label: host.t("unknownMin", "Count as minimum") },
@@ -834,7 +832,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
               <section class="surface stack">
                 ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
                 <div
-                  class="tb-goals"
+                  class="cluster tb-goals"
                   role="radiogroup"
                   aria-label=${host.t("goal", "Goal")}
                   @keydown=${rovingKeydown(
@@ -846,15 +844,14 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                   ${GOALS.map(
                     ({ id, icon: name }) => html`
                       <button
-                        class=${`tb-goal${s.goal === id ? " is-selected" : ""}`}
+                        class="chip"
                         type="button"
                         role="radio"
                         aria-checked=${String(s.goal === id)}
                         tabindex=${s.goal === id ? "0" : "-1"}
                         @click=${() => set({ goal: id })}
                       >
-                        <span class="tb-goal__icon">${icon(name, 20)}</span>
-                        <span class="tb-goal__text"><strong>${goalText(host, id)}</strong></span>
+                        ${icon(s.goal === id ? "check" : name, 18)}<span class="chip__label">${goalText(host, id)}</span>
                       </button>
                     `,
                   )}
@@ -1039,7 +1036,7 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
         host.hasTaskResults
           ? html`
               <button
-                class="button button--text"
+                class="button button--text tb-run__results"
                 @click=${() => host.querySelector(".tb-results-column")?.scrollIntoView({ block: "start" })}
               >
                 ${host.t("viewResults", "View results")}

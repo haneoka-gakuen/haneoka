@@ -37,6 +37,7 @@ import {
   songList,
 } from "./build-tab";
 import { sectionHeading } from "./catalog";
+import { renderChecklist } from "./tool-layout";
 import { boostControl } from "./boost-control";
 import { rovingKeydown, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
@@ -474,7 +475,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
       ${sectionHeading({ icon: "emoji_events", label: host.t("eventSetup", "Event") })}
       ${ptField(host, "event", eventSection(host, s))}
       <div
-        class="tb-goals"
+        class="cluster tb-goals"
         role="radiogroup"
         aria-label=${host.t("pt.mode", "Play mode")}
         @keydown=${rovingKeydown(available, f.play, (play) => set({ play }))}
@@ -484,7 +485,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
           .map(
             (play) => html`
               <button
-                class=${`tb-goal${f.play === play.value ? " is-selected" : ""}`}
+                class="chip"
                 type="button"
                 role="radio"
                 aria-checked=${f.play === play.value}
@@ -492,8 +493,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                 ?disabled=${!play.available}
                 @click=${() => set({ play: play.value })}
               >
-                <span class="tb-goal__icon">${play.icon}</span>
-                <span>${play.label}</span>
+                ${f.play === play.value ? icon("check", 18) : play.icon}<span class="chip__label">${play.label}</span>
               </button>
             `,
           )}
@@ -757,7 +757,7 @@ function renderRun(host: TeamBuilder): TemplateResult {
         host.hasTaskResults
           ? html`
               <button
-                class="button button--text"
+                class="button button--text tb-run__results"
                 @click=${() => host.querySelector(".tb-results-column")?.scrollIntoView({ block: "start" })}
               >
                 ${host.t("viewResults", "View results")}
@@ -806,30 +806,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
   const t = (key: string, fallback: string, params?: Record<string, string | number>) =>
     host.t(`pt.${key}`, fallback, params);
   const job = pt.job;
-  if (!job) {
-    const issue = host.inputIssues(true)[0];
-    const emptyBox = issue?.field === "tb-cards" && host.searchSettings.scope === "box" && !host.view?.members.size;
-    return html`
-      <div class="state tb-results--empty">
-        <span class="state__icon">${icon("emoji_events", 32)}</span>
-        <p class="state__title">
-          ${emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : (issue?.message ?? host.t("readyToCalculate", "Ready to calculate"))}
-        </p>
-        ${
-          issue
-            ? html`
-                <button
-                  class="button button--tonal"
-                  @click=${() => (emptyBox ? host.imports.openBox() : host.focusInput(issue.field))}
-                >
-                  ${emptyBox ? host.t("importMyCards", "Import my cards") : host.t("adjustConditions", "Adjust conditions")}
-                </button>
-              `
-            : nothing
-        }
-      </div>
-    `;
-  }
+  if (!job) return renderChecklist(host, host.inputIssues(true));
   const measure = job.request.goal.kind === "event" && job.request.goal.measure === "items" ? "items" : "points";
   const ranking = ptSongRanking(job, measure);
   const challenge = ptChallengeBest(job, measure);

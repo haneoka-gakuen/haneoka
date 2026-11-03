@@ -2412,7 +2412,8 @@
         "screenshotsHint": "이 기기에서 인식",
         "groupText": "텍스트",
         "tagList": "텍스트 내용에 따름",
-        "pasteHint": "CSV, TSV 또는 복사한 텍스트"
+        "pasteHint": "CSV, TSV 또는 복사한 텍스트",
+        "libraryServerItem": "보유 카드 서버: {server}"
       },
       "resourceResultsChanged": "육성 값이나 조건이 변경되었습니다. 결과를 갱신하려면 다시 계산해 주세요.",
       "localDraftChanged": "다른 탭에서 카드 목록이 변경되었습니다. 현재 입력을 내보낸 뒤 저장된 목록을 다시 불러오세요.",
@@ -3253,7 +3254,9 @@
         "runSearch": "재편성",
         "continue": "탐색 계속",
         "pool": "멤버 / 스냅",
-        "materials": "재료 및 스킬 정보"
+        "materials": "재료 및 스킬 정보",
+        "targetNext": "다음 단계",
+        "targetMax": "최대"
       },
       "arena": {
         "tab": "격주 아레나",
@@ -3295,7 +3298,15 @@
       "pinBaseline": "비교 기준으로 설정",
       "baseline": "기준",
       "clearBaseline": "기준 해제",
-      "maxScore": "최고"
+      "maxScore": "최고",
+      "manageCards": "관리",
+      "stepRequired": "필수",
+      "conditionsTitle": "조건",
+      "stepWaiting": "위 단계를 완료",
+      "stepRun": "설정에서 시작",
+      "suggestShort": "추천",
+      "growthUnset": "미입력",
+      "bulkActions": "표시된 카드 편집"
     },
     "calendar": {
       "title": "달력",

@@ -282,10 +282,18 @@
   --icon-size: 14px;
 }
 
+/* Level, training and skills stack in one bottom-left column, so no tile ratio can overlap them;
+   the rank mark sits apart in the bottom-right corner. */
 .card-growth {
   position: absolute;
   z-index: 1;
   inset: 0;
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 0.2em;
+  padding: 0 0 3% 3%;
   container-type: inline-size;
   pointer-events: none;
   color: #fff;
@@ -296,9 +304,6 @@
   paint-order: stroke fill;
 }
 .card-growth__level {
-  position: absolute;
-  left: 3%;
-  bottom: 3%;
   display: flex;
   align-items: baseline;
   gap: 0.1em;
@@ -308,9 +313,6 @@
   font-size: 0.75em;
 }
 .card-growth__training {
-  position: absolute;
-  left: 3%;
-  bottom: 15%;
   display: flex;
   align-items: center;
   gap: 0.15em;
@@ -322,9 +324,6 @@
   object-fit: contain;
 }
 .card-growth__skills {
-  position: absolute;
-  left: 3%;
-  bottom: 29%;
   display: flex;
   align-items: center;
   gap: 0.4em;

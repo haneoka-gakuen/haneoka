@@ -537,7 +537,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         rows.length
           ? html`
               <button
-                class="button button--text"
+                class="button button--text tb-run__results"
                 type="button"
                 @click=${() => host.querySelector("#sc-results")?.scrollIntoView({ block: "start" })}
               >

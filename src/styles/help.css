@@ -10,7 +10,6 @@
     min-height: 0;
     grid-template-columns: 260px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
-    background: var(--md-sys-color-surface);
   }
   .help-categories {
     min-height: 0;

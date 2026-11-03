@@ -110,7 +110,8 @@
     overflow: visible;
     border-radius: 0;
     box-shadow: none;
-    background: var(--md-sys-color-surface);
+    /* The shell's pane is the page background, as on collection pages. */
+    background: transparent;
     transform: none;
     opacity: 1;
     visibility: visible;

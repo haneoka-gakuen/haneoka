@@ -9,11 +9,13 @@ import { ownMemberChanges, ownSnapChanges, type OwnedMember, type OwnedSnap } fr
 import { iconButton, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { modal } from "../ui/modal";
-import { tileMedia } from "../ui/tile";
-import { growthSteps } from "../ui/growth-steps";
+import { tile, tileMedia } from "../ui/tile";
+import { cardGrowthIcons } from "../../lib/ui-marks";
+import "@material/web/switch/switch.js";
 import type { TeamBuilder } from "../team-builder";
 import { renderResourceSort, sortedCards } from "./catalog-sort";
 import { chooserGroup } from "../ui/chooser-filters";
+import { actionMenu } from "../ui/action-menu";
 
 type Kind = "members" | "snaps";
 interface Row {
@@ -89,29 +91,24 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
     else host.write([{ key: `${p}.${row.id}.use`, value: !owned.use }]);
   };
   const checkLabel = owned ? host.t("useInSearch", "Use in team search") : host.t("markOwned", "Mark as owned");
+  const open = () => {
+    if (quick) { toggle(); return; }
+    host.editing = { kind: row.kind, cardId: row.id };
+    host.requestUpdate();
+  };
   return html`
-    <div class=${`tile tile--${row.kind === "members" ? "member" : "support"} tb-card${owned ? "" : " is-unowned"}${using ? " is-used" : ""}${quick && owned ? " is-selected" : ""}${owned?.lock ? " is-locked" : ""}`}>
-      <span class="tb-card__media">
-        <button class="tb-card__open" type="button" aria-pressed=${quick ? String(!!owned) : nothing}
-          aria-label=${`${quick ? host.t("showOwned", "Owned") : host.t("editGrowth", "Edit growth")}: ${options.label}`}
-          @click=${() => {
-            if (quick) { toggle(); return; }
-            host.editing = { kind: row.kind, cardId: row.id };
-            host.requestUpdate();
-          }}>
-          ${tileMedia(owned || quick ? options : { ...options, marks: [...(options.marks ?? []), { at: "bottom-start", text: host.t("notOwned", "Not owned") }] })}
-          ${quick ? html`<span class="tb-card__selection" aria-hidden="true">${owned ? icon("check", 16) : nothing}</span>` : nothing}
-        </button>
-        ${quick ? nothing : html`<button class="tb-card__check" type="button" role="checkbox" aria-checked=${String(using)}
-          aria-label=${`${checkLabel}: ${options.label}`} title=${checkLabel} @click=${toggle}>
-          <span class="tb-card__selection" aria-hidden="true">${using ? icon("check", 16) : nothing}</span>
-        </button>`}
-        ${!quick && owned?.lock ? html`<span class="tb-card__lock" title=${host.t("required", "Always include")}>${icon("push_pin", 16)}</span>` : nothing}
-      </span>
-      <span class="tile__identity">
-        <strong class="tile__title" lang=${options.titleLanguage || nothing}>${options.title}</strong>
-        <small class="tile__subtitle">${options.adornment ?? nothing}<span>${options.subtitle}</span></small>
-      </span>
+    <div class=${`tb-card${owned ? "" : " is-unowned"}${using ? " is-used" : ""}${quick && owned ? " is-selected" : ""}${owned?.lock ? " is-locked" : ""}`}>
+      ${tile({
+        ...(owned || quick ? options : { ...options, marks: [...(options.marks ?? []), { at: "bottom-start", text: host.t("notOwned", "Not owned") }] }),
+        kind: row.kind === "members" ? "member" : "support",
+        label: `${quick ? host.t("showOwned", "Owned") : host.t("editGrowth", "Edit growth")}: ${options.label}`,
+        onOpen: open,
+      })}
+      <button class="tb-card__check" type="button" role="checkbox" aria-checked=${String(using)}
+        aria-label=${`${quick ? host.t("showOwned", "Owned") : checkLabel}: ${options.label}`} title=${quick ? host.t("showOwned", "Owned") : checkLabel} @click=${toggle}>
+        <span class="tb-card__selection" aria-hidden="true">${using ? icon("check", 16) : nothing}</span>
+      </button>
+      ${!quick && owned?.lock ? html`<span class="tb-card__lock" title=${host.t("required", "Always include")}>${icon("push_pin", 16)}</span>` : nothing}
     </div>
   `;
 }
@@ -173,10 +170,48 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
   const ownedCount = f.kind === "members" ? view.members.size : view.snaps.size;
   const usedCount = [...(f.kind === "members" ? view.members : view.snaps).values()].filter((row) => row.use).length;
   const requiredCount = clearRequiredChanges(host).length;
+  const compact = host.compactConditions;
   return html`
     <div class=${`tb-box${host.pt.showIssues && host.pt.issues.some((issue) => issue.code === "inventory") ? " pt-field--invalid" : ""}`} data-pt-field="inventory" tabindex="-1">
       
-      <div class="row row--wrap tb-box__import-entry">
+      <div class="tb-box__bar">
+        <div class="tb-box__kind">${segmented({
+          label: host.t("cardKind", "Card kind"),
+          value: f.kind,
+          grow: false,
+          options: [
+            { value: "members", label: `${host.t("members", "Members")} ${view.members.size}`, icon: "person" },
+            { value: "snaps", label: `${host.t("snapshots", "Snaps")} ${view.snaps.size}`, icon: "photo" },
+          ],
+          onSelect: (kind) => {
+            const presentation = kind === "members" ? "member" : "support";
+            const inactive = new Set(CARD_SKILL_FACETS.filter((facet) => !(facet.kinds as readonly string[]).includes(presentation)).map((facet) => facet.key as string));
+            set({kind, facets: Object.fromEntries(Object.entries(f.facets).filter(([key]) => !inactive.has(key)))});
+          },
+        })}</div>
+        ${host.boxQuickEntry ? nothing : html`<div class="tb-box__show">${segmented({
+          label: host.t("showCards", "Show"),
+          value: f.show,
+          grow: false,
+          options: [
+            { value: "owned", label: host.t("showOwned", "Owned") },
+            { value: "all", label: host.t("showAll", "All") },
+            { value: "unowned", label: host.t("showUnowned", "Not owned") },
+          ],
+          onSelect: (show) => set({ show }),
+        })}</div>`}
+        ${iconButton({
+          icon: "filter_list",
+          label: host.t("filters", "Filters"),
+          toggle: true,
+          pressed: host.filtersOpen,
+          badge: activeFilters,
+          onClick: () => {
+            host.filtersOpen = !host.filtersOpen;
+            host.requestUpdate();
+          },
+        })}
+        ${compact && !host.boxQuickEntry ? nothing : html`<span class="row__spacer"></span>
         ${segmented({
           label: host.t("boxImport.libraryServer", "Card library server"),
           value: host.data!.identity.server,
@@ -187,84 +222,60 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           ],
           onSelect: (server) => host.switchServer(server),
         })}
-        <span class="row__spacer"></span>
         ${host.boxQuickEntry ? nothing : html`
           <button class="button button--tonal" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
-          <button class="button button--text" type="button" @click=${() => host.imports.exportJson()}>${icon("download", 18)}${host.common("common.actions.export", "Export")}</button>
-        `}
+        `}`}
       </div>
-      <div class="surface tb-toolbar">
-        <div class="row row--wrap tb-toolbar__row">
-          ${segmented({
-            label: host.t("cardKind", "Card kind"),
-            value: f.kind,
-            grow: false,
-            options: [
-              { value: "members", label: host.t("members", "Members"), icon: "person" },
-              { value: "snaps", label: host.t("snapshots", "Snaps"), icon: "photo" },
-            ],
-            onSelect: (kind) => {
-              const presentation = kind === "members" ? "member" : "support";
-              const inactive = new Set(CARD_SKILL_FACETS.filter((facet) => !(facet.kinds as readonly string[]).includes(presentation)).map((facet) => facet.key as string));
-              set({kind, facets: Object.fromEntries(Object.entries(f.facets).filter(([key]) => !inactive.has(key)))});
-            },
-          })}
-          ${host.boxQuickEntry ? nothing : segmented({
-            label: host.t("showCards", "Show"),
-            value: f.show,
-            grow: false,
-            options: [
-              { value: "owned", label: host.t("showOwned", "Owned") },
-              { value: "all", label: host.t("showAll", "All") },
-              { value: "unowned", label: host.t("showUnowned", "Not owned") },
-            ],
-            onSelect: (show) => set({ show }),
-          })}
-          ${iconButton({
-            icon: "filter_list",
-            label: host.t("filters", "Filters"),
-            toggle: true,
-            pressed: host.filtersOpen,
-            badge: activeFilters,
-            onClick: () => {
-              host.filtersOpen = !host.filtersOpen;
-              host.requestUpdate();
-            },
-          })}
-        </div>
-        ${host.filtersOpen
-          ? html`
-              <div class="chooser-filters">${renderCardFilters(host, f, set)}${chooserGroup(host.common("common.actions.sort", "Sort"), renderResourceSort(host, f.kind))}</div>
-            `
-          : nothing}
-        <div class="row row--wrap tb-toolbar__row tb-bulk">
-          <span class="tb-bulk__summary">${host.boxQuickEntry
-            ? host.t("quickEntrySummary", "{owned} owned / {shown} shown", { owned: ownedCount, shown: rows.length })
-            : host.t("boxSummary", "{owned} owned / {used} in search / {shown} shown", { owned: ownedCount, used: usedCount, shown: rows.length })}</span>
-          <span class="row__spacer"></span>
-          <button class="button button--text button--small" type="button" ?disabled=${!rows.length}
-            @click=${() => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.flatMap((row) => [{ key: `${prefix(row.kind)}.${row.id}.own`, value: true }, ...(row.owned || host.boxQuickEntry ? [] : [{ key: `${prefix(row.kind)}.${row.id}.use`, value: true }])]))}>
-            ${icon("library_add_check", 18)}${host.boxQuickEntry ? host.t("quickOwnAll", "Select all") : host.t("bulkOwn", "Own all shown")}</button>
-          ${host.boxQuickEntry ? nothing : html`
-          <button class="button button--text button--small" type="button" ?disabled=${!ownedRows.length}
-            @click=${() => bulk(host, host.t("bulkUsedDone", "{count} cards take part", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: true })))}>
-            ${icon("check_box", 18)}${host.t("bulkUse", "Use all")}</button>
-          <button class="button button--text button--small" type="button" ?disabled=${!ownedRows.length}
-            @click=${() => bulk(host, host.t("bulkUnusedDone", "{count} cards left out", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: false })))}>
-            ${icon("check_box_outline_blank", 18)}${host.t("bulkUnuse", "Use none")}</button>
-          <button class="button button--text button--small" type="button" ?disabled=${!ownedRows.length}
-            @click=${() => bulk(host, host.t("bulkMaxDone", "Set {count} cards to full growth", { count: ownedRows.length }), ownedRows.flatMap((row) => maxChanges(host, row)))}>
-            ${icon("upgrade", 18)}${host.t("bulkMax", "Full growth")}</button>
-          <button class="button button--text button--small" type="button" ?disabled=${!requiredCount} @click=${() => {
-            const changes = clearRequiredChanges(host);
-            bulk(host, host.t("clearRequiredDone", "Cleared required marks on {count} cards", { count: changes.length }), changes);
-          }}>${host.t("clearRequired", "Clear all required marks")}</button>
-          <button class="button button--text button--small" type="button" ?disabled=${!view.members.size && !view.snaps.size} @click=${() => {
-            clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
-            host.requestUpdate();
-          }}>${host.t("clearOwnership", "Mark all members and snapshots not owned")}</button>
-          `}
-        </div>
+      ${host.filtersOpen
+        ? html`
+            <div class="surface chooser-filters tb-box__filters">${renderCardFilters(host, f, set)}${chooserGroup(host.common("common.actions.sort", "Sort"), renderResourceSort(host, f.kind))}</div>
+          `
+        : nothing}
+      <div class="tb-box__status">
+        <span class="tb-results__meta">${host.boxQuickEntry
+          ? host.t("quickEntrySummary", "{owned} owned / {shown} shown", { owned: ownedCount, shown: rows.length })
+          : host.t("boxSummary", "{owned} owned / {used} in search / {shown} shown", { owned: ownedCount, used: usedCount, shown: rows.length })}</span>
+        <span class="row__spacer"></span>
+        ${host.boxQuickEntry
+          ? html`<button class="button button--text" type="button" ?disabled=${!rows.length}
+              @click=${() => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.own`, value: true })))}>
+              ${icon("library_add_check", 18)}${host.t("quickOwnAll", "Select all")}</button>`
+          : actionMenu({
+              id: "tb-box-actions",
+              label: compact ? host.common("common.actions.moreActions", "More") : host.t("bulkActions", "Edit shown cards"),
+              items: [
+                ...(compact
+                  ? [
+                      { label: host.t("importBox", "Import"), icon: "upload_file", run: () => host.imports.openBox() },
+                      ...(["jp", "intl"] as const).map((server) => ({
+                        label: host.t("boxImport.libraryServerItem", "Card library: {server}", { server: host.t(`boxImport.servers.${server}`, server === "jp" ? "JP" : "Global") }),
+                        icon: host.data!.identity.server === server ? "check" : "public",
+                        disabled: host.data!.identity.server === server,
+                        run: () => host.switchServer(server),
+                      })),
+                    ]
+                  : []),
+                { label: host.t("bulkOwn", "Own all shown"), icon: "library_add_check", disabled: !rows.length,
+                  run: () => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.flatMap((row) => [{ key: `${prefix(row.kind)}.${row.id}.own`, value: true }, ...(row.owned ? [] : [{ key: `${prefix(row.kind)}.${row.id}.use`, value: true }])])) },
+                { label: host.t("bulkUse", "Use all"), icon: "check_box", disabled: !ownedRows.length,
+                  run: () => bulk(host, host.t("bulkUsedDone", "{count} cards take part", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: true }))) },
+                { label: host.t("bulkUnuse", "Use none"), icon: "check_box_outline_blank", disabled: !ownedRows.length,
+                  run: () => bulk(host, host.t("bulkUnusedDone", "{count} cards left out", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: false }))) },
+                { label: host.t("bulkMax", "Full growth"), icon: "upgrade", disabled: !ownedRows.length,
+                  run: () => bulk(host, host.t("bulkMaxDone", "Set {count} cards to full growth", { count: ownedRows.length }), ownedRows.flatMap((row) => maxChanges(host, row))) },
+                { label: host.t("clearRequired", "Clear all required marks"), icon: "push_pin", disabled: !requiredCount,
+                  run: () => {
+                    const changes = clearRequiredChanges(host);
+                    bulk(host, host.t("clearRequiredDone", "Cleared required marks on {count} cards", { count: changes.length }), changes);
+                  } },
+                { label: host.common("common.actions.export", "Export"), icon: "download", run: () => host.imports.exportJson() },
+                { label: host.t("clearOwnership", "Mark all members and snapshots not owned"), icon: "remove_circle", disabled: !view.members.size && !view.snaps.size,
+                  run: () => {
+                    clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
+                    host.requestUpdate();
+                  } },
+              ],
+            })}
       </div>
       ${clearOwnershipDialog(host)}
       ${rows.length
@@ -304,13 +315,46 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
     host.write([...(owned ? [] : [{ key: `${p}.${cardId}.own`, value: true }, { key: `${p}.${cardId}.use`, value: true }]), ...changes]);
   };
   const fieldKey = (field: string) => `${kind === "members" ? "m" : "s"}${cardId}.${({ awk: "awake", lvl: "level", rnk: "rank", sk: "liveSkillLevel", gsk: "gekisoSkillLevel" } as Record<string,string>)[field] ?? field}`;
-  const steps = (label: string, field: string, value: number | null, max: number) => ptField(host, fieldKey(field),
-    growthSteps(label, value, Array.from({ length: max }, (_, index) => index + 1), kind === "snaps" && field === "rnk", next => write(field, next)));
+  const marks = cardGrowthIcons((name) => catalog.visuals?.marks.get(name) ?? "");
+  const unset = host.t("growthUnset", "Not entered");
+  /** One growth stage row: the game's own stage marks where it has them, numbers otherwise. */
+  const stages = (
+    label: string,
+    field: string,
+    value: number | null,
+    max: number,
+    face: (stage: number) => TemplateResult,
+    leading?: string,
+  ) => ptField(host, fieldKey(field), html`
+    <div class="tb-growth-field">
+      <span class="tb-growth-field__label">
+        ${leading ? html`<img class="tb-growth-field__icon" src=${leading} alt="" width="24" height="24" />` : nothing}
+        <span>${label}</span>
+        <output>${value === null ? unset : nothing}</output>
+      </span>
+      <div class="tb-stages" role="radiogroup" aria-label=${label}>
+        ${Array.from({ length: max }, (_, index) => index + 1).map((stage) => html`
+          <button class="tb-stage" type="button" role="radio" aria-checked=${String(value === stage)}
+            @click=${() => write(field, stage)}>${face(stage)}</button>
+        `)}
+      </div>
+    </div>
+  `);
+  const number = (stage: number) => html`<span class="tb-stage__number">${stage}</span>`;
+  const rankFace = (images: string[], label: string, shown: (stage: number) => number) => (stage: number) =>
+    images[stage]
+      ? html`<img class="tb-stage__mark" src=${images[stage]} alt=${`${label} ${shown(stage)}`} title=${String(shown(stage))} width="40" height="40" />`
+      : number(shown(stage));
+  const trainingFace = (stage: number) => html`${marks.training ? html`<img class="tb-stage__mark tb-stage__mark--small" src=${marks.training} alt="" width="24" height="24" />` : nothing}<span>${stage}</span>`;
   const levelField = (value: number | null, cap: number) => ptField(host, fieldKey("lvl"), html`
-    <div class="tb-field">
-      <span class="tb-field__label">${host.t("level", "Level")}<output>${value === null ? "—" : Math.min(value, cap)} / ${cap}</output></span>
-      <div class="tb-field__level">
-        <input class="tb-stepper__value" type="number" inputmode="numeric" min="1" max=${cap} step="1" placeholder="—" aria-label=${host.t("level", "Level")}
+    <div class="tb-growth-field">
+      <span class="tb-growth-field__label">
+        <span>${host.t("level", "Level")}</span>
+        <output>${value === null ? unset : html`Lv.<strong>${Math.min(value, cap)}</strong> / ${cap}`}</output>
+      </span>
+      <div class="tb-level">
+        ${iconButton({ icon: "remove", label: `${host.t("level", "Level")} −1`, disabled: value !== null && value <= 1, onClick: () => write("lvl", Math.max(1, Math.min(cap, (value ?? 2) - 1))) })}
+        <input class="tb-level__value" type="number" inputmode="numeric" min="1" max=${cap} step="1" placeholder="—" aria-label=${host.t("level", "Level")}
           .value=${live(value === null ? "" : String(Math.min(value, cap)))}
           @input=${(event: Event) => {
             const input = event.currentTarget as HTMLInputElement;
@@ -326,15 +370,10 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
             input.value = next === null ? "" : String(next);
             write("lvl", next);
           }} />
-        <md-slider class="md3-slider" labeled min="1" max=${cap} .value=${live(Math.min(value ?? cap, cap))} aria-label=${host.t("level", "Level")}
-          @input=${(event: Event) => write("lvl", Number((event.currentTarget as HTMLInputElement).value))}
-          @change=${(event: Event) => write("lvl", Number((event.currentTarget as HTMLInputElement).value))}
-          @click=${(event: Event) => write("lvl", Number((event.currentTarget as HTMLInputElement).value))}
-          @keyup=${(event: KeyboardEvent) => {
-            if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key))
-              write("lvl", Number((event.currentTarget as HTMLInputElement).value));
-          }}></md-slider>
-        ${iconButton({ icon: "vertical_align_top", label: host.t("maxLevel", "Max level"), disabled: value === cap, onClick: () => write("lvl", cap) })}
+        ${iconButton({ icon: "add", label: `${host.t("level", "Level")} +1`, disabled: value !== null && value >= cap, onClick: () => write("lvl", Math.min(cap, (value ?? 0) + 1)) })}
+        <md-slider class="md3-slider" min="1" max=${cap} .value=${live(Math.min(value ?? cap, cap))} aria-label=${host.t("level", "Level")}
+          @change=${(event: Event) => write("lvl", Number((event.currentTarget as HTMLInputElement).value))}></md-slider>
+        <button class="button button--tonal button--small" type="button" ?disabled=${value === cap} @click=${() => write("lvl", cap)}>MAX</button>
       </div>
     </div>
   `);
@@ -342,50 +381,56 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
   if (kind === "members") {
     const row = owned as OwnedMember | undefined;
     const limits = catalog.memberLimits(cardId, row?.awake ?? null)!;
+    const card = catalog.member(cardId);
+    const skillIcon = (group: "live" | "gekiso", id: number | undefined) => String(catalog.data.skills[group]?.[String(id)]?.icon ?? "") || undefined;
     fields = html`
-      ${steps(host.t("training", "Training"), "awk", row?.awake ?? null, limits.awake)}
+      ${stages(host.t("training", "Training"), "awk", row?.awake ?? null, limits.awake, trainingFace)}
       ${levelField(row?.level ?? null, limits.levelCap)}
-      ${steps(host.t("awakening", "Awakening"), "rnk", row?.rank ?? null, limits.rank)}
-      ${steps(host.t("liveSkill", "Live skill"), "sk", row?.skill ?? null, limits.liveSkillLevel)}
-      ${host.master!.members.get(cardId)?.gekisoSkillId ? steps(host.t("gekisoSkill", "GEKISO skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel) : nothing}
+      ${stages(host.t("awakening", "Awakening"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.memberRanks, host.t("awakening", "Awakening"), (stage) => stage))}
+      ${stages(host.t("liveSkill", "Live skill"), "sk", row?.skill ?? null, limits.liveSkillLevel, number, skillIcon("live", card?.liveSkillId))}
+      ${host.master!.members.get(cardId)?.gekisoSkillId ? stages(host.t("gekisoSkill", "GEKISO skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel, number, skillIcon("gekiso", card?.gekisoSkillId)) : nothing}
     `;
   } else {
     const row = owned as OwnedSnap | undefined;
     const limits = catalog.snapLimits(cardId, row?.rank ?? null)!;
-    fields = html`${steps(host.t("limitBreak", "Limit break"), "rnk", row?.rank ?? null, limits.rank)}${levelField(row?.level ?? null, limits.levelCap)}`;
+    fields = html`${stages(host.t("limitBreak", "Limit break"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.supportRanks, host.t("limitBreak", "Limit break"), (stage) => stage - 1))}${levelField(row?.level ?? null, limits.levelCap)}`;
   }
   const flag = (label: string, field: "use" | "lock", value: boolean, disabled = false) => html`
-    <label class="tb-check"><md-checkbox touch-target="wrapper" ?disabled=${disabled} .checked=${live(value)} @change=${(event: Event) => write(field, (event.target as HTMLInputElement).checked)}></md-checkbox><span>${label}</span></label>
+    <label class="tb-switch-row">
+      <span>${label}</span>
+      <md-switch ?disabled=${disabled} .selected=${live(value)} aria-label=${label}
+        @change=${(event: Event) => write(field, (event.target as HTMLInputElement & { selected: boolean }).selected)}></md-switch>
+    </label>
   `;
   return html`
-    <dialog ${modal(close)} class="dialog-host" aria-labelledby="tb-editor-title" @click=${close}>
-      <section class="surface tb-editor" data-overlay-pane tabindex="-1" @click=${(event: Event) => event.stopPropagation()}>
-        <header class="tb-editor__header">
-          <span class=${`tb-editor__art tb-editor__art--${kind}`}>${tileMedia(options)}</span>
-          <div class="stack stack--tight">
-            <h2 id="tb-editor-title" class="tb-editor__title">${options.title}</h2>
-            <span class="tb-editor__subtitle">${options.subtitle}</span>
-            ${owned ? nothing : html`<span class="badge badge--primary">${host.t("notOwned", "Not owned")}</span>`}
-          </div>
-          ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
-        </header>
+    <dialog ${modal(close)} class="dialog tb-editor" aria-labelledby="tb-editor-title">
+      <header class="tb-editor__header">
+        <span class=${`tb-editor__art tb-editor__art--${kind}`}>${tileMedia(options)}</span>
+        <div class="tb-editor__heading">
+          <h2 id="tb-editor-title" class="tb-editor__title" lang=${options.titleLanguage || nothing}>${options.title}</h2>
+          <span class="tb-editor__subtitle">${options.subtitle}</span>
+          ${owned ? nothing : html`<span class="badge badge--primary tb-editor__state">${host.t("notOwned", "Not owned")}</span>`}
+        </div>
+        ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
+      </header>
+      <div class="tb-editor__body">
         <div class="tb-editor__fields">${fields}</div>
-        ${ptField(host, fieldKey("use"), html`<div class="cluster">
+        ${ptField(host, fieldKey("use"), html`<div class="tb-editor__flags">
           ${flag(host.t("useInSearch", "Use in team search"), "use", owned?.use ?? false)}
           ${flag(characterRequired ? host.t("requiredOnePerCharacter", "One required card per character") : host.t("required", "Always include"), "lock", owned?.lock ?? false, characterRequired)}
         </div>`)}
-        <footer class="row row--wrap tb-editor__actions">
-          <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
-          ${owned
-            ? html`<button class="button button--text button--danger" type="button" @click=${() => {
-                bulk(host, host.t("removedCard", "Removed from your cards"), [{ key: `${p}.${cardId}.own`, value: false }, { key: `${p}.${cardId}.lock`, value: false }]);
-                close();
-              }}>${icon("remove_circle", 18)}${host.t("removeOwned", "Not owned")}</button>`
-            : nothing}
-          <span class="row__spacer"></span>
-          <button class="button" type="button" @click=${close}>${host.t("done", "Done")}</button>
-        </footer>
-      </section>
+      </div>
+      <footer class="tb-editor__actions">
+        <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
+        ${owned
+          ? html`<button class="button button--text button--danger" type="button" @click=${() => {
+              bulk(host, host.t("removedCard", "Removed from your cards"), [{ key: `${p}.${cardId}.own`, value: false }, { key: `${p}.${cardId}.lock`, value: false }]);
+              close();
+            }}>${icon("remove_circle", 18)}${host.t("removeOwned", "Not owned")}</button>`
+          : nothing}
+        <span class="row__spacer"></span>
+        <button class="button" type="button" @click=${close}>${host.t("done", "Done")}</button>
+      </footer>
     </dialog>
   `;
 }

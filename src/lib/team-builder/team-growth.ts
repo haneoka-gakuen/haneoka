@@ -1,10 +1,10 @@
 // L3 — GEB
-// Input: Frozen engine inputs, a formation and one proposed card upgrade.
+// Input: Frozen engine inputs, a formation and the growth items proposed for one card.
 // Output: Temporary growth scenarios and constrained requests for the same native goal.
 // Pos: [Map](L2-2.md); growth comparison request projection, not a scoring implementation.
 // Effects/Dependencies: No Box writes; preserves the source's candidates and scoring conditions.
 import type { EngineHit, EngineRequest } from "./engine/api";
-import { maxMemberGrowth, maxSnapGrowth, memberGrowth, snapGrowth, type MemberInput, type SnapInput } from "./engine/box";
+import { maxMemberGrowth, maxSnapGrowth, type MemberInput } from "./engine/box";
 import type { EngineMaster } from "./engine/master";
 import { memberLevelCap, snapLevelCap } from "./engine/power";
 import type { GrowthAction } from "../growth-comparison";
@@ -12,9 +12,14 @@ import type { GrowthAction } from "../growth-comparison";
 export interface TeamGrowthChoice {
   kind: "members" | "snaps";
   key: string;
-  action: GrowthAction | "full";
+  /** Growth items raised together; each goes one stage up, or to its maximum. */
+  actions: GrowthAction[];
   target: "next" | "cap";
 }
+export const teamGrowthActions = (kind: TeamGrowthChoice["kind"]): GrowthAction[] =>
+  kind === "members" ? ["level", "training", "awakening", "live", "gekisou"] : ["level", "break"];
+/** Stage items first: training and limit break set the level cap. */
+const APPLY_ORDER: GrowthAction[] = ["training", "break", "awakening", "live", "gekisou", "level"];
 export const teamGrowthFields = {
   level: "level",
   training: "awake",
@@ -23,10 +28,14 @@ export const teamGrowthFields = {
   gekisou: "gekisoSkillLevel",
   break: "rank",
 } as const;
+export interface TeamGrowthStep {
+  action: GrowthAction;
+  from: number | null;
+  to: number;
+}
 export interface TeamGrowthChange {
   status: "ready" | "missing-state" | "missing-data" | "at-cap" | "invalid-state";
-  from: number | null;
-  to: number | null;
+  steps: TeamGrowthStep[];
   request: EngineRequest | null;
 }
 
@@ -51,48 +60,39 @@ export function teamGrowthChange(
   source: EngineRequest,
   choice: TeamGrowthChoice,
 ): TeamGrowthChange {
-  const result: TeamGrowthChange = { status: "missing-data", from: null, to: null, request: null };
+  const result: TeamGrowthChange = { status: "missing-data", steps: [], request: null };
   const row = source[choice.kind].find((row) => row.key === choice.key);
   if (!row) return result;
   const member = choice.kind === "members" ? master.members.get(row.cardId) : undefined;
   const snap = choice.kind === "snaps" ? master.snaps.get(row.cardId) : undefined;
   if (!member && !snap) return result;
-  const maximum = member ? maxMemberGrowth(master, member) : maxSnapGrowth(master, snap!);
-  const values = row as MemberInput;
-  const max = maximum as Omit<MemberInput, "key" | "cardId">;
-  if (choice.action === "full") {
-    const fields = Object.keys(maximum) as (keyof typeof max)[];
-    const effective = (member
-      ? memberGrowth(master, member, values, source.unknownPolicy)
-      : snapGrowth(master, snap!, row as SnapInput, source.unknownPolicy)) as typeof max;
-    if (fields.every((field) => effective[field] === max[field])) return { ...result, status: "at-cap" };
-    const request = freshGrowthRequest(source);
-    Object.assign(
-      request[choice.kind].find((row) => row.key === choice.key)!,
-      maximum,
-    );
-    return { ...result, status: "ready", request };
+  const allowed = teamGrowthActions(choice.kind);
+  const actions = APPLY_ORDER.filter((action) => choice.actions.includes(action) && allowed.includes(action));
+  if (!actions.length) return result;
+  const max = (member ? maxMemberGrowth(master, member) : maxSnapGrowth(master, snap!)) as Omit<MemberInput, "key" | "cardId">;
+  const values = { ...(row as MemberInput) };
+  const steps: TeamGrowthStep[] = [];
+  for (const action of actions) {
+    const field = teamGrowthFields[action];
+    const from = values[field];
+    if (from == null && choice.target === "next") return { ...result, status: "missing-state" };
+    let cap = max[field]!;
+    if (action === "level") {
+      const stage = member ? values.awake : values.rank;
+      if (stage === null && choice.target === "next") return { ...result, status: "missing-state" };
+      cap = member ? memberLevelCap(master, member, stage ?? max.awake!) : snapLevelCap(master, snap!, stage ?? max.rank!);
+    }
+    if (from != null && (!Number.isInteger(from) || from < 1 || from > cap)) return { ...result, status: "invalid-state" };
+    // An unentered value already counts as its maximum under the "max" policy.
+    if (from === cap || (from == null && source.unknownPolicy === "max")) continue;
+    const to = choice.target === "cap" ? cap : from! + 1;
+    values[field] = to;
+    steps.push({ action, from, to });
   }
-  if (choice.kind === "snaps" && !["level", "break"].includes(choice.action)) return result;
-  if (choice.kind === "members" && choice.action === "break") return result;
-  const field = teamGrowthFields[choice.action];
-  const from = values[field];
-  if (from == null) return { ...result, status: "missing-state" };
-  let cap = max[field]!;
-  if (choice.action === "level") {
-    const stage = member ? values.awake : values.rank;
-    if (stage === null) return { ...result, from, status: "missing-state" };
-    cap = member ? memberLevelCap(master, member, stage) : snapLevelCap(master, snap!, stage);
-  }
-  if (!Number.isInteger(from) || from < 1 || from > cap) return { ...result, from, status: "invalid-state" };
-  if (from === cap) return { ...result, from, status: "at-cap" };
-  const to = choice.action === "level" && choice.target === "cap" ? cap : from + 1;
+  if (!steps.length) return { ...result, status: "at-cap" };
   const request = freshGrowthRequest(source);
-  Object.assign(
-    request[choice.kind].find((row) => row.key === choice.key)!,
-    { [field]: to },
-  );
-  return { status: "ready", from, to, request };
+  Object.assign(request[choice.kind].find((row) => row.key === choice.key)!, Object.fromEntries(steps.map((step) => [teamGrowthFields[step.action], step.to])));
+  return { status: "ready", steps, request };
 }
 
 /** All five bindings include empty slots, so a fixed comparison cannot fill or swap a Snapshot. */

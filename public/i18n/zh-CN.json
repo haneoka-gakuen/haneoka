@@ -2412,7 +2412,8 @@
         "screenshotsHint": "在本机识别",
         "groupText": "文本",
         "tagList": "取决于文本内容",
-        "pasteHint": "CSV、TSV 或复制的文本"
+        "pasteHint": "CSV、TSV 或复制的文本",
+        "libraryServerItem": "卡库区服：{server}"
       },
       "resourceResultsChanged": "养成或条件已变更，请重新计算以更新结果。",
       "localDraftChanged": "另一个标签页已修改卡库。请先导出当前输入，再重新读取已保存的卡库。",
@@ -3253,7 +3254,9 @@
         "runSearch": "重新配队",
         "continue": "继续配队",
         "pool": "成员 / 留影",
-        "materials": "材料与技能资料"
+        "materials": "材料与技能资料",
+        "targetNext": "下一阶段",
+        "targetMax": "最高"
       },
       "arena": {
         "tab": "激奏舞台",
@@ -3295,7 +3298,15 @@
       "pinBaseline": "设为对比基准",
       "baseline": "对比基准",
       "clearBaseline": "清除对比基准",
-      "maxScore": "最高"
+      "maxScore": "最高",
+      "manageCards": "管理",
+      "stepRequired": "必填",
+      "conditionsTitle": "条件",
+      "stepWaiting": "先完成上面的步骤",
+      "stepRun": "在设置中开始",
+      "suggestShort": "推荐",
+      "growthUnset": "未填写",
+      "bulkActions": "批量编辑"
     },
     "calendar": {
       "title": "日历",

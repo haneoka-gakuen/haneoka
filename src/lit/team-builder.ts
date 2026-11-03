@@ -12,7 +12,7 @@ import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
 import { clearManualOrders, seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
-import { LitElement, html, nothing, render, type TemplateResult } from "lit";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -373,7 +373,6 @@ export class TeamBuilder extends LitElement {
   }
   connectedCallback() {
     const startTab = navigationDocumentUrl().searchParams.get("tab");
-    const openBox = startTab === "box";
     const league = Number(navigationDocumentUrl().searchParams.get("league"));
     if (startTab === "arena") this.requestedArenaLeague = Number.isSafeInteger(league) && league > 0 ? league : 0;
     const payload = readPageData<TeamBuilderPageData>(this);
@@ -400,8 +399,9 @@ export class TeamBuilder extends LitElement {
     void this.load(
       linkedServer && ["jp", "intl"].includes(linkedServer) ? linkedServer : readReleaseServer() || this.server,
     );
-    if (openBox || startTab === "arena") void this.updateComplete.then(() => {
-      if (this.isConnected) this.setTab(openBox ? "box" : "arena");
+    const tabs: readonly string[] = ["arena", "song-comparison", "pt", "box", "account", "teams"];
+    if (startTab && tabs.includes(startTab)) void this.updateComplete.then(() => {
+      if (this.isConnected) this.setTab(startTab as Tab);
     });
   }
   preparePage(payload: TeamBuilderPageData, server = payload.server, allowedServers?: readonly string[]) {
@@ -433,9 +433,7 @@ export class TeamBuilder extends LitElement {
     this.layoutObserver?.disconnect();
     clearTimeout(this.noticeTimer);
     super.disconnectedCallback();
-    this.restoreShell();
     clearAppBarActions(SYNC_OWNER);
-    clearAppBarActions("team-builder-resources");
     clearAppBarActions("team-builder-quick-entry");
     this.releaseSearch?.();
     this.releaseSearch = undefined;
@@ -796,6 +794,23 @@ export class TeamBuilder extends LitElement {
     if (config) config.scrollTop = saved?.config ?? 0;
     this.querySelector<HTMLElement>(".tb-tabpanel")?.focus({ preventScroll: true });
   }
+  renderBuildMode() {
+    return segmented({
+      label: this.t("buildMode", "Team building"),
+      value: this.buildMode,
+      options: [
+        { value: "automatic", label: this.t("automaticTeam", "Find a team"), icon: "auto_awesome" },
+        { value: "manual", label: this.t("manualTeam", "Build a team by hand"), icon: "edit_square" },
+      ],
+      onSelect: (mode) => {
+        this.saveScroll();
+        this.buildMode = mode;
+        this.submitted = false;
+        this.requestUpdate();
+        void this.restoreScroll();
+      },
+    });
+  }
   setTab(tab: Tab) {
     if (this.tab === tab) return;
     if (this.running && (this.tab === "arena" || tab === "arena")) this.cancel();
@@ -805,6 +820,11 @@ export class TeamBuilder extends LitElement {
     if (["build", "arena", "pt", "song-comparison"].includes(tab)) this.lastTaskTab = tab;
     this.tab = tab;
     this.submitted = false;
+    const url = new URL(location.href);
+    if (tab === "build") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    if (tab !== "arena") url.searchParams.delete("league");
+    history.replaceState(history.state, "", url);
     this.requestUpdate();
     void this.restoreScroll();
   }
@@ -1550,15 +1570,19 @@ export class TeamBuilder extends LitElement {
   }
 
   private renderTabs(): TemplateResult {
+    const owned = this.view ? this.view.members.size + this.view.snaps.size : 0;
     const tabs = [
-      { id: "build", icon: "groups", label: this.t("tabBuild", "Build"), count: null },
-      { id: "arena", icon: "swords", label: this.t("arena.tab", "GEKISO Arena"), count: null },
-      { id: "song-comparison", icon: "music_note", label: this.t("sc.tab", "GEKISO songs"), count: null },
-      { id: "pt", icon: "emoji_events", label: this.t("pt.tab", "Event rewards"), count: null },
+      { id: "build", icon: "groups", label: this.t("tabBuild", "Build"), count: 0 },
+      { id: "arena", icon: "swords", label: this.t("arena.tab", "GEKISO Arena"), count: 0 },
+      { id: "song-comparison", icon: "music_note", label: this.t("sc.tab", "GEKISO songs"), count: 0 },
+      { id: "pt", icon: "emoji_events", label: this.t("pt.tab", "Event rewards"), count: 0 },
+      { id: "box", icon: "style", label: this.t("tabBox", "My cards"), count: owned },
+      { id: "account", icon: "trending_up", label: this.t("tabAccount", "Account bonuses"), count: 0 },
+      { id: "teams", icon: "bookmarks", label: this.t("tabTeams", "Teams"), count: this.view?.teams.length ?? 0 },
     ] as const;
     return html`
       <nav
-        class="tabs tabs--pills tb-tabs"
+        class="tabs tb-tabs"
         role="tablist"
         aria-label=${this.t("title", "Team builder")}
         @keydown=${rovingKeydown(
@@ -1573,20 +1597,13 @@ export class TeamBuilder extends LitElement {
               class="tab"
               type="button"
               role="tab"
+              data-tb-tab=${id}
               aria-selected=${String(this.tab === id)}
               tabindex=${this.tab === id ? "0" : "-1"}
               aria-controls="tb-panel"
               @click=${() => this.setTab(id)}
             >
-              ${icon(name, 20)}
-              <span>${label}</span>
-              ${
-                count
-                  ? html`
-                      <span class="tab__count">${count}</span>
-                    `
-                  : nothing
-              }
+              ${icon(name, 20)}<span>${label}</span>${count ? html`<span class="tab__count">${count}</span>` : nothing}
               <span class="tab__indicator"></span>
             </button>
           `,
@@ -1594,102 +1611,14 @@ export class TeamBuilder extends LitElement {
       </nav>
     `;
   }
-  private shellBack?: HTMLButtonElement;
-  private shellMenu?: { menu: HTMLElement; leading: HTMLElement; group: HTMLElement };
-  private shellHeading?: { element: HTMLElement; nodes: Node[]; title: string };
-  private get resourceTitle() {
-    return this.tab === "box"
-      ? this.t("tabBox", "My cards")
-      : this.tab === "account"
-        ? this.t("tabAccount", "Account bonuses")
-        : this.tab === "teams"
-          ? this.t("tabTeams", "Teams")
-          : "";
-  }
-  private restoreShell() {
-    this.shellBack?.remove();
-    this.shellBack = undefined;
-    if (this.shellMenu) {
-      this.shellMenu.leading.append(this.shellMenu.menu);
-      this.shellMenu.group.remove();
-      this.shellMenu = undefined;
-    }
-    if (this.shellHeading?.element.isConnected) {
-      this.shellHeading.element.replaceChildren(...this.shellHeading.nodes);
-      document.title = this.shellHeading.title;
-    }
-    this.shellHeading = undefined;
-  }
-  private syncShell() {
-    if (typeof document === "undefined") return;
-    const title = this.resourceTitle;
-    if (!title) {
-      this.restoreShell();
-      return;
-    }
-    const leading = document.querySelector<HTMLElement>("[data-top-app-bar-leading]");
-    if (leading && !this.shellBack) {
-      const back = document.createElement("button");
-      back.type = "button";
-      back.className = "icon-button";
-      back.dataset.entityBack = "";
-      render(icon("arrow_back"), back);
-      back.addEventListener("click", () => this.setTab(this.lastTaskTab));
-      leading.prepend(back);
-      this.shellBack = back;
-      const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]");
-      const actions = document.querySelector<HTMLElement>("[data-top-app-bar-actions]");
-      if (menu && actions) {
-        const group = document.createElement("div");
-        group.className = "top-app-bar__group";
-        group.append(menu);
-        actions.prepend(group);
-        this.shellMenu = { menu, leading, group };
-      }
-    }
-    this.shellBack?.setAttribute("aria-label", this.t("backToTask", "Back to task"));
-    const heading = document.querySelector<HTMLElement>("[data-top-app-bar] h1");
-    if (heading && !this.shellHeading)
-      this.shellHeading = { element: heading, nodes: [...heading.childNodes], title: document.title };
-    if (heading && heading.textContent !== title) heading.textContent = title;
-    document.title = `${title} / haneoka`;
-  }
-  private resourceLinks(className = "") {
-    return (
-      [
-        ["box", "tabBox", "My cards"],
-        ["account", "tabAccount", "Account bonuses"],
-        ["teams", "tabTeams", "Teams"],
-      ] as const
-    ).map(
-      ([tab, key, label]) => html`
-        <button
-          class=${`button ${this.tab === tab ? "button--tonal" : "button--text"} ${className}`}
-          type="button"
-          aria-pressed=${this.tab === tab}
-          @click=${() => this.setTab(tab)}
-        >
-          ${this.t(key, label)}
-        </button>
-      `,
-    );
-  }
   /** Sync status lives in the app bar; the box search uses the app-bar search field. */
   private syncAppBar() {
-    this.syncShell();
     if (this.tab === "box") setAppBarActions("team-builder-quick-entry", html`
       <button class="button button--tonal" type="button" aria-pressed=${this.boxQuickEntry} data-app-bar-keep
         @click=${() => { this.boxQuickEntry = !this.boxQuickEntry; this.editing = null; this.requestUpdate(); }}>
         ${this.boxQuickEntry ? this.t("finishQuickEntry", "Finish adding") : this.t("quickEntry", "Quick add")}
       </button>`, this);
     else clearAppBarActions("team-builder-quick-entry");
-    setAppBarActions(
-      "team-builder-resources",
-      html`
-        ${this.resourceLinks("tb-resource-action")}
-      `,
-      this,
-    );
 
     const snapshot = this.snapshot;
     const status = snapshot?.status ?? "local";
@@ -1789,28 +1718,7 @@ export class TeamBuilder extends LitElement {
     this.teamGrowth.sync();
     this.arena.sync();
     this.comparison.sync(this);
-    const buildPanel = () => html`
-      <div class="stack tb-build-panel">
-        <div class="tb-mode">
-          ${segmented({
-            label: this.t("buildMode", "Team building"),
-            value: this.buildMode,
-            options: [
-              { value: "automatic", label: this.t("automaticTeam", "Find a team") },
-              { value: "manual", label: this.t("manualTeam", "Build a team by hand") },
-            ],
-            onSelect: (mode) => {
-              this.saveScroll();
-              this.buildMode = mode;
-              this.submitted = false;
-              this.requestUpdate();
-              void this.restoreScroll();
-            },
-          })}
-        </div>
-        ${this.buildMode === "manual" ? renderManualTeamTab(this) : renderBuildTab(this)}
-      </div>
-    `;
+    const buildPanel = () => (this.buildMode === "manual" ? renderManualTeamTab(this) : renderBuildTab(this));
     const panel =
       this.tab === "pt"
         ? renderPtTab(this)
@@ -1827,21 +1735,12 @@ export class TeamBuilder extends LitElement {
                 : renderTeamsTab(this);
     return html`
       <div class=${`team-builder tb${this.tab === "box" && this.boxQuickEntry ? " tb--quick-entry" : ""}`}>
-        <nav class="cluster tb-resource-links" aria-label=${this.t("resources", "Resources")}>
-          ${this.resourceLinks()}
-        </nav>
-        ${
-          !this.resourceTitle
-            ? html`
-                <header class="tb-header">${this.renderTabs()}</header>
-              `
-            : nothing
-        }
+        <header class="tb-header">${this.renderTabs()}</header>
         <section
           id="tb-panel"
           class="tb-tabpanel"
-          role=${this.resourceTitle ? "region" : "tabpanel"}
-          aria-label=${this.resourceTitle || this.t("title", "Team builder")}
+          role="tabpanel"
+          aria-label=${this.t("title", "Team builder")}
           tabindex="-1"
           @focusin=${this.revealFocusedControl}
         >

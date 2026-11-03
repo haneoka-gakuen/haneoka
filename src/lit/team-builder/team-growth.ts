@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: A selected result or manual team, frozen card inputs and a temporary upgrade.
+// Input: A selected result or manual team, frozen card inputs and the growth items chosen for one card.
 // Output: Shared training priorities and same-team / rebuilt-team scenario details.
 // Pos: [Map](../L2-2.md); in-workspace growth comparison controller and dialog.
 // Effects/Dependencies: Native searches, cached responses and release-bound material JSON; no Box writes.
@@ -13,16 +13,16 @@ import { engineInputs } from "../../lib/team-builder/sync/box-view";
 import {
   fixedGrowthRequest,
   freshGrowthRequest,
+  teamGrowthActions,
   teamGrowthChange,
   type TeamGrowthChoice,
 } from "../../lib/team-builder/team-growth";
-import { compareGrowth, type GrowthAction } from "../../lib/growth-comparison";
 import type { GrowthPageData } from "../../lib/growth-catalog";
 import { summarizeCatalogCosts } from "../../lib/catalog-cost-summary";
 import { memberStat, snapshotPercent } from "../../lib/card-growth";
 import { upgradeCost } from "../ui/upgrade-cost";
 import { stageDisplay, growthSkillLevel } from "../../lib/growth-catalog";
-import { iconButton } from "../ui/controls";
+import { iconButton, segmented } from "../ui/controls";
 import { modal } from "../ui/modal";
 import { tileMedia } from "../ui/tile";
 import { accordion } from "../ui/accordion";
@@ -51,7 +51,7 @@ const actionLabels = {
 
 export class TeamGrowthComparison {
   source: Source | null = null;
-  choice: TeamGrowthChoice = { kind: "members", key: "", action: "level", target: "next" };
+  choice: TeamGrowthChoice = { kind: "members", key: "", actions: ["level"], target: "next" };
   results: Partial<Record<Phase, EngineResponse>> = {};
   phase: Phase | null = null;
   error = "";
@@ -203,8 +203,8 @@ export class TeamGrowthComparison {
     this.choice = {
       kind: upgrade?.kind ?? "members",
       key: upgrade?.key ?? source.hit.members[0]!,
-      action: upgrade ? "full" : "level",
-      target: "next",
+      actions: upgrade ? teamGrowthActions(upgrade.kind) : ["level"],
+      target: upgrade ? "cap" : "next",
     };
     this.restoreSearch();
     void this.loadMaterials(source);
@@ -282,7 +282,7 @@ export class TeamGrowthComparison {
         const change = teamGrowthChange(this.host.master!, request, {
           kind,
           key: row.key,
-          action: "full",
+          actions: teamGrowthActions(kind),
           target: "cap",
         });
         return change.request ? [{ kind, key: row.key, request: change.request }] : [];
@@ -443,16 +443,10 @@ export class TeamGrowthComparison {
         break: "rank",
       }).map(([action, field]) => [action, (input as unknown as Record<string, number | null>)[field]]),
     );
-    const actions = this.choice.action === "full" ? (Object.keys(card.tracks) as GrowthAction[]) : [this.choice.action];
+    const steps = this.change()?.steps ?? [];
+    const actions = steps.map((step) => step.action);
     const after = { ...state };
-    for (const action of actions) {
-      const track = card.tracks[action];
-      if (track)
-        after[action] =
-          this.choice.action === "full"
-            ? Math.max(...track.stages.map((row) => row.value))
-            : compareGrowth(card, state, action, this.choice.target).to;
-    }
+    for (const step of steps) after[step.action] = step.to;
     const stats = (values: typeof state) => {
       const level = card.tracks.level?.stages.find((row) => row.value === values.level)?.rates;
       if (!card.maximum || !level) return null;
@@ -489,10 +483,7 @@ export class TeamGrowthComparison {
           const track = card.tracks[action];
           if (!track) return nothing;
           const from = state[action];
-          const to =
-            this.choice.action === "full"
-              ? Math.max(...track.stages.map((row) => row.value))
-              : compareGrowth(card, state, action, this.choice.target).to;
+          const to = after[action];
           if (from == null || to == null)
             return html`
               <span>${this.host.t("growthComparison.status.missing-state", "—")}</span>
@@ -589,11 +580,10 @@ export class TeamGrowthComparison {
                 ? t("noTeam")
                 : t("complete");
     const item = source.input[choice.kind].find((row) => row.key === choice.key)!;
-    const actions: TeamGrowthChoice["action"][] =
-      choice.kind === "members"
-        ? ["level", "training", "awakening", "live", "gekisou", "full"]
-        : ["level", "break", "full"];
+    const actions = teamGrowthActions(choice.kind);
     const title = (key: string) => host.t(actionLabels[key as keyof typeof actionLabels], key);
+    const stepText = (steps: typeof change.steps) =>
+      steps.map((step) => `${title(step.action)} ${step.from === null ? "—" : stageDisplay(step.action, step.from)} → ${stageDisplay(step.action, step.to)}`).join(" / ");
     const cardHref = (kind: "members" | "snaps", id: number) => {
       const server =
         host.data!.crossServer?.owners[kind === "members" ? "members" : "snapshots"]?.[String(id)] ??
@@ -664,9 +654,7 @@ export class TeamGrowthComparison {
               </div>
               <div class="stack">
                 <span>${catalog.cardName(choice.kind, item.cardId)}</span>
-                <span>
-                  ${title(choice.action)}${change.from !== null && change.to !== null && choice.action !== "full" ? ` ${stageDisplay(choice.action, change.from)} → ${stageDisplay(choice.action, change.to)}` : ""}
-                </span>
+                <span>${stepText(change.steps)}</span>
               </div>
             </div>
             <div class="tb-team-growth__values">
@@ -759,40 +747,40 @@ export class TeamGrowthComparison {
                   host.requestUpdate();
                 }}
               >${icon("search", 20)}<span class="truncate">${catalog.cardName(choice.kind, item.cardId)}</span></button>
-              <md-outlined-select
-                label=${host.t("growthComparison.action", "Training")}
-                .value=${choice.action}
-                ?disabled=${!!this.phase}
-                @change=${(event: Event) => this.select({ action: (event.target as HTMLInputElement).value as TeamGrowthChoice["action"] })}
-              >
-                ${actions.map(
-                  (action) => html`
-                    <md-select-option value=${action}><div slot="headline">${title(action)}</div></md-select-option>
-                  `,
-                )}
-              </md-outlined-select>
-              ${
-                choice.action === "level"
-                  ? html`
-                      <md-outlined-select
-                        label=${host.t("growthComparison.target", "Target level")}
-                        .value=${choice.target}
-                        ?disabled=${!!this.phase}
-                        @change=${(event: Event) => this.select({ target: (event.target as HTMLInputElement).value as "next" | "cap" })}
-                      >
-                        ${["next", "cap"].map(
-                          (key) => html`
-                            <md-select-option value=${key}>
-                              <div slot="headline">${host.t(`growthComparison.${key}`, key)}</div>
-                            </md-select-option>
-                          `,
-                        )}
-                      </md-outlined-select>
-                    `
-                  : nothing
-              }
+              <div class="stack stack--tight" role="group" aria-label=${host.t("growthComparison.action", "Training")}>
+                <span class="tb-field__label">${host.t("growthComparison.action", "Training")}</span>
+                <div class="cluster tb-growth-options">
+                  ${actions.map((action) => {
+                    const selected = choice.actions.includes(action);
+                    const step = change.steps.find((row) => row.action === action);
+                    return html`
+                      <button class="chip" type="button" role="checkbox" aria-checked=${String(selected)} ?disabled=${!!this.phase}
+                        @click=${() => this.select({ actions: selected ? choice.actions.filter((item) => item !== action) : [...choice.actions, action] })}>
+                        ${selected ? icon("check", 18) : nothing}
+                        <span class="chip__label">${title(action)}</span>
+                        ${step ? html`<span class="chip__count tabular">${step.from === null ? "—" : stageDisplay(action, step.from)} → ${stageDisplay(action, step.to)}</span>` : nothing}
+                      </button>
+                    `;
+                  })}
+                </div>
+                <div class="cluster tb-growth-actions">
+                  <button class="button button--text button--small" type="button" ?disabled=${!!this.phase}
+                    @click=${() => this.select({ actions: [...actions] })}>${host.t("quickOwnAll", "Select all")}</button>
+                  <button class="button button--text button--small" type="button" ?disabled=${!!this.phase || !choice.actions.length}
+                    @click=${() => this.select({ actions: [] })}>${host.common("common.actions.clear", "Clear")}</button>
+                </div>
+              </div>
+              ${segmented({
+                label: host.t("growthComparison.target", "Target level"),
+                value: choice.target,
+                options: [
+                  { value: "next" as const, label: host.t("tg.targetNext", "Next stage"), disabled: !!this.phase },
+                  { value: "cap" as const, label: host.t("tg.targetMax", "Max"), disabled: !!this.phase },
+                ],
+                onSelect: (target) => this.select({ target }),
+              })}
               <div class="tb-team-growth__transition tabular">
-                ${change.status === "ready" ? (choice.action === "full" ? t("full") : `${stageDisplay(choice.action, change.from!)} → ${stageDisplay(choice.action, change.to!)}`) : host.t(`growthComparison.status.${change.status}`, change.status)}
+                ${change.status === "ready" ? stepText(change.steps) : host.t(`growthComparison.status.${change.status}`, change.status)}
               </div>
               ${
                 change.status === "missing-state"

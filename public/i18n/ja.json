@@ -2412,7 +2412,8 @@
         "screenshotsHint": "この端末で認識",
         "groupText": "テキスト",
         "tagList": "テキストの内容による",
-        "pasteHint": "CSV、TSV、コピーしたテキスト"
+        "pasteHint": "CSV、TSV、コピーしたテキスト",
+        "libraryServerItem": "カード所持情報：{server}"
       },
       "resourceResultsChanged": "育成値や条件が変わりました。結果を更新するには再計算してください。",
       "localDraftChanged": "別のタブでカード一覧が変更されました。現在の入力をエクスポートしてから、保存済みの一覧を読み直してください。",
@@ -3253,7 +3254,9 @@
         "runSearch": "再編成",
         "continue": "探索を続ける",
         "pool": "メンバー / スナップ",
-        "materials": "素材・スキル資料"
+        "materials": "素材・スキル資料",
+        "targetNext": "次の段階",
+        "targetMax": "最大"
       },
       "arena": {
         "tab": "撃奏アリーナ",
@@ -3295,7 +3298,15 @@
       "pinBaseline": "比較の基準にする",
       "baseline": "基準",
       "clearBaseline": "基準を解除",
-      "maxScore": "最高"
+      "maxScore": "最高",
+      "manageCards": "管理",
+      "stepRequired": "必須",
+      "conditionsTitle": "条件",
+      "stepWaiting": "上の手順を完了",
+      "stepRun": "設定から開始",
+      "suggestShort": "おすすめ",
+      "growthUnset": "未入力",
+      "bulkActions": "表示中のカードを編集"
     },
     "calendar": {
       "title": "カレンダー",

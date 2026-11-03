@@ -545,7 +545,7 @@
     min-height: 0;
     overflow: visible;
     border-radius: 0;
-    background: var(--md-sys-color-surface);
+    background: transparent;
   }
   .viewer-detail--page > .viewer-detail__body {
     width: min(100%, var(--content-max));

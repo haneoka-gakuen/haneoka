@@ -2412,7 +2412,8 @@
         "screenshotsHint": "在本機辨識",
         "groupText": "文字",
         "tagList": "取決於文字內容",
-        "pasteHint": "CSV、TSV 或複製的文字"
+        "pasteHint": "CSV、TSV 或複製的文字",
+        "libraryServerItem": "卡庫區服：{server}"
       },
       "resourceResultsChanged": "養成或條件已變更，請重新計算以更新結果。",
       "localDraftChanged": "另一個分頁已修改卡庫。請先匯出目前輸入，再重新讀取已儲存的卡庫。",
@@ -3253,7 +3254,9 @@
         "runSearch": "重新配隊",
         "continue": "繼續配隊",
         "pool": "團員 / 快照",
-        "materials": "材料與技能資料"
+        "materials": "材料與技能資料",
+        "targetNext": "下一階段",
+        "targetMax": "最高"
       },
       "arena": {
         "tab": "激奏舞台",
@@ -3295,7 +3298,15 @@
       "pinBaseline": "設為比較基準",
       "baseline": "比較基準",
       "clearBaseline": "清除比較基準",
-      "maxScore": "最高"
+      "maxScore": "最高",
+      "manageCards": "管理",
+      "stepRequired": "必填",
+      "conditionsTitle": "條件",
+      "stepWaiting": "先完成上面的步驟",
+      "stepRun": "在設定中開始",
+      "suggestShort": "推薦",
+      "growthUnset": "未填寫",
+      "bulkActions": "批次編輯"
     },
     "calendar": {
       "title": "日曆",

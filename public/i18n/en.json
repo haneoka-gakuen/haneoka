@@ -2412,7 +2412,8 @@
         "screenshotsHint": "Recognized on this device",
         "groupText": "Text",
         "tagList": "What the text lists",
-        "pasteHint": "CSV, TSV or copied text"
+        "pasteHint": "CSV, TSV or copied text",
+        "libraryServerItem": "Card library: {server}"
       },
       "resourceResultsChanged": "Training or conditions changed. Calculate again to update the results.",
       "localDraftChanged": "Your card library changed in another tab. Export your current inputs, then reload the saved library.",
@@ -3253,7 +3254,9 @@
         "runSearch": "Rebuild teams",
         "continue": "Continue search",
         "pool": "Members / Snapshots",
-        "materials": "Materials and skills"
+        "materials": "Materials and skills",
+        "targetNext": "Next stage",
+        "targetMax": "Max"
       },
       "arena": {
         "tab": "GEKISO Arena",
@@ -3295,7 +3298,15 @@
       "pinBaseline": "Set as baseline",
       "baseline": "Baseline",
       "clearBaseline": "Clear baseline",
-      "maxScore": "Highest"
+      "maxScore": "Highest",
+      "manageCards": "Manage",
+      "stepRequired": "Required",
+      "conditionsTitle": "Conditions",
+      "stepWaiting": "Complete the steps above",
+      "stepRun": "Start from the settings",
+      "suggestShort": "Suggest",
+      "growthUnset": "Not entered",
+      "bulkActions": "Edit shown cards"
     },
     "calendar": {
       "title": "Calendar",

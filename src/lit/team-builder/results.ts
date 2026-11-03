@@ -22,6 +22,7 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { sectionHeading } from "./catalog";
+import { renderChecklist } from "./tool-layout";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof, manualResultSource, resultOrderIndex, setResultOrder } from "./score-goal";
@@ -1351,40 +1352,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
     ["event", "plan"].includes(host.resultSettings?.goal ?? "score") !== (host.tab === "pt") ||
     (host.tab === "pt" && (host.resultSettings?.goal === "plan") !== (host.settings.rewardMode === "plan"))
   ) {
-    const issue = host.inputIssues()[0];
-    const emptyBox = issue?.field === "tb-cards" && host.searchSettings.scope === "box" && !host.view?.members.size;
-    const missingCards = issue?.field === "tb-cards";
-    const missingSong = issue?.field === "tb-songs" || issue?.field === "tb-challenge-songs";
-    return html`
-      <section class="surface tb-results tb-results--empty">
-        <div class="state">
-          <span class="state__icon">${icon("groups", 40)}</span>
-          <p class="state__title">
-            ${emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : missingCards ? host.t("emptyRangeTitle", "No cards in this range") : (issue?.message ?? host.t("readyToCalculate", "Ready to calculate"))}
-          </p>
-          ${
-            host.inputIssues()[0]
-              ? html`
-                  <button
-                    class="button button--tonal"
-                    @click=${async () => {
-                      if (emptyBox) {
-                        host.imports.openBox();
-                        return;
-                      }
-                      await host.focusInput(issue!.field);
-                      if (missingSong)
-                        host.querySelector<HTMLButtonElement>(`#${issue!.field} .tb-songs__add`)?.click();
-                    }}
-                  >
-                    ${emptyBox ? host.t("importMyCards", "Import my cards") : missingCards ? host.t("adjustCardRange", "Adjust card range") : missingSong ? host.t("addSongs", "Choose songs") : host.t("adjustConditions", "Adjust conditions")}
-                  </button>
-                `
-              : nothing
-          }
-        </div>
-      </section>
-    `;
+    return renderChecklist(host);
   }
   const catalog = host.catalog!;
   const stale = host.stale;
