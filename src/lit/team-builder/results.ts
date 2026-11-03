@@ -96,7 +96,7 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
       ? [
           `GREAT ${format(host, input.goal.accuracy.great * 100, 2)}% / JUST ${format(host, input.goal.accuracy.just * 100, 2)}% / ${host.t("missEvery", "Miss every N notes")}: ${input.goal.accuracy.missEvery ?? 0}`,
           `${host.t("pt.luckSamples", "Luck samples")}: ${input.goal.seeds}`,
-          `${host.t("gekisoPlacements", "Scoring placements")}: ${input.goal.opponents ? (host.results?.results.find((result) => result.hits.includes(hit))?.placements?.join(" / ") ?? "—") : input.goal.rank}`,
+          `${host.t("gekisoPlacements", "Scoring placements")}: ${input.goal.opponents ? (host.results?.results.find((result) => result.hits.includes(hit))?.placements?.join(" / ") ?? "—") : input.goal.ranks?.join(" / ") ?? input.goal.rank}`,
         ]
       : input?.goal.kind === "event" && input.goal.gekiso && s.route !== "challenge"
         ? [

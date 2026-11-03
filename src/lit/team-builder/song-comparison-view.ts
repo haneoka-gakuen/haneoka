@@ -3,6 +3,7 @@
 // Output: 条件表单、歌曲代表谱面、可展开明细与固定队伍活动加成。
 // Pos: [Map](../L2-2.md)；独立激奏选曲页签的结果视图。
 // Effects/Dependencies: Lit light DOM；事件回调交由控制器处理。
+import { rangeRankControl } from "./gekiso-rank";
 import { songRulesControl } from "./song-rules";
 import { toolLayout } from "./tool-layout";
 import { html, nothing } from "lit";
@@ -484,7 +485,13 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
               `
             : nothing
         }
-        ${select("sc-rank", t("rank"), s.rank === null ? "" : String(s.rank), [{ value: "", label: t("select") }, ...Array.from({ length: s.players }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))], (value) => c.update({ rank: value ? Number(value) : null }))}
+        <div id="sc-rank" tabindex="-1">
+          ${rangeRankControl(host, s.ranks, (range, rank) => {
+            const ranks = [...s.ranks] as typeof s.ranks;
+            ranks[range] = rank;
+            c.update({ ranks });
+          }, s.players)}
+        </div>
         ${accordion({
           id: "sc-conditions",
           label: t("details"),

@@ -35,13 +35,13 @@ export function conditionSummary(host: TeamBuilder) {
     ...(gekiso
       ? [
           host.tab === "song-comparison"
-            ? `${host.t("placementRank", "Specified placement")} ${host.songComparison.settings.rank ?? "—"}`
+            ? `${host.t("placementRank", "Specified placement")} ${host.songComparison.settings.ranks.map(rank => rank ?? "—").join(" / ")}`
             : manual
-              ? `${host.t("placementRank", "Specified placement")} ${s.gekisoRank}`
+              ? `${host.t("placementRank", "Specified placement")} ${s.gekisoRanks.join(" / ")}`
             : s.goal === "gekiso"
               ? s.gekisoPlacementMode === "opponents"
                 ? host.t("placementOpponents", "Opponent scores")
-                : `${host.t("placementRank", "Specified placement")} ${s.gekisoRank}`
+                : `${host.t("placementRank", "Specified placement")} ${s.gekisoRanks.join(" / ")}`
               : `${host.t("placementRank", "Specified placement")} 1`,
           ...(host.tab !== "song-comparison" && !manual && host.hasComboSongs() ? [`CB ≥ ×${s.minComboBonus}`] : []),
         ]

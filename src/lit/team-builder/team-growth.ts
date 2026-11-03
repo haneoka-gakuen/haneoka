@@ -3,6 +3,7 @@
 // Output: Shared training priorities and same-team / rebuilt-team scenario details.
 // Pos: [Map](../L2-2.md); in-workspace growth comparison controller and dialog.
 // Effects/Dependencies: Native searches, cached responses and release-bound material JSON; no Box writes.
+import { icon } from "../ui/icon";
 import { html, nothing } from "lit";
 import type { EngineHit, EngineRequest, EngineResponse, TeamEvaluation } from "../../lib/team-builder/engine/api";
 import { completeResponse } from "../../lib/team-builder/engine/execution";
@@ -102,6 +103,7 @@ export class TeamGrowthComparison {
   close() {
     this.stop();
     this.source = null;
+    if (this.host.slotPicker && "growth" in this.host.slotPicker) this.host.slotPicker = null;
     this.results = {};
     this.host.requestUpdate();
   }
@@ -598,9 +600,6 @@ export class TeamGrowthComparison {
         host.data!.identity.server;
       return `/${server}/${host.locale}/${kind === "members" ? "member-cards" : "support-cards"}/${id}/`;
     };
-    const cardChoices = (["members", "snaps"] as const)
-      .flatMap((kind) => source.input[kind].map((row) => ({ kind, row, inTeam: source.hit[kind].includes(row.key) })))
-      .sort((a, b) => Number(b.inTeam) - Number(a.inTeam));
     const formation = (result: EngineHit, input: EngineRequest) => html`
       <ol class="tb-formation" aria-label=${host.t("formation", "Formation")}>
         ${[1, 2, 0, 3, 4].map(
@@ -749,25 +748,17 @@ export class TeamGrowthComparison {
           <aside class=${`surface stack tb-team-growth__settings${this.settingsOpen ? " is-open" : ""}`}>
             <div class="stack tb-team-growth__fields">
               <h3 class="detail-section-title">${t("scenario")}</h3>
-              <md-outlined-select
-                label=${host.t("growthComparison.card", "Card")}
-                .value=${choice.key}
+              <span class="tb-field__label">${host.t("growthComparison.card", "Card")}</span>
+              <button
+                class="button button--outlined button--full"
+                type="button"
+                data-growth-card-picker
                 ?disabled=${!!this.phase}
-                @change=${(event: Event) => {
-                  const key = (event.target as HTMLInputElement).value,
-                    selected = cardChoices.find((item) => item.row.key === key)!;
-                  this.select({ key, kind: selected.kind, action: "level" });
+                @click=${() => {
+                  host.slotPicker = { growth: true, kind: choice.kind };
+                  host.requestUpdate();
                 }}
-              >
-                ${cardChoices.map(
-                  ({ kind, row, inTeam }) => html`
-                    <md-select-option value=${row.key}>
-                      <div slot="headline">${catalog.cardName(kind, row.cardId)}</div>
-                      <div slot="supporting-text">${t(inTeam ? "inTeam" : "inPool")}</div>
-                    </md-select-option>
-                  `,
-                )}
-              </md-outlined-select>
+              >${icon("search", 20)}<span class="truncate">${catalog.cardName(choice.kind, item.cardId)}</span></button>
               <md-outlined-select
                 label=${host.t("growthComparison.action", "Training")}
                 .value=${choice.action}

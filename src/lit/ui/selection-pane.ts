@@ -5,11 +5,12 @@ import "@material/web/checkbox/checkbox.js";
 import { tile, tileMedia, type TileOptions } from "./tile";
 import { rovingKeydown } from "./controls";
 import { chooserHeader, chooserFilters } from "./chooser-filters";
-import { backdropPress, isBackdropClick } from "./modal";
+import { backdropPress, isBackdropClick, modal } from "./modal";
 
 /** Native chooser dialog, matching the stamp selector above the app shell. */
 export function selectionPane(options: {
   id: string;
+  managed?: boolean;
   title: string;
   closeLabel: string;
   close: () => void;
@@ -45,6 +46,8 @@ export function selectionPane(options: {
   const selectedVisible = options.items.some((item) => item.value === options.selected);
   return html`
     <dialog
+      ?data-managed-modal=${options.managed}
+      ${options.managed ? modal(options.close) : nothing}
       class=${`selection-pane${options.layout === "list" ? " selection-pane--list" : ""}${options.filtersOpen ? " is-filtering" : ""}`}
       aria-label=${options.title}
       @cancel=${(event: Event) => {

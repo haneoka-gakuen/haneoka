@@ -1,3 +1,4 @@
+import { rangeRankControl } from "./gekiso-rank";
 /** Saved teams, a manual formation and its evaluation across songs, with swap suggestions. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -78,7 +79,7 @@ export async function evaluate(host: TeamBuilder) {
       team: teamSpec(host, team),
       songs: goal.songs,
       play: goal.kind === "score" ? goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
-      ...(goal.kind === "gekiso" ? { gekiso: { accuracy: goal.accuracy, rank: goal.rank, seeds: goal.seeds, minJustWindowMs: goal.minJustWindowMs } } : {}),
+      ...(goal.kind === "gekiso" ? { gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, minJustWindowMs: goal.minJustWindowMs } } : {}),
       challengeEventId: goal.kind === "score" ? goal.challengeEventId : null,
       event: null,
     });
@@ -548,15 +549,11 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                     ${host.settings.challengeRules ? eventSection(host, { ...host.settings, goal: "score" }) : nothing}
                   `
                 : html`
-                    ${segmented({
-                                      label: host.t("gekisoRank", "Placement in each range"),
-                                      value: String(host.settings.gekisoRank),
-                                      options: [1, 2, 3, 4, 5].map((rank) => ({
-                                        value: String(rank),
-                                        label: String(rank),
-                                      })),
-                                      onSelect: (value) => host.updateSettings({ gekisoRank: Number(value) }),
-                                    })}
+                    ${rangeRankControl(host, host.settings.gekisoRanks, (range, rank) => {
+                      const gekisoRanks = [...host.settings.gekisoRanks] as typeof host.settings.gekisoRanks;
+                      gekisoRanks[range] = rank;
+                      host.updateSettings({ gekisoRanks });
+                    })}
                     ${gekisoSamplingAdvanced(host)}
                   `
             }

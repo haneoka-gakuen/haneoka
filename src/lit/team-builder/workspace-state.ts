@@ -34,6 +34,7 @@ export function resolveLuckSamples(settings: Pick<BuildSettings,
 
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
+  settings.gekisoRanks = stored.gekisoRanks ? [...stored.gekisoRanks] : [settings.gekisoRank, settings.gekisoRank, settings.gekisoRank];
   // Required cards hold for this visit only; custom accuracy is unavailable for now.
   settings.required = { members: [], snaps: [] };
   if (!CUSTOM_ACCURACY) settings.playMode = "ap";

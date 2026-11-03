@@ -87,7 +87,7 @@ export class SongComparison {
       s.mode === "ap" ? 0 : s.great,
       s.just,
       s.mode === "ap" ? 0 : s.missEvery,
-      s.rank,
+      s.ranks,
       s.songRules,
       0,
     ]);
@@ -134,7 +134,7 @@ export class SongComparison {
   }
   update(patch: Partial<ComparisonSettings>) {
     this.settings = { ...this.settings, ...patch };
-    if (this.settings.rank !== null && this.settings.rank > this.settings.players) this.settings.rank = null;
+    this.settings.ranks = this.settings.ranks.map(rank => rank !== null && rank > this.settings.players ? null : rank) as ComparisonSettings["ranks"];
     this.host.write([{ key: `pref.${PREF}`, value: this.settings as unknown as BoxValue }]);
     this.sync();
     if (!this.stale && this.evaluatedSettings)
@@ -264,7 +264,7 @@ export class SongComparison {
         row.status = "running";
         delete row.reason;
         host.requestUpdate();
-        const issue = chartIssue(host.master!, host.data!, row.song, settings.rank!, settings.songRules);
+        const issue = chartIssue(host.master!, host.data!, row.song, settings.ranks, settings.songRules);
         if (issue) {
           row.status = "failed";
           row.reason = issue;

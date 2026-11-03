@@ -72,6 +72,7 @@ export interface BuildSettings {
   /** Gekisou: share of Just-eligible notes hit Just (percent) and the assumed range placement (1 for Mission). */
   just: number;
   gekisoRank: number;
+  gekisoRanks: [number, number, number];
   gekisoPlacementMode: "rank" | "opponents";
   minComboBonus: number;
   justWindowMs: number;
@@ -152,6 +153,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   timeLimit: null,
   just: 100,
   gekisoRank: 1,
+  gekisoRanks: [1, 1, 1],
   gekisoPlacementMode: "rank",
   minComboBonus: 1,
   justWindowMs: 0,

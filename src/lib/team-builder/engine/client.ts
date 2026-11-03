@@ -520,7 +520,7 @@ export class EngineClient {
                 team: { members: team.members, snaps: team.snaps, leader: team.members[0]! },
                 songs: goal.songs.filter((_, position) => position % count === index),
                 play: { great: 0, good: 0, bad: 0, miss: 0 }, challengeEventId: null, event: null,
-                gekiso: { accuracy: goal.accuracy, rank: goal.rank, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs } },
+                gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs } },
             })))).flat();
             if (stopped) return latest;
             const bySong = new Map(evaluated.map(value => [chartKey(value.song), value]));
@@ -648,7 +648,7 @@ export class EngineClient {
             songRules: request.songRules,
             members: request.members, snaps: request.snaps, player: request.player, unknownPolicy: request.unknownPolicy,
             team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! }, songs: [hit.song!],
-            play: { great: 0, good: 0, bad: 0, miss: 0 }, gekiso: { accuracy: goal.accuracy, rank: goal.rank, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs },
+            play: { great: 0, good: 0, bad: 0, miss: 0 }, gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs },
             challengeEventId: null, event: null,
           } });
           if (stopped) return;

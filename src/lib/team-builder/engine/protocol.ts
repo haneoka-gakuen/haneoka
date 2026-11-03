@@ -18,7 +18,7 @@ export type EvaluateRequest = {
   team: TeamSpec;
   songs: SongRef[];
   play: PlayModel;
-  gekiso?: Pick<Extract<Goal, { kind: "gekiso" }>, "accuracy" | "rank" | "seeds" | "arena" | "minJustWindowMs">;
+  gekiso?: Pick<Extract<Goal, { kind: "gekiso" }>, "accuracy" | "rank" | "ranks" | "seeds" | "arena" | "minJustWindowMs">;
   challengeEventId: number | null;
   event: { eventId: number; route: "live" | "challenge"; consumption: number; eventEffects?: readonly import("./master").EventEffectRow[] } | null;
 };

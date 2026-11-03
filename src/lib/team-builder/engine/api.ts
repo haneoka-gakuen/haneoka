@@ -114,6 +114,8 @@ export type Goal =
       accuracy: Accuracy;
       /** Assumed placement in every range (1 for solo Mission lives). */
       rank: number;
+      /** Placements for ranges 1–3; absent preserves the uniform rank. */
+      ranks?: [number, number, number];
       /** Minimum base multiplier at the opening COMBO, evaluated at initial LIFE. */
       minComboBonus?: number;
       /** Minimum steady JUST tap half-window, in milliseconds. */
@@ -450,6 +452,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   request = singleSongRequest(request);
   if (request.songRules) throw new Error("song-rules-native-required");
   if (request.aggregation === "mean") throw new Error("shared-native-required");
+  const placementGoal = request.goal;
+  if (placementGoal.kind === "gekiso" && placementGoal.ranks?.some(rank => rank !== placementGoal.rank)) throw new Error("range-ranks-native-required");
   if (request.goal.kind === "gekiso" && request.goal.arena) throw new Error("arena-native-required");
   if (request.goal.kind === "event" && request.goal.rewardPlan) throw new Error("reward-plan-native-required");
   if ((request.goal.kind === "gekiso" && request.goal.minJustWindowMs) ||

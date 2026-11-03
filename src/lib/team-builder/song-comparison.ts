@@ -22,6 +22,7 @@ export interface ComparisonSettings {
   just: number | null;
   missEvery: number | null;
   rank: number | null;
+  ranks: [number | null, number | null, number | null];
   sort: "contribution" | "score" | "remaining";
 }
 export const comparisonDefaults = (): ComparisonSettings => ({
@@ -33,6 +34,7 @@ export const comparisonDefaults = (): ComparisonSettings => ({
   just: null,
   missEvery: 0,
   rank: null,
+  ranks: [null, null, null],
   sort: "contribution",
 });
 export interface Formation {
@@ -74,6 +76,10 @@ export function readComparisonSettings(value: unknown): ComparisonSettings {
     just: percent(saved.just) ? saved.just : null,
     missEvery: integer(saved.missEvery, 0, Number.MAX_SAFE_INTEGER) ? saved.missEvery : null,
     rank: integer(saved.rank, 1, players) ? saved.rank : null,
+    ranks: [0, 1, 2].map(range => {
+      const value = Array.isArray(saved.ranks) ? saved.ranks[range] : saved.rank;
+      return integer(value, 1, players) ? value : null;
+    }) as ComparisonSettings["ranks"],
     sort: saved.sort === "score" || saved.sort === "remaining" ? saved.sort : "contribution",
   };
 }
@@ -128,7 +134,7 @@ export function comparisonIssues(s: ComparisonSettings): ComparisonIssue[] {
   if (s.mode === "custom" && !percent(s.great)) issues.push({ field: "sc-great", reason: "percent" });
   if (s.mode === "custom" && !integer(s.missEvery, 0, Number.MAX_SAFE_INTEGER))
     issues.push({ field: "sc-miss", reason: "miss" });
-  if (!integer(s.rank, 1, s.players)) issues.push({ field: "sc-rank", reason: "rank" });
+  if (s.ranks.some(rank => !integer(rank, 1, s.players))) issues.push({ field: "sc-rank", reason: "rank" });
   return issues;
 }
 export function comparisonRequest(
@@ -152,7 +158,8 @@ export function comparisonRequest(
         just: s.just! / 100,
         missEvery: s.mode === "ap" ? 0 : s.missEvery!,
       },
-      rank: s.rank!,
+      rank: s.ranks[0]!,
+      ranks: s.ranks as [number, number, number],
       seeds: 0,
     },
     constraints: {
@@ -177,7 +184,7 @@ export function availableOnServer(data: TeamBuilderData, collection: string, id:
     ? !!data.crossServer.availability[collection]?.[String(id)]?.includes(data.identity.server)
     : true;
 }
-export function chartIssue(master: EngineMaster, data: TeamBuilderData, song: SongRef, rank: number, rules?: SongRules): string | null {
+export function chartIssue(master: EngineMaster, data: TeamBuilderData, song: SongRef, ranks: readonly (number | null)[], rules?: SongRules): string | null {
   const row = master.songs.get(song.songId);
   if (!row || !availableOnServer(data, "songs", song.songId) || !["jp", "intl"].includes(data.identity.server))
     return "source";
@@ -186,12 +193,12 @@ export function chartIssue(master: EngineMaster, data: TeamBuilderData, song: So
   if (missions.length !== 3 || missions.some((mission) => ![1, 2, 3].includes(mission))) return "missions";
   const pattern = missionPattern(missions[0]!, missions[1]!, missions[2]!);
   if (
-    ![1, 2, 3].every((count) =>
+    !ranks.every(rank => [1, 2, 3].every((count) =>
       master.live.gekiso.rankingBonuses.some(
         (bonus) =>
           bonus.pattern === pattern && bonus.count === count && bonus.rank === rank && Number.isFinite(bonus.percent),
       ),
-    )
+    ))
   )
     return "rewards";
   return null;

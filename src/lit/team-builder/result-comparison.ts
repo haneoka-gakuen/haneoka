@@ -435,7 +435,7 @@ export class ResultComparison {
                       ? html`
                           <span>
                             ${host.t("gekisoPlacements", "Scoring placements")}:
-                            ${item.input.goal.opponents ? (item.placements?.join(" / ") ?? "—") : item.input.goal.rank}
+                            ${item.input.goal.opponents ? (item.placements?.join(" / ") ?? "—") : item.input.goal.ranks?.join(" / ") ?? item.input.goal.rank}
                           </span>
                           <span>
                             GREAT ${format(item.input.goal.accuracy.great * 100, 2)}% / JUST

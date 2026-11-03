@@ -1,3 +1,4 @@
+import { rangeRankControl } from "./gekiso-rank";
 import { farmingMode } from "./workspace-state";
 import { enableManualEvent, renderManualEvent } from "./manual-event";
 import { toolLayout } from "./tool-layout";
@@ -150,14 +151,10 @@ export function placementControl(host: TeamBuilder): TemplateResult {
   })}
       ${
     s.gekisoPlacementMode === "rank"
-      ? segmented({
-          label: host.t("gekisoRank", "Placement in each range"),
-          value: String(s.gekisoRank),
-          options: [1, 2, 3, 4, 5].map((rank) => ({
-            value: String(rank),
-            label: String(rank),
-          })),
-          onSelect: (value) => set({ gekisoRank: Number(value) }),
+      ? rangeRankControl(host, s.gekisoRanks, (range, rank) => {
+          const gekisoRanks = [...s.gekisoRanks] as BuildSettings["gekisoRanks"];
+          gekisoRanks[range] = rank;
+          set({ gekisoRanks });
         })
       : html`
           <div class="tb-number-grid">

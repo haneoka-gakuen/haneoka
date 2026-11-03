@@ -3,6 +3,7 @@
 // Output: Independent Arena draft and the second team-builder task panel.
 // Pos: [Map](../L2-2.md); Arena rules, schedule lifecycle and shared tool presentation.
 // Effects/Dependencies: Persists Box preferences, schedules rule transitions and cancels obsolete calculations.
+import { rangeRankControl } from "./gekiso-rank";
 import { html, nothing } from "lit";
 import type { TeamBuilder } from "../team-builder";
 import { arenaPeriod, arenaReleaseAt, arenaReleased, type ArenaRule } from "../../lib/team-builder/arena";
@@ -61,7 +62,7 @@ export class ArenaController {
       ...initial,
       ...saved,
       customized: saved.customized === true || saved.automatic === false,
-      build: restoreBuildSettings({ ...initial.build, ...objectRow(saved.build) }),
+      build: restoreBuildSettings({ ...objectRow(saved.build), goal: "gekiso" }),
       rule: { ...initial.rule, ...objectRow(saved.rule) },
     } as ArenaDraft;
     const requested = this.host.requestedArenaLeague;
@@ -309,14 +310,13 @@ export function renderArenaTab(host: TeamBuilder) {
           draft.mode === "individual"
             ? placementControl(host)
             : html`
-                <md-outlined-select
-                  id="tb-placement"
-                  label=${host.t("gekisoRank", "Placement in each range")}
-                  .value=${String(settings.gekisoRank)}
-                  @change=${(e: Event) => arena.updateBuild({ gekisoRank: Number((e.target as HTMLInputElement).value) })}
-                >
-                  ${[1, 2, 3, 4, 5].map((value) => option(value, String(value)))}
-                </md-outlined-select>
+                <div id="tb-placement">
+                  ${rangeRankControl(host, settings.gekisoRanks, (range, rank) => {
+                    const gekisoRanks = [...settings.gekisoRanks] as BuildSettings["gekisoRanks"];
+                    gekisoRanks[range] = rank;
+                    arena.updateBuild({ gekisoRanks });
+                  })}
+                </div>
               `
         }
         ${comboBonusControl(host)}${justWindowControl(host)}${gekisoSamplingAdvanced(host)}

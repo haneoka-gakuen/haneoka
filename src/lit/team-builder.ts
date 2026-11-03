@@ -338,7 +338,7 @@ export class TeamBuilder extends LitElement {
   /** Training priorities for the searched goal: each owned card raised to full growth on its own. */
   growth: { context: string; done: number; total: number; result: GrowthResult | null } | null = null;
   manualBusy = false;
-  slotPicker: { slot: number; kind: "members" | "snaps" } | { target: "manual-event"; kind: "members" | "snaps"; ids: number[] } | null = null;
+  slotPicker: { growth: true; kind: "members" | "snaps" } | { slot: number; kind: "members" | "snaps" } | { target: "manual-event"; kind: "members" | "snaps"; ids: number[] } | null = null;
   slotFilters: BoxFilters = {
     kind: "members",
     query: "",
@@ -1232,7 +1232,8 @@ export class TeamBuilder extends LitElement {
         just: s.just / 100,
         missEvery: s.playMode === "ap" ? 0 : s.missEvery || 0,
       },
-      rank: s.gekisoPlacementMode === "opponents" ? 1 : s.gekisoRank,
+      rank: s.gekisoPlacementMode === "opponents" ? 1 : s.gekisoRanks[0],
+      ...(s.gekisoPlacementMode === "rank" ? { ranks: [...s.gekisoRanks] as [number, number, number] } : {}),
       minComboBonus: s.minComboBonus,
       ...(s.justWindowMs > 0 ? { minJustWindowMs: s.justWindowMs } : {}),
       ...(s.gekisoPlacementMode === "opponents" ? { opponents: parseOpponents(s.gekisoOpponents).ranges } : {}),
@@ -1846,7 +1847,7 @@ export class TeamBuilder extends LitElement {
         >
           ${panel}
         </section>
-        ${renderCardPicker(this)} ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
+        ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
         ${this.imports.render()} ${this.renderSnackbar()}
       </div>
     `;
