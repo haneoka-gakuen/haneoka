@@ -1,5 +1,5 @@
 // Input: Cubism source URL, loader, cancellation and progress options.
-// Output: Portable model ZIP with standard motion groups and WebGAL usage notes.
+// Output: Portable model ZIP with standard motion groups and local resource references.
 // Pos: [Shared logic](L2-2.md); browser model-package export boundary.
 // Effects/Dependencies: Downloads model resources and builds a ZIP in memory.
 import { exportCubismModel, type ExportCubismModelOptions } from "@haneoka/vega-plugin-cubism/export";
@@ -142,31 +142,5 @@ export async function exportLive2DModel(options: ExportCubismModelOptions) {
   const sourceFiles = unzipSync(result.bytes);
   for (const [path, data] of Object.entries(sourceFiles))
     files[`${folder}/${path}`] = [data, { level: /\.(?:png|ogg|mp3|webm)$/iu.test(path) ? 0 : 6 }];
-  const descriptor = Object.keys(sourceFiles).find((path) => /\.(?:model3|model)\.json$/iu.test(path));
-  if (descriptor) {
-    const settings = JSON.parse(new TextDecoder().decode(sourceFiles[descriptor]!)) as Record<string, unknown>;
-    const references = (settings.FileReferences || settings) as Record<string, unknown>;
-    const motions = (references.Motions || references.motions || {}) as Record<string, unknown>;
-    const motion = Object.keys(motions).find((name) => name && name !== "Idle");
-    const expressions = (references.Expressions || references.expressions || []) as Record<string, unknown>[];
-    const expression = expressions[0]?.Name || expressions[0]?.name;
-    const figure = `${folder}/${descriptor}`;
-    const example = `changeFigure:${figure}${motion ? ` -motion=${motion}` : ""}${expression ? ` -expression=${expression}` : ""};`;
-    const readme = [
-      "WebGAL",
-      "",
-      "Extract this complete folder into game/figure, then call its model descriptor:",
-      "",
-      `changeFigure:${figure};`,
-      "",
-      "Motion and expression example:",
-      example,
-      "",
-      "Terre's ordinary asset uploader saves files; unzip this package first.",
-      "Live2D runtime setup: https://docs.openwebgal.com/en/live2D.html",
-      "",
-    ].join("\n");
-    files[`${folder}/README.txt`] = new TextEncoder().encode(readme);
-  }
   return { ...result, bytes: zipSync(files) };
 }
