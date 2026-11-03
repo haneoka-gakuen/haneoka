@@ -27,6 +27,7 @@ const LOOKUP_MS = 60_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 /** The collector reuses counts read in the last five minutes; one more covers clock skew. */
 const ARENA_WITNESS_REUSE_MS = 360_000;
+const ARENA_POPULATION_TARGET_MS = 1_200_000;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
@@ -1773,7 +1774,8 @@ export class OfficialRankingCollector extends Container<Env> {
       samplingIntervalSeconds: INTERVAL_MS / 1000, lastSuccessfulObservationAtMs: state.lastSuccessfulObservationAtMs,
       ageMs: age, stale: age === null || age < 0 || age > 2 * INTERVAL_MS, pollAfterSeconds: unavailable ? 300 : 30,
       lastFailure: state.lastFailure ?? null,
-      sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0 },
+      sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
+        populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000 },
       demand: { queued: [...state.playerInterests ?? [], ...state.songInterests ?? [], ...state.cardInterests ?? []]
           .filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS).length,
         retryAtMs: (state.lookupNextAtMs ?? 0) > now ? state.lookupNextAtMs : null, lastFailure: state.lookupLastFailure ?? null },
@@ -1823,7 +1825,10 @@ export class OfficialRankingCollector extends Container<Env> {
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
       const eventSwept = final ? [] : await this.eventSweep(state, region, now);
-      const swept = final ? [] : await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length));
+      const arena = state.arenaCatalog;
+      const populationDue = arena && now >= arena.startAtMs && now < arena.rankingEndAtMs
+        && arena.bandIds.some((id) => now - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
+      const swept = final || populationDue ? [] : await this.arenaSweep(state, region, now, Math.min(ARENA_SWEEP_WINDOWS, 20 - demanded.length));
       state.run.eventSweepWindows = eventSwept;
       state.run.sweepWindows = swept;
       const eventWindows = final ? eventFinal?.windows ?? [] : [...eventDemand, ...eventSwept
@@ -2166,12 +2171,16 @@ export class OfficialRankingCollector extends Container<Env> {
           if (update.status === "failed") state.nextAtMs = serviceFailure ? Date.now() + recoveryDelay(state.failures)
             : Math.max(state.nextAtMs, Date.now() + Math.min(3_600_000, INTERVAL_MS * 2 ** Math.min(4, state.failures - 1)));
           const arena = run.finalArena || run.catalog?.arena === undefined ? null : state.arenaCatalog;
-          const cold = arena && Date.now() < arena.rankingEndAtMs && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
-            && !state.arenaPopulationAt?.[`${arena.seasonId}:${id}`]);
+          const cold = arena && Date.now() >= arena.startAtMs && Date.now() < arena.rankingEndAtMs
+            && arena.bandIds.some((id) => arena.thresholdsByBand?.[id]?.length !== 0
+              && Date.now() - (state.arenaPopulationAt?.[`${arena.seasonId}:${id}`] ?? 0) > ARENA_POPULATION_TARGET_MS);
           if (update.status === "ok" && cold && (state.arenaWarmupRuns ?? 0) < 20) {
             state.arenaWarmupRuns = (state.arenaWarmupRuns ?? 0) + 1;
             this.expediteArena(state);
-          } else if (update.status === "ok" && state.arenaInterests?.length) this.expediteArena(state);
+          } else if (update.status === "ok") {
+            if (!cold) state.arenaWarmupRuns = 0;
+            if (state.arenaInterests?.length) this.expediteArena(state);
+          }
           this.ctx.waitUntil(this.runLookup(region));
           const health = this.runHealth(state);
           if (health) {
