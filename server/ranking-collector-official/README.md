@@ -102,8 +102,9 @@ region, board and Japan-time day, including Arena windows, event point windows
 and population counts. Window replacement and scheduled pruning preserve these
 payloads. Each window retains its own observation time and coverage.
 
-Each observation writes a separate R2 object. Thinning older observations limits
-retained storage; it does not undo the operations already incurred. Unchanged
+Small observations share one-minute R2 batches; large observations use separate
+objects. Raw history thinning and lossless storage compression limit retained
+bytes. Unchanged
 catalog content reuses its R2 object while D1 records the latest observation
 time. Event and Arena final targets are registered when their definitions change;
 new rank windows register their own targets as they are saved. Repeated target
@@ -660,3 +661,7 @@ A region, board and aligned rank interval may be read at most once within 150 se
 Initial window admission respects the last stored observation time during cutover. Regular collection follows the earliest active head-window expiry, so an early cache hit does not defer that board for another full cycle.
 
 Unchanged player profiles harvested across boards share a 150-second persistence window. Changed profiles and explicit player lookups persist immediately.
+
+### Compressed payload storage
+
+Official payload readers accept plain JSON and gzip envelopes with an 8 MiB decompressed limit. Storage compression preserves every original body, observation time and SHA-256. Deploy compatible readers before enabling gzip writes or recompressing existing objects. Keep gzip-reading support during later rollbacks.

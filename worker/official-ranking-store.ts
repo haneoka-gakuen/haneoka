@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immediate durable observations, immutable R2 batches, D1 indexes, daily/final archives and reference-safe payload cleanup.
+// Output: Immediate durable observations, gzip-compatible R2 payloads, D1 indexes, daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import type { GameRecordsRegion } from "../src/lib/game-records";
@@ -24,6 +24,7 @@ interface ObservationRow {
 
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 const BATCH_PAYLOADS = true;
+const GZIP_PAYLOADS = false;
 const INLINE_PAYLOAD_BYTES = 256 * 1024;
 const BATCH_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const BATCH_DELAY_MS = 60_000;
@@ -42,6 +43,37 @@ function storage(env: OfficialRankingStoreBindings): { db: D1Database; bucket: R
 
 type PayloadBatchCache = Map<string, Record<string, string>>;
 
+async function payloadText(object: R2ObjectBody): Promise<string> {
+  if (object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_unavailable");
+  const stream = object.httpMetadata?.contentEncoding === "gzip" ? object.body.pipeThrough(new DecompressionStream("gzip")) : object.body;
+  const reader = stream.getReader(), chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_PAYLOAD_BYTES) { await reader.cancel(); throw new Error("official_payload_too_large"); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(bytes);
+}
+
+async function putPayload(bucket: R2Bucket, key: string, body: string): Promise<void> {
+  if (GZIP_PAYLOADS) {
+    const compressed = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+    if (compressed.byteLength < new TextEncoder().encode(body).byteLength) {
+      await bucket.put(key, compressed, { httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } });
+      return;
+    }
+  }
+  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+}
+
 async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, expectedHash: string, batches?: PayloadBatchCache): Promise<T> {
   const { db, bucket } = storage(env);
   const batched = key.startsWith("official/2/");
@@ -49,8 +81,8 @@ async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, ex
     .bind(key, expectedHash).first<string>("body_json") : null);
   if (body === null) {
     const object = await bucket.get(key);
-    if (!object || object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_unavailable");
-    body = await object.text();
+    if (!object) throw new Error("official_payload_unavailable");
+    body = await payloadText(object);
     if (batched) {
       const batch = JSON.parse(body) as { contract: string; payloads: Record<string, string> };
       if (batch.contract !== BATCH_CONTRACT || typeof batch.payloads?.[expectedHash] !== "string") throw new Error("official_payload_integrity");
@@ -68,7 +100,7 @@ async function prepareObservationPayload(env: OfficialRankingStoreBindings,
   const { db, bucket } = storage(env);
   if (!BATCH_PAYLOADS || new TextEncoder().encode(body).byteLength > INLINE_PAYLOAD_BYTES) {
     const key = `official/1/${observation.region}/${kind}/${observation.snapshotId}/${hash}.json`;
-    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+    await putPayload(bucket, key, body);
     return { key, statements: [] as D1PreparedStatement[] };
   }
   const bytes = new TextEncoder().encode(JSON.stringify({ [hash]: body })).byteLength;
@@ -101,7 +133,7 @@ export async function flushOfficialPayloads(env: OfficialRankingStoreBindings, r
       .bind(key).all<{ payload_hash: string; body_json: string }>();
     if (!await bucket.head(key)) {
       const body = JSON.stringify({ contract: BATCH_CONTRACT, payloads: Object.fromEntries(payloads.map((row) => [row.payload_hash, row.body_json])) });
-      await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+      await putPayload(bucket, key, body);
     }
     await db.batch([
       db.prepare("DELETE FROM official_observation_payloads WHERE payload_key=?").bind(key),
@@ -138,7 +170,7 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
   } else {
     hash = await officialDigest(body);
     key = `official/1/${catalog.region}/catalogs/${hash}.json`;
-    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+    await putPayload(bucket, key, body);
   }
   await db.prepare(`INSERT INTO official_ranking_catalogs
     (region, highest_event_id, event_identity, observed_at_ms, payload_key, payload_hash)
@@ -778,7 +810,7 @@ export interface OfficialSongRanking {
 export async function saveOfficialSongRanking(env: OfficialRankingStoreBindings, ranking: OfficialSongRanking): Promise<void> {
   const { db, bucket } = storage(env);
   const key = `official/1/${ranking.region}/songs/${ranking.musicId}.json`;
-  await bucket.put(key, JSON.stringify(ranking), { httpMetadata: { contentType: "application/json" } });
+  await putPayload(bucket, key, JSON.stringify(ranking));
   await db.prepare(`INSERT INTO official_song_rankings (region, music_id, payload_key, observed_at_ms) VALUES (?, ?, ?, ?)
     ON CONFLICT(region, music_id) DO UPDATE SET payload_key = excluded.payload_key, observed_at_ms = excluded.observed_at_ms`)
     .bind(ranking.region, ranking.musicId, key, ranking.observedAtMs).run();
@@ -790,7 +822,7 @@ export async function readOfficialSongRanking(env: OfficialRankingStoreBindings,
   const row = await db.prepare("SELECT payload_key AS payloadKey FROM official_song_rankings WHERE region = ? AND music_id = ?")
     .bind(region, musicId).first<{ payloadKey: string }>();
   const body = row ? await bucket.get(row.payloadKey) : null;
-  return body ? ((await body.json()) as OfficialSongRanking) : null;
+  return body ? JSON.parse(await payloadText(body)) as OfficialSongRanking : null;
 }
 
 const cardImageKey = (region: GameRecordsRegion, file: string) => `official/1/${region}/cards/${file}`;
