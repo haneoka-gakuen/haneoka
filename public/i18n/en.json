@@ -4093,6 +4093,7 @@
   },
   "account": {
     "page": {
+      "loadFailed": "Account information could not be loaded",
       "signOut": "Sign out",
       "loading": "Loading…",
       "unavailableTitle": "Accounts are unavailable",

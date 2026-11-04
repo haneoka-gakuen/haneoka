@@ -4093,6 +4093,7 @@
   },
   "account": {
     "page": {
+      "loadFailed": "계정 정보를 불러오지 못했습니다",
       "signOut": "로그아웃",
       "loading": "불러오는 중…",
       "unavailableTitle": "계정 서비스를 사용할 수 없습니다",

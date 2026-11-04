@@ -4093,6 +4093,7 @@
   },
   "account": {
     "page": {
+      "loadFailed": "無法載入帳號資訊",
       "signOut": "登出",
       "loading": "載入中…",
       "unavailableTitle": "帳號服務無法使用",

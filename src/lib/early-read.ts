@@ -24,7 +24,7 @@ if (typeof window !== "undefined")
 export function takeEarlyRead(url: string): Promise<Response | null> | null {
   if (typeof window === "undefined") return null;
   const reads = (window as EarlyWindow).__haneokaEarlyReads;
-  const early = reads && Object.hasOwn(reads, url) ? reads[url] : undefined;
+  const early = reads && Object.prototype.hasOwnProperty.call(reads, url) ? reads[url] : undefined;
   if (!early) return null;
   delete reads![url];
   return performance.now() - early.at < EARLY_READ_MS ? early.response : null;
@@ -38,7 +38,7 @@ export function takeEarlyRead(url: string): Promise<Response | null> | null {
 export function prefetchEarlyRead(url: string) {
   if (typeof window === "undefined") return;
   const reads = ((window as EarlyWindow).__haneokaEarlyReads ||= {});
-  const existing = Object.hasOwn(reads, url) ? reads[url] : undefined;
+  const existing = Object.prototype.hasOwnProperty.call(reads, url) ? reads[url] : undefined;
   if (existing && performance.now() - existing.at < EARLY_READ_MS) return;
   reads[url] = {
     at: performance.now(),

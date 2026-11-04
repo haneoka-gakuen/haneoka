@@ -10,7 +10,7 @@ import { svg as githubSvg } from "@thesvg/icons/github";
 import { svg as googleSvg } from "@thesvg/icons/google";
 import { svg as xSvg } from "@thesvg/icons/x";
 import { fetchJson, JsonResponseError, preferredLocale } from "./shared/catalog";
-import { RequestScope } from "../lib/request-scope";
+import { RequestScope, throwIfAborted } from "../lib/request-scope";
 import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 import { snackbar } from "../lib/snackbar";
@@ -23,6 +23,7 @@ const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
   save: "account.page.save",
   privacy: "home.dashboard.privacy",
   terms: "home.dashboard.terms",
+  retry: "common.actions.retry",
 };
 
 type Value = Record<string, unknown>;
@@ -246,7 +247,7 @@ export class AccountWorkspace extends LitElement {
     const headers = new Headers({ accept: "application/json" });
     new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     if (typeof init.body === "string" && !headers.has("content-type")) headers.set("content-type", "application/json");
-    const signal = init.signal ? AbortSignal.any([this.lifetime.signal, init.signal]) : this.lifetime.signal;
+    const signal = init.signal ?? this.lifetime.signal;
     // A plain read AccountDocument.astro already started at document start.
     const early =
       (init.method ?? "GET") === "GET" && init.body === undefined && init.headers === undefined
@@ -254,7 +255,7 @@ export class AccountWorkspace extends LitElement {
         : null;
     const adopted = early ? await readEarlyJson<Value | null>(early, signal) : undefined;
     if (adopted !== undefined) {
-      signal.throwIfAborted();
+      throwIfAborted(signal);
       return adopted ?? {};
     }
     const data = await fetchJson<Value | null>(url, {
@@ -264,7 +265,7 @@ export class AccountWorkspace extends LitElement {
       headers,
       signal,
     });
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     return data ?? {};
   }
 
@@ -297,7 +298,7 @@ export class AccountWorkspace extends LitElement {
   }
 
   private async load() {
-    const signal = this.loadRequests.begin();
+    const signal = this.loadRequests.begin(this.lifetime.signal);
     this.profileRequests.cancel();
     this.securityRequests.cancel();
     const current = () => this.isConnected && this.loadRequests.current(signal);
@@ -354,13 +355,10 @@ export class AccountWorkspace extends LitElement {
     };
   }
 
-  private async loadProfile(
-    signal?: AbortSignal,
-    speculative?: ReturnType<AccountWorkspace["signedInReads"]>,
-  ): Promise<void> {
-    const ownSignal = this.profileRequests.begin();
+  private async loadProfile(signal?: AbortSignal, speculative?: ReturnType<AccountWorkspace["signedInReads"]>): Promise<void> {
+    const ownSignal = this.profileRequests.begin(signal ?? this.lifetime.signal);
     const userId = this.user()?.id;
-    const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
+    const init: RequestInit = { signal: ownSignal };
     const [value, appeals] = await Promise.all([
       speculative?.profile ?? this.request("/api/v1/account/profile", init),
       this.user()?.emailVerified
@@ -378,9 +376,9 @@ export class AccountWorkspace extends LitElement {
   }
 
   private async loadSecurity(signal?: AbortSignal, speculative?: ReturnType<AccountWorkspace["signedInReads"]>) {
-    const ownSignal = this.securityRequests.begin();
+    const ownSignal = this.securityRequests.begin(signal ?? this.lifetime.signal);
     const userId = this.user()?.id;
-    const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
+    const init: RequestInit = { signal: ownSignal };
     const optional = (url: string) => this.request(url, init).catch((): Value => ({}));
     const [sessions, accounts, games, relationships, apiTokens] = await Promise.all([
       speculative?.sessions ?? this.request("/api/auth/list-sessions", init),
