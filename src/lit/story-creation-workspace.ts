@@ -2,7 +2,7 @@
 // Input: 网页账户、Altair 同源宿主会话、工程模板来源与社区故事版本。
 // Output: 网站内故事制作、导入导出、云保存和发布；向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
-// Effects/Dependencies: 延迟加载 iframe、账户与云 API；销毁时释放消息通道、请求和应用栏。
+// Effects/Dependencies: 初始化后开放操作；延迟加载 iframe、账户与云 API，销毁时释放消息通道、请求和应用栏。
 import { LitElement, html, nothing } from "lit";
 import robotoFontStyles from "@fontsource-variable/roboto/wght.css?url";
 import latinFontStyles from "@fontsource-variable/noto-sans/wght.css?url";
@@ -64,6 +64,7 @@ export class StoryCreationWorkspace extends LitElement {
     resourceOrigin: { attribute: "resource-origin" },
     state: { state: true },
     busy: { state: true },
+    studioReady: { state: true },
     publicationOpen: { state: true },
     conflict: { state: true },
     images: { state: true },
@@ -88,6 +89,7 @@ export class StoryCreationWorkspace extends LitElement {
   declare locale: string;
   declare private state: StudioState | undefined;
   declare private busy: boolean;
+  declare private studioReady: boolean;
   declare private publicationOpen: boolean;
   declare private conflict: boolean;
   declare private images: { path: string; source: string }[];
@@ -126,6 +128,7 @@ export class StoryCreationWorkspace extends LitElement {
     super();
     this.locale = "en";
     this.busy = false;
+    this.studioReady = false;
     this.publicationOpen = false;
     this.conflict = false;
     this.images = [];
@@ -148,6 +151,7 @@ export class StoryCreationWorkspace extends LitElement {
   private actionButton(action: StudioAction, artwork: unknown) {
     const label = this.t(action === "stories" ? "importStory" : action);
     const disabled =
+      !this.studioReady ||
       this.busy ||
       this.state?.busy ||
       (action === "undo" && !this.state?.canUndo) ||
@@ -229,24 +233,26 @@ export class StoryCreationWorkspace extends LitElement {
           : this.state?.localSaved
             ? this.t("deviceSaved")
             : this.t("deviceSaving");
-    const status = this.busy
-      ? this.progress || this.t("saving")
-      : this.cloud?.publishingRevision
-        ? this.t("processing")
-        : cloudSaved
-          ? this.t("saved")
-          : this.cloud
-            ? this.t("cloudUnsaved")
-            : this.state?.projectId
-              ? localStatus
-              : this.t("local");
+    const status = !this.studioReady
+      ? this.t("loading")
+      : this.busy
+        ? this.progress || this.t("saving")
+        : this.cloud?.publishingRevision
+          ? this.t("processing")
+          : cloudSaved
+            ? this.t("saved")
+            : this.cloud
+              ? this.t("cloudUnsaved")
+              : this.state?.projectId
+                ? localStatus
+                : this.t("local");
     setAppBarActions(
       this.toolbarOwner,
       html`
         <button
           class="icon-button"
           data-app-bar-keep
-          ?disabled=${this.busy || this.state?.busy || !this.state?.projectId}
+          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
           title=${this.t("save")}
           aria-label=${this.t("save")}
           @click=${() => void this.save()}
@@ -256,7 +262,7 @@ export class StoryCreationWorkspace extends LitElement {
         <button
           class="button button--filled"
           data-app-bar-keep
-          ?disabled=${this.busy || this.state?.busy || !this.state?.projectId}
+          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
           @click=${() => void this.showPublication()}
         >
           ${this.t("publish")}
@@ -272,7 +278,7 @@ export class StoryCreationWorkspace extends LitElement {
           class="icon-button"
           title=${this.t("saveCopy")}
           aria-label=${this.t("saveCopy")}
-          ?disabled=${this.busy || this.state?.busy || !this.state?.projectId}
+          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
           @click=${() => void this.saveCopy()}
         >
           ${icon("content_copy")}
@@ -371,6 +377,7 @@ export class StoryCreationWorkspace extends LitElement {
     this.client = undefined;
     this.themeObserver?.disconnect();
     this.state = undefined;
+    this.studioReady = false;
     const frame = this.querySelector<HTMLIFrameElement>("iframe");
     if (!frame) return;
     const client = (this.client = new AltairStudioClient(frame));
@@ -454,6 +461,7 @@ export class StoryCreationWorkspace extends LitElement {
     });
     if (client === this.client) {
       initialized = true;
+      this.studioReady = true;
       this.rememberProject();
     }
   }
@@ -1328,9 +1336,9 @@ export class StoryCreationWorkspace extends LitElement {
           : nothing
       }
       ${this.renderAssetLibrary()}
-      <div class="story-creation__frame" aria-busy=${String(this.busy)}>
+      <div class="story-creation__frame" aria-busy=${String(this.busy || !this.studioReady)}>
         <iframe
-          ?inert=${this.loading}
+          ?inert=${this.loading || !this.studioReady}
           src=${this.studioEntry}
           title=${this.t("editor")}
           allow="fullscreen; autoplay; clipboard-read; clipboard-write"
