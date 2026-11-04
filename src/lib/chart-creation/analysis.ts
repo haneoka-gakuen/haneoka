@@ -2,12 +2,8 @@
 // Input: 不可变社区工程与版本身份。
 // Output: 原生谱面统计与覆盖全部可播放社区谱面的独立粗略推荐等级。
 // Pos: [Map](../L2-2.md)；社区谱面分析适配。
-// Effects/Dependencies: 两个现有转换器交叉核对 combo；纯计算，无 HTTP 或存储。
-import { buildChart, parseScore } from "@haneoka/cassiopeia-plugin-our-notes";
-import { convertChartAsync } from "@haneoka/sonolus";
-import { serializeSsForTarget } from "../../../packages/chart-editor/src/formats/diagnostics";
-import { readAuthorCollections } from "../../../packages/chart-editor/src/creation/collections";
-import { TempoMap } from "../../../packages/chart-editor/src/timing";
+// Effects/Dependencies: 使用编辑、播放及发布共用的原生编译结果；纯计算，无 HTTP 或存储。
+import { compileOurNotesCreation } from "./native-compile";
 import type { Project } from "../../../packages/chart-editor/src/model";
 import { CHART_DIFFICULTY_VERSION } from "../chart-difficulty";
 import { estimateCommunityDifficulty } from "./community-difficulty-model";
@@ -16,17 +12,7 @@ import type { CommunityChartAnalysis } from "./community-types";
 export const COMMUNITY_CHART_ANALYSIS_VERSION = `${CHART_DIFFICULTY_VERSION}:community-native-v4`;
 
 export async function analyzeCommunityChart(project: Project, sourceId: string): Promise<CommunityChartAnalysis> {
-  const ss = serializeSsForTarget({ ...project, extensions: {} }, false);
-  const chart = buildChart(parseScore(ss));
-  const playback = await convertChartAsync(ss);
-  const tempo = new TempoMap(project.tempos, { resolution: project.resolution });
-  chart.timeScaleChanges = project.timeScales
-    .map((event) => ({ timeMs: tempo.tickToSeconds(event.tick) * 1000, scale: event.scale }))
-    .sort((a, b) => a.timeMs - b.timeMs);
-  const warnings: string[] = [];
-  if (project.timeScales.some((event) => event.scale <= 0)) warnings.push("canonical-nonpositive-time-scale");
-  if (readAuthorCollections(project).groups.some((group) => group.forceNoteSpeed !== undefined))
-    warnings.push("canonical-author-speed-profile");
+  const { chart } = compileOurNotesCreation(project);
   const count = chart.notes.filter((note) => note.judged).length;
   const bpms = chart.bpmChanges.map((event) => event.bpm);
   return {
@@ -41,9 +27,9 @@ export async function analyzeCommunityChart(project: Project, sourceId: string):
       chart,
       difficulty: -1,
       masterJudgedCount: null,
-      authoredJudgedCount: playback.notes.filter((note) => note.judged).length,
+      authoredJudgedCount: count,
       sourceId,
-      canonicalWarnings: warnings,
+      canonicalWarnings: [],
     }),
   };
 }

@@ -55,7 +55,8 @@
     scrollbar-width: thin;
   }
   .chart-studio__tools > .chart-creation__actions {
-    flex: 0 0 auto;
+    flex: 1;
+    min-inline-size: 0;
     flex-wrap: nowrap;
     margin: 0;
   }
@@ -204,14 +205,16 @@
   .chart-studio__tools .segmented > button { gap: 2px; padding: 4px; inline-size: 48px; min-inline-size: 48px; min-block-size: 48px; }
   .chart-studio__note-icon { display: block; flex: 0 0 auto; inline-size: 30px; block-size: auto; }
   .chart-studio__tools .chart-creation__actions { gap: 4px; }
+  .chart-studio__palette { display: flex; flex: 1; min-inline-size: 0; align-items: center; gap: 4px; }
+  .chart-studio__tool-more .action-menu > .button { inline-size: 48px; min-inline-size: 48px; padding: 4px; }
+  .chart-studio__tool-picker { display: inline-flex; min-inline-size: 0; max-inline-size: 100%; }
+  .chart-studio__tool-picker .action-menu > .button { max-inline-size: 116px; padding-inline: 8px; gap: 4px; }
+  .chart-studio__tool-picker .action-menu > .button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chart-studio__tools .action-menu > .button { min-block-size: 48px; white-space: nowrap; }
   .chart-studio__panel--right > .segmented > button { min-block-size: 48px; padding: 4px; }
   @media (max-width: 959px) {
     .chart-studio[data-narrow="false"] .chart-studio__panel { display: none; }
     .chart-studio__tools .chart-studio__multi, .chart-studio__tools output { display: none; }
-    .chart-studio__tool-picker { display: inline-flex; min-inline-size: 0; }
-    .chart-studio__tool-picker .action-menu > .button { max-inline-size: 116px; padding-inline: 8px; gap: 4px; }
-    .chart-studio__tool-picker .action-menu > .button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
   .chart-studio kbd, .chart-studio__guide kbd {
     font: inherit;

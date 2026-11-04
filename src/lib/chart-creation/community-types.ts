@@ -71,6 +71,8 @@ export interface CommunityChartItem {
 }
 export interface CommunityChartPlayback {
   ss: string;
+  chart?: import("@haneoka/cassiopeia").ChartDocument;
+  visualProfiles?: import("@haneoka/cassiopeia-plugin-our-notes").NativeChartVisualProfiles;
   offsetMs: number;
   timeScaleChanges: { timeMs: number; scale: number }[];
 }

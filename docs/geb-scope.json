@@ -279,6 +279,8 @@
     "src/lib/chart-creation/community.ts",
     "src/lib/chart-creation/storage.ts",
     "src/lib/chart-creation/sekai-source.ts",
+    "src/lib/chart-creation/native-compile.ts",
+    "src/lib/chart-creation/sonolus.ts",
     "src/lib/chart-creation/patterns.ts",
     "src/lib/chart-creation/shortcuts.ts",
     "src/lib/chart-creation/feedback.ts",

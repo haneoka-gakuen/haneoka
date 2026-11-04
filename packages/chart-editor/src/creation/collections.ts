@@ -1,4 +1,4 @@
-import { createProjectId, createEmptyProject, resolveLinePointShape, structuredCloneValue, type Project, type JsonValue } from "../model";
+import { createProjectId, createEmptyProject, resolveLinePointShape, structuredCloneValue, type Project, type JsonValue, type TimeScaleEvent } from "../model";
 import { assertValidProject } from "../validation";
 import { mirrorSelectionNote } from "./selection";
 
@@ -7,6 +7,8 @@ export interface AuthorGroup {
   id: string;
   name: string;
   forceNoteSpeed?: number;
+  /** Omitted inherits the global timeline; an empty list is independent normal scrolling. */
+  timeScales?: TimeScaleEvent[];
 }
 /** Editor visibility is independent of authored note.visible and of game judgement. */
 export interface AuthorLayer {
@@ -91,6 +93,15 @@ export function readAuthorCollections(project: Project): AuthorCollections {
   for (const group of groups)
     if (group.forceNoteSpeed !== undefined && (!Number.isFinite(group.forceNoteSpeed) || group.forceNoteSpeed <= 0))
       throw new Error("invalid_group_speed");
+  for (const group of groups) if (group.timeScales !== undefined) {
+    if (!Array.isArray(group.timeScales)) throw new Error("invalid_group_timescales");
+    const ticks = new Set<number>(), ids = new Set<string>();
+    for (const event of group.timeScales) {
+      if (!record(event) || !text(event.id) || !event.id || ids.has(event.id) || !Number.isSafeInteger(event.tick) || event.tick < 0 || ticks.has(event.tick) || !Number.isFinite(event.scale))
+        throw new Error("invalid_group_timescales");
+      ticks.add(event.tick); ids.add(event.id);
+    }
+  }
   for (const layer of layers) if (typeof layer.visible !== "boolean") throw new Error("invalid_layer_visibility");
   const ids = entityIds(project),
     groupIds = new Set(groups.map((g) => g.id)),
@@ -168,6 +179,13 @@ export function reorderAuthorCollection(project: Project, kind: CollectionKind, 
   if (!Number.isSafeInteger(index) || index < 0 || index >= items.length) throw new Error("invalid_collection_order");
   const [item] = items.splice(previous, 1);
   items.splice(index, 0, item!);
+  return write(project, state);
+}
+export function setAuthorGroupTimeScales(project: Project, id: string, events: TimeScaleEvent[] | null): Project {
+  const state = readAuthorCollections(project), group = state.groups.find(group => group.id === id);
+  if (!group) throw new Error("collection_missing");
+  if (events === null) delete group.timeScales;
+  else group.timeScales = structuredCloneValue(events).sort((a, b) => a.tick - b.tick);
   return write(project, state);
 }
 export function setAuthorGroupSpeed(project: Project, id: string, speed: number | null): Project {
@@ -463,6 +481,16 @@ export function pasteAuthorSelection(project: Project, clipboard: AuthorClipboar
   if (!all.length) return { project: write(result, state), ids: [], idMap, groupMap, layerMap };
   const first = Math.min(...all.map((n) => n.tick)),
     delta = tick - first;
+  for (const original of clipboard.collections.groups) {
+    const group = state.groups.find(group => group.id === groupMap[original.id]);
+    if (!group?.timeScales || delta === 0) continue;
+    const shifted = group.timeScales.map(event => ({ ...event, tick: event.tick + delta })).sort((a, b) => a.tick - b.tick);
+    if (shifted.some(event => !Number.isSafeInteger(event.tick))) throw new Error("clipboard_tick_overflow");
+    const previous = shifted.filter(event => event.tick < 0).at(-1);
+    group.timeScales = shifted.filter(event => event.tick >= 0);
+    if (previous && !group.timeScales.some(event => event.tick === 0))
+      group.timeScales.unshift({ ...previous, id: createProjectId("speed"), tick: 0 });
+  }
   for (const line of incoming.lines) {
     idMap[line.id] = createProjectId("line");
     line.id = idMap[line.id]!;

@@ -3,6 +3,39 @@ import type { Project } from "../../../packages/chart-editor/src/model";
 import { assertValidProject } from "../../../packages/chart-editor/src/validation";
 import { readAuthorCollections } from "../../../packages/chart-editor/src/creation/collections";
 import type { NativeCanonicalSource, NativeCreationSourceMap } from "./native-source-map";
+import { TempoMap } from "../../../packages/chart-editor/src/timing";
+import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-notes";
+
+export function compileAuthorScrollProfiles(project: Project, chart: ChartDocument, mapping: NativeCreationSourceMap): NativeChartVisualProfiles["scroll"] {
+  const collections = readAuthorCollections(project), groups = new Map(collections.groups.map(group => [group.id, group]));
+  const tempo = new TempoMap(project.tempos, { resolution: project.resolution });
+  const timelines = new Map<string, { id: string; changes: { timeMs: number; scale: number }[] }>();
+  const registered = new WeakMap<Project["timeScales"], string>();
+  const register = (events: Project["timeScales"]) => {
+    const cached = registered.get(events); if (cached !== undefined) return cached;
+    let previous = 1;
+    const changes = [...events].sort((a, b) => a.tick - b.tick).flatMap(event => {
+      if (previous === event.scale) return [];
+      previous = event.scale; return [{ timeMs: tempo.tickToSeconds(event.tick) * 1000, scale: event.scale }];
+    });
+    const key = JSON.stringify(changes);
+    let result = timelines.get(key);
+    if (!result) { result = { id: `scroll-${timelines.size}`, changes }; timelines.set(key, result); }
+    registered.set(events, result.id); return result.id;
+  };
+  const global = register(project.timeScales);
+  const scope = (source: NativeCanonicalSource) => {
+    const groupId = collections.members[source.canonicalId]?.groupId ?? (source.lineId ? collections.members[source.lineId]?.groupId : undefined);
+    return register((groupId ? groups.get(groupId)?.timeScales : undefined) ?? project.timeScales);
+  };
+  const notes = chart.notes.map(note => {
+    const ids = new Set(mapping.sourcesForNote(note.id).map(scope));
+    if (ids.size > 1) throw new Error("our_notes_scroll_alias_conflict");
+    return { nativeNoteId: note.id, groupId: ids.values().next().value ?? global };
+  });
+  if (timelines.size === 1 && project.timeScales.every(event => event.scale > 0)) return;
+  return { groups: [...timelines.values()], notes };
+}
 
 export interface AuthorSpeedSource {
   readonly canonicalId: string;

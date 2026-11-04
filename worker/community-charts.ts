@@ -8,11 +8,10 @@ import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
 import { inspectCommunityText } from "./moderation";
 import { assertValidProject } from "../packages/chart-editor/src/validation";
-import { serializeSsForTarget } from "../packages/chart-editor/src/formats/diagnostics";
+import { compileOurNotesCreation } from "../src/lib/chart-creation/native-compile";
+import { compileCreationSonolus } from "../src/lib/chart-creation/sonolus";
 import { readAuthorCollections } from "../packages/chart-editor/src/creation/collections";
-import { TempoMap } from "../packages/chart-editor/src/timing";
 import { analyzeCommunityChart, COMMUNITY_CHART_ANALYSIS_VERSION } from "../src/lib/chart-creation/analysis";
-import { chartToLevelData, convertChartAsync } from "@haneoka/sonolus";
 import {
   chartLevelName,
   type ChartMediaRef,
@@ -541,25 +540,14 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
     if (!normalized.audio || !normalized.cover) throw new Error("media_missing");
     const inspection = inspectCommunityText([title, project.meta.artist, project.meta.charter, summary].join("\n"));
     if (inspection.verdict !== "allow") throw new Error("text_blocked");
-    if (readAuthorCollections(project).groups.some((group) => group.forceNoteSpeed !== undefined))
-      throw new Error("sonolus_timescale");
-    let chart: Awaited<ReturnType<typeof convertChartAsync>>;
+    let level: ReturnType<typeof compileCreationSonolus>;
     try {
-      chart = await convertChartAsync(serializeSsForTarget(project, false));
+      const compiled = compileOurNotesCreation(project);
+      if (!compiled.chart.notes.length) throw new Error("empty_chart");
+      level = compileCreationSonolus(project, compiled);
     } catch {
       throw new Error("sonolus_chart_invalid");
     }
-    if (!chart.notes.length || chart.notes.some((note) => note.judged && (note.pos + note.size <= 0 || note.pos >= 24)))
-      throw new Error("sonolus_chart_invalid");
-    const level = chartToLevelData(chart, project.audioOffset);
-    for (const event of project.timeScales)
-      level.entities.push({
-        archetype: "#TIMESCALE_CHANGE",
-        data: [
-          { name: "#BEAT", value: event.tick / project.resolution },
-          { name: "#TIMESCALE", value: event.scale },
-        ],
-      });
     const compressed = await new Response(
       new Blob([JSON.stringify(level)]).stream().pipeThrough(new CompressionStream("gzip")),
     ).arrayBuffer();
@@ -764,13 +752,13 @@ export async function handleCommunityChartRequest(
         const object = await primary.COMMUNITY_UPLOADS.get(row.objectKey);
         if (!object) return fail(request, 404, "chart_missing");
         const { project } = await object.json<{ project: Project }>();
-        const tempo = new TempoMap(project.tempos, { resolution: project.resolution });
+        const compiled = compileOurNotesCreation(project);
         return json(request, {
-          ss: serializeSsForTarget({ ...project, extensions: {} }, false),
+          ss: compiled.ss,
+          chart: compiled.chart,
+          ...(compiled.visualProfiles ? { visualProfiles: compiled.visualProfiles } : {}),
           offsetMs: project.audioOffset * 1000,
-          timeScaleChanges: project.timeScales
-            .map((event) => ({ timeMs: tempo.tickToSeconds(event.tick) * 1000, scale: event.scale }))
-            .sort((a, b) => a.timeMs - b.timeMs),
+          timeScaleChanges: compiled.chart.timeScaleChanges,
         } satisfies CommunityChartPlayback);
       }
       if (action === "project" && method === "GET") {

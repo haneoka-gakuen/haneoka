@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
-// Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
+// Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
 // Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -36,7 +36,7 @@ import { chartCreationTools as creationTools, chartSnapDivisions as snapDivision
   displayChartShortcut, matchChartShortcut, readChartShortcuts, shortcutForEvent, writeChartShortcuts,
   type ChartShortcutOverrides } from "../lib/chart-creation/shortcuts";
 import { CreationStore, type CreationDocument, type CreationRevision } from "../lib/chart-creation/storage";
-import { createExampleAudio, decodeCreationAudio, type CreationAudio } from "../lib/chart-creation/audio";
+import { decodeCreationAudio, type CreationAudio } from "../lib/chart-creation/audio";
 import { EditorAudioFeedback, DEFAULT_EDITOR_AUDIO, readEditorAudioSettings, writeEditorAudioSettings, type EditorAudioSettings } from "../lib/chart-creation/feedback";
 import { MediaClock } from "@haneoka/cassiopeia-host-web";
 import { clientText, initializeI18nClient } from "../i18n/client";
@@ -56,7 +56,7 @@ import { chartPublicationSeed, loadCommunityChart, readChartCloudDraft, saveChar
 import { communityChartPath, type ChartMediaRef } from "../lib/chart-creation/community-types";
 import "./chart-creation-collections";
 import type { ChartCollectionScope } from "./chart-creation-collections";
-import { readAuthorCollections, authorSelectionForScope, authorEntityIds, reconcileAuthorEdit, assignAuthorSelection, copyAuthorSelection, copyAuthorSegments, mirrorAuthorClipboard, pasteAuthorSelection, type AuthorClipboard } from "../../packages/chart-editor/src/creation/collections";
+import { readAuthorCollections, setAuthorGroupTimeScales, authorSelectionForScope, authorEntityIds, reconcileAuthorEdit, assignAuthorSelection, copyAuthorSelection, copyAuthorSegments, mirrorAuthorClipboard, pasteAuthorSelection, type AuthorClipboard } from "../../packages/chart-editor/src/creation/collections";
 import { joinNoteLines, lineJoinTargets, linePatternTarget, lineSplitTarget, lineTraces, repeatLinePattern, splitNoteLine } from "../../packages/chart-editor/src/creation/connectors";
 import { applyAuthorCollectionOperation, type AuthorCollectionOperation } from "../../packages/chart-editor/src/creation/collections-history";
 import type { ChartCreationLibrary, PublicChartImport, CreationLibraryProvider } from "./chart-creation-library";
@@ -237,6 +237,7 @@ interface TouchViewport {
 }
 
 let chartCreationOwnerSequence = 0;
+const paletteTools = ["select", "tap", "flick_up", "flick_left", "flick_right", "hold", "erase", "trace", "guide", "pan", "brush", "node"];
 
 export class ChartCreationWorkspace extends LitElement {
   static properties = {
@@ -249,6 +250,8 @@ export class ChartCreationWorkspace extends LitElement {
     error: { state: true },
     status: { state: true },
     tool: { state: true },
+    paletteSlots: { state: true },
+    scrollScope: { state: true },
     selected: { state: true },
     selectedIds: { state: true },
     multiPick: { state: true },
@@ -358,6 +361,8 @@ export class ChartCreationWorkspace extends LitElement {
   };
   private controller?: AbortController;
   private observer?: ResizeObserver;
+  declare private paletteSlots: number;
+  declare private scrollScope: string;
   private appearanceObserver?: MutationObserver;
   private unlocale?: () => void;
   declare private busy: boolean;
@@ -478,6 +483,8 @@ export class ChartCreationWorkspace extends LitElement {
     this.error = "";
     this.status = "";
     this.tool = "tap";
+    this.paletteSlots = 0;
+    this.scrollScope = "";
     this.setSelection([]);
     this.documents = [];
     this.revisions = [];
@@ -555,8 +562,9 @@ export class ChartCreationWorkspace extends LitElement {
     });
     void this.updateComplete.then(() => {
       if (!this.isConnected) return;
-      this.observer ??= new ResizeObserver(() => this.paint());
+      this.observer ??= new ResizeObserver(() => { this.paint(); this.fitPalette(); });
       this.observer.observe(this.querySelector(".chart-creation__editor")!);
+      this.observer.observe(this.querySelector(".chart-studio__palette")!);
       this.rebuildPreview();
       void this.ensureCanvasSkin();
       this.paint();
@@ -658,6 +666,7 @@ export class ChartCreationWorkspace extends LitElement {
     }
     this.paint();
     this.paintToolIcons();
+    this.fitPalette();
     setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
     const panel = this.narrow ? this.querySelector<HTMLElement>(".chart-studio__panel:not([hidden])") : null;
     if (panel !== (this.focusedPanel ?? null)) {
@@ -1041,6 +1050,7 @@ export class ChartCreationWorkspace extends LitElement {
       const compiled = this.flatProjection(this.chart);
       const playback: ChartSimulatorPlayback = {
         ss: compiled?.ss ?? serializeSsForTarget(this.chart, false),
+        ...(compiled ? { chart: compiled.chart } : {}),
         offsetMs: this.chart.audioOffset * 1000,
         timeScaleChanges: compiled?.chart.timeScaleChanges ?? this.chart.timeScales.map(event => ({
           timeMs: this.map().tickToSeconds(event.tick) * 1000, scale: event.scale,
@@ -1081,35 +1091,13 @@ export class ChartCreationWorkspace extends LitElement {
     this.preview?.pause();
     this.requestUpdate();
   }
-  private loadAudio(file: File, example = false) {
+  private loadAudio(file: File) {
     return this.run(async (signal) => {
       const audio = await decodeCreationAudio(file, signal);
       await this.save();
       this.preview?.dispose();
       this.audio = audio;
       this.preciseSeekSeconds = undefined;
-      if (example) {
-        this.projectId = crypto.randomUUID();
-        this.head = 0;
-        this.activeRevision = 0;
-        this.source = undefined;
-        const chart = createEmptyProject({ title: file.name, source: "authored" });
-        chart.singles = Array.from({ length: 15 }, (_, i) => ({
-          id: createProjectId("note"),
-          tick: (i + 1) * 480,
-          lane: (i % 6) * 4,
-          size: 4,
-          type: "tap",
-          critical: false,
-          direction: "none",
-          visible: true,
-        }));
-        this.collectionScope = {}; this.deletingProject = false;
-        this.history.reset(chart);
-        this.original = structuredClone(chart);
-        this.revisions = [];
-        this.setSelection([]);
-      }
       this.dirty = true;
       this.windowStart = 0;
       this.rebuildPreview(0);
@@ -2720,6 +2708,17 @@ export class ChartCreationWorkspace extends LitElement {
     return this.t(tool.startsWith("flick_") ? `shortcuts.${tool}` : tool === "brush" ? "creation.brush" : tool);
   }
   private paletteTool() { return this.tool === "flick" ? `flick_${this.direction}` : this.tool; }
+  private visiblePaletteTools() {
+    const visible = paletteTools.slice(0, this.paletteSlots), active = this.paletteTool();
+    if (visible.length && !visible.includes(active)) visible[visible.length - 1] = active;
+    return visible;
+  }
+  private fitPalette() {
+    const width = this.querySelector(".chart-studio__palette")?.getBoundingClientRect().width;
+    if (!width) return;
+    const slots = width >= paletteTools.length * 50 - 2 ? paletteTools.length : Math.max(0, Math.floor((width - 50) / 50));
+    if (slots !== this.paletteSlots) this.paletteSlots = slots;
+  }
   private paletteShortcut(tool: string) { return this.shortcutLabel(tool === "flick_up" ? "tool:flick" : tool.startsWith("flick_") ? tool : `tool:${tool}`); }
   private selectPaletteTool(tool: string) {
     if (this.busy) return;
@@ -2894,8 +2893,23 @@ export class ChartCreationWorkspace extends LitElement {
       ? "creation.generation_limit" : "creation.invalid_edit"));
   }
   private interpolateSpeeds() {
-    try { this.commitProject(interpolateChartTimeScales(this.chart, this.selectedSpeeds, this.snap)); }
+    try {
+      const result = interpolateChartTimeScales({ ...this.chart, timeScales: this.speedEvents(this.chart) }, this.selectedSpeeds, this.snap);
+      this.editSpeedEvents(events => events.splice(0, events.length, ...result.timeScales));
+    }
     catch (error) { this.lineToolError(error); }
+  }
+  private speedEvents(project: Project) {
+    return readAuthorCollections(project).groups.find(group => group.id === this.scrollScope)?.timeScales ?? project.timeScales;
+  }
+  private editSpeedEvents(update: (events: Project["timeScales"]) => void) {
+    try {
+      const group = readAuthorCollections(this.chart).groups.find(group => group.id === this.scrollScope);
+      const events = structuredClone(group?.timeScales ?? this.chart.timeScales);
+      update(events); events.sort((a, b) => a.tick - b.tick);
+      if (group) this.commitProject(setAuthorGroupTimeScales(this.chart, group.id, events));
+      else this.edit(project => { project.timeScales = events; });
+    } catch { this.error = this.t("creation.invalid_edit"); }
   }
   private jumpToWaypoint(tick: number) {
     const seconds = this.map().tickToSeconds(tick);
@@ -3450,6 +3464,9 @@ export class ChartCreationWorkspace extends LitElement {
         const ids = new Set([this.selected]);
         for (const note of [...p.singles, ...p.lines.flatMap((l) => l.points)]) if (ids.has(note.id)) updater(note);
       });
+    const speedGroups = readAuthorCollections(chart).groups,
+      speedGroup = speedGroups.find(group => group.id === this.scrollScope),
+      timeScales = speedGroup?.timeScales ?? chart.timeScales;
     const filesPanel = html`
       <div class="chart-creation__actions">
         <a class="button button--tonal" href=${communityChartPath(readReleaseServer(), this.locale)}>${clientText(this.locale, "community.charts.title")}</a>
@@ -3461,13 +3478,6 @@ export class ChartCreationWorkspace extends LitElement {
         </button>
         <button class="button button--filled" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>
           ${this.t("importLocalAudio")}
-        </button>
-        <button
-          class="button button--tonal"
-          ?disabled=${this.busy}
-          @click=${() => this.loadAudio(createExampleAudio(), true)}
-        >
-          ${this.t("creation.example")}
         </button>
         <button class="button" ?disabled=${this.busy} @click=${() => this.pick("[data-chart]")}>
           ${this.t("importLocalChart")}
@@ -3928,27 +3938,33 @@ export class ChartCreationWorkspace extends LitElement {
         )}
       </section>
       ${this.renderMeters()}
-      <section aria-label=${this.t("timeScale")}>
+      <section class="stack" aria-label=${this.t("timeScale")}>
+        <md-outlined-select label=${this.t("creation.scroll_scope")} .value=${speedGroup?.id ?? ""} ?disabled=${this.busy}
+          @change=${(event: Event) => { this.scrollScope = (event.target as HTMLInputElement).value; this.selectedSpeeds = new Set(); }}>
+          <md-select-option value=""><div slot="headline">${this.t("creation.scroll_global")}</div></md-select-option>
+          ${speedGroups.map(group => html`<md-select-option value=${group.id}><div slot="headline">${group.name}</div></md-select-option>`)}
+        </md-outlined-select>
+        ${speedGroup ? html`<label class="cluster"><md-checkbox aria-label=${this.t("creation.scroll_inherit")} .checked=${speedGroup.timeScales === undefined} ?disabled=${this.busy}
+          @change=${(event: Event) => this.commitProject(setAuthorGroupTimeScales(this.chart, speedGroup.id,
+            (event.target as HTMLInputElement).checked ? null : this.chart.timeScales))}></md-checkbox>${this.t("creation.scroll_inherit")}</label>` : nothing}
         <div class="chart-creation__actions">
-          <button class="button button--text" type="button" ?disabled=${this.busy || !chart.timeScales.length}
-            @click=${() => { this.selectedSpeeds = new Set(chart.timeScales.map(event => event.id)); this.requestUpdate(); }}>${this.t("creation.select_all_speeds")}</button>
-          <button class="button button--text" type="button" ?disabled=${this.busy || chart.timeScales.filter(event => this.selectedSpeeds.has(event.id)).length < 2}
+          <button class="button button--text" type="button" ?disabled=${this.busy || !timeScales.length}
+            @click=${() => { this.selectedSpeeds = new Set(timeScales.map(event => event.id)); this.requestUpdate(); }}>${this.t("creation.select_all_speeds")}</button>
+          <button class="button button--text" type="button" ?disabled=${this.busy || timeScales.filter(event => this.selectedSpeeds.has(event.id)).length < 2}
             @click=${() => this.interpolateSpeeds()}>${this.t("creation.interpolate_speeds")}</button>
         </div>
         <button
           class="button"
           ?disabled=${this.busy || !this.hasProject}
           @click=${() =>
-            this.edit((p) => {
+            this.editSpeedEvents(events => {
               const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds)));
-              if (!p.timeScales.some((t) => t.tick === tick))
-                p.timeScales.push({ id: createProjectId("speed"), tick, scale: 1 });
-              p.timeScales.sort((a, b) => a.tick - b.tick);
+              if (!events.some(event => event.tick === tick)) events.push({ id: createProjectId("speed"), tick, scale: 1 });
             })}
         >
           ${this.t("addTimeScale")}
         </button>
-        ${chart.timeScales.map(
+        ${timeScales.map(
           (scale) => html`
             <div class="chart-creation__form">
               <label class="cluster">
@@ -3959,17 +3975,12 @@ export class ChartCreationWorkspace extends LitElement {
                     this.requestUpdate();
                   }}></md-checkbox>${this.t("selection")} / ${scale.tick / chart.resolution}
               </label>
-              ${this.beatField(scale.tick, tick => this.edit(project => {
-                project.timeScales.find(event => event.id === scale.id)!.tick = tick;
-                project.timeScales.sort((a, b) => a.tick - b.tick);
-              }))}
+              ${this.beatField(scale.tick, tick => this.editSpeedEvents(events => { events.find(event => event.id === scale.id)!.tick = tick; }))}
               ${this.field(
                 "timeScale",
                 scale.scale,
                 (value) =>
-                  this.edit((p) => {
-                    p.timeScales.find((t) => t.id === scale.id)!.scale = Number(value);
-                  }),
+                  this.editSpeedEvents(events => { events.find(event => event.id === scale.id)!.scale = Number(value); }),
                 true,
               )}
               ${iconButton({
@@ -3977,9 +3988,7 @@ export class ChartCreationWorkspace extends LitElement {
                 icon: "delete",
                 disabled: this.busy,
                 onClick: () =>
-                  this.edit((p) => {
-                    p.timeScales = p.timeScales.filter((t) => t.id !== scale.id);
-                  }),
+                  this.editSpeedEvents(events => { events.splice(events.findIndex(event => event.id === scale.id), 1); }),
               })}
             </div>
           `,
@@ -4247,26 +4256,26 @@ export class ChartCreationWorkspace extends LitElement {
             @click=${() => void this.openGridSettings()}>1/${this.snap}</button>
           <div class="chart-studio__tools">
             <div class="chart-creation__actions">
-              ${this.narrow ? html`<span class="chart-studio__tool-picker">${actionMenu({
+              <div class="chart-studio__palette">
+              ${this.paletteSlots === 0 ? html`<span class="chart-studio__tool-picker">${actionMenu({
                 id: "chart-tool-picker", label: html`${this.renderToolArt(this.paletteTool())}<span>${this.toolLabel(this.paletteTool())}</span>${icon("arrow_drop_down", 18)}`,
-                items: creationTools.flatMap(tool => tool === "flick" ? ["flick_up", "flick_left", "flick_right"] : [tool]).map(tool => ({ label: `${this.toolLabel(tool)} (${this.paletteShortcut(tool)})`,
+                items: paletteTools.map(tool => ({ label: `${this.toolLabel(tool)} (${this.paletteShortcut(tool)})`,
                   leading: this.renderToolArt(tool), run: () => this.selectPaletteTool(tool) })),
               })}</span>` : html`${segmented({
-          label: this.t("currentTool"),
-          value: this.paletteTool(),
-          options: ["select", "tap", "flick_up", "flick_left", "flick_right", "hold", "erase"].map(value => ({
-            shortcut: this.paletteShortcut(value), value, label: this.toolLabel(value), leading: this.renderToolArt(value),
-          })),
-          showShortcuts: true,
-          iconOnly: true,
-          grow: false,
-          onSelect: value => this.selectPaletteTool(value),
-        })}
-        ${actionMenu({ id: "chart-tool-more", label: html`${this.t("interaction.more_tools")}${icon("arrow_drop_down", 18)}`,
-          items: creationTools.filter(tool => !["select", "tap", "flick", "hold", "erase"].includes(tool)).map(tool => ({
-            label: `${this.toolLabel(tool)} (${this.shortcutLabel(`tool:${tool}`)})`, leading: this.renderToolArt(tool), run: () => this.selectPaletteTool(tool),
-          })) })}
-        `}
+                label: this.t("currentTool"), value: this.paletteTool(),
+                options: this.visiblePaletteTools().map(value => ({
+                  shortcut: this.paletteShortcut(value), value, label: this.toolLabel(value), leading: this.renderToolArt(value),
+                })),
+                showShortcuts: true, iconOnly: true, grow: false,
+                onSelect: value => this.selectPaletteTool(value),
+              })}
+              ${this.paletteSlots < paletteTools.length ? html`<span class="chart-studio__tool-more">${actionMenu({
+                id: "chart-tool-more", label: html`${icon("more_horiz", 20)}<span class="sr-only">${this.t("interaction.more_tools")}</span>`,
+                items: paletteTools.filter(tool => !this.visiblePaletteTools().includes(tool)).map(tool => ({
+                  label: `${this.toolLabel(tool)} (${this.paletteShortcut(tool)})`, leading: this.renderToolArt(tool), run: () => this.selectPaletteTool(tool),
+                })),
+              })}</span>` : nothing}`}
+              </div>
               ${iconButton({
           label: this.t("creation.multi_select"),
           icon: "checklist",

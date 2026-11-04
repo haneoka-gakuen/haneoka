@@ -230,8 +230,8 @@ export const validateProject = (value: unknown): ProjectValidationResult => {
         timeScaleTicks.add(event.tick);
         previousTick = event.tick;
       }
-      if (!finite(event.scale) || event.scale <= 0) {
-        add("error", "timeScale.value", `${path}.scale`, "Time scale must be finite and positive");
+      if (!finite(event.scale)) {
+        add("error", "timeScale.value", `${path}.scale`, "Time scale must be finite");
       }
     }
   }

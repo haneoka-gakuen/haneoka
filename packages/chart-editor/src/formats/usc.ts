@@ -23,7 +23,7 @@ import {
   type FormatWarning,
   type ImportResult,
 } from "./shared";
-import { COLLECTIONS_KEY, type AuthorCollections } from "../creation/collections";
+import { COLLECTIONS_KEY, readAuthorCollections, type AuthorCollections } from "../creation/collections";
 
 export type UscDirection = "left" | "up" | "right";
 export type UscEase = "in" | "linear" | "out";
@@ -43,6 +43,7 @@ export interface UscTimeScaleChange {
 export interface UscSingleNote {
   type: "single";
   beat: number;
+  timeScaleGroup?: number;
   lane: number;
   size: number;
   trace: boolean;
@@ -52,6 +53,7 @@ export interface UscSingleNote {
 
 interface UscSpatialConnection {
   beat: number;
+  timeScaleGroup?: number;
   lane: number;
   size: number;
 }
@@ -114,7 +116,9 @@ export interface UscSlideNote {
   connections: UscConnection[];
 }
 
-export type UscObject = UscBpmChange | UscTimeScaleChange | UscSingleNote | UscSlideNote;
+export type UscObject = UscBpmChange | UscTimeScaleChange | UscSingleNote | UscSlideNote | {
+  type: "timeScaleGroup"; changes: { beat: number; timeScale: number }[];
+};
 
 export interface UscChart {
   offset: number;
@@ -320,12 +324,10 @@ export const importUsc = (input: string | Uint8Array | unknown, options: { laneB
     }
     return [...events].sort((a, b) => a[0] - b[0]).filter((event, index, all) => index === 0 || event[1] !== all[index - 1]![1]);
   });
-  const usedGroups = new Set<number>();
   const groupOf = (object: Record<string, unknown>) => {
     const index = object.timeScaleGroup ?? 0;
     if (!Number.isInteger(index) || (index as number) < 0 || speedGroups.length && (index as number) >= speedGroups.length)
       throw new ChartFormatError("usc", "Invalid time-scale group");
-    usedGroups.add(index as number);
     return importedId("usc", "group", index as number);
   };
   if (speedGroups.length) for (const object of usc.objects) {
@@ -334,16 +336,13 @@ export const importUsc = (input: string | Uint8Array | unknown, options: { laneB
     for (const point of (Array.isArray(object.connections) ? object.connections : Array.isArray(object.midpoints) ? object.midpoints : []))
       if (isRecord(point)) groupOf(point);
   }
-  const used = [...usedGroups];
-  const commonTimeline = used.length ? groupTimelines[used[0]!] : undefined;
-  if (used.some(index => groupTimelines[index]!.some(([, scale]) => scale <= 0) || JSON.stringify(groupTimelines[index]) !== JSON.stringify(commonTimeline)))
-    throw new ChartFormatError("usc", "usc_group_speed_unsupported");
   const collections: AuthorCollections = { schema: "haneoka.authoring.collections", version: 1,
-    groups: used.sort((a, b) => a - b).map(index => ({ id: importedId("usc", "group", index), name: String(index + 1) })),
+    groups: groupTimelines.map((timeline, index) => ({ id: importedId("usc", "group", index), name: String(index + 1),
+      timeScales: timeline.map(([tick, scale], at) => ({ id: importedId("usc", "group-speed", index, at), tick, scale })) })),
     layers: [], members: {}, sourceContexts: {},
   };
   const tempos = [];
-  const timeScales = (commonTimeline ?? []).map(([tick, scale], index) => ({ id: importedId("usc", "group-speed", index), tick, scale }));
+  const timeScales: Project["timeScales"] = [];
   const singles: SingleNote[] = [];
   const lines = [];
   const sourceOrder: string[] = [];
@@ -426,10 +425,23 @@ const connectionEase = (point: LinePoint) => ({
 
 export const projectToUsc = (project: Project): UscChart => {
   const objectById = new Map<string, UscObject>();
+  const collections = readAuthorCollections(project);
+  const grouped = collections.groups.some(group => group.timeScales !== undefined);
+  const assigned = (id: string, parent?: string) => collections.members[id]?.groupId ?? (parent ? collections.members[parent]?.groupId : undefined);
+  const globalNeeded = project.timeScales.length > 0 || project.singles.some(note => !assigned(note.id)) || project.lines.some(line => line.points.some(point => !assigned(point.id, line.id)));
+  const groups = grouped ? [...(globalNeeded ? [{ id: "", timeScales: project.timeScales }] : []), ...collections.groups] : [];
+  const groupIndices = new Map(groups.map((group, index) => [group.id, index]));
+  const groupOf = (id: string, parent?: string) => groupIndices.get(
+    assigned(id, parent) ?? "") ?? 0;
+  if (grouped) for (const [index, group] of groups.entries()) objectById.set(`scroll-group-${index}`, {
+    type: "timeScaleGroup", changes: (group.timeScales ?? project.timeScales).map(event => ({
+      beat: tickToBeat(event.tick, project.resolution), timeScale: event.scale,
+    })),
+  });
   for (const tempo of project.tempos) {
     objectById.set(tempo.id, { type: "bpm", beat: tickToBeat(tempo.tick, project.resolution), bpm: tempo.bpm });
   }
-  for (const event of project.timeScales) {
+  for (const event of grouped ? [] : project.timeScales) {
     objectById.set(event.id, {
       type: "timeScale",
       beat: tickToBeat(event.tick, project.resolution),
@@ -442,6 +454,7 @@ export const projectToUsc = (project: Project): UscChart => {
     const object: UscSingleNote = {
       type: "single",
       beat: tickToBeat(note.tick, project.resolution),
+      ...(grouped ? { timeScaleGroup: groupOf(note.id) } : {}),
       ...toUscShape(note.lane, note.size, project.laneBasis),
       trace: note.type === "trace",
       critical: note.critical,
@@ -457,6 +470,7 @@ export const projectToUsc = (project: Project): UscChart => {
       const size = point.lane === "auto" ? resolveLinePointSize(points, index) : point.size;
       const common = {
         beat: tickToBeat(point.tick, project.resolution),
+        ...(grouped ? { timeScaleGroup: groupOf(point.id, line.id) } : {}),
         ...toUscShape(lane, size, project.laneBasis),
       };
       const first = index === 0;

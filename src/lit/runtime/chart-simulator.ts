@@ -309,6 +309,7 @@ export class ChartSimulator extends LitElement {
     ]));
   }
   private chart?: ChartDocument;
+  private loadedVisualProfiles?: NativeChartVisualProfiles;
   private assets?: OurNotesAssetManifest;
   private renderer?: OurNotesRenderer;
   private intro?: NativeIntroPlayback;
@@ -780,8 +781,10 @@ export class ChartSimulator extends LitElement {
     chart.durationMs += this.offsetMs;
     return chart;
   }
-  private communityChart({ ss, offsetMs, timeScaleChanges }: CommunityChartPlayback): ChartDocument {
-    const chart = this.runtime().require(OUR_NOTES_RULES).parse(ss);
+  private communityChart({ ss, offsetMs, timeScaleChanges, chart: compiled, visualProfiles }: CommunityChartPlayback): ChartDocument {
+    const chart = compiled ? structuredClone(compiled) : this.runtime().require(OUR_NOTES_RULES).parse(ss);
+    this.loadedVisualProfiles = visualProfiles ? { ...visualProfiles,
+      ...(visualProfiles.scroll ? { scroll: { ...visualProfiles.scroll, offsetMs: (visualProfiles.scroll.offsetMs ?? 0) + offsetMs } } : {}) } : undefined;
     const shift = <T extends { timeMs: number }>(rows: readonly T[]) => rows.forEach(row => { row.timeMs += offsetMs; });
     shift(chart.notes);
     shift(chart.bpmChanges);
@@ -798,6 +801,7 @@ export class ChartSimulator extends LitElement {
   }
   private async load() {
     if (!this.source && !this.playback) return;
+    this.loadedVisualProfiles = undefined;
     this.dispose();
     const controller = new AbortController();
     this.loadAbort = controller;
@@ -1690,7 +1694,7 @@ export class ChartSimulator extends LitElement {
       .require(OUR_NOTES_RULES)
       .createFrameBuilder(this.chart, {
         ...(this.gekisouPlan ? { gekisou: this.gekisouPlan } : {}),
-        ...(this.playback?.visualProfiles ? { visualProfiles: this.playback.visualProfiles } : {}),
+        ...(this.loadedVisualProfiles ? { visualProfiles: this.loadedVisualProfiles } : {}),
       });
     this.frames.configureGekisouPresentation(
       this.gekisouPlan

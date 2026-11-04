@@ -1,49 +1,14 @@
-import { buildChart, parseScore, OUR_NOTES_BUNDLED_NOTE_ATLASES } from "@haneoka/cassiopeia-plugin-our-notes";
-import { LANE_COUNT, type ChartDocument } from "@haneoka/cassiopeia";
-import { assertValidProject } from "../../../packages/chart-editor/src/validation";
-import { serializeSs } from "../../../packages/chart-editor/src/formats/ss";
-import { getExportDiagnostics } from "../../../packages/chart-editor/src/formats/diagnostics";
-import { TempoMap } from "../../../packages/chart-editor/src/timing";
+import { compileOurNotesCreation } from "./native-compile";
+export { compileOurNotesCreation } from "./native-compile";
+import { OUR_NOTES_BUNDLED_NOTE_ATLASES } from "@haneoka/cassiopeia-plugin-our-notes";
+import type { ChartDocument } from "@haneoka/cassiopeia";
 import type { Project } from "../../../packages/chart-editor/src/model";
 import type { ChartEmbedHandle, ChartSkin, ChartPlaybackOptions } from "../../../packages/embed-cassiopeia/src/types";
 import type { HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import type { CreationAudio } from "./audio";
 import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
-import { assertEditedChartSpans, authoredSpanOverlaps } from "../../../packages/chart-editor/src/creation/span";
-import { prepareNativeSourceMap, type NativeCreationSourceMap } from "./native-source-map";
-import { compileAuthorNativeSpeedPlan } from "./native-speed-plan";
-import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-notes";
+import type { NativeCreationSourceMap } from "./native-source-map";
 
-/** Canonical imported and authored projects use the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
-export function compileOurNotesCreation(project: Project) {
-  assertValidProject(project);
-  assertEditedChartSpans(project, project);
-  const ss = serializeSs(project), root = parseScore(ss), sources = prepareNativeSourceMap(project, root),
-    chart = buildChart(root, sources.observer);
-  const ids = new Set(chart.notes.map((note) => note.id));
-  if (
-    !Number.isFinite(chart.durationMs) ||
-    chart.notes.some(
-      (note) => !Number.isFinite(note.timeMs) || !Number.isFinite(note.pos) || !Number.isFinite(note.size),
-    ) ||
-    ids.size !== chart.notes.length ||
-    chart.lines.some((line) => line.noteIds.some((id) => !ids.has(id)))
-  )
-    throw new Error("our_notes_invalid_runtime");
-  const outside = chart.notes.find((note) => note.judged && !authoredSpanOverlaps(note.pos, note.size, LANE_COUNT));
-  if (outside)
-    throw new Error("our_notes_judged_note_outside_stage", {
-      cause: { id: outside.id, tick: outside.tick, lane: outside.pos, size: outside.size },
-    });
-  // Musical time stays in the kernel; media zero is represented by the host offset.
-  const tempo = new TempoMap(project.tempos, { resolution: project.resolution });
-  chart.timeScaleChanges = project.timeScales
-    .map((event) => ({ timeMs: tempo.tickToSeconds(event.tick) * 1000, scale: event.scale }))
-    .sort((a, b) => a.timeMs - b.timeMs);
-  const sourceMap = sources.finish(chart), plan = compileAuthorNativeSpeedPlan(project, chart, sourceMap);
-  const visualProfiles: NativeChartVisualProfiles | undefined = plan ? { notes: plan.notes, lines: plan.lines } : undefined;
-  return { ss, chart, sourceMap, visualProfiles, bgmOffsetMs: project.audioOffset * 1000, warnings: getExportDiagnostics(project, "ss") };
-}
 
 export interface NativeCreationPreviewHandle extends ChartEmbedHandle {
   getSourceMap(): NativeCreationSourceMap | undefined;

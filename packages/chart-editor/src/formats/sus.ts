@@ -254,11 +254,11 @@ const timeScalesFromLine = (line: SusLine, toTick: ToTick, warnings: FormatWarni
     const measure = Number(match[1]);
     const tickOffset = Number(match[2]);
     const timeScale = Number(match[3]);
-    if (!Number.isFinite(timeScale) || timeScale <= 0) {
+    if (!Number.isFinite(timeScale)) {
       warnings.push({
         code: "sus.timeScale.invalid",
         path: `line:${line.line}`,
-        message: `Non-positive time scale ${String(match[3])} was skipped`,
+        message: `Invalid time scale ${String(match[3])} was skipped`,
       });
       return [];
     }

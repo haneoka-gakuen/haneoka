@@ -1,6 +1,7 @@
 import type { ChartDocument, SsRawNote, SsRoot } from "@haneoka/cassiopeia";
 import { projectNoteOrder, type Project } from "../../../packages/chart-editor/src/model";
 import { assertValidProject } from "../../../packages/chart-editor/src/validation";
+import { readAuthorCollections } from "../../../packages/chart-editor/src/creation/collections";
 
 export interface NativeCanonicalSource {
   readonly canonicalId: string;
@@ -11,6 +12,7 @@ export interface NativeCanonicalSource {
 
 /** Compiler reports raw object identity, including every alias of a merged native note. */
 export interface NativeSourceObserver {
+  scopeForSource?(source: SsRawNote): string;
   onSourceNote(source: SsRawNote, nativeId: number): void;
   onSourceLine(source: SsRawNote, nativeId: number): void;
 }
@@ -69,6 +71,7 @@ export function prepareNativeSourceMap(project: Project, root: SsRoot) {
   }
 
   const noteSources = new Map<number, Map<string, NativeCanonicalSource>>();
+  const collections = readAuthorCollections(project), groups = new Map(collections.groups.map(group => [group.id, group]));
   const lineSources = new Map<number, Map<string, NativeCanonicalSource>>();
   const visited = new Set<SsRawNote>();
   let finished = false;
@@ -82,7 +85,21 @@ export function prepareNativeSourceMap(project: Project, root: SsRoot) {
     aliases.set(source.canonicalId, source);
     visited.add(raw);
   };
+  const scopeKeys = new Map<string | undefined, string>();
   const observer: NativeSourceObserver = {
+    scopeForSource: raw => {
+      const source = rawSources.get(raw);
+      if (!source) throw missingSource();
+      const state = collections, groupId = state.members[source.canonicalId]?.groupId ?? (source.lineId ? state.members[source.lineId]?.groupId : undefined);
+      const cached = scopeKeys.get(groupId); if (cached !== undefined) return cached;
+      const group = groupId ? groups.get(groupId) : undefined;
+      let previous = 1;
+      const timeline = [...(group?.timeScales ?? project.timeScales)].sort((a, b) => a.tick - b.tick).flatMap(event => {
+        if (event.scale === previous) return [];
+        previous = event.scale; return [[event.tick, event.scale]];
+      });
+      const key = JSON.stringify([timeline, group?.forceNoteSpeed ?? null]); scopeKeys.set(groupId, key); return key;
+    },
     onSourceNote: (raw, id) => record(raw, id, false),
     onSourceLine: (raw, id) => record(raw, id, true),
   };
