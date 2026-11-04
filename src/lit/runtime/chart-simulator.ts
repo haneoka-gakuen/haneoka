@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
-// Output: 共用分块 2D 概览、3D 观赏、播放控件与完整 PNG／分页 PNG ZIP 下载。
+// Output: 分块 2D 概览、按需装载的 3D 观看、独立进度控件与完整 PNG／分页 PNG ZIP 下载。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
 // Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
@@ -231,7 +231,6 @@ export class ChartSimulator extends LitElement {
     overviewPhase: { state: true },
     playing: { state: true },
     mode: { state: true },
-    currentTime: { state: true },
     duration: { state: true },
     loop: { state: true },
     fullscreen: { state: true },
@@ -279,6 +278,10 @@ export class ChartSimulator extends LitElement {
   declare playing: boolean;
   declare mode: "simple" | "watch";
   declare currentTime: number;
+  private transportTimeText?: Text;
+  private transportTimeSlider?: HTMLElement & { value: number };
+  private transportTimeSecond = Number.NaN;
+  private transportTimeTick = Number.NaN;
   declare duration: number;
   declare loop: boolean;
   declare fullscreen: boolean;
@@ -320,6 +323,7 @@ export class ChartSimulator extends LitElement {
   };
   private assets?: OurNotesAssetManifest;
   private renderer?: OurNotesRenderer;
+  private stageLoading?: Promise<void>;
   private intro?: NativeIntroPlayback;
   private introScene?: NativeIntroAssembly;
   private introTitle?: TitleIntroductionPresentation;
@@ -479,7 +483,34 @@ export class ChartSimulator extends LitElement {
     this.transportVisibility.bind(this.querySelector<HTMLElement>(".playback-controls"));
     this.transportVisibility.setFullscreen(this.fullscreen);
     this.transportVisibility.setPlaying(this.playing);
-    if (this.mode === "simple") requestAnimationFrame(() => this.drawOverview());
+    const text = [...(this.querySelector("[data-chart-current-time]")?.childNodes ?? [])]
+      .find((node): node is Text => node.nodeType === Node.TEXT_NODE);
+    const slider = this.querySelector<HTMLElement & { value: number }>("[data-chart-current-time-slider]") ?? undefined;
+    if (text !== this.transportTimeText) { this.transportTimeText = text; this.transportTimeSecond = Number.NaN; }
+    if (slider !== this.transportTimeSlider) { this.transportTimeSlider = slider; this.transportTimeTick = Number.NaN; }
+    this.syncTransportTime();
+    if (changed.has("mode")) {
+      if (this.mode === "simple") {
+        cancelAnimationFrame(this.animationFrame);
+        this.pause();
+      } else if (this.overviewPhase === "ready" && this.phase !== "ready" && this.loadAbort) {
+        void this.loadStage(this.loadAbort.signal);
+      }
+      this.resize();
+    } else if (this.mode === "simple" && changed.has("overviewPhase")) requestAnimationFrame(() => this.drawOverview());
+  }
+
+  private syncTransportTime() {
+    if (this.transportCollapsed || this.transportAutoHidden) return;
+    const second = Math.floor(this.currentTime), tick = Math.round(this.currentTime * 100);
+    if (this.transportTimeText && second !== this.transportTimeSecond) {
+      this.transportTimeText.data = this.format(this.currentTime);
+      this.transportTimeSecond = second;
+    }
+    if (this.transportTimeSlider && tick !== this.transportTimeTick) {
+      this.transportTimeSlider.value = tick / 100;
+      this.transportTimeTick = tick;
+    }
   }
 
   private sourceRelease(): string | undefined {
@@ -852,6 +883,10 @@ export class ChartSimulator extends LitElement {
       }
       this.overviewSkin = skin;
       this.overviewPhase = "ready";
+      await this.updateComplete;
+      signal.throwIfAborted();
+      this.resizeObserver = new ResizeObserver(() => this.resize());
+      for (const host of this.querySelectorAll(".chart-runtime__stage, .chart-simple-overview")) this.resizeObserver.observe(host);
     } catch (error) {
       if (signal.aborted) return;
       console.error(error);
@@ -860,20 +895,35 @@ export class ChartSimulator extends LitElement {
       this.phase = "error";
       return;
     }
-    // The 3D stage loads on its own: its failure leaves the 2D overview in place.
+    if (this.mode === "watch") await this.loadStage(signal);
+  }
+
+  private loadStage(signal: AbortSignal): Promise<void> {
+    if (this.stageLoading) return this.stageLoading;
+    const pending = this.initializeStage(signal).finally(() => {
+      if (this.stageLoading === pending) this.stageLoading = undefined;
+    });
+    this.stageLoading = pending;
+    return pending;
+  }
+
+  private async initializeStage(signal: AbortSignal) {
     try {
-      if (this.liveMode === "gekisou" && this.gekisouMissionTypes?.length && !this.assets.particles.laneEffects.gekisou)
+      signal.throwIfAborted();
+      this.phase = "loading";
+      const chart = this.chart!, assets = this.assets!;
+      if (this.liveMode === "gekisou" && this.gekisouMissionTypes?.length && !assets.particles.laneEffects.gekisou)
         throw new Error("Original Gekisou lane source unavailable");
       this.gekisouPlan =
         this.liveMode === "gekisou" && this.chartFormat === "" && this.gekisouMissionTypes?.length
-          ? new OurNotesGekisouPlan(this.chart, { enabled: true, missionTypes: this.gekisouMissionTypes })
+          ? new OurNotesGekisouPlan(chart, { enabled: true, missionTypes: this.gekisouMissionTypes })
           : undefined;
       await this.initialize(signal);
       signal.throwIfAborted();
       this.phase = "ready";
       await this.updateComplete;
       this.resize();
-      if (playback?.startTime) this.seek(playback.startTime);
+      if (this.loadedPlayback?.startTime) this.seek(this.loadedPlayback.startTime);
     } catch (error) {
       if (signal.aborted) return;
       console.error(error);
@@ -1144,6 +1194,7 @@ export class ChartSimulator extends LitElement {
     const ownsClock = () => this.clock === clock && !signal.aborted && this.introAudioContext === introContext;
     clock.audio.addEventListener("play", () => {
       if (!ownsClock()) return;
+      if (this.mode !== "watch") { clock.pause(); return; }
       if (this.watchReplaySource?.clock === clock) this.watchReplaySource.musicStarted = true;
       this.playing = true;
       void introContext?.resume();
@@ -1160,8 +1211,6 @@ export class ChartSimulator extends LitElement {
       this.session?.finish(clock.timeMs);
       this.draw();
     });
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(root);
     this.duration = Math.max(this.clock.durationMs, this.chart.durationMs) / 1000;
     this.resize();
     this.draw();
@@ -1763,13 +1812,14 @@ export class ChartSimulator extends LitElement {
   }
   private resize() {
     const root = this.querySelector<HTMLElement>(".chart-runtime__stage");
-    if (!root || !this.renderer) return;
-    const ratio = renderPixelRatio(root.clientWidth, root.clientHeight);
-    root.style.setProperty("--chart-hud-scale", String(Math.min(root.clientWidth / 1920, root.clientHeight / 1080)));
-    this.renderer.resize(root.clientWidth, root.clientHeight, ratio);
-    this.gekisouOverlayContext.width = Math.max(1, root.clientWidth);
-    this.gekisouOverlayContext.height = Math.max(1, root.clientHeight);
-    this.draw();
+    if (root && this.renderer && this.mode === "watch" && root.clientWidth && root.clientHeight) {
+      const ratio = renderPixelRatio(root.clientWidth, root.clientHeight);
+      root.style.setProperty("--chart-hud-scale", String(Math.min(root.clientWidth / 1920, root.clientHeight / 1080)));
+      this.renderer.resize(root.clientWidth, root.clientHeight, ratio);
+      this.gekisouOverlayContext.width = root.clientWidth;
+      this.gekisouOverlayContext.height = root.clientHeight;
+      this.draw();
+    }
     this.drawOverview();
   }
   private drawOverview() {
@@ -1834,7 +1884,7 @@ export class ChartSimulator extends LitElement {
     }
   }
   private draw() {
-    if (!this.renderer || !this.session || !this.frames) return;
+    if (this.mode !== "watch" || !this.renderer || !this.session || !this.frames) return;
     this.renderer.copyStageWorldToClip(this.gekisouOverlayContext.worldToClip);
     const introTime = this.intro?.sample(performance.now());
     if (this.intro && introTime !== undefined) {
@@ -1958,6 +2008,7 @@ export class ChartSimulator extends LitElement {
       this.renderer.render(frame);
     }
     this.currentTime = time / 1000;
+    this.syncTransportTime();
   }
   private applyNativeIntroTitle(frame: ReturnType<RenderFrameBuilder["buildReusable"]>, seconds?: number) {
     frame.overlayTexts = undefined;
@@ -2009,10 +2060,13 @@ export class ChartSimulator extends LitElement {
     return this.toggle();
   }
   pause() {
+    this.noteSounds?.setLongLineActive(false, this.volume * 0.875);
+    void this.introAudioContext?.suspend();
     if (this.playing) void this.toggle();
   }
   private async toggle() {
     if (!this.clock) return;
+    if (!this.playing && this.mode !== "watch") return;
     if (this.intro && this.intro.phase !== "complete") {
       const intro = this.intro,
         clock = this.clock;
@@ -2023,7 +2077,7 @@ export class ChartSimulator extends LitElement {
         this.draw();
       } else {
         await Promise.all([this.noteSounds?.unlock(), this.introAudioContext?.resume()]);
-        if (this.intro !== intro || this.clock !== clock || this.loadAbort?.signal.aborted) return;
+        if (this.intro !== intro || this.clock !== clock || this.loadAbort?.signal.aborted || this.mode !== "watch") return;
         this.intro.start(performance.now());
         this.playing = true;
         for (const kind of this.introAudioPaused.keys()) this.playNativeIntroSound(kind);
@@ -2236,6 +2290,9 @@ export class ChartSimulator extends LitElement {
     }
   }
   private dispose() {
+    this.stageLoading = undefined;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
     this.loadAbort?.abort();
     this.loadAbort = undefined;
     this.overviewSkin?.dispose();
@@ -2276,7 +2333,6 @@ export class ChartSimulator extends LitElement {
     this.transportVisibility.setPlaying(false);
     this.transportVisibility.setScrubbing(false);
     this.resumeAfterScrub = false;
-    this.resizeObserver?.disconnect();
     this.clock?.destroy();
     this.noteSounds?.dispose();
     this.disposeNativeIntro();
@@ -2646,8 +2702,9 @@ export class ChartSimulator extends LitElement {
                       </svg>
                     </button>
                     <div class="chart-runtime__timeline">
-                      <small>${this.format(this.currentTime)}</small>
+                      <small data-chart-current-time>${this.format(this.currentTime)}</small>
                       <md-slider
+                        data-chart-current-time-slider
                         class="md3-slider md3-slider--runtime"
                         min="0"
                         max=${this.duration || 1}
