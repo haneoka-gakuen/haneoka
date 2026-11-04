@@ -3,6 +3,7 @@
 // Output: Administrative collections, editors, account lifecycle states and private archive dialogs.
 // Pos: [Map](L2-2.md); browser administration workspace.
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
+import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
 import { USER_ROLES, isUserRole } from "../lib/user-roles";
 import { modal } from "./ui/modal";
@@ -1943,7 +1944,7 @@ export class AdminWorkspace extends LitElement {
                   <dt>${this.label("history.revision", "Version")}</dt><dd>${String(record.version)}</dd>
                   <dt>${this.label("columns.createdAt", "Created")}</dt><dd>${this.date(record.createdAt)}</dd>
                 </dl>
-                ${record.status === "published" && (record.visibility === "public" || this.contentKind === "stories") ? html`<a class="button button--outlined" target="_blank" rel="noopener" href=${`/intl/${preferredLocale()}/${this.contentKind === "stories" ? "community-stories" : this.contentKind}/${encodeURIComponent(String(record.id))}/`}>${this.label("creations.open", "View page")}</a>` : nothing}
+                ${record.status === "published" && (record.visibility === "public" || this.contentKind === "stories") ? html`<a class="button button--outlined" target="_blank" rel="noopener" href=${this.contentKind === "stories" ? communityStoryPath("", preferredLocale(), String(record.id)) : `/intl/${preferredLocale()}/${this.contentKind}/${encodeURIComponent(String(record.id))}/`}>${this.label("creations.open", "View page")}</a>` : nothing}
                 ${record.deletedAt ? nothing : html`<button class="button button--danger" ?disabled=${!!this.busy} @click=${() => { this.confirmRemoval = true; }}>${this.label("creations.remove", "Remove content")}</button>`}
               </aside>
             </div>`}

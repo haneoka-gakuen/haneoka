@@ -388,7 +388,7 @@ export class StoryCreationWorkspace extends LitElement {
       await this.configure();
       if (client !== this.client) return;
       const params = new URL(location.href).searchParams,
-        story = params.get("story");
+        story = params.get("community") ?? params.get("story");
       if (story) {
         const remix = params.get("remix") === "1";
         const revision = params.has("revision") ? Number(params.get("revision")) : undefined;
@@ -396,6 +396,7 @@ export class StoryCreationWorkspace extends LitElement {
         if (remix || revision !== undefined) {
           const url = new URL(location.href);
           url.searchParams.delete("story");
+          url.searchParams.delete("community");
           url.searchParams.delete("remix");
           url.searchParams.delete("revision");
           history.replaceState(null, "", url);
@@ -553,6 +554,7 @@ export class StoryCreationWorkspace extends LitElement {
       if (["new", "import", "folder", "library"].includes(action)) {
         const url = new URL(location.href);
         url.searchParams.delete("story");
+        url.searchParams.delete("community");
         url.searchParams.delete("remix");
         history.replaceState(null, "", url);
       }
@@ -1217,6 +1219,7 @@ export class StoryCreationWorkspace extends LitElement {
         await writeStoryDraft(copy.id, this.draft);
         const url = new URL(location.href);
         url.searchParams.delete("story");
+        url.searchParams.delete("community");
         url.searchParams.delete("remix");
         url.searchParams.delete("revision");
         url.searchParams.set("project", copy.id);

@@ -1,6 +1,7 @@
 import { canonicalEntityTarget, type CommunityEntityTarget } from "./community-entity-guard";
 import { publishedCommunityStory } from "./community-stories";
 import { communitySonolusRows } from "./community-charts";
+import { communityStoryPath } from "../src/lib/community-story-route";
 import { communityChartPath } from "../src/lib/community-chart-route";
 
 type Server = "jp" | "intl";
@@ -349,12 +350,12 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
           jp: {
             routeKind: "community-stories",
             routeId: row.id,
-            detailPath: `/jp/${locale}/community-stories/${row.id}/`,
+            detailPath: communityStoryPath("", locale, row.id),
           },
           intl: {
             routeKind: "community-stories",
             routeId: row.id,
-            detailPath: `/intl/${locale}/community-stories/${row.id}/`,
+            detailPath: communityStoryPath("", locale, row.id),
           },
         },
       };

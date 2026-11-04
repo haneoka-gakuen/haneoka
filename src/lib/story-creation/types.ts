@@ -118,9 +118,6 @@ export function publishableStoryPath(value: string): boolean {
         /\.(?:pem|key|p12|pfx)$/iu.test(part),
     );
 }
-export const communityStoryPath = (server: string, locale: string, id = "") =>
-  `/${server}/${locale}/community-stories/${id ? `${encodeURIComponent(id)}/` : ""}`;
-export const storyCreationPath = (locale: string, id?: string) =>
-  `/${locale}/story-creation/${id ? `?story=${encodeURIComponent(id)}` : ""}`;
+export { communityStoryPath, communityStoryReaderPath, storyCreationPath } from "../community-story-route";
 export const storyAssetUrl = (id: string, revision: number, path: string) =>
   `${STORY_API}/${id}/assets/${revision}/${storyFilePath(path).split("/").map(encodeURIComponent).join("/")}`;

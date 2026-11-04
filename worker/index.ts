@@ -4,7 +4,9 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { ARENA_PROJECTION } from "../src/lib/arena";
-import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument, rewriteCommunityChartStructuredData } from "../src/lib/community-chart-route";
+import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
+import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
+import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument } from "../src/lib/community-chart-route";
 import { readArenaCatalog } from "../src/lib/arena-catalog";
 import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
@@ -3827,11 +3829,12 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   let response = await handleScopedRequest(request, env, ctx);
   const chartDocument = parseCommunityChartDocument(new URL(request.url).pathname);
-  if (chartDocument && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
-    const path = (locale: string) => chartDocument.player
-      ? communityChartPlayerPath("", locale, chartDocument.id)
-      : communityChartPath("", locale, chartDocument.id);
-    const canonical = `https://${CANONICAL_HOST}${path(chartDocument.locale)}`;
+  const storyDocument = parseCommunityStoryDocument(new URL(request.url).pathname);
+  if ((chartDocument || storyDocument) && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
+    const path = (locale: string) => storyDocument ? communityStoryDocumentPath(storyDocument, locale) : chartDocument!.player
+      ? communityChartPlayerPath("", locale, chartDocument!.id)
+      : communityChartPath("", locale, chartDocument!.id);
+    const canonical = `https://${CANONICAL_HOST}${path((storyDocument ?? chartDocument)!.locale)}`;
     let structuredData = "";
     response = new HTMLRewriter()
       .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", canonical); } })
@@ -3843,22 +3846,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       } })
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;
-        text.replace(text.lastInTextNode ? rewriteCommunityChartStructuredData(structuredData, new URL(request.url).pathname, `https://${CANONICAL_HOST}`) : "", { html: true });
+        text.replace(text.lastInTextNode ? rewriteCommunityStructuredData(structuredData, canonical) : "", { html: true });
         if (text.lastInTextNode) structuredData = "";
-      } })
-      .transform(response);
-  }
-  const storyDocument = /^\/(jp|intl)\/(ja|en|zh-TW|zh-CN|ko)\/community-stories\/([0-9a-f-]{36})\/?$/u.exec(new URL(request.url).pathname);
-  if (storyDocument && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
-    const storyPath = (locale: string) => `/${storyDocument[1]}/${locale}/community-stories/${storyDocument[3]}/`;
-    const canonical = `https://${CANONICAL_HOST}${storyPath(storyDocument[2]!)}`;
-    response = new HTMLRewriter()
-      .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", canonical); } })
-      .on('meta[property="og:url"]', { element(element) { element.setAttribute("content", canonical); } })
-      .on('link[rel="alternate"][hreflang]', { element(element) {
-        const tag = element.getAttribute("hreflang");
-        const locale = tag === "x-default" ? "en" : tag === "ja-JP" ? "ja" : tag;
-        if (locale && SERVER_FIRST_LOCALES.has(locale)) element.setAttribute("href", `https://${CANONICAL_HOST}${storyPath(locale)}`);
       } })
       .transform(response);
   }
@@ -3881,7 +3870,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*",
     } });
   }
-  const legacyChart = legacyCommunityChartRedirectTarget(url.pathname, url.search);
+  const legacyChart = legacyCommunityStoryRedirectTarget(url.pathname, url.search) ?? legacyCommunityChartRedirectTarget(url.pathname, url.search);
   if (legacyChart && (request.method === "GET" || request.method === "HEAD"))
     return new Response(null, { status: 308, headers: { Location: legacyChart, "Cache-Control": "public, max-age=86400" } });
   const resourceImage = await handleResourceImage(request, env);
@@ -4209,11 +4198,11 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     Promise.resolve(previewSettings),
   ]);
   const chartEtag = response.headers.get("ETag");
-  const chartPath = parseCommunityChartDocument(url.pathname);
+  const chartPath = parseCommunityChartDocument(url.pathname) || parseCommunityStoryDocument(url.pathname);
   const page = chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
     ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
     : response;
-  if (page !== response && chartEtag) page.headers.set("ETag", communityChartDocumentEtag(chartEtag, url.pathname));
+  if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
   const result = await applySiteSettings(request, page, settings, webBuildId, env);
   if (
     (result.body || request.method === "HEAD" || result.status === 304) &&

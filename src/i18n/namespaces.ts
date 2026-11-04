@@ -172,6 +172,8 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
   if (/^\/(?:catalog\/)?events\/tracker(?:\/|$)/u.test(pathname)) return EVENT_TRACKER_I18N_NAMESPACE;
   if (pathname.includes("anon-tokyo")) return ANON_I18N_NAMESPACE;
   if (
+    pathname === "/story-editor/create" ||
+    pathname.startsWith("/story-editor/create/") ||
     pathname === "/story-creation" ||
     pathname.startsWith("/story-creation/") ||
     pathname === "/community-stories" ||

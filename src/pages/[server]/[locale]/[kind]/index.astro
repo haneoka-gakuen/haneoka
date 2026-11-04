@@ -4,7 +4,6 @@ import HelpDocument from "../../../../components/HelpDocument.astro";
 import Live2DDocument from "../../../../components/Live2DDocument.astro";
 import RouteDocument from "../../../../components/RouteDocument.astro";
 import SpineDocument from "../../../../components/SpineDocument.astro";
-import CommunityStoriesDocument from "../../../../components/CommunityStoriesDocument.astro";
 import { findRoute, titleOf } from "../../../../config/routes";
 import { LOCALES, type Locale } from "../../../../i18n/locales";
 import { RELEASE_SERVERS, type ReleaseServer } from "../../../../lib/release-server";
@@ -40,7 +39,7 @@ const CATALOG_ROUTES: Readonly<Partial<Record<ResourceKind, string>>> = {
 export async function getStaticPaths() {
   return staticBuildPaths("src/pages/[server]/[locale]/[kind]/index.astro", (await staticCatalogPageServers()).flatMap((server) =>
     LOCALES.flatMap((locale) =>
-      RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge" && kind !== "skills" && kind !== "charts" && kind !== "stories")
+      RESOURCE_KINDS.filter((kind) => kind !== "circle" && kind !== "challenge" && kind !== "skills" && kind !== "charts" && kind !== "community-stories" && kind !== "stories")
         .map((kind) => ({ params: { server, locale, kind } })),
     ),
   ));
@@ -59,5 +58,4 @@ if (catalogRoute && !catalogEntry) throw new Error(`Missing route definition for
 {kind === "live2d" && <Live2DDocument locale={locale} server={server} />}
 {kind === "spine" && <SpineDocument locale={locale} server={server} />}
 {kind === "help" && <HelpDocument locale={locale} server={server} />}
-{kind === "community-stories" && <CommunityStoriesDocument locale={locale} server={server} />}
 {catalogEntry && <RouteDocument locale={locale} entry={catalogEntry} title={titleOf(catalogEntry, locale)} server={server} />}

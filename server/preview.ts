@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Node 本地预览 HTTP 服务入口。
 // Effects/Dependencies: 监听、读资源和代理；HTML 注入 Web 更新基准，已封装产物核对最终引用摘要，不替代生产 D1／队列。
 import { projectUiMarks } from "../src/lib/ui-marks.ts";
+import { communityStoryDocumentEtag, communityStoryShellPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument, rewriteCommunityStoryDocument } from "../src/lib/community-story-route.ts";
 import { communityChartDocumentEtag, communityChartShellPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument, rewriteCommunityChartDocument } from "../src/lib/community-chart-route.ts";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest.ts";
 import { publishedWebBuildId, WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id.ts";
@@ -665,12 +666,13 @@ function sendHtml(
   status = 200,
 ): void {
   const chartPath = new URL(req.url || "/", "http://preview.invalid").pathname;
-  if (parseCommunityChartDocument(chartPath)) {
+  if (parseCommunityChartDocument(chartPath) || parseCommunityStoryDocument(chartPath)) {
     const input = source;
     source = Readable.from((async function* () {
       const chunks: Buffer[] = [];
       for await (const chunk of input) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      yield rewriteCommunityChartDocument(Buffer.concat(chunks).toString("utf8"), chartPath, "https://haneoka.org");
+      const html = Buffer.concat(chunks).toString("utf8");
+      yield parseCommunityStoryDocument(chartPath) ? rewriteCommunityStoryDocument(html, chartPath, "https://haneoka.org") : rewriteCommunityChartDocument(html, chartPath, "https://haneoka.org");
     })());
   }
   const buildFile = path.join(DIST, "build.json");
@@ -683,7 +685,7 @@ function sendHtml(
   }
   const etag = headers.ETag;
   if (etag) {
-    const pageEtag = communityChartDocumentEtag(etag, chartPath);
+    const pageEtag = communityStoryDocumentEtag(communityChartDocumentEtag(etag, chartPath), chartPath);
     headers.ETag = buildId ? pageEtag.replace(/"$/u, `:web-${buildId}"`) : pageEtag;
   }
   delete headers["Content-Length"];
@@ -1391,7 +1393,7 @@ function servePackedStaticDocument(req: IncomingMessage, res: ServerResponse, ur
   let pathname = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) ||
     (provider ? providerEntityHtmlPath(provider) : corePath);
   const shared = /^\/provider-static\/data\/([a-f0-9]{64})\.json$/u.exec(url.pathname);
-  const redirect = !url.pathname.endsWith("/") && !communityChartShellPath(url.pathname) && !!coreStaticDocumentPath(`${url.pathname}/`);
+  const redirect = !url.pathname.endsWith("/") && !communityChartShellPath(url.pathname) && !communityStoryShellPath(url.pathname) && !!coreStaticDocumentPath(`${url.pathname}/`);
   if (redirect) pathname = coreStaticDocumentPath(`${url.pathname}/`);
   if (!pathname && !shared) return false;
   let record: StaticDocumentRecord | undefined;
@@ -1623,6 +1625,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return;
   }
   const legacyEntityTarget =
+    legacyCommunityStoryRedirectTarget(url.pathname, url.search) ??
     legacyCommunityChartRedirectTarget(url.pathname, url.search) ??
     legacyProviderRedirectTarget(url.pathname, url.search) ??
     legacyEntityRedirectTarget(url.pathname, url.search) ??

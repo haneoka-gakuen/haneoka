@@ -63,6 +63,7 @@ const looks: Record<string, HubLook> = {
   "/team-builder": "scene",
   "/stamp-maker": "scatter",
   "/chart-editor/create": "scene",
+  "/story-editor/create": "scene",
   "/catalog/live2d": "stage",
   "/catalog/spine": "stage",
   "/catalog/assets": "polaroid",
@@ -73,6 +74,7 @@ const looks: Record<string, HubLook> = {
   "/community/feeds": "scene",
   "/community/playlists": "records",
   "/community/charts": "scene",
+  "/community/stories": "scene",
   "/community/mine": "scene",
 };
 export const hubLook = (route: string): HubLook => looks[route] ?? "burst";
@@ -105,6 +107,7 @@ const curated: Record<HubId, HubTile[]> = {
     tile("/team-builder", "team", 6, 3, 5),
     tile("/stamp-maker", "stamps", 6, 3, 5),
     tile("/chart-editor/create", "chart", 6, 3),
+    tile("/story-editor/create", "banners", 6, 3),
     tile("/catalog/live2d", "models", 3, 3, 3),
     tile("/song-progress", "icon", 3, 2),
     tile("/player-profile", "icon", 3, 2),
@@ -121,6 +124,7 @@ const curated: Record<HubId, HubTile[]> = {
     },
     tile("/community/playlists", "jackets", 3, 3, 6),
     tile("/community/charts", "chart", 3, 3),
+    tile("/community/stories", "banners", 3, 3),
     {
       ...tile("/community/mine", "personal", 6, 3),
       related: ["/community/following", "/community/bookmarks", "/community/notifications", "/community/activity"],

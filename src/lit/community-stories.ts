@@ -6,6 +6,8 @@
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { storyRequest, downloadStoryProject } from "../lib/story-creation/community";
+import { communityStoryDocumentPath, communityStoryReaderPath, parseCommunityStoryDocument } from "../lib/community-story-route";
+import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
 import {
   STORY_API,
   communityStoryPath,
@@ -107,8 +109,9 @@ export class CommunityStories extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     const url = new URL(location.href),
-      match = /\/community-stories\/([0-9a-f-]{36})/u.exec(url.pathname);
-    this.storyId = match?.[1] || "";
+      route = parseCommunityStoryDocument(url.pathname);
+    this.storyId = route?.id || "";
+    if (route) applyCommunityDocumentMetadata(document, route.locale, locale => communityStoryDocumentPath(route, locale), "https://haneoka.org");
     this.mine = url.searchParams.get("scope") === "mine";
     this.revision = Number(url.searchParams.get("revision") || 0);
     this.stopLocale = initializeI18nClient().subscribe((c) => {
@@ -172,6 +175,8 @@ export class CommunityStories extends LitElement {
         );
         this.items = stories;
       }
+      if (this.selected && parseCommunityStoryDocument(location.pathname)?.reader && !this.selected.compilationError)
+        await this.play();
       this.phase = "ready";
     } catch (error) {
       if (!this.lifetime.signal.aborted) {
@@ -197,15 +202,22 @@ export class CommunityStories extends LitElement {
       const row = this.selected;
       this.reader = {
         project: data.project,
-        story: { ...vegaProjectToAdvStory(data.project), storyId: `community:${row.id}:${row.revision}`, title: row.title },
+        story: {
+          ...vegaProjectToAdvStory(data.project),
+          storyId: `community:${row.id}:${row.revision}`,
+          title: row.title,
+        },
         server: this.server,
-        backHref: location.pathname + location.search,
-        ...(row.canEdit || row.remix ? { editorHref: storyCreationPath(this.locale, row.id) + `&revision=${row.revision}${row.canEdit ? "" : "&remix=1"}` } : {}),
+        backHref: this.href(row.id) + location.search,
+        ...(row.canEdit || row.remix
+          ? {
+              editorHref:
+                storyCreationPath(this.locale, row.id) + `&revision=${row.revision}${row.canEdit ? "" : "&remix=1"}`,
+            }
+          : {}),
         comments: { id: row.id, type: "community-stories" },
       };
       this.playing = true;
-    } catch (error) {
-      this.notify(error);
     } finally {
       this.busy = false;
     }
@@ -303,15 +315,15 @@ export class CommunityStories extends LitElement {
   private renderDetail(row: CommunityStoryItem) {
     const back = () => location.assign(this.href() + (this.mine ? "?scope=mine" : ""));
     const actions = html`
-      <button
+      <a
         class="icon-button"
-        ?disabled=${this.busy || !!row.compilationError}
+        href=${row.compilationError ? nothing : communityStoryReaderPath(this.server, this.locale, row.id) + location.search}
+        aria-disabled=${String(!!row.compilationError)}
         title=${this.t("read")}
         aria-label=${this.t("read")}
-        @click=${() => void this.play()}
       >
         ${icon("play_arrow")}
-      </button>
+      </a>
       <button
         class="icon-button"
         ?disabled=${this.busy}
@@ -364,15 +376,13 @@ export class CommunityStories extends LitElement {
     `;
     if (this.playing && this.reader)
       return html`
-          <story-workspace
-            .reader=${this.reader}
-            .locale=${this.locale}
-            @story-reader-close=${() => {
-              this.playing = false;
-              this.project = undefined;
-              this.reader = undefined;
+        <story-workspace
+          .reader=${this.reader}
+          .locale=${this.locale}
+          @story-reader-close=${() => {
+              location.assign(this.href(row.id) + location.search);
             }}
-          ></story-workspace>
+        ></story-workspace>
       `;
     return html`
       <section

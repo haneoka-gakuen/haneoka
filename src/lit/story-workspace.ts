@@ -3,6 +3,7 @@
 // Output: 共用故事集合、文本阅读和 Vega 播放界面。
 // Pos: [Map](L2-2.md)；四种来源和社区版本的故事观看工作区。
 // Effects/Dependencies: 载荷请求、应用栏、评论、语音和按需 Vega 舞台；断开释放私有与媒体状态。
+import { storyCreationPath } from "../lib/community-story-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
@@ -396,6 +397,8 @@ export class StoryWorkspace extends LitElement {
       this.detailMode = "text";
       this.detailError = "";
       this.phase = "ready";
+      if (new URL(location.href).searchParams.get("view") === "play")
+        void this.updateComplete.then(() => this.openVegaPlayer());
     }
     if (changed.has("locale")) {
       this.transcriptQuery = "";
@@ -2558,7 +2561,7 @@ export class StoryWorkspace extends LitElement {
   private storyEditorHref(): string {
     if (this.reader) return this.reader.editorHref ?? "";
     const episode = this.detailEpisode!, server = this.detailServer();
-    const url = new URL(`/${this.locale}/story-creation/`, location.origin);
+    const url = new URL(storyCreationPath(this.locale), location.origin);
     url.searchParams.set("importStory", this.episodeId(episode));
     url.searchParams.set("importServer", this.isProvider() ? String(episode.sourceServer || (server === "intl" ? "en" : server)) : server);
     if (this.isProvider()) url.searchParams.set("importProvider", this.origin);
@@ -2606,6 +2609,12 @@ export class StoryWorkspace extends LitElement {
         { value: "play" as const, label: uiText(this.locale, "navigation.player"), icon: "play_circle" },
       ],
       onSelect: (mode) => {
+        if (this.reader) {
+          const url = new URL(location.href);
+          if (mode === "play") url.searchParams.set("view", "play");
+          else url.searchParams.delete("view");
+          history.replaceState(null, "", url);
+        }
         if (mode === "play") void this.openVegaPlayer();
         else {
           this.storyCommentsTextChoice = true;

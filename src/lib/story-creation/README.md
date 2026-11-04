@@ -1,6 +1,6 @@
 # Story creation and community stories
 
-`/{locale}/story-creation/` embeds the production Altair application from
+`/{locale}/story-editor/create/` embeds the production Altair application from
 `.generated-public/story-studio/`. AppShell owns the title, account state, save,
 publication, and project actions. Altair owns editing, local files, previews,
 history, templates, and game packaging. Haneoka receives source, game and tool
@@ -14,6 +14,12 @@ menu when space runs out. The embedded editor fills the content pane; its
 panels own scrolling. Host configuration supplies the complete Material roles,
 the current font stack and the same local font stylesheets. Interface controls
 and Monaco follow subsequent theme, font and language changes.
+
+The community collection and its entity/reader pages are cross-server, like
+community charts. Editor links use `?community={id}`; local workspaces use
+`?project={id}`. Legacy story and editor addresses redirect with revision,
+draft and import parameters intact. Private asset review remains under
+`/{locale}/admin/story-assets/`.
 
 ## Project and publication flow
 
@@ -30,8 +36,8 @@ and Monaco follow subsequent theme, font and language changes.
    requires supported commands and plugins plus a complete local resource graph.
    A new private revision leaves the previous public revision readable.
 4. Publish publicly or by link. Canonical details live at
-   `/{server}/{locale}/community-stories/{id}/`; reading uses the official
-   `StoryWorkspace`, including transcript search, speaker filters, voice playback
+   `/{locale}/community/stories/{id}/`; reading uses the official
+   `StoryWorkspace` at `/{locale}/community/stories/{id}/story/`, including transcript search, speaker filters, voice playback
    and the text/player mode switch. Its Vega stage consumes the authorized
    immutable project and keeps revision-scoped saves. Leaving either reading
    mode releases its media and restores the community detail actions.

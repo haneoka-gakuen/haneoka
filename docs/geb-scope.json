@@ -109,6 +109,8 @@
     "src/config/character-signatures.ts",
     "src/lib/resource-route.ts",
     "src/lib/community-chart-route.ts",
+    "src/lib/community-document-meta.ts",
+    "src/lib/community-story-route.ts",
     "src/lib/static-catalog-source.ts",
     "src/lib/stamp-maker/public-manifest.ts",
     "src/lib/static-documents.ts",
