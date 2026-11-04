@@ -13,17 +13,17 @@
     "masterdata.tar.gz": {
       "bytes": 1315042,
       "sha256": "eedf6487a0d0f5cf79e1eae80b78a518f63d7a757a5cf6d422a2a478c3b3358a",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-dc0caf17/masterdata.tar.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-c0e27374/masterdata.tar.gz"
     },
     "resources.json.gz": {
-      "bytes": 8342997,
-      "sha256": "5239d4824aad825fa9351b0b6a157821bb78f2d8090653a38565f72d70906605",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-dc0caf17/resources.json.gz"
+      "bytes": 8342994,
+      "sha256": "74765dbd17b7cfcadf09248a2c5c1d7aee7a3d922069d1e8a23a49f7fac58348",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-c0e27374/resources.json.gz"
     },
     "spine.json.gz": {
       "bytes": 113381,
       "sha256": "157536ea4e9f1c2fce98927ba90bbe5756f3d22fe700125c2f4b75a4f1387084",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-dc0caf17/spine.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-c0e27374/spine.json.gz"
     },
     "stories-intl.tar.gz": {
       "bytes": 3074422,
@@ -33,7 +33,7 @@
     "tables.json.gz": {
       "bytes": 45048,
       "sha256": "eea070f93260f8bd848180bcdbb60a8e7a597b02ca3cc425b97952eba5c8e267",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-dc0caf17/tables.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.200-c0e27374/tables.json.gz"
     }
   },
   "masterHash": "c045774b66a6c9d107739ba5ca121e6a",
@@ -54,7 +54,7 @@
     "hash": "c045774b66a6c9d107739ba5ca121e6a",
     "version": "1.1.0.200"
   },
-  "releaseId": "r-00c252da6a893c592c7d",
+  "releaseId": "r-db2ed25240cda09de229",
   "server": "intl",
   "stories": {
     "input": "d1442191767a0253e1869eb91f4e91723698de1d51bab1447c5d242e5c2dbf06",
@@ -66,6 +66,6 @@
       "stories-intl.tar.gz"
     ]
   },
-  "tag": "feed-intl-1.1.0.200-dc0caf17",
+  "tag": "feed-intl-1.1.0.200-c0e27374",
   "versionSchema": 2
 }
