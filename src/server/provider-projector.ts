@@ -6,10 +6,7 @@ import { projectSekaiSongs, projectSekaiBands, projectSekaiEventStories, project
 import type { ProviderSourceReader } from "../../worker/provider-source";
 
 type Row = Record<string, unknown>;
-export const PROVIDER_STORY_SECTIONS = {
-  bestdori: ["event", "band", "main", "afterlive", "card"],
-  sekai: ["event", "unit", "character", "card", "area", "special", "mysekai", "live"],
-} as const;
+export { PROVIDER_STORY_SECTIONS } from "../lib/provider-page-data";
 
 /** The build uses the same projectors and source selection as live provider routes. */
 export function createProviderProjector(reader: ProviderSourceReader) {

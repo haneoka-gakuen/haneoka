@@ -1,6 +1,6 @@
 import { navigationDocumentUrl } from "./document-url";
 import { clientText } from "../i18n/client";
-import { parseEntitySelection, resourceCollectionHref, resourcePath } from "./resource-route";
+import { parseEntitySelection, resourceCollectionHref, resourcePath, type EntityLink } from "./resource-route";
 
 type Listener = { path: string; owner?: Element; update: () => void };
 const listeners = new Set<Listener>();
@@ -150,4 +150,43 @@ export function updateEntityHeading(owner: HTMLElement, title: string, language?
   heading.dataset.entityTitle = "true";
   if (language) heading.lang = language;
   else heading.removeAttribute("lang");
+}
+
+export function updateEntityNeighbors(
+  owner: HTMLElement,
+  locale: string,
+  neighbors: Partial<Record<"previous" | "next", EntityLink>>,
+): void {
+  const group = owner.closest("[data-shell]")?.querySelector(".top-app-bar__secondary-actions");
+  if (!group) return;
+  for (const direction of ["previous", "next"] as const) {
+    const neighbor = neighbors[direction];
+    let link = group.querySelector<HTMLAnchorElement>(`[data-entity-navigation="${direction}"]`);
+    if (!neighbor) {
+      link?.remove();
+      continue;
+    }
+    if (!link) {
+      link = document.createElement("a");
+      link.className = "icon-button";
+      link.dataset.entityNavigation = direction;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "material-icon");
+      svg.setAttribute("width", "24");
+      svg.setAttribute("height", "24");
+      svg.setAttribute("aria-hidden", "true");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", direction === "previous" ? "/icons.svg#chevron_left" : "/icons.svg#chevron_right");
+      svg.append(use);
+      link.append(svg);
+      group.append(link);
+    }
+    link.href = neighbor.href;
+    link.dataset.entityBaseHref = neighbor.href;
+    link.setAttribute(
+      "aria-label",
+      `${clientText(locale, `common.actions.${direction}`)}${neighbor.title ? `: ${neighbor.title}` : ""}`,
+    );
+  }
+  syncEntityNavigation();
 }

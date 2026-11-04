@@ -28,6 +28,8 @@ import {
   closeDetailLocation,
   observeDetailLocation,
   updateEntityHeading,
+  updateEntityNeighbors,
+  entityReturnHref,
 } from "../lib/detail-navigation";
 import { RequestScope } from "../lib/request-scope";
 import { LitElement, html, nothing } from "lit";
@@ -89,6 +91,8 @@ import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cro
 import { catalogServerMark, catalogSourceChoices, serverAvailabilityImage } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { providerEntityRoute } from "../lib/provider-entity-data";
+import { providerEntityFromUrl } from "../lib/provider-entity-routing";
+import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
 import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
 import {
   providerEntityJsonPath,
@@ -658,6 +662,17 @@ export class StoryWorkspace extends LitElement {
       return;
     }
     const documentUrl = navigationDocumentUrl();
+    const providerEntity = this.isProvider() ? providerEntityFromUrl(documentUrl) : undefined;
+    if (providerEntity && providerEntity.resource !== "songs") {
+      this.entityId = providerEntity.id;
+      if (this.hasAttribute("data-provider-entity-shell"))
+        applyCommunityDocumentMetadata(
+          document,
+          providerEntity.locale,
+          (locale) => providerEntityRoute({ ...providerEntity, locale: locale as Locale }),
+          "https://haneoka.org",
+        );
+    }
     const selection = parseEntitySelection(documentUrl.pathname);
     if (this.origin === "release" && selection?.source === "canonical" && selection.route.kind === "stories")
       this.entityId = selection.route.id;
@@ -723,6 +738,7 @@ export class StoryWorkspace extends LitElement {
         if (back) back.href = this.reader.backHref;
       }
     }
+    this.syncProviderShellNavigation();
     this.syncAppBarActions();
     // Focus stays inside a detail while it is open.
     this.paneFocus.sync(
@@ -828,6 +844,10 @@ export class StoryWorkspace extends LitElement {
     const page = readPageData<
       StoryPayload | WorkspaceCollectionPayload | ProviderCollectionPayload | ProviderEntityPayload
     >(this);
+    if (this.hasAttribute("data-provider-entity-shell")) {
+      await this.loadProviderEntityShell(signal);
+      return;
+    }
     if (page?.schema === "haneoka-provider-entity-v1" && page.provider === this.origin) {
       try {
         const payload = page.locale === this.locale ? page : await this.providerEntity(page.resource, page.id, signal);
@@ -917,6 +937,85 @@ export class StoryWorkspace extends LitElement {
       this.error = error instanceof Error ? error.message : String(error);
       this.catalogRequests.cancel();
     }
+  }
+  private async loadProviderEntityShell(signal: AbortSignal) {
+    const active = () => this.isConnected && this.catalogRequests.current(signal);
+    this.detailRequests.cancel();
+    this.dataset.entityReady = "false";
+    this.phase = "loading";
+    this.error = "";
+    this.detailError = "";
+    this.detailLoading = true;
+    this.detailMode = "text";
+    this.stopStoryPlayback();
+    this.detailEpisode = null;
+    this.detailCard = null;
+    try {
+      await this.loadBestdori(signal);
+      if (!active()) return;
+      this.phase = "ready";
+      if (this.isCardSection() && this.entityId.startsWith("card.")) {
+        const card = recordValues(this.episodes).find((item) => item.resourceSetName === this.entityId.split(".")[1]);
+        if (card) {
+          const detail = await fetchJson<JsonRecord>(
+            `${this.providerBase()}/cards/${encodeURIComponent(String(card.cardId))}?lang=${encodeURIComponent(this.locale)}`,
+            { signal },
+          );
+          if (!active()) return;
+          this.detailCard = detail;
+        }
+      }
+      if (this.isCardSection() && !this.entityId.startsWith("card."))
+        await this.openBestdoriCard(this.episodeForId(this.entityId) || { cardId: this.entityId });
+      else await this.openScenario(this.entityId);
+      if (active() && !this.detailError) this.dataset.entityReady = "true";
+    } catch (error) {
+      if (active()) {
+        this.phase = "error";
+        this.error = error instanceof Error ? error.message : String(error);
+        this.detailLoading = false;
+      }
+    }
+  }
+  private syncProviderShellNavigation() {
+    if (!this.hasAttribute("data-provider-entity-shell") || this.detailLoading || this.detailError) return;
+    const episode = this.detailEpisode;
+    const value = episode
+      ? this.episodeTitleValue(episode)
+      : this.detailCard
+        ? resolveLocalizedText(this.detailCard.prefix, this.locale)
+        : undefined;
+    if (!value?.text) return;
+    updateEntityHeading(this, value.text, value.locale);
+    document.title = `${value.text} / haneoka`;
+    if (episode && this.detailCard) {
+      const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
+      if (back) {
+        back.dataset.entityFallbackHref = providerEntityRoute({
+          provider: "bestdori",
+          locale: this.locale as Locale,
+          resource: "cards",
+          id: String(this.detailCard.cardId),
+        });
+        back.href = entityReturnHref()!;
+      }
+    }
+    const chapter = episode ? this.chapterOf(episode) : undefined;
+    const sequence =
+      this.isCardSection() && this.detailCard
+        ? (this.detailCard.episodes as JsonRecord[]).map((row) => ({
+            ...row,
+            storyId: `card.${row.resourceSetName || this.detailCard!.resourceSetName}.${row.scenarioId}`,
+          }))
+        : chapter
+          ? this.chapterEpisodes(chapter)
+          : this.allEpisodes();
+    const index = episode ? sequence.findIndex((row) => this.episodeId(row) === this.entityId) : -1;
+    const neighbor = (row: JsonRecord | undefined) =>
+      row ? { href: this.storyHref(row)!, title: this.episodeTitle(row) } : undefined;
+    const previous = index > 0 ? neighbor(sequence[index - 1]) : undefined;
+    const next = index >= 0 ? neighbor(sequence[index + 1]) : undefined;
+    updateEntityNeighbors(this, this.locale, { ...(previous ? { previous } : {}), ...(next ? { next } : {}) });
   }
   private loadDetailSources(signal?: AbortSignal): boolean {
     const server = this.dataServer();
@@ -1658,7 +1757,7 @@ export class StoryWorkspace extends LitElement {
     Object.entries(this.facets).forEach(([key, values]) => values.forEach((value) => p.append(key, value)));
     const open = this.detailEpisode ? this.episodeId(this.detailEpisode) : "";
     if (open && !this.entityId) p.set("story", open);
-    if (this.detailCard?.cardId) p.set("card", String(this.detailCard.cardId));
+    if (this.detailCard?.cardId && !this.entityId) p.set("card", String(this.detailCard.cardId));
     history.replaceState(history.state, "", `${location.pathname}${p.size ? `?${p}` : ""}`);
   }
 
@@ -1684,7 +1783,7 @@ export class StoryWorkspace extends LitElement {
         ? `/${this.locale}${url.pathname.replace(/\/+$/u, "")}/`
         : url.pathname;
     const returnTo =
-      this.isProvider() && this.detailCard && id.startsWith("card.")
+      this.isProvider() && this.detailCard && !this.detailEpisode && id.startsWith("card.")
         ? `${url.pathname}${url.search}`
         : this.entityId
           ? url.searchParams.get("return") || undefined
@@ -1762,7 +1861,10 @@ export class StoryWorkspace extends LitElement {
     this.detailLoading = true;
     this.sync();
     try {
-      const payload = this.isProvider() ? await this.providerEntity("stories", id, signal) : undefined;
+      const payload =
+        this.isProvider() && !this.hasAttribute("data-provider-entity-shell")
+          ? await this.providerEntity("stories", id, signal)
+          : undefined;
       const detail = payload
         ? payload.detail
         : await fetchJson<JsonRecord>(
@@ -1798,20 +1900,16 @@ export class StoryWorkspace extends LitElement {
       openDetailLocation(this.storyHref(item)!);
       return;
     }
-    const params = new URLSearchParams(location.search);
     const cardId = String(item.cardId || "");
-    if (cardId && params.get("card") !== cardId) {
-      params.set("card", cardId);
-      params.delete("story");
-      openDetailLocation(`${location.pathname}?${params}`);
-    }
     const signal = this.detailRequests.begin();
     this.bestdoriDetail ??= await import("./bestdori-community-detail");
     if (!this.detailRequests.current(signal)) return;
     this.detailLoading = true;
     this.detailCard = item;
     try {
-      const payload = await this.providerEntity("cards", String(item.cardId || ""), signal);
+      const payload = this.hasAttribute("data-provider-entity-shell")
+        ? undefined
+        : await this.providerEntity("cards", String(item.cardId || ""), signal);
       const detail =
         payload?.detail ||
         (await fetchJson<JsonRecord>(
@@ -2085,7 +2183,12 @@ export class StoryWorkspace extends LitElement {
               const group = shown.filter((episode) => this.episodeGroup(episode) === kind);
               return group.length
                 ? storyEpisodeGroup(
-                    uiText(this.locale, this.mode === "event" && kind === "bandStory" ? "story.labels.eventStory" : (uiLabelPaths[kind] ?? kind)),
+                    uiText(
+                      this.locale,
+                      this.mode === "event" && kind === "bandStory"
+                        ? "story.labels.eventStory"
+                        : (uiLabelPaths[kind] ?? kind),
+                    ),
                     episodes.filter((episode) => this.episodeGroup(episode) === kind).length,
                     this.renderEpisodeCollection(group),
                   )

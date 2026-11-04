@@ -7,6 +7,7 @@ import {
   legacyProviderRedirectTarget,
   providerEntityFromUrl,
   providerEntityPhysicalPath,
+  providerStoryShellPath,
 } from "../lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "../lib/provider-entity-data";
 import { providerEntityManifestEntry, providerEntityRoot } from "./provider-entity-manifest";
@@ -47,6 +48,10 @@ export function installProviderDevRouting(server: DevServer): void {
           ? providerEntityManifestEntry(providerEntityHtmlPath(selected), true)
           : undefined;
         if (entry) request.url = `${providerEntityPhysicalPath(entry)}${url.search}`;
+        else {
+          const shell = providerStoryShellPath(url.pathname);
+          if (shell) request.url = `${shell}${url.search}`;
+        }
       } else {
         const view = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) || staticViewFromUrl(url);
         if (view) request.url = `${view}${url.search}`;

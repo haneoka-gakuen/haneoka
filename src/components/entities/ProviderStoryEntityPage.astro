@@ -1,0 +1,24 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../AppShell.astro";
+import { t } from "../../i18n/messages";
+import type { Locale } from "../../i18n/locales";
+import type { CatalogProvider } from "../../lib/provider-page-data";
+import { renderProviderStoryShell } from "../../server/render-provider";
+import "../../styles/story.css";
+
+interface Props { locale: Locale; provider: CatalogProvider; section: string }
+const { locale, provider, section } = Astro.props;
+const route = `/community/${provider === "bestdori" ? "gbp" : "sekai"}/stories/${section}`;
+const titleKey = provider === "bestdori"
+  ? `story.navigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`
+  : `community.page.sekai.stories.${section}`;
+const title = t(locale, titleKey);
+const rendered = renderProviderStoryShell(locale, route);
+---
+<Base locale={locale} route={route} title={title} canonicalRoute={`/${locale}${route}/_/`} noindex>
+  <AppShell locale={locale} route={route} title={title} entity={{ title, backHref: `/${locale}${route}/` }} appBar={rendered.appBar}>
+    <story-workspace locale={locale} origin={provider} mode={section} entity-id="_" data-provider-entity-shell data-prerendered set:html={rendered.body}></story-workspace>
+  </AppShell>
+</Base>
+<script>import "../../lit/story-workspace";</script>

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 供应方集合、实体载荷或核心实体壳的语言与分类。
+// Output: 共用故事／歌曲组件的正文和应用栏静态首屏。
+// Pos: [Map](L2-2.md)；供应方页面的 SSR 与核心故事壳入口。
+// Effects/Dependencies: 初始化 SSR 语言上下文；详情壳不请求供应方资料。
 import { renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
 import { CatalogScreen } from "../lit/catalog-screen";
 import { StoryWorkspace } from "../lit/story-workspace";
@@ -29,6 +34,12 @@ export function renderProviderStories(
   useStaticLocale(locale, route);
   const workspace = new StoryWorkspace();
   workspace.prepareProviderCollection(payload, locale, mode);
+  return renderWorkspacePage(workspace, locale, route);
+}
+export function renderProviderStoryShell(locale: Locale, route: string): StaticWorkspacePage {
+  const workspace = new StoryWorkspace();
+  workspace.locale = locale;
+  workspace.entityId = "_";
   return renderWorkspacePage(workspace, locale, route);
 }
 

@@ -4187,6 +4187,9 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
         const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
         if (hit) return hit;
       }
+      if (provider && provider.resource !== "songs")
+        return (await notFoundDocument(assetRequest, env, provider.locale)) ??
+          new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
       if (view) {
         const hit = await env.ASSETS.fetch(new Request(new URL(view, url), assetRequest));
         if (hit.status !== 404) return hit;

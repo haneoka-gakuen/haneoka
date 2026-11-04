@@ -24,7 +24,11 @@ import {
   providerEntityRoot,
   readProviderEntityPayload,
 } from "./server/provider-entity-manifest";
-import { providerEntityFromUrl, providerEntityPhysicalPath } from "./lib/provider-entity-routing";
+import {
+  providerEntityFromUrl,
+  providerEntityPhysicalPath,
+  providerStoryShellPath,
+} from "./lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "./lib/provider-entity-data";
 import { withMaterialStylePreloads } from "./server/material-ssr-styles";
 
@@ -78,6 +82,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
         return context.rewrite(target);
       }
     }
+    const providerShell = providerStoryShellPath(context.url.pathname);
+    if (providerShell) return context.rewrite(new URL(`${providerShell}${context.url.search}`, context.url));
     const community =
       /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/(posts\/[^/]+(?:\/edit)?|users\/[^/]+|forums\/[^/]+)\/?$/u.exec(
         context.url.pathname,

@@ -8,6 +8,7 @@ import { assetStaticLookupPath } from "./asset-static-routing.ts";
 import { playlistStaticLookupPath } from "./playlists/static-routing.ts";
 import { communityStoryShellPath } from "./community-story-route.ts";
 import { communityChartShellPath } from "./community-chart-route.ts";
+import { providerStoryShellPath } from "./provider-entity-routing.ts";
 
 export const STATIC_DOCUMENT_SCHEMA = "haneoka-static-documents-v2";
 export const STATIC_DOCUMENT_INDEX_ROOT = "/provider-static/index";
@@ -156,13 +157,25 @@ export function isCoreFallbackShell(pathname: string): boolean {
   const parts = routePath.split("/").filter(Boolean);
   if (/^(ja|en|ko|zh-CN|zh-TW)$/u.test(parts[0] || "")) {
     if (parts.length <= 2) return true;
-    if (["community/forums", "community/feeds", "community/charts", "community/stories", "admin/forums", "catalog/assets"].includes(parts.slice(1).join("/"))) return true;
+    if (
+      [
+        "community/forums",
+        "community/feeds",
+        "community/charts",
+        "community/stories",
+        "admin/forums",
+        "catalog/assets",
+      ].includes(parts.slice(1).join("/"))
+    )
+      return true;
   }
   if (/^\/(jp|intl)\/(ja|en|ko|zh-CN|zh-TW)\/(assets\/|announcements\/detail\/)$/u.test(routePath)) return true;
   if (/^\/(jp|intl)\/(ja|en|ko|zh-CN|zh-TW)\/(?:calendar\/|announcements\/)?$/u.test(routePath)) return true;
   return false;
 }
 export function staticDocumentLookupPath(pathname: string): string | undefined {
+  const providerShell = providerStoryShellPath(pathname);
+  if (providerShell) return coreStaticDocumentPath(providerShell);
   const storyShell = communityStoryShellPath(pathname);
   if (storyShell) return coreStaticDocumentPath(storyShell);
   const chartShell = communityChartShellPath(pathname);

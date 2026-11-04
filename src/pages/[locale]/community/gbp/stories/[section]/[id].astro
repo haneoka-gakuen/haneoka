@@ -1,0 +1,12 @@
+---
+import { staticBuildPaths } from "../../../../../../server/static-build";
+import Page from "../../../../../../components/entities/ProviderStoryEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../../../i18n/locales";
+import { PROVIDER_STORY_SECTIONS } from "../../../../../../lib/provider-page-data";
+export function getStaticPaths() {
+  return staticBuildPaths("src/pages/[locale]/community/gbp/stories/[section]/[id].astro", LOCALES.flatMap(locale =>
+    PROVIDER_STORY_SECTIONS.bestdori.map(section => ({ params: { locale, section, id: "_" } })),
+  ));
+}
+---
+<Page locale={Astro.params.locale as Locale} provider="bestdori" section={Astro.params.section!} />

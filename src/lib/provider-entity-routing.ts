@@ -1,5 +1,6 @@
 import { isLocale } from "@haneoka/i18n";
-import { providerEntityHtmlPath, type ProviderEntityLocator } from "./provider-entity-data.ts";
+import { providerEntityHtmlPath, providerEntityRoute, type ProviderEntityLocator } from "./provider-entity-data.ts";
+import { PROVIDER_STORY_SECTIONS } from "./provider-page-data.ts";
 
 function entityId(value: string | null): string | undefined {
   return value && value.length <= 768 && value !== "." && value !== ".." && !/[\\/\u0000-\u001f\u007f]/u.test(value)
@@ -45,6 +46,10 @@ export function providerEntityFromUrl(url: URL): ProviderEntityLocator | undefin
 export function legacyProviderRedirectTarget(pathname: string, search = ""): string | undefined {
   const parts = pathname.split("/").filter(Boolean);
   if (!isLocale(parts[0]) || parts[1] !== "community") return;
+  if (parts.length === 6 && parts[3] === "stories" && !pathname.endsWith("/")) {
+    const entry = providerEntityFromUrl(new URL(pathname, "https://haneoka.org"));
+    if (entry) return `${providerEntityRoute(entry)}${search}`;
+  }
   if ((parts[2] === "gbp" || parts[2] === "sekai") && parts[3] === "stories" && parts.length === 5) {
     const query = new URLSearchParams(search);
     const story = entityId(query.get("story"));
@@ -65,4 +70,11 @@ export function legacyProviderRedirectTarget(pathname: string, search = ""): str
 }
 export function providerEntityPhysicalPath(entry: ProviderEntityLocator): string {
   return providerEntityHtmlPath(entry).replace(/\.html$/u, "/");
+}
+export function providerStoryShellPath(pathname: string): string | undefined {
+  const entry = providerEntityFromUrl(new URL(pathname, "https://haneoka.org"));
+  if (!entry || entry.resource === "songs" || entry.id === "_") return;
+  const section = entry.resource === "cards" ? "card" : entry.section!;
+  if (!(PROVIDER_STORY_SECTIONS[entry.provider] as readonly string[]).includes(section)) return;
+  return `/${entry.locale}/community/${entry.provider === "bestdori" ? "gbp" : "sekai"}/stories/${section}/_/`;
 }
