@@ -5158,7 +5158,11 @@
       "cloudUnsaved": "Changes not synced",
       "reviewAllowed": "Approved",
       "reviewBlocked": "Rejected",
-      "reviewHistoryEmpty": "No review history"
+      "reviewHistoryEmpty": "No review history",
+      "importStory": "Import Our Notes story",
+      "assetServer": "Server",
+      "assetEmpty": "No assets",
+      "storyCount": "{count} stories"
     }
   },
   "legal": {

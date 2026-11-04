@@ -377,6 +377,7 @@
     "src/lit/community-stories.ts",
     "src/lit/story-asset-reviews.ts",
     "src/lit/story-creation-workspace.ts",
+    "src/lit/story-import-picker.ts",
     "worker/community-stories.ts",
     "worker/community-story-assets.ts",
     "worker/community-story-moderation.ts",

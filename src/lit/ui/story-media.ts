@@ -1,13 +1,23 @@
 import { html, nothing } from "lit";
 import { nextImageCandidate } from "./lazy-images";
 import "../../styles/story-media.css";
-export function storyCastMedia(characters: ReadonlyArray<{ name: string; image: string }>, background = "") {
+export function storyCastMedia(
+  characters: ReadonlyArray<{ name: string; image: string }>,
+  background = "",
+  referrerPolicy?: ReferrerPolicy,
+) {
   return html`
     <span class=${`story-cast-media ${background ? "story-cast-media--home" : ""}`}>
       ${
         background
           ? html`
-              <img class="story-cast-media__background" data-src=${background} alt="" @error=${nextImageCandidate} />
+              <img
+                class="story-cast-media__background"
+                data-src=${background}
+                alt=""
+                referrerpolicy=${referrerPolicy || nothing}
+                @error=${nextImageCandidate}
+              />
             `
           : nothing
       }
@@ -18,7 +28,12 @@ export function storyCastMedia(characters: ReadonlyArray<{ name: string; image: 
               ${
                 character.image
                   ? html`
-                      <img data-src=${character.image} alt=${character.name} @error=${nextImageCandidate} />
+                      <img
+                        data-src=${character.image}
+                        alt=${character.name}
+                        referrerpolicy=${referrerPolicy || nothing}
+                        @error=${nextImageCandidate}
+                      />
                     `
                   : html`
                       <span>${character.name}</span>
@@ -29,5 +44,17 @@ export function storyCastMedia(characters: ReadonlyArray<{ name: string; image: 
         )}
       </span>
     </span>
+  `;
+}
+
+export function storyEpisodeGroup(title: string, count: number, content: unknown) {
+  return html`
+    <section class="story-episode-group">
+      <h3>
+        ${title}
+        <small>${count}</small>
+      </h3>
+      ${content}
+    </section>
   `;
 }

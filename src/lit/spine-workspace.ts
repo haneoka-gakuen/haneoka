@@ -14,8 +14,8 @@ import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
 import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
-import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
+import { spineTileOptions, spineModelTitle, spineModelFamily } from "./ui/model-tile";
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { LazyImages } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
@@ -407,17 +407,10 @@ export class SpineWorkspace extends LitElement {
     }
   }
   private modelTitle(model: Value) {
-    return (
-      String(model.sourcePathKey || model.id || uiText(this.locale, "navigation.spine"))
-        .split("/")
-        .at(-1)
-        ?.replace(/_SkeletonData(?:\.asset)?$/i, "") || String(model.id)
-    );
+    return spineModelTitle(model, this.locale);
   }
   private familyName(value: unknown) {
-    const family = String(value || "");
-    if (family === "home-spot") return uiText(this.locale, "media.spine.families.homeSpot");
-    return family || "—";
+    return spineModelFamily(value, this.locale);
   }
   private async select(id: string, updateUrl = true, prepared?: Value, source?: string) {
     if (updateUrl && (id !== this.entityId || (source && source !== readReleaseServer()))) {
@@ -899,18 +892,12 @@ export class SpineWorkspace extends LitElement {
     return "";
   }
   private renderModelCard(model: Value) {
-    const title = this.modelTitle(model);
-    return tile({
-      kind: "model",
-      title,
-      subtitle: this.familyName(model.family || model.spineVersion || "Spine"),
-      label: title,
-      image: this.preview(model),
-      placeholder: icon("animation", 32),
-      fit: "contain",
+    return tile(spineTileOptions({
+      model,
+      locale: this.locale,
       serverMark: catalogServerMark(this.unionModels?.entries.get(model), this.locale),
       onOpen: () => this.selectModel(model),
-    });
+    }));
   }
   private renderSimpleList(models: Value[]) {
     return collectionList(

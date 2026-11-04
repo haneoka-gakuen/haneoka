@@ -5158,7 +5158,11 @@
       "cloudUnsaved": "未同期の変更あり",
       "reviewAllowed": "承認済み",
       "reviewBlocked": "却下済み",
-      "reviewHistoryEmpty": "審査履歴はありません"
+      "reviewHistoryEmpty": "審査履歴はありません",
+      "importStory": "Our Notes のストーリーを読み込む",
+      "assetServer": "サーバー",
+      "assetEmpty": "素材はありません",
+      "storyCount": "{count} 件のストーリー"
     }
   },
   "legal": {

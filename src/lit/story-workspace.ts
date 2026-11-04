@@ -66,7 +66,7 @@ import { specList } from "./ui/spec";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { tile } from "./ui/tile";
 import { storyTile } from "./shared/story-tile";
-import { storyCastMedia } from "./ui/story-media";
+import { storyCastMedia, storyEpisodeGroup } from "./ui/story-media";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { dialogueRow } from "./ui/dialogue-row";
 import { characterPair } from "./ui/character-pair";
@@ -2084,15 +2084,11 @@ export class StoryWorkspace extends LitElement {
           ? ["bandStory", "extraStory", "perspectiveStory"].map((kind) => {
               const group = shown.filter((episode) => this.episodeGroup(episode) === kind);
               return group.length
-                ? html`
-                    <section class="story-episode-group">
-                      <h3>
-                        ${uiText(this.locale, this.mode === "event" && kind === "bandStory" ? "story.labels.eventStory" : (uiLabelPaths[kind] ?? kind))}
-                        <small>${episodes.filter((episode) => this.episodeGroup(episode) === kind).length}</small>
-                      </h3>
-                      ${this.renderEpisodeCollection(group)}
-                    </section>
-                  `
+                ? storyEpisodeGroup(
+                    uiText(this.locale, this.mode === "event" && kind === "bandStory" ? "story.labels.eventStory" : (uiLabelPaths[kind] ?? kind)),
+                    episodes.filter((episode) => this.episodeGroup(episode) === kind).length,
+                    this.renderEpisodeCollection(group),
+                  )
                 : nothing;
             })
           : this.renderEpisodeCollection(shown)

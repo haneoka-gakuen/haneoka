@@ -5158,7 +5158,11 @@
       "cloudUnsaved": "有未同步的修改",
       "reviewAllowed": "已通過",
       "reviewBlocked": "未通過",
-      "reviewHistoryEmpty": "沒有審核記錄"
+      "reviewHistoryEmpty": "沒有審核記錄",
+      "importStory": "匯入 Our Notes 故事",
+      "assetServer": "伺服器",
+      "assetEmpty": "暫無素材",
+      "storyCount": "{count} 篇故事"
     }
   },
   "legal": {

@@ -1,4 +1,4 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
 import { icon } from "../ui/icon";
 import type { TileMark, TileOptions } from "../ui/tile";
 
@@ -23,7 +23,14 @@ export function storyTile(
     aspectRatio: "16 / 9",
     adornment: identityImage
       ? html`
-          <img src=${identityImage} alt="" width="16" height="16" loading="lazy" />
+          <img
+            src=${identityImage}
+            alt=""
+            width="16"
+            height="16"
+            loading="lazy"
+            referrerpolicy=${base.referrerPolicy || nothing}
+          />
         `
       : undefined,
     placeholder: icon("auto_stories", 32),

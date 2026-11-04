@@ -2,6 +2,7 @@ import { html, nothing } from "lit";
 import "../../styles/components/selection-pane.css";
 import { live } from "lit/directives/live.js";
 import "@material/web/checkbox/checkbox.js";
+import "@material/web/textfield/outlined-text-field.js";
 import { tile, tileMedia, type TileOptions } from "./tile";
 import { rovingKeydown } from "./controls";
 import { chooserHeader, chooserFilters } from "./chooser-filters";
@@ -27,7 +28,11 @@ export function selectionPane(options: {
   status?: unknown;
   /** Stamp-style chip groups; existing other callers may still supply fields. */
   filterLayout?: "facets" | "fields";
-  kind: "member" | "support" | "song" | "system";
+  kind: "member" | "support" | "song" | "system" | "model" | "story";
+  collectionClass?: string;
+  groups?: readonly { title: string; values: ReadonlySet<string> }[];
+  renderGroup?: (title: string, count: number, content: unknown) => unknown;
+  renderItem?: (item: TileOptions & { value: string; disabled?: boolean }, index: number) => unknown;
   items: ReadonlyArray<TileOptions & { value: string; disabled?: boolean }>;
   /** Keeps unavailable choices visible with the native disabled state. */
   disabled?: boolean;
@@ -43,7 +48,76 @@ export function selectionPane(options: {
   preview: unknown;
 }) {
   const previewId = `${options.id}-preview`;
+  const orderedItems =
+    options.groups && options.renderGroup
+      ? options.groups.flatMap((group) => options.items.filter((item) => group.values.has(item.value)))
+      : options.items;
+  const indexes = new Map(orderedItems.map((item, index) => [item, index]));
   const selectedVisible = options.items.some((item) => item.value === options.selected);
+  const collection = (items: typeof options.items, grouped = false) => html`
+    <div
+      class=${options.collectionClass ?? `collection collection--${options.kind}`}
+      role=${grouped ? nothing : options.selectedValues ? "group" : "tablist"}
+      aria-label=${options.title}
+      @keydown=${
+            grouped || options.selectedValues
+              ? nothing
+              : rovingKeydown(
+                  options.items.map((item) => item.value),
+                  options.selected,
+                  options.select,
+                )
+          }
+    >
+      ${items.map((item) => {
+            const index = indexes.get(item)!;
+            return options.selectedValues
+              ? html`
+                  <label
+                    class=${`tile tile--${item.kind ?? options.kind} selection-pane__choice${options.selectedValues.has(item.value) ? " is-selected" : ""}`}
+                    style=${item.style || nothing}
+                  >
+                    <span class="selection-pane__choice-media">
+                      ${tileMedia(item)}
+                      <md-checkbox
+                        class="selection-pane__choice-checkbox"
+                        touch-target="wrapper"
+                        ?disabled=${options.disabled || item.disabled}
+                        .checked=${live(options.selectedValues.has(item.value))}
+                        aria-label=${item.label}
+                        @change=${() => {
+                          if (!options.disabled && !item.disabled) options.select(item.value);
+                        }}
+                      ></md-checkbox>
+                    </span>
+                    <span class="tile__identity">
+                      <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
+                      ${
+                        item.subtitle === undefined || item.subtitle === null
+                          ? nothing
+                          : html`
+                              <small class="tile__subtitle">
+                                ${item.adornment ?? nothing}
+                                <span>${item.subtitle}</span>
+                              </small>
+                            `
+                      }
+                    </span>
+                  </label>
+                `
+              : options.renderItem
+                ? options.renderItem(item, index)
+                : tile({
+                    ...item,
+                    selected: item.value === options.selected,
+                    role: "tab",
+                    controls: previewId,
+                    tabIndex: item.value === options.selected || (!selectedVisible && index === 0) ? 0 : -1,
+                    onOpen: () => options.select(item.value),
+                  });
+          })}
+    </div>
+  `;
   return html`
     <dialog
       ?data-managed-modal=${options.managed}
@@ -92,65 +166,26 @@ export function selectionPane(options: {
         ${options.quickFilters ?? nothing}
         <p role="status" class="team-builder__hint">${options.countLabel}</p>
         ${options.status ?? nothing}
-        <div
-          class=${`collection collection--${options.kind}`}
-          role=${options.selectedValues ? "group" : "tablist"}
-          aria-label=${options.title}
-          @keydown=${
-            options.selectedValues
-              ? nothing
-              : rovingKeydown(
-                  options.items.map((item) => item.value),
-                  options.selected,
-                  options.select,
-                )
-          }
-        >
-          ${options.items.map((item, index) =>
-            options.selectedValues
-              ? html`
-                  <label
-                    class=${`tile tile--${item.kind ?? options.kind} selection-pane__choice${options.selectedValues.has(item.value) ? " is-selected" : ""}`}
-                    style=${item.style || nothing}
-                  >
-                    <span class="selection-pane__choice-media">
-                      ${tileMedia(item)}
-                      <md-checkbox
-                        class="selection-pane__choice-checkbox"
-                        touch-target="wrapper"
-                        ?disabled=${options.disabled || item.disabled}
-                        .checked=${live(options.selectedValues.has(item.value))}
-                        aria-label=${item.label}
-                        @change=${() => {
-                          if (!options.disabled && !item.disabled) options.select(item.value);
-                        }}
-                      ></md-checkbox>
-                    </span>
-                    <span class="tile__identity">
-                      <strong class="tile__title" lang=${item.titleLanguage || nothing}>${item.title}</strong>
-                      ${
-                        item.subtitle === undefined || item.subtitle === null
-                          ? nothing
-                          : html`
-                              <small class="tile__subtitle">
-                                ${item.adornment ?? nothing}
-                                <span>${item.subtitle}</span>
-                              </small>
-                            `
-                      }
-                    </span>
-                  </label>
-                `
-              : tile({
-                  ...item,
-                  selected: item.value === options.selected,
-                  role: "tab",
-                  controls: previewId,
-                  tabIndex: item.value === options.selected || (!selectedVisible && index === 0) ? 0 : -1,
-                  onOpen: () => options.select(item.value),
-                }),
-          )}
-        </div>
+        ${
+          options.groups && options.renderGroup
+            ? html`
+                <div
+                  role="tablist"
+                  aria-label=${options.title}
+                  @keydown=${rovingKeydown(
+                    orderedItems.map((item) => item.value),
+                    options.selected,
+                    options.select,
+                  )}
+                >
+                  ${options.groups.map((group) => {
+            const items = options.items.filter((item) => group.values.has(item.value));
+            return options.renderGroup!(group.title, items.length, collection(items, true));
+          })}
+                </div>
+              `
+            : collection(options.items)
+        }
         ${
           !options.items.length
             ? html`

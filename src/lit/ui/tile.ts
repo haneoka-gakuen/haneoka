@@ -63,6 +63,7 @@ export interface TileOptions {
   adornment?: unknown;
   label: string;
   image: string;
+  referrerPolicy?: ReferrerPolicy;
   imageFallback?: string;
   imageCandidates?: string[];
   /** Known source dimensions. They reserve the media before the request starts. */
@@ -176,6 +177,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
                 width=${Number.isFinite(width) && width > 0 ? String(width) : nothing}
                 height=${Number.isFinite(height) && height > 0 ? String(height) : nothing}
                 decoding="async"
+                referrerpolicy=${options.referrerPolicy ?? nothing}
                 @load=${onImageLoad}
                 @error=${onImageError}
               />

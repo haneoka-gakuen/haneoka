@@ -11,6 +11,7 @@ import { localeFromPath } from "../i18n/locales";
 import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity, setAppBarSearch } from "../lib/app-bar";
 import { viewSwitch, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
+import { assetItem, assetKindText, assetKindIcon } from "./ui/asset-item";
 import {
   indexSourceTree,
   plainSourceName,
@@ -385,7 +386,7 @@ export class AssetExplorer extends LitElement {
   }
   private fileIcon(file: string) {
     const kind = this.kind(file);
-    return kind === "image" ? "image" : kind === "audio" ? "graphic_eq" : kind === "video" ? "movie" : kind === "model" ? "view_in_ar" : kind === "text" ? "code" : "draft";
+    return assetKindIcon(kind);
   }
   /** The folder tree: top level always, then the open branch along the current path. */
   private renderTree(parts: string[] = [], depth = 0): unknown {
@@ -427,15 +428,11 @@ export class AssetExplorer extends LitElement {
         ${this.files.map((file) => {
           const name = AssetExplorer.plainName(this.displayName(file).split("/").at(-1) || "");
           const image = this.view !== "table" && this.kind(file) === "image" ? this.url(file) : "";
-          return html`
-            <button class=${`asset-item${this.selected === file ? " is-selected" : ""}`} title=${name} @click=${() => this.select(file)}>
-              <span class="asset-item__media">
-                ${image ? html`<img src=${image} alt="" loading="lazy" decoding="async" />` : icon(this.fileIcon(file), 24)}
-              </span>
-              <span class="asset-item__name md-body-medium">${name}</span>
-              <span class="asset-item__meta md-body-small">${uiText(preferredLocale(), `navigation.asset${({ image: "Images", audio: "Audio", video: "Video", model: "Models", text: "Data" } as Record<string, string>)[this.kind(file)] ?? "Other"}`)}</span>
-            </button>
-          `;
+          return assetItem({
+            name, image, icon: this.fileIcon(file), selected: this.selected === file,
+            meta: assetKindText(this.kind(file), preferredLocale()),
+            onOpen: () => this.select(file),
+          });
         })}
       `;
     }

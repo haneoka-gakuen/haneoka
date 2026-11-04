@@ -5158,7 +5158,11 @@
       "cloudUnsaved": "동기화하지 않은 변경 사항",
       "reviewAllowed": "승인됨",
       "reviewBlocked": "거부됨",
-      "reviewHistoryEmpty": "검토 기록이 없습니다"
+      "reviewHistoryEmpty": "검토 기록이 없습니다",
+      "importStory": "Our Notes 스토리 가져오기",
+      "assetServer": "서버",
+      "assetEmpty": "소재 없음",
+      "storyCount": "스토리 {count}개"
     }
   },
   "legal": {

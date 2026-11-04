@@ -52,6 +52,9 @@ import { chooserGroup } from "./ui/chooser-filters";
 import { filterChip } from "./ui/controls";
 import { LazyImages } from "./ui/lazy-images";
 import { tile, tileMedia } from "./ui/tile";
+import { modelTileOptions, spineTileOptions } from "./ui/model-tile";
+import { assetItem, assetKindText, assetKindIcon } from "./ui/asset-item";
+let workspaceId = 0;
 export class StoryCreationWorkspace extends LitElement {
   static properties = {
     locale: {},
@@ -68,6 +71,7 @@ export class StoryCreationWorkspace extends LitElement {
     draft: { state: true },
     progress: { state: true },
     assetLibraryOpen: { state: true },
+    storyPickerOpen: { state: true },
     assetLibraryBusy: { state: true },
     assetLibraryError: { state: true },
     assetCatalogue: { state: true },
@@ -91,6 +95,7 @@ export class StoryCreationWorkspace extends LitElement {
   declare private draft: StoryCloudDraft | undefined;
   declare private progress: string;
   declare private assetLibraryOpen: boolean;
+  declare private storyPickerOpen: boolean;
   declare private assetLibraryBusy: boolean;
   declare private assetLibraryError: string;
   declare private assetCatalogue: StudioAssetCatalogue | undefined;
@@ -104,6 +109,7 @@ export class StoryCreationWorkspace extends LitElement {
   private assetImages?: LazyImages;
   private assetImageRoot?: Element;
   private client?: AltairStudioClient;
+  private readonly toolbarOwner = `story-creation-${++workspaceId}`;
   private lifetime = new AbortController();
   private stopLocale?: () => void;
   private themeObserver?: MutationObserver;
@@ -124,6 +130,7 @@ export class StoryCreationWorkspace extends LitElement {
     this.coverQuery = "";
     this.progress = "";
     this.assetLibraryOpen = false;
+    this.storyPickerOpen = false;
     this.assetLibraryBusy = false;
     this.assetLibraryError = "";
     this.assetCategory = "model";
@@ -136,17 +143,18 @@ export class StoryCreationWorkspace extends LitElement {
   }
   private t = (key: string) => clientText(this.locale, `community.stories.${key}`);
   private actionButton(action: StudioAction, artwork: unknown) {
+    const label = this.t(action === "stories" ? "importStory" : action);
     const disabled =
       this.busy ||
       this.state?.busy ||
       (action === "undo" && !this.state?.canUndo) ||
       (action === "redo" && !this.state?.canRedo) ||
-      (!this.state?.projectId && !["new", "import", "folder", "library"].includes(action));
+      (!this.state?.projectId && !["new", "import", "stories", "folder", "library"].includes(action));
     return html`
       <button
         class="icon-button"
-        title=${this.t(action)}
-        aria-label=${this.t(action)}
+        title=${label}
+        aria-label=${label}
         ?disabled=${disabled}
         @click=${() => void this.action(action)}
       >
@@ -156,6 +164,7 @@ export class StoryCreationWorkspace extends LitElement {
   }
   override connectedCallback() {
     super.connectedCallback();
+    if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     this.stopLocale = initializeI18nClient().subscribe((c) => {
       this.locale = c.locale;
       void this.configure();
@@ -165,14 +174,15 @@ export class StoryCreationWorkspace extends LitElement {
   override disconnectedCallback() {
     this.lifetime.abort();
     this.client?.dispose();
+    this.client = undefined;
     this.stopLocale?.();
     this.themeObserver?.disconnect();
     this.assetGeneration++;
     this.assetImages?.disconnect();
     this.releaseCoverImages();
     window.removeEventListener("beforeunload", this.beforeUnload);
-    clearAppBarActions("story-creation");
-    clearAppBarIdentity("story-creation");
+    clearAppBarActions(this.toolbarOwner);
+    clearAppBarIdentity(this.toolbarOwner);
     super.disconnectedCallback();
   }
   private beforeUnload = (event: BeforeUnloadEvent) => {
@@ -182,6 +192,7 @@ export class StoryCreationWorkspace extends LitElement {
     }
   };
   protected override updated() {
+    if (!this.isConnected || this.lifetime.signal.aborted) return;
     if (!this.publicationOpen && this.images.length) {
       this.coverPickerOpen = false;
       this.releaseCoverImages();
@@ -227,7 +238,7 @@ export class StoryCreationWorkspace extends LitElement {
               ? localStatus
               : this.t("local");
     setAppBarActions(
-      "story-creation",
+      this.toolbarOwner,
       html`
         <button
           class="icon-button"
@@ -249,6 +260,7 @@ export class StoryCreationWorkspace extends LitElement {
         </button>
         ${this.actionButton("undo", icon("undo"))} ${this.actionButton("redo", icon("redo"))}
         ${this.actionButton("assets", icon("perm_media"))} ${this.actionButton("import", icon("upload_file"))}
+        ${this.actionButton("stories", icon("auto_stories"))}
         ${this.actionButton("export-game", icon("sports_esports"))}
         ${this.actionButton("export-project", icon("download"))} ${this.actionButton("settings", icon("settings"))}
         ${this.actionButton("library", icon("folder"))} ${this.actionButton("new", icon("add"))}
@@ -302,7 +314,7 @@ export class StoryCreationWorkspace extends LitElement {
       this,
     );
     setAppBarIdentity(
-      "story-creation",
+      this.toolbarOwner,
       html`
         <span
           class="chip"
@@ -351,6 +363,7 @@ export class StoryCreationWorkspace extends LitElement {
     }
   }
   private async connect() {
+    if (!this.isConnected || this.lifetime.signal.aborted) return;
     this.client?.dispose();
     this.client = undefined;
     this.themeObserver?.disconnect();
@@ -362,8 +375,13 @@ export class StoryCreationWorkspace extends LitElement {
     client.subscribe((state) => {
       if (client !== this.client) return;
       this.state = state;
-      void this.selectDraft();
-      if (initialized && !this.loading) this.rememberProject();
+      void this.selectDraft()
+        .then(() => {
+          if (client === this.client && initialized && !this.loading && !this.state?.busy) this.rememberProject();
+        })
+        .catch((error) => {
+          if (client === this.client) this.notify(error);
+        });
     });
     client.onIntent((action) => {
       if (action === "save") void this.save();
@@ -384,7 +402,7 @@ export class StoryCreationWorkspace extends LitElement {
     });
     await this.activeOperation;
     if (client !== this.client || this.lifetime.signal.aborted) return;
-    const initializedFrame = await this.run(async () => {
+    await this.run(async () => {
       await this.configure();
       if (client !== this.client) return;
       const params = new URL(location.href).searchParams,
@@ -431,15 +449,18 @@ export class StoryCreationWorkspace extends LitElement {
         if (state) this.state = state;
       }
     });
-    if (initializedFrame && client === this.client) {
+    if (client === this.client) {
       initialized = true;
       this.rememberProject();
     }
   }
   private rememberProject() {
     const url = new URL(location.href);
-    if (this.state?.projectId) url.searchParams.set("project", this.state.projectId);
-    else url.searchParams.delete("project");
+    if (this.state?.projectId) {
+      url.searchParams.set("project", this.state.projectId);
+      for (const key of ["importStory", "importProvider", "importServer", "importRelease", "importSource"])
+        url.searchParams.delete(key);
+    } else url.searchParams.delete("project");
     if (url.href !== location.href) history.replaceState(null, "", url);
   }
   private async configure() {
@@ -546,6 +567,11 @@ export class StoryCreationWorkspace extends LitElement {
     }
   }
   private async action(action: StudioAction) {
+    if (action === "stories") {
+      await import("./story-import-picker");
+      if (this.isConnected) this.storyPickerOpen = true;
+      return;
+    }
     if (action === "assets") {
       await this.showAssetLibrary();
       return;
@@ -660,6 +686,20 @@ export class StoryCreationWorkspace extends LitElement {
       void this.loadAssetCatalogue();
     };
     const source = this.assetSource;
+    const models = ["model", "spine"].includes(this.assetCategory);
+    const selectAsset = (id: string) => {
+      if (this.assetLibraryBusy) return;
+      const node = nodes.find((node) => node.id === id);
+      if (node?.type === "directory")
+        void this.loadAssetCatalogue({
+          mode: "catalog",
+          source,
+          category: this.assetCategory,
+          layout: "directory",
+          path: node.path,
+        });
+      else this.assetSelected = id;
+    };
     return selectionPane({
       id: "story-server-assets",
       title: `${this.t("assets")} · ${this.t(`assetKinds.${this.assetCategory}`)}`,
@@ -676,6 +716,21 @@ export class StoryCreationWorkspace extends LitElement {
         this.assetFiltersOpen = !this.assetFiltersOpen;
       },
       filterLayout: "facets",
+      quickFilters: chooserGroup(
+        this.t("assetCategory"),
+        html`
+          ${categories.map((category) =>
+            filterChip({
+              label: this.t(`assetKinds.${category}`),
+              selected: this.assetCategory === category,
+              onToggle: () => {
+                this.assetCategory = category;
+                load();
+              },
+            }),
+          )}
+        `,
+      ),
       filters: html`
         ${chooserGroup(
           this.t("assetSource"),
@@ -697,7 +752,7 @@ export class StoryCreationWorkspace extends LitElement {
           `,
         )}
         ${chooserGroup(
-          clientText(this.locale, "editors.story.releaseServer"),
+          this.t("assetServer"),
           html`
             ${(source.provider === "haneoka" ? ["jp", "intl"] : ["jp", "en", "tw", "cn", "kr"]).map((server) =>
               filterChip({
@@ -705,21 +760,6 @@ export class StoryCreationWorkspace extends LitElement {
                 selected: source.server === server,
                 onToggle: () => {
                   this.assetSource = { ...source, server };
-                  load();
-                },
-              }),
-            )}
-          `,
-        )}
-        ${chooserGroup(
-          this.t("assetCategory"),
-          html`
-            ${categories.map((category) =>
-              filterChip({
-                label: this.t(`assetKinds.${category}`),
-                selected: this.assetCategory === category,
-                onToggle: () => {
-                  this.assetCategory = category;
                   load();
                 },
               }),
@@ -775,15 +815,30 @@ export class StoryCreationWorkspace extends LitElement {
           </div>
         </details>
       `,
-      kind: "member",
+      kind: models ? "model" : "system",
+      collectionClass: models ? undefined : "asset-manager__contents asset-manager__contents--grid",
+      renderItem: models
+        ? undefined
+        : (item, index) =>
+            assetItem({
+              name: item.subtitle as string,
+              image: item.image,
+              meta: assetKindText(nodes[index]?.displayKind ?? "other", this.locale),
+              icon: nodes[index]?.type === "directory" ? "folder" : assetKindIcon(nodes[index]?.displayKind ?? "other"),
+              selected: item.value === this.assetSelected,
+              referrerPolicy: "no-referrer",
+              role: "tab",
+              controls: "story-server-assets-preview",
+              tabIndex: item.value === this.assetSelected || (!this.assetSelected && index === 0) ? 0 : -1,
+              onOpen: () => selectAsset(item.value),
+            }),
       items: nodes.map((node) => ({
         value: node.id,
         label: node.title,
         title: node.title,
         subtitle: node.name,
         image: node.image,
-        aspectRatio: node.displayKind === "model" ? "3 / 4" : "4 / 3",
-        fit: "contain" as const,
+        referrerPolicy: "no-referrer" as const,
         placeholder:
           node.type === "directory"
             ? icon("folder", 32)
@@ -792,25 +847,20 @@ export class StoryCreationWorkspace extends LitElement {
               : node.displayKind === "video"
                 ? icon("movie", 32)
                 : icon("image", 32),
+        ...(node.presentation
+          ? (node.presentation.kind === "live2d" ? modelTileOptions : spineTileOptions)({
+              model: { ...node.presentation.data },
+              locale: this.locale,
+              referrerPolicy: "no-referrer",
+            })
+          : {}),
       })),
       selected: this.assetSelected,
-      select: (id) => {
-        if (this.assetLibraryBusy) return;
-        const node = nodes.find((node) => node.id === id);
-        if (node?.type === "directory")
-          void this.loadAssetCatalogue({
-            mode: "catalog",
-            source,
-            category: this.assetCategory,
-            layout: "directory",
-            path: node.path,
-          });
-        else this.assetSelected = id;
-      },
+      select: selectAsset,
       countLabel: this.assetLibraryBusy
         ? this.t("loading")
         : this.t("assetCount").replace("{count}", String(nodes.length)),
-      emptyLabel: this.assetLibraryBusy ? this.t("loading") : this.t("empty"),
+      emptyLabel: this.assetLibraryBusy ? this.t("loading") : this.t("assetEmpty"),
       preview: html`
         ${this.assetLibraryBusy ? loadingState(this.t("loading"), { local: true }) : nothing}
         ${
@@ -1234,6 +1284,27 @@ export class StoryCreationWorkspace extends LitElement {
 
   render() {
     return html`
+      ${
+        this.storyPickerOpen
+          ? html`
+              <story-import-picker
+                .locale=${this.locale}
+                .origin=${this.resourceOrigin || location.origin}
+                .importStory=${async (source: StudioAssetSource, storyId: string) => {
+          const client = this.client;
+          if (!client) throw new Error("studio_unavailable");
+          const state = await client.request<StudioState>("import-source", { source, storyId });
+          if (client !== this.client) throw new DOMException("Project changed", "AbortError");
+          this.state = state;
+          this.rememberProject();
+        }}
+                @story-picker-close=${() => {
+          this.storyPickerOpen = false;
+        }}
+              ></story-import-picker>
+            `
+          : nothing
+      }
       ${this.renderAssetLibrary()}
       <div class="story-creation__frame" aria-busy=${String(this.busy)}>
         <iframe
