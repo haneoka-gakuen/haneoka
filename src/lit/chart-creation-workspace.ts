@@ -2,7 +2,7 @@
 // Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
 // Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
-// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
+// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何随原生谱面缓存；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -69,7 +69,7 @@ import { listPublicCreationSongs, pinnedPublicUrl } from "../lib/chart-creation/
 import { readReleaseServer } from "../lib/release-server";
 import { compileOurNotesCreation } from "../lib/chart-creation/our-notes";
 import { loadOurNotesCreationCanvasSkin, ourNotesCreationCanvasNoteAppearance, createChartCanvasRibbonStyle, drawChartCanvasLanePlane, drawChartCanvasRibbon, interpolateNoteLine, type OurNotesCreationCanvasSkin } from "../lib/chart-creation/native-canvas-skin";
-import type { ChartNote } from "@haneoka/cassiopeia";
+import type { ChartDocument, ChartNote } from "@haneoka/cassiopeia";
 import type { RenderNoteKind } from "@haneoka/cassiopeia-plugin-our-notes";
 import { loadingState } from "./ui/state";
 import { modal } from "./ui/modal";
@@ -351,6 +351,7 @@ export class ChartCreationWorkspace extends LitElement {
   private canvasThemeKey = "";
   private canvasController?: AbortController;
   private flatChart?: { project:Project; value?:ReturnType<typeof compileOurNotesCreation> };
+  private flatLines?: { chart: ChartDocument; lines: { kind: ChartDocument["lines"][number]["kind"]; noteIds: number[]; points: ChartNote[] }[] };
   declare private canvasLoading: boolean;
   declare private canvasFailed: boolean;
   private canvasSkin: ChartSkin = {
@@ -2232,12 +2233,21 @@ export class ChartCreationWorkspace extends LitElement {
     if(skin&&projection){
       ctx.save();
       const changedNative = new Set([...changed].flatMap(id => projection.sourceMap.notesForCanonical(id)));
-      const native=projection.chart, byId=new Map(native.notes.map(note=>[note.id,note]));
-      for(const line of native.lines){
-        ctx.globalAlpha = previewing && !line.noteIds.some(id => changedNative.has(id)) ? 0.4 : 1;
-        const points=line.noteIds.map(id=>byId.get(id)).filter((note):note is ChartNote=>Boolean(note)&&note!.indexInLine!==null).sort((a,b)=>a.timeMs-b.timeMs||a.id-b.id);
+      const native=projection.chart;
+      if(this.flatLines?.chart!==native){
+        const byId=new Map(native.notes.map(note=>[note.id,note]));
+        this.flatLines={chart:native,lines:native.lines.map(line=>({
+          kind:line.kind,noteIds:line.noteIds,
+          points:line.noteIds.map(id=>byId.get(id)).filter((note):note is ChartNote=>Boolean(note)&&note!.indexInLine!==null).sort((a,b)=>a.timeMs-b.timeMs||a.id-b.id),
+        }))};
+      }
+      for(const line of this.flatLines.lines){
+        const points=line.points;
         if(points.length<2)continue;
-        const top=nativeY(points.at(-1)!.timeMs),lineHeight=nativeY(points[0].timeMs)-top;
+        const top=nativeY(points.at(-1)!.timeMs),bottom=nativeY(points[0].timeMs);
+        if(top>height||bottom<0)continue;
+        ctx.globalAlpha = previewing && !line.noteIds.some(id => changedNative.has(id)) ? 0.4 : 1;
+        const lineHeight=bottom-top;
         const style=createChartCanvasRibbonStyle(ctx,line.kind==="guide"?"guide":"slide",lineHeight,24,top,skin.slideLineStyle);
         for(let i=1;i<points.length;i++){
           const head=points[i-1],tail=points[i];
