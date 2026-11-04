@@ -1141,7 +1141,11 @@ export class TeamBuilder extends LitElement {
         message: this.t("farm.conversionConflict", "CP conversion requires {condition}", { condition }),
       });
     }
-    if (s.goal === "event" && s.rewardPlan && !compileRewardPlan(effectiveRewardPlan(s.rewardPlan, s.route !== "live"), { songs: s.planChallengeSongs, consumption: s.challengePoints }))
+    if (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live" && s.rewardRoomMode === "battle" &&
+      (!Number.isInteger(s.rewardPlayers) || s.rewardPlayers < 1 || s.rewardPlayers > 5 ||
+        s.rewardOtherScore !== null && (!Number.isInteger(s.rewardOtherScore) || s.rewardOtherScore < 0 || s.rewardOtherScore > 2147483647)))
+      add("tb-reward-room", "rewardPlan.invalidRoom", "Enter a valid room size and score");
+    if (s.goal === "event" && s.rewardPlan && !compileRewardPlan(effectiveRewardPlan(s.rewardPlan, s.route === "challenge"), { songs: s.planChallengeSongs, consumption: s.challengePoints }))
       add("tb-reward-plan", "rewardPlan.invalidRate", "Enter conversion rates and challenge charts");
     const gekiso = s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live");
     if (gekiso && this.hasMission("JustCount", s.songs) && (!Number.isInteger(s.justWindowMs) || s.justWindowMs < 0))
@@ -1295,10 +1299,11 @@ export class TeamBuilder extends LitElement {
         if (!s.rewardPlan && s.weighted && !(s.weightPoints > 0 || s.weightItems > 0 || (s.route === "live" && s.weightCp > 0)))
           return null;
         if (s.rewardPlan || s.weighted) {
-          const plan = effectiveRewardPlan(s.rewardPlan ?? legacyRewardPlan(s), s.route !== "live");
+          const plan = effectiveRewardPlan(s.rewardPlan ?? legacyRewardPlan(s), s.route === "challenge");
           const compiled = compileRewardPlan(plan, { songs: s.planChallengeSongs, consumption: s.challengePoints });
           if (!compiled) return null;
           return { kind: "event", rewardPlan: compiled, measure: plan.primary,
+            ...(s.ptMode === "gekiso" && s.route === "live" ? { rewardRoom: s.rewardRoomMode === "solo" ? { mode: "solo" as const } : { mode: "battle" as const, players: s.rewardPlayers, ...(s.rewardOtherScore === null ? {} : { otherAverageScore: s.rewardOtherScore }) } } : {}),
             ranking: s.ptMode === "gekiso" && s.route === "live" ? "pt-only" : "primary",
             route: s.route, eventId: s.eventId, songs: s.route === "skip" ? [] : s.songs,
             consumption: s.route === "challenge" ? s.challengePoints : s.boosts, play,
@@ -1307,6 +1312,7 @@ export class TeamBuilder extends LitElement {
         }
         return {
           kind: "event",
+          ...(s.ptMode === "gekiso" && s.route === "live" ? { rewardRoom: s.rewardRoomMode === "solo" ? { mode: "solo" as const } : { mode: "battle" as const, players: s.rewardPlayers, ...(s.rewardOtherScore === null ? {} : { otherAverageScore: s.rewardOtherScore }) } } : {}),
           measure: s.weighted
             ? s.weightPoints > 0
               ? "points"

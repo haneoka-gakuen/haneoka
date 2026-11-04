@@ -1,5 +1,5 @@
 import type { EvidenceGap } from "../model.ts";
-import { settleEventReward } from "../event-settlement.ts";
+import { settleEventPoints, settleEventReward } from "../event-settlement.ts";
 
 export interface BoostBonusRow {
   consumedCount: number;
@@ -56,7 +56,7 @@ function eventAmount(bonusBP: number, rate: number, baseAmount: number): number 
   return settleEventReward(baseAmount, bonusBP, rate);
 }
 export function calcClientEventPoints(pointBonusBP: number, eventPointRate: number, baseRankPoint: number): number {
-  return eventAmount(pointBonusBP, eventPointRate, baseRankPoint);
+  return settleEventPoints(integer(baseRankPoint), integer(pointBonusBP), integer(eventPointRate));
 }
 /** ConsumeLiveBoost: MasterLiveChallengePoint.Value uses the resolved Boost
  * eventPointRate directly. Member/snapshot point bonuses do not enter CP.

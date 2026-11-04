@@ -39,7 +39,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
   const set = (rewardPlan: RewardPlan) =>
     host.updateFarming({ rewardPlan, ptCycle: false, weighted: false, measure: rewardPlan.primary });
   const primaryOptions = REWARD_METRICS.filter(
-    (metric) => host.searchSettings.route === "live" || metric !== "challenge-points",
+    (metric) => host.searchSettings.route !== "challenge" || metric !== "challenge-points",
   );
   const preview =
     [
@@ -56,6 +56,15 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
   return html`
     <section class="surface stack" id="tb-reward-plan" data-tb-field tabindex="-1">
       ${sectionHeading({ icon: "emoji_events", label: host.t("rewardPlan.title", "Reward plan") })}
+      ${segmented({
+        label: host.t("rewardPlan.criterion", "Reward target"),
+        value: plan.criterion ?? "mean",
+        options: [
+          { value: "mean", label: host.t("rewardPlan.mean", "Average reward") },
+          { value: "max", label: host.t("rewardPlan.max", "Highest reward") },
+        ],
+        onSelect: (criterion) => set({ ...plan, criterion }),
+      })}
       <span class="tb-field__label">${host.t("rewardPlan.primary", "Main reward")}</span>
       ${segmented({
       label: host.t("rewardPlan.primary", "Main reward"),
@@ -65,7 +74,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
     })}
       ${REWARD_METRICS.filter(
       (metric) =>
-        metric !== plan.primary && (host.searchSettings.route === "live" || metric !== "challenge-points"),
+        metric !== plan.primary && (host.searchSettings.route !== "challenge" || metric !== "challenge-points"),
     ).map((metric) => {
       const option = plan.options[metric];
       return html`
@@ -142,5 +151,5 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
 export const farmingRewardPlan = (host: TeamBuilder): RewardPlan =>
   effectiveRewardPlan(
     host.searchSettings.rewardPlan ?? legacyRewardPlan(host.searchSettings),
-    host.searchSettings.route !== "live",
+    host.searchSettings.route === "challenge",
   );

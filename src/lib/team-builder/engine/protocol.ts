@@ -20,7 +20,7 @@ export type EvaluateRequest = {
   play: PlayModel;
   gekiso?: Pick<Extract<Goal, { kind: "gekiso" }>, "accuracy" | "rank" | "ranks" | "seeds" | "arena" | "minJustWindowMs">;
   challengeEventId: number | null;
-  event: { eventId: number; route: "live" | "challenge"; consumption: number; eventEffects?: readonly import("./master").EventEffectRow[] } | null;
+  event: { eventId: number; route: "live" | "challenge"; consumption: number; rewardRoom?: import("./api").RewardRoom; eventEffects?: readonly import("./master").EventEffectRow[] } | null;
 };
 export type ExplainRequest = {
   songRules?: import("../arena").SongRules;

@@ -202,6 +202,7 @@ export function scoreText(host: TeamBuilder, message: readonly [string, string])
   return host.t(message[0], message[1]);
 }
 
-export function scoreProof(host: TeamBuilder, proven: boolean): string {
+export function scoreProof(host: TeamBuilder, proven: boolean, sampled = false): string {
+  if (proven && sampled) return host.t("sampledProven", "Optimal within samples");
   return proven ? host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation");
 }

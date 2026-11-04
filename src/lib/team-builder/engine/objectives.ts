@@ -9,7 +9,7 @@ import { type ObjectiveAdapter, type Team, type Totals } from "./search";
 import { resolveSlotSkill, windowMs, type SlotSkill } from "./skills";
 import { exchangedReward, type CpExchange } from "./pt-value";
 import { liveScoreCache } from "./live-score-cache";
-import { settleEventReward } from "../event-settlement";
+import { settleEventPoints, settleEventReward } from "../event-settlement";
 
 export type Criterion = "mean" | "min" | "max";
 export interface LiveDetail {
@@ -295,6 +295,7 @@ export interface EventRoute {
   rate: number;
   /** Reward multiplier for items. */
   rewardRate: number;
+  cpRate?: number | null;
   /** rank → points per play at rate 1. */
   points: ReadonlyMap<number, number>;
   rewards: readonly RewardRow[];
@@ -305,7 +306,7 @@ export interface EventRoute {
 }
 export const eventPoints = (route: EventRoute, bonus: number, rank: number) => {
   const value = route.points.get(rank) ?? 0;
-  return settleEventReward(value, bonus, route.rate);
+  return settleEventPoints(value, bonus, route.rate);
 };
 export const eventItems = (route: EventRoute, bonus: number, rank: number) => {
   let total = 0;
@@ -331,7 +332,7 @@ export function eventObjective(
   const direct = (bonus: number, rank: number) =>
     measure === "points" ? eventPoints(route, bonus, rank) : eventItems(route, bonus, rank);
   const value = (bonus: number, rank: number) => {
-    const cp = route.kind === "live" ? (route.challengePoints.get(rank) ?? 0) * route.rate : 0;
+    const cp = route.cpRate === null ? 0 : Math.imul(route.challengePoints.get(rank) ?? 0, route.cpRate ?? (route.kind === "live" ? route.rate : 0));
     return exchange ? exchangedReward(direct(bonus, rank), cp, exchange) : direct(bonus, rank) + challengePointWeight * cp;
   };
   const memberBonus = (i: number) => memberEventPercent(route.effects, context.members[i]!, bonusType);
@@ -528,7 +529,7 @@ export function eventObjective(
       const mean = total / ORDERS.length;
       return {
         key: mean + (TIE * otherSum) / ORDERS.length,
-        detail: { ...detail, perOrder, mean, bonus, ranks, rewardSum, comparisonSum: total, directMin, directMax, challengePoints: route.kind === "live" ? challenge / ORDERS.length : 0 },
+        detail: { ...detail, perOrder, mean, bonus, ranks, rewardSum, comparisonSum: total, directMin, directMax, challengePoints: route.cpRate === null ? 0 : challenge / ORDERS.length },
       };
     },
   };

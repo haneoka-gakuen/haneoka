@@ -526,6 +526,26 @@ function renderSetup(host: TeamBuilder): TemplateResult {
           <span>${host.t("farm.cpConversion", "Include challenge rewards from earned CP")}</span>
         </label>` : nothing}
     </section>
+    ${s.ptMode === "gekiso" && s.route === "live" ? html`
+      <section class="surface stack" id="tb-reward-room" data-tb-field tabindex="-1">
+        ${sectionHeading({ icon: "groups", label: host.t("rewardPlan.room", "Score grading") })}
+        ${segmented({ label: host.t("rewardPlan.room", "Score grading"), value: s.rewardRoomMode,
+          options: [
+            { value: "battle", label: host.t("rewardPlan.battle", "Multiplayer") },
+            { value: "solo", label: host.t("rewardPlan.solo", "Solo Mission") },
+          ], onSelect: (rewardRoomMode) => set({ rewardRoomMode }) })}
+        ${s.rewardRoomMode === "battle" ? html`
+          ${segmented({ label: host.t("rewardPlan.players", "Players"), value: String(s.rewardPlayers),
+            options: [1, 2, 3, 4, 5].map(value => ({ value: String(value), label: String(value) })),
+            onSelect: value => set({ rewardPlayers: Number(value) }) })}
+          ${s.rewardPlayers > 1 ? html`<md-outlined-text-field type="number" min="0" max="2147483647" step="1"
+            label=${host.t("rewardPlan.otherScore", "Other players’ average score")}
+            .value=${s.rewardOtherScore === null ? "" : String(s.rewardOtherScore)}
+            placeholder=${host.t("rewardPlan.equalScore", "Same score as you")}
+            @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value.trim(); set({ rewardOtherScore: value ? Number(value) : null }); }}
+          ></md-outlined-text-field>` : nothing}
+        ` : nothing}
+      </section>` : nothing}
     ${renderRewardPlan(host, plan)}
     ${
       s.route !== "skip"
@@ -826,7 +846,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
     <section id="pt-results" class="stack">
       <div class="pt-results-bar">
         <span class="tb-proof">
-          ${ptComplete(job) ? host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation")}${
+          ${ptComplete(job) ? ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation")}${
             gap === null
               ? nothing
               : html`

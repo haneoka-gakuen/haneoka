@@ -45,6 +45,9 @@ export interface BuildSettings {
   weightItems: number;
   weightCp: number;
   rewardPlan: RewardPlan | null;
+  rewardRoomMode: "battle" | "solo";
+  rewardPlayers: number;
+  rewardOtherScore: number | null;
   route: "live" | "challenge" | "skip";
   boosts: number;
   challengePoints: number;
@@ -86,7 +89,7 @@ export interface BuildSettings {
 }
 export interface FarmingSettings extends Pick<BuildSettings,
   "aggregation" | "playMode" | "great" | "good" | "miss" | "missEvery" | "measure" | "weighted" |
-  "weightPoints" | "weightItems" | "weightCp" | "rewardPlan" | "unknownPolicy" | "fullRanking" | "k" | "timeLimit" | "ptCycle"> {
+  "weightPoints" | "weightItems" | "weightCp" | "rewardPlan" | "rewardRoomMode" | "rewardPlayers" | "rewardOtherScore" | "unknownPolicy" | "fullRanking" | "k" | "timeLimit" | "ptCycle"> {
   play: "solo" | "gekiso" | "challenge" | "skip";
   requireGrowth: boolean;
   includeMemory: boolean;
@@ -95,7 +98,7 @@ export const DEFAULT_FARMING: FarmingSettings = {
   aggregation: "individual",
   play: "solo", playMode: "ap", great: 3, good: 0, miss: 0, missEvery: 0,
   measure: "points", weighted: false, weightPoints: 1, weightItems: 0, weightCp: 0,
-  rewardPlan: null,
+  rewardPlan: null, rewardRoomMode: "battle", rewardPlayers: 5, rewardOtherScore: null,
   requireGrowth: true, unknownPolicy: "min", includeMemory: false,
   fullRanking: false, k: 1, timeLimit: null, ptCycle: false,
 };
@@ -131,7 +134,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   weightPoints: 1,
   weightItems: 0,
   weightCp: 0,
-  rewardPlan: null,
+  rewardPlan: null, rewardRoomMode: "battle", rewardPlayers: 5, rewardOtherScore: null,
   route: "live",
   boosts: 3,
   challengePoints: 200,

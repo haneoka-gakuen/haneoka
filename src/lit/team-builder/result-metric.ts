@@ -32,7 +32,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     const event = hit.event;
     if (event.rewardPlan) {
       const plan = event.rewardPlan, primary = plan.levels[0]![0]!.metric;
-      const label = plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
+      const label = plan.criterion === "max" ? host.t("rewardPlan.max", "Highest reward") : plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
         : primary === "points" ? host.t("pointsPerPlay", "Event points per play")
         : primary === "items" ? host.t("rewardPlan.itemsPerPlay", "Badges per play") : host.t("cpPerPlay", "Challenge points per play");
       return metric(`reward-plan:${JSON.stringify(plan)}`, label, event.mean, 4,

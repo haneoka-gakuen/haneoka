@@ -2788,7 +2788,17 @@
         "manual": "수동",
         "converted": "환산 보상",
         "itemsPerPlay": "회당 배지",
-        "invalidRate": "환산 계수와 챌린지 채보를 선택하세요"
+        "invalidRate": "환산 계수와 챌린지 채보를 선택하세요",
+        "criterion": "보상 목표",
+        "mean": "평균 보상",
+        "max": "최고 보상",
+        "room": "스코어 등급",
+        "battle": "멀티 플레이",
+        "solo": "솔로 Mission",
+        "players": "인원",
+        "otherScore": "다른 플레이어의 평균 스코어",
+        "equalScore": "내 점수와 동일",
+        "invalidRoom": "인원과 스코어를 확인하세요"
       },
       "measureCp": "챌린지 포인트",
       "cpPerLive": "1회 챌린지 포인트 소비",
@@ -3310,7 +3320,8 @@
       "stepRun": "설정에서 시작",
       "suggestShort": "추천",
       "growthUnset": "미입력",
-      "bulkActions": "표시된 카드 편집"
+      "bulkActions": "표시된 카드 편집",
+      "sampledProven": "표본 내 최적"
     },
     "calendar": {
       "title": "달력",

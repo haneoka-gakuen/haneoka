@@ -40,7 +40,6 @@ import { GekisoScoreCache } from "./gekiso-score-cache";
 import { GekisoContextCache } from "./gekiso-context-cache";
 import { deadlineOf, remaining, requestSongs, pendingSong, acceptsReward, excludesBound, singleSongRequest, type RewardCutoff } from "./execution";
 import type { EngineSnapshot, StopReason } from "./protocol";
-import { isLiveBoostCost } from "./boosts";
 import type { ArenaRule } from "../arena";
 
 export interface ArenaGoal extends ArenaRule {
@@ -69,10 +68,13 @@ export interface ConstraintInput {
 export type RewardMetric = "points" | "challenge-points" | "items";
 export interface RewardTerm { metric: RewardMetric; weight: number }
 export interface RewardRankingPlan {
+  criterion?: "mean" | "max";
   unit: number;
   levels: RewardTerm[][];
   autoCp?: { songs: SongRef[]; consumption: number };
 }
+
+export type RewardRoom = { mode: "solo" } | { mode: "battle"; players: number; otherAverageScore?: number };
 
 export type Goal =
   | { kind: "power"; song: SongRef | null; challengeEventId: number | null }
@@ -98,6 +100,7 @@ export type Goal =
       /** Ranks by weights·(points, items, challenge points) instead of the measure alone. */
       weights?: { points: number; items: number; challengePoints: number };
       rewardPlan?: RewardRankingPlan;
+      rewardRoom?: RewardRoom;
       /** Primary-reward ordering; pt-only additionally validates the strict solo/challenge input contract. */
       ranking?: "pt-only" | "primary";
       /** Best challenge payout per CP for this objective. Only the solo trial uses this value. */
@@ -361,15 +364,16 @@ export function eventRoute(master: EngineMaster, eventId: number, route: "live" 
   const event = master.events.get(eventId);
   if (!event) throw new RangeError(`unknown-event:${eventId}`);
   const challenge = route === "challenge" || (route === "skip" && consumption > 10);
-  if (!challenge && !isLiveBoostCost(consumption)) throw new Error("unsupported-live-boost-cost");
   const table = challenge ? master.challengeBoosts : master.boosts;
   const row = table.find((item) => item.consumed === consumption);
+  if (consumption < 0 || consumption !== 0 && !row || challenge && consumption === 0) throw new Error("unsupported-live-boost-cost");
   const rate = challenge ? (consumption <= 200 ? row?.eventPointRate ?? 1 : row?.eventPointRate ?? 1) : consumption < 1 ? 1 : row?.eventPointRate ?? 1;
   const rewardRate = challenge ? row?.rewardRate ?? 1 : consumption < 1 ? 1 : row?.rewardRate ?? 1;
   return {
     kind: route === "challenge" ? "challenge" : route,
     rate,
     rewardRate,
+    cpRate: challenge ? null : rate,
     points: challenge ? event.challengePoints : event.livePoints,
     rewards: challenge ? event.challengeRewards : event.liveRewards,
     itemId: event.itemId,
@@ -457,6 +461,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   if (placementGoal.kind === "gekiso" && placementGoal.ranks?.some(rank => rank !== placementGoal.rank)) throw new Error("range-ranks-native-required");
   if (request.goal.kind === "gekiso" && request.goal.arena) throw new Error("arena-native-required");
   if (request.goal.kind === "event" && request.goal.rewardPlan) throw new Error("reward-plan-native-required");
+  if (request.goal.kind === "event" && request.goal.route === "skip" && request.goal.measure === "challenge-points") throw new Error("skip-cp-native-required");
+  if (request.goal.kind === "event" && request.goal.rewardRoom && (request.goal.rewardRoom.mode === "solo" || request.goal.rewardRoom.players !== 5 || request.goal.rewardRoom.otherAverageScore !== undefined)) throw new Error("reward-room-native-required");
   if ((request.goal.kind === "gekiso" && request.goal.minJustWindowMs) ||
     (request.goal.kind === "event" && request.goal.gekiso?.minJustWindowMs)) throw new Error("just-window-native-required");
   const started = performance.now();

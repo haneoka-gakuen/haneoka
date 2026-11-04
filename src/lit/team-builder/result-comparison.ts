@@ -369,7 +369,7 @@ export class ResultComparison {
                   <span>${item.metric.label}</span>
                   <small>
                     ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
-                      : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
+                      : item.proven && item.hit.gekiso?.sampled ? host.t("sampledProven", "Optimal within samples") : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
                   </small>
                 `,
               )}

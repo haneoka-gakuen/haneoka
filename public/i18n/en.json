@@ -2788,7 +2788,17 @@
         "manual": "Manual",
         "converted": "Converted rewards",
         "itemsPerPlay": "Badges per play",
-        "invalidRate": "Enter conversion rates and challenge charts"
+        "invalidRate": "Enter conversion rates and challenge charts",
+        "criterion": "Reward target",
+        "mean": "Average reward",
+        "max": "Highest reward",
+        "room": "Score grading",
+        "battle": "Multiplayer",
+        "solo": "Solo Mission",
+        "players": "Players",
+        "otherScore": "Other players’ average score",
+        "equalScore": "Same score as you",
+        "invalidRoom": "Enter a valid room size and score"
       },
       "measureCp": "Challenge points",
       "cpPerLive": "Challenge points per LIVE",
@@ -3310,7 +3320,8 @@
       "stepRun": "Start from the settings",
       "suggestShort": "Suggest",
       "growthUnset": "Not entered",
-      "bulkActions": "Edit shown cards"
+      "bulkActions": "Edit shown cards",
+      "sampledProven": "Optimal within samples"
     },
     "calendar": {
       "title": "Calendar",

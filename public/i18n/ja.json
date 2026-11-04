@@ -2788,7 +2788,17 @@
         "manual": "手動",
         "converted": "換算報酬",
         "itemsPerPlay": "1回のバッジ",
-        "invalidRate": "換算係数とチャレンジ譜面を選択"
+        "invalidRate": "換算係数とチャレンジ譜面を選択",
+        "criterion": "報酬目標",
+        "mean": "平均報酬",
+        "max": "最高報酬",
+        "room": "スコアランク",
+        "battle": "マルチプレイ",
+        "solo": "ソロ Mission",
+        "players": "人数",
+        "otherScore": "ほかのプレイヤーの平均スコア",
+        "equalScore": "自分と同じスコア",
+        "invalidRoom": "人数とスコアを確認してください"
       },
       "measureCp": "チャレンジポイント",
       "cpPerLive": "1回のチャレンジポイント消費",
@@ -3310,7 +3320,8 @@
       "stepRun": "設定から開始",
       "suggestShort": "おすすめ",
       "growthUnset": "未入力",
-      "bulkActions": "表示中のカードを編集"
+      "bulkActions": "表示中のカードを編集",
+      "sampledProven": "サンプル内で最適"
     },
     "calendar": {
       "title": "カレンダー",

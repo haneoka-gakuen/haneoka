@@ -77,6 +77,10 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
           `${host.t("weightPoints", "Weight per event point")}: ${input.goal.weights.points} / ${host.t("weightItems", "Weight per shop item")}: ${input.goal.weights.items} / ${host.t("weightCp", "Weight per challenge point")}: ${input.goal.weights.challengePoints}`,
         ]
       : []),
+    ...(input?.goal.kind === "event" && input.goal.gekiso && input.goal.rewardRoom ? [
+      input.goal.rewardRoom.mode === "solo" ? host.t("rewardPlan.solo", "Solo Mission")
+        : `${host.t("rewardPlan.battle", "Multiplayer")} / ${host.t("rewardPlan.players", "Players")}: ${input.goal.rewardRoom.players} / ${host.t("rewardPlan.otherScore", "Other players’ average score")}: ${input.goal.rewardRoom.otherAverageScore === undefined ? host.t("rewardPlan.equalScore", "Same score as you") : format(host, input.goal.rewardRoom.otherAverageScore)}`,
+    ] : []),
     ...(input?.goal.kind === "score" && input.goal.target
       ? [`${host.t("targetScore", "Target score")}: ${format(host, input.goal.target.score)}`]
       : []),
@@ -1380,7 +1384,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
     <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
         <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
-          ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven)}
+          ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}
         </span>
         ${
           gap === null

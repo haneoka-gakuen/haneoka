@@ -2788,7 +2788,17 @@
         "manual": "手動",
         "converted": "折算收益",
         "itemsPerPlay": "每局徽章",
-        "invalidRate": "請填寫折算係數並選擇挑戰譜面"
+        "invalidRate": "請填寫折算係數並選擇挑戰譜面",
+        "criterion": "獎勵目標",
+        "mean": "平均獎勵",
+        "max": "單次最高獎勵",
+        "room": "分數評級",
+        "battle": "多人演出",
+        "solo": "單人 Mission",
+        "players": "房間人數",
+        "otherScore": "其他玩家平均分",
+        "equalScore": "與自己同分",
+        "invalidRoom": "請填寫有效的房間人數與分數"
       },
       "measureCp": "挑戰點數",
       "cpPerLive": "每次挑戰演出消耗的挑戰點數",
@@ -3310,7 +3320,8 @@
       "stepRun": "在設定中開始",
       "suggestShort": "推薦",
       "growthUnset": "未填寫",
-      "bulkActions": "批次編輯"
+      "bulkActions": "批次編輯",
+      "sampledProven": "樣本內最優"
     },
     "calendar": {
       "title": "日曆",
