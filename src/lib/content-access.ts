@@ -44,12 +44,18 @@ export function clearContentAccess(): void {
 export async function refreshContentAccess(): Promise<void> {
   if (typeof document === "undefined" || !document.documentElement) return;
   const signal = requests.begin();
+  const deadline = setTimeout(() => {
+    if (requests.current(signal)) {
+      publish(false);
+      requests.cancel();
+    }
+  }, 10_000);
   try {
     const response = await fetch("/api/v1/account/content-access", {
       cache: "no-store",
       credentials: "same-origin",
       headers: { accept: "application/json" },
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+      signal,
     });
     if (!requests.current(signal)) return;
     if (!response.ok) {
@@ -82,5 +88,7 @@ export async function refreshContentAccess(): Promise<void> {
     publish(allowed, version, allowed ? (sources as string[]) : [], families as Record<string, ContentSourceFamily>);
   } catch {
     if (requests.current(signal)) publish(false);
+  } finally {
+    clearTimeout(deadline);
   }
 }
