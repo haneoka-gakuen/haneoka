@@ -364,6 +364,7 @@ export class AdminWorkspace extends LitElement {
     );
   }
   updated() {
+    if (!this.isConnected) return;
     this.syncAppBar();
     if (this.error !== this.announced.error) {
       this.announced.error = this.error;
