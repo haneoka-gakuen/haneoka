@@ -6,11 +6,11 @@ import { communityStoryPath } from "../lib/community-story-route";
 import type { Locale } from "../i18n/locales";
 import "../styles/catalog.css";
 import "../styles/story.css";
-interface Props {locale:Locale;server:string}
-const {locale,server}=Astro.props,titleKey="community.stories.title",title=t(locale,titleKey);
+interface Props {locale:Locale;server:string;entity?:boolean}
+const {locale,server,entity=false}=Astro.props,titleKey="community.stories.title",title=t(locale,titleKey);
 ---
 <Base locale={locale} route="/community/stories" title={title} titleKey={titleKey} canonicalRoute={communityStoryPath(server,locale)}>
- <AppShell locale={locale} server={server} route="/community/stories" title={title} titleKey={titleKey}>
+ <AppShell locale={locale} server={server} route="/community/stories" title={title} titleKey={titleKey} entity={entity ? {title,backHref:communityStoryPath(server,locale)} : undefined}>
   <community-stories class="community-stories page" locale={locale} server={server}></community-stories>
  </AppShell>
 </Base>

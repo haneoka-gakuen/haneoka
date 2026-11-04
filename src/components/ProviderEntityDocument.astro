@@ -8,6 +8,7 @@ import { catalogConfig } from "../config/catalog-labels";
 import { localizeValue } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { serializePageData } from "../lib/page-data";
+import { providerEntityCollection } from "../server/provider-entity-data";
 import "../styles/catalog.css";
 import "../styles/story.css";
 
@@ -29,18 +30,36 @@ if (import.meta.env.PROD) writeStaticJsonDocument(providerEntityJsonPath(payload
 const pageDataId = "provider-entity";
 const song = resource === "songs";
 const collectionRoute = `/community/${provider === "bestdori" ? song ? "gbp/songs" : "gbp/stories" : song ? "sekai/songs" : "sekai/stories"}${song ? "" : `/${section || "card"}`}`;
-const backHref = `/${locale}${collectionRoute}/`;
+const backHref = payload.resource === "stories" && payload.card
+  ? providerEntityRoute({ ...payload, resource: "cards", id: String(payload.card.cardId) })
+  : `/${locale}${collectionRoute}/`;
+const siblings = resource === "stories"
+  ? (payload.card
+      ? (payload.card.episodes as Record<string, unknown>[]).map(row => ({ ...row, storyId: `card.${row.resourceSetName || payload.card!.resourceSetName}.${row.scenarioId}` }))
+      : Object.values(providerEntityCollection(payload).document) as Record<string, unknown>[]).filter((row) =>
+      String(row.chapterId ?? row.chapterKey ?? row.eventId ?? "") === String(summary?.chapterId ?? summary?.chapterKey ?? summary?.eventId ?? ""),
+    ).sort((a, b) => Number(a.storySort || a.episodeNumber || 0) - Number(b.storySort || b.episodeNumber || 0) ||
+      String(a.storyId).localeCompare(String(b.storyId), "en", { numeric: true }))
+  : [];
+const index = siblings.findIndex(row => String(row.storyId || row.storyKey || row.id) === payload.id);
+const neighbor = (row: Record<string, unknown> | undefined) => row
+  ? { href: providerEntityRoute({ ...payload, id: String(row.storyId || row.storyKey || row.id) }), title: localizeValue(row.title, locale) }
+  : undefined;
 const config = song ? catalogConfig({ resource: "songs", locale, origin: provider, entityId: payload.id, entityContext: true }) : "";
 ---
 <Base locale={locale} route={route} canonicalRoute={route} title={entityTitle} description={entityTitle} noindex>
-  <AppShell locale={locale} route={collectionRoute} title={collectionTitle} titleKey={titleKey} appBar={rendered.appBar} entity={song ? { title: entityTitle, backHref } : undefined}>
+  <AppShell locale={locale} route={collectionRoute} title={entityTitle} appBar={rendered.appBar} entity={{ title: entityTitle, backHref, previous: neighbor(siblings[index - 1]), next: index < 0 ? undefined : neighbor(siblings[index + 1]) }}>
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
     {song
       ? <catalog-screen config={config} data-page-data={pageDataId} data-collection-data="provider-entity-collection" data-prerendered set:html={rendered.body}></catalog-screen>
-      : <story-workspace locale={locale} origin={provider} mode={section || "card"} data-page-data={pageDataId} data-collection-data="provider-entity-collection" data-prerendered set:html={rendered.body}></story-workspace>}
+      : <story-workspace locale={locale} origin={provider} mode={section || "card"} entity-id={payload.id} data-page-data={pageDataId} data-prerendered set:html={rendered.body}></story-workspace>}
   </AppShell>
 </Base>
 <script>
-  import "../lit/catalog-screen";
   import "../lit/story-workspace";
+  const loadSong = () => {
+    if (document.querySelector('catalog-screen[data-page-data="provider-entity"]')) void import("../lit/catalog-screen");
+  };
+  loadSong();
+  document.addEventListener("astro:page-load", loadSong);
 </script>

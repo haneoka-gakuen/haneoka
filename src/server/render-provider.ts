@@ -4,7 +4,7 @@ import { StoryWorkspace } from "../lit/story-workspace";
 import type { ProviderCollectionPayload } from "../lib/provider-page-data";
 import type { Locale } from "../i18n/locales";
 import type { ProviderEntityPayload } from "../lib/provider-entity-data";
-import { providerEntityCollection, providerEntityCollectionResource } from "./provider-entity-data";
+import { providerEntityCollection } from "./provider-entity-data";
 import { catalogConfig } from "../config/catalog-labels";
 import { STATIC_DOCUMENT_UNDERLAY_START, STATIC_DOCUMENT_UNDERLAY_END } from "../lib/static-documents";
 import { serializePageData } from "../lib/page-data";
@@ -32,49 +32,33 @@ export function renderProviderStories(
   return renderWorkspacePage(workspace, locale, route);
 }
 
-const underlays = new Map<string, Promise<StaticWorkspacePage>>();
 const collectionScripts = new WeakMap<ProviderCollectionPayload, string>();
 export async function renderProviderEntity(
   payload: ProviderEntityPayload,
   locale: Locale,
   route: string,
 ): Promise<StaticWorkspacePage> {
+  if (payload.resource !== "songs") {
+    const workspace = new StoryWorkspace();
+    useStaticLocale(locale, route);
+    await workspace.prepareProviderEntity(payload, payload.collection);
+    return renderWorkspacePage(workspace, locale, route);
+  }
   const collection = providerEntityCollection(payload);
   let collectionData = collectionScripts.get(collection);
   if (!collectionData) {
     collectionData = `<script id="provider-entity-collection" type="application/json">${serializePageData(collection)}</script>`;
     collectionScripts.set(collection, collectionData);
   }
-  if (payload.resource === "songs") {
-    const workspace = new CatalogScreen();
-    useStaticLocale(locale, route);
-    await workspace.prepareProviderEntity(
-      payload,
-      catalogConfig({ resource: "songs", locale, origin: payload.provider, entityId: payload.id, entityContext: true }),
-    );
-    const page = renderWorkspacePage(workspace, locale, route);
-    return {
-      ...page,
-      body: STATIC_DOCUMENT_UNDERLAY_START + collectionData + STATIC_DOCUMENT_UNDERLAY_END + page.body,
-    };
-  }
-  const resource = providerEntityCollectionResource(payload);
-  const key = `${payload.provider}:${locale}:${resource}:${payload.collectionUrl}`;
-  let underlay = underlays.get(key);
-  if (!underlay) {
-    underlay = Promise.resolve(
-      renderProviderStories(collection, locale, payload.section || "card", route.split("?")[0]),
-    );
-    underlays.set(key, underlay);
-  }
-  const background = await underlay;
-  const workspace = new StoryWorkspace();
+  const workspace = new CatalogScreen();
   useStaticLocale(locale, route);
-  await workspace.prepareProviderEntity(payload, collection);
-  const detail = renderWorkspacePage({ render: () => workspace.renderStaticProviderDetail() }, locale, route);
+  await workspace.prepareProviderEntity(
+    payload,
+    catalogConfig({ resource: "songs", locale, origin: payload.provider, entityId: payload.id, entityContext: true }),
+  );
+  const page = renderWorkspacePage(workspace, locale, route);
   return {
-    body:
-      STATIC_DOCUMENT_UNDERLAY_START + collectionData + background.body + STATIC_DOCUMENT_UNDERLAY_END + detail.body,
-    appBar: background.appBar,
+    ...page,
+    body: STATIC_DOCUMENT_UNDERLAY_START + collectionData + STATIC_DOCUMENT_UNDERLAY_END + page.body,
   };
 }

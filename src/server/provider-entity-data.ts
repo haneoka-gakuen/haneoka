@@ -42,7 +42,7 @@ export function providerEntityPayload(entry: ProviderEntityLocator, collection: 
     collectionUrl: registerProviderStaticData(collection),
   };
 }
-/** Full underlay data remains available to the build renderer without repeating it inline. */
+/** Build-time navigation and song documents share the full collection. */
 export function providerEntityCollection(payload: ProviderEntityPayload): ProviderCollectionPayload {
   return readProviderStaticData<ProviderCollectionPayload>(payload.collectionUrl);
 }

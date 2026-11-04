@@ -21,8 +21,7 @@
     background: color-mix(in srgb, var(--md-sys-color-surface) 84%, transparent);
   }
   .bestdori-card-detail,
-  .bestdori-song-detail,
-  .bestdori-transcript {
+  .bestdori-song-detail {
     min-width: 0;
     min-height: 0;
     padding: 20px;
@@ -134,26 +133,6 @@
   .bestdori-rewards small {
     color: var(--md-sys-color-on-surface-variant);
   }
-  .bestdori-transcript {
-    width: min(100%, 1000px);
-    margin-inline: auto;
-  }
-  .bestdori-transcript article {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .bestdori-transcript article strong {
-    color: var(--md-sys-color-primary);
-    font-size: var(--md-sys-typescale-label-medium-size);
-  }
-  .bestdori-transcript article p {
-    margin: 4px 0 0;
-    white-space: pre-line;
-  }
-  .bestdori-story-detail vega-story-stage {
-    grid-row: 2;
-    min-height: 0;
-  }
 
   @media (max-width: 599px) {
     .bestdori-detail,
@@ -168,8 +147,7 @@
       padding-inline: 10px;
     }
     .bestdori-card-detail,
-    .bestdori-song-detail,
-    .bestdori-transcript {
+    .bestdori-song-detail {
       padding: 12px;
     }
     .bestdori-card-detail__images,

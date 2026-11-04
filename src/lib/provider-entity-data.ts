@@ -33,11 +33,12 @@ export function providerEntityJsonPath(entry: ProviderEntityLocator): string {
 }
 export function providerEntityRoute(entry: ProviderEntityLocator): string {
   const { provider, locale, resource, id, section } = entry;
-  if (resource === "songs") return `/${locale}/community/${provider === "bestdori" ? "gbp/songs" : "sekai/songs"}/detail/?${new URLSearchParams({ song: id })}`;
+  if (resource === "songs")
+    return `/${locale}/community/${provider === "bestdori" ? "gbp/songs" : "sekai/songs"}/detail/?${new URLSearchParams({ song: id })}`;
   if (resource === "cards") {
     if (provider !== "bestdori") throw new TypeError("This provider has no card entity view");
-    return `/${locale}/community/gbp/stories/card/?${new URLSearchParams({ card: id })}`;
+    return `/${locale}/community/gbp/stories/card/${encodeURIComponent(id)}/`;
   }
   if (!section) throw new TypeError("Story entity section is required");
-  return `/${locale}/community/${provider === "bestdori" ? "gbp/stories" : "sekai/stories"}/${section}/?${new URLSearchParams({ story: id, ...(entry.cardId ? { card: entry.cardId } : {}) })}`;
+  return `/${locale}/community/${provider === "bestdori" ? "gbp/stories" : "sekai/stories"}/${section}/${encodeURIComponent(id)}/`;
 }

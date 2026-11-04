@@ -1,66 +1,49 @@
 import { resolveLocalizedText } from "../lib/localized-text";
-import { localizedContent } from "./ui/localized-content";
-import { songTitle } from "../lib/song-display";
 import "./ui/image-gallery";
 import { renderPane } from "./ui/pane";
 import { detailLayout } from "./ui/detail-layout";
 import "../styles/bestdori-detail.css";
 import { html, nothing, type TemplateResult } from "lit";
-import { localizedText } from "./shared/catalog";
+import { localizedText, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { loadingIndicator } from "./ui/loading-indicator";
 type Value = Record<string, unknown>;
 export interface BestdoriDetailState {
   locale: string;
-  routeKind: string;
   busy: boolean;
   card: Value | null;
-  detail: Value | null;
-  view: "text" | "player";
-  providerBase: string;
+  page: boolean;
   label(key: string, fallback: string): string;
 }
 export interface BestdoriDetailActions {
   closeCard(): void;
-  closeDetail(): void;
-  openStory(id: string, title?: unknown): void;
-  playSong(song: Value): void;
-  setView(view: "text" | "player"): void;
+  storyHref(id: string): string;
 }
 const icon = (name: string, size = 20) => html`
   <svg class="material-icon" width=${size} height=${size}><use href=${`/icons.svg#${name}`}></use></svg>
 `;
-const storyLines = (story: Value, locale: string) => {
-  const result: Value[] = [];
-  const walk = (value: unknown) => {
-    if (Array.isArray(value)) {
-      value.forEach(walk);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    const record = value as Value;
-    if (localizedText(record.text, locale)) result.push(record);
-    for (const [key, nested] of Object.entries(record)) if (key !== "text" && key !== "targets") walk(nested);
-  };
-  walk(story.commands);
-  return result;
-};
 export function renderBestdoriDetail(
   state: BestdoriDetailState,
   actions: BestdoriDetailActions,
 ): TemplateResult | typeof nothing {
   const { locale, label } = state;
-  if (state.card && !state.detail) {
+  if (state.card) {
     const card = state.card,
       title = localizedText(card.prefix, locale) || String(card.cardId || "—");
     const images = card.cardImages as Value | undefined;
     const episodes = Array.isArray(card.episodes) ? (card.episodes as Value[]) : [];
     const gallery = [
-      { id: "normal", source: String(images?.normal || card.cardImage || ""), label: label("normalArt", "Normal") },
-      { id: "trained", source: String(images?.trained || ""), label: label("trainedArt", "Trained") },
+      {
+        id: "normal",
+        source: String(images?.normal || card.cardImage || ""),
+        label: uiText(locale, "story.labels.illustration"),
+      },
+      { id: "trained", source: String(images?.trained || ""), label: uiText(locale, "catalog.cards.fields.training") },
     ].filter((image) => image.source);
     return renderPane({
       kind: "card",
+      page: state.page,
+      hideHeader: state.page,
       id: `gbp-card-${card.cardId}`,
       title,
       titleLanguage: resolveLocalizedText(card.prefix, locale).locale,
@@ -75,7 +58,7 @@ export function renderBestdoriDetail(
           : nothing,
         html`
           <section class="detail-section">
-            ${renderDetailSectionHeading(label("storiesBestDori", "Stories"), "stories", { count: episodes.length, level: 2 })}
+            ${renderDetailSectionHeading(label("stories", "Stories"), "stories", { count: episodes.length, level: 2 })}
             ${
               state.busy
                 ? html`
@@ -86,16 +69,13 @@ export function renderBestdoriDetail(
             ${episodes.map((episode, index) => {
               const storyId = `card.${episode.resourceSetName || card.resourceSetName}.${episode.scenarioId}`;
               return html`
-                <button
-                  class="surface surface--outlined bestdori-episode"
-                  @click=${() => actions.openStory(storyId, episode.title)}
-                >
+                <a class="surface surface--outlined bestdori-episode" href=${actions.storyHref(storyId)}>
                   <span>${String(index + 1).padStart(2, "0")}</span>
                   <strong lang=${resolveLocalizedText(episode.title, locale).locale}>
                     ${localizedText(episode.title, locale) || String(episode.scenarioId || storyId)}
                   </strong>
                   ${icon("chevron_right")}
-                </button>
+                </a>
               `;
             })}
           </section>
@@ -104,165 +84,5 @@ export function renderBestdoriDetail(
     });
   }
 
-  const detail = state.detail;
-  if (!detail)
-    return state.busy
-      ? html`
-          <div class="bestdori-detail-loading">${loadingIndicator()}</div>
-        `
-      : nothing;
-  if (state.routeKind === "bestdori-songs") {
-    const title = songTitle(detail, locale);
-    const difficulties = Array.isArray(detail.difficulty) ? (detail.difficulty as Value[]) : [];
-    const comboGroups =
-      detail.comboRewards && typeof detail.comboRewards === "object"
-        ? Object.entries(detail.comboRewards as Value)
-        : [];
-    const reward = (item: Value) => {
-      const resolved = (item.resolved as Value | undefined) || {};
-      return html`
-        <span>
-          ${
-            resolved.image
-              ? html`
-                  <img src=${String(resolved.image)} alt="" />
-                `
-              : icon("redeem", 18)
-          }
-          <small>
-            ${localizedText(resolved.name || item.resourceTypeName, locale) || String(item.resourceType || "")}
-          </small>
-          <strong>×${Number(item.resourceCount || 0).toLocaleString(locale)}</strong>
-        </span>
-      `;
-    };
-    return html`
-      <aside class="bestdori-detail pane-layer" role="dialog" aria-modal="true" tabindex="-1" data-overlay-pane>
-        <header>
-          <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
-            ${icon("arrow_back")}
-          </button>
-          <strong lang=${typeof title === "string" ? nothing : title.locale}>
-            ${typeof title === "string" ? title : title.text}
-          </strong>
-          ${
-            detail.musicUrl
-              ? html`
-                  <button
-                    class="icon-button"
-                    aria-label=${label("play", "Play")}
-                    @click=${() => actions.playSong(detail)}
-                  >
-                    ${icon("play_arrow")}
-                  </button>
-                `
-              : nothing
-          }
-        </header>
-        <div class="bestdori-song-detail">
-          <img src=${String(detail.jacketUrl || detail.jacketThumbUrl || "")} alt="" />
-          <dl>
-            <div>
-              <dt>${label("composer", "Composer")}</dt>
-              <dd>${localizedContent(detail.composer, locale)}</dd>
-            </div>
-            <div>
-              <dt>${label("lyricist", "Lyrics")}</dt>
-              <dd>${localizedContent(detail.lyricist, locale)}</dd>
-            </div>
-            <div>
-              <dt>${label("arranger", "Arrangement")}</dt>
-              <dd>${localizedContent(detail.arranger, locale)}</dd>
-            </div>
-          </dl>
-          <div class="bestdori-difficulties">
-            ${difficulties.map(
-              (difficulty) => html`
-                <span>
-                  <small>${String(difficulty.difficultyName || difficulty.difficulty || "")}</small>
-                  <strong>${String(difficulty.playLevel || difficulty.displayLevel || difficulty.level || "—")}</strong>
-                </span>
-              `,
-            )}
-          </div>
-          <section class="bestdori-rewards">
-            ${renderDetailSectionHeading(label("rewards", "Rewards"), "rewards", { level: 2 })}
-            <div>${(Array.isArray(detail.scoreRewards) ? (detail.scoreRewards as Value[]) : []).map(reward)}</div>
-            ${comboGroups.map(
-              ([difficulty, items]) => html`
-                <h3>${difficulty}</h3>
-                <div>${(Array.isArray(items) ? (items as Value[]) : []).map(reward)}</div>
-              `,
-            )}
-          </section>
-        </div>
-      </aside>
-    `;
-  }
-  const lines = storyLines(detail, locale);
-  const title = localizedText(detail.title || detail.chapterName, locale) || String(detail.storyId || "Story");
-  return html`
-    <aside
-      class="bestdori-detail bestdori-story-detail pane-layer"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      data-overlay-pane
-    >
-      <header>
-        <button class="icon-button" aria-label=${label("close", "Close")} @click=${actions.closeDetail}>
-          ${icon("arrow_back")}
-        </button>
-        <strong lang=${resolveLocalizedText(detail.title || detail.chapterName, locale).locale}>${title}</strong>
-        <nav class="segmented">
-          <button aria-pressed=${state.view === "text"} @click=${() => actions.setView("text")}>
-            ${label("storyText", "Text")}
-          </button>
-          <button
-            aria-pressed=${state.view === "player"}
-            @click=${async () => {
-              await Promise.all([import("./runtime/vega-story-stage"), import("../styles/story.css")]);
-              actions.setView("player");
-            }}
-          >
-            ${label("player", "Player")}
-          </button>
-        </nav>
-      </header>
-      ${
-        state.view === "player"
-          ? html`
-              <vega-story-stage
-                .story=${detail}
-                locale=${locale}
-                provider-base=${state.providerBase}
-              ></vega-story-stage>
-            `
-          : html`
-              <div class="bestdori-transcript">
-                ${lines.map((line) => {
-                  const target = Array.isArray(line.targets) ? (line.targets[0] as Value | undefined) : undefined;
-                  const targetName = Array.isArray(line.targetTextNames) ? line.targetTextNames[0] : undefined;
-                  const speaker = resolveLocalizedText(
-                    line.speakerName || line.characterName || target?.name || targetName,
-                    locale,
-                  );
-                  return html`
-                    <article>
-                      ${
-                        speaker.text
-                          ? html`
-                              <strong lang=${speaker.locale}>${speaker.text}</strong>
-                            `
-                          : nothing
-                      }
-                      <p>${localizedContent(line.text, locale)}</p>
-                    </article>
-                  `;
-                })}
-              </div>
-            `
-      }
-    </aside>
-  `;
+  return nothing;
 }
