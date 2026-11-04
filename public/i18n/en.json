@@ -770,7 +770,10 @@
       "animations": {
         "gacha": "Gacha animation",
         "animated": "Animated card art",
-        "replay": "Replay gacha animation"
+        "replay": "Replay gacha animation",
+        "cutIn": "Cut-in 1",
+        "showcase": "Cut-in 2",
+        "intro": "Entrance"
       },
       "types": {
         "permanent": "Permanent"

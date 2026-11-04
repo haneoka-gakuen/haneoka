@@ -133,6 +133,7 @@ import { loadPlaylistCatalogSource, auditedCryChicPortraits } from "../lib/playl
 import { renderItemRelations, type ItemRelationsController } from "./shared/item-relations";
 import type { ItemRelations } from "../server/item-relations";
 import "./ui/image-gallery";
+import type { GalleryClip } from "./ui/image-gallery";
 import "../styles/card-detail.css";
 import "../styles/character-detail.css";
 import "../styles/character-profile.css";
@@ -5774,8 +5775,8 @@ export class CatalogScreen extends LitElement {
       id: string;
       label: string;
       source: unknown;
-      videoSequence?: { clips: Array<{ url: string; loop?: boolean }>; background?: string };
-      animatedOverlay?: { url: string; background?: string };
+      videoSequence?: { clips: GalleryClip[] };
+      animatedOverlay?: GalleryClip;
     }> =
       this.profile.presentation === "member"
         ? [
@@ -6286,52 +6287,39 @@ export class CatalogScreen extends LitElement {
       ></image-gallery>
     `;
   }
-  /** Animated member cards: the gacha movie as one seamless gallery entry. */
+  private cardMovieClip(item: Item, key: string, label: string): GalleryClip | undefined {
+    const movie = (item.movies as Item | undefined)?.[key] as Item | undefined;
+    if (typeof movie?.displayUrl !== "string") return undefined;
+    return {
+      url: movie.displayUrl,
+      label,
+      filename: `card-${item.cardId}-${key}.mp4`,
+      width: Number(movie.displayWidth),
+      height: Number(movie.displayHeight),
+    };
+  }
   private cardMovieGalleryEntries(item: Item) {
     if (this.profile.presentation !== "member") return [];
-    const movies = item.movies && typeof item.movies === "object" ? (item.movies as Item) : {};
-    const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
-    const background = typeof images.background === "string" ? images.background : undefined;
-    const poster =
-      typeof images.thumbnail === "string" ? images.thumbnail : typeof images.full === "string" ? images.full : "";
-    const media = (key: string) => {
-      const value = movies[key] as Item | undefined;
-      return {
-        url: typeof value?.playableUrl === "string" ? value.playableUrl : "",
-        alphaPackedUrl: typeof value?.alphaPackedUrl === "string" ? value.alphaPackedUrl : undefined,
-        alphaLayout: typeof value?.alphaLayout === "string" ? value.alphaLayout : undefined,
-      };
-    };
-    // Play both authored anime segments, then the Live2D intro and terminal
-    // showcase loop. Only the transparent Live2D segments composite over the
-    // card background; both opaque anime segments carry their own picture.
+    const images = item.images as Item | undefined;
+    const poster = String(images?.full || images?.thumbnail || "");
     const clips = [
-      { ...media("gacha") },
-      { ...media("showcase") },
-      { ...media("gachaIntro"), backdrop: true },
-      { ...media("showcaseLoop"), loop: true, backdrop: true },
-    ].filter((clip) => clip.url || clip.alphaPackedUrl);
+      this.cardMovieClip(item, "gacha", uiText(this.settings.locale, "catalog.cards.animations.cutIn")),
+      this.cardMovieClip(item, "showcase", uiText(this.settings.locale, "catalog.cards.animations.showcase")),
+      this.cardMovieClip(item, "gachaIntro", uiText(this.settings.locale, "catalog.cards.animations.intro")),
+      this.cardAnimatedOverlay(item),
+    ].filter((clip): clip is GalleryClip => Boolean(clip));
     if (clips.length < 2 || !poster) return [];
-    return [
-      {
-        id: "movie:gacha",
-        label: this.label("cardMovieGacha", "Gacha movie"),
-        source: poster,
-        videoSequence: { clips, background },
-      },
-    ];
+    return [{
+      id: "movie:gacha",
+      label: this.label("cardMovieGacha", "Gacha movie"),
+      source: poster,
+      videoSequence: { clips },
+    }];
   }
-  /** The still's own animated mode: the showcase loop over the card background. */
-  private cardAnimatedOverlay(item: Item) {
+  private cardAnimatedOverlay(item: Item): GalleryClip | undefined {
     if (this.profile.presentation !== "member") return undefined;
-    const movies = item.movies && typeof item.movies === "object" ? (item.movies as Item) : {};
-    const images = item.images && typeof item.images === "object" ? (item.images as Item) : {};
-    const loop = movies.showcaseLoop as Item | undefined;
-    const url = typeof loop?.playableUrl === "string" ? loop.playableUrl : "";
-    const background = typeof images.background === "string" ? images.background : undefined;
-    const alphaPackedUrl = typeof loop?.alphaPackedUrl === "string" ? loop.alphaPackedUrl : undefined;
-    const alphaLayout = typeof loop?.alphaLayout === "string" ? loop.alphaLayout : undefined;
-    return url || alphaPackedUrl ? { url, alphaPackedUrl, alphaLayout, background } : undefined;
+    const clip = this.cardMovieClip(item, "showcaseLoop", uiText(this.settings.locale, "catalog.cards.animations.animated"));
+    return clip ? { ...clip, loop: true } : undefined;
   }
   progressionRows(key: string) {
     const document = (this.detailAux.progression as Item | undefined) || {};

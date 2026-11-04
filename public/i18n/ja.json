@@ -770,7 +770,10 @@
       "animations": {
         "gacha": "ガチャ演出",
         "animated": "動くカードイラスト",
-        "replay": "ガチャ演出をもう一度再生"
+        "replay": "ガチャ演出をもう一度再生",
+        "cutIn": "カットイン1",
+        "showcase": "カットイン2",
+        "intro": "登場"
       },
       "types": {
         "permanent": "恒常"

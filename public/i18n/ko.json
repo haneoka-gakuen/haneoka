@@ -770,7 +770,10 @@
       "animations": {
         "gacha": "뽑기 연출",
         "animated": "움직이는 카드 일러스트",
-        "replay": "뽑기 연출 다시 재생"
+        "replay": "뽑기 연출 다시 재생",
+        "cutIn": "컷인 1",
+        "showcase": "컷인 2",
+        "intro": "등장"
       },
       "types": {
         "permanent": "상시"

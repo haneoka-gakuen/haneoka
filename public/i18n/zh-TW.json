@@ -770,7 +770,10 @@
       "animations": {
         "gacha": "轉蛋動畫",
         "animated": "動態卡圖",
-        "replay": "重播轉蛋動畫"
+        "replay": "重播轉蛋動畫",
+        "cutIn": "過場1",
+        "showcase": "過場2",
+        "intro": "登場"
       },
       "types": {
         "permanent": "常駐"

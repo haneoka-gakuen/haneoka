@@ -1,8 +1,8 @@
 # L3 — GEB
 # Input: Master、已提取真实资源路径、server 和构建上下文。
-# Output: 规范目录、实体、关系与领域投影文档。
+# Output: 规范目录、实体、关系、领域投影及完整卡面 MP4。
 # Pos: [Map](L2-2.md)；资源到公开目录的领域构建枢纽。
-# Effects/Dependencies: 读取构建文件并写 API／索引；媒体引用受实际资源和可用性策略约束。
+# Effects/Dependencies: 读取／恢复构建文件，调用卡面视频转换并写 API／索引。
 """Build the canonical catalog documents from Master data and real Unity paths.
 
 This module deliberately has no knowledge of processor directory names. Media
@@ -42,6 +42,7 @@ from core.paths import build_layout
 from core.unity_objects import iter_unity_object_archive
 from build.anon_tokyo import build_anon_tokyo_catalog
 from build.collectibles import build_backgrounds, build_stickers, build_chat_customizations
+from build.card_videos import build_card_videos
 from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
 from build.runtime_texture_projection import RuntimeTextureProjection
@@ -354,6 +355,10 @@ class BuildData:
                     for offset in range(len(parts)):
                         self.cri_usm_entries_by_suffix.setdefault(parts[offset:], []).append(entry)
         self._sound_cache: dict[int, dict[str, Any] | None] = {}
+        card_videos = self.root / "metadata" / "card-videos.json"
+        self.card_video_outputs: dict[str, dict[str, Any]] = (
+            read_json(card_videos)["cards"] if card_videos.is_file() else {}
+        )
         self._cri_audio_output_cache: dict[
             str, tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]
         ] = {}
@@ -909,6 +914,7 @@ class BuildData:
         reveal clip (``cri/<id>/member_preview_movie``) between the cut-in
         and the Live2D performance. Every clip resolves independently;
         cards without the movie bundle publish no field at all.
+        ``displayUrl`` binds the complete MP4 shared by playback and download.
         """
         card = int(identity or 0)
         if not card:
@@ -925,6 +931,13 @@ class BuildData:
             media = self.video_media(name)
             if media:
                 movies[key] = {**media, "loop": loop}
+                display = self.card_video_outputs.get(str(card), {}).get(key)
+                if display:
+                    movies[key].update(
+                        displayUrl=self.runtime_output_url(display["path"]),
+                        displayWidth=display["width"],
+                        displayHeight=display["height"],
+                    )
         return movies or None
 
     def music_sound(
@@ -8699,6 +8712,8 @@ def build_api(
         result = project_catalog(data.server, name, builder, *args, **kwargs)
         timings[name] = round(time.perf_counter() - begin, 3)
         return result
+
+    data.card_video_outputs = project("card videos", build_card_videos, data)
 
     # Restore the catalogues' small immutable inputs through the pinned fetchers.
     asset_inputs = [

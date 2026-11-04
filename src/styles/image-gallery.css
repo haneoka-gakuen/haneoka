@@ -21,7 +21,7 @@
     padding: 16px;
     cursor: zoom-in;
   }
-  .image-gallery__stage > :is(img, svg) {
+  .image-gallery__stage > :is(img, svg, video) {
     min-width: 0;
     min-height: 0;
     width: 100%;
@@ -43,88 +43,42 @@
   .image-gallery__stage--cinema {
     cursor: default;
   }
-  /* Card clips and the card background share the exact 3:4 frame, so a
-     transparent clip lands on the scene where the game composites it. */
-  .image-gallery__cinema-frame {
-    position: relative;
-    height: 100%;
-    max-width: 100%;
-    aspect-ratio: 3 / 4;
-    border-radius: var(--md-sys-shape-corner-medium, 12px);
-    isolation: isolate;
-  }
-  .image-gallery__cinema-bg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: inherit;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-  .image-gallery__cinema-bg.is-visible {
-    opacity: 1;
-  }
-  .image-gallery__clip {
-    position: absolute;
-    inset: 0;
-    display: none;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  .image-gallery__clip.is-current {
-    display: block;
-  }
-  .image-gallery__decoder {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
+  .image-gallery__clip,
+  .image-gallery__cinema-poster {
+    grid-area: 1 / 1;
+    border-radius: 0;
     pointer-events: none;
   }
+  .image-gallery__clip {
+    opacity: 0;
+  }
+  .image-gallery__clip.is-current {
+    opacity: 1;
+  }
   .image-gallery__cinema-poster {
-    position: absolute;
-    inset: 0;
-    display: none;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+    visibility: hidden;
   }
   .image-gallery__cinema-poster.is-visible {
-    display: block;
+    visibility: visible;
   }
-  .image-gallery__cinema-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 2;
-  }
-  .image-gallery__replay,
+  .image-gallery__download,
   .image-gallery__animate {
     position: absolute;
     bottom: 12px;
     z-index: 2;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     color: var(--md-sys-color-on-secondary-container);
     background: var(--md-sys-color-secondary-container);
   }
-  .image-gallery__replay {
+  .image-gallery__download {
     left: 12px;
   }
-  /* Sits directly beside the zoom (expand) control in the stage corner. */
   .image-gallery__animate {
     right: 56px;
-  }
-  .image-gallery__stage--cinema .image-gallery__animate {
-    right: 12px;
   }
   .image-gallery__thumb--video::after {
     content: "";
@@ -165,12 +119,14 @@
     text-align: center;
   }
   .image-gallery__caption strong {
-    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) / var(--md-sys-typescale-title-small-line-height) var(--app-font);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
     overflow-wrap: anywhere;
   }
   .image-gallery__caption small {
     color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
     font-variant-numeric: tabular-nums;
   }
   .image-gallery__thumbnails {
@@ -205,7 +161,8 @@
     padding: 0 16px 12px;
     margin: 0;
     color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) / var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .detail-layout {
     display: grid;
