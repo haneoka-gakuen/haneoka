@@ -13,17 +13,17 @@
     "masterdata.tar.gz": {
       "bytes": 625337,
       "sha256": "45c4bb90da9c1c8c47da519565f4d1f12fd58a0769df56ba1bf9bad3234e2f4e",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-59871462/masterdata.tar.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-0668cbe0/masterdata.tar.gz"
     },
     "resources.json.gz": {
-      "bytes": 7532356,
-      "sha256": "9204eaafd1b10870010274d7c61cf0b119e814f186ec25e76110692b072f4763",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-59871462/resources.json.gz"
+      "bytes": 7532348,
+      "sha256": "37cb43b84fd9f541c7ba8e8c6acc2eed5b8a70f13b48bafd8b1db63eb47e8c30",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-0668cbe0/resources.json.gz"
     },
     "spine.json.gz": {
       "bytes": 113359,
       "sha256": "436b15bde35581bde9572280061abb72cea27db41e6db236e0cc3f8b737cb1df",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-59871462/spine.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-0668cbe0/spine.json.gz"
     },
     "stories-jp.tar.gz": {
       "bytes": 627380,
@@ -33,7 +33,7 @@
     "tables.json.gz": {
       "bytes": 44998,
       "sha256": "5c96e4132db3e6d966f108817fc97d8c38c3b04dd0a30e521db2665645021f7b",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-59871462/tables.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-jp-1.1.0.200-0668cbe0/tables.json.gz"
     }
   },
   "masterHash": "8be74134b87dacf7ce1f38967cd66745",
@@ -54,7 +54,7 @@
     "hash": "8be74134b87dacf7ce1f38967cd66745",
     "version": "1.1.0.200"
   },
-  "releaseId": "r-543111d15c9a6a1261fe",
+  "releaseId": "r-3fe1f21b1cf737f0cb41",
   "server": "jp",
   "stories": {
     "input": "7867ff2254db093ba4dee573557f13564a062646df6b0119809f72d0e42dcef1",
@@ -66,6 +66,6 @@
       "stories-jp.tar.gz"
     ]
   },
-  "tag": "feed-jp-1.1.0.200-59871462",
+  "tag": "feed-jp-1.1.0.200-0668cbe0",
   "versionSchema": 2
 }
