@@ -15,7 +15,6 @@ const warning = (code: string, path: string, message: string): FormatWarning => 
 const hasUnsupportedMeta = (project: Project, format: Exclude<ExportFormat, "project">): boolean => {
   const meta = project.meta;
   if (meta.title || meta.artist || meta.charter || meta.difficulty || meta.level || meta.tags?.length) return true;
-  if (meta.source && meta.source !== format) return true;
   const supportedExtra = format === "ss" ? new Set(["ssVersion"]) : new Set<string>();
   return Object.keys(meta.extra ?? {}).some((key) => !supportedExtra.has(key));
 };
@@ -66,15 +65,6 @@ export const getExportDiagnostics = (project: Project, format: ExportFormat): Fo
   }
 
   if (format === "ss") {
-    if (project.meta.source && !["ss", "authored"].includes(project.meta.source)) {
-      warnings.push(
-        warning(
-          "ss.export.sourceRulesChanged",
-          "$.meta.source",
-          "SS carries converted geometry; the original game's judgement rules are not carried",
-        ),
-      );
-    }
     project.singles.forEach((note, index) => {
       if (note.type === "trace" && note.direction !== "none")
         warnings.push(

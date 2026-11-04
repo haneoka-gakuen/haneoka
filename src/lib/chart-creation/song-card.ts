@@ -7,7 +7,7 @@ import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry }
 
 type Row = Record<string, unknown>;
 export interface CreationSongCardData {
-  readonly provider: "haneoka" | "bestdori";
+  readonly provider: "haneoka" | "bestdori" | "sekai";
   readonly identity?: HaneokaReleaseIdentity;
   readonly region?: string;
   /** Exact logical sprite names mapped to their source-scoped URLs. */
@@ -52,7 +52,7 @@ export function createCreationSongCardData(options: {
     bands: entities(options.bands, "bandId"),
     assetUrl: options.assetUrl,
     performers: createPerformerRegistry({
-      game: options.provider === "bestdori" ? "gbp" : "our-notes",
+      game: options.provider === "bestdori" ? "gbp" : options.provider === "sekai" ? "sekai" : "our-notes",
       server: options.identity?.server ?? options.region ?? "jp",
       sourceId: options.identity?.sourceId,
       bands: options.bands,

@@ -1,5 +1,11 @@
+// L3 — GEB
+// Input: SS 字符串、规范工程与显式归档选项。
+// Output: 格式导入与仅由规范字段生成的 SS；归档导出可显式恢复来源拼写。
+// Pos: [Map](../../L2-2.md)；SS 适配，不让来源记录参与默认播放与导出。
+// Effects/Dependencies: 纯转换；原文件记录保留在工程扩展中。
 import {
   importedId,
+  projectNoteOrder,
   resolveLinePointShape,
   structuredCloneValue,
   tickToBeat,
@@ -106,7 +112,7 @@ const parseSingle = (value: unknown, index: number, warnings: FormatWarning[]): 
     size: finiteNumber(value.size, 6),
     type,
     critical: value.crit === true,
-    direction: type === "flick" ? (dir === "none" ? "up" : dir) : "none",
+    direction: type === "flick" ? (dir === "none" ? "up" : dir) : type === "trace" ? dir : "none",
     visible: value.visible !== false,
   };
 };
@@ -140,7 +146,7 @@ const parseLine = (value: Record<string, unknown>, index: number, warnings: Form
         ...(lane === "auto" && !hasAuthoredSize ? { autoSize: true } : {}),
         type,
         critical: rawPoint.crit === true,
-        direction: type === "flick" ? (dir === "none" ? "up" : dir) : "none",
+        direction: type === "flick" ? (dir === "none" ? "up" : dir) : type === "trace" ? dir : "none",
         visible: rawPoint.visible !== false,
         ease: easePair(rawPoint.ease, value.ease),
       } satisfies LinePoint,
@@ -358,11 +364,16 @@ const ssEvents = (project: Project, records: Record<string, unknown>) => ({
   call: project.markers.call.map((item) => ({ t: item.tick, timing: [...item.timing] })),
 });
 
-export const projectToSs = (project: Project): SsDocument => {
-  const version = finiteNumber(project.meta.extra?.ssVersion, 1);
+export interface SsExportOptions {
+  /** Archive export only. Playback and ordinary exports use canonical project fields. */
+  preserveSource?: boolean;
+}
+
+export const projectToSs = (project: Project, options: SsExportOptions = {}): SsDocument => {
+  const version = options.preserveSource ? finiteNumber(project.meta.extra?.ssVersion, 1) : 1;
   const scale = 24 / project.laneBasis;
   const snapshot =
-    isRecord(project.extensions.ssSource) && project.extensions.ssSource.schema === "haneoka-ss-source-v1"
+    options.preserveSource && isRecord(project.extensions.ssSource) && project.extensions.ssSource.schema === "haneoka-ss-source-v1"
       ? project.extensions.ssSource
       : undefined;
   const records = isRecord(snapshot?.records) ? snapshot.records : {};
@@ -379,7 +390,7 @@ export const projectToSs = (project: Project): SsDocument => {
     } as SsNote);
   }
   const notes: SsNote[] = [];
-  for (const id of project.sourceOrder ?? []) {
+  for (const id of projectNoteOrder(project)) {
     const note = noteById.get(id);
     if (!note) continue;
     notes.push(note);
@@ -400,7 +411,7 @@ export const projectToSs = (project: Project): SsDocument => {
   };
 };
 
-export const serializeSs = (project: Project, pretty = true): string =>
-  JSON.stringify(projectToSs(project), null, pretty ? 2 : undefined);
+export const serializeSs = (project: Project, pretty = true, options: SsExportOptions = {}): string =>
+  JSON.stringify(projectToSs(project, options), null, pretty ? 2 : undefined);
 
 export const ssNoteBeat = (note: SsNote): number => tickToBeat(note.t ?? 0);

@@ -25,6 +25,7 @@ import {
 import type { HaneokaLocale, HaneokaReleaseIdentity } from "../../packages/api-client/src/haneoka";
 import { BESTDORI_SERVERS, isBestdoriServer, type BestdoriServer } from "../../packages/bestdori/src/transport";
 import { listBestdoriCreatorSongs, loadBestdoriCreatorSong, loadBestdoriCreationSongCardData, type BestdoriCreatorSong } from "../lib/chart-creation/bestdori-source";
+import { listSekaiCreatorSongs, loadSekaiCreatorSong, loadSekaiCreationSongCardData } from "../lib/chart-creation/sekai-source";
 import "../styles/team-builder.css";
 import type { ChartMediaRef } from "../lib/chart-creation/community-types";
 
@@ -36,10 +37,10 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 
 type CatalogueRecord = Record<string, unknown>;
 
-export type CreationLibraryProvider = "haneoka" | "bestdori";
+export type CreationLibraryProvider = "haneoka" | "bestdori" | "sekai";
 export interface CreationMediaSelection { ref: Extract<ChartMediaRef, { kind: "server" }>; url: string; title: string }
 type CreationSong = PublicCreationSong | BestdoriCreatorSong;
-export type PublicChartImport = Awaited<ReturnType<typeof loadPublicCreationSong>> | Awaited<ReturnType<typeof loadBestdoriCreatorSong>>;
+export type PublicChartImport = Awaited<ReturnType<typeof loadPublicCreationSong>> | Awaited<ReturnType<typeof loadBestdoriCreatorSong>> | Awaited<ReturnType<typeof loadSekaiCreatorSong>>;
 export class ChartCreationLibrary extends LitElement {
   static properties = {
     locale: {},
@@ -190,6 +191,7 @@ export class ChartCreationLibrary extends LitElement {
     if (this.opened) void this.loadIndex();
   }
   async show(provider: CreationLibraryProvider = "haneoka", mediaKind?: "audio" | "cover", selection?: { region: BestdoriServer; songId: string; difficulty: string }) {
+    if (mediaKind && provider === "sekai") provider = "haneoka";
     this.mediaKind = mediaKind;
     this.trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const server = readReleaseServer();
@@ -241,6 +243,7 @@ export class ChartCreationLibrary extends LitElement {
       const seed = provider === "haneoka" ? this.pageData?.variants[this.server] : undefined;
       const page = provider === "bestdori"
         ? await listBestdoriCreatorSongs({ region, locale: this.locale, signal: controller.signal })
+        : provider === "sekai" ? await listSekaiCreatorSongs({ locale: this.locale, signal: controller.signal })
         : seed ? { items: Object.entries(seed.songs).map(([id, value]) => ({ id, value: value as PublicCreationSong })), release: seed.identity }
         : await this.catalogue.load({ server: this.server, locale: this.apiLocale(), signal: controller.signal });
       controller.signal.throwIfAborted();
@@ -273,6 +276,7 @@ export class ChartCreationLibrary extends LitElement {
       const seed = provider === "haneoka" ? this.pageData?.variants[this.server] : undefined;
       const context = provider === "bestdori"
         ? await loadBestdoriCreationSongCardData({ region, locale, signal: controller.signal })
+        : provider === "sekai" ? await loadSekaiCreationSongCardData({ locale, signal: controller.signal })
         : seed ? createCreationSongCardData({ provider: "haneoka", identity: seed.identity,
           bands: seed.bands, characters: seed.characters, marks: seed.marks,
           assetUrl: value => typeof value === "string" && value ? pinnedPublicUrl(value.startsWith("runtime/") ? `/runtime/${seed.identity.server}/${value.slice("runtime/".length)}` : value, seed.identity) : "" })
@@ -296,7 +300,7 @@ export class ChartCreationLibrary extends LitElement {
   private image(source: unknown) {
     if (typeof source !== "string" || !source) return "";
     if (this.filterCatalog) return this.filterCatalog.assetUrl(source);
-    return this.provider === "bestdori" ? new URL(source, "https://haneoka.org").href : this.identity ? pinnedPublicUrl(source, this.identity) : "";
+    return this.provider !== "haneoka" ? new URL(source, "https://haneoka.org").href : this.identity ? pinnedPublicUrl(source, this.identity) : "";
   }
   private renderFilters() {
     const { bands: fallbackBands, rows } = this.searchIndex();
@@ -316,9 +320,9 @@ export class ChartCreationLibrary extends LitElement {
         ? [{ id, name, image: this.image(character.faceImage ?? character.thumbnailImage) }] : [];
     });
     return html`
-      ${chooserFacet({ label: clientText(this.locale, "common.fields.source"), allLabel: this.t("serverLibrary"), value: this.provider === "bestdori" ? "bestdori" : "",
-        options: [{ value: "bestdori", label: "Bestdori" }],
-        change: value => this.switchProvider(value === "bestdori" ? "bestdori" : "haneoka"),
+      ${chooserFacet({ label: clientText(this.locale, "common.fields.source"), allLabel: "Our Notes", value: this.provider === "haneoka" ? "" : this.provider,
+        options: [{ value: "bestdori", label: "Bestdori" }, ...(!this.mediaKind ? [{ value: "sekai", label: "SEKAI" }] : [])],
+        change: value => this.switchProvider(value === "bestdori" || value === "sekai" ? value : "haneoka"),
       })}
       ${this.provider === "bestdori" ? chooserFacet({ label: clientText(this.locale, "settings.labels.server"), allLabel: "JP", value: this.bestdoriRegion === "jp" ? "" : this.bestdoriRegion,
         options: BESTDORI_SERVERS.filter(region => region !== "jp").map(region => ({ value: region, label: region.toUpperCase() })),
@@ -370,6 +374,8 @@ export class ChartCreationLibrary extends LitElement {
     try {
       const value = this.provider === "bestdori"
         ? await loadBestdoriCreatorSong({ region: this.bestdoriRegion, locale: this.locale, songId: this.chosen, difficulty: this.difficulty, withAudio: true, signal: controller.signal })
+        : this.provider === "sekai" ? await loadSekaiCreatorSong({ locale: this.locale, songId: this.chosen, difficulty: this.difficulty,
+          song: this.items.find(item => item.id === this.chosen)?.value as PublicCreationSong, signal: controller.signal })
         : await loadPublicCreationSong({
         identity: this.identity!,
         songId: this.chosen,
@@ -466,7 +472,7 @@ export class ChartCreationLibrary extends LitElement {
     });
     return selectionPane({
       id: "chart-creation-library",
-      title: this.provider === "bestdori" ? "Bestdori" : this.t("serverLibrary"),
+      title: this.t("serverLibrary"),
       closeLabel: clientText(this.locale, "common.actions.close"),
       close: () => this.close(),
       searchLabel: this.t("searchServerLibrary"),

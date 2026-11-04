@@ -75,7 +75,7 @@ export function insertLinePoint(
 export function setLinePointMode(project: Project, ids: ReadonlySet<string>, mode: LinePointMode): Project {
   const shapes = new Map(chartSelectionNodes(project).filter(({ note }) => ids.has(note.id)).map(entry => [entry.note.id, entry]));
   const result = structuredCloneValue(project);
-  for (const line of result.lines) for (const point of line.points.slice(1, -1)) {
+  for (const line of result.lines) for (const point of line.points) {
     const shape = shapes.get(point.id);
     if (!shape) continue;
     point.lane = mode === "auto" ? "auto" : shape.lane;
@@ -88,7 +88,6 @@ export function setLinePointMode(project: Project, ids: ReadonlySet<string>, mod
   }
   clearAutoCache(result, ids);
   assertValidProject(result);
-  assertEditedChartSpans(project, result);
   return result;
 }
 

@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: 本地谱面工程、音频、发布配置及备份 ZIP。
-// Output: CAS 本地历史与带音频／封面的可移植工程备份；MMW 原始字节保留 binary 编码标记。
+// Input: 本地谱面工程、可选音频、发布配置及备份 ZIP。
+// Output: 有无音频均可保存的 CAS 历史与可移植工程备份；MMW 原始字节保留 binary 编码标记。
 // Pos: [Map](../L2-2.md)；谱面创作的 IndexedDB 与文件持久化边界。
 // Effects/Dependencies: IndexedDB 连接生命周期、ZIP、哈希；导出云端封面时按当前账户读取素材，导入移除云端写入身份。
 import { zip, unzip } from "fflate";
@@ -21,7 +21,7 @@ export interface CreationRevision {
   revision: number;
   savedAt: number;
   chart: Project;
-  audio: AudioRef;
+  audio?: AudioRef;
 }
 export interface CreationDocument {
   id: string;
@@ -29,7 +29,7 @@ export interface CreationDocument {
   head: number;
   updatedAt: number;
   original: Project;
-  originalAudio: AudioRef;
+  originalAudio?: AudioRef;
   source?: { name: string; text: string; encoding?: "binary" };
 }
 const request = <T>(value: IDBRequest<T>) =>
@@ -107,8 +107,8 @@ export class CreationStore {
     if (!value) throw new Error("revision_missing");
     assertValidProject(value.chart);
     readAuthorCollections(value.chart);
-    const file = (await request(tx.objectStore("audio").get(value.audio.sha256))) as File | undefined;
-    if (!file) throw new Error("audio_missing");
+    const file = value.audio ? (await request(tx.objectStore("audio").get(value.audio.sha256))) as File | undefined : undefined;
+    if (value.audio && !file) throw new Error("audio_missing");
     await done;
     return { document, value, file };
   }
@@ -116,10 +116,10 @@ export class CreationStore {
     id: string,
     head: number,
     chart: Project,
-    audio: CreationAudio,
+    audio: CreationAudio | undefined,
     original: Project,
     source?: CreationDocument["source"],
-    originalAudio?: { audio: AudioRef; file: File },
+    originalAudio?: { audio: AudioRef; file: File } | null,
   ): Promise<CreationDocument> {
     assertValidProject(chart);
     assertValidProject(original);
@@ -134,12 +134,13 @@ export class CreationStore {
       tx.abort();
       throw new Error("save_conflict");
     }
-    const ref: AudioRef = {
+    const ref: AudioRef | undefined = audio ? {
       sha256: audio.sha256,
       name: audio.file.name,
       type: audio.file.type,
       duration: audio.analysis.duration,
-    };
+    } : undefined;
+    const originalRef = originalAudio === null ? undefined : originalAudio?.audio ?? ref;
     const savedAt = Date.now(),
       revision = head + 1;
     const document: CreationDocument = previous
@@ -150,10 +151,10 @@ export class CreationStore {
           head: revision,
           updatedAt: savedAt,
           original: structuredCloneValue(original),
-          originalAudio: structuredCloneValue(originalAudio?.audio ?? ref),
+          ...(originalRef ? { originalAudio: structuredCloneValue(originalRef) } : {}),
           ...(source ? { source } : {}),
         };
-    if (!(await request(tx.objectStore("audio").getKey(audio.sha256))))
+    if (audio && !(await request(tx.objectStore("audio").getKey(audio.sha256))))
       tx.objectStore("audio").put(audio.file, audio.sha256);
     if (!previous && originalAudio && !(await request(tx.objectStore("audio").getKey(originalAudio.audio.sha256))))
       tx.objectStore("audio").put(originalAudio.file, originalAudio.audio.sha256);
@@ -162,7 +163,7 @@ export class CreationStore {
       revision,
       savedAt,
       chart: structuredCloneValue(chart),
-      audio: ref,
+      ...(ref ? { audio: ref } : {}),
     } satisfies CreationRevision);
     docs.put(document);
     await done;
@@ -176,8 +177,8 @@ export class CreationStore {
     if (!document) throw new Error("project_missing");
     assertValidProject(document.original);
     readAuthorCollections(document.original);
-    const file = (await request(tx.objectStore("audio").get(document.originalAudio.sha256))) as File | undefined;
-    if (!file) throw new Error("audio_missing");
+    const file = document.originalAudio ? (await request(tx.objectStore("audio").get(document.originalAudio.sha256))) as File | undefined : undefined;
+    if (document.originalAudio && !file) throw new Error("audio_missing");
     await done;
     return { document, chart: document.original, audio: document.originalAudio, file };
   }
@@ -197,12 +198,12 @@ export class CreationStore {
       request(tx.objectStore("revisions").getAll()) as Promise<CreationRevision[]>,
     ]);
     const used = new Set([
-      ...documents.filter((row) => row.id !== id).map((row) => row.originalAudio.sha256),
-      ...revisions.filter((row) => row.projectId !== id).map((row) => row.audio.sha256),
+      ...documents.filter((row) => row.id !== id).flatMap((row) => row.originalAudio ? [row.originalAudio.sha256] : []),
+      ...revisions.filter((row) => row.projectId !== id).flatMap((row) => row.audio ? [row.audio.sha256] : []),
     ]);
     const candidates = new Set([
-      document.originalAudio.sha256,
-      ...revisions.filter((row) => row.projectId === id).map((row) => row.audio.sha256),
+      ...(document.originalAudio ? [document.originalAudio.sha256] : []),
+      ...revisions.filter((row) => row.projectId === id).flatMap((row) => row.audio ? [row.audio.sha256] : []),
     ]);
     for (const row of revisions) if (row.projectId === id) tx.objectStore("revisions").delete([id, row.revision]);
     tx.objectStore("documents").delete(id);
@@ -212,7 +213,7 @@ export class CreationStore {
   async export(id: string, revision?: number): Promise<Blob> {
     const { document, value } = await this.open(id, revision);
     const tx = await this.transaction("audio");
-    const refs = [...new Map([document.originalAudio, value.audio].map((ref) => [ref.sha256, ref])).values()];
+    const refs = [...new Map([document.originalAudio, value.audio].filter((ref): ref is AudioRef => !!ref).map((ref) => [ref.sha256, ref])).values()];
     const files = await Promise.all(
       refs.map((ref) => request(tx.objectStore("audio").get(ref.sha256)) as Promise<File>),
     );
@@ -283,7 +284,9 @@ export class CreationStore {
     readAuthorCollections(envelope.value.chart);
     const original = envelope.document.original as Project,
       chart = envelope.value.chart as Project;
-    const refs: AudioRef[] = [envelope.document.originalAudio, envelope.value.audio];
+    const originalAudio = envelope.document.originalAudio as AudioRef | undefined,
+      currentAudio = envelope.value.audio as AudioRef | undefined,
+      refs: AudioRef[] = [originalAudio, currentAudio].filter((ref): ref is AudioRef => ref !== undefined);
     const audioFiles = new Map<string, File>();
     for (const ref of refs) {
       if (
@@ -324,10 +327,10 @@ export class CreationStore {
       head: 1,
       updatedAt: savedAt,
       original,
-      originalAudio: refs[0],
+      ...(originalAudio ? { originalAudio } : {}),
       ...(source ? { source } : {}),
     });
-    tx.objectStore("revisions").add({ projectId: id, revision: 1, savedAt, chart, audio: refs[1] });
+    tx.objectStore("revisions").add({ projectId: id, revision: 1, savedAt, chart, ...(currentAudio ? { audio: currentAudio } : {}) });
     await done;
     if (envelope.publication) {
       const image = entries["cover/image"];

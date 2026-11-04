@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: 本地／云端工程、GBP 歌曲导入地址、歌曲资料、音频与原生素材 release 身份。
-// Output: 谱面与滑条结构编辑、入门与工具提示、精确定位、路标与游戏事件、图案／键位配置、编辑音频及原生统计、保存及社区发布；预览复用 chart-simulator。
+// Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
+// Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
 // Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -20,6 +20,8 @@ import { ProjectHistory } from "../../packages/chart-editor/src/history";
 import {
   createEmptyProject,
   createProjectId,
+  projectNoteOrder,
+  rescaleProjectLanes,
   resolveLinePointShape,
   type Project,
   type SingleNote,
@@ -50,7 +52,7 @@ import { accordion } from "./ui/accordion";
 import "./chart-creation-library";
 import "./chart-publication";
 import type { ChartPublication } from "./chart-publication";
-import { loadCommunityChart, readChartCloudDraft, saveChartCloudDraft } from "../lib/chart-creation/community";
+import { chartPublicationSeed, loadCommunityChart, readChartCloudDraft, saveChartCloudDraft } from "../lib/chart-creation/community";
 import { communityChartPath, type ChartMediaRef } from "../lib/chart-creation/community-types";
 import "./chart-creation-collections";
 import type { ChartCollectionScope } from "./chart-creation-collections";
@@ -73,7 +75,7 @@ import { loadingState } from "./ui/state";
 import { modal } from "./ui/modal";
 import { focusedValue } from "./ui/focused-value";
 
-import { assertEditedChartSpans, authoredSpanInBounds, authoredSpanViewport, authoredWidthBounds, constrainLaneValue, viewportXToAuthoredLane, authoredLaneToViewportX } from "../../packages/chart-editor/src/creation/span";
+import { authoredSpanInBounds, authoredSpanViewport, authoredWidthBounds, constrainLaneValue, viewportXToAuthoredLane, authoredLaneToViewportX } from "../../packages/chart-editor/src/creation/span";
 import { createAuthoredNote, resizeChartSelection, resizeChartSelectionByDelta } from "../../packages/chart-editor/src/creation/authoring";
 import {
   brushChartSelection,
@@ -242,6 +244,7 @@ export class ChartCreationWorkspace extends LitElement {
     collectionScope: { state: true },
     deletingProject: { state: true },
     busy: { state: true },
+    projectReady: { state: true },
     dirty: { state: true },
     error: { state: true },
     status: { state: true },
@@ -320,6 +323,8 @@ export class ChartCreationWorkspace extends LitElement {
   private projectExpanded = true;
   private store = new CreationStore();
   private patternStore = new ChartPatternStore();
+  declare private projectReady: boolean;
+  private get hasProject() { return this.projectReady || !!this.audio || !!this.head || !!this.source; }
   declare private pastePlacement: PastePlacement | undefined;
   declare private patternOpen: boolean;
   declare private patternBusy: boolean;
@@ -458,6 +463,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.nodeMode = "visible";
     this.collectionScope = {}; this.deletingProject = false;
     this.defaultWidth = 4;
+    this.projectReady = false;
     this.fullscreen = false;
     this.zoomX = 1;
     this.laneStart = -this.editingGutter();
@@ -572,7 +578,7 @@ export class ChartCreationWorkspace extends LitElement {
       this.documents = await this.store.list();
       const cloudId = new URL(location.href).searchParams.get("community");
       if (cloudId && /^[0-9a-f-]{36}$/u.test(cloudId)) await this.openCommunity(cloudId, signal);
-      else if (!this.audio) {
+      else if (!this.hasProject) {
         const recent = localStorage.getItem("haneoka-chart-last-project");
         if (recent && this.documents.some(document => document.id === recent)) await this.open(recent);
       }
@@ -629,7 +635,7 @@ export class ChartCreationWorkspace extends LitElement {
   private errorShown = "";
   protected updated() {
     if (!this.isConnected) return;
-    if (this.dirty && this.audio && !this.busy && !this.pastePlacement && !this.conflict && !this.autosaveTimer) {
+    if (this.dirty && this.hasProject && !this.busy && !this.pastePlacement && !this.conflict && !this.autosaveTimer) {
       this.autosaveTimer = setTimeout(() => {
         this.autosaveTimer = undefined;
         if (this.isConnected && !this.busy && !this.gesture && !this.pastePlacement && !this.widthSession && !this.conflict) {
@@ -679,7 +685,7 @@ export class ChartCreationWorkspace extends LitElement {
   private captureDraft() {
     if (this.previewPlayer?.phase === "ready") this.seconds = this.previewPlayer.currentTime;
     return {
-      history: this.history, original: this.original, source: this.source,
+      history: this.history, original: this.original, source: this.source, projectReady: this.projectReady,
       projectId: this.projectId, head: this.head, activeRevision: this.activeRevision,
       audio: this.audio, dirty: this.dirty, conflict: this.conflict, revisions: this.revisions,
       previewIdentity: this.previewIdentity, collectionScope: this.collectionScope,
@@ -694,7 +700,7 @@ export class ChartCreationWorkspace extends LitElement {
     };
   }
   private suspendDraft() {
-    if (!this.audio) return;
+    if (!this.hasProject) return;
     // Astro keeps modules alive across page swaps, including history traversal.
     // Wait for an in-flight save so its new revision is restored with the draft.
     const draft = this.operation.then(() => this.captureDraft());
@@ -740,7 +746,7 @@ export class ChartCreationWorkspace extends LitElement {
     }
   }
   private async save(silent = false) {
-    if (!this.audio || !this.dirty) return;
+    if (!this.hasProject || !this.dirty) return;
     const document = await this.store.save(
       this.projectId,
       this.head,
@@ -786,6 +792,7 @@ export class ChartCreationWorkspace extends LitElement {
       void this.ensureCanvasSkin();
       return;
     }
+    if (!this.audio && position !== undefined) this.updateTransport(Math.max(0, position), false);
     ++this.playbackRequest; this.startingPlayback = false;
     this.preview?.dispose();
     this.preview = undefined;
@@ -953,18 +960,23 @@ export class ChartCreationWorkspace extends LitElement {
         signal.throwIfAborted();
         await this.save();
         signal.throwIfAborted();
-        if (!value.audio) throw new Error("creation_audio_required");
-        const audio = await decodeCreationAudio(value.audio, signal);
-        const provider = "provider" in value ? "bestdori" : "our-notes";
-        const ref: ChartMediaRef = provider === "bestdori"
-          ? { kind: "server", provider, server: (value.identity as import("../lib/chart-creation/bestdori-source").BestdoriCreatorIdentity).requestedRegion, songId: String(value.metadata.musicId) }
-          : { kind: "server", provider, server: (value.identity as HaneokaReleaseIdentity).server, releaseId: (value.identity as HaneokaReleaseIdentity).releaseId, songId: String(value.metadata.musicId) };
-        value.project.extensions.communityMedia = { audio: ref, cover: ref, audioSha: audio.sha256 };
+        compileOurNotesCreation(value.project);
+        const audio = value.audio ? await decodeCreationAudio(value.audio, signal) : undefined;
+        if (!("provider" in value && value.provider === "sekai")) {
+          const ref: ChartMediaRef = "provider" in value
+            ? { kind: "server", provider: "bestdori", server: value.identity.requestedRegion, songId: String(value.metadata.musicId) }
+            : { kind: "server", provider: "our-notes", server: value.identity.server, releaseId: value.identity.releaseId, songId: String(value.metadata.musicId) };
+          value.project.extensions.communityMedia = { audio: ref, cover: ref, ...(audio ? { audioSha: audio.sha256 } : {}) };
+        }
+        const projectId = crypto.randomUUID();
+        if ("provider" in value && value.provider === "sekai")
+          await saveChartCloudDraft(projectId, { ...chartPublicationSeed(value.project, audio),
+            ...(value.coverFile ? { coverFile: value.coverFile } : {}), ...(audio ? { audioSha: audio.sha256 } : {}) });
         signal.throwIfAborted();
         await this.disposePreview();
         signal.throwIfAborted();
         if (!this.isConnected) throw new DOMException("Disconnected", "AbortError");
-        this.projectId = crypto.randomUUID();
+        this.projectId = projectId;
         this.head = 0;
         this.activeRevision = 0;
         this.revisions = [];
@@ -978,7 +990,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.setSelection([]);
         this.pending = undefined;
         this.dirty = true;
-        this.windowStart = 0;
+        this.frameProjectStart();
         this.rebuildPreview(0);
         this.status = value.warnings.length ? this.t("warnings") : this.t("ready");
         accepted = true;
@@ -1055,7 +1067,13 @@ export class ChartCreationWorkspace extends LitElement {
   private seekPlayback(seconds: number, exact = false) {
     this.preciseSeekSeconds = this.stageMode === "edit" && exact ? seconds : undefined;
     if (this.stageMode === "preview") this.previewPlayer?.seek(seconds);
-    else this.preview?.seek(seconds);
+    else if (this.preview) this.preview.seek(seconds);
+    else {
+      this.seconds = Math.max(0, seconds);
+      if (this.seconds < this.windowStart || this.seconds > this.windowStart + this.secondsPerScreen)
+        this.windowStart = this.clampStart(this.seconds - this.secondsPerScreen * .25);
+      this.updateTransport(this.seconds, false); this.requestUpdate();
+    }
   }
   private pausePlayback() {
     ++this.playbackRequest; this.startingPlayback = false;
@@ -1097,12 +1115,11 @@ export class ChartCreationWorkspace extends LitElement {
       this.rebuildPreview(0);
     });
   }
-  private async startPractice() {
-    this.guideOpen = false;
-    this.closePanels();
-    await this.loadAudio(createExampleAudio(), true);
-    await this.updateComplete;
-    this.querySelector<HTMLCanvasElement>(".chart-creation__editor")?.focus({ preventScroll: true });
+  private async removeAudio() {
+    await this.run(async () => {
+      await this.save(); await this.disposePreview(); this.preview?.dispose(); this.preview = undefined;
+      this.projectReady = true; this.audio = undefined; this.dirty = true; this.rebuildPreview(this.seconds);
+    });
   }
   private async openCommunity(id: string, signal: AbortSignal) {
     const requestedRevision = Number(new URL(location.href).searchParams.get("revision"));
@@ -1135,8 +1152,8 @@ export class ChartCreationWorkspace extends LitElement {
     const signal = this.controller!.signal;
     await this.save(); signal.throwIfAborted();
     const opened = await this.store.open(id, revision);
-    const [audio, revisions] = await Promise.all([decodeCreationAudio(opened.file, signal), this.store.versions(id)]);
-    if (audio.sha256 !== opened.value.audio.sha256) throw new Error("audio_hash");
+    const [audio, revisions] = await Promise.all([opened.file ? decodeCreationAudio(opened.file, signal) : undefined, this.store.versions(id)]);
+    if (audio && audio.sha256 !== opened.value.audio!.sha256) throw new Error("audio_hash");
     signal.throwIfAborted(); await this.disposePreview(); signal.throwIfAborted();
     if (!this.isConnected) throw new DOMException("Disconnected", "AbortError");
     this.preview?.dispose();
@@ -1146,17 +1163,17 @@ export class ChartCreationWorkspace extends LitElement {
     this.history.reset(opened.value.chart); this.audio = audio; this.previewIdentity = undefined;
     this.setSelection([]); this.pending = undefined;
     // Viewing a historical version is clean; the first subsequent edit creates a new saved branch.
-    this.dirty = false; this.windowStart = 0; this.revisions = revisions;
+    this.dirty = false; this.revisions = revisions; this.frameProjectStart();
     this.rebuildPreview(0); this.status = this.t("restored");
   }
   private async saveCopy() {
-    if (!this.audio) return;
+    if (!this.hasProject) return;
     await this.run(async signal => {
-      const id = crypto.randomUUID(), snapshot = structuredClone(this.chart), original = this.original, audio = this.audio!, source = this.source;
+      const id = crypto.randomUUID(), snapshot = structuredClone(this.chart), original = this.original, audio = this.audio, source = this.source;
       snapshot.meta.title = `${snapshot.meta.title || this.t("project")} (${this.t("creation.copy")})`;
       const originalAudio = this.head ? await this.store.original(this.projectId) : undefined;
       signal.throwIfAborted();
-      const document = await this.store.save(id, 0, snapshot, audio, original, source, originalAudio);
+      const document = await this.store.save(id, 0, snapshot, audio, original, source, originalAudio ? originalAudio.audio && originalAudio.file ? { audio: originalAudio.audio, file: originalAudio.file } : null : undefined);
       const publication = await readChartCloudDraft(this.projectId);
       if (publication) await saveChartCloudDraft(id, { ...publication, id: undefined, version: undefined, revision: undefined, pendingSave: undefined });
       signal.throwIfAborted();
@@ -1170,8 +1187,8 @@ export class ChartCreationWorkspace extends LitElement {
   private async restoreOriginal() {
     await this.run(async signal => {
       await this.save(); signal.throwIfAborted();
-      const original = await this.store.original(this.projectId), audio = await decodeCreationAudio(original.file, signal);
-      if (audio.sha256 !== original.audio.sha256) throw new Error("audio_hash");
+      const original = await this.store.original(this.projectId), audio = original.file ? await decodeCreationAudio(original.file, signal) : undefined;
+      if (audio && audio.sha256 !== original.audio!.sha256) throw new Error("audio_hash");
       signal.throwIfAborted(); await this.disposePreview(); signal.throwIfAborted();
       this.original = original.chart; this.source = original.document.source; this.audio = audio;
       this.history.reset(original.chart); this.collectionScope = {}; this.previewIdentity = undefined;
@@ -1192,7 +1209,7 @@ export class ChartCreationWorkspace extends LitElement {
       this.projectId = crypto.randomUUID(); this.head = this.activeRevision = 0;
       this.collectionScope = {}; this.deletingProject = false; this.revisions = []; this.dirty = false;
       this.setSelection([]); this.pending = undefined; this.windowStart = this.seconds = 0;
-      this.stageMode = "edit"; this.documents = await this.store.list(); this.rebuildPreview(0);
+      this.projectReady = false; this.stageMode = "edit"; this.documents = await this.store.list(); this.rebuildPreview(0);
     });
   }
   private pick(selector: string) {
@@ -1229,7 +1246,8 @@ export class ChartCreationWorkspace extends LitElement {
       this.setSelection([]);
       this.pending = undefined;
       this.dirty = true;
-      this.rebuildPreview();
+      this.frameProjectStart();
+      this.rebuildPreview(0);
       this.status = imported.warnings.length ? this.t("warnings") : this.t("ready");
     });
   }
@@ -1242,6 +1260,13 @@ export class ChartCreationWorkspace extends LitElement {
   private map() {
     const p = this.chart;
     return new TempoMap(p.tempos, { resolution: p.resolution, audioOffset: p.audioOffset });
+  }
+  private frameProjectStart() {
+    const project = this.chart;
+    const first = [...project.singles, ...project.lines.flatMap(line => line.points)]
+      .reduce((tick, note) => Math.min(tick, note.tick), Infinity);
+    this.seconds = 0; this.preciseSeekSeconds = undefined;
+    this.windowStart = Number.isFinite(first) ? Math.max(0, this.map().tickToSeconds(first) - this.secondsPerScreen / 4) : 0;
   }
   private beforeUnload = (event: BeforeUnloadEvent) => {
     if (this.dirty) {
@@ -1331,7 +1356,7 @@ export class ChartCreationWorkspace extends LitElement {
       case "play": this.togglePlayback(); break;
       case "cancel": this.pending = undefined; this.continuingLine = ""; this.setSelection([]); this.requestUpdate(); break;
       case "confirm": {
-        if (!this.audio || this.canvasLoading || !this.canvasTheme || !this.cursor
+        if (!this.hasProject || this.canvasLoading || !this.canvasTheme || !this.cursor
           || !["tap", "flick", "trace", "hold", "guide", "node"].includes(this.tool)) return false;
         const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
         if (!canvas) return false;
@@ -1513,7 +1538,7 @@ export class ChartCreationWorkspace extends LitElement {
   private renderMeters() {
     return html`<section class="stack" aria-label=${this.t("meter")}>
       <h3 class="detail-section-title">${this.t("meter")}</h3>
-      <button class="button" type="button" ?disabled=${this.busy || !this.audio} @click=${() => this.edit(project => {
+      <button class="button" type="button" ?disabled=${this.busy || !this.hasProject} @click=${() => this.edit(project => {
         const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds)));
         if (project.meters.some(meter => meter.tick === tick)) return;
         const meter = meterAtTick(project.meters, tick) ?? project.meters[0]!;
@@ -1526,7 +1551,7 @@ export class ChartCreationWorkspace extends LitElement {
           project.meters.sort((a, b) => a.tick - b.tick);
         }))}
         <md-outlined-text-field label=${this.t("meter")} .value=${focusedValue(this.meterDrafts.get(meter.id) ?? `${meter.numerator}/${meter.denominator}`)}
-          .error=${this.meterDrafts.has(meter.id)} ?disabled=${this.busy || !this.audio}
+          .error=${this.meterDrafts.has(meter.id)} ?disabled=${this.busy || !this.hasProject}
           @input=${() => { if (this.meterDrafts.delete(meter.id)) this.requestUpdate(); }}
           @change=${(event: Event) => {
             const value = (event.target as HTMLInputElement).value, match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/u.exec(value);
@@ -1583,7 +1608,7 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private clampStart(value: number) { return Math.max(0, value); }
   private setVerticalZoom(span: number, pixel?: number) {
-    if (this.busy || this.gesture || !this.audio || this.stageMode !== "edit" || !Number.isFinite(span)) return;
+    if (this.busy || this.gesture || !this.hasProject || this.stageMode !== "edit" || !Number.isFinite(span)) return;
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
     if (!canvas?.clientHeight) return;
     const height = canvas.clientHeight;
@@ -1602,7 +1627,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.requestUpdate();
   }
   private wheel(event: WheelEvent) {
-    if (this.busy || !this.audio) return;
+    if (this.busy || !this.hasProject) return;
     event.preventDefault();
     if (this.gesture || this.pan) return;
     const canvas = event.currentTarget as HTMLCanvasElement;
@@ -1630,7 +1655,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.requestUpdate();
   }
   private trackCursor(event: PointerEvent) {
-    if (!event.isPrimary || this.stageMode !== "edit" || this.busy || !this.audio) return;
+    if (!event.isPrimary || this.stageMode !== "edit" || this.busy || !this.hasProject) return;
     this.cursor = { clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType };
     if (!this.gesture && !this.pan && !this.cursorFrame)
       this.cursorFrame = requestAnimationFrame(() => { this.cursorFrame = 0; this.paint(); });
@@ -1737,7 +1762,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.paint(); this.requestUpdate();
   }
   private hit(event: PointerEvent) {
-    if (this.busy || !this.audio || this.canvasLoading || !this.canvasTheme || ![0, 1, 2].includes(event.button)) return;
+    if (this.busy || !this.hasProject || this.canvasLoading || !this.canvasTheme || ![0, 1, 2].includes(event.button)) return;
     const canvas = event.currentTarget as HTMLCanvasElement;
     if (event.pointerType === "touch") {
       this.touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1826,7 +1851,7 @@ export class ChartCreationWorkspace extends LitElement {
     return snapTick(tick, this.snap, mode, this.chart.resolution * 4);
   }
   private nudgeSelection(direction: -1 | 1, oneTick = false) {
-    if (this.busy || this.gesture || !this.audio || !this.selectedIds.size) return;
+    if (this.busy || this.gesture || !this.hasProject || !this.selectedIds.size) return;
     this.cancelWidth();
     try { this.commitProject(nudgeChartSelectionOnGrid(this.chart, this.selectedIds, this.selected, direction, oneTick ? this.chart.resolution * 4 : this.snap, 4)); }
     catch { this.error = this.t("creation.invalid_edit"); }
@@ -2014,7 +2039,7 @@ export class ChartCreationWorkspace extends LitElement {
       if (!authoredSpanInBounds(point.lane, point.size, project.laneBasis)) throw new Error("invalid_edit");
       return { ...createAuthoredNote(project, {
         ...point, type: placement.tool === "flick" ? "flick" : placement.tool === "trace" ? "trace" : "tap",
-        direction: placement.tool === "flick" ? placement.direction : "none", critical: placement.critical, placement: "stage",
+        direction: placement.tool === "flick" ? placement.direction : "none", critical: placement.critical, placement: "overlap",
       }), id };
     };
     if (["hold", "guide"].includes(placement.tool)) {
@@ -2322,7 +2347,7 @@ export class ChartCreationWorkspace extends LitElement {
         ctx.restore();
       }
       if (!action && !this.pan && !hovered && !nodeTarget && ["tap", "flick", "trace", "hold", "guide"].includes(this.tool)) {
-        const valid = authoredSpanInBounds(lane, this.defaultWidth, chart.laneBasis);
+        const valid = authoredSpanInBounds(lane, this.defaultWidth, chart.laneBasis, "overlap");
         ctx.save();
         if (valid && skin) {
           ctx.globalAlpha = 0.65;
@@ -2401,7 +2426,6 @@ export class ChartCreationWorkspace extends LitElement {
       candidate = reconcileAuthorEdit(this.chart, candidate);
       candidate = this.scopeNewEntities(this.chart, candidate);
       assertValidProject(candidate); readAuthorCollections(candidate);
-      assertEditedChartSpans(this.chart, candidate);
       const compiled = compileOurNotesCreation(candidate);
       const revision = this.history.revision;
       this.history.replace(candidate, mergeKey ? { mergeKey } : {});
@@ -2458,7 +2482,7 @@ export class ChartCreationWorkspace extends LitElement {
     } catch { snackbar(this.t("creation.invalid_edit")); }
   }
   private beginPaste(clipboard: AuthorClipboard) {
-    if (this.busy || !this.audio || this.stageMode !== "edit") return;
+    if (this.busy || !this.hasProject || this.stageMode !== "edit") return;
     this.cancelGesture();
     this.cancelWidth();
     this.pausePlayback();
@@ -2488,7 +2512,6 @@ export class ChartCreationWorkspace extends LitElement {
       const pasted = pasteAuthorSelection(placement.base, placement.clipboard, tick, laneShift);
       placement.candidate = pasted.project;
       placement.ids = pasted.ids;
-      assertEditedChartSpans(placement.base, pasted.project);
       placement.error = "";
     } catch { placement.error = this.t("patterns.outside_stage"); }
     if (previousError !== placement.error) this.requestUpdate();
@@ -2630,7 +2653,7 @@ export class ChartCreationWorkspace extends LitElement {
           ${this.patterns.map(pattern => html`<md-select-option value=${pattern.id} .selected=${this.selectedPattern === pattern.id}><div slot="headline">${pattern.name}</div></md-select-option>`)}
         </md-outlined-select>
         <div class="cluster">
-          <button class="button button--filled" type="button" ?disabled=${this.patternBusy || !this.audio} @click=${() => this.applyPattern()}>${this.t("patterns.apply")}</button>
+          <button class="button button--filled" type="button" ?disabled=${this.patternBusy || !this.hasProject} @click=${() => this.applyPattern()}>${this.t("patterns.apply")}</button>
           <button class="button button--text" type="button" ?disabled=${this.patternBusy || this.selectedPattern === "one-tick-flick"} @click=${() => void this.deletePattern()}>${this.t("patterns.delete")}</button>
           <button class="button button--text" type="button" ?disabled=${this.patternBusy || this.selectedPattern === "one-tick-flick"} @click=${() => this.exportPattern()}>${this.c("export")}</button>
           <button class="button button--text" type="button" ?disabled=${this.patternBusy} @click=${() => this.pick("[data-pattern-import]")}>${this.t("patterns.import")}</button>
@@ -2639,7 +2662,7 @@ export class ChartCreationWorkspace extends LitElement {
         <md-outlined-text-field label=${this.t("patterns.name")} .value=${live(this.patternName)} maxlength="80"
           ?disabled=${this.patternBusy} .error=${this.patternError === this.t("patterns.name_required")}
           @input=${(event: Event) => { this.patternName = (event.target as HTMLInputElement).value; this.patternError = ""; }}></md-outlined-text-field>
-        <button class="button button--tonal" type="button" ?disabled=${this.patternBusy || !this.audio || !this.selectedIds.size} @click=${() => void this.savePattern()}>${this.t("patterns.save_selection")}</button>
+        <button class="button button--tonal" type="button" ?disabled=${this.patternBusy || !this.hasProject || !this.selectedIds.size} @click=${() => void this.savePattern()}>${this.t("patterns.save_selection")}</button>
         <button class="button button--text" type="button" ?disabled=${this.patternBusy || this.selectedPattern === "one-tick-flick" || !this.patternName.trim()}
           @click=${() => void this.renamePattern()}>${this.t("patterns.rename")}</button>
         <output class="chart-studio__dialog-status" role="status">${this.patternError}</output>
@@ -2755,7 +2778,6 @@ export class ChartCreationWorkspace extends LitElement {
       <header class="dialog__header"><h2>${this.t("help.title")}</h2></header>
       <div class="dialog__body"><div class="stack">
         <div class="cluster">
-          <button class="button button--tonal" type="button" ?disabled=${this.busy} @click=${() => void this.startPractice()}>${this.t("help.practice")}</button>
           <button class="button button--text" type="button" @click=${() => { this.guideOpen = false; this.showShortcuts(); }}>${this.t("help.customize")}</button>
         </div>
         <ol class="chart-studio__steps">
@@ -2920,7 +2942,7 @@ export class ChartCreationWorkspace extends LitElement {
       onExpandedChange: expanded => { this.gameMarkersOpen = expanded; this.requestUpdate(); }, content: html`
       <section class="stack" aria-label=${this.t("markers.skill")}>
         <h3 class="detail-section-title">${this.t("markers.skill")}</h3>
-        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.audio}
+        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.hasProject}
           @click=${() => this.edit(project => { project.markers.skill.push(at()); })}>${this.t("markers.add_skill")}</button>
         ${this.chart.markers.skill.map((tick, index) => html`<div class="chart-creation__form">
           ${this.beatField(tick, tick => this.edit(project => { project.markers.skill[index] = tick; }))}${remove("skill", index)}
@@ -2928,7 +2950,7 @@ export class ChartCreationWorkspace extends LitElement {
       </section>
       <section class="stack" aria-label=${this.t("markers.fever")}>
         <h3 class="detail-section-title">${this.t("markers.fever")}</h3>
-        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.audio}
+        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.hasProject}
           @click=${() => this.edit(project => { const tick = at(); project.markers.fever.push([tick, tick + project.resolution * 4]); })}>${this.t("markers.add_fever")}</button>
         ${this.chart.markers.fever.map((pair, index) => html`<div class="chart-creation__form">
           ${([0, 1] as const).map(edge => this.field(edge ? "markers.end" : "markers.start", pair[edge] / this.chart.resolution, value => this.edit(project => {
@@ -2940,7 +2962,7 @@ export class ChartCreationWorkspace extends LitElement {
       </section>
       <section class="stack" aria-label=${this.t("markers.call")}>
         <h3 class="detail-section-title">${this.t("markers.call")}</h3>
-        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.audio}
+        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.hasProject}
           @click=${() => this.edit(project => { project.markers.call.push({ tick: at(), timing: [1, 1, 1, 1] }); })}>${this.t("markers.add_call")}</button>
         ${this.chart.markers.call.map((call, index) => html`<div class="chart-creation__form">
           ${this.beatField(call.tick, tick => this.edit(project => { project.markers.call[index]!.tick = tick; }))}
@@ -2956,7 +2978,7 @@ export class ChartCreationWorkspace extends LitElement {
     return html`<section class="stack" aria-label=${this.t("creation.waypoints")}>
       <h3 class="detail-section-title">${this.t("creation.waypoints")}</h3>
       <div class="chart-creation__actions">
-        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.audio} @click=${() => this.edit(project => {
+        <button class="button button--tonal" type="button" ?disabled=${this.busy || !this.hasProject} @click=${() => this.edit(project => {
           const waypoints = project.waypoints ??= [];
           waypoints.push({ id: createProjectId("waypoint"), tick: Math.max(0, Math.round(this.map().secondsToTick(this.seconds))),
             name: `${this.t("creation.waypoint")} ${waypoints.length + 1}` });
@@ -2964,7 +2986,7 @@ export class ChartCreationWorkspace extends LitElement {
         })}>${this.t("creation.add_waypoint")}</button>
         ${([-1, 1] as const).map(direction => iconButton({ label: this.t(direction < 0 ? "creation.previous_waypoint" : "creation.next_waypoint"),
           shortcut: this.shortcutLabel(direction < 0 ? "previous_waypoint" : "next_waypoint"), icon: direction < 0 ? "arrow_downward" : "arrow_upward",
-          disabled: this.busy || !this.audio || !this.chart.waypoints?.length, onClick: () => this.stepWaypoint(direction) }))}
+          disabled: this.busy || !this.hasProject || !this.chart.waypoints?.length, onClick: () => this.stepWaypoint(direction) }))}
       </div>
       ${(this.chart.waypoints ?? []).map(point => html`<div class="chart-creation__form">
         ${this.field("creation.waypoint_name", point.name, name => this.edit(project => { project.waypoints!.find(item => item.id === point.id)!.name = name; }))}
@@ -2973,7 +2995,7 @@ export class ChartCreationWorkspace extends LitElement {
           project.waypoints!.sort((a, b) => a.tick - b.tick);
         }))}
         <div class="chart-creation__actions">
-          <button class="button button--text" type="button" ?disabled=${this.busy || !this.audio}
+          <button class="button button--text" type="button" ?disabled=${this.busy || !this.hasProject}
             aria-label=${`${this.t("creation.jump_waypoint")} / ${point.name}`} @click=${() => this.jumpToWaypoint(point.tick)}>${this.t("creation.jump_waypoint")}</button>
           ${iconButton({ label: `${this.t("creation.delete_waypoint")} / ${point.name}`, icon: "delete", disabled: this.busy,
             onClick: () => this.edit(project => { project.waypoints = project.waypoints!.filter(item => item.id !== point.id); }) })}
@@ -3019,7 +3041,7 @@ export class ChartCreationWorkspace extends LitElement {
       (lane === undefined ? 0 : Math.abs(a.lane + a.size / 2 - lane) - Math.abs(b.lane + b.size / 2 - lane)))[0];
   }
   private insertNodeAt(tick: number, lane?: number, tolerance = 0) {
-    if (this.busy || this.gesture || !this.audio) return;
+    if (this.busy || this.gesture || !this.hasProject) return;
     const target = this.nodeTarget(tick, lane, tolerance);
     if (!target) { snackbar(this.t("creation.node_missing")); return; }
     try {
@@ -3049,7 +3071,7 @@ export class ChartCreationWorkspace extends LitElement {
     catch { snackbar(this.t("creation.invalid_edit")); }
   }
   private removeSelectedNodes() {
-    if (this.busy || this.gesture || !this.audio) return;
+    if (this.busy || this.gesture || !this.hasProject) return;
     this.cancelWidth();
     try {
       const result = removeLineControlPoints(this.chart, this.selectedIds);
@@ -3066,7 +3088,7 @@ export class ChartCreationWorkspace extends LitElement {
     return values.size > 1 ? "mixed" : (values.values().next().value ?? "inherit");
   }
   private setSelectedLineCritical(value: string): boolean {
-    if (this.busy || this.gesture || !this.audio
+    if (this.busy || this.gesture || !this.hasProject
       || !["inherit", "normal", "critical"].includes(value)) return false;
     const ids = this.selectedConnectorIds();
     if (!ids.size) return false;
@@ -3091,7 +3113,7 @@ export class ChartCreationWorkspace extends LitElement {
     return values.size > 1 ? "mixed" : (values.values().next().value ?? "long");
   }
   private setSelectedLineKind(value: string): boolean {
-    if (this.busy || this.gesture || !this.audio
+    if (this.busy || this.gesture || !this.hasProject
       || (value !== "long" && value !== "guide")) return false;
     const ids = this.selectedConnectorIds();
     if (!ids.size || this.chart.lines.filter(line => ids.has(line.id)).every(line => line.kind === value)) return false;
@@ -3129,8 +3151,11 @@ export class ChartCreationWorkspace extends LitElement {
       this.pending = undefined;
       this.windowStart = 0;
       this.seconds = 0;
-      this.dirty = false;
+      this.dirty = true;
+      this.projectReady = true;
       this.stageMode = "edit";
+      this.rebuildPreview(0);
+      this.closePanels();
       this.requestUpdate();
     });
   }
@@ -3155,7 +3180,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.error = "";
   }
   private stepWidth(delta: number) {
-    if (this.busy || this.gesture || this.pan || !this.audio) return;
+    if (this.busy || this.gesture || this.pan || !this.hasProject) return;
     // A keyboard press starts a new operation after a cancelled slider gesture.
     this.widthCancelled = false;
     const item = this.selectionNodes().find(node => node.note.id === this.selected);
@@ -3173,7 +3198,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.widthSession.base,
         this.widthSession.ids,
         value,
-        { placement: "overlap", resolveAutoLane: true },
+        { placement: "authored", resolveAutoLane: false },
       );
       this.paint();
     } catch {
@@ -3205,7 +3230,12 @@ export class ChartCreationWorkspace extends LitElement {
     const apply = (raw: string) => {
       this.widthCancelled = false;
       const size = raw.trim() ? Number(raw) : NaN;
-      if (selected) this.commitWidth(size);
+      if (selected) this.edit(project => {
+        for (const note of [...project.singles, ...project.lines.flatMap(line => line.points)]) if (note.id === this.selected) {
+          note.size = size;
+          if ("ease" in note) { if (note.lane === "auto") note.autoSize = false; delete note.resolvedLane; delete note.resolvedSize; }
+        }
+      });
       else this.setDefaultWidth(size);
     };
     return html`
@@ -3223,7 +3253,7 @@ export class ChartCreationWorkspace extends LitElement {
           max=${maximum}
           step="0.25"
           .value=${value}
-          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.audio}
+          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.hasProject}
           @pointerdown=${() => {
           this.widthCancelled = false;
         }}
@@ -3251,10 +3281,9 @@ export class ChartCreationWorkspace extends LitElement {
           aria-label=${label}
           type="number"
           min="0"
-          max=${Number.isFinite(limit) ? limit : nothing}
           step="any"
           .value=${focusedValue(String(value))}
-          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.audio}
+          ?disabled=${this.busy || !!this.gesture || !!this.pan || !this.hasProject}
           @change=${(event: Event) => apply((event.target as HTMLInputElement).value)}
           @focusout=${(event: FocusEvent) => {
           const input = event.composedPath().find(node => node instanceof HTMLInputElement);
@@ -3295,7 +3324,23 @@ export class ChartCreationWorkspace extends LitElement {
         aria-label=${this.t("help.open")} title=${`${this.t("help.title")} (${this.shortcutLabel("help")})`}
         ?disabled=${this.busy} @click=${() => this.showGuide()}>${icon("help", 20)}<span>${this.t("help.open")}</span></button>`;
   }
+  private selectedObjectId() {
+    return this.chart.lines.find(line => line.points.some(point => point.id === this.selected))?.id ?? this.selected;
+  }
+  private setObjectOrder(index: number) {
+    const ids = projectNoteOrder(this.chart), id = this.selectedObjectId();
+    if (!Number.isSafeInteger(index) || index < 0 || index >= ids.length || !ids.includes(id)) {
+      this.error = this.t("creation.invalid_position"); return;
+    }
+    ids.splice(ids.indexOf(id), 1); ids.splice(index, 0, id);
+    this.edit(project => { project.sourceOrder = [...ids, ...(project.sourceOrder ?? []).filter(value => !ids.includes(value))]; });
+  }
+  private renderLibraryButton() {
+    return html`<button class="button button--tonal" type="button" ?disabled=${this.busy}
+      @click=${() => this.showLibrary()}>${icon("library_music", 20)}${this.t("serverLibrary")}</button>`;
+  }
   private renderAppActions() {
+    if (!this.hasProject) return html`${this.renderLibraryButton()}${this.renderGuideButton()}`;
     if (this.pastePlacement) return html`
       <span data-app-bar-keep>${iconButton({ label: this.c("cancel"), icon: "close", onClick: () => this.cancelPaste() })}</span>
       <button class="button button--filled" data-app-bar-keep type="button" ?disabled=${!!this.pastePlacement.error || !this.pastePlacement.candidate}
@@ -3342,10 +3387,11 @@ export class ChartCreationWorkspace extends LitElement {
       </span>
       ${this.busy ? iconButton({ label: this.c("cancel"), icon: "close", onClick: () => this.cancelOperation() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("patterns.title"), icon: "widgets", disabled: this.busy, onClick: () => void this.showPatterns() }) : nothing}
+      ${this.stageMode === "edit" ? this.renderLibraryButton() : nothing}
       ${this.renderGuideButton()}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("shortcuts.title"), icon: "keyboard", disabled: this.busy, onClick: () => this.showShortcuts() }) : nothing}
       ${this.stageMode === "edit" ? iconButton({ label: this.t("audio.title"), icon: "volume_up", disabled: this.busy, onClick: () => void this.showAudioSettings() }) : nothing}
-      ${iconButton({ label: this.t("creation.save"), shortcut: this.shortcutLabel("save"), className: "chart-studio__header-save", icon: "save", disabled: this.busy || !this.audio || !this.dirty, onClick: () => void this.run(() => this.save()) })}
+      ${iconButton({ label: this.t("creation.save"), shortcut: this.shortcutLabel("save"), className: "chart-studio__header-save", icon: "save", disabled: this.busy || !this.hasProject || !this.dirty, onClick: () => void this.run(() => this.save()) })}
       <button class="button button--text" type="button" ?disabled=${this.busy || !this.audio}
         @click=${() => void this.querySelector<ChartPublication>("chart-publication")?.show()}>
         ${icon("edit", 20)}<span>${clientText(this.locale, "community.charts.publishToCommunity")}</span>
@@ -3385,7 +3431,7 @@ export class ChartCreationWorkspace extends LitElement {
         step=${numeric ? step : nothing}
         type=${numeric ? "number" : "text"}
         .value=${focusedValue(String(value))}
-        ?disabled=${this.busy || !this.audio}
+        ?disabled=${this.busy || !this.hasProject}
         @change=${(e: Event) => changed((e.currentTarget as HTMLInputElement).value)}
         @focusout=${(e: FocusEvent) => {
           const input = e.composedPath().find(node => node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement);
@@ -3398,7 +3444,7 @@ export class ChartCreationWorkspace extends LitElement {
     const chart = this.chart,
       selection = [...chart.singles, ...chart.lines.flatMap((l) => l.points)].find((n) => n.id === this.selected);
     const selectedShape = this.selectionNodes(chart).find(item => item.note.id === this.selected);
-    const interior = selection && chart.lines.some(line => line.points.slice(1, -1).some(point => point.id === selection.id));
+    const linePoint = selection && "ease" in selection;
     const selectedUpdate = (updater: (note: SingleNote | LinePoint) => void) =>
       this.edit((p) => {
         const ids = new Set([this.selected]);
@@ -3413,9 +3459,6 @@ export class ChartCreationWorkspace extends LitElement {
         <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary()}>
           ${this.t("serverLibrary")}
         </button>
-        <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary("bestdori")}>
-          ${this.t("importGbp")}
-        </button>
         <button class="button button--filled" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>
           ${this.t("importLocalAudio")}
         </button>
@@ -3426,19 +3469,19 @@ export class ChartCreationWorkspace extends LitElement {
         >
           ${this.t("creation.example")}
         </button>
-        <button class="button" ?disabled=${this.busy || !this.audio} @click=${() => this.pick("[data-chart]")}>
+        <button class="button" ?disabled=${this.busy} @click=${() => this.pick("[data-chart]")}>
           ${this.t("importLocalChart")}
         </button>
         <button
           class="button"
-          ?disabled=${this.busy || !this.audio || !this.dirty}
+          ?disabled=${this.busy || !this.hasProject || !this.dirty}
           @click=${() => void this.run(() => this.save())}
         >
           ${this.t("creation.save")}
         </button>
         <button
           class="button"
-          ?disabled=${this.busy || !this.audio}
+          ?disabled=${this.busy || !this.hasProject}
           @click=${() =>
             void this.run(async () => {
               await this.save();
@@ -3450,7 +3493,7 @@ export class ChartCreationWorkspace extends LitElement {
         <button class="button" ?disabled=${this.busy} @click=${() => this.pick("[data-backup]")}>
           ${this.t("creation.open_backup")}
         </button>
-        <button class="button button--tonal" ?disabled=${this.busy || !this.audio} @click=${() => void this.saveCopy()}>${this.t("creation.save_copy")}</button>
+        <button class="button button--tonal" ?disabled=${this.busy || !this.hasProject} @click=${() => void this.saveCopy()}>${this.t("creation.save_copy")}</button>
         <button class="button button--text" ?disabled=${this.busy || !this.head} @click=${() => void this.restoreOriginal()}>${this.t("creation.restore_original")}</button>
         <button class="button button--text" ?disabled=${this.busy || !this.head} @click=${() => { this.deletingProject = !this.deletingProject; }}>${this.t("creation.delete_project")}</button>
         ${this.deletingProject ? html`<dialog class="dialog" aria-label=${this.t("creation.delete_project")} ${modal(() => { if (!this.busy) this.deletingProject = false; })}>
@@ -3460,10 +3503,12 @@ export class ChartCreationWorkspace extends LitElement {
       </div>
     `;
     const audioPanel = html`
+      <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>${this.t("importLocalAudio")}</button>
       ${
         this.audio
           ? html`
               <div class="chart-creation__audio">
+                <button class="button button--text" ?disabled=${this.busy} @click=${() => void this.removeAudio()}>${this.t("creation.remove_audio")}</button>
                 <span>${this.audio.file.name} / ${this.audio.analysis.duration.toFixed(2)} s</span>
                 ${this.audio.analysis.candidates.map(
                   (candidate) => html`
@@ -3487,7 +3532,7 @@ export class ChartCreationWorkspace extends LitElement {
     const collectionsPanel = accordion({
       id: "chart-inspector-collections", label: this.t("collections.title"), expanded: this.collectionsExpanded,
       onExpandedChange: expanded => { this.collectionsExpanded = expanded; this.requestUpdate(); },
-      content: html`<chart-creation-collections .locale=${this.locale} .project=${chart} .selection=${this.selectedIds} .scope=${this.collectionScope} .busy=${this.busy || !!this.gesture || !!this.widthSession || !this.audio} .forceSpeedAvailable=${true} .globalNoteSpeed=${DEFAULT_RENDER_SETTINGS.noteSpeed} .onOperation=${this.collectionOperation} .onScope=${this.changeCollectionScope} .onSelect=${this.selectCollectionMembers}></chart-creation-collections>`,
+      content: html`<chart-creation-collections .locale=${this.locale} .project=${chart} .selection=${this.selectedIds} .scope=${this.collectionScope} .busy=${this.busy || !!this.gesture || !!this.widthSession || !this.hasProject} .forceSpeedAvailable=${true} .globalNoteSpeed=${DEFAULT_RENDER_SETTINGS.noteSpeed} .onOperation=${this.collectionOperation} .onScope=${this.changeCollectionScope} .onSelect=${this.selectCollectionMembers}></chart-creation-collections>`,
     });
     const selectionPanel = html`
 
@@ -3500,7 +3545,7 @@ export class ChartCreationWorkspace extends LitElement {
                   ${([-1, 1] as const).map(direction => iconButton({
                     label: `${this.t("beat")} ${direction > 0 ? "+" : "−"} / ${this.t("snap")}`,
                     icon: direction > 0 ? "arrow_upward" : "arrow_downward",
-                    disabled: this.busy || !!this.gesture || !this.audio,
+                    disabled: this.busy || !!this.gesture || !this.hasProject,
                     onClick: () => this.nudgeSelection(direction),
                   }))}
                   <button
@@ -3515,7 +3560,7 @@ export class ChartCreationWorkspace extends LitElement {
                   ${iconButton({ label: this.t("creation.copy_brush"), icon: "format_paint", disabled: this.busy, onClick: () => this.copyBrush() })}
                   ${"ease" in selection ? iconButton({ label: this.t("creation.generate_nodes"), icon: "add", disabled: this.busy, onClick: () => this.generateSelectedNodes() }) : nothing}
                   ${iconButton({ label: this.t("creation.remove_nodes"), icon: "remove",
-                    disabled: this.busy || !!this.gesture || !this.audio || !removableLinePointIds(chart, this.selectedIds).length,
+                    disabled: this.busy || !!this.gesture || !this.hasProject || !removableLinePointIds(chart, this.selectedIds).length,
                     onClick: () => this.removeSelectedNodes() })}
                 </div>
                 <button
@@ -3555,10 +3600,11 @@ export class ChartCreationWorkspace extends LitElement {
                 <div class="chart-studio__tick-actions" role="group" aria-label=${this.t("creation.tick_nudge")}>
                   ${([-1, 1] as const).map(direction => html`
                     <button class="button button--tonal" type="button"
-                      ?disabled=${this.busy || !!this.gesture || !this.audio || (direction < 0 && selection.tick === 0)}
+                      ?disabled=${this.busy || !!this.gesture || !this.hasProject || (direction < 0 && selection.tick === 0)}
                       @click=${() => this.nudgeSelection(direction, true)}>${direction < 0 ? "−" : "+"}1 ${this.t("tick")}</button>
                   `)}
                 </div>
+                ${this.field("creation.object_order", projectNoteOrder(chart).indexOf(this.selectedObjectId()) + 1, value => this.setObjectOrder(Number(value) - 1), true, "1")}
                 ${this.selectedConnectorIds(chart).size ? html`<button class="button button--text" type="button" ?disabled=${this.busy} @click=${() => this.selectConnectors()}>${this.t("patterns.select_line")}</button>` : nothing}
                 ${this.selectedConnectorIds(chart).size ? html`<button class="button button--tonal" type="button" ?disabled=${this.busy}
                   @click=${() => this.activateNodeTool()}>${icon("add", 20)}${this.t("creation.insert_node")}</button>` : nothing}
@@ -3592,11 +3638,18 @@ export class ChartCreationWorkspace extends LitElement {
                     }),
                   true,
                 )}
-                ${interior && selection ? this.renderNodeMode(selection.lane === "auto" ? "auto" : selection.visible ? "visible" : "hidden", mode => this.changeSelectedNodeMode(mode)) : nothing}
+                ${linePoint && selection ? this.renderNodeMode(selection.lane === "auto" ? "auto" : selection.visible ? "visible" : "hidden", mode => this.changeSelectedNodeMode(mode)) : nothing}
+                ${linePoint && selection.lane === "auto" ? html`<label class="cluster"><md-checkbox aria-label=${this.t("creation.automatic_width")} .checked=${selection.autoSize === true} ?disabled=${this.busy}
+                  @change=${(event: Event) => selectedUpdate(note => {
+                    if (!("ease" in note)) return;
+                    note.autoSize = (event.target as HTMLInputElement).checked;
+                    if (!note.autoSize) note.size = selectedShape?.size ?? note.size;
+                    delete note.resolvedLane; delete note.resolvedSize;
+                  })}></md-checkbox>${this.t("creation.automatic_width")}</label>` : nothing}
                 ${this.selectedConnectorIds(chart).size ? html`
                   <md-outlined-select label=${this.t("creation.line_kind")}
                     .value=${live(this.selectedLineKind())}
-                    ?disabled=${this.busy || !!this.gesture || !this.audio}
+                    ?disabled=${this.busy || !!this.gesture || !this.hasProject}
                     @change=${this.changeLineKind}>
                     <md-select-option value="long" .selected=${this.selectedLineKind() === "long"}><div slot="headline">${this.t("hold")}</div></md-select-option>
                     <md-select-option value="guide" .selected=${this.selectedLineKind() === "guide"}><div slot="headline">${this.t("guide")}</div></md-select-option>
@@ -3606,7 +3659,7 @@ export class ChartCreationWorkspace extends LitElement {
                   <p>${this.t("creation.line_kind_hint")}</p>
                   <md-outlined-select label=${this.t("creation.line_critical")}
                     .value=${live(this.selectedLineCritical())}
-                    ?disabled=${this.busy || !!this.gesture || !this.audio}
+                    ?disabled=${this.busy || !!this.gesture || !this.hasProject}
                     @change=${this.changeLineCritical}>
                     <md-select-option value="inherit" .selected=${this.selectedLineCritical() === "inherit"}><div slot="headline">${this.t("creation.line_critical_inherit")}</div></md-select-option>
                     <md-select-option value="normal" .selected=${this.selectedLineCritical() === "normal"}><div slot="headline">${this.t("creation.line_critical_normal")}</div></md-select-option>
@@ -3622,8 +3675,8 @@ export class ChartCreationWorkspace extends LitElement {
                   @change=${(e: Event) =>
                     selectedUpdate((n) => {
                       n.type = (e.target as HTMLSelectElement).value as SingleNote["type"];
-                      if (n.type !== "flick") n.direction = "none";
-                      else n.direction = "up";
+                      if (n.type === "tap") n.direction = "none";
+                      else if (n.type === "flick" && n.direction === "none") n.direction = "up";
                     })}
                 >
                   ${["tap", "flick", "trace"].map(
@@ -3635,7 +3688,7 @@ export class ChartCreationWorkspace extends LitElement {
                   )}
                 </md-outlined-select>
                 ${
-                  selection.type === "flick"
+                  selection.type !== "tap"
                     ? html`
                         <md-outlined-select
                           label=${this.t("direction")}
@@ -3646,11 +3699,11 @@ export class ChartCreationWorkspace extends LitElement {
                               n.direction = (e.target as HTMLSelectElement).value as SingleNote["direction"];
                             })}
                         >
-                          ${["left", "up", "right"].map(
+                          ${(selection.type === "trace" ? ["none", "left", "up", "right"] : ["left", "up", "right"]).map(
                             (value) => html`
                               <md-select-option value=${value}>
                                 <div slot="headline">
-                                  ${this.t(`direction${value[0].toUpperCase()}${value.slice(1)}`)}
+                                  ${this.t(value === "none" ? "creation.direction_none" : `direction${value[0].toUpperCase()}${value.slice(1)}`)}
                                 </div>
                               </md-select-option>
                             `,
@@ -3702,7 +3755,7 @@ export class ChartCreationWorkspace extends LitElement {
                   <md-checkbox
                     aria-label=${this.t("visible")}
                     .checked=${selection.visible}
-                    ?disabled=${this.busy || selection.lane === "auto"}
+                    ?disabled=${this.busy}
                     @change=${(e: Event) =>
                       selectedUpdate((n) => {
                         n.visible = (e.target as HTMLInputElement).checked;
@@ -3726,6 +3779,10 @@ export class ChartCreationWorkspace extends LitElement {
         },
         content: html`
           <div class="chart-creation__form">
+            ${this.field("creation.lane_basis", chart.laneBasis, value => {
+              try { this.commitProject(rescaleProjectLanes(chart, Number(value))); }
+              catch { this.error = this.t("creation.invalid_edit"); }
+            }, true)}
             ${this.field("title", chart.meta.title, (value) =>
               this.edit((p) => {
                 p.meta.title = value;
@@ -3778,7 +3835,7 @@ export class ChartCreationWorkspace extends LitElement {
           <div class="chart-creation__form">
             ${this.tool === "node" ? html`
               ${this.renderNodeMode(this.nodeMode, mode => { this.nodeMode = mode; }, "creation.new_node_mode")}
-              <button class="button" type="button" ?disabled=${this.busy || !this.audio || !this.selectedConnectorIds().size}
+              <button class="button" type="button" ?disabled=${this.busy || !this.hasProject || !this.selectedConnectorIds().size}
                 @click=${() => this.insertNodeAt(Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds))))}>${this.t("creation.insert_node_here")}</button>
             ` : ["tap", "flick", "trace", "hold", "guide"].includes(this.tool) ? html`
             ${this.widthControl(this.defaultWidth)}
@@ -3810,7 +3867,7 @@ export class ChartCreationWorkspace extends LitElement {
             )}
             <button
               class="button"
-              ?disabled=${this.busy || !this.audio || ["select", "erase", "pan", "brush"].includes(this.tool)}
+              ?disabled=${this.busy || !this.hasProject || ["select", "erase", "pan", "brush"].includes(this.tool)}
               @click=${() => this.place(Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds))), this.insertLane)}
             >
               ${this.t("creation.add_note")}
@@ -3829,7 +3886,7 @@ export class ChartCreationWorkspace extends LitElement {
         <div class="chart-creation__actions">
           <button
             class="button"
-            ?disabled=${this.busy || !this.audio}
+            ?disabled=${this.busy || !this.hasProject}
             @click=${() =>
               this.edit((p) => {
                 const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds)));
@@ -3880,7 +3937,7 @@ export class ChartCreationWorkspace extends LitElement {
         </div>
         <button
           class="button"
-          ?disabled=${this.busy || !this.audio}
+          ?disabled=${this.busy || !this.hasProject}
           @click=${() =>
             this.edit((p) => {
               const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.seconds)));
@@ -4085,7 +4142,7 @@ export class ChartCreationWorkspace extends LitElement {
         </md-outlined-select>
         <button
           class="button"
-          ?disabled=${this.busy || !this.audio || !this.exportValidation().valid}
+          ?disabled=${this.busy || !this.hasProject || !this.exportValidation().valid}
           @click=${() =>
             void this.run(async () => {
               await this.save();
@@ -4179,10 +4236,10 @@ export class ChartCreationWorkspace extends LitElement {
           </button>
 
           <div class="chart-studio__zoom-y" role="group" aria-label=${this.t("creation.zoom_y")} ?hidden=${this.stageMode !== "edit"}>
-            ${iconButton({ icon: "remove", label: `${this.t("creation.zoom_y")} −`, disabled: this.busy || !this.audio || Boolean(this.gesture) || this.secondsPerScreen >= 16,
+            ${iconButton({ icon: "remove", label: `${this.t("creation.zoom_y")} −`, disabled: this.busy || !this.hasProject || Boolean(this.gesture) || this.secondsPerScreen >= 16,
               onClick: () => this.setVerticalZoom(this.secondsPerScreen * 2) })}
             <span title=${this.t("creation.zoom_y")}>${icon("height", 18)}<output>${Number((4 / this.secondsPerScreen).toFixed(2))}×</output></span>
-            ${iconButton({ icon: "add", label: `${this.t("creation.zoom_y")} +`, disabled: this.busy || !this.audio || Boolean(this.gesture) || this.secondsPerScreen <= 0.5,
+            ${iconButton({ icon: "add", label: `${this.t("creation.zoom_y")} +`, disabled: this.busy || !this.hasProject || Boolean(this.gesture) || this.secondsPerScreen <= 0.5,
               onClick: () => this.setVerticalZoom(this.secondsPerScreen / 2) })}
           </div>
           <button class="chip chart-studio__grid-preset" type="button" ?disabled=${this.busy}
@@ -4259,7 +4316,7 @@ export class ChartCreationWorkspace extends LitElement {
               items: [{ label: this.t("creation.multi_select"), icon: this.multiPick ? "check" : "checklist",
                 run: () => { this.multiPick = !this.multiPick; } }, ...["cut", "copy", "paste", "paste_mirrored", "duplicate", "flip", "delete", "select_all"].map(id => ({
                 label: this.shortcutCommandLabel(chartShortcutCommands.find(command => command.id === id)!),
-                disabled: this.busy || !this.audio || (id.startsWith("paste") ? !this.hasClipboard : id === "select_all" ? false : !this.selectedIds.size),
+                disabled: this.busy || !this.hasProject || (id.startsWith("paste") ? !this.hasClipboard : id === "select_all" ? false : !this.selectedIds.size),
                 run: () => { this.executeShortcut(id); this.requestUpdate(); },
               }))],
             })}
@@ -4340,10 +4397,10 @@ export class ChartCreationWorkspace extends LitElement {
               @pointercancel=${this.panEnd}
               @lostpointercapture=${this.panEnd}
               @wheel=${this.wheel}
-              @contextmenu=${(event: MouseEvent) => { if (this.audio) event.preventDefault(); }}
+              @contextmenu=${(event: MouseEvent) => { if (this.hasProject) event.preventDefault(); }}
               @auxclick=${(event: MouseEvent) => { if (event.button === 1) event.preventDefault(); }}
             ></canvas>
-            ${this.audio && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
+            ${this.hasProject && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
             <output class="chart-studio__cursor" data-cursor aria-live="off" hidden></output>
             ${this.stageMode === "preview" && this.previewPlayback ? html`
               <chart-simulator
@@ -4359,26 +4416,18 @@ export class ChartCreationWorkspace extends LitElement {
               ></chart-simulator>
             ` : nothing}
             ${
-              !this.audio
+              !this.hasProject
                 ? html`
                     <div class="chart-studio__empty">
-                      <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary()}>
-                        ${icon("library_music")}${this.t("serverLibrary")}
-                      </button>
                       <strong>${this.t("help.welcome")}</strong>
+                      <button class="button button--filled" type="button" ?disabled=${this.busy} @click=${() => void this.newProject()}>${icon("add", 20)}${this.t("newProject")}</button>
+                      ${this.renderLibraryButton()}
                       <button
                         class="button button--filled"
                         ?disabled=${this.busy}
                         @click=${() => this.pick("[data-audio]")}
                       >
                         ${icon("library_music")}${this.t("importLocalAudio")}
-                      </button>
-                      <button
-                        class="button button--text"
-                        ?disabled=${this.busy}
-                        @click=${() => void this.startPractice()}
-                      >
-                        ${this.t("help.practice")}
                       </button>
                     </div>
                   `
@@ -4393,7 +4442,7 @@ export class ChartCreationWorkspace extends LitElement {
                 max=${Math.max(this.windowStart + this.secondsPerScreen, this.timelineDuration())}
                 step="0.1"
                 .value=${this.windowStart}
-                ?disabled=${this.busy || !this.audio}
+                ?disabled=${this.busy || !this.hasProject}
                 @input=${(event: Event) => {
               this.windowStart = Number((event.target as HTMLInputElement).value);
             }}
@@ -4454,7 +4503,7 @@ export class ChartCreationWorkspace extends LitElement {
             class="icon-button"
             type="button"
             aria-label=${this.c("stop")}
-            ?disabled=${this.busy || !this.audio}
+            ?disabled=${this.busy || !this.hasProject}
             @click=${() => {
             this.pausePlayback();
             this.seekPlayback(0);
@@ -4471,7 +4520,7 @@ export class ChartCreationWorkspace extends LitElement {
             max=${Math.max(this.timelineDuration(), this.seconds)}
             step="0.01"
             .value=${this.seconds}
-            ?disabled=${this.busy || !this.audio}
+            ?disabled=${this.busy || !this.hasProject}
             @input=${(event: Event) => this.seekPlayback(Number((event.target as HTMLInputElement).value), true)}
           ></md-slider>
           <output data-time>0.00</output>
@@ -4481,7 +4530,7 @@ export class ChartCreationWorkspace extends LitElement {
             icon: "center_focus_strong",
             toggle: true,
             pressed: this.followPlayback,
-            disabled: this.busy || !this.audio,
+            disabled: this.busy || !this.hasProject,
             onClick: () => {
               this.followPlayback = !this.followPlayback;
               this.windowStart = this.clampStart(this.seconds - this.secondsPerScreen * 0.25);

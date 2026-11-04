@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: 规范工程、单音符与滑条几何、拖动网格。
+// Output: 统一的重叠／自由控制点边界及选区限制。
+// Pos: [Map](../../L2-2.md)；所有来源共用的创作几何。
+// Effects/Dependencies: 纯运算；有效判定区域由宿主的原生转换器统一检查。
 import { resolveLinePointShape, type Project, type SingleNote, type LinePoint } from "../model";
 
 export type AuthoredPlacement = "stage" | "authored" | "overlap";
@@ -34,9 +39,10 @@ export function assertAuthoredSpanOverlap(lane: number, size: number, basis: num
 export function authoredLaneBounds(
   size: number,
   basis: number,
-  placement: "stage" | "overlap" = "overlap",
+  placement: AuthoredPlacement = "overlap",
 ): LaneBounds {
   geometry(0, size, basis);
+  if (placement === "authored") return { min: -Infinity, max: Infinity, minInclusive: false, maxInclusive: false };
   if (placement === "stage") return { min: 0, max: basis - size, minInclusive: true, maxInclusive: true };
   return { min: -size, max: basis, minInclusive: size === 0, maxInclusive: size === 0 };
 }
@@ -44,7 +50,7 @@ export function authoredSpanInBounds(
   lane: number,
   size: number,
   basis: number,
-  placement: "stage" | "overlap" = "stage",
+  placement: AuthoredPlacement = "stage",
 ): boolean {
   return laneValueInBounds(lane, authoredLaneBounds(size, basis, placement));
 }
@@ -94,9 +100,10 @@ export function authoredWidthBounds(
   size: number,
   basis: number,
   anchor: "left" | "center" | "right" = "left",
-  placement: "stage" | "overlap" = "overlap",
+  placement: AuthoredPlacement = "overlap",
 ): LaneBounds | undefined {
   geometry(lane, size, basis);
+  if (placement === "authored") return { min: 0, max: Infinity, minInclusive: true, maxInclusive: false };
   const fixed = anchor === "right" ? lane + size : anchor === "center" ? lane + size / 2 : lane;
   if (placement === "stage") {
     if (fixed < 0 || fixed > basis) return;
@@ -114,41 +121,30 @@ export function authoredWidthBounds(
         : Math.max(0, -2 * fixed, 2 * (fixed - basis));
   return { min: minimum, max: Infinity, minInclusive: fixed >= 0 && fixed <= basis, maxInclusive: false };
 }
-/** Only interior connector points may extend beyond the stage. */
+/** Singles overlap the stage; connector geometry is authored without source-dependent bounds. */
 export function authoredSpanNodes(project: Project): {
   note: SingleNote | LinePoint;
   lane: number;
   size: number;
   kind?: string;
-  placement: "stage" | "overlap";
+  placement: AuthoredPlacement;
 }[] {
   return [
-    ...project.singles.map((note) => ({ note, lane: note.lane, size: note.size, placement: "stage" as const })),
+    ...project.singles.map((note) => ({ note, lane: note.lane, size: note.size, placement: "overlap" as const })),
     ...project.lines.flatMap((line) =>
       line.points.map((note, index) => ({
         note,
         ...resolveLinePointShape(line.points, index),
         kind: line.kind,
-        placement: index > 0 && index < line.points.length - 1 ? ("overlap" as const) : ("stage" as const),
+        placement: "authored" as const,
       })),
     ),
   ];
 }
-/** Preserve imported geometry; check changed spans and controls that become endpoints. */
-export function assertEditedChartSpans(before: Project, after: Project) {
-  const previous = new Map(authoredSpanNodes(before).map((entry) => [entry.note.id, entry]));
+/** The same span rules apply to imported notes, copies and newly authored notes. */
+export function assertEditedChartSpans(_before: Project, after: Project) {
   for (const entry of authoredSpanNodes(after)) {
-    const old = previous.get(entry.note.id);
-    const changed =
-      !old ||
-      old.lane !== entry.lane ||
-      old.size !== entry.size ||
-      old.note.type !== entry.note.type ||
-      old.note.visible !== entry.note.visible ||
-      old.kind !== entry.kind ||
-      old.placement !== entry.placement ||
-      before.laneBasis !== after.laneBasis;
-    if (changed && !authoredSpanInBounds(entry.lane, entry.size, after.laneBasis, entry.placement))
+    if (!authoredSpanInBounds(entry.lane, entry.size, after.laneBasis, entry.placement))
       throw new RangeError("authored_span_outside_stage");
   }
 }

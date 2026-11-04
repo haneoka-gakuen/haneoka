@@ -9,7 +9,7 @@ import type { ChartEmbedHandle, ChartSkin, ChartPlaybackOptions } from "../../..
 import type { HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import type { CreationAudio } from "./audio";
 import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
-import { authoredSpanOverlaps } from "../../../packages/chart-editor/src/creation/span";
+import { assertEditedChartSpans, authoredSpanOverlaps } from "../../../packages/chart-editor/src/creation/span";
 import { prepareNativeSourceMap, type NativeCreationSourceMap } from "./native-source-map";
 import { compileAuthorNativeSpeedPlan } from "./native-speed-plan";
 import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-notes";
@@ -17,6 +17,7 @@ import type { NativeChartVisualProfiles } from "@haneoka/cassiopeia-plugin-our-n
 /** Canonical imported and authored projects use the actual OurNotes converter, including guide overlap, crit and slide endpoints. */
 export function compileOurNotesCreation(project: Project) {
   assertValidProject(project);
+  assertEditedChartSpans(project, project);
   const ss = serializeSs(project), root = parseScore(ss), sources = prepareNativeSourceMap(project, root),
     chart = buildChart(root, sources.observer);
   const ids = new Set(chart.notes.map((note) => note.id));

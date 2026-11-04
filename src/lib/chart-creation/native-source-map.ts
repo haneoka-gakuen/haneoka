@@ -1,5 +1,5 @@
 import type { ChartDocument, SsRawNote, SsRoot } from "@haneoka/cassiopeia";
-import type { Project } from "../../../packages/chart-editor/src/model";
+import { projectNoteOrder, type Project } from "../../../packages/chart-editor/src/model";
 import { assertValidProject } from "../../../packages/chart-editor/src/validation";
 
 export interface NativeCanonicalSource {
@@ -41,7 +41,7 @@ export function prepareNativeSourceMap(project: Project, root: SsRoot) {
       pointIds: [...line.points].sort((a, b) => a.tick - b.tick).map(point => point.id),
     });
   const ordered: { id: string; value: { kind: "single" | "line"; pointIds?: string[] } }[] = [];
-  for (const id of project.sourceOrder ?? []) {
+  for (const id of projectNoteOrder(project)) {
     const value = rows.get(id);
     if (!value) continue;
     ordered.push({ id, value });

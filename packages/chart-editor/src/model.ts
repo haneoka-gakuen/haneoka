@@ -122,6 +122,30 @@ export interface Project {
   sourceOrder?: string[];
 }
 
+/** Root note order is authored data, independent of importer IDs and file metadata. */
+export const projectNoteOrder = (project: Project): string[] => {
+  const remaining = new Set([...project.singles.map(note => note.id), ...project.lines.map(line => line.id)]);
+  const result: string[] = [];
+  for (const id of project.sourceOrder ?? []) if (remaining.delete(id)) result.push(id);
+  return [...result, ...remaining];
+};
+
+/** Change coordinate units without changing a note's position on the stage. */
+export const rescaleProjectLanes = (project: Project, laneBasis: number): Project => {
+  if (!Number.isFinite(laneBasis) || laneBasis <= 0) throw new RangeError("invalid_lane_basis");
+  const result = structuredCloneValue(project), ratio = laneBasis / project.laneBasis;
+  result.laneBasis = laneBasis;
+  for (const note of [...result.singles, ...result.lines.flatMap(line => line.points)]) {
+    if (typeof note.lane === "number") note.lane *= ratio;
+    note.size *= ratio;
+    if ("ease" in note) {
+      delete note.resolvedLane;
+      delete note.resolvedSize;
+    }
+  }
+  return result;
+};
+
 let fallbackIdCounter = 0;
 
 const safeIdPart = (value: string | number): string =>
