@@ -80,6 +80,11 @@ class Updates:
         self.base = {key: job[key] for key in ('region', 'runId', 'credentialGeneration')}
         self.base['contract'] = 'haneoka:official-ranking-update/1'
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
+        self.window_cache = 'ranking-window-cache-v1' in job.get('capabilities', [])
+
+    def attempt(self, snapshot, window, retain=True):
+        fields = dict(windowKey=window, retain=retain) if self.window_cache else {}
+        return self.send('attempt', snapshotId=snapshot, **fields)
 
     def send(self, kind, **fields):
         raw = json.dumps(dict(self.base, type=kind, **fields), ensure_ascii=False).encode()
@@ -96,7 +101,7 @@ class Updates:
                 with self.opener.open(request, timeout=min(5, remaining)) as response:
                     if response.status != 200:
                         raise CallbackError('callback rejected',{'status':response.status})
-                return
+                    return json.load(response)
             except HTTPError as error:
                 status = error.code
                 receipt = {'status':status}
@@ -279,8 +284,12 @@ def run_job(job, origin):
             updates.send('catalog', catalog=catalog)
             boards = ([(board['kind'], board['challengeId']) for board in job['finalBoards']]
                       if final_event is not None else targets(catalog, int(time.time() * 1000)))
+            event_windows = ('event-windows-v1' in job.get('capabilities', []) and job.get('eventWindows')
+                            and (final_event is not None or ('point', '') in targets(catalog, int(time.time() * 1000))))
+            if updates.window_cache and event_windows:
+                boards = [(kind, challenge) for kind, challenge in boards if kind != 'point']
             arena_active = include_arena and catalog.get('arena') is not None
-            if boards or arena_active or final_event is not None and job.get('eventWindows'):
+            if boards or arena_active or event_windows:
                 sampler = Sampler(SimpleNamespace(region=region, descriptors=Path(__file__).parent/configured.descriptor,
                     output=root/'receipts', client_version=job['clientVersion'], proxy='', connect_ip=None,
                     credentials=credentials, credential_identity=identity, stop_file=None, deadline=deadline,
@@ -302,8 +311,11 @@ def run_job(job, origin):
                         break
                     snapshot = uuid.uuid4().hex
                     stage = 'attempt_callback'
-                    updates.send('attempt', snapshotId=snapshot)
                     event = catalog['event']
+                    window = f"challenge/{challenge}" if kind == 'challenge' else 'point/1/100' if kind == 'point' else 'total'
+                    claim = updates.attempt(snapshot, f"event/{event['id']}/{window}")
+                    if claim.get('reused') or claim.get('deferredUntilMs'):
+                        continue
                     observation = dict(snapshotId=snapshot, region=region, eventId=event['id'], kind=kind,
                                        challengeId=challenge, observedAtMs=int(time.time()*1000))
                     receipt = None
@@ -352,8 +364,7 @@ def run_job(job, origin):
                     updates.send('observation', observation=observation)
                     if final_status in ('auth_paused', 'rate_limited'):
                         break
-                if (final_status not in ('auth_paused', 'rate_limited') and 'event-windows-v1' in job.get('capabilities', [])
-                        and (final_event is not None or ('point', '') in targets(catalog, int(time.time() * 1000)))):
+                if final_status not in ('auth_paused', 'rate_limited') and event_windows:
                     stage = 'event_window'
                     def window_provenance():
                         return dict(clientVersion=job['clientVersion'], masterVersion=sampler.master_version,

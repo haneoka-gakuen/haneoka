@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
-// Output: Regional observations, drained/serialized account jobs, explicit-authentication renewal, merged credential pools and redacted managed-account health.
+// Output: Regional observations, drained/serialized account jobs, explicit-authentication renewal, merged credential pools redacted managed-account health and durable 150-second ranking-window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
@@ -24,6 +24,7 @@ export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
 const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const LOOKUP_MS = 60_000;
+const WINDOW_REUSE_MS = 150_000;
 const ARENA_DEMAND_INTERVAL_MS = 60_000;
 /** The collector reuses counts read in the last five minutes; one more covers clock skew. */
 const ARENA_WITNESS_REUSE_MS = 360_000;
@@ -69,6 +70,7 @@ interface CollectorRun {
   startedAtMs: number;
   deadlineMs: number;
   pendingAttempt: string | null;
+  pendingWindowKey?: string;
   resolvedAttempt: boolean;
   authStruck?: boolean;
   complete: boolean;
@@ -99,6 +101,8 @@ interface CollectorState {
   failures: number;
   arenaProbeReads?: number;
   arenaStoredReads?: number;
+  windowReuses?: number;
+  windowDeferrals?: number;
   populationWorkKey?: string;
   populationWorkStreak?: number;
   blockedGeneration: string | null;
@@ -152,6 +156,11 @@ function validRegion(value: unknown): value is GameRecordsRegion {
 }
 const sameThresholds = (left: readonly number[] | undefined, right: readonly number[] | undefined) =>
   left !== undefined && right !== undefined && left.length === right.length && left.every((value, index) => value === right[index]);
+function observationWindowKey(value: OfficialObservation | OfficialArenaObservation | OfficialEventWindow): string {
+  if ("seasonId" in value) return `arena/${value.seasonId}/${value.bandId}/${value.startRank}/${value.endRank}`;
+  if ("startRank" in value) return `event/${value.eventId}/point/${value.startRank}/${value.endRank}`;
+  return `event/${value.eventId}/${value.kind === "challenge" ? `challenge/${value.challengeId}` : value.kind === "point" ? "point/1/100" : "total"}`;
+}
 function decimal(value: unknown): value is string { return typeof value === "string" && /^[1-9][0-9]{0,18}$/u.test(value); }
 function millis(value: unknown): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0; }
 function retryMs(value: unknown): number {
@@ -436,6 +445,11 @@ export class OfficialRankingCollector extends Container<Env> {
 
   constructor(ctx: ConstructorParameters<typeof Container<Env>>[0], env: Env) {
     super(ctx, env);
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS collector_window_cache (
+      window_key TEXT PRIMARY KEY, attempted_at_ms INTEGER NOT NULL, snapshot_id TEXT NOT NULL,
+      observation_json TEXT, retained INTEGER NOT NULL DEFAULT 0)`);
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS collector_window_replies (
+      snapshot_id TEXT PRIMARY KEY, expires_at_ms INTEGER NOT NULL, update_hash TEXT NOT NULL, body_json TEXT NOT NULL)`);
     ctx.blockConcurrencyWhile(async () => {
       let token = await ctx.storage.get<string>("containerToken");
       if (!token) {
@@ -452,9 +466,87 @@ export class OfficialRankingCollector extends Container<Env> {
 
   async pruneObservations(region: GameRecordsRegion): Promise<number> {
     return this.serialized(async () => {
+      this.ctx.storage.sql.exec("DELETE FROM collector_window_cache WHERE attempted_at_ms<?", Date.now() - 2 * WINDOW_REUSE_MS);
+      this.ctx.storage.sql.exec("DELETE FROM collector_window_replies WHERE expires_at_ms<?", Date.now());
       await flushOfficialPayloads(this.env, region);
       return pruneOfficialObservations(this.env, region);
     });
+  }
+
+  private validWindow(run: CollectorRun, key: string): boolean {
+    const [kind, id, board, start, end] = key.split("/");
+    const event = run.catalog?.event, arena = run.catalog?.arena;
+    if (kind === "event" && event && id === event.id) {
+      if (board === "total" && key === `event/${id}/total`) return event.totalRankingEnabled;
+      if (board === "challenge" && key === `event/${id}/challenge/${start}`)
+        return event.challenges.some((row) => row.id === start && row.enabled);
+      if (board !== "point" || !event.pointRankingEnabled) return false;
+    } else if (kind !== "arena" || !arena || id !== arena.seasonId || !arena.bandIds.includes(board!)) return false;
+    const first = Number(start), last = Number(end);
+    return key === `${kind}/${id}/${board}/${first}/${last}` && Number.isSafeInteger(first) && first > 0
+      && (first - 1) % 100 === 0 && last === first + 99;
+  }
+
+  private async claimWindow(state: CollectorState, run: CollectorRun,
+    update: Extract<OfficialCollectorUpdate, { type: "attempt" }>, updateHash: string): Promise<Response | null> {
+    const key = update.windowKey!;
+    if (typeof key !== "string" || key.length > 160 || !this.validWindow(run, key)) return json({ error: "board_mismatch" }, 409);
+    const prior = this.ctx.storage.sql.exec<{ update_hash: string; body_json: string }>(
+      "SELECT update_hash,body_json FROM collector_window_replies WHERE snapshot_id=?", update.snapshotId).toArray()[0];
+    if (prior) {
+      if (prior.update_hash !== updateHash) return json({ error: "checkpoint_conflict" }, 409);
+      run.checkpoints[`attempt:${update.snapshotId}`] = updateHash;
+      await this.ctx.storage.put("collectorState", state);
+      return json(JSON.parse(prior.body_json));
+    }
+    const cached = this.ctx.storage.sql.exec<{ attempted_at_ms: number; snapshot_id: string; observation_json: string | null; retained: number }>(
+      "SELECT attempted_at_ms,snapshot_id,observation_json,retained FROM collector_window_cache WHERE window_key=?", key).toArray()[0];
+    if (cached && cached.snapshot_id !== update.snapshotId && Date.now() < cached.attempted_at_ms + WINDOW_REUSE_MS) {
+      const observation = cached.observation_json ? JSON.parse(cached.observation_json) as OfficialArenaObservation | OfficialEventWindow | OfficialObservation : null;
+      const challengeEnd = run.finalEvent?.challenges.find((row) => key === `event/${run.finalEvent!.id}/challenge/${row.id}`)?.endAtMs;
+      const cutoff = run.finalArena?.rankingEndAtMs ?? (run.finalEvent ? (challengeEnd ?? run.finalEvent.endAtMs) + run.finalEvent.aggregationSeconds * 1000 : 0);
+      const reusable = observation && !observation.error && observation.observedAtMs >= cutoff;
+      if (reusable && key.startsWith("arena/") && (update.retain || run.finalArena) && !cached.retained) {
+        await saveOfficialArenaObservation(this.env, observation as OfficialArenaObservation);
+        this.ctx.storage.sql.exec("UPDATE collector_window_cache SET retained=1 WHERE window_key=?", key);
+        state.arenaStoredReads = (state.arenaStoredReads ?? 0) + 1;
+      }
+      if (reusable && key.startsWith("arena/") && update.retain) {
+        const window = observation as OfficialArenaObservation;
+        state.arenaInterests = (state.arenaInterests ?? []).filter((entry) => entry.seasonId !== window.seasonId
+          || entry.bandId !== window.bandId || entry.startRank !== window.startRank);
+        if (state.arenaSweep && run.sweepWindows?.some((entry) => entry.bandId === window.bandId && entry.startRank === window.startRank)) {
+          const sweepKey = `${window.seasonId}:${window.bandId}${window.startRank > ARENA_NEAR_RANKS ? ":deep" : ""}`;
+          state.arenaSweep.next[sweepKey] = window.startRank + 100;
+          state.arenaSweep.band = ((run.catalog?.arena?.bandIds.indexOf(window.bandId) ?? 0) + 1) % run.catalog!.arena!.bandIds.length;
+        }
+      }
+      const reply = reusable ? { ok: true, reused: observation } : { ok: true, deferredUntilMs: cached.attempted_at_ms + WINDOW_REUSE_MS };
+      this.ctx.storage.sql.exec("INSERT INTO collector_window_replies VALUES (?,?,?,?)", update.snapshotId, run.deadlineMs + 15_000, updateHash, JSON.stringify(reply));
+      if (reusable) state.windowReuses = (state.windowReuses ?? 0) + 1;
+      else {
+        state.windowDeferrals = (state.windowDeferrals ?? 0) + 1;
+        if (run.finalEvent || run.finalArena) state.nextFinalAtMs = Math.min(state.nextFinalAtMs ?? Infinity, cached.attempted_at_ms + WINDOW_REUSE_MS);
+      }
+      run.checkpoints[`attempt:${update.snapshotId}`] = updateHash;
+      await this.ctx.storage.put("collectorState", state);
+      return json(reply);
+    }
+    this.ctx.storage.sql.exec(`INSERT INTO collector_window_cache (window_key,attempted_at_ms,snapshot_id)
+      VALUES (?,?,?) ON CONFLICT(window_key) DO UPDATE SET attempted_at_ms=excluded.attempted_at_ms,
+      snapshot_id=excluded.snapshot_id,observation_json=NULL,retained=0`, key, Date.now(), update.snapshotId);
+    run.pendingWindowKey = key;
+    return null;
+  }
+
+  private rememberWindow(run: CollectorRun, observation: OfficialArenaObservation | OfficialEventWindow | OfficialObservation, retained: boolean): void {
+    if (!run.pendingWindowKey) return;
+    const key = observationWindowKey(observation);
+    const body = JSON.stringify(observation);
+    this.ctx.storage.sql.exec(`UPDATE collector_window_cache SET attempted_at_ms=MAX(attempted_at_ms,?),observation_json=?,retained=?
+      WHERE window_key=? AND snapshot_id=?`, observation.observedAtMs,
+      new TextEncoder().encode(body).byteLength <= 1_000_000 ? body : null, Number(retained), key, observation.snapshotId);
+    delete run.pendingWindowKey;
   }
 
   async platformLoginView(region: PlatformRegion) {
@@ -1784,6 +1876,7 @@ export class OfficialRankingCollector extends Container<Env> {
       ageMs: age, stale: age === null || age < 0 || age > 2 * INTERVAL_MS, pollAfterSeconds: unavailable ? 300 : 30,
       lastFailure: state.lastFailure ?? null,
       sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
+        windowReuseSeconds: WINDOW_REUSE_MS / 1000, windowReuses: state.windowReuses ?? 0, windowDeferrals: state.windowDeferrals ?? 0,
         populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000,
         populationCatchupSeconds: ARENA_POPULATION_CATCHUP_MS / 1000,
         populationProgress: Object.entries(state.arenaProgress ?? {}).map(([key, progress]) => ({
@@ -1833,7 +1926,7 @@ export class OfficialRankingCollector extends Container<Env> {
       const usable = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
         && !state.accounts?.[account.identity]?.held && !state.accounts?.[account.identity]?.blocked[account.authGeneration]
         && (state.accounts?.[account.identity]?.cooldownUntilMs ?? 0) <= now).length;
-      state.nextAtMs = now + Math.max(ARENA_DEMAND_INTERVAL_MS, Math.ceil(INTERVAL_MS / Math.max(1, usable)));
+      state.nextAtMs = now + Math.max(WINDOW_REUSE_MS, Math.ceil(INTERVAL_MS / Math.max(1, usable)));
       const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
@@ -1858,9 +1951,9 @@ export class OfficialRankingCollector extends Container<Env> {
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
-        capabilities: eventFinal ? ["event-finals-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
-          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-probes-v1", "population-priority-v1"]
-            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "arena-probes-v1", "population-priority-v1"],
+        capabilities: eventFinal ? ["event-finals-v1", "ranking-window-cache-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
+          : arenaFinal ? ["arena-finals-v1", "arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-probes-v1", "population-priority-v1", "ranking-window-cache-v1"]
+            : ["arena-ranking-v1", "arena-population-v1", "arena-progress-v1", "arena-demand-v1", "event-windows-v1", "arena-probes-v1", "population-priority-v1", "ranking-window-cache-v1"],
         ...(eventFinal ? { finalEvent: eventFinal.event, finalBoards: eventFinal.boards } : {}),
         ...(arenaFinal ? { finalArena: arenaFinal.arena, finalPopulationBands: arenaFinal.populationBands } : {}),
         playerLookups: [], songRankings: [], cardImages: [],
@@ -1945,6 +2038,10 @@ export class OfficialRankingCollector extends Container<Env> {
       const updateHash = await officialDigest(canonical(update));
       if (run.checkpoints[checkpoint]) {
         if (run.checkpoints[checkpoint] !== updateHash) return json({ error: "checkpoint_conflict" }, 409);
+        if (update.type === "attempt" && update.windowKey) {
+          const reply = this.ctx.storage.sql.exec<{ body_json: string }>("SELECT body_json FROM collector_window_replies WHERE snapshot_id=?", update.snapshotId).toArray()[0];
+          if (reply) return json(JSON.parse(reply.body_json));
+        }
         if (update.type === "attempt" && (run.complete || run.pendingAttempt !== update.snapshotId || state.blockedGeneration)) {
           return json({ error: "attempt_finished" }, 409);
         }
@@ -2005,12 +2102,17 @@ export class OfficialRankingCollector extends Container<Env> {
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "attempt") {
           if (!/^[a-f0-9]{32}$/u.test(update.snapshotId) || run.pendingAttempt || state.blockedGeneration || !(run.catalog?.event || run.catalog?.arena)) return json({ error: "attempt_pending" }, 409);
+          if (update.windowKey !== undefined) {
+            const cached = await this.claimWindow(state, run, update, updateHash);
+            if (cached) return cached;
+          }
           run.pendingAttempt = update.snapshotId;
           run.resolvedAttempt = false;
           run.checkpoints[checkpoint] = updateHash;
           await this.ctx.storage.put("collectorState", state);
         } else if (update.type === "observation") {
           validateObservation(update.observation, region);
+          if (run.pendingWindowKey && run.pendingWindowKey !== observationWindowKey(update.observation)) return json({ error: "board_mismatch" }, 409);
           if (run.pendingAttempt !== update.observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           const event = run.catalog?.event;
           if (!event || update.observation.eventId !== event.id || update.observation.observedAtMs < run.startedAtMs
@@ -2034,6 +2136,7 @@ export class OfficialRankingCollector extends Container<Env> {
           await this.ctx.storage.put("collectorState", state);
           await saveOfficialObservation(this.env, update.observation);
           if (update.observation.players) await harvestOfficialPlayers(this.env, region, update.observation.players, update.observation.observedAtMs);
+          this.rememberWindow(run, update.observation, true);
           run.pendingAttempt = null;
           run.checkpoints[checkpoint] = updateHash;
           if (!update.observation.error) {
@@ -2053,6 +2156,7 @@ export class OfficialRankingCollector extends Container<Env> {
         } else if (update.type === "event-window") {
           validateEventWindow(update.observation, region);
           const observation = update.observation;
+          if (run.pendingWindowKey && run.pendingWindowKey !== observationWindowKey(observation)) return json({ error: "board_mismatch" }, 409);
           if (run.pendingAttempt !== observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           if (observation.eventId !== run.catalog?.event?.id || observation.observedAtMs < run.startedAtMs) return json({ error: "board_mismatch" }, 409);
           if (run.finalEvent && !run.finalWindows?.some((window) => window.eventId === observation.eventId
@@ -2070,6 +2174,17 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           await this.ctx.storage.put("collectorState", state);
           await saveOfficialEventWindow(this.env, observation);
+          if (observation.startRank === 1) {
+            const players = observation.players?.map((row) => ({ player_data: row.profile ?? {}, score: row.point ?? 0 }));
+            await saveOfficialObservation(this.env, {
+              snapshotId: observation.snapshotId, region, eventId: observation.eventId, kind: "point", challengeId: "",
+              observedAtMs: observation.observedAtMs, ...(observation.provenance ? { provenance: observation.provenance } : {}),
+              ...(observation.error ? { error: observation.error, httpStatus: observation.httpStatus ?? null, grpcStatus: observation.grpcStatus ?? null }
+                : { players: players! }),
+            });
+            if (players) await harvestOfficialPlayers(this.env, region, players, observation.observedAtMs);
+          }
+          this.rememberWindow(run, observation, true);
           if (!observation.error) {
             state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.eventId !== observation.eventId || entry.startRank !== observation.startRank);
             const sweep = state.eventSweep;
@@ -2089,6 +2204,7 @@ export class OfficialRankingCollector extends Container<Env> {
           const retained = update.type === "arena-observation";
           if (!retained && !run.arenaProbes) return json({ error: "capability_mismatch" }, 409);
           validateArenaObservation(update.observation, region);
+          if (run.pendingWindowKey && run.pendingWindowKey !== observationWindowKey(update.observation)) return json({ error: "board_mismatch" }, 409);
           if (run.pendingAttempt !== update.observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
           const arena = run.catalog?.arena;
           if (!arena || update.observation.seasonId !== arena.seasonId || !arena.bandIds.includes(update.observation.bandId)
@@ -2111,6 +2227,7 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           if (retained) await this.ctx.storage.put("collectorState", state);
           if (retained) await saveOfficialArenaObservation(this.env, update.observation);
+          this.rememberWindow(run, update.observation, retained);
           if (retained && !update.observation.error) {
             const observation = update.observation;
             state.arenaInterests = (state.arenaInterests ?? []).filter((entry) => entry.seasonId !== observation.seasonId

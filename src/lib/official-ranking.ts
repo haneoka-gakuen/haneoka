@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Official catalog identities, game protobuf observations and collector checkpoints.
-// Output: Shared contracts for retained windows, transient Arena probes, complete populations, demand progress and origin-bound account pools.
+// Output: Shared contracts for retained windows, transient Arena probes, complete populations, demand progress, rolling-window admissions and origin-bound account pools.
 // Pos: [Map](L2-2.md); official ranking wire types alongside game-records DTOs.
 // Effects/Dependencies: Web Crypto digests; parses private configuration without logging or network access.
 import type { GameRecordsRegion } from "./game-records";
@@ -270,7 +270,7 @@ export type OfficialCollectorUpdate = {
   credentialGeneration: string;
 } & (
   | { type: "catalog"; catalog: OfficialCatalog }
-  | { type: "attempt"; snapshotId: string }
+  | { type: "attempt"; snapshotId: string; windowKey?: string; retain?: boolean }
   | { type: "observation"; observation: OfficialObservation }
   | { type: "arena-observation" | "arena-probe"; observation: OfficialArenaObservation }
   | { type: "event-window"; observation: OfficialEventWindow }

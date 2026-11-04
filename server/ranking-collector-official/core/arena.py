@@ -1,4 +1,4 @@
-"""L3: server/L2.md; live/final rank windows, transient population probes and resumable, freshly witnessed counts."""
+"""L3: server/L2.md; live/final rank windows with rolling 150-second reuse, transient population probes and resumable counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -12,6 +12,7 @@ from google.protobuf import json_format
 
 # A count witnessed this recently stands in a published snapshot without another read.
 REUSE_MS = 300_000
+WINDOW_REUSE_MS = 150_000
 
 
 class ArenaDeferred(Exception):
@@ -19,6 +20,10 @@ class ArenaDeferred(Exception):
 
 
 class ArenaChanged(Exception):
+    pass
+
+
+class ArenaThrottled(ArenaDeferred):
     pass
 
 
@@ -68,7 +73,9 @@ class EventWindows:
         snapshot = uuid.uuid4().hex
         observation = dict(snapshotId=snapshot, region=self.job['region'], eventId=event_id,
                            startRank=start, endRank=end, observedAtMs=int(time.time() * 1000))
-        self.updates.send('attempt', snapshotId=snapshot)
+        claim = self.updates.attempt(snapshot, f'event/{event_id}/point/{start}/{end}')
+        if claim.get('reused') or claim.get('deferredUntilMs'):
+            return None
         receipt, refused = None, None
         try:
             request = self.sampler.message('app.event.GetRankingListRequest',
@@ -131,7 +138,7 @@ class ArenaCollector:
 
     def window(self, band, start=1, refresh=False):
         key = (band, start)
-        if key in self.windows and not refresh:
+        if key in self.windows and (not refresh or time.time() * 1000 < self.windows[key]['observedAtMs'] + WINDOW_REUSE_MS):
             return self.windows[key]
         self.room()
         snapshot = uuid.uuid4().hex
@@ -139,7 +146,17 @@ class ArenaCollector:
                            bandId=band, startRank=start, endRank=start + 99,
                            observedAtMs=int(time.time() * 1000))
         self.stage = 'attempt_callback'
-        self.updates.send('attempt', snapshotId=snapshot)
+        probe = self.probing and start > 1 and 'arena-probes-v1' in self.capabilities
+        claim = self.updates.attempt(snapshot, f"arena/{self.arena['seasonId']}/{band}/{start}/{start + 99}", retain=not probe)
+        if claim.get('reused'):
+            observation = claim['reused']
+            self.windows[key] = observation
+            self.maxima[band] = observation['maxRank']
+            if band == self.band:
+                self.learn(observation)
+            return observation
+        if claim.get('deferredUntilMs'):
+            raise ArenaThrottled()
         receipt, response, stopped = None, None, None
         self.stage = 'arena_board'
         try:
@@ -181,7 +198,6 @@ class ArenaCollector:
             stopped = (ArenaDeferred() if self.probing and exhausted
                        else ArenaStopped(status, self.failure_info('arena_board', error, receipt), retry))
         self.stage = 'arena_observation_callback'
-        probe = self.probing and start > 1 and 'arena-probes-v1' in self.capabilities
         self.updates.send('arena-probe' if probe else 'arena-observation', observation=observation)
         if stopped:
             raise stopped
@@ -201,10 +217,16 @@ class ArenaCollector:
         try:
             if self.job.get('finalArena') is not None:
                 for demand in self.job.get('arenaWindows', []):
-                    self.window(demand['bandId'], demand['startRank'])
+                    try:
+                        self.window(demand['bandId'], demand['startRank'])
+                    except ArenaThrottled:
+                        continue
                 return
             for band in self.arena['bandIds']:
-                self.window(band)
+                try:
+                    self.window(band)
+                except ArenaThrottled:
+                    continue
             if 'arena-demand-v1' in self.capabilities:
                 demand_deadline = min(time.time() + 30, self.deadline - 3 - reserve - min(25, self.population_seconds()))
                 for demand in self.job.get('arenaWindows', [])[:20]:
@@ -213,7 +235,10 @@ class ArenaCollector:
                     if (demand['seasonId'] == self.arena['seasonId'] and demand['bandId'] in self.arena['bandIds']
                             and type(demand['startRank']) is int and demand['startRank'] > 0
                             and (demand['startRank'] - 1) % 100 == 0 and demand['endRank'] == demand['startRank'] + 99):
-                        self.window(demand['bandId'], demand['startRank'])
+                        try:
+                            self.window(demand['bandId'], demand['startRank'])
+                        except ArenaThrottled:
+                            continue
         except ArenaDeferred:
             if self.job.get('finalArena') is None and self.active() and any((band, 1) not in self.windows for band in self.arena['bandIds']):
                 raise ArenaStopped('failed', self.failure_info('arena_board', TimeoutError()), None)
