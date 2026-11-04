@@ -2,7 +2,7 @@
 // Input: 冻结的自动／手动配队请求、结果、设置与目录。
 // Output: 排名卡片、共用评分详情、所选技能顺序、可折叠谱面片段与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按请求隔离时间线缓存；渲染 DOM、图表与对话框，导出沿用原结果的歌曲及成绩。
+// Effects/Dependencies: 按请求隔离后台时间线缓存；折叠的顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
 import { resultMetric } from "./result-metric";
@@ -616,10 +616,11 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
   const value = timelines.get(key);
   if (value) return value;
   const request = resultInputs(host, hit);
-  const task = request && host.engine && hit.song ? host.acquireTask("timeline") : null;
-  if (request && host.engine && hit.song && task) {
+  const engine = host.engine;
+  if (request && engine && hit.song && !host.running && !host.manualBusy) {
     timelines.set(key, "loading");
-    void host.engine
+    const current = () => host.isConnected && host.engine === engine;
+    void engine
       .explain({
         songRules: request.songRules,
         ...(request.goal.kind === "gekiso" && request.goal.arena ? { arena: request.goal.arena } : {}),
@@ -642,16 +643,15 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
           : {}),
       })
       .then((timeline) => {
-        if (host.ownsTask(task)) timelines.set(key, timeline);
+        if (current()) timelines.set(key, timeline);
         else timelines.delete(key);
       })
-      .catch(() => {
-        if (host.ownsTask(task)) timelines.set(key, "error");
+      .catch((error: unknown) => {
+        if (current() && !(error instanceof DOMException && error.name === "AbortError")) timelines.set(key, "error");
         else timelines.delete(key);
       })
       .finally(() => {
-        host.releaseTask(task);
-        host.requestUpdate();
+        if (current()) host.requestUpdate();
       });
   }
   return "loading" as const;
@@ -745,6 +745,7 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
           .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}
         ></timing-chart-preview>`,
       })}
+      <div class="scroll-x" role="region" tabindex="0" aria-label=${host.t("timingNotes", "Notes to hit early")} data-scroll-region>
       <table class="tb-timing__steps">
         <tbody>
           ${window.steps.map(
@@ -759,6 +760,7 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
           )}
         </tbody>
       </table>
+      </div>
     </li>
   `;
 }
@@ -778,7 +780,7 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
       host.requestUpdate();
     },
     content: html`
-    <section class="tb-timing stack stack--tight">
+    <section class="tb-timing stack stack--flex stack--tight">
       <div class="row row--between row--wrap">
         <strong class="tb-subtitle">${host.t("timingNotes", "Notes to hit early")}</strong>
         <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing?.advanceMs ?? Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)) })}</span>
@@ -845,7 +847,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const topOpen = host.expanded.has(`${key}|orders`);
   const rankOf = (other: number) => score.orders.filter((entry) => entry > other).length + 1;
   return html`
-    <section class="tb-order stack">
+    <section class="tb-order stack stack--flex">
       <div class="row row--wrap row--between">
         <strong class="tb-subtitle">${host.t("skillOrder", "Skill order")}</strong>
         <div class="cluster">
@@ -939,7 +941,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 `
         }
       </div>
-      <div class="stack stack--tight">
+      <div class="stack stack--flex stack--tight">
         <strong class="tb-subtitle">${host.t("firstSkill", "Best order by first skill")}</strong>
         ${collectionList(
           byFirst.map((entry) => {
@@ -971,7 +973,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
           else host.expanded.delete(`${key}|orders`);
           host.requestUpdate();
         },
-        content: collectionList(
+        content: cache(topOpen ? collectionList(
           ranked.slice(0, 10).map((entry) => ({
             id: String(entry.index),
             title: orderFaces(host, hit, entry.index, firing),
@@ -983,7 +985,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
             `,
             onOpen: () => choose(entry.index),
           })),
-        ),
+        ) : nothing),
       })}
     </section>
   `;
@@ -991,7 +993,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
 
 export function renderResultDetails(host: TeamBuilder, hit: EngineHit): TemplateResult {
   return html`
-    <div class="tb-hit__detail stack">
+    <div class="tb-hit__detail stack stack--flex">
       ${host.results && !usesPtResults(host) && !manualResultSource(hit)
         ? html`<span class="tb-results__meta">
             ${host.results.results.some((result) => result.stats.exact > 0)
@@ -1375,7 +1377,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
   const proven = groups.length > 0 && groups.every((result) => result.proven);
   const gap = proven ? null : improvementPercent(groups);
   return html`
-    <section class="tb-results stack">
+    <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
         <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
           ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven)}

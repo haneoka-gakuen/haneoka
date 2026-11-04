@@ -275,10 +275,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
   const results = host.manualResultsFor === context ? host.manualResults : null;
   const rows = host.manualGoal().songs.map((song) => ({ song,
     row: results?.find((result) => result.song.songId === song.songId && result.song.difficulty === song.difficulty) ?? null }));
-  const baseline = host.manualBaseline?.conditions === host.manualConditions() ? host.manualBaseline : null;
+  const baseline = host.manualBaseline && host.manualBaseline.conditions === host.manualConditions() ? host.manualBaseline : null;
   const baseOf = (song: { songId: number; difficulty: number }) =>
     baseline?.results.find((row) => row.song.songId === song.songId && row.song.difficulty === song.difficulty);
-  const suggestions = host.manualSuggestionsFor === host.manualSuggestionContext() ? host.manualSuggestions : null;
+  const suggestions = host.manualSuggestions && host.manualSuggestionsFor === host.manualSuggestionContext() ? host.manualSuggestions : null;
   const suggesting = host.manualSuggesting;
   const calculating = host.taskKind === "evaluation" || host.taskKind === "suggestion";
   const showSkipScore = host.settings.manualScoreMode !== "gekiso";
@@ -606,14 +606,14 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
             </div>
           `,
           html`
-            <div class="stack stack--loose">
+            <div class="stack stack--flex stack--loose">
               ${editor}
-              <section class="surface stack tb-manual__scores">
+              <section class="surface stack stack--flex tb-manual__scores">
                 <div class="row row--between row--wrap">
                   ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
                   ${baselineBar(host, !!results && manualReady(host))}
                 </div>
-                <div class="stack stack--loose">
+                <div class="stack stack--flex stack--loose">
                   ${rows.map(({ song, row }) => {
                     const hit = row ? manualResultHit(row) : null;
                     const key = `manual:${song.songId}:${song.difficulty}`;
@@ -624,7 +624,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                     return html`
                       <article class="card card--outlined tb-hit">
                         ${resultSong(host, song, (hit ? resultRequest(host, hit)?.songRules : host.songRules(host.manualGoal())) ?? null)}
-                        <div class="card__body stack">
+                        <div class="card__body stack stack--flex">
                           <div class="tb-manual__metrics">${specList([
                             { label: host.t("expectedScore", "Average score"), value: row ? html`${format(host, row.score.mean)} ${delta(host, row.score.mean, base?.score.mean)}` : "—" },
                             { label: host.t("selectedOrderScore", "Selected-order score"), value: row ? html`${format(host, manualOrderScore(row)!)} ${delta(host, manualOrderScore(row), base ? manualOrderScore(base) : undefined)}` : "—" },

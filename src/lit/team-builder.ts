@@ -172,6 +172,8 @@ export class TeamBuilder extends LitElement {
   compactConditions = false;
   conditionsOpen = false;
   private layoutObserver?: ResizeObserver;
+  private workspaceTool?: HTMLElement;
+  private workspaceLayout = "";
   private conditionScroll = 0;
   openConditions() {
     this.conditionScroll = this.closest("#main-content")?.scrollTop ?? 0;
@@ -556,9 +558,13 @@ export class TeamBuilder extends LitElement {
     this.pt.markFields();
     this.songComparison.markFields();
     this.images.observe(this);
-    const header = this.querySelector(".tb-header");
-    if (header) this.style.setProperty("--tb-header-height", `${header.getBoundingClientRect().height + 8}px`);
-    this.measureWorkspace();
+    const tool = this.querySelector<HTMLElement>(".tb-tool");
+    const layout = `${this.tab}:${this.buildMode}:${this.compactConditions}`;
+    if (tool !== this.workspaceTool || layout !== this.workspaceLayout) {
+      this.workspaceTool = tool ?? undefined;
+      this.workspaceLayout = layout;
+      this.measureWorkspace();
+    }
     for (const dialog of this.querySelectorAll<HTMLDialogElement>("dialog.selection-pane"))
       if (!dialog.hasAttribute("data-managed-modal") && !dialog.open && dialog.isConnected) dialog.showModal();
   }
@@ -567,10 +573,9 @@ export class TeamBuilder extends LitElement {
       tool = this.querySelector<HTMLElement>(".tb-tool");
     if (!main || !tool) return;
     const offset = tool.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
-    this.style.setProperty(
-      "--tb-workspace-block",
-      `${Math.max(0, main.clientHeight - offset - (this.compactConditions ? 0 : 24))}px`,
-    );
+    const block = `${Math.max(0, main.clientHeight - offset - (this.compactConditions ? 0 : 24))}px`;
+    if (this.style.getPropertyValue("--tb-workspace-block") !== block)
+      this.style.setProperty("--tb-workspace-block", block);
   }
   t(key: string, fallback: string, params?: Record<string, string | number>) {
     const readable = fallback.replace(/\{([^}]+)\}/gu, (token, name: string) =>

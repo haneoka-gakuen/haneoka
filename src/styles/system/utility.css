@@ -48,6 +48,13 @@
 }
 
 /* ---------- Flow ---------- */
+.stack.stack--flex {
+  display: flex;
+  flex-direction: column;
+}
+.stack--flex > * {
+  flex-shrink: 0;
+}
 .grow {
   flex: 1 1 auto;
   min-width: 0;
