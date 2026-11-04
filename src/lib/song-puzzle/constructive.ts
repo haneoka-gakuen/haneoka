@@ -41,6 +41,7 @@ export async function constructSolution(
     0,
   );
   let nodes = 0,
+    lastYield = start,
     blank = positions[0],
     key = board.reduce((value, tile, index) => value | (BigInt(tile) << shifts[index]), 0n);
   const path: number[] = [],
@@ -57,7 +58,10 @@ export async function constructSolution(
     if (cancelled()) throw new SearchStopped("cancelled");
     if (performance.now() >= deadline) throw new SearchStopped("budget");
     progress({ nodes, bound, elapsedMs: performance.now() - start });
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    if (performance.now() - lastYield >= 16) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      lastYield = performance.now();
+    }
   };
   const move = (index: number) => {
     const tile = board[index];

@@ -1,9 +1,9 @@
 // L3 — GEB
 // Input: 有界截图像素、所选封面、阶数及可选裁剪／目标空格。
-// Output: 棋盘区域、完整唯一排列、目标空格与待确认的格子。
+// Output: 棋盘区域、完整唯一排列、目标空格、待确认格子与可选相似片校正建议。
 // Pos: [Map](../L2-2.md)；封面拼图的本地图像匹配与全局分配。
 // Effects/Dependencies: 纯 CPU 像素处理；不读取网络、DOM 或账户。
-import { goalBoard } from "./model";
+import { goalBoard, solvable } from "./model";
 import { readPuzzleLabels } from "./labels";
 
 export interface PuzzlePixels {
@@ -22,6 +22,7 @@ export interface PuzzleRecognition {
   goalBlank: number;
   uncertain: number[];
   error: number;
+  repair?: number[];
 }
 interface Feature {
   color: Float32Array;
@@ -133,7 +134,7 @@ function feature(
   return { color, luma, edge };
 }
 
-function difference(a: Feature, b: Feature, resolution: number, small: boolean): number {
+function difference(a: Feature, b: Feature, resolution: number, small: boolean, labels = true): number {
   let color = 0,
     gradient = 0,
     count = 0,
@@ -150,7 +151,7 @@ function difference(a: Feature, b: Feature, resolution: number, small: boolean):
         points = 0;
       for (let y = by * block; y < (by + 1) * block; y++)
         for (let x = bx * block; x < (bx + 1) * block; x++) {
-          if (x < resolution * (small ? 2 / 3 : 1 / 3) && y < resolution * (small ? 1 / 2 : 1 / 3)) continue;
+          if (labels && x < resolution * (small ? 2 / 3 : 1 / 3) && y < resolution * (small ? 1 / 2 : 1 / 3)) continue;
           const i = y * resolution + x,
             av = a.luma[i],
             bv = b.luma[i];
@@ -221,12 +222,13 @@ function match(
   gap: number,
   resolution: number,
   goalBlank?: number,
+  labels = true,
 ): Match {
   const cells = size * size,
     small = crop.side / size < 80,
     observed = fragments(image, size, crop, gap, resolution),
     costs = observed.map((a) => [
-      ...reference.map((b) => difference(a, b, resolution, small)),
+      ...reference.map((b) => difference(a, b, resolution, small, labels)),
       emptyCost(a, resolution, small),
     ]);
   costs.push([...new Array<number>(cells).fill(goalBlank === undefined ? 0 : 10000), 10000]);
@@ -261,7 +263,84 @@ function uncertainCells(match: Match): number[] {
   return uncertain;
 }
 
-/** Gradient integrals rank repeated grid seams before reference matching chooses the board. */
+function blankRegions(image: PuzzlePixels, size: number): PuzzleCrop[] {
+  const scale = Math.min(1, 400 / Math.max(image.width, image.height)),
+    width = Math.round(image.width * scale),
+    height = Math.round(image.height * scale),
+    colors = new Float32Array(width * height * 3),
+    mask = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++)
+      for (let c = 0; c < 3; c++) colors[(y * width + x) * 3 + c] = sample(image, x / scale, y / scale, c);
+  for (let y = 1; y < height - 1; y++)
+    for (let x = 1; x < width - 1; x++) {
+      const index = y * width + x,
+        offset = index * 3;
+      if (Math.max(colors[offset]!, colors[offset + 1]!, colors[offset + 2]!) > 0.32) continue;
+      let variation = 0;
+      for (const neighbor of [index - width, index + width, index - 1, index + 1])
+        for (let c = 0; c < 3; c++)
+          variation = Math.max(variation, Math.abs(colors[offset + c]! - colors[neighbor * 3 + c]!));
+      if (variation < 0.055) mask[index] = 1;
+    }
+  const holes: Array<{ x: number; y: number; width: number; height: number; area: number }> = [];
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const stack = [i];
+    let left = width,
+      right = 0,
+      top = height,
+      bottom = 0,
+      area = 0;
+    mask[i] = 0;
+    while (stack.length) {
+      const index = stack.pop()!,
+        x = index % width,
+        y = Math.floor(index / width);
+      area++;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+      for (const next of [
+        x ? index - 1 : -1,
+        x + 1 < width ? index + 1 : -1,
+        y ? index - width : -1,
+        y + 1 < height ? index + width : -1,
+      ])
+        if (next >= 0 && mask[next]) {
+          mask[next] = 0;
+          stack.push(next);
+        }
+    }
+    const w = right - left + 1,
+      h = bottom - top + 1;
+    if (Math.min(w, h) >= 5 && w / h > 0.8 && w / h < 1.25 && area > w * h * 0.8)
+      holes.push({ x: left, y: top, width: w, height: h, area });
+  }
+  const regions: PuzzleCrop[] = [];
+  for (const hole of holes.sort((a, b) => b.area - a.area).slice(0, 8))
+    for (const padding of [1, 2]) {
+      const cell = ((hole.width + hole.height) / 2 + padding * 2) / scale,
+        side = cell * size;
+      if (side > Math.min(image.width, image.height) || side < Math.min(image.width, image.height) * 0.3) continue;
+      for (let row = 0; row < size; row++)
+        for (let column = 0; column < size; column++) {
+          const x = (hole.x - padding) / scale - column * cell,
+            y = (hole.y - padding) / scale - row * cell;
+          if (
+            x >= -cell * 0.1 &&
+            y >= -cell * 0.1 &&
+            x + side <= image.width + cell * 0.1 &&
+            y + side <= image.height + cell * 0.1
+          )
+            regions.push(boundedCrop({ x, y, side }, image));
+        }
+    }
+  return regions;
+}
+
+/** Grid seams, outer frames and square blank regions seed reference-based board selection. */
 function locate(image: PuzzlePixels, size: number): PuzzleCrop[] {
   const scale = Math.min(1, 360 / Math.max(image.width, image.height)),
     width = Math.max(2, Math.round(image.width * scale)),
@@ -292,6 +371,13 @@ function locate(image: PuzzlePixels, size: number): PuzzleCrop[] {
     );
   };
   const candidates: Array<PuzzleCrop & { score: number }> = [];
+  const frames: Array<PuzzleCrop & { score: number }> = [];
+  const keep = (list: typeof candidates, candidate: (typeof candidates)[number]) => {
+    if (list.length === 100 && candidate.score <= list[list.length - 1]!.score) return;
+    list.push(candidate);
+    list.sort((a, b) => b.score - a.score);
+    if (list.length > 100) list.pop();
+  };
   const limit = Math.min(width, height);
   for (let side = Math.max(size * 7, limit * 0.32); side <= limit; side += Math.max(3, side * 0.045)) {
     const step = Math.max(3, side / (size * 3));
@@ -304,15 +390,21 @@ function locate(image: PuzzlePixels, size: number): PuzzleCrop[] {
         }
         const texture = (sum(vertical, x, y, side, side) + sum(horizontal, x, y, side, side)) / (side * side);
         const score = seams / (4 * side * (size - 1)) - texture * 0.7;
-        if (candidates.length < 100 || score > candidates[candidates.length - 1].score) {
-          candidates.push({ x, y, side, score });
-          candidates.sort((a, b) => b.score - a.score);
-          if (candidates.length > 100) candidates.pop();
-        }
+        keep(candidates, { x, y, side, score });
+        const left = sum(vertical, x - 1, y, 2, side),
+          right = sum(vertical, x + side - 1, y, 2, side),
+          top = sum(horizontal, x, y - 1, side, 2),
+          bottom = sum(horizontal, x, y + side - 1, side, 2);
+        keep(frames, {
+          x,
+          y,
+          side,
+          score: (Math.min(left, right) + Math.min(top, bottom)) / (4 * side) - texture * 0.15,
+        });
       }
   }
   const regions: PuzzleCrop[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of [...frames.slice(0, 30), ...candidates]) {
     if (
       regions.some(
         (region) =>
@@ -322,13 +414,16 @@ function locate(image: PuzzlePixels, size: number): PuzzleCrop[] {
     )
       continue;
     regions.push(candidate);
-    if (regions.length >= 14) break;
+    if (regions.length >= 24) break;
   }
   for (const ratio of [1, 0.8, 0.6]) {
     const side = limit * ratio;
     regions.push({ x: (width - side) / 2, y: (height - side) / 2, side });
   }
-  return regions.map(({ x, y, side }) => boundedCrop({ x: x / scale, y: y / scale, side: side / scale }, image));
+  return [
+    ...blankRegions(image, size),
+    ...regions.map(({ x, y, side }) => boundedCrop({ x: x / scale, y: y / scale, side: side / scale }, image)),
+  ];
 }
 
 export function recognizePuzzle(
@@ -343,7 +438,12 @@ export function recognizePuzzle(
     coarse = fragments(cover, size, coverCrop, 0, 6),
     fine = fragments(cover, size, coverCrop, 0, 12);
   const candidates = (crop ? [boundedCrop(crop, image)] : locate(image, size))
-    .map((region) => match(image, coarse, size, region, 0.025, 6, missing))
+    .map(
+      (region) =>
+        [0, 0.04, 0.09]
+          .map((gap) => match(image, coarse, size, region, gap, 6, missing))
+          .sort((a, b) => a.error - b.error)[0]!,
+    )
     .sort((a, b) => a.error - b.error)
     .slice(0, crop ? 1 : 3);
   let best: Match | undefined;
@@ -380,7 +480,32 @@ export function recognizePuzzle(
         if (next.error < best.error) best = next;
       }
     }
-  best = match(image, fragments(cover, size, coverCrop, 0, 24), size, best.crop, best.gap, 24, missing);
+  const visualReference = fragments(cover, size, coverCrop, 0, 24),
+    observed = fragments(image, size, best.crop, best.gap, 24),
+    labelEvidence = best.assignment
+      .slice(0, size * size)
+      .flatMap((source, row) => {
+        if (source >= size * size || best!.costs[row]![source]! > 0.18) return [];
+        const a = observed[row]!,
+          b = visualReference[source]!,
+          small = best!.crop.side / size < 80;
+        return [difference(a, b, 24, small, false) - difference(a, b, 24, small, true)];
+      })
+      .sort((a, b) => a - b),
+    labels = labelEvidence.length >= 4 && labelEvidence[Math.floor(labelEvidence.length / 2)]! > 0.012;
+  best = match(image, visualReference, size, best.crop, best.gap, 24, missing, labels);
+  const detail = match(image, fragments(cover, size, coverCrop, 0, 36), size, best.crop, best.gap, 36, missing, labels),
+    scaleDisagreement = best.assignment
+      .slice(0, size * size)
+      .flatMap((source, row) => (source === detail.assignment[row] ? [] : [row])),
+    combined = best.costs.map((row, i) => row.map((value, j) => value * 0.65 + detail.costs[i]![j]! * 0.35)),
+    combinedAssignment = assign(combined);
+  best = {
+    ...best,
+    costs: combined,
+    assignment: combinedAssignment,
+    error: combinedAssignment.reduce((sum, column, row) => sum + combined[row]![column]!, 0) / (size * size - 1),
+  };
   if (best.error > 0.36) throw new Error("no-match");
   let uncertain = uncertainCells(best);
   const anchors = best.assignment
@@ -388,14 +513,9 @@ export function recognizePuzzle(
     .flatMap((source, row) =>
       source < size * size && !uncertain.includes(row) && best!.costs[row][source] < 0.18 ? [{ row, source }] : [],
     );
-  const hints = readPuzzleLabels(
-    image,
-    size,
-    best.crop,
-    best.gap,
-    anchors,
-    goalBoard(size, best.assignment[size * size]),
-  );
+  const hints = labels
+    ? readPuzzleLabels(image, size, best.crop, best.gap, anchors, goalBoard(size, best.assignment[size * size]))
+    : new Map<number, number>();
   if (hints.size) {
     const visual = best.costs,
       costs = visual.map((row) => [...row]),
@@ -415,5 +535,24 @@ export function recognizePuzzle(
     goalBlank = best.assignment[cells],
     goal = goalBoard(size, goalBlank),
     tiles = best.assignment.slice(0, cells).map((source) => (source === cells ? 0 : goal[source]));
-  return { crop: best.crop, tiles, goalBlank, uncertain, error: best.error };
+  uncertain = [...new Set([...uncertain, ...scaleDisagreement.filter((row) => !hints.has(row))])].sort((a, b) => a - b);
+  let repair: number[] | undefined,
+    repairCost = 0.025;
+  if (best.error < 0.12 && !solvable({ size, tiles, goal }))
+    for (let i = 0; i < uncertain.length; i++)
+      for (let j = i + 1; j < uncertain.length; j++) {
+        const a = uncertain[i]!,
+          b = uncertain[j]!,
+          sourceA = best.assignment[a]!,
+          sourceB = best.assignment[b]!;
+        if (!tiles[a] || !tiles[b] || hints.has(a) || hints.has(b)) continue;
+        const first = best.costs[a]![sourceB]!,
+          second = best.costs[b]![sourceA]!,
+          cost = first + second - best.costs[a]![sourceA]! - best.costs[b]![sourceB]!;
+        if (first > 0.1 || second > 0.1 || cost >= repairCost) continue;
+        repairCost = cost;
+        repair = [...tiles];
+        [repair[a], repair[b]] = [repair[b]!, repair[a]!];
+      }
+  return { crop: best.crop, tiles, goalBlank, uncertain, error: best.error, repair };
 }

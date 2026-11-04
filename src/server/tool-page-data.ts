@@ -11,7 +11,7 @@ import { adaptTeamBuilderData, nativeInputAreaOffsets, objectRow, type TeamBuild
 import { hydrateRuntimeDocuments } from "../lib/team-builder/data/complete";
 import { readRuntimeRulesDocument } from "../lib/team-builder/data/runtime-rules";
 import type { fetchCatalogVisuals } from "../lib/catalog-visuals";
-import { goalBoard, shuffle } from "../lib/song-puzzle/model";
+import { nativePuzzle } from "../lib/song-puzzle/native";
 import { stampChoices, mergeTextlessStampManifests, type TextlessStampManifest } from "../lib/stamp-maker/catalog";
 import { publicStampManifest } from "../lib/stamp-maker/public-manifest";
 import type { HaneokaReleaseIdentity } from "../../packages/api-client/src/haneoka";
@@ -317,14 +317,13 @@ export function songPuzzlePageData(server: string): Promise<SongPuzzlePageData> 
       const variants = Object.fromEntries(
         results.flatMap((result, index) => (result.status === "fulfilled" ? [[servers[index]!, result.value.songs]] : [])),
       );
-      const goal = goalBoard(3);
       return {
         schema: "haneoka-song-puzzle-page-v1",
         server,
         songs: variants[server]!,
         variants,
         cardData: Object.fromEntries(results.flatMap((result, index) => result.status === "fulfilled" ? [[servers[index]!, result.value.cardData]] : [])),
-        tiles: shuffle({ size: 3, tiles: goal, goal }, 20),
+        tiles: nativePuzzle(Number(Object.keys(variants[server]!)[0]), 3).tiles,
       };
     })();
     puzzlePages.set(server, pending);

@@ -390,7 +390,17 @@
     "worker/svg-rasterizer.ts",
     "tooling/local-containers/entrypoint.sh",
     "tooling/local-containers/docker.sh",
-    "src/lit/story-workspace.ts"
+    "src/lit/story-workspace.ts",
+    "src/lit/song-puzzle.ts",
+    "src/workers/song-puzzle.worker.ts",
+    "src/lib/song-puzzle/native.ts",
+    "src/lib/song-puzzle/small.ts",
+    "src/lib/song-puzzle/walking.ts",
+    "src/lib/song-puzzle/shorten.ts",
+    "src/lib/song-puzzle/patterns.ts",
+    "src/lib/song-puzzle/portfolio.ts",
+    "src/lib/song-puzzle/exact.ts",
+    "src/lib/song-puzzle/storage.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

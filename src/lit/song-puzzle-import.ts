@@ -31,6 +31,7 @@ async function readPixels(url: string, maxSide: number, signal: AbortSignal): Pr
   if (Math.min(canvas.width, canvas.height) < 64) throw new Error("image");
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("canvas");
+  context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
   canvas.width = canvas.height = 0;
@@ -119,7 +120,7 @@ export class SongPuzzleImport extends LitElement {
     this.busy = true;
     this.requestUpdate();
     try {
-      const image = await readPixels(url, 1400, this.controller.signal);
+      const image = await readPixels(url, 2048, this.controller.signal);
       if (!this.isConnected || token !== this.token) return;
       this.image = image;
       const side = Math.min(image.width, image.height);
@@ -148,7 +149,7 @@ export class SongPuzzleImport extends LitElement {
         if (!response.ok) throw new Error("cover");
         const url = URL.createObjectURL(await response.blob());
         try {
-          this.reference = await readPixels(url, 768, this.controller.signal);
+          this.reference = await readPixels(url, 1024, this.controller.signal);
         } finally {
           URL.revokeObjectURL(url);
         }
@@ -245,6 +246,7 @@ export class SongPuzzleImport extends LitElement {
       this.result = {
         ...this.result,
         tiles,
+        repair: undefined,
         uncertain: this.result.uncertain.filter((cell) => cell !== first && cell !== index),
       };
       this.selected = -1;
@@ -343,6 +345,23 @@ export class SongPuzzleImport extends LitElement {
             <div class="puzzle-import__status" role="status" aria-live="polite">
               ${this.text(state, { count: result?.uncertain.length ?? 0 })}
             </div>
+            ${
+              result?.repair
+                ? html`
+                    <button
+                      type="button"
+                      class="button button--tonal"
+                      @click=${() => {
+                        this.result = { ...result, tiles: result.repair!, repair: undefined };
+                        this.selected = -1;
+                        this.requestUpdate();
+                      }}
+                    >
+                      ${this.text("imageResolveSimilar")}
+                    </button>
+                  `
+                : nothing
+            }
             ${
               image && crop
                 ? html`

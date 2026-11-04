@@ -20,6 +20,7 @@ Unofficial database, tools and community for *BanG Dream! Our Notes*, at [haneok
 - Community charts ranked by the shared post recommendation system, with latest, popularity and difficulty sorting
 - Gekiso Arena schedule, rankings, song rules and team building
 - Event trackers, player lookup, song rankings and calendars
+- Song jacket puzzles with original-game openings, screenshot recognition, local progress, faster solving and independent step-by-step replay
 - Community posts, playlists and accounts
 - Embeddable players and a [public API](https://docs.haneoka.org)
 - [Native app](https://github.com/haneoka-gakuen/haneoka-app) for Android, iOS, Windows, macOS and Linux
