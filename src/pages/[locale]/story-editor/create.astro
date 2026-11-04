@@ -7,10 +7,11 @@ import "../../../styles/story-creation.css";
 import { staticBuildPaths } from "../../../server/static-build";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 export function getStaticPaths(){ return staticBuildPaths("src/pages/[locale]/story-editor/create.astro",LOCALES.map(locale=>({params:{locale},props:{locale}}))); }
 const {locale}=Astro.props as {locale:Locale};
 const titleKey="community.stories.editor",title=t(locale,titleKey),route="/story-editor/create";
-const studioVersion=createHash("sha256").update(readFileSync(new URL("../../../../.generated-public/story-studio/index.html",import.meta.url))).digest("hex").slice(0,16);
+const studioVersion=createHash("sha256").update(readFileSync(resolve(".generated-public/story-studio/index.html"))).digest("hex").slice(0,16);
 ---
 <Base locale={locale} route={route} title={title} titleKey={titleKey}>
  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
