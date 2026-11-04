@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Parsed chart, native canvas skin, viewport height and optional highlighted time range.
-// Output: Full flat-chart overview or a clipped excerpt with numbered note outlines.
+// Output: Clipped flat-chart panels, a selected panel range or a numbered timing excerpt.
 // Pos: [Map](L2-2.md); shared flat rendering for the player and team-builder timing guide.
 // Effects/Dependencies: Draws the supplied canvas with Cassiopeia note, ribbon and lane primitives.
 import {
@@ -83,6 +83,15 @@ export const countNoteKinds = (chart: ChartDocument): { tap: number; flick: numb
   return counts;
 };
 
+export function chartOverviewLayout(durationMs: number, viewportHeight: number) {
+  const presentation = chartCanvasOverviewPresentation();
+  const height = Math.max(360, viewportHeight);
+  const panelDuration = (height / presentation.heightPerSecond) * 1000;
+  const panelWidth = presentation.laneWidth * 13;
+  const panelCount = Math.max(1, Math.ceil(durationMs / panelDuration));
+  return { height, panelDuration, panelWidth, panelCount, width: panelCount * panelWidth };
+}
+
 export function drawDetailedChartOverview(
   canvas: HTMLCanvasElement,
   chart: ChartDocument,
@@ -94,15 +103,15 @@ export function drawDetailedChartOverview(
     highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[] }[];
     color: string;
   },
+  panelRange?: { first: number; count: number },
 ): void {
   const presentation = chartCanvasOverviewPresentation();
-  const height = Math.max(360, viewportHeight);
-  const panelDuration = (height / presentation.heightPerSecond) * 1000;
-  const panelWidth = presentation.laneWidth * 13;
   const startMs = excerpt?.startMs ?? 0;
   const endMs = excerpt?.endMs ?? chart.durationMs;
-  const panelCount = Math.max(1, Math.ceil((endMs - startMs) / panelDuration));
-  const width = panelCount * panelWidth;
+  const { height, panelDuration, panelWidth, panelCount } = chartOverviewLayout(endMs - startMs, viewportHeight);
+  const firstPanel = panelRange?.first ?? 0;
+  const lastPanel = Math.min(panelCount, firstPanel + (panelRange?.count ?? panelCount));
+  const width = (lastPanel - firstPanel) * panelWidth;
   const dpr = Math.max(1, Math.min(1.5, devicePixelRatio || 1));
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
@@ -148,16 +157,14 @@ export function drawDetailedChartOverview(
   const yAt = (timeMs: number, panel: number) =>
     height - ((timeMs - startMs - panel * panelDuration) / 1000) * presentation.heightPerSecond;
 
-  for (let panel = 0; panel < panelCount; panel += 1) {
+  for (let panel = firstPanel; panel < lastPanel; panel += 1) {
     const panelStart = startMs + panel * panelDuration;
     const panelEnd = excerpt ? Math.min(endMs, startMs + (panel + 1) * panelDuration) : (panel + 1) * panelDuration;
     context.save();
-    context.translate(panel * panelWidth, 0);
-    if (excerpt) {
-      context.beginPath();
-      context.rect(0, 0, panelWidth, height);
-      context.clip();
-    }
+    context.translate((panel - firstPanel) * panelWidth, 0);
+    context.beginPath();
+    context.rect(0, 0, panelWidth, height);
+    context.clip();
     context.fillStyle = "#000";
     context.fillRect(0, 0, panelWidth, height);
     context.lineWidth = presentation.lineWidth;

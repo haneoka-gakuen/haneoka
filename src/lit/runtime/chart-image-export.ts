@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 原生概览画布、歌曲信息、统计与本地化标签。
-// Output: 补齐的导出信息、PNG Blob 与下载。
+// Output: 补齐的导出信息、预算内的 PNG Blob 与下载。
 // Pos: [Map](L2-2.md)；网页和程序化导出共用的图片排版。
 // Effects/Dependencies: 解码图片、加载字体、绘制 Canvas；下载创建并回收 Blob URL。
 import type { ChartDocument } from "@haneoka/cassiopeia";
@@ -277,6 +277,7 @@ export async function composeChartOverviewImage(
   );
   const statsHeight = statRows.length * statRowHeight + (statRows.length - 1) * statRowGap;
   const height = padding + headerHeight + gapHeaderStats + statsHeight + gapStatsChart + chartHeight + padding;
+  if (width > 16_384 || height > 16_384 || width * height > 32_000_000) return undefined;
   output.width = width;
   output.height = height;
 

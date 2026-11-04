@@ -72,8 +72,13 @@
     scrollbar-color: #68707d #1a2029;
   }
   .chart-simple-overview canvas {
+    position: absolute;
+    top: 0;
     display: block;
     max-width: none;
+  }
+  .chart-simple-overview__strip {
+    position: relative;
   }
   .chart-runtime__canvas,
   .chart-runtime__hud {

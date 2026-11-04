@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
-// Output: 共用 2D 概览、3D 观赏、播放控件与谱面图片下载。
+// Output: 共用分块 2D 概览、3D 观赏、播放控件与完整 PNG／分页 PNG ZIP 下载。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
 // Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
@@ -76,7 +76,7 @@ import {
   type OurNotesRenderer,
 } from "@haneoka/cassiopeia-renderer-three";
 import { WEB_HOST, createWebHostPlugin, type MediaClock, type NoteSoundPlayer } from "@haneoka/cassiopeia-host-web";
-import { drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
+import { chartOverviewLayout, drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
 import {
@@ -310,6 +310,14 @@ export class ChartSimulator extends LitElement {
   }
   private chart?: ChartDocument;
   private loadedVisualProfiles?: NativeChartVisualProfiles;
+  private overviewRender?: {
+    chart: ChartDocument;
+    skin: NonNullable<ChartSimulator["overviewSkin"]>;
+    height: number;
+    dpr: number;
+    first: number;
+    last: number;
+  };
   private assets?: OurNotesAssetManifest;
   private renderer?: OurNotesRenderer;
   private intro?: NativeIntroPlayback;
@@ -1766,19 +1774,64 @@ export class ChartSimulator extends LitElement {
   }
   private drawOverview() {
     const host = this.querySelector<HTMLElement>(".chart-simple-overview");
-    const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
-    if (!host || !canvas || !this.chart || !this.overviewSkin) return;
-    drawDetailedChartOverview(canvas, this.chart, this.overviewSkin, host.clientHeight || 720);
+    const strip = host?.querySelector<HTMLElement>(".chart-simple-overview__strip");
+    const chart = this.chart, skin = this.overviewSkin;
+    if (!host || !strip || !chart || !skin || this.mode !== "simple" || !host.clientWidth) return;
+    const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
+    strip.style.width = `${layout.width}px`;
+    strip.style.height = `${layout.height}px`;
+    const panelsPerCanvas = 8, chunkWidth = layout.panelWidth * panelsPerCanvas;
+    const first = Math.floor(host.scrollLeft / chunkWidth);
+    const last = Math.min(Math.ceil(layout.panelCount / panelsPerCanvas), Math.ceil((host.scrollLeft + host.clientWidth) / chunkWidth));
+    const dpr = devicePixelRatio || 1, previous = this.overviewRender;
+    if (previous?.chart === chart && previous.skin === skin && previous.height === layout.height
+      && previous.dpr === dpr && previous.first === first && previous.last === last) return;
+    const canvases: HTMLCanvasElement[] = [];
+    for (let chunk = first; chunk < last; chunk += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.style.left = `${chunk * chunkWidth}px`;
+      drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, {
+        first: chunk * panelsPerCanvas, count: panelsPerCanvas,
+      });
+      canvases.push(canvas);
+    }
+    for (const canvas of strip.querySelectorAll("canvas")) canvas.width = canvas.height = 0;
+    strip.replaceChildren(...canvases);
+    this.overviewRender = { chart, skin, height: layout.height, dpr, first, last };
   }
-  /** Renders the simple overview and downloads it as a framed PNG. */
+  /** Downloads every overview panel, paging oversized images into a PNG archive. */
   async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
-    const canvas = this.querySelector<HTMLCanvasElement>(".chart-simple-overview canvas");
-    const chart = this.chart;
-    if (!canvas || this.overviewPhase !== "ready" || !chart) return;
-    this.drawOverview();
+    const host = this.querySelector<HTMLElement>(".chart-simple-overview");
+    const chart = this.chart, skin = this.overviewSkin;
+    if (!host || this.overviewPhase !== "ready" || !chart || !skin) return;
+    const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
     const payload = completeChartOverviewMeta({ ...meta, locale: this.locale }, chart, key => this.ui(key));
-    const blob = await composeChartOverviewImage(canvas, payload);
-    if (blob) downloadChartOverviewImage(blob, chartImageFileName(payload));
+    const fileName = chartImageFileName(payload), canvas = document.createElement("canvas");
+    const dpr = Math.max(1, Math.min(1.5, devicePixelRatio || 1));
+    try {
+      if (layout.width * dpr <= 16_384 && layout.height * dpr <= 16_384
+        && layout.width * layout.height * dpr * dpr <= 16_777_216) {
+        drawDetailedChartOverview(canvas, chart, skin, layout.height);
+        const blob = await composeChartOverviewImage(canvas, payload);
+        if (blob) {
+          downloadChartOverviewImage(blob, fileName);
+          return;
+        }
+      }
+      const { zipSync } = await import("fflate");
+      const pages: Record<string, Uint8Array> = {};
+      const pageCount = Math.ceil(layout.panelCount / 8), digits = String(pageCount).length;
+      for (let page = 0; page < pageCount; page += 1) {
+        drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, { first: page * 8, count: 8 });
+        const blob = await composeChartOverviewImage(canvas, payload);
+        if (!blob) return;
+        pages[fileName.replace(/\.png$/u, `-${String(page + 1).padStart(digits, "0")}.png`)] = new Uint8Array(await blob.arrayBuffer());
+      }
+      const archive = new Blob([zipSync(pages, { level: 0 }).buffer as ArrayBuffer], { type: "application/zip" });
+      downloadChartOverviewImage(archive, fileName.replace(/\.png$/u, ".zip"));
+    } finally {
+      canvas.width = canvas.height = 0;
+    }
   }
   private draw() {
     if (!this.renderer || !this.session || !this.frames) return;
@@ -2187,6 +2240,10 @@ export class ChartSimulator extends LitElement {
     this.loadAbort = undefined;
     this.overviewSkin?.dispose();
     this.overviewSkin = undefined;
+    this.overviewRender = undefined;
+    const strip = this.querySelector(".chart-simple-overview__strip");
+    for (const canvas of strip?.querySelectorAll("canvas") ?? []) canvas.width = canvas.height = 0;
+    strip?.replaceChildren();
     this.disposeStage();
   }
   private disposeStage() {
@@ -2544,8 +2601,8 @@ export class ChartSimulator extends LitElement {
                 `
               : nothing
         }
-        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"}>
-          <canvas aria-label=${this.label}></canvas>
+        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"} @scroll=${this.drawOverview}>
+          <div class="chart-simple-overview__strip" role="img" aria-label=${this.label}></div>
         </div>
         <div
           class="chart-runtime__stage"
