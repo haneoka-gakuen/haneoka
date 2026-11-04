@@ -499,8 +499,28 @@ export class OfficialRankingCollector extends Container<Env> {
       await this.ctx.storage.put("collectorState", state);
       return json(JSON.parse(prior.body_json));
     }
-    const cached = this.ctx.storage.sql.exec<{ attempted_at_ms: number; snapshot_id: string; observation_json: string | null; retained: number }>(
+    let cached = this.ctx.storage.sql.exec<{ attempted_at_ms: number; snapshot_id: string; observation_json: string | null; retained: number }>(
       "SELECT attempted_at_ms,snapshot_id,observation_json,retained FROM collector_window_cache WHERE window_key=?", key).toArray()[0];
+    if (!cached || Date.now() >= cached.attempted_at_ms + WINDOW_REUSE_MS) {
+      const [kind, id, board, start] = key.split("/");
+      const statement = kind === "arena" ? this.env.DB!.prepare(`SELECT observed_at_ms,snapshot_id FROM official_arena_window_metadata
+        WHERE region=? AND season_id=? AND band_id=? AND start_rank=?`).bind(state.region, id, board, Number(start))
+        : board === "point" ? this.env.DB!.prepare(`SELECT observed_at_ms,snapshot_id FROM official_event_window_metadata
+          WHERE region=? AND event_id=? AND start_rank=? UNION ALL
+          SELECT observed_at_ms,snapshot_id FROM official_ranking_observations
+          WHERE region=? AND event_id=? AND board_kind='challenge' AND challenge_id='point' AND ?=1
+          ORDER BY observed_at_ms DESC LIMIT 1`).bind(state.region, id, Number(start), state.region, id, Number(start))
+          : this.env.DB!.prepare(`SELECT observed_at_ms,snapshot_id FROM official_ranking_observations
+            WHERE region=? AND event_id=? AND board_kind=? AND challenge_id=? ORDER BY observed_at_ms DESC LIMIT 1`)
+            .bind(state.region, id, board, board === "challenge" ? start : "");
+      const previous = await statement.first<{ observed_at_ms: number; snapshot_id: string }>();
+      if (previous && Date.now() < previous.observed_at_ms + WINDOW_REUSE_MS) {
+        this.ctx.storage.sql.exec(`INSERT INTO collector_window_cache VALUES (?,?,?,NULL,1)
+          ON CONFLICT(window_key) DO UPDATE SET attempted_at_ms=excluded.attempted_at_ms,
+          snapshot_id=excluded.snapshot_id,observation_json=NULL,retained=1`, key, previous.observed_at_ms, previous.snapshot_id);
+        cached = { attempted_at_ms: previous.observed_at_ms, snapshot_id: previous.snapshot_id, observation_json: null, retained: 1 };
+      }
+    }
     if (cached && cached.snapshot_id !== update.snapshotId && Date.now() < cached.attempted_at_ms + WINDOW_REUSE_MS) {
       const observation = cached.observation_json ? JSON.parse(cached.observation_json) as OfficialArenaObservation | OfficialEventWindow | OfficialObservation : null;
       const challengeEnd = run.finalEvent?.challenges.find((row) => key === `event/${run.finalEvent!.id}/challenge/${row.id}`)?.endAtMs;
@@ -2321,6 +2341,22 @@ export class OfficialRankingCollector extends Container<Env> {
           } else if (update.status === "ok") {
             if (!cold) state.arenaWarmupRuns = 0;
             if (state.arenaInterests?.length) this.expediteArena(state);
+          }
+          if (update.status === "ok" && !run.finalEvent && !run.finalArena) {
+            const now = Date.now(), event = run.catalog?.event, arena = run.catalog?.arena;
+            const keys = event && now >= event.startAtMs && now < event.endAtMs + event.aggregationSeconds * 1000 ? [
+              ...event.challenges.filter((row) => row.enabled && now >= row.startAtMs && now < row.endAtMs + event.aggregationSeconds * 1000)
+                .map((row) => `event/${event.id}/challenge/${row.id}`),
+              ...(event.totalRankingEnabled ? [`event/${event.id}/total`] : []),
+              ...(event.pointRankingEnabled ? [`event/${event.id}/point/1/100`] : []),
+            ] : [];
+            if (arena && now >= arena.startAtMs && now < arena.rankingEndAtMs)
+              keys.push(...arena.bandIds.map((id) => `arena/${arena.seasonId}/${id}/1/100`));
+            if (keys.length) {
+              const due = this.ctx.storage.sql.exec<{ due: number | null }>(
+                `SELECT MIN(attempted_at_ms+?) AS due FROM collector_window_cache WHERE window_key IN (${keys.map(() => "?").join(",")})`, WINDOW_REUSE_MS, ...keys).one().due;
+              if (due !== null) state.nextAtMs = Math.min(state.nextAtMs, Math.max(now + 1000, due));
+            }
           }
           this.ctx.waitUntil(this.runLookup(region));
           const health = this.runHealth(state);
