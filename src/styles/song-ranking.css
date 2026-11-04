@@ -292,17 +292,8 @@
     font: var(--md-sys-typescale-body-small-weight)
       var(--md-sys-typescale-body-small-size)/var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
-  .song-ranking__profile-level {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin: 8px 8px 0 0;
-    padding: 2px 8px;
-    border-radius: var(--md-sys-shape-corner-small);
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-    font: var(--md-sys-typescale-label-large-weight)
-      var(--md-sys-typescale-label-large-size)/var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  .song-ranking__profile-badges {
+    margin-top: 8px;
   }
   .song-ranking__profile-namecard,
   .song-ranking__profile-details,

@@ -552,33 +552,35 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             <p class="song-ranking__profile-id">
               ${this.label("profileSearch", "Player profile ID")} / ${this.selectedProfileId}
             </p>
-            ${
-              this.communityOwner
-                ? html`
-                    <a class="chip chip--assist" href=${`/${this.locale}/community/users/${this.communityOwner.uid}/`}>
-                      ${icon("person", 18)}<span class="chip__label">${this.communityOwner.name}</span>
-                    </a>
-                  `
-                : nothing
-            }
-            ${
-              level != null
-                ? html`
-                    <span class="song-ranking__profile-level">
-                      ${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}
-                    </span>
-                  `
-                : nothing
-            }
-            ${
-              favorites != null
-                ? html`
-                    <span class="song-ranking__profile-level">
-                      ${icon("favorite", 16)}<span class="sr-only">${this.label("favorites", "Likes received")}</span>${favorites}
-                    </span>
-                  `
-                : nothing
-            }
+            <div class="cluster song-ranking__profile-badges">
+              ${
+                this.communityOwner
+                  ? html`
+                      <a class="chip chip--assist" href=${`/${this.locale}/community/users/${this.communityOwner.uid}/`}>
+                        ${icon("person", 18)}<span class="chip__label">${this.communityOwner.name}</span>
+                      </a>
+                    `
+                  : nothing
+              }
+              ${
+                level != null
+                  ? html`
+                      <span class="chip chip--tonal chip--static">
+                        <span class="chip__label">${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}</span>
+                      </span>
+                    `
+                  : nothing
+              }
+              ${
+                favorites != null
+                  ? html`
+                      <span class="chip chip--tonal chip--static">
+                        ${icon("favorite", 18)}<span class="sr-only">${this.label("favorites", "Likes received")}</span><span class="chip__label">${favorites}</span>
+                      </span>
+                    `
+                  : nothing
+              }
+            </div>
           </div>
         </header>
         <div class="song-ranking__profile-layout">
