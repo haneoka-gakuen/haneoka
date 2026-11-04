@@ -101,7 +101,3 @@ retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Haneoka is an unofficial project and is not affiliated with or endorsed by the
 rights holders of _BanG Dream!_ or _BanG Dream! Our Notes_.
-
-故事编辑器位于 `/{locale}/story-creation/`，支持原生与 WebGAL 工程、公共素材、本地草稿、私有云保存与社区故事发布。正式故事详情可进入编辑器，创建独立原生工程。配置与开发操作见[故事创作接入](src/lib/story-creation/README.md)。
-
-动作与表情编辑器支持 Motori 片段互通并保留原始文件。原生时间线可编辑多轨音频、裁切、变速、音量和淡入淡出，导出混音或分轨 WAV；实时预览可录制同一 Three.js 舞台与播放器音频，下载视频和 SRT 字幕包。
