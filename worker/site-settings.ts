@@ -6,6 +6,7 @@ import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { USER_ROLES, isUserRole, type UserRole } from "../src/lib/user-roles";
 import { WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id";
+import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 
 export type SiteSettings = {
   showRestrictedContent: boolean;
@@ -139,10 +140,12 @@ export async function applySiteSettings(
   headers.set("Vary", [...vary].join(", "));
   headers.delete("Content-Length");
   const assetEtag = headers.get("ETag");
+  const provider = providerEntityFromUrl(new URL(request.url));
+  const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilers = settings ? spoilerCookieEnabled(request.headers.get("Cookie")) : false;
   const etag = assetEtag?.replace(
     /"$/u,
-    `:web-${buildId}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -172,6 +175,11 @@ export async function applySiteSettings(
         if (settings) element.setAttribute("data-site-settings-version", String(settings.version));
         else element.removeAttribute("data-site-settings-version");
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
+      },
+    })
+    .on("story-workspace[data-provider-entity-shell]", {
+      element(element) {
+        if (providerId) element.setAttribute("entity-id", providerId);
       },
     })
     .transform(output);
