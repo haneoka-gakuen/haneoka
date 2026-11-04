@@ -2957,3 +2957,230 @@ CREATE INDEX IF NOT EXISTS official_ranking_final_snapshot
   ON official_ranking_finals (region, snapshot_id) WHERE snapshot_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS official_arena_final_snapshot
   ON official_arena_finals (region, snapshot_id) WHERE snapshot_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS community_story_blob (
+  hash TEXT PRIMARY KEY NOT NULL CHECK(length(hash)=64 AND hash NOT GLOB '*[^0-9a-f]*'),
+  object_key TEXT NOT NULL UNIQUE,
+  byte_size INTEGER NOT NULL CHECK(byte_size>=0),
+  state TEXT NOT NULL CHECK(state IN ('uploading','active','deleting')),
+  moderation_status TEXT NOT NULL DEFAULT 'allow' CHECK(moderation_status IN ('allow','review','block')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS community_story_asset (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  blob_hash TEXT NOT NULL REFERENCES community_story_blob(hash) ON DELETE RESTRICT,
+  media_type TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('data','audio','image','video')),
+  state TEXT NOT NULL CHECK(state IN ('reserved','processing','ready','rejected')),
+  attachment_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(owner_id,blob_hash)
+);
+CREATE INDEX IF NOT EXISTS community_story_asset_owner_idx ON community_story_asset(owner_id,updated_at);
+CREATE INDEX IF NOT EXISTS community_story_asset_attachment_idx ON community_story_asset(attachment_id) WHERE attachment_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS community_story (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  head INTEGER NOT NULL DEFAULT 0 CHECK(head>=0),
+  version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0),
+  published_revision INTEGER,
+  publishing_revision INTEGER,
+  publish_token TEXT,
+  publish_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS community_story_owner_idx ON community_story(owner_id,updated_at DESC,id);
+CREATE INDEX IF NOT EXISTS community_story_publishing_idx ON community_story(updated_at,id) WHERE publishing_revision IS NOT NULL AND deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS community_story_revision (
+  story_id TEXT NOT NULL REFERENCES community_story(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL CHECK(revision>0),
+  request_id TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  write_version INTEGER NOT NULL CHECK(write_version>0),
+  object_key TEXT NOT NULL UNIQUE,
+  runtime_key TEXT NOT NULL UNIQUE,
+  project_id TEXT NOT NULL,
+  compile_error TEXT,
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 120),
+  summary TEXT NOT NULL CHECK(length(summary)<=2000),
+  locales_json TEXT NOT NULL CHECK(json_valid(locales_json) AND json_type(locales_json)='array'),
+  cover_path TEXT,
+  visibility TEXT NOT NULL CHECK(visibility IN ('public','unlisted')),
+  remix INTEGER NOT NULL CHECK(remix IN (0,1)),
+  upstream_id TEXT REFERENCES community_story(id) ON DELETE SET NULL,
+  scene_count INTEGER NOT NULL CHECK(scene_count>=0),
+  command_count INTEGER NOT NULL CHECK(command_count>=0),
+  byte_size INTEGER NOT NULL CHECK(byte_size>=0),
+  file_count INTEGER NOT NULL CHECK(file_count>0),
+  created_at INTEGER NOT NULL,
+  published_at INTEGER,
+  deleted_at INTEGER,
+  PRIMARY KEY(story_id,revision),
+  UNIQUE(story_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS community_story_public_idx ON community_story_revision(published_at DESC,story_id) WHERE published_at IS NOT NULL AND deleted_at IS NULL;
+CREATE TABLE IF NOT EXISTS community_story_revision_asset (
+  story_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  asset_id TEXT NOT NULL REFERENCES community_story_asset(id) ON DELETE RESTRICT,
+  is_public INTEGER NOT NULL DEFAULT 1 CHECK(is_public IN (0,1)),
+  PRIMARY KEY(story_id,revision,asset_id),
+  FOREIGN KEY(story_id,revision) REFERENCES community_story_revision(story_id,revision) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS community_story_revision_asset_asset_idx ON community_story_revision_asset(asset_id);
+CREATE TABLE IF NOT EXISTS community_story_like (
+  story_id TEXT NOT NULL REFERENCES community_story(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(story_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS community_story_gc (
+  object_key TEXT PRIMARY KEY NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS community_story_action (
+  story_id TEXT NOT NULL REFERENCES community_story(id) ON DELETE CASCADE,
+  request_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('publish','unpublish','delete')),
+  payload_hash TEXT NOT NULL,
+  applied_version INTEGER NOT NULL CHECK(applied_version>0),
+  revision INTEGER NOT NULL CHECK(revision>0),
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(story_id,request_id)
+);
+
+CREATE TABLE IF NOT EXISTS community_story_remix_grant (
+  owner_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  source_story_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL CHECK(source_revision>0),
+  source_title TEXT NOT NULL,
+  source_owner_uid INTEGER NOT NULL,
+  source_owner_name TEXT NOT NULL,
+  granted_at INTEGER NOT NULL,
+  PRIMARY KEY(owner_id,source_story_id)
+);
+
+CREATE TABLE IF NOT EXISTS community_story_remix_revision_grant (
+  owner_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  source_story_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL CHECK(source_revision>0),
+  source_title TEXT NOT NULL,
+  source_owner_uid INTEGER NOT NULL,
+  source_owner_name TEXT NOT NULL,
+  granted_at INTEGER NOT NULL,
+  PRIMARY KEY(owner_id,source_story_id,source_revision)
+);
+INSERT OR IGNORE INTO community_story_remix_revision_grant
+  SELECT owner_id,source_story_id,source_revision,source_title,source_owner_uid,source_owner_name,granted_at
+  FROM community_story_remix_grant;
+
+CREATE TABLE IF NOT EXISTS community_story_revision_origin (
+  story_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  source_story_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL CHECK(source_revision>0),
+  source_title TEXT NOT NULL,
+  source_owner_uid INTEGER NOT NULL,
+  source_owner_name TEXT NOT NULL,
+  PRIMARY KEY(story_id,revision),
+  FOREIGN KEY(story_id,revision) REFERENCES community_story_revision(story_id,revision) ON DELETE CASCADE
+);
+INSERT OR IGNORE INTO community_story_revision_origin
+  SELECT r.story_id,r.revision,g.source_story_id,g.source_revision,g.source_title,g.source_owner_uid,g.source_owner_name
+  FROM community_story_revision r
+  JOIN community_story s ON s.id=r.story_id
+  JOIN community_story_remix_grant g ON g.owner_id=s.owner_id AND g.source_story_id=r.upstream_id;
+CREATE TABLE IF NOT EXISTS community_story_upload (
+  attachment_id TEXT PRIMARY KEY NOT NULL REFERENCES community_attachment(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO community_story_upload(attachment_id,created_at)
+SELECT a.attachment_id,min(a.created_at) FROM community_story_asset a
+WHERE a.attachment_id IS NOT NULL
+ AND EXISTS(SELECT 1 FROM community_attachment attachment WHERE attachment.id=a.attachment_id)
+ AND NOT EXISTS(SELECT 1 FROM community_post_attachment link WHERE link.attachment_id=a.attachment_id)
+GROUP BY a.attachment_id;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_post_insert_guard
+BEFORE INSERT ON community_post_attachment
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_post_update_guard
+BEFORE UPDATE OF attachment_id ON community_post_attachment
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TABLE IF NOT EXISTS community_story_resource_review (
+  id TEXT PRIMARY KEY NOT NULL,
+  blob_hash TEXT NOT NULL UNIQUE REFERENCES community_story_blob(hash) ON DELETE CASCADE,
+  media_type TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('review','allow','block')),
+  source TEXT NOT NULL CHECK(source IN ('upload','trusted','legacy','manual')),
+  reviewer_user_id TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+  decision_operation_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  decided_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS community_story_resource_review_pending_idx
+ ON community_story_resource_review(created_at DESC,id) WHERE status='review';
+INSERT OR IGNORE INTO community_story_resource_review(id,blob_hash,media_type,file_name,status,source,created_at,updated_at)
+SELECT lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-8'||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6))),
+ b.hash,min(a.media_type),b.hash,b.moderation_status,'legacy',b.created_at,b.updated_at
+FROM community_story_blob b JOIN community_story_asset a ON a.blob_hash=b.hash
+WHERE b.state='active' AND (a.kind='audio' OR a.media_type='image/svg+xml') GROUP BY b.hash;
+
+CREATE TRIGGER IF NOT EXISTS community_story_upload_playlist_insert_guard
+BEFORE INSERT ON community_playlist
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.cover_attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_playlist_update_guard
+BEFORE UPDATE OF cover_attachment_id ON community_playlist
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.cover_attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_chart_insert_guard
+BEFORE INSERT ON community_chart_revision
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.cover_attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_chart_update_guard
+BEFORE UPDATE OF cover_attachment_id ON community_chart_revision
+WHEN EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=NEW.cover_attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_scope_insert_guard
+BEFORE INSERT ON community_story_upload
+WHEN EXISTS(SELECT 1 FROM community_post_attachment link WHERE link.attachment_id=NEW.attachment_id)
+ OR EXISTS(SELECT 1 FROM community_playlist cover WHERE cover.cover_attachment_id=NEW.attachment_id)
+ OR EXISTS(SELECT 1 FROM community_chart_revision cover WHERE cover.cover_attachment_id=NEW.attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+CREATE TRIGGER IF NOT EXISTS community_story_upload_scope_update_guard
+BEFORE UPDATE OF attachment_id ON community_story_upload
+WHEN EXISTS(SELECT 1 FROM community_post_attachment link WHERE link.attachment_id=NEW.attachment_id)
+ OR EXISTS(SELECT 1 FROM community_playlist cover WHERE cover.cover_attachment_id=NEW.attachment_id)
+ OR EXISTS(SELECT 1 FROM community_chart_revision cover WHERE cover.cover_attachment_id=NEW.attachment_id)
+BEGIN SELECT RAISE(ABORT,'story_attachment_scope'); END;
+
+CREATE TABLE IF NOT EXISTS community_story_resource_check (
+ review_id TEXT PRIMARY KEY NOT NULL REFERENCES community_story_resource_review(id) ON DELETE CASCADE,
+ status TEXT NOT NULL CHECK(status IN ('queued','processing','succeeded','review')),
+ attempts INTEGER NOT NULL DEFAULT 0,
+ lease_token TEXT,
+ lease_until INTEGER,
+ dispatch_token TEXT,
+ dispatched_at INTEGER,
+ next_attempt_at INTEGER NOT NULL,
+ policy_version TEXT NOT NULL,
+ model_id TEXT,
+ reason_code TEXT,
+ categories_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(categories_json)),
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS community_story_resource_check_dispatch_idx
+ ON community_story_resource_check(status,next_attempt_at,updated_at);
+CREATE INDEX IF NOT EXISTS community_attachment_content_hash_idx
+ ON community_attachment(sha256) WHERE sha256 IS NOT NULL;

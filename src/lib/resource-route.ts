@@ -5,19 +5,26 @@
 // Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
 import { CONTENT_SOURCE_IDS, isContentSourceId } from "./content-access-state.ts";
+import { communityStoryPath } from "./community-story-route.ts";
 import { communityChartPath } from "./community-chart-route.ts";
 
 export const RELEASE_SERVERS = ["jp", "intl"] as const;
 export type ReleaseServer = string;
-export const isReleaseServer = (value: unknown, sources: readonly string[] = CONTENT_SOURCE_IDS): value is ReleaseServer =>
-  isContentSourceId(value) && sources.includes(value);
+export const isReleaseServer = (
+  value: unknown,
+  sources: readonly string[] = CONTENT_SOURCE_IDS,
+): value is ReleaseServer => isContentSourceId(value) && sources.includes(value);
 
-export function releaseServerFromPath(pathname: string, sources: readonly string[] = CONTENT_SOURCE_IDS): ReleaseServer | undefined {
+export function releaseServerFromPath(
+  pathname: string,
+  sources: readonly string[] = CONTENT_SOURCE_IDS,
+): ReleaseServer | undefined {
   const prefix = pathname.split("/")[1];
   return isReleaseServer(prefix, sources) ? prefix : undefined;
 }
 
 export const RESOURCE_KINDS = [
+  "community-stories",
   "charts",
   "characters",
   "songs",
@@ -115,6 +122,7 @@ export function resourcePath({ server, locale, kind, id }: ResourceRoute): strin
   if (!isContentSourceId(server) || !isLocale(locale) || !isResourceKind(kind))
     throw new TypeError("Invalid resource route");
   if (id !== undefined && !isResourceId(id)) throw new TypeError("Invalid resource identity");
+  if (kind === "community-stories") return communityStoryPath(server, locale, id);
   if (kind === "charts") return communityChartPath(server, locale, id);
   return `/${server}/${locale}/${kind}/${id === undefined ? "" : `${encodeURIComponent(id)}/`}`;
 }
@@ -160,7 +168,10 @@ export function storyCollectionPath({
 /** Alias for callers that need to make the canonical-vs-legacy distinction explicit. */
 export const formatResourceRoute = resourcePath;
 
-export function parseResourceRoute(pathname: string, sources: readonly string[] = CONTENT_SOURCE_IDS): ResourceRoute | undefined {
+export function parseResourceRoute(
+  pathname: string,
+  sources: readonly string[] = CONTENT_SOURCE_IDS,
+): ResourceRoute | undefined {
   if (!pathname.startsWith("/") || pathname.includes("?") || pathname.includes("#")) return undefined;
   const parts = pathname.slice(1).replace(/\/$/u, "").split("/");
   if (parts.length !== 3 && parts.length !== 4 && parts.length !== 5) return undefined;
@@ -291,6 +302,7 @@ export function legacyEntityRedirectTarget(pathname: string, search = ""): strin
 /** Map logical catalogue destinations to the selected server's collections. */
 export function resourceCollectionHref(route: string, server: ReleaseServer, locale: Locale): string | undefined {
   const source = new URL(route, "https://route.invalid");
+  if (source.pathname === "/community/stories") return `${communityStoryPath(server, locale)}${source.search}`;
   if (source.pathname === "/community/charts") return `${communityChartPath(server, locale)}${source.search}`;
   const parts = source.pathname.replace(/^\/+|\/+$/gu, "").split("/");
   if (parts.length === 1 && parts[0] === "charts") return `${communityChartPath(server, locale)}${source.search}`;

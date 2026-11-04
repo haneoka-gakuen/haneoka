@@ -3,6 +3,7 @@
 // Output: Administrative collections, editors, account lifecycle states and private archive dialogs.
 // Pos: [Map](L2-2.md); browser administration workspace.
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
+import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
 import { USER_ROLES, isUserRole } from "../lib/user-roles";
 import { modal } from "./ui/modal";
@@ -19,6 +20,7 @@ import {
 import { localizedText } from "./shared/catalog";
 import { clientText } from "../i18n/client";
 import { LitElement, html, nothing } from "lit";
+import type { VegaProject } from "@haneoka/vega-protocol";
 import { PaneFocus } from "./ui/pane";
 import { loadingState } from "./ui/state";
 import { accordion } from "./ui/accordion";
@@ -36,6 +38,7 @@ import { snackbar } from "../lib/snackbar";
 import { formatDate } from "../lib/date-format";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import "./admin-comments";
+import type { StoryAssetReviews } from "./story-asset-reviews";
 
 type Value = Record<string, unknown>;
 interface PlatformRole {
@@ -60,10 +63,10 @@ interface ArchiveState {
   selected: string;
   snapshots: Array<{ boardKey: string; observedAtMs: number | null; dueAtMs?: number; state?: "waiting" | "pending" | "archived" }>;
 }
-const sections = ["overview", "comments", "reports", "appeals", "posts", "users", "forums", "operations"] as const;
+const sections = ["overview", "comments", "reports", "appeals", "posts", "story-assets", "users", "forums", "operations"] as const;
 type Section = (typeof sections)[number];
 type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
-type ContentKind = "posts" | "charts" | "playlists";
+type ContentKind = "posts" | "charts" | "playlists" | "stories";
 type HistorySection = "revisions" | "stateEvents" | "comments";
 const ADMIN_GEO_FILTERS = [
   "geoCountry",
@@ -120,6 +123,7 @@ export class AdminWorkspace extends LitElement {
     creationFilter: { state: true },
     creation: { state: true },
     creationLoading: { state: true },
+    creationProject: { state: true },
     confirmRemoval: { state: true },
     reviewPostId: { state: true },
     historyLoading: { state: true },
@@ -190,6 +194,8 @@ export class AdminWorkspace extends LitElement {
   declare private creationFilter: string;
   declare private creation: Value | null;
   declare private creationLoading: boolean;
+  declare private creationProject: VegaProject | undefined;
+  private creationPreviewRevision = 0;
   declare private confirmRemoval: boolean;
   declare reviewPostId: string;
   declare historyLoading: boolean;
@@ -301,6 +307,7 @@ export class AdminWorkspace extends LitElement {
     this.creationFilter = "all";
     this.creation = null;
     this.creationLoading = false;
+    this.creationProject = undefined;
     this.confirmRemoval = false;
     this.reviewPostId = "";
     this.historyLoading = false;
@@ -346,6 +353,11 @@ export class AdminWorkspace extends LitElement {
   }
   private announced = { error: "" };
   private appBarOwner = `admin-${Math.random().toString(36).slice(2)}`;
+  private navigationObserver?: ResizeObserver;
+  private selectedNavigation?: Element;
+  private revealNavigation = () => {
+    this.querySelector('.admin-sections [aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "center" });
+  };
   private syncAppBar() {
     setAppBarActions(
       this.appBarOwner,
@@ -366,6 +378,16 @@ export class AdminWorkspace extends LitElement {
   updated() {
     if (!this.isConnected) return;
     this.syncAppBar();
+    const navigation = this.querySelector<HTMLElement>(".admin-sections");
+    if (navigation && !this.navigationObserver) {
+      this.navigationObserver = new ResizeObserver(this.revealNavigation);
+      this.navigationObserver.observe(navigation);
+    }
+    const selected = navigation?.querySelector('[aria-current="page"]');
+    if (selected && selected !== this.selectedNavigation) {
+      this.selectedNavigation = selected;
+      this.revealNavigation();
+    }
     if (this.error !== this.announced.error) {
       this.announced.error = this.error;
       if (this.error) snackbar(this.error, { error: true, action: { label: this.label("retry", "Retry"), run: () => void this.refresh() } });
@@ -382,6 +404,8 @@ export class AdminWorkspace extends LitElement {
   private readonly onLocale = () => this.requestUpdate();
   disconnectedCallback() {
     clearAppBarActions(this.appBarOwner);
+    this.navigationObserver?.disconnect();
+    this.navigationObserver = undefined;
     this.lifetime.abort();
     this.invalidatePrivateState();
     removeEventListener("haneoka:locale-ready", this.onLocale);
@@ -391,6 +415,7 @@ export class AdminWorkspace extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
+    if (this.section === "story-assets") void import("./story-asset-reviews");
     addEventListener("haneoka:locale-ready", this.onLocale);
     document.addEventListener("visibilitychange", this.onPoolVisibility, { signal: this.lifetime.signal });
     void Promise.all([
@@ -404,7 +429,7 @@ export class AdminWorkspace extends LitElement {
     const moderation = filters.get("moderationStatus");
     const state = filters.get("status");
     const kind = filters.get("kind");
-    this.contentKind = kind === "charts" || kind === "playlists" ? kind : "posts";
+    this.contentKind = kind === "charts" || kind === "playlists" || kind === "stories" ? kind : "posts";
     this.creationFilter = ["draft", "published", "deleted"].includes(state || "") ? state! : "all";
     this.userRoleFilter = isUserRole(filters.get("role"))
       ? filters.get("role")!
@@ -679,7 +704,7 @@ export class AdminWorkspace extends LitElement {
               statisticsGeneratedAt: statistics.generatedAt,
               sessionCounts: statistics.sessions,
             }))
-          : section === "comments"
+          : section === "comments" || section === "story-assets"
             ? await this.request(`/api/v1/admin/overview`, { signal })
           : section === "forums"
             ? await this.request("/api/v1/admin/forums", { signal })
@@ -702,6 +727,7 @@ export class AdminWorkspace extends LitElement {
           if (this.accessCurrent(generation)) this.error = error instanceof Error ? error.message : String(error);
         });
       this.phase = "ready";
+      if (!append && section === "story-assets") this.querySelector<StoryAssetReviews>("story-asset-reviews")?.refresh();
       if (!append && section === "overview") {
         void this.loadAnalyticsSeries();
         void this.loadAnalyticsGeo();
@@ -933,6 +959,8 @@ export class AdminWorkspace extends LitElement {
   private closeReview() {
     this.historyRequests.cancel();
     this.creation = null;
+    this.creationProject = undefined;
+    this.creationPreviewRevision = 0;
     this.creationLoading = false;
     this.confirmRemoval = false;
     this.closeMovePost();
@@ -1787,7 +1815,7 @@ export class AdminWorkspace extends LitElement {
     return html`
       <div class="admin-filters">${segmented({
         label: this.label("creations.content", "Content"), value: this.contentKind,
-        options: (["posts", "charts", "playlists"] as ContentKind[]).map(value => ({ value, label: this.label(`creations.${value}`, value) })),
+        options: (["posts", "charts", "playlists", "stories"] as ContentKind[]).map(value => ({ value, label: this.label(`creations.${value}`, value) })),
         onSelect: value => this.selectContentKind(value),
       })}</div>
       ${this.contentKind === "posts" ? this.renderPostFilters() : html`
@@ -1833,6 +1861,20 @@ export class AdminWorkspace extends LitElement {
       await this.load(false);
     });
   }
+  private previewStoryRevision(revision: Value) {
+    const creation = this.creation;
+    if (!creation || this.contentKind !== "stories") return;
+    void this.mutate("story-preview", async assertCurrent => {
+      const [data] = await Promise.all([
+        this.request(`/api/v1/admin/stories/${creation.id}/runtime/${revision.revision}`),
+        import("./runtime/vega-story-stage"),
+      ]);
+      assertCurrent();
+      if (this.creation?.id !== creation.id) return;
+      this.creationPreviewRevision = Number(revision.revision);
+      this.creationProject = data.project as VegaProject;
+    });
+  }
   private renderCreation() {
     const record = this.creation;
     if (!record || this.privateAccess.signal.aborted) return nothing;
@@ -1863,7 +1905,35 @@ export class AdminWorkspace extends LitElement {
                       <dt>${this.label("creations.difficulty", "Difficulty")}</dt><dd>${String(revision.difficulty)} ${String(revision.level)}</dd>
                     </dl>
                     <p class="admin-post-body">${String(revision.summary || "")}</p>
-                  </section>`) : html`
+                  </section>`) : this.contentKind === "stories" ? html`
+                  <section class="surface stack">
+                    <div class="cluster"><strong>${this.creationProject ? `${this.label("history.revision", "Version")} ${this.creationPreviewRevision}` : this.label("creations.preview", "Preview")}</strong>
+                      <button class="button button--text" ?disabled=${!this.creationProject} @click=${() => { this.creationProject = undefined; }}>${this.label("creations.closePreview", "Close preview")}</button></div>
+                    <div class="admin-story-preview">${this.creationProject ? html`<vega-story-stage .communityProject=${this.creationProject}
+                      .story=${{storyId: `admin-story:${record.id}:${this.creationPreviewRevision}`,title:record.title}}
+                      locale=${preferredLocale()} server="intl"
+                      @haneoka-story-interrupt=${() => { this.creationProject = undefined; }}></vega-story-stage>` : html`
+                        <div class="admin-story-preview__empty stack">${icon("play_arrow",48)}<span>${this.label("creations.preview", "Preview")}</span></div>`}
+                    </div>
+                  </section>
+                  ${details.map(revision => html`<section class="surface stack">
+                    <h3>${this.label("history.revision", "Version")} ${String(revision.revision)}
+                      ${revision.isHead ? html`<span class="chip">${this.label("creations.latest", "Latest")}</span>` : nothing}
+                      ${revision.isPublished ? this.statusBadge("published") : nothing}</h3>
+                    <strong>${String(revision.title)}</strong>
+                    <dl class="spec-list">
+                      <dt>${this.label("creations.files", "Files")}</dt><dd>${String(revision.fileCount)}</dd>
+                      <dt>${this.label("creations.scenes", "Scenes")}</dt><dd>${String(revision.sceneCount)}</dd>
+                      <dt>${this.label("creations.commands", "Commands")}</dt><dd>${String(revision.commandCount)}</dd>
+                      <dt>${this.label("creations.pendingAssets", "Pending assets")}</dt><dd>${String(revision.pendingAssets)}</dd>
+                      <dt>${this.label("creations.rejectedAssets", "Rejected assets")}</dt><dd>${String(revision.rejectedAssets)}</dd>
+                    </dl>
+                    <p class="admin-post-body">${String(revision.summary || "")}</p>
+                    ${revision.compilationError ? html`<p role="alert">${this.label("creations.compilationError", "Project cannot be compiled")}</p>` : nothing}
+                    <button class="button button--tonal" ?disabled=${!!this.busy || !!revision.compilationError}
+                      @click=${() => this.previewStoryRevision(revision)}>${this.label("creations.preview", "Preview")}</button>
+                  </section>`)}
+                  ` : html`
                   <h3>${this.label("creations.tracks", "Tracks")} / ${details.length}</h3>
                   <ol>${details.map(track => html`<li><a href=${track.provider === "bestdori" ? `/${preferredLocale()}/community/gbp/songs/detail/?song=${encodeURIComponent(String(track.musicId))}` : ["jp", "intl"].includes(String(track.server)) ? `/${track.server}/${preferredLocale()}/songs/${encodeURIComponent(String(track.musicId))}/` : `/catalog/songs?song=${encodeURIComponent(String(track.musicId))}`}>${String(track.provider)} / ${String(track.server)} / ${String(track.musicId)}</a></li>`)}</ol>`}
               </main>
@@ -1874,7 +1944,7 @@ export class AdminWorkspace extends LitElement {
                   <dt>${this.label("history.revision", "Version")}</dt><dd>${String(record.version)}</dd>
                   <dt>${this.label("columns.createdAt", "Created")}</dt><dd>${this.date(record.createdAt)}</dd>
                 </dl>
-                ${record.status === "published" && record.visibility === "public" ? html`<a class="button button--outlined" target="_blank" rel="noopener" href=${`/intl/${preferredLocale()}/${this.contentKind}/${encodeURIComponent(String(record.id))}/`}>${this.label("creations.open", "View page")}</a>` : nothing}
+                ${record.status === "published" && (record.visibility === "public" || this.contentKind === "stories") ? html`<a class="button button--outlined" target="_blank" rel="noopener" href=${this.contentKind === "stories" ? communityStoryPath("", preferredLocale(), String(record.id)) : `/intl/${preferredLocale()}/${this.contentKind}/${encodeURIComponent(String(record.id))}/`}>${this.label("creations.open", "View page")}</a>` : nothing}
                 ${record.deletedAt ? nothing : html`<button class="button button--danger" ?disabled=${!!this.busy} @click=${() => { this.confirmRemoval = true; }}>${this.label("creations.remove", "Remove content")}</button>`}
               </aside>
             </div>`}
@@ -1897,12 +1967,14 @@ export class AdminWorkspace extends LitElement {
       reports: counts.pendingReports,
       appeals: counts.pendingAppeals,
       posts: counts.reviewPosts,
+      "story-assets": counts.reviewStoryAssets,
     };
     const icons: Record<Section, string> = {
       overview: "space_dashboard",
       comments: "comment",
       users: "group",
       posts: "article",
+      "story-assets": "fact_check",
       forums: "forum",
       reports: "flag",
       appeals: "gavel",
@@ -2480,6 +2552,7 @@ export class AdminWorkspace extends LitElement {
             ${metric("pendingReports", "/admin/reports", "flag")}
             ${metric("pendingAppeals", "/admin/appeals", "gavel")}
             ${metric("reviewPosts", "/admin/posts?moderationStatus=review", "article")}
+            ${metric("reviewStoryAssets", "/admin/story-assets", "fact_check")}
           </div>
         </section>
         <div class="admin-summary-grid">
@@ -4723,6 +4796,10 @@ export class AdminWorkspace extends LitElement {
                     ? this.renderOverview()
                     : this.section === "comments"
                       ? html`<admin-comments @admin-open-history=${(event: CustomEvent<{ postId: string; commentId: string }>) => void this.openHistory(event.detail.postId, event.detail.commentId)}></admin-comments>`
+                    : this.section === "story-assets"
+                      ? html`<story-asset-reviews @admin-review-count=${(event: CustomEvent<number>) => {
+                          this.document = { ...this.document, overview: { ...(this.document.overview as Value), reviewStoryAssets: event.detail } };
+                        }} @admin-access-denied=${() => this.refresh()}></story-asset-reviews>`
                     : this.section === "forums"
                       ? this.renderForums()
                       : html`

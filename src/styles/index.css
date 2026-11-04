@@ -36,6 +36,7 @@
 @import "./patterns/browse.css" layer(patterns);
 @import "./patterns/collection.css" layer(patterns);
 @import "./patterns/detail.css" layer(patterns);
+@import "./patterns/story-player.css" layer(patterns);
 @import "./patterns/strip.css" layer(patterns);
 
 /* 7 — utilities */

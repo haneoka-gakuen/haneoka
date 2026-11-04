@@ -1,0 +1,7 @@
+---
+import CommunityStoriesDocument from "../CommunityStoriesDocument.astro";
+import type { Locale } from "../../i18n/locales";
+interface Props {locale:Locale;server:string}
+const {locale,server}=Astro.props;
+---
+<CommunityStoriesDocument locale={locale} server={server} />

@@ -1,3 +1,9 @@
+// L3 — GEB
+// Input: 正式／供应方故事载荷或社区不可变版本的原生工程。
+// Output: 共用故事集合、文本阅读和 Vega 播放界面。
+// Pos: [Map](L2-2.md)；四种来源和社区版本的故事观看工作区。
+// Effects/Dependencies: 载荷请求、应用栏、评论、语音和按需 Vega 舞台；断开释放私有与媒体状态。
+import { storyCreationPath } from "../lib/community-story-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
@@ -43,7 +49,14 @@ import { projectHaneokaTranscript, type HaneokaTranscriptEntry } from "@haneoka/
 import { advText } from "./ui/adv-text";
 import { parseAdvRichText, type AdvRichTextNode } from "@haneoka/vega-plugin-richtext";
 import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
-import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse, type BrowseHeading, type BrowseRailItem } from "./ui/browse";
+import {
+  clearBrowseBar,
+  collectionSkeleton,
+  filterGroup,
+  renderBrowse,
+  type BrowseHeading,
+  type BrowseRailItem,
+} from "./ui/browse";
 import { filterChip, inputChip, segmented } from "./ui/controls";
 import { modal } from "./ui/modal";
 import { icon } from "./ui/icon";
@@ -67,12 +80,20 @@ import {
 } from "../lib/resource-route";
 import { isPublicReleaseServer } from "../lib/release-server";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
-import { crossCatalogPresentation, pinCrossCatalogValue, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
+import {
+  crossCatalogPresentation,
+  pinCrossCatalogValue,
+  type CrossCatalogPresentation,
+} from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark, catalogSourceChoices, serverAvailabilityImage } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
-import { providerEntityJsonPath, type ProviderEntityPayload, type ProviderEntityResource } from "../lib/provider-entity-data";
+import {
+  providerEntityJsonPath,
+  type ProviderEntityPayload,
+  type ProviderEntityResource,
+} from "../lib/provider-entity-data";
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
@@ -82,60 +103,69 @@ import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
 import { formatDate } from "../lib/date-format";
+import type { VegaProject } from "@haneoka/vega-protocol";
+
+export interface StoryReaderInput {
+  story: JsonRecord;
+  project: VegaProject;
+  server: string;
+  backHref: string;
+  editorHref?: string;
+  comments: { id: string; type: "community-stories" };
+}
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "afterlive": "navigation.afterlive",
-  "anotherStory": "story.labels.anotherStory",
-  "attribute": "catalog.fields.attribute",
-  "background": "story.labels.background",
-  "band": "catalog.fields.band",
-  "bandStory": "story.labels.bandStory",
-  "bands": "catalog.fields.bands",
-  "birthday": "catalog.characters.fields.birthday",
-  "cards": "navigation.cards",
-  "chapter": "story.labels.chapter",
-  "character": "catalog.fields.character",
-  "characterRank": "catalog.characters.fields.characterRank",
-  "characters": "navigation.characters",
-  "close": "common.actions.close",
-  "conversation": "story.labels.conversation",
-  "cover": "media.images.fields.cover",
-  "duration": "common.fields.duration",
-  "episode": "story.labels.episode",
-  "error": "common.states.error",
-  "eventStory": "story.labels.eventStory",
-  "extraStory": "story.labels.extraStory",
-  "grid": "common.layout.grid",
-  "home": "navigation.home",
-  "id": "common.fields.id",
-  "illustration": "story.labels.illustration",
-  "info": "catalog.fields.info",
-  "language": "settings.labels.language",
-  "level": "common.fields.level",
-  "list": "common.layout.list",
-  "loading": "common.states.loading",
-  "order": "common.layout.order",
-  "pause": "common.actions.pause",
-  "perspectiveStory": "story.labels.perspectiveStory",
-  "play": "common.actions.play",
-  "playback": "media.audio.playback",
-  "rarity": "catalog.cards.fields.rarity",
-  "release": "catalog.fields.release",
-  "sort": "common.actions.sort",
-  "stamp": "story.labels.stamp",
-  "stories": "navigation.stories",
-  "story": "navigation.story",
-  "storyText": "navigation.storyText",
-  "subtitle": "common.fields.subtitle",
-  "table": "common.layout.table",
-  "title": "common.fields.title",
-  "tutorial": "navigation.tutorial",
-  "video": "story.labels.video",
-  "view": "common.actions.view",
-  "voice": "navigation.voice"
+  afterlive: "navigation.afterlive",
+  anotherStory: "story.labels.anotherStory",
+  attribute: "catalog.fields.attribute",
+  background: "story.labels.background",
+  band: "catalog.fields.band",
+  bandStory: "story.labels.bandStory",
+  bands: "catalog.fields.bands",
+  birthday: "catalog.characters.fields.birthday",
+  cards: "navigation.cards",
+  chapter: "story.labels.chapter",
+  character: "catalog.fields.character",
+  characterRank: "catalog.characters.fields.characterRank",
+  characters: "navigation.characters",
+  close: "common.actions.close",
+  conversation: "story.labels.conversation",
+  cover: "media.images.fields.cover",
+  duration: "common.fields.duration",
+  episode: "story.labels.episode",
+  error: "common.states.error",
+  eventStory: "story.labels.eventStory",
+  extraStory: "story.labels.extraStory",
+  grid: "common.layout.grid",
+  home: "navigation.home",
+  id: "common.fields.id",
+  illustration: "story.labels.illustration",
+  info: "catalog.fields.info",
+  language: "settings.labels.language",
+  level: "common.fields.level",
+  list: "common.layout.list",
+  loading: "common.states.loading",
+  order: "common.layout.order",
+  pause: "common.actions.pause",
+  perspectiveStory: "story.labels.perspectiveStory",
+  play: "common.actions.play",
+  playback: "media.audio.playback",
+  rarity: "catalog.cards.fields.rarity",
+  release: "catalog.fields.release",
+  sort: "common.actions.sort",
+  stamp: "story.labels.stamp",
+  stories: "navigation.stories",
+  story: "navigation.story",
+  storyText: "navigation.storyText",
+  subtitle: "common.fields.subtitle",
+  table: "common.layout.table",
+  title: "common.fields.title",
+  tutorial: "navigation.tutorial",
+  video: "story.labels.video",
+  view: "common.actions.view",
+  voice: "navigation.voice",
 };
-
 
 /** Sections of the archive's own story catalogue. */
 type ReleaseMode = "event" | "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial";
@@ -189,6 +219,7 @@ const FACET_KEYS = [
 
 export class StoryWorkspace extends LitElement {
   static properties = {
+    reader: { attribute: false },
     locale: { type: String },
     entityId: { type: String, attribute: "entity-id" },
     mode: { type: String },
@@ -220,6 +251,7 @@ export class StoryWorkspace extends LitElement {
     limit: { state: true },
   };
   declare locale: string;
+  declare reader: StoryReaderInput | undefined;
   declare entityId: string;
   declare mode: StoryMode;
   declare origin: Origin;
@@ -299,7 +331,8 @@ export class StoryWorkspace extends LitElement {
     this.detailLoading = false;
     this.detailError = "";
     if (id) void this.openScenario(id);
-    else if (card && (!Array.isArray(card.episodes) || (card.hasStory && !card.episodes.length))) void this.openBestdoriCard(card);
+    else if (card && (!Array.isArray(card.episodes) || (card.hasStory && !card.episodes.length)))
+      void this.openBestdoriCard(card);
   };
   private transcriptCache = new WeakMap<JsonRecord, readonly HaneokaTranscriptEntry[]>();
   private paneFocus = new PaneFocus();
@@ -356,6 +389,17 @@ export class StoryWorkspace extends LitElement {
     return !this.hasAttribute("data-prerendered") || this.phase === "ready" || this.phase === "error";
   }
   protected update(changed: Map<string, unknown>): void {
+    if (changed.has("reader") && this.reader) {
+      this.stopStoryPlayback();
+      this.detailEpisode = this.reader.story;
+      this.entityId = this.episodeId(this.reader.story);
+      this.pageServer = this.reader.server;
+      this.detailMode = "text";
+      this.detailError = "";
+      this.phase = "ready";
+      if (new URL(location.href).searchParams.get("view") === "play")
+        void this.updateComplete.then(() => this.openVegaPlayer());
+    }
     if (changed.has("locale")) {
       this.transcriptQuery = "";
       this.transcriptSpeakers = [];
@@ -375,7 +419,8 @@ export class StoryWorkspace extends LitElement {
     this.mode = payload.mode as ReleaseMode;
     this.pageServer = payload.server;
     this.chapters = recordValues(payload.chapters);
-    this.unionStories = undefined; this.unionChapters.clear();
+    this.unionStories = undefined;
+    this.unionChapters.clear();
     this.episodes = payload.episodes;
     this.storyEvents = payload.storyEvents;
     this.spots = payload.homeSpots;
@@ -407,13 +452,19 @@ export class StoryWorkspace extends LitElement {
     this.ensureRailSelection();
     this.phase = "ready";
   }
-  public async prepareProviderEntity(payload: ProviderEntityPayload, collection: ProviderCollectionPayload): Promise<void> {
+  public async prepareProviderEntity(
+    payload: ProviderEntityPayload,
+    collection: ProviderCollectionPayload,
+  ): Promise<void> {
     if (payload.resource === "cards" || payload.card) this.bestdoriDetail = await import("./bestdori-community-detail");
     this.prepareProviderCollection(collection, payload.locale, payload.section || "card");
     this.detailError = "";
     this.detailLoading = false;
     this.detailMode = "text";
-    this.detailEpisode = payload.resource === "stories" ? { ...payload.collection.document[payload.id] as JsonRecord, ...payload.detail } : null;
+    this.detailEpisode =
+      payload.resource === "stories"
+        ? { ...(payload.collection.document[payload.id] as JsonRecord), ...payload.detail }
+        : null;
     this.detailCard = payload.resource === "cards" ? payload.detail : payload.card || null;
   }
   public renderStaticProviderDetail() {
@@ -423,11 +474,16 @@ export class StoryWorkspace extends LitElement {
     const dto = catalogs.stories!;
     const server = dto.selectedServer;
     this.unionStories = crossCatalogPresentation(dto);
-    this.episodes = Object.fromEntries(this.unionStories.items.map((row) => [this.unionStories!.entries.get(row)!.key, row]));
+    this.episodes = Object.fromEntries(
+      this.unionStories.items.map((row) => [this.unionStories!.entries.get(row)!.key, row]),
+    );
     this.unionChapters.clear();
-    const chapters = new Map<string, JsonRecord>(), spots = new Map<string, JsonRecord>(), events = new Map<string, JsonRecord>();
+    const chapters = new Map<string, JsonRecord>(),
+      spots = new Map<string, JsonRecord>(),
+      events = new Map<string, JsonRecord>();
     for (const source of [server, ...OFFICIAL_CATALOG_SERVERS.filter((value) => value !== server)]) {
-      const identity = dto.identities[source], document = dto.documents[source] as JsonRecord | undefined;
+      const identity = dto.identities[source],
+        document = dto.documents[source] as JsonRecord | undefined;
       if (!identity || !document) continue;
       const ownChapters = new Map<string, JsonRecord>();
       for (const chapter of recordValues(document.chapters)) {
@@ -446,7 +502,9 @@ export class StoryWorkspace extends LitElement {
         if (!events.has(id)) events.set(id, event);
       }
     }
-    this.chapters = [...chapters.values()]; this.spots = [...spots.values()]; this.storyEvents = [...events.values()];
+    this.chapters = [...chapters.values()];
+    this.spots = [...spots.values()];
+    this.storyEvents = [...events.values()];
     this.characters = crossCatalogPresentation(catalogs.characters!).items;
     this.bands = crossCatalogPresentation(catalogs.bands!).items;
   }
@@ -475,6 +533,7 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private storyCommentsTarget(episode: JsonRecord) {
+    if (this.reader) return { ...this.reader.comments, server: this.reader.server };
     const server = this.detailServer(),
       id = episode.advId;
     if (
@@ -486,11 +545,12 @@ export class StoryWorkspace extends LitElement {
       id <= 0
     )
       return undefined;
-    return { id: String(id), server };
+    return { id: String(id), server, type: "stories" };
   }
   private storyCommentsRouteAllowed(): boolean {
     const view = this.ownerDocument.defaultView;
     if (!view || view.top !== view) return false;
+    if (this.reader) return true;
     const logical = this.closest<HTMLElement>("[data-shell]")?.dataset.route;
     if (
       logical !== "/catalog/stories" &&
@@ -542,7 +602,7 @@ export class StoryWorkspace extends LitElement {
           this.storyCommentsReady
             ? html`
                 <entity-comments
-                  entity-type="stories"
+                  entity-type=${target.type}
                   entity-id=${target.id}
                   server=${target.server}
                   locale=${this.locale}
@@ -551,10 +611,14 @@ export class StoryWorkspace extends LitElement {
                 ></entity-comments>
               `
             : this.storyCommentsFailed
-              ? errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => {
-                  this.storyCommentsFailed = false;
-                  void this.ensureStoryComments();
-                })
+              ? errorState(
+                  uiText(this.locale, "common.states.unavailable"),
+                  uiText(this.locale, "common.actions.retry"),
+                  () => {
+                    this.storyCommentsFailed = false;
+                    void this.ensureStoryComments();
+                  },
+                )
               : loadingState(uiText(this.locale, "common.states.loading"))
         }
       </div>
@@ -588,6 +652,12 @@ export class StoryWorkspace extends LitElement {
   };
   connectedCallback() {
     super.connectedCallback();
+    if (this.reader) {
+      addEventListener("haneoka:locale-ready", this.onLocale);
+      this.locale = preferredLocale(this.locale);
+      void import("@material/web/textfield/outlined-text-field.js");
+      return;
+    }
     const documentUrl = navigationDocumentUrl();
     const selection = parseEntitySelection(documentUrl.pathname);
     if (this.origin === "release" && selection?.source === "canonical" && selection.route.kind === "stories")
@@ -645,6 +715,7 @@ export class StoryWorkspace extends LitElement {
   updated() {
     if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
+    this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
     if (this.entityId && this.detailEpisode) {
       const title = this.episodeTitleValue(this.detailEpisode);
       updateEntityHeading(this, title.text, title.locale);
@@ -676,17 +747,41 @@ export class StoryWorkspace extends LitElement {
   private providerBase() {
     return providerCatalogBase(this.origin === "sekai" ? "sekai" : "bestdori", this.locale);
   }
-  private async providerEntity(resource: ProviderEntityResource, id: string, signal: AbortSignal): Promise<ProviderEntityPayload | undefined> {
+  private async providerEntity(
+    resource: ProviderEntityResource,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<ProviderEntityPayload | undefined> {
     const provider = this.origin === "sekai" ? "sekai" : "bestdori";
-    const payload = await fetchJson<ProviderEntityPayload>(providerEntityJsonPath({
-      provider, locale: this.locale as Locale, resource, id,
-      ...(resource === "stories" ? { section: this.mode } : {}),
-    }), { signal }).catch((error: unknown) => {
+    const payload = await fetchJson<ProviderEntityPayload>(
+      providerEntityJsonPath({
+        provider,
+        locale: this.locale as Locale,
+        resource,
+        id,
+        ...(resource === "stories" ? { section: this.mode } : {}),
+      }),
+      { signal },
+    ).catch((error: unknown) => {
       if (error instanceof JsonResponseError && error.status === 404) return undefined;
       throw error;
     });
     if (payload === undefined) return undefined;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.schema !== "haneoka-provider-entity-v1" || payload.provider !== provider || payload.locale !== this.locale || payload.resource !== resource || payload.id !== id || !payload.detail || typeof payload.detail !== "object" || Array.isArray(payload.detail) || (resource === "stories" && payload.section !== this.mode)) throw new Error(`Invalid provider entity ${id}`);
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      Array.isArray(payload) ||
+      payload.schema !== "haneoka-provider-entity-v1" ||
+      payload.provider !== provider ||
+      payload.locale !== this.locale ||
+      payload.resource !== resource ||
+      payload.id !== id ||
+      !payload.detail ||
+      typeof payload.detail !== "object" ||
+      Array.isArray(payload.detail) ||
+      (resource === "stories" && payload.section !== this.mode)
+    )
+      throw new Error(`Invalid provider entity ${id}`);
     return payload;
   }
   private text(value: unknown) {
@@ -727,35 +822,46 @@ export class StoryWorkspace extends LitElement {
   private async load() {
     const signal = this.catalogRequests.begin();
     const active = () => this.isConnected && this.catalogRequests.current(signal);
-    const page = readPageData<StoryPayload | WorkspaceCollectionPayload | ProviderCollectionPayload | ProviderEntityPayload>(this);
+    const page = readPageData<
+      StoryPayload | WorkspaceCollectionPayload | ProviderCollectionPayload | ProviderEntityPayload
+    >(this);
     if (page?.schema === "haneoka-provider-entity-v1" && page.provider === this.origin && !this.entityId) {
       try {
         const payload = page.locale === this.locale ? page : await this.providerEntity(page.resource, page.id, signal);
         if (payload) {
-        const embedded = readPageData<ProviderCollectionPayload>(this, "data-collection-data");
-        const collection = embedded?.schema === "haneoka-provider-collection-v1" && embedded.provider === payload.provider && embedded.locale === payload.locale
-          ? embedded : await fetchJson<ProviderCollectionPayload>(payload.collectionUrl, { signal });
-        if (!active()) return;
-        const { sort, order } = this;
-        await this.prepareProviderEntity(payload, collection);
-        if (!active()) return;
-        this.sort = sort; this.order = order;
-        await this.updateComplete;
-        if (active() && this.detailEpisode) {
-          this.dataset.entityReady = "true";
-          if (this.storyAutoPlayRequested()) await this.openVegaPlayer();
-        }
-        return;
+          const embedded = readPageData<ProviderCollectionPayload>(this, "data-collection-data");
+          const collection =
+            embedded?.schema === "haneoka-provider-collection-v1" &&
+            embedded.provider === payload.provider &&
+            embedded.locale === payload.locale
+              ? embedded
+              : await fetchJson<ProviderCollectionPayload>(payload.collectionUrl, { signal });
+          if (!active()) return;
+          const { sort, order } = this;
+          await this.prepareProviderEntity(payload, collection);
+          if (!active()) return;
+          this.sort = sort;
+          this.order = order;
+          await this.updateComplete;
+          if (active() && this.detailEpisode) {
+            this.dataset.entityReady = "true";
+            if (this.storyAutoPlayRequested()) await this.openVegaPlayer();
+          }
+          return;
         }
       } catch (error) {
-        if (active()) { this.phase = "error"; this.detailError = error instanceof Error ? error.message : String(error); }
+        if (active()) {
+          this.phase = "error";
+          this.detailError = error instanceof Error ? error.message : String(error);
+        }
         return;
       }
     }
     if (page?.schema === "haneoka-provider-collection-v1" && page.provider === this.origin && !this.entityId) {
       const { sort, order } = this;
       this.prepareProviderCollection(page, this.locale, this.mode);
-      this.sort = sort; this.order = order;
+      this.sort = sort;
+      this.order = order;
       await this.updateComplete;
       if (!active()) return;
       const params = new URLSearchParams(location.search);
@@ -765,10 +871,16 @@ export class StoryWorkspace extends LitElement {
       if (openId) void this.openStory(openId);
       return;
     }
-    if (page?.schema === "haneoka-workspace-collection-v1" && page.resource === "stories" && !this.entityId && canUseStaticCatalogScope()) {
+    if (
+      page?.schema === "haneoka-workspace-collection-v1" &&
+      page.resource === "stories" &&
+      !this.entityId &&
+      canUseStaticCatalogScope()
+    ) {
       const { sort, order } = this;
       this.prepareCollection(page, this.locale, this.mode);
-      this.sort = sort; this.order = order;
+      this.sort = sort;
+      this.order = order;
       await this.updateComplete;
       if (!active()) return;
       const openId = new URLSearchParams(location.search).get("story");
@@ -811,16 +923,19 @@ export class StoryWorkspace extends LitElement {
   }
   private loadDetailSources(signal?: AbortSignal): boolean {
     const server = this.dataServer();
-    if (this.isProvider() || !this.entityId || canUseStaticCatalogScope() || !isRestrictedContentSource(server)) return false;
+    if (this.isProvider() || !this.entityId || canUseStaticCatalogScope() || !isRestrictedContentSource(server))
+      return false;
     const current = signal || this.catalogRequests.begin();
-    void this.loadRelease(current).then(() => {
-      if (!this.isConnected || !this.catalogRequests.current(current)) return;
-      const detail = this.detailEpisode;
-      const entry = this.unionStories?.byId.get(`${server}:${this.entityId}`);
-      if (detail && entry) this.unionStories!.entries.set(detail, entry);
-      this.phase = "ready";
-      this.requestUpdate();
-    }).catch(() => undefined);
+    void this.loadRelease(current)
+      .then(() => {
+        if (!this.isConnected || !this.catalogRequests.current(current)) return;
+        const detail = this.detailEpisode;
+        const entry = this.unionStories?.byId.get(`${server}:${this.entityId}`);
+        if (detail && entry) this.unionStories!.entries.set(detail, entry);
+        this.phase = "ready";
+        this.requestUpdate();
+      })
+      .catch(() => undefined);
     return true;
   }
   private async loadRelease(signal: AbortSignal) {
@@ -828,14 +943,18 @@ export class StoryWorkspace extends LitElement {
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
     const server = this.dataServer() as OfficialCatalogServer;
     if ((!this.entityId || isRestrictedContentSource(server)) && OFFICIAL_CATALOG_SERVERS.includes(server)) {
-      const catalogs = await fetchCrossServerCatalogs(["stories", "characters", "bands"], server, this.locale, { signal });
+      const catalogs = await fetchCrossServerCatalogs(["stories", "characters", "bands"], server, this.locale, {
+        signal,
+      });
       if (!this.isConnected || !this.catalogRequests.current(signal)) return;
       const dto = catalogs.stories!;
-      if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded")) throw new Error("Story catalog unavailable");
+      if (Object.values(dto.sourceAvailability).every((value) => value !== "loaded"))
+        throw new Error("Story catalog unavailable");
       this.applyReleaseCatalogs(catalogs);
       return;
     }
-    this.unionStories = undefined; this.unionChapters.clear();
+    this.unionStories = undefined;
+    this.unionChapters.clear();
     const [stories, characters, bands] = await Promise.all([
       fetchJson<JsonRecord>(catalogUrl("stories"), { signal }),
       fetchJson<Record<string, JsonRecord>>(catalogUrl("characters"), { signal }),
@@ -865,7 +984,9 @@ export class StoryWorkspace extends LitElement {
       ),
       // Sekai stories carry no cast index; only Bestdori has bands and characters to facet by.
       this.origin === "bestdori"
-        ? fetchJson<JsonRecord | JsonRecord[]>(`${this.providerBase()}/bands`, { signal }).catch(() => ({}) as JsonRecord)
+        ? fetchJson<JsonRecord | JsonRecord[]>(`${this.providerBase()}/bands`, { signal }).catch(
+            () => ({}) as JsonRecord,
+          )
         : {},
       this.origin === "bestdori"
         ? fetchJson<JsonRecord | JsonRecord[]>(`${this.providerBase()}/characters`, { signal }).catch(
@@ -915,22 +1036,25 @@ export class StoryWorkspace extends LitElement {
   }
   private episodeEntry(episode: JsonRecord) {
     if (this.isProvider()) return undefined;
-    return this.unionStories?.entries.get(episode) || this.unionStories?.byId.get(this.dataServer() + ':' + this.episodeId(episode));
+    return (
+      this.unionStories?.entries.get(episode) ||
+      this.unionStories?.byId.get(this.dataServer() + ":" + this.episodeId(episode))
+    );
   }
   private episodeCandidates(id: string): JsonRecord[] {
     if (!this.unionStories && Object.hasOwn(this.episodes, id)) return [this.episodes[id]!];
-    return Object.values(this.episodes).filter(episode => this.episodeId(episode) === id);
+    return Object.values(this.episodes).filter((episode) => this.episodeId(episode) === id);
   }
   private episodeForId(id: string): JsonRecord | undefined {
     const matches = this.episodeCandidates(id);
     if (!this.isProvider() && this.unionStories) {
-      const own = matches.filter(episode => this.episodeEntry(episode)?.perServer[this.dataServer()]);
+      const own = matches.filter((episode) => this.episodeEntry(episode)?.perServer[this.dataServer()]);
       if (own.length === 1) return own[0];
     }
     return matches.length === 1 ? matches[0] : undefined;
   }
   private episodeKey(episode: JsonRecord): string {
-    return this.episodeEntry(episode)?.key || this.dataServer() + ':' + this.episodeId(episode);
+    return this.episodeEntry(episode)?.key || this.dataServer() + ":" + this.episodeId(episode);
   }
   private defaultSort() {
     if (this.mode === "event") return "id";
@@ -998,20 +1122,19 @@ export class StoryWorkspace extends LitElement {
     const episodes = this.unionStories
       ? Object.values(this.episodes).filter((episode) => String(episode.chapterId) === String(chapter?.chapterId))
       : (Array.isArray(chapter?.episodes) ? chapter.episodes : []).map(String).flatMap((id) => {
-        const episode = this.episodeForId(id);
-        return episode ? [episode] : [];
-      });
-    return episodes
-      .filter(
-        (episode) =>
-          episode &&
-          (this.origin !== "release" ||
-            (this.mode === "birthday"
-              ? episode.storyCategory === "birthday"
-              : this.mode === "band"
-                ? episode.storyCategory !== "birthday"
-                : true)),
-      );
+          const episode = this.episodeForId(id);
+          return episode ? [episode] : [];
+        });
+    return episodes.filter(
+      (episode) =>
+        episode &&
+        (this.origin !== "release" ||
+          (this.mode === "birthday"
+            ? episode.storyCategory === "birthday"
+            : this.mode === "band"
+              ? episode.storyCategory !== "birthday"
+              : true)),
+    );
   }
   private chapterOf(episode: JsonRecord) {
     if (this.isProvider())
@@ -1019,8 +1142,10 @@ export class StoryWorkspace extends LitElement {
         (item) => String(item.chapterId) === String(episode.chapterId ?? episode.chapterKey ?? episode.eventId ?? ""),
       );
     const entry = this.episodeEntry(episode);
-    return (entry && this.unionChapters.get(entry.displayServer)?.get(String(episode.chapterId))) ||
-      this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId));
+    return (
+      (entry && this.unionChapters.get(entry.displayServer)?.get(String(episode.chapterId))) ||
+      this.chapters.find((item) => String(item.chapterId) === String(episode.chapterId))
+    );
   }
   /**
    * A chapter's authored name, or nothing. It used to fall back to
@@ -1038,17 +1163,24 @@ export class StoryWorkspace extends LitElement {
       const active = this.activeSpots();
       const spotId = (spot: JsonRecord) => String(spot.homeSpotId || spot.spotId || spot.id);
       const ids = new Set(active.map(spotId));
-      const spots = this.unionStories ? Object.values(this.unionStories.dto.documents).flatMap(document =>
-        recordValues((document as JsonRecord | undefined)?.homeSpots).filter(spot => ids.has(spotId(spot)))) : active;
+      const spots = this.unionStories
+        ? Object.values(this.unionStories.dto.documents).flatMap((document) =>
+            recordValues((document as JsonRecord | undefined)?.homeSpots).filter((spot) => ids.has(spotId(spot))),
+          )
+        : active;
       const seen = new Set<string>();
-      return spots.flatMap((spot) =>
-        (Array.isArray(spot.talks) ? (spot.talks as JsonRecord[]) : [])
-          .flatMap((talk) => this.episodeCandidates(String(talk.storyKey))),
-      ).filter(episode => {
-        const key = this.episodeKey(episode);
-        if (seen.has(key)) return false;
-        seen.add(key); return true;
-      });
+      return spots
+        .flatMap((spot) =>
+          (Array.isArray(spot.talks) ? (spot.talks as JsonRecord[]) : []).flatMap((talk) =>
+            this.episodeCandidates(String(talk.storyKey)),
+          ),
+        )
+        .filter((episode) => {
+          const key = this.episodeKey(episode);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
     }
     const chapters = this.relevantChapters();
     if (!chapters.length) {
@@ -1420,13 +1552,25 @@ export class StoryWorkspace extends LitElement {
   /* ---------------------------------------------------------------- results */
 
   private visibleEpisodes(omitted = "", sorted = true) {
-    const query = this.isCardSection() ? parseCatalogQuery(this.query, {
-      game: "gbp", kind: "card", attributeKey: "attribute",
-      aliases: [
-        ...this.characters.map((character) => ({ key: "character", value: String(character.characterId), names: catalogQueryNames(character, "character") })),
-        ...this.bands.map((band) => ({ key: "band", value: String(band.bandId), names: catalogQueryNames(band, "band") })),
-      ],
-    }) : { text: this.query, facets: {} };
+    const query = this.isCardSection()
+      ? parseCatalogQuery(this.query, {
+          game: "gbp",
+          kind: "card",
+          attributeKey: "attribute",
+          aliases: [
+            ...this.characters.map((character) => ({
+              key: "character",
+              value: String(character.characterId),
+              names: catalogQueryNames(character, "character"),
+            })),
+            ...this.bands.map((band) => ({
+              key: "band",
+              value: String(band.bandId),
+              names: catalogQueryNames(band, "band"),
+            })),
+          ],
+        })
+      : { text: this.query, facets: {} };
     const combined = intersectCatalogFacets(this.facets, query.facets);
     const facets = omitted ? { ...combined, [omitted]: [] } : combined;
     const needle = query.text.trim().normalize("NFKC").toLocaleLowerCase();
@@ -1541,12 +1685,14 @@ export class StoryWorkspace extends LitElement {
     const sourceEntry = resolved ? this.episodeEntry(resolved) : undefined;
     const sourceServer = variantSource || sourceEntry?.displayServer || this.dataServer();
     // A restricted edition has no page of its own, so it opens in this pane.
-    if (!this.isProvider() && isPublicReleaseServer(sourceServer) &&
-        (id !== this.entityId || sourceServer !== this.dataServer())) {
+    if (
+      !this.isProvider() &&
+      isPublicReleaseServer(sourceServer) &&
+      (id !== this.entityId || sourceServer !== this.dataServer())
+    ) {
       openDetailLocation(
         entityHref({
-          server:
-            sourceServer,
+          server: sourceServer,
           locale: preferredLocale(this.locale) as Locale,
           kind: "stories",
           id,
@@ -1588,7 +1734,14 @@ export class StoryWorkspace extends LitElement {
     this.sync();
     try {
       const payload = this.isProvider() ? await this.providerEntity("stories", id, signal) : undefined;
-      const detail = payload ? payload.detail : await fetchJson<JsonRecord>(this.isProvider() ? `${this.providerBase()}/stories/${encodeURIComponent(id)}?lang=${encodeURIComponent(this.locale)}` : catalogUrl("stories", id, this.detailServer()), { signal });
+      const detail = payload
+        ? payload.detail
+        : await fetchJson<JsonRecord>(
+            this.isProvider()
+              ? `${this.providerBase()}/stories/${encodeURIComponent(id)}?lang=${encodeURIComponent(this.locale)}`
+              : catalogUrl("stories", id, this.detailServer()),
+            { signal },
+          );
       if (this.detailRequests.current(signal)) {
         this.detailEpisode = { ...(known || {}), ...detail };
         const entry = sourceEntry || this.unionStories?.byId.get(`${sourceServer}:${id}`);
@@ -1626,7 +1779,12 @@ export class StoryWorkspace extends LitElement {
     this.detailCard = item;
     try {
       const payload = await this.providerEntity("cards", String(item.cardId || ""), signal);
-      const detail = payload?.detail || await fetchJson<JsonRecord>(`${this.providerBase()}/cards/${encodeURIComponent(cardId)}?lang=${encodeURIComponent(this.locale)}`, { signal });
+      const detail =
+        payload?.detail ||
+        (await fetchJson<JsonRecord>(
+          `${this.providerBase()}/cards/${encodeURIComponent(cardId)}?lang=${encodeURIComponent(this.locale)}`,
+          { signal },
+        ));
       if (this.detailRequests.current(signal)) this.detailCard = detail;
     } catch {
       /* Keep the available card summary when detail loading fails. */
@@ -1636,6 +1794,11 @@ export class StoryWorkspace extends LitElement {
   }
   /** One step back: a scenario returns to its card, a card to the collection. */
   private closeDetail() {
+    if (this.reader) {
+      this.stopStoryPlayback();
+      this.dispatchEvent(new CustomEvent("story-reader-close", { bubbles: true }));
+      return;
+    }
     this.detailSource = "";
     this.detailRequests.cancel();
     this.stopStoryPlayback();
@@ -1685,14 +1848,18 @@ export class StoryWorkspace extends LitElement {
   }
 
   private async continueStory(event: CustomEvent<{ storyId: string }>) {
+    if (this.reader) return;
     const current = this.detailEpisode;
     if (!current || this.detailMode !== "play" || this.episodeId(current) !== event.detail.storyId) return;
     const chapter = this.chapterOf(current);
     const candidates = chapter ? this.chapterEpisodes(chapter) : this.allEpisodes();
     const group = this.episodeGroup(current);
     const sourceServer = this.detailServer();
-    const sequence = candidates.filter((episode) => this.episodeGroup(episode) === group &&
-      (!this.episodeEntry(episode) || this.episodeEntry(episode)!.perServer[sourceServer]));
+    const sequence = candidates.filter(
+      (episode) =>
+        this.episodeGroup(episode) === group &&
+        (!this.episodeEntry(episode) || this.episodeEntry(episode)!.perServer[sourceServer]),
+    );
     const index = sequence.findIndex((episode) => this.episodeKey(episode) === this.episodeKey(current));
     if (index < 0) return;
     const next = sequence[index + 1];
@@ -1755,7 +1922,8 @@ export class StoryWorkspace extends LitElement {
         },
         rail: {
           // Sections organised by a rail draw its column while loading.
-          pending: this.phase === "loading" && this.origin === "release" && !["tutorial", "afterlive"].includes(this.mode),
+          pending:
+            this.phase === "loading" && this.origin === "release" && !["tutorial", "afterlive"].includes(this.mode),
           label: this.railLabel(),
           value: this.railValue(),
           items: this.railItems(),
@@ -1833,7 +2001,9 @@ export class StoryWorkspace extends LitElement {
   private renderResults(episodes: JsonRecord[]) {
     if (this.phase === "loading")
       return this.view === "grid"
-        ? html`${collectionSkeleton("story")}${loadingState(uiText(this.locale, "common.states.loading"))}`
+        ? html`
+            ${collectionSkeleton("story")}${loadingState(uiText(this.locale, "common.states.loading"))}
+          `
         : loadingState(uiText(this.locale, "common.states.loading"));
     if (this.phase === "error")
       return errorState(
@@ -2182,7 +2352,11 @@ export class StoryWorkspace extends LitElement {
             iconOnly: true,
             options: [
               { value: "asc" as const, label: uiText(this.locale, "common.layout.ascending"), icon: "arrow_upward" },
-              { value: "desc" as const, label: uiText(this.locale, "common.layout.descending"), icon: "arrow_downward" },
+              {
+                value: "desc" as const,
+                label: uiText(this.locale, "common.layout.descending"),
+                icon: "arrow_downward",
+              },
             ],
             onSelect: (order) => {
               this.order = order;
@@ -2252,9 +2426,7 @@ export class StoryWorkspace extends LitElement {
               `
             : nothing
         }
-        <div class="story-scene__runtime" data-home-spine-stage>
-          ${loadingIndicator()}
-        </div>
+        <div class="story-scene__runtime" data-home-spine-stage>${loadingIndicator()}</div>
         <button
           class="icon-button story-scene__replay"
           type="button"
@@ -2328,7 +2500,7 @@ export class StoryWorkspace extends LitElement {
             // uiText returns the key itself when it has no entry, which would
             // print "close" as a button label; the caller's fallback wins.
             label: (key, fallback) => {
-              const value = uiText(this.locale, (uiLabelPaths[key] ?? key));
+              const value = uiText(this.locale, uiLabelPaths[key] ?? key);
               return value === key ? fallback : value;
             },
           },
@@ -2360,28 +2532,72 @@ export class StoryWorkspace extends LitElement {
     await this.openScenario(variant.id, variant.row, source);
   }
   private renderDetailActions() {
-    const choices = this.detailMode === "play" && this.detailEpisode ? this.renderSourceChoices(this.detailEpisode) : nothing;
-    return html`${choices === nothing ? nothing : html`
-      <button class="icon-button" type="button" aria-haspopup="dialog"
-        aria-label=${uiText(this.locale, "common.fields.source")}
-        title=${uiText(this.locale, "common.fields.source")}
-        @click=${() => { this.sourceChoicesOpen = true; }}>
-        <img src=${serverAvailabilityImage(this.detailServer())} alt="" width="24" height="24" />
-      </button>`}${this.renderDetailModes()}`;
+    const choices =
+      this.detailMode === "play" && this.detailEpisode ? this.renderSourceChoices(this.detailEpisode) : nothing;
+    return html`
+      ${
+        choices === nothing
+          ? nothing
+          : html`
+              <button
+                class="icon-button"
+                type="button"
+                aria-haspopup="dialog"
+                aria-label=${uiText(this.locale, "common.fields.source")}
+                title=${uiText(this.locale, "common.fields.source")}
+                @click=${() => {
+                  this.sourceChoicesOpen = true;
+                }}
+              >
+                <img src=${serverAvailabilityImage(this.detailServer())} alt="" width="24" height="24" />
+              </button>
+            `
+      }${this.detailEpisode && (!this.reader || this.reader.editorHref) ? html`
+        <a class="icon-button" href=${this.storyEditorHref()} title=${uiText(this.locale, "community.stories.editor")} aria-label=${uiText(this.locale, "community.stories.editor")}>
+          ${icon("edit_note")}
+        </a>` : nothing}${this.renderDetailModes()}
+    `;
+  }
+  private storyEditorHref(): string {
+    if (this.reader) return this.reader.editorHref ?? "";
+    const episode = this.detailEpisode!, server = this.detailServer();
+    const url = new URL(storyCreationPath(this.locale), location.origin);
+    url.searchParams.set("importStory", this.episodeId(episode));
+    url.searchParams.set("importServer", this.isProvider() ? String(episode.sourceServer || (server === "intl" ? "en" : server)) : server);
+    if (this.isProvider()) url.searchParams.set("importProvider", this.origin);
+    const identity = this.episodeEntry(episode)?.perServer[server]?.identity;
+    if (identity) {
+      url.searchParams.set("importRelease", identity.releaseId);
+      url.searchParams.set("importSource", identity.sourceId);
+    }
+    return url.pathname + url.search;
   }
   private renderSourceDialog(episode: JsonRecord) {
     const choices = this.renderSourceChoices(episode);
     if (!this.sourceChoicesOpen || choices === nothing) return nothing;
-    return html`<dialog class="dialog" aria-label=${uiText(this.locale, "common.fields.source")}
-      ${modal(() => { this.sourceChoicesOpen = false; })}>
-      <header class="dialog__header"><h2>${uiText(this.locale, "common.fields.source")}</h2></header>
-      <div class="dialog__body">${choices}</div>
-      <footer class="dialog__actions">
-        <button class="button button--text" type="button" @click=${() => { this.sourceChoicesOpen = false; }}>
-          ${uiText(this.locale, "common.actions.close")}
-        </button>
-      </footer>
-    </dialog>`;
+    return html`
+      <dialog
+        class="dialog"
+        aria-label=${uiText(this.locale, "common.fields.source")}
+        ${modal(() => {
+          this.sourceChoicesOpen = false;
+        })}
+      >
+        <header class="dialog__header"><h2>${uiText(this.locale, "common.fields.source")}</h2></header>
+        <div class="dialog__body">${choices}</div>
+        <footer class="dialog__actions">
+          <button
+            class="button button--text"
+            type="button"
+            @click=${() => {
+              this.sourceChoicesOpen = false;
+            }}
+          >
+            ${uiText(this.locale, "common.actions.close")}
+          </button>
+        </footer>
+      </dialog>
+    `;
   }
   private renderDetailModes() {
     return segmented({
@@ -2393,6 +2609,12 @@ export class StoryWorkspace extends LitElement {
         { value: "play" as const, label: uiText(this.locale, "navigation.player"), icon: "play_circle" },
       ],
       onSelect: (mode) => {
+        if (this.reader) {
+          const url = new URL(location.href);
+          if (mode === "play") url.searchParams.set("view", "play");
+          else url.searchParams.delete("view");
+          history.replaceState(null, "", url);
+        }
         if (mode === "play") void this.openVegaPlayer();
         else {
           this.storyCommentsTextChoice = true;
@@ -2404,6 +2626,7 @@ export class StoryWorkspace extends LitElement {
     });
   }
   private syncAppBarActions() {
+    if (this.reader) return;
     // An episode over the collection hands its modes to its own takeover of the bar.
     const visible = Boolean(this.entityId && this.detailEpisode && !this.detailLoading && !this.detailError);
     if (!visible) {
@@ -2441,32 +2664,34 @@ export class StoryWorkspace extends LitElement {
       // A restricted edition's references have no pages of their own.
       const server = this.detailServer();
       const linkable = isPublicReleaseServer(server);
-      const returnTo = this.entityId && linkable
-        ? entityHref({
-            server,
-            locale: this.locale as Locale,
-            kind: "stories",
-            id: this.entityId,
-          })
-        : undefined;
+      const returnTo =
+        this.entityId && linkable
+          ? entityHref({
+              server,
+              locale: this.locale as Locale,
+              kind: "stories",
+              id: this.entityId,
+            })
+          : undefined;
       return [
         {
           label,
-          value: canLink && linkable
-            ? html`
-                <a
-                  href=${entityHref({
-                    server,
-                    locale: this.locale as Locale,
-                    kind: reference.resource as "stories" | "characters",
-                    id: String(reference.id),
-                    returnTo,
-                  })}
-                >
-                  ${identity}
-                </a>
-              `
-            : identity,
+          value:
+            canLink && linkable
+              ? html`
+                  <a
+                    href=${entityHref({
+                      server,
+                      locale: this.locale as Locale,
+                      kind: reference.resource as "stories" | "characters",
+                      id: String(reference.id),
+                      returnTo,
+                    })}
+                  >
+                    ${identity}
+                  </a>
+                `
+              : identity,
         },
       ];
     });
@@ -2479,7 +2704,7 @@ export class StoryWorkspace extends LitElement {
       entries.filter((entry) => ["dialogue", "message", "subtitle"].includes(entry.kind)).length;
     return html`
       <section
-        class=${this.entityId ? "story-detail story-detail--page" : "story-detail pane-layer"}
+        class=${this.entityId ? `story-detail story-detail--page${this.detailMode === "play" ? " story-player-layout" : ""}` : "story-detail pane-layer"}
         data-view=${this.detailMode}
         role=${this.entityId ? nothing : "dialog"}
         aria-modal=${this.entityId ? nothing : "true"}
@@ -2487,17 +2712,22 @@ export class StoryWorkspace extends LitElement {
         tabindex="-1"
         data-overlay-pane=${this.entityId ? nothing : ""}
         ${appBarTakeover(
-          this.entityId
+          this.entityId && !this.reader
             ? null
             : {
                 title: this.episodeTitle(episode),
                 titleLanguage: this.episodeTitleValue(episode).locale,
                 backLabel: uiText(this.locale, "common.actions.back"),
+                ...(this.reader ? { backHref: this.reader.backHref } : {}),
                 onBack: () => this.closeDetail(),
-                identity: html`<div class="browse__crumbs">${icon("chevron_right", 20)}<span>${localizedContent(
-                  this.chapterOf(episode)?.chapterName || episode.chapterName,
-                  this.locale,
-                )}</span></div>`,
+                identity: this.reader ? nothing : html`
+                  <div class="browse__crumbs">
+                    ${icon("chevron_right", 20)}
+                    <span>
+                      ${localizedContent(this.chapterOf(episode)?.chapterName || episode.chapterName, this.locale)}
+                    </span>
+                  </div>
+                `,
                 actions: this.detailLoading || this.detailError ? nothing : this.renderDetailActions(),
               },
         )}
@@ -2510,6 +2740,7 @@ export class StoryWorkspace extends LitElement {
                     ? html`
                         <vega-story-stage
                           .story=${episode}
+                          .communityProject=${this.reader?.project}
                           .providerBase=${this.isProvider() ? this.providerBase() : ""}
                           server=${this.detailServer()}
                           .locale=${this.locale}
@@ -2527,8 +2758,7 @@ export class StoryWorkspace extends LitElement {
               `
             : html`
                 <div class="story-detail__body">
-                  ${this.renderSourceChoices(episode)}
-                  ${this.localizedEpisodeArtwork(episode)}
+                  ${this.renderSourceChoices(episode)} ${this.localizedEpisodeArtwork(episode)}
                   ${
                     this.text(episode.description)
                       ? html`
@@ -2541,7 +2771,7 @@ export class StoryWorkspace extends LitElement {
                         `
                       : nothing
                   }
-                  <details class="story-reading-info">
+                  ${this.reader ? nothing : html`<details class="story-reading-info">
                     <summary class="state-layer">
                       ${icon("info", 20)}
                       <strong>${uiText(this.locale, "common.actions.details")}</strong>
@@ -2570,7 +2800,7 @@ export class StoryWorkspace extends LitElement {
                         : null,
                       ...this.storyUnlockRows(episode),
                     ])}
-                  </details>
+                  </details>`}
                   ${this.detailError ? errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => void this.openScenario(this.episodeId(episode), episode), this.detailError) : nothing}
                   ${
                     commands.length
@@ -2611,11 +2841,11 @@ export class StoryWorkspace extends LitElement {
                                           type="button"
                                           aria-label=${uiText(this.locale, "common.actions.reset")}
                                           @click=${(event: Event) => {
-                                          this.transcriptQuery = "";
-                                          (event.currentTarget as HTMLElement)
-                                            .closest<HTMLElement>("md-outlined-text-field")
-                                            ?.focus();
-                                        }}
+                                            this.transcriptQuery = "";
+                                            (event.currentTarget as HTMLElement)
+                                              .closest<HTMLElement>("md-outlined-text-field")
+                                              ?.focus();
+                                          }}
                                         >
                                           ${icon("close", 20)}
                                         </button>
@@ -2659,7 +2889,9 @@ export class StoryWorkspace extends LitElement {
                             ${
                               visibleCommands.length
                                 ? html`
-                                    <div class="story-transcript dialogue-list">${this.renderTranscript(visibleCommands)}</div>
+                                    <div class="story-transcript dialogue-list">
+                                      ${this.renderTranscript(visibleCommands)}
+                                    </div>
                                   `
                                 : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })
                             }
@@ -2879,12 +3111,17 @@ export class StoryWorkspace extends LitElement {
           <image-gallery
             natural
             lazy
-            .images=${[{
-              id: String(entry.commandIndex),
-              source: entry.source!,
-              label: uiText(this.locale, entry.mediaKind === "background" ? "story.labels.background" : "story.labels.illustration"),
-              candidates: this.localizedImages(entry.source!),
-            }]}
+            .images=${[
+              {
+                id: String(entry.commandIndex),
+                source: entry.source!,
+                label: uiText(
+                  this.locale,
+                  entry.mediaKind === "background" ? "story.labels.background" : "story.labels.illustration",
+                ),
+                candidates: this.localizedImages(entry.source!),
+              },
+            ]}
             .active=${String(entry.commandIndex)}
             .locale=${this.locale}
           ></image-gallery>

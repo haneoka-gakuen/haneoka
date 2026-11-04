@@ -15,7 +15,7 @@ const schema = "haneoka-compiled-packages-v1";
 function workspacePackages() {
   const packages = JSON.parse(run("pnpm", ["list", "--recursive", "--depth", "-1", "--json"]));
   if (!Array.isArray(packages) || !packages.length) throw new Error("Workspace package inventory is empty");
-  return packages.filter((workspace) => workspace.path !== root);
+  return packages.filter((workspace) => workspace.path !== root && workspace.name !== "@haneoka/altair-app");
 }
 
 function identity() {
@@ -40,11 +40,11 @@ function identity() {
       digest(fs.lstatSync(absolute).isSymbolicLink() ? fs.readlinkSync(absolute) : fs.readFileSync(absolute)),
     ];
   });
-  const links = run("git", ["ls-tree", "-r", "HEAD", ".dependencies"])
+  const links = run("git", ["ls-files", "--stage", ".dependencies"])
     .trim()
     .split("\n")
     .flatMap((line) => {
-      const match = /^160000 commit ([a-f0-9]{40})\t(.+)$/u.exec(line);
+      const match = /^160000 ([a-f0-9]{40}) 0\t(.+)$/u.exec(line);
       return match ? [[match[2], match[1]]] : [];
     })
     .filter(([directory]) => !engine || directory === ".dependencies/ournotes-team-builder");

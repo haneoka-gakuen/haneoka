@@ -58,7 +58,11 @@
       "types": "./dist/transport.d.ts",
       "import": "./dist/transport.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./sekai": {
+      "types": "./dist/sekai.d.ts",
+      "import": "./dist/sekai.js"
+    }
   },
   "scripts": {
     "clean": "node scripts/clean-dist.mjs",
@@ -82,5 +86,8 @@
   },
   "peerDependencies": {
     "@haneoka/vega-protocol": "^0.1.0"
+  },
+  "dependencies": {
+    "@haneoka/altair-plugin-bestdori": "workspace:*"
   }
 }

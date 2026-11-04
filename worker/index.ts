@@ -4,7 +4,9 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { ARENA_PROJECTION } from "../src/lib/arena";
-import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument, rewriteCommunityChartStructuredData } from "../src/lib/community-chart-route";
+import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
+import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
+import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument } from "../src/lib/community-chart-route";
 import { readArenaCatalog } from "../src/lib/arena-catalog";
 import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
@@ -31,7 +33,14 @@ import { handleArenaRankingApi } from "./arena-ranking";
 import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, atlasReferenceSource, atlasReferenceSprite, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
 import { handleEventPointRankingApi } from "./event-point-ranking";
 import { handleAdminRequest } from "./admin";
-import { applySiteSettings, readSiteSettings, testContentAllowed, isPublicResourceServer, restrictedResourceRequest, privateResourceResponse } from "./site-settings";
+import {
+  applySiteSettings,
+  readSiteSettings,
+  testContentAllowed,
+  isPublicResourceServer,
+  restrictedResourceRequest,
+  privateResourceResponse,
+} from "./site-settings";
 import { serveStaticDocument, staticDocumentRedirect, staticPublicationContext } from "./static-documents";
 import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documents";
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
@@ -59,7 +68,13 @@ import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
 import { handleCommunityPlaylistRequest } from "./community-playlists";
-import { handleCommunityChartRequest, communitySonolusProviders, communitySonolusRows, cleanupCommunityCharts } from "./community-charts";
+import { handleCommunityStoryRequest, cleanupCommunityStories, reconcileCommunityStories } from "./community-stories";
+import {
+  handleCommunityChartRequest,
+  communitySonolusProviders,
+  communitySonolusRows,
+  cleanupCommunityCharts,
+} from "./community-charts";
 import type { ChartMediaRef } from "../src/lib/chart-creation/community-types";
 import { handleCommunityForumsRequest } from "./community-forums";
 import { handleCommunityEntityRequest } from "./community-entities";
@@ -411,7 +426,6 @@ const isJsonObject = (value: JsonValue | undefined): value is JsonObject =>
 
 const UI_MARK_SOURCE = "metadata/sources/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2.json";
 
-
 const parseJson = (text: string): JsonValue => {
   const value: unknown = JSON.parse(text);
   if (!isJsonValue(value)) throw new Error("JSON contains a value that cannot be represented safely");
@@ -601,7 +615,11 @@ async function activeResourceServer(env: Env, slug: string): Promise<ResourceSer
     .first<{ resourcePrefix: string; slug: string; region: string }>();
   const value =
     row?.slug === slug && validResourcePrefix(row.resourcePrefix)
-      ? { resourcePrefix: row.resourcePrefix, slug: row.slug, baseServer: row.region === "jp" ? "jp" as const : "intl" as const }
+      ? {
+          resourcePrefix: row.resourcePrefix,
+          slug: row.slug,
+          baseServer: row.region === "jp" ? ("jp" as const) : ("intl" as const),
+        }
       : null;
   cacheResourceServerRoute(slug, { expiresAt: now + RESOURCE_SERVER_CACHE_TTL_MS, value }, now);
   return value;
@@ -632,7 +650,11 @@ async function activeResourceServers(env: Env): Promise<readonly ResourceServerR
     ) {
       throw new Error("invalid active resource server route");
     }
-    return { resourcePrefix: row.resourcePrefix, slug: row.slug, baseServer: row.region === "jp" ? "jp" as const : "intl" as const };
+    return {
+      resourcePrefix: row.resourcePrefix,
+      slug: row.slug,
+      baseServer: row.region === "jp" ? ("jp" as const) : ("intl" as const),
+    };
   });
   if (new Set(routes.map((route) => route.slug)).size !== routes.length) {
     throw new Error("duplicate active resource server route");
@@ -2224,11 +2246,16 @@ function catalogPageBindings(env: Env, request: Request): PageDataBindings {
       try {
         if (key.startsWith("catalog-pages/v1/objects/")) {
           const compressed = await env.ASSET_BUCKET.get(`${key}.gz`);
-          if (compressed) return new Uint8Array(await new Response(compressed.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+          if (compressed)
+            return new Uint8Array(
+              await new Response(compressed.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(),
+            );
         }
         const object = await env.ASSET_BUCKET.get(key);
         return object ? new Uint8Array(await object.arrayBuffer()) : null;
-      } catch { throw new PageDataError("page_data_incomplete", 503); }
+      } catch {
+        throw new PageDataError("page_data_incomplete", 503);
+      }
     },
     producer: async () => {
       if (!catalogPageRollout.enabledKinds.length) return { ...catalogPageRollout };
@@ -2239,10 +2266,16 @@ function catalogPageBindings(env: Env, request: Request): PageDataBindings {
       const vector: PageSource[] = [];
       for (const slug of ["jp", "intl"] as const) {
         const route = await activeResourceServer(env, slug);
-        if (!route) { vector.push({ state: "inactive", server: slug }); continue; }
+        if (!route) {
+          vector.push({ state: "inactive", server: slug });
+          continue;
+        }
         let release: Release | null;
-        try { release = await currentRelease(env, route, true); }
-        catch { throw new PageDataError("source_unavailable", 503); }
+        try {
+          release = await currentRelease(env, route, true);
+        } catch {
+          throw new PageDataError("source_unavailable", 503);
+        }
         if (!release) throw new PageDataError("source_unavailable", 503);
         vector.push({ state: "published", server: slug, releaseId: release.releaseId, sourceId: release.sourceId });
       }
@@ -2322,7 +2355,10 @@ async function handleCatalogApiRequest(
   const tail = cleanRelativePath(rawTail);
   if (!tail) return errorResponse(request, 404, "route_not_found", "API route not found");
   if (tail === "ui-marks") {
-    const cacheRequest = releaseCacheRequest(new Request(withUiMarksProjection(request.url), request), release.releaseId);
+    const cacheRequest = releaseCacheRequest(
+      new Request(withUiMarksProjection(request.url), request),
+      release.releaseId,
+    );
     return releaseResponseHeaders(
       await edgeCached(
         cacheRequest,
@@ -2456,16 +2492,26 @@ async function handleCatalogApiRequest(
           ]);
           if (input === null) return errorResponse(request, 404, "resource_not_found", "Catalog resource not found");
           if (!isJsonObject(catalog)) return errorResponse(request, 502, "catalog_missing", "Catalog index is missing");
-          const body = JSON.stringify(publicStampManifest(input, {
-            server: release.server,
-            sourceId: release.sourceId,
-            stampIds: new Set(Object.keys(catalog)),
-          }));
+          const body = JSON.stringify(
+            publicStampManifest(input, {
+              server: release.server,
+              sourceId: release.sourceId,
+              stampIds: new Set(Object.keys(catalog)),
+            }),
+          );
           const etag = await jsonDocumentEtag(body);
-          return new Response(request.method === "HEAD" || etagMatches(request.headers.get("If-None-Match"), etag) ? null : body, {
-            status: etagMatches(request.headers.get("If-None-Match"), etag) ? 304 : 200,
-            headers: { ...CORS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": CATALOG_API_CACHE_CONTROL, ETag: etag },
-          });
+          return new Response(
+            request.method === "HEAD" || etagMatches(request.headers.get("If-None-Match"), etag) ? null : body,
+            {
+              status: etagMatches(request.headers.get("If-None-Match"), etag) ? 304 : 200,
+              headers: {
+                ...CORS,
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": CATALOG_API_CACHE_CONTROL,
+                ETag: etag,
+              },
+            },
+          );
         },
         CATALOG_API_CACHE_CONTROL,
       ),
@@ -2849,7 +2895,11 @@ async function handleReleaseMedia(
   // A `?release=` URL names one immutable release: its bytes can never
   // change, so browsers keep it for a year instead of revalidating every
   // jacket on every visit. Unpinned URLs follow the moving current pointer.
-  const cacheControl = stampDiagnostics ? "private, no-store" : requested ? PINNED_MEDIA_CACHE_CONTROL : CATALOG_API_CACHE_CONTROL;
+  const cacheControl = stampDiagnostics
+    ? "private, no-store"
+    : requested
+      ? PINNED_MEDIA_CACHE_CONTROL
+      : CATALOG_API_CACHE_CONTROL;
   const moc = tree === "runtime" && relative.endsWith(".moc3");
   const clientEncoding = request.cf?.clientAcceptEncoding;
   const gzip =
@@ -2885,8 +2935,8 @@ async function handleReleaseMedia(
   const response = stampDiagnostics
     ? privateResourceResponse(await produce())
     : gzip
-    ? await produce()
-    : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
+      ? await produce()
+      : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
   return releaseResponseHeaders(response, release);
 }
 
@@ -2945,16 +2995,25 @@ async function handleArtifact(
 const BESTDORI_SONOLUS_DATA_ID = /^bestdori:(\d+):(easy|normal|hard|expert|special)$/u;
 const BESTDORI_SONOLUS_LEVEL_PREFIX = "/sonolus/levels/haneoka-gbp-";
 
-async function resolveCommunityChartMedia(env: Env, ctx: ExecutionContext, ref: Extract<ChartMediaRef, { kind: "server" }>, kind: "audio" | "cover", origin: string): Promise<string | null> {
+async function resolveCommunityChartMedia(
+  env: Env,
+  ctx: ExecutionContext,
+  ref: Extract<ChartMediaRef, { kind: "server" }>,
+  kind: "audio" | "cover",
+  origin: string,
+): Promise<string | null> {
   if (ref.provider === "bestdori") {
     const url = new URL(`/api/v1/garupa/bestdori/${ref.server}/songs/${ref.songId}`, origin);
     const response = await handleGarupaBestdoriApi(ctx, new Request(url), url, env.BESTDORI_UPSTREAM_BASE);
     if (!response?.ok) return null;
-    const song = await response.json() as Record<string, unknown>;
+    const song = (await response.json()) as Record<string, unknown>;
     const value = kind === "audio" ? song.musicUrl : song.jacketUrl;
     if (typeof value !== "string") return null;
     const media = new URL(value, origin);
-    return media.origin === origin && /^\/api\/v1\/garupa\/bestdori\/(jp|en|tw|cn|kr)\/media\/(sound|jacket)\//u.test(media.pathname) ? media.pathname : null;
+    return media.origin === origin &&
+      /^\/api\/v1\/garupa\/bestdori\/(jp|en|tw|cn|kr)\/media\/(sound|jacket)\//u.test(media.pathname)
+      ? media.pathname
+      : null;
   }
   if (!ref.releaseId || !isPublicResourceServer(ref.server)) return null;
   const server = await activeResourceServer(env, ref.server);
@@ -2969,7 +3028,11 @@ async function resolveCommunityChartMedia(env: Env, ctx: ExecutionContext, ref: 
   const value = kind === "audio" ? song.musicUrl : song.jacketUrl;
   if (typeof value !== "string") return null;
   const media = new URL(value, origin);
-  if (media.origin !== origin || ![`/assets/${ref.server}/`, `/runtime/${ref.server}/`].some(prefix => media.pathname.startsWith(prefix))) return null;
+  if (
+    media.origin !== origin ||
+    ![`/assets/${ref.server}/`, `/runtime/${ref.server}/`].some((prefix) => media.pathname.startsWith(prefix))
+  )
+    return null;
   media.searchParams.set("release", release.releaseId);
   return media.pathname + media.search;
 }
@@ -2985,7 +3048,7 @@ function sonolusReleaseKey(release: Pick<Release, "releaseId" | "server">): stri
 }
 
 async function activeSonolusReleases(env: Env): Promise<readonly Release[]> {
-  const servers = (await activeResourceServers(env)).filter(server => isPublicResourceServer(server.slug));
+  const servers = (await activeResourceServers(env)).filter((server) => isPublicResourceServer(server.slug));
   const releases = (await Promise.all(servers.map((server) => currentRelease(env, server)))).filter(
     (release): release is Release => release !== null,
   );
@@ -3228,8 +3291,13 @@ async function handleSonolus(
     assetUrl.pathname === "/sonolus/playlists" ||
     assetUrl.pathname.startsWith("/sonolus/playlists/");
   const isBestdoriCatalog = isBestdoriSonolusCatalogRequest(assetUrl);
-  const communityName = /^\/sonolus\/levels\/(haneoka-community-[0-9a-f-]{36})(?:\/data\/[a-f0-9]{40})?$/u.exec(assetUrl.pathname)?.[1];
-  const isCommunityCatalog = !!communityName || assetUrl.searchParams.get("source") === "community" || assetUrl.searchParams.get("type") === "community";
+  const communityName = /^\/sonolus\/levels\/(haneoka-community-[0-9a-f-]{36})(?:\/data\/[a-f0-9]{40})?$/u.exec(
+    assetUrl.pathname,
+  )?.[1];
+  const isCommunityCatalog =
+    !!communityName ||
+    assetUrl.searchParams.get("source") === "community" ||
+    assetUrl.searchParams.get("type") === "community";
   const releases = await activeSonolusReleases(env);
   const canonicalRelease = releases[0];
   if (!canonicalRelease) {
@@ -3265,27 +3333,46 @@ async function handleSonolus(
       return value === null ? null : sonolusThumbnailDocument(value, thumbnail);
     };
     const communityRows = isCommunityCatalog ? await communitySonolusRows(env, communityName) : [];
-    if (isCommunityCatalog) revision += `:community:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(communityRows.map(row => [row.id, row.revision, row.updatedAt])))))].map(v => v.toString(16).padStart(2, "0")).join("")}`;
+    if (isCommunityCatalog)
+      revision += `:community:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(communityRows.map((row) => [row.id, row.revision, row.updatedAt])))))].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
     const communityProviders = isCommunityCatalog ? communitySonolusProviders(env, communityRows, revision) : null;
-    const catalogProvider = communityProviders?.catalogProvider ?? (isBestdoriCatalog
-      ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
-      : ourNotesSonolusCatalogProvider(env, releases, revision));
-    const dataProvider = communityProviders?.dataProvider ?? (isBestdoriCatalog
-      ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
-      : ourNotesSonolusDataProvider(env, releases));
+    const catalogProvider =
+      communityProviders?.catalogProvider ??
+      (isBestdoriCatalog
+        ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
+        : ourNotesSonolusCatalogProvider(env, releases, revision));
+    const dataProvider =
+      communityProviders?.dataProvider ??
+      (isBestdoriCatalog
+        ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
+        : ourNotesSonolusDataProvider(env, releases));
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const projected = await sonolusLevelService.handle({
       catalogProvider,
       dataProvider,
-      ...(isCommunityCatalog ? { levelInfoTitle: encodeSonolusLocalizedText({ en: "Community Charts", ja: "コミュニティ譜面", ko: "커뮤니티 채보", "zh-CN": "社区谱面", "zh-TW": "社群譜面" }, "en"), quickSearchValues: "source=community" } : isBestdoriCatalog
+      ...(isCommunityCatalog
         ? {
-            levelInfoTitle: "GBP Charts",
-            playlistInfoTitle: "GBP Playlists",
-            playlistName: (songId: string) => sonolusPlaylistName("gbp", songId),
-            quickSearchValues: "source=bestdori",
+            levelInfoTitle: encodeSonolusLocalizedText(
+              {
+                en: "Community Charts",
+                ja: "コミュニティ譜面",
+                ko: "커뮤니티 채보",
+                "zh-CN": "社区谱面",
+                "zh-TW": "社群譜面",
+              },
+              "en",
+            ),
+            quickSearchValues: "source=community",
           }
-        : {}),
+        : isBestdoriCatalog
+          ? {
+              levelInfoTitle: "GBP Charts",
+              playlistInfoTitle: "GBP Playlists",
+              playlistName: (songId: string) => sonolusPlaylistName("gbp", songId),
+              quickSearchValues: "source=bestdori",
+            }
+          : {}),
       levelTemplateProvider: new ReleaseLevelTemplateProvider({
         readJson,
         ...(thumbnail ? { fallbackCover: thumbnail } : {}),
@@ -3305,8 +3392,25 @@ async function handleSonolus(
     });
     if (projected) {
       if (isCommunityCatalog) projected.cacheControl = "no-store";
-      if (assetUrl.pathname === "/sonolus/info" && projected.kind === "document" && Array.isArray(projected.body.buttons))
-        projected.body.buttons.splice(2, 0, { type: "level", title: encodeSonolusLocalizedText({ en: "Community Charts", ja: "コミュニティ譜面", ko: "커뮤니티 채보", "zh-CN": "社区谱面", "zh-TW": "社群譜面" }, "en"), infoType: "community" });
+      if (
+        assetUrl.pathname === "/sonolus/info" &&
+        projected.kind === "document" &&
+        Array.isArray(projected.body.buttons)
+      )
+        projected.body.buttons.splice(2, 0, {
+          type: "level",
+          title: encodeSonolusLocalizedText(
+            {
+              en: "Community Charts",
+              ja: "コミュニティ譜面",
+              ko: "커뮤니티 채보",
+              "zh-CN": "社区谱面",
+              "zh-TW": "社群譜面",
+            },
+            "en",
+          ),
+          infoType: "community",
+        });
       const produce = async (): Promise<Response> => {
         const headers = new Headers({
           ...(projected.kind === "document" ? SONOLUS_JSON_HEADERS : SONOLUS_REPOSITORY_HEADERS),
@@ -3523,7 +3627,8 @@ async function documentEntityAvailability(
 
 /** Additional documents share formal shells, while entity data keeps its source identity. */
 async function previewDocumentRedirect(request: Request, env: Env): Promise<Response | null> {
-  const source = new URL(request.url), parts = source.pathname.split("/").filter(Boolean);
+  const source = new URL(request.url),
+    parts = source.pathname.split("/").filter(Boolean);
   const slug = parts[0];
   if (!slug || isPublicResourceServer(slug) || !SERVER_FIRST_LOCALES.has(parts[1] || "")) return null;
   const definition = await accessibleResourceServer(env, request, slug);
@@ -3533,8 +3638,13 @@ async function previewDocumentRedirect(request: Request, env: Env): Promise<Resp
   target.pathname = `/${base}/${parts.slice(1).join("/")}/`;
   for (const key of ["server", "release", "releaseId", "source", "sourceId"]) target.searchParams.delete(key);
   const returnTo = target.searchParams.get("return");
-  if (returnTo?.startsWith(`/${slug}/`)) target.searchParams.set("return", `/${base}/${returnTo.slice(slug.length + 2)}`);
-  const redirect = () => new Response(null, { status: 302, headers: { Location: target.pathname + target.search, "Cache-Control": "no-store" } });
+  if (returnTo?.startsWith(`/${slug}/`))
+    target.searchParams.set("return", `/${base}/${returnTo.slice(slug.length + 2)}`);
+  const redirect = () =>
+    new Response(null, {
+      status: 302,
+      headers: { Location: target.pathname + target.search, "Cache-Control": "no-store" },
+    });
   const route = parseResourceRoute(source.pathname, [slug]);
   const collection = route && (!route.id || (route.kind === "stories" && STORY_MODES.has(route.id)));
   if (collection || parts[2] === "assets" || (parts[2] === "events" && parts[3] === "tracker")) {
@@ -3545,7 +3655,10 @@ async function previewDocumentRedirect(request: Request, env: Env): Promise<Resp
     const own = await documentEntityAvailability(env, route as ResourceRoute & { id: string });
     for (const formalSource of [base, base === "jp" ? "intl" : "jp"]) {
       const formal = await documentEntityAvailability(env, { ...route, server: formalSource, id: route.id });
-      if (formal && (!own || !semanticOwnersConflict(own.entity, formal.entity, DOCUMENT_RESOURCE_NAMES[route.kind] || route.kind))) {
+      if (
+        formal &&
+        (!own || !semanticOwnersConflict(own.entity, formal.entity, DOCUMENT_RESOURCE_NAMES[route.kind] || route.kind))
+      ) {
         target.pathname = resourcePath({ ...route, server: formalSource });
         return redirect();
       }
@@ -3553,7 +3666,8 @@ async function previewDocumentRedirect(request: Request, env: Env): Promise<Resp
     return null;
   }
   const headers = new Headers(request.headers);
-  headers.delete("If-None-Match"); headers.delete("If-Modified-Since");
+  headers.delete("If-None-Match");
+  headers.delete("If-Modified-Since");
   const sibling = await env.ASSETS.fetch(new Request(target, { method: "HEAD", headers }));
   if (sibling.status < 400) return redirect();
   target.pathname = `/${parts.slice(1).join("/")}/`;
@@ -3574,7 +3688,14 @@ function previewDetailShell(request: Request, shell: Response, route: ResourceRo
         const config = JSON.parse(element.getAttribute("config") || "{}");
         element.setAttribute(
           "config",
-          JSON.stringify({ ...config, server: route.server, entityKind: route.kind, entityId: route.id, entityContext: true, chartPage: route.view === "chart" }),
+          JSON.stringify({
+            ...config,
+            server: route.server,
+            entityKind: route.kind,
+            entityId: route.id,
+            entityContext: true,
+            chartPage: route.view === "chart",
+          }),
         );
       }
       element.setInnerContent("");
@@ -3655,7 +3776,9 @@ async function serveCanonicalResourceDocument(
   const direct = await env.ASSETS.fetch(request);
   if (direct.status !== 404) return direct;
 
-  const availability: DocumentEntityAvailability | null = pageReady ? { entity: {} } : await documentEntityAvailability(env, route as ResourceRoute & { id: string });
+  const availability: DocumentEntityAvailability | null = pageReady
+    ? { entity: {} }
+    : await documentEntityAvailability(env, route as ResourceRoute & { id: string });
   if (!availability) return new Response("Not found", { status: 404 });
 
   const url = new URL(request.url);
@@ -3706,11 +3829,12 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   let response = await handleScopedRequest(request, env, ctx);
   const chartDocument = parseCommunityChartDocument(new URL(request.url).pathname);
-  if (chartDocument && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
-    const path = (locale: string) => chartDocument.player
-      ? communityChartPlayerPath("", locale, chartDocument.id)
-      : communityChartPath("", locale, chartDocument.id);
-    const canonical = `https://${CANONICAL_HOST}${path(chartDocument.locale)}`;
+  const storyDocument = parseCommunityStoryDocument(new URL(request.url).pathname);
+  if ((chartDocument || storyDocument) && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
+    const path = (locale: string) => storyDocument ? communityStoryDocumentPath(storyDocument, locale) : chartDocument!.player
+      ? communityChartPlayerPath("", locale, chartDocument!.id)
+      : communityChartPath("", locale, chartDocument!.id);
+    const canonical = `https://${CANONICAL_HOST}${path((storyDocument ?? chartDocument)!.locale)}`;
     let structuredData = "";
     response = new HTMLRewriter()
       .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", canonical); } })
@@ -3722,7 +3846,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       } })
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;
-        text.replace(text.lastInTextNode ? rewriteCommunityChartStructuredData(structuredData, new URL(request.url).pathname, `https://${CANONICAL_HOST}`) : "", { html: true });
+        text.replace(text.lastInTextNode ? rewriteCommunityStructuredData(structuredData, canonical) : "", { html: true });
         if (text.lastInTextNode) structuredData = "";
       } })
       .transform(response);
@@ -3746,14 +3870,16 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*",
     } });
   }
-  const legacyChart = legacyCommunityChartRedirectTarget(url.pathname, url.search);
+  const legacyChart = legacyCommunityStoryRedirectTarget(url.pathname, url.search) ?? legacyCommunityChartRedirectTarget(url.pathname, url.search);
   if (legacyChart && (request.method === "GET" || request.method === "HEAD"))
     return new Response(null, { status: 308, headers: { Location: legacyChart, "Cache-Control": "public, max-age=86400" } });
   const resourceImage = await handleResourceImage(request, env);
   if (resourceImage) return resourceImage;
   const segments = url.pathname.split("/").filter(Boolean);
-  const documentSource = SERVER_FIRST_LOCALES.has(segments[1] || "") && segments[0] && !isPublicResourceServer(segments[0])
-    ? await accessibleResourceServer(env, request, segments[0]) : null;
+  const documentSource =
+    SERVER_FIRST_LOCALES.has(segments[1] || "") && segments[0] && !isPublicResourceServer(segments[0])
+      ? await accessibleResourceServer(env, request, segments[0])
+      : null;
   const documentSources = documentSource ? [documentSource.slug] : undefined;
   if (request.method === "GET" || request.method === "HEAD") {
     const documentPath =
@@ -3866,7 +3992,11 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     const communityForums = await handleCommunityForumsRequest(request, env);
     if (communityForums) return communityForums;
     const admin = await handleAdminRequest(request, env);
-    if (admin) return admin;
+    if (admin) {
+      if (admin.ok && request.method === "POST" && url.pathname.startsWith("/api/v1/admin/story-asset-reviews/"))
+        ctx.waitUntil(reconcileCommunityStories(env));
+      return admin;
+    }
     const profile = await handleProfileRequest(request, env);
     if (profile) return profile;
     const kofiSponsor = await handleKofiSponsorRequest(request, env);
@@ -3891,6 +4021,29 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (appeal) return appeal;
     const upload = await handleUploadRequest(request, env);
     if (upload) return upload;
+    const communityStories = await handleCommunityStoryRequest(request, env, async (source) => {
+      let target: URL;
+      try {
+        target = new URL(source);
+      } catch {
+        return null;
+      }
+      if (target.username || target.password || target.hash) return null;
+      if (
+        [url.origin, "https://haneoka.org"].includes(target.origin) &&
+        /^\/(?:assets|runtime|objects)\/(?:jp|intl)\//u.test(target.pathname) &&
+        target.searchParams.getAll("release").length === 1 &&
+        /^r-[a-f0-9]{20}$/u.test(target.searchParams.get("release") || "") &&
+        [...target.searchParams.keys()].every((key) => key === "release")
+      )
+        return target.origin === url.origin
+          ? handleScopedRequest(new Request(new URL(target.pathname + target.search, url.origin)), env, ctx)
+          : fetch(target, { redirect: "manual" });
+      if (target.origin === "https://bestdori.com" && target.pathname.startsWith("/assets/"))
+        return fetch(target, { redirect: "manual" });
+      return null;
+    });
+    if (communityStories) return communityStories;
     const communityCharts = await handleCommunityChartRequest(request, env, async (ref, kind) => {
       const source = await resolveCommunityChartMedia(env, ctx, ref, kind, url.origin);
       return source ? handleScopedRequest(new Request(new URL(source, url.origin)), env, ctx) : null;
@@ -3975,9 +4128,10 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (url.pathname.startsWith("/api/")) return errorResponse(request, 404, "route_not_found", "API route not found");
   const documentRequest =
     url.pathname.endsWith("/") || url.pathname.endsWith(".html") || !/\.[^/]+$/u.test(url.pathname);
-  if (!documentRequest) return restrictedResourceRequest(request)
-    ? new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
-    : serveStaticAsset(request, env);
+  if (!documentRequest)
+    return restrictedResourceRequest(request)
+      ? new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
+      : serveStaticAsset(request, env);
   const previewRequest = restrictedResourceRequest(request);
   if (previewRequest) {
     const redirect = await previewDocumentRedirect(request, env);
@@ -3997,9 +4151,20 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       if (redirect) return redirect;
       let pageReady = false;
       const pageRoute = parseResourceRoute(url.pathname);
-      if (catalogPageRollout.enabledKinds.length && pageRoute?.id && ["jp", "intl"].includes(pageRoute.server) && ["cards", "support-cards", "events", "songs"].includes(pageRoute.kind)) {
+      if (
+        catalogPageRollout.enabledKinds.length &&
+        pageRoute?.id &&
+        ["jp", "intl"].includes(pageRoute.server) &&
+        ["cards", "support-cards", "events", "songs"].includes(pageRoute.kind)
+      ) {
         const query = new URL(`/api/v1/servers/${pageRoute.server}/release`, url);
-        query.search = new URLSearchParams({ projection: "page-data", contract: "catalog-page-v1", locale: pageRoute.locale, resource: pageRoute.kind, id: pageRoute.id }).toString();
+        query.search = new URLSearchParams({
+          projection: "page-data",
+          contract: "catalog-page-v1",
+          locale: pageRoute.locale,
+          resource: pageRoute.kind,
+          id: pageRoute.id,
+        }).toString();
         const lookup = await handlePageData(new Request(query), catalogPageBindings(env, request));
         if (lookup?.status === 404)
           return (
@@ -4011,7 +4176,9 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       const provider = providerEntityFromUrl(url);
       const view = staticViewFromUrl(url);
       const corePath = staticDocumentLookupPath(view || url.pathname);
-      const document = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) ||
+      const document =
+        assetStaticDocumentFromUrl(url) ||
+        playlistStaticDocumentFromUrl(url) ||
         (provider ? providerEntityHtmlPath(provider) : corePath);
       const documents = document ? [document] : [];
       if (provider && corePath && corePath !== document) documents.push(corePath);
@@ -4024,17 +4191,18 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
         if (hit.status !== 404) return hit;
       }
       return (
-        (await serveCanonicalResourceDocument(assetRequest, env, ctx, publicationId, pageReady)) || serveStaticAsset(assetRequest, env)
+        (await serveCanonicalResourceDocument(assetRequest, env, ctx, publicationId, pageReady)) ||
+        serveStaticAsset(assetRequest, env)
       );
     })(),
     Promise.resolve(previewSettings),
   ]);
   const chartEtag = response.headers.get("ETag");
-  const chartPath = parseCommunityChartDocument(url.pathname);
+  const chartPath = parseCommunityChartDocument(url.pathname) || parseCommunityStoryDocument(url.pathname);
   const page = chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
     ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
     : response;
-  if (page !== response && chartEtag) page.headers.set("ETag", communityChartDocumentEtag(chartEtag, url.pathname));
+  if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
   const result = await applySiteSettings(request, page, settings, webBuildId, env);
   if (
     (result.body || request.method === "HEAD" || result.status === 304) &&
@@ -4160,15 +4328,34 @@ const worker: ExportedHandler<Env> = {
       controller.cron === COMMUNITY_RANKING_CRON
           ? ["community_ranking", () => refreshCommunityRanking(env)]
           : controller.cron === MEDIA_RECONCILIATION_CRON
-            ? ["community_media_reconciliation", () => reconcileCommunityMedia(env)]
+            ? [
+                "community_media_reconciliation",
+                async () => {
+                  await reconcileCommunityMedia(env);
+                  await reconcileCommunityStories(env);
+                },
+              ]
             : controller.cron === ACCOUNT_CLEANUP_CRON
               ? ["account_cleanup", async () => { if (env.EMAIL && env.AUTH_EMAIL_FROM) await cleanupUnverifiedAccounts(env); }]
             : controller.cron === SEARCH_SYNC_CRON
               ? ["search_sync", () => syncSearchIndex(env.DB, (catalogRequest) => handleCatalogApi(env, ctx, catalogRequest, new URL(catalogRequest.url).pathname))]
             : controller.cron === MODERATION_RECONCILIATION_CRON
-              ? ["moderation_reconciliation", () => reconcileModerationState(env)]
+              ? [
+                  "moderation_reconciliation",
+                  async () => {
+                    await reconcileModerationState(env);
+                    await reconcileCommunityStories(env);
+                  },
+                ]
               : controller.cron === COMMUNITY_UPLOAD_CLEANUP_CRON
-                ? ["community_upload_cleanup", async () => { await cleanupCommunityCharts(env); await cleanupCommunityUploads(env); }]
+                ? [
+                    "community_upload_cleanup",
+                    async () => {
+                      await cleanupCommunityStories(env);
+                      await cleanupCommunityCharts(env);
+                      await cleanupCommunityUploads(env);
+                    },
+                  ]
                 : controller.cron === DATABASE_CLEANUP_CRON
                   ? ["database_cleanup", () => cleanupDatabase(env)]
                   : null;
@@ -4196,6 +4383,7 @@ const worker: ExportedHandler<Env> = {
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     if (await handleCommunityMediaQueue(batch, env)) return;
     await handleModerationQueue(batch, env);
+    await reconcileCommunityStories(env);
   },
 };
 

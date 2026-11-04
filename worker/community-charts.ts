@@ -360,7 +360,8 @@ async function resolveMedia(
           .bind(ref.id, owner)
           .first()
       : await env.DB.prepare(
-          "SELECT id FROM community_attachment WHERE id = ? AND owner_user_id = ? AND purpose = 'post' AND status = 'ready' AND moderation_status = 'allow' AND deleted_at IS NULL AND media_type IN ('image/png','image/jpeg','image/webp')",
+          `SELECT id FROM community_attachment WHERE id = ? AND owner_user_id = ? AND purpose = 'post' AND status = 'ready' AND moderation_status = 'allow' AND deleted_at IS NULL AND media_type IN ('image/png','image/jpeg','image/webp')
+           AND NOT EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id)`,
         )
           .bind(ref.id, owner)
           .first();

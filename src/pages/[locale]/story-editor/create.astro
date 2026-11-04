@@ -1,0 +1,21 @@
+---
+import Base from "../../../layouts/Base.astro";
+import AppShell from "../../../components/AppShell.astro";
+import { LOCALES, type Locale } from "../../../i18n/locales";
+import { t } from "../../../i18n/messages";
+import "../../../styles/story-creation.css";
+import { staticBuildPaths } from "../../../server/static-build";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+export function getStaticPaths(){ return staticBuildPaths("src/pages/[locale]/story-editor/create.astro",LOCALES.map(locale=>({params:{locale},props:{locale}}))); }
+const {locale}=Astro.props as {locale:Locale};
+const titleKey="community.stories.editor",title=t(locale,titleKey),route="/story-editor/create";
+const studioVersion=createHash("sha256").update(readFileSync(resolve(".generated-public/story-studio/index.html"))).digest("hex").slice(0,16);
+---
+<Base locale={locale} route={route} title={title} titleKey={titleKey}>
+ <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+  <story-creation-workspace class="story-creation" locale={locale} studio-entry={`/story-studio/index.html?v=${studioVersion}`} resource-origin={import.meta.env.PUBLIC_STORY_RESOURCE_ORIGIN||undefined}></story-creation-workspace>
+ </AppShell>
+</Base>
+<script>import "../../../lit/story-creation-workspace";</script>

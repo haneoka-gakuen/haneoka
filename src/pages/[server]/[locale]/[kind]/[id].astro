@@ -161,6 +161,6 @@ const skillPage = page as SkillPage;
 {(kind === "missions" || kind === "tgw-card") && (
   <CatalogSystemEntityPage page={catalogPage} locale={locale} server={server} returnTo={returnTo} previous={previous} next={next} />
 )}
-{kind !== "charts" && kind !== "live2d" && kind !== "spine" && kind !== "help" && kind !== "stories" && kind !== "skills" && kind !== "missions" && kind !== "tgw-card" && (
+{kind !== "community-stories" && kind !== "charts" && kind !== "live2d" && kind !== "spine" && kind !== "help" && kind !== "stories" && kind !== "skills" && kind !== "missions" && kind !== "tgw-card" && (
   <CatalogEntityPage page={catalogPage} locale={locale} server={server} canonical returnTo={returnTo} previous={previous} next={next} />
 )}

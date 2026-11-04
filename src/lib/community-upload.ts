@@ -1,5 +1,6 @@
 type RecordValue = Record<string, unknown>;
 interface UploadOptions {
+  actorId?: string;
   signal: AbortSignal;
   progress: (loaded: number, total: number) => void;
   request: (url: string, init?: RequestInit) => Promise<RecordValue>;
@@ -11,7 +12,15 @@ function uploadUrl(value: unknown): string {
     throw new Error("Invalid media upload URL");
   return url.href;
 }
-function putBlob(url: string, blob: Blob, mediaType: string, options: UploadOptions, offset: number, total: number) {
+function putBlob(
+  url: string,
+  blob: Blob,
+  mediaType: string,
+  options: UploadOptions,
+  offset: number,
+  total: number,
+  attempt = 0,
+): Promise<RecordValue> {
   return new Promise<RecordValue>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let timer = 0;
@@ -30,18 +39,54 @@ function putBlob(url: string, blob: Blob, mediaType: string, options: UploadOpti
     };
     xhr.open("PUT", uploadUrl(url));
     xhr.setRequestHeader("Content-Type", mediaType);
+    if (options.actorId) xhr.setRequestHeader("X-Haneoka-Actor", options.actorId);
     xhr.upload.onprogress = (event) => {
       deadline();
       options.progress(offset + Math.min(event.loaded, blob.size), total);
     };
-    xhr.onload = () => {
+    xhr.onload = async () => {
       cleanup();
       let data: RecordValue = {};
       try {
         data = JSON.parse(xhr.responseText);
       } catch {}
+      if (xhr.status === 429 && attempt < 2) {
+        try {
+          await new Promise<void>((finish, fail) => {
+            const abort = () => {
+              clearTimeout(retryTimer);
+              fail(options.signal.reason);
+            };
+            const retryTimer = setTimeout(
+              () => {
+                options.signal.removeEventListener("abort", abort);
+                finish();
+              },
+              (Number(xhr.getResponseHeader("Retry-After")) || 60) * 1000,
+            );
+            if (options.signal.aborted) {
+              abort();
+              return;
+            }
+            options.signal.addEventListener("abort", abort, { once: true });
+          });
+          resolve(await putBlob(url, blob, mediaType, options, offset, total, attempt + 1));
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(String((data.error as RecordValue | undefined)?.message || `HTTP ${xhr.status}`)));
+      else
+        reject(
+          new Error(
+            String(
+              (data.error as RecordValue | undefined)?.code ||
+                (data.error as RecordValue | undefined)?.message ||
+                `HTTP ${xhr.status}`,
+            ),
+          ),
+        );
     };
     xhr.onerror = () => {
       cleanup();

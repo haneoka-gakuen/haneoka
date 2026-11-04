@@ -1,8 +1,5 @@
-import { initWasm, Resvg } from "@resvg/resvg-wasm";
-import wasm from "@resvg/resvg-wasm/index_bg.wasm";
+import { Resvg, svgWasmReady as ready } from "./svg-rasterizer";
 
-// Initialization only shares the compiled module; request-owned asset I/O stays local.
-const ready = initWasm(wasm);
 const FONT_ROOT = "https://haneoka.org/chart-image-fonts/";
 const MAX_FONT_BYTES = 4 * 1024 * 1024;
 interface FontSubset {

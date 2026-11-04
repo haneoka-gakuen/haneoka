@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 故事资料、媒体地址和舞台选项。
-// Output: Vega 播放舞台、控制与生命周期适配。
+// Output: 共用 Our Notes 主题与 Three 舞台的 Vega 播放、控制及生命周期适配。
 // Pos: [Map](L2-2.md)；故事工作区与外部故事引擎的浏览器桥。
 // Effects/Dependencies: 按需加载引擎／资源，创建渲染与媒体状态，清理依赖 dispose／舞台生命周期。
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
@@ -23,44 +23,40 @@ import "@material/web/progress/linear-progress.js";
 import {
   createVega,
   createVegaPlayerState,
+  vegaProjectToAdvStory,
   type AdvStory,
   type VegaEngine,
   type VegaPlayerHandle,
 } from "@haneoka/vega/web";
+import type { VegaProject } from "@haneoka/vega-protocol";
+import { describeSpineModel } from "@haneoka/vega-plugin-spine";
+import { createVegaFullPreset } from "@haneoka/vega-preset-full";
 import type { StoryResolvedText } from "@haneoka/vega/runtime";
 import { iterateAdvCommands } from "@haneoka/vega/renderer-kit";
 import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
-import { createCubismPlugin } from "@haneoka/vega-plugin-cubism";
 import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
-import { createVegaRichTextPlugin } from "@haneoka/vega-plugin-richtext";
-import { createThreeRendererPlugin } from "@haneoka/vega-renderer-three";
-import { createDefaultShellPlugin } from "@haneoka/vega-shell-default";
 import { applyRenderQuality, observeRenderQuality } from "../../lib/render-quality";
 import "../ui/render-quality-settings";
 import {
-  vegaHaneokaTheme,
   createHaneokaThemeAssetsPlugin,
   createHaneokaThemeHostPlugin,
   createHaneokaStorySequencePlugin,
-  HANEOKA_POST_TEXTURE_ASSETS,
   type HaneokaThemeHost,
   type HaneokaThemeHostSnapshot,
 } from "@haneoka/vega-theme-haneoka";
-import { vegaPortableUiPlugin } from "@haneoka/vega-ui-portable";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "collapse": "common.actions.collapse",
-  "error": "common.states.error",
-  "expand": "common.actions.expand",
-  "fullscreen": "common.actions.fullscreen",
-  "instantText": "story.labels.instantText",
-  "live2d": "navigation.live2d",
-  "loading": "common.states.loading",
-  "pause": "common.actions.pause",
-  "textSize": "story.labels.textSize"
+  collapse: "common.actions.collapse",
+  error: "common.states.error",
+  expand: "common.actions.expand",
+  fullscreen: "common.actions.fullscreen",
+  instantText: "story.labels.instantText",
+  live2d: "navigation.live2d",
+  loading: "common.states.loading",
+  pause: "common.actions.pause",
+  textSize: "story.labels.textSize",
 };
-
 
 type RecordValue = Record<string, unknown>;
 const speakerNameJoiners: Readonly<Record<string, string>> = Object.freeze({
@@ -129,6 +125,7 @@ type StoryTransportKey =
 export class VegaStoryStage extends LitElement {
   static properties = {
     story: { attribute: false },
+    communityProject: { attribute: false },
     server: { type: String },
     locale: { type: String },
     providerBase: { type: String, attribute: "provider-base" },
@@ -145,6 +142,7 @@ export class VegaStoryStage extends LitElement {
     completed: { state: true },
   };
   declare story: RecordValue;
+  declare communityProject: VegaProject | undefined;
   declare server: string;
   declare locale: string;
   declare providerBase: string;
@@ -175,6 +173,7 @@ export class VegaStoryStage extends LitElement {
   private stopRenderQuality?: () => void;
   private completionEmitted = false;
   private transportFrame = 0;
+  private playbackError = "";
   private scrubbing = false;
   private resumeAfterScrub = false;
   private transportSeekRevision = 0;
@@ -266,7 +265,9 @@ export class VegaStoryStage extends LitElement {
     const controller = new AbortController();
     this.loadController = controller;
     const { signal } = controller;
-    const story = this.story;
+    const project = this.communityProject;
+    const sourceStory = this.story;
+    let story = sourceStory;
     const server = this.server;
     const providerBase = this.providerBase;
     const active = () => !signal.aborted && this.isConnected && this.loadController === controller;
@@ -277,7 +278,9 @@ export class VegaStoryStage extends LitElement {
     loadingReporter.update({ stageLabel: this.ui("resources") });
     this.phase = "loading";
     this.issue = "";
+    this.playbackError = "";
     try {
+      story = project ? ({ ...vegaProjectToAdvStory(project), ...sourceStory } as RecordValue) : sourceStory;
       await this.disposePlayer();
       if (!active()) return;
       const assets = (story.assets as RecordValue | undefined) || {};
@@ -285,15 +288,19 @@ export class VegaStoryStage extends LitElement {
         .map((entry) => String(entry.live2dKey || ""))
         .filter(Boolean);
       const [runtime, live2d] = await Promise.all([
-        providerBase ? Promise.resolve(story.runtime || {}) : fetchJson<RecordValue>(url("story-runtime"), { signal }),
-        providerBase
-          ? keys.length
-            ? fetchJson<RecordValue>(
-                `${providerBase}/live2d?projection=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}&${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}${story.sourceServer ? `&server=${encodeURIComponent(String(story.sourceServer))}` : ""}`,
-                { signal },
-              ).then((payload) => keys.map((key) => (payload.items as RecordValue | undefined)?.[key] || {}))
-            : []
-          : Promise.all(keys.map((key) => fetchJson<RecordValue>(url("live2d", key), { signal }))),
+        project || providerBase
+          ? Promise.resolve(story.runtime || {})
+          : fetchJson<RecordValue>(url("story-runtime"), { signal }),
+        project
+          ? Promise.resolve([])
+          : providerBase
+            ? keys.length
+              ? fetchJson<RecordValue>(
+                  `${providerBase}/live2d?projection=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}&${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}${story.sourceServer ? `&server=${encodeURIComponent(String(story.sourceServer))}` : ""}`,
+                  { signal },
+                ).then((payload) => keys.map((key) => (payload.items as RecordValue | undefined)?.[key] || {}))
+              : []
+            : Promise.all(keys.map((key) => fetchJson<RecordValue>(url("live2d", key), { signal }))),
       ]);
       if (!active()) return;
       const resolvedRuntime = resolveStoryRuntimeAssets(merge(runtime, story.runtime), server);
@@ -305,11 +312,16 @@ export class VegaStoryStage extends LitElement {
           textureCacheMegabytes: 128,
         });
       }
-      const hydrated = hydrateStoryPayload({
-        ...story,
-        assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
-        runtime: resolvedRuntime,
-      }) as AdvStory;
+      const hydrated = project
+        ? (story as AdvStory)
+        : (hydrateStoryPayload({
+            ...story,
+            assets: {
+              ...assets,
+              live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })),
+            },
+            runtime: resolvedRuntime,
+          }) as AdvStory);
       const preparationPlan: Array<{
         index: number;
         category: "Voice" | "Se";
@@ -335,49 +347,73 @@ export class VegaStoryStage extends LitElement {
       const mount = this.querySelector<HTMLElement>(".vega-story-runtime__mount");
       if (!mount) throw new Error("Vega player host is unavailable");
       const continuous = () => this.continuousPlay;
+      let spineAdapter;
+      if (
+        [...iterateAdvCommands(hydrated.commands ?? [])].some(
+          (command) => command.characterModel && describeSpineModel(command.characterModel),
+        )
+      ) {
+        const [{ createSpineThreeRuntimeAdapter }, three, spine] = await Promise.all([
+          import("@haneoka/vega-plugin-spine/three"),
+          import("three"),
+          import("@esotericsoftware/spine-threejs"),
+        ]);
+        if (!active()) return;
+        spineAdapter = createSpineThreeRuntimeAdapter({ three, spine });
+      }
+      const theme = "haneoka";
+      const richText = Object.fromEntries(
+        ["bbcode", "html", "latex", "markdown", "typst"].map((format) => [
+          format,
+          project?.plugins?.some((plugin) => plugin.id === `haneoka.vega-richtext-${format}`) ?? false,
+        ]),
+      );
       const engine = createVega({
-        plugins: [
-          createVegaRichTextPlugin(),
-          vegaPortableUiPlugin,
-          createDefaultShellPlugin({
+        plugins: createVegaFullPreset({
+          theme,
+          ending: false,
+          richText,
+          cubism: cubismAdapter(),
+          ...(spineAdapter ? { spine: spineAdapter } : {}),
+          shell: {
             displaySettings: (host) => {
               const settings = host.ownerDocument.createElement("render-quality-settings");
               settings.setAttribute("locale", host.closest<HTMLElement>(".vega-shell")?.lang || this.locale);
               host.append(settings);
               return () => settings.remove();
             },
-          }),
-          createThreeRendererPlugin({ postTextureAssets: HANEOKA_POST_TEXTURE_ASSETS }),
-          createCubismPlugin({ adapter: cubismAdapter() }),
-          createHaneokaThemeAssetsPlugin({
-            resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
-          }),
-          createHaneokaThemeHostPlugin(this.themeHostAdapter()),
-          createHaneokaStorySequencePlugin({
-            get continuous() {
-              return continuous();
-            },
-            toggleContinuous: () => {
-              this.continuousPlay = !this.continuousPlay;
-              try {
-                localStorage.setItem("haneoka:story-continuous", String(this.continuousPlay));
-              } catch {
-                /* Keep the in-memory setting. */
-              }
-              for (const listener of this.sequenceListeners) listener();
-            },
-            interrupt: () => this.dispatchEvent(new CustomEvent("haneoka-story-interrupt", { bubbles: true })),
-            subscribe: (listener) => {
-              this.sequenceListeners.add(listener);
-              return {
-                dispose: () => {
-                  this.sequenceListeners.delete(listener);
-                },
-              };
-            },
-          }),
-          vegaHaneokaTheme,
-        ],
+          },
+          additionalPlugins: [
+            createHaneokaThemeAssetsPlugin({
+              resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
+            }),
+            createHaneokaThemeHostPlugin(this.themeHostAdapter()),
+            createHaneokaStorySequencePlugin({
+              supportsContinuousPlay: !project,
+              get continuous() {
+                return continuous();
+              },
+              toggleContinuous: () => {
+                this.continuousPlay = !this.continuousPlay;
+                try {
+                  localStorage.setItem("haneoka:story-continuous", String(this.continuousPlay));
+                } catch {
+                  /* Keep the in-memory setting. */
+                }
+                for (const listener of this.sequenceListeners) listener();
+              },
+              interrupt: () => this.dispatchEvent(new CustomEvent("haneoka-story-interrupt", { bubbles: true })),
+              subscribe: (listener) => {
+                this.sequenceListeners.add(listener);
+                return {
+                  dispose: () => {
+                    this.sequenceListeners.delete(listener);
+                  },
+                };
+              },
+            }),
+          ],
+        }),
       });
       this.engine = engine;
       signal.addEventListener(
@@ -414,10 +450,10 @@ export class VegaStoryStage extends LitElement {
         resolveLocalizedText: this.localizedTextResolver(),
         displayNameJoiner: this.speakerNameJoiner(),
         renderBackend: "vega-three-webgl2",
-        theme: "haneoka",
+        theme,
         shell: {
           initialScreen: "game",
-          projectId: `haneoka:${server}:${String(story.storyId)}`,
+          projectId: project ? `haneoka:${String(story.storyId)}` : `haneoka:${server}:${String(story.storyId)}`,
           settingsId: "haneoka:story-player",
           initialSettings: this.legacySettings(),
         },
@@ -428,6 +464,7 @@ export class VegaStoryStage extends LitElement {
       }
       this.stopBootStateObserver();
       this.handle = player;
+      if (project && typeof hydrated.vegaEntryKey === "string") player.player.navigateToKey(hydrated.vegaEntryKey);
       applyRenderQuality(player.player.SceneRoot);
       player.player.runtime.displayNameJoiner = this.speakerNameJoiner();
       const speakerLocaleSubscription = player.shell?.subscribe(({ settings }) => {
@@ -649,7 +686,7 @@ export class VegaStoryStage extends LitElement {
   }
 
   private ui(key: StoryTransportKey) {
-    if (key === "collapse" || key === "expand") return uiText(this.locale, (uiLabelPaths[key] ?? key));
+    if (key === "collapse" || key === "expand") return uiText(this.locale, uiLabelPaths[key] ?? key);
     return clientText(this.locale, `story.playback.${key}`, key);
   }
 
@@ -664,6 +701,12 @@ export class VegaStoryStage extends LitElement {
       const handle = this.handle;
       if (!handle) return;
       const state = handle.player.state;
+      if (state.error && state.error !== this.playbackError) {
+        this.playbackError = state.error;
+        console.error("[vega-story] playback failed", state.error);
+        this.phase = "error";
+        this.issue = uiText(this.locale, "common.states.error");
+      }
       if (state.ready) {
         const sounds = handle.player.SoundManager as typeof handle.player.SoundManager & {
           prepareForCommand?(index: number): void;
@@ -758,6 +801,7 @@ export class VegaStoryStage extends LitElement {
     try {
       await player.seekTo(player.resolveSeekRatio(value / maximum), { resume: false });
       if (this.handle !== handle || !this.isConnected || revision !== this.transportSeekRevision) return;
+      player.holdRestoredDialogue();
     } catch (error) {
       if (this.handle !== handle || !this.isConnected || revision !== this.transportSeekRevision) return;
       // Core restores the previous checkpoint after a failed target. Keep its
@@ -926,7 +970,10 @@ export class VegaStoryStage extends LitElement {
           class="vega-story-runtime__mount"
           aria-busy=${this.phase === "loading" || this.phase === "booting" ? "true" : "false"}
           @click=${(event: MouseEvent) => {
-            if (!this.started && !(event.target as Element)?.closest("button, input, select, a, [role=button], [data-vega-ui-slot]"))
+            if (
+              !this.started &&
+              !(event.target as Element)?.closest("button, input, select, a, [role=button], [data-vega-ui-slot]")
+            )
               this.startPlayback();
           }}
         ></div>

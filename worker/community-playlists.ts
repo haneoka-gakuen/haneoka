@@ -354,6 +354,7 @@ const validCover = async (env: Env, ownerId: string, input: PlaylistInput): Prom
   const cover = await env.DB.prepare(
     `SELECT 1 AS ok FROM community_attachment
      WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL
+       AND NOT EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id)
        AND status NOT IN ('rejected', 'deleted') AND media_type IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif')`,
   )
     .bind(input.coverAttachmentId, ownerId)
