@@ -51,7 +51,7 @@
     "dev:worker": "wrangler dev --local-upstream localhost --ip 127.0.0.1 --port 8787",
     "db:schema:snapshot:local": "node scripts/database/snapshot_schema.ts --local",
     "db:schema:snapshot:remote": "node scripts/database/snapshot_schema.ts --remote",
-    "db:schema:bootstrap:local": "wrangler d1 execute haneoka-community --local --file=worker/database/schema.sql",
+    "db:schema:bootstrap:local": "python3 scripts/database/bootstrap_schema.py",
     "db:admin:grant": "node scripts/database/grant_admin.ts",
     "db:plan:create": "node scripts/database/create_plan.ts",
     "db:plan:apply:local": "node scripts/database/apply_plan.ts --local",

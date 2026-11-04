@@ -24,7 +24,7 @@ interface ObservationRow {
 
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 const BATCH_PAYLOADS = true;
-const GZIP_PAYLOADS = false;
+const GZIP_PAYLOADS = true;
 const INLINE_PAYLOAD_BYTES = 256 * 1024;
 const BATCH_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const BATCH_DELAY_MS = 60_000;
@@ -63,15 +63,49 @@ async function payloadText(object: R2ObjectBody): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-async function putPayload(bucket: R2Bucket, key: string, body: string): Promise<void> {
+async function putPayload(bucket: R2Bucket, key: string, body: string): Promise<R2Object> {
   if (GZIP_PAYLOADS) {
     const compressed = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
     if (compressed.byteLength < new TextEncoder().encode(body).byteLength) {
-      await bucket.put(key, compressed, { httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } });
-      return;
+      return bucket.put(key, compressed, { httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } });
     }
   }
-  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  return bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+}
+
+export async function compressOfficialPayload(env: OfficialRankingStoreBindings, key: string, retained?: ReadonlySet<string>): Promise<number> {
+  const { bucket } = storage(env);
+  const object = await bucket.get(key);
+  if (!object) return 0;
+  if (object.httpMetadata?.contentEncoding && object.httpMetadata.contentEncoding !== "gzip") return object.size;
+  if (retained?.size === 0 || object.httpMetadata?.contentEncoding === "gzip" && !retained) return object.size;
+  if (object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_too_large");
+  let body = await payloadText(object), trimmed = false;
+  if (key.startsWith("official/2/")) {
+    const batch = JSON.parse(body) as { contract: string; payloads: Record<string, string> };
+    if (batch.contract !== BATCH_CONTRACT) throw new Error("official_payload_integrity");
+    for (const [hash, value] of Object.entries(batch.payloads))
+      if (typeof value !== "string" || await officialDigest(value) !== hash) throw new Error("official_payload_integrity");
+    if (retained) {
+      if ([...retained].some((hash) => !Object.hasOwn(batch.payloads, hash))) throw new Error("official_payload_reference_missing");
+      const compact = JSON.stringify({ ...batch, payloads: Object.fromEntries(Object.entries(batch.payloads).filter(([hash]) => retained.has(hash))) });
+      if (new TextEncoder().encode(compact).byteLength <= new TextEncoder().encode(body).byteLength * 0.75) { body = compact; trimmed = true; }
+    }
+  } else {
+    const hash = /\/([a-f0-9]{64})\.json$/u.exec(key)?.[1];
+    if (hash && await officialDigest(body) !== hash) throw new Error("official_payload_integrity");
+  }
+  if (object.httpMetadata?.contentEncoding === "gzip" && !trimmed) return object.size;
+  const compressed = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+  if (compressed.byteLength >= object.size) return object.size;
+  if (object.httpMetadata?.contentEncoding === "gzip" && object.size - compressed.byteLength < 65_536) return object.size;
+  const saved = await bucket.put(key, compressed, {
+    onlyIf: { etagMatches: object.etag },
+    httpMetadata: { ...object.httpMetadata, contentEncoding: "gzip" },
+    ...(object.customMetadata ? { customMetadata: object.customMetadata } : {}),
+  });
+  if (!saved) throw new Error("official_payload_changed");
+  return compressed.byteLength;
 }
 
 async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, expectedHash: string, batches?: PayloadBatchCache): Promise<T> {
@@ -131,11 +165,15 @@ export async function flushOfficialPayloads(env: OfficialRankingStoreBindings, r
   for (const { payload_key: key } of results) {
     const { results: payloads } = await db.prepare("SELECT payload_hash,body_json FROM official_observation_payloads WHERE payload_key=?")
       .bind(key).all<{ payload_hash: string; body_json: string }>();
-    if (!await bucket.head(key)) {
+    let saved = await bucket.head(key);
+    if (!saved) {
       const body = JSON.stringify({ contract: BATCH_CONTRACT, payloads: Object.fromEntries(payloads.map((row) => [row.payload_hash, row.body_json])) });
-      await putPayload(bucket, key, body);
+      saved = await putPayload(bucket, key, body);
     }
     await db.batch([
+      db.prepare(`INSERT INTO official_payload_maintenance (payload_key,region,size_bytes,uploaded_at_ms,compressed_at_ms)
+        VALUES (?,?,?,?,?) ON CONFLICT(payload_key) DO NOTHING`)
+        .bind(key, region, saved.size, saved.uploaded.getTime(), saved.httpMetadata?.contentEncoding === "gzip" ? Date.now() : null),
       db.prepare("DELETE FROM official_observation_payloads WHERE payload_key=?").bind(key),
       db.prepare("DELETE FROM official_observation_batches WHERE payload_key=?").bind(key),
     ]);
@@ -182,6 +220,9 @@ export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, cat
     .bind(catalog.region, eventId ?? highest?.highest_event_id ?? "0",
       catalog.event ? JSON.stringify(catalog.event.challenges.map((challenge) => `${challenge.id}:${challenge.musicId}`)) : highest?.event_identity ?? "[]",
       catalog.catalogObservedAtMs, key, hash).run();
+  if (highest && highest.payload_key !== key) await db.prepare(`INSERT INTO official_observation_payload_gc
+    (payload_key,region,snapshot_id) VALUES (?,?,?) ON CONFLICT(payload_key) DO NOTHING`)
+    .bind(highest.payload_key, catalog.region, highest.payload_hash).run();
   if (eventChanged) await saveEventFinalTargets(db, catalog);
   if (arenaChanged) await saveArenaFinalTargets(db, catalog);
 }
@@ -857,8 +898,11 @@ function archiveObservationUnreferenced(alias: "o"): string {
 
 async function deleteRetiredPayloads(env: OfficialRankingStoreBindings, region: GameRecordsRegion, limit: number): Promise<void> {
   const { db, bucket } = storage(env);
-  const { results } = await db.prepare(`SELECT payload_key FROM official_observation_payload_gc AS g
+  const { results } = await db.prepare(`SELECT g.payload_key,m.size_bytes FROM official_observation_payload_gc AS g
+    LEFT JOIN official_payload_maintenance AS m ON m.payload_key=g.payload_key
     WHERE g.region=? AND queued_at_ms<=?
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_catalogs WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_song_rankings WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key=g.payload_key)
@@ -866,11 +910,21 @@ async function deleteRetiredPayloads(env: OfficialRankingStoreBindings, region: 
     AND NOT EXISTS (SELECT 1 FROM official_arena_ranking_observations WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_event_window_observations WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_arena_population_observations WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata WHERE payload_key=g.payload_key)
     AND NOT EXISTS (SELECT 1 FROM official_observation_batches WHERE payload_key=g.payload_key)
-    ORDER BY queued_at_ms,payload_key LIMIT ?`).bind(region, Date.now() - PAYLOAD_DELETE_GRACE_MS, limit).all<{ payload_key: string }>();
+    ORDER BY queued_at_ms,g.payload_key LIMIT ?`).bind(region, Date.now() - PAYLOAD_DELETE_GRACE_MS, limit).all<{ payload_key: string; size_bytes: number | null }>();
   if (!results.length) return;
   await bucket.delete(results.map((row) => row.payload_key));
-  await db.batch(results.map((row) => db.prepare("DELETE FROM official_observation_payload_gc WHERE payload_key=?").bind(row.payload_key)));
+  const statements: D1PreparedStatement[] = [];
+  for (let offset = 0; offset < results.length; offset += 80) {
+    const keys = results.slice(offset, offset + 80).map((row) => row.payload_key), placeholders = keys.map(() => "?").join(",");
+    statements.push(db.prepare(`DELETE FROM official_observation_payload_gc WHERE payload_key IN (${placeholders})`).bind(...keys),
+      db.prepare(`DELETE FROM official_payload_maintenance WHERE payload_key IN (${placeholders})`).bind(...keys));
+  }
+  statements.push(db.prepare(`UPDATE official_storage_sweeps SET deleted_objects=deleted_objects+?,known_deleted_bytes=known_deleted_bytes+? WHERE region=?`)
+    .bind(results.length, results.reduce((sum, row) => sum + (row.size_bytes ?? 0), 0), region));
+  await db.batch(statements);
 }
 
 /** Thins raw observations older than {@link OFFICIAL_KEEP_ALL_MS}: event boards keep the last successful snapshot and last attempt of each
@@ -915,6 +969,6 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
   const retired = doomed.length ? await db.batch<{ payload_key: string }>(doomed.map((row) => db.prepare(
     `DELETE FROM ${row.table} AS o WHERE cursor=? AND payload_key=? AND ${archiveObservationUnreferenced("o")} RETURNING payload_key`)
     .bind(row.cursor, row.key))) : [];
-  await deleteRetiredPayloads(env, region, limit);
+  await deleteRetiredPayloads(env, region, Math.max(limit, 500));
   return retired.reduce((count, result) => count + result.results.length, 0);
 }

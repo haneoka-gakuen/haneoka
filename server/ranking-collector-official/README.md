@@ -650,7 +650,7 @@ JP creation needs no form fields. `POST /api/v1/admin/collector-guest-accounts` 
 
 ### Observation payload batches
 
-The Worker commits small observation bodies and their indexes in one D1 transaction, so current rankings and history are readable immediately. Its regional scheduled recovery seals one-minute batches into immutable R2 objects, with a 2 MiB batch limit and a 256 KiB per-body limit. Larger observations retain their standalone R2 format. Each original JSON body and SHA-256 remains intact. Pending bodies are removed only after R2 confirms persistence; failed uploads retry from D1, with at most 64 pending batches per region. Shared objects remain protected until every observation and archive reference is retired.
+The Worker commits small observation bodies and their indexes in one D1 transaction, so current rankings and history are readable immediately. Its regional scheduled recovery seals one-minute batches into R2 envelopes with immutable original bodies, with a 2 MiB batch limit and a 256 KiB per-body limit. Larger observations retain their standalone R2 format. Each original JSON body and SHA-256 remains intact. Pending bodies are removed only after R2 confirms persistence; failed uploads retry from D1, with at most 64 pending batches per region. Shared objects remain protected until every observation and archive reference is retired.
 
 Deploy the batch reader and additive migration before enabling the writer. Keep batch-reading support when reverting later collector changes. The container callback contract and sampling cadence do not change.
 
@@ -665,3 +665,9 @@ Unchanged player profiles harvested across boards share a 150-second persistence
 ### Compressed payload storage
 
 Official payload readers accept plain JSON and gzip envelopes with an 8 MiB decompressed limit. Storage compression preserves every original body, observation time and SHA-256. Deploy compatible readers before enabling gzip writes or recompressing existing objects. Keep gzip-reading support during later rollbacks.
+
+### Storage reclamation
+
+The two-minute maintenance trigger scans one bounded page per region, prioritizing shared batches. Completed inventory rounds pause for one day. Only canonical collector JSON names are eligible; original card images, unknown objects and legacy provider history are outside this sweep. Objects older than one day with no D1 reference enter the existing durable quarantine queue. Deletion rechecks every live index, archive, metadata and pending-batch reference after five minutes. The grace period follows the last retired member of a shared object. Superseded catalog payloads also enter this queue.
+
+Lossless compression preserves all original body hashes. Shared envelopes older than twelve hours may discard members with no remaining reference after quarantine, provided this saves at least 25% of the original envelope and 64 KiB of stored bytes. Current, daily and final snapshots remain protected. Each region processes at most 64 payloads, 32 MiB or twenty seconds per maintenance turn, with retry checkpoints. Regions run sequentially outside the game-collection mutation queues. Inspect `official_storage_sweeps` and `official_payload_maintenance` for progress and retry states. Apply migration 0075 before activating this version.

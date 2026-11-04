@@ -94,6 +94,8 @@
     "worker/official-ranking-collector.ts",
     "worker/search-index.ts",
     "worker/official-ranking-store.ts",
+    "worker/official-ranking-maintenance.ts",
+    "scripts/database/bootstrap_schema.py",
     "worker/official-platform-accounts.ts",
     "worker/official-guest-accounts.ts",
     "worker/official-guest-jobs.ts",

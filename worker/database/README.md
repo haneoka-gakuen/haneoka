@@ -37,6 +37,8 @@ pnpm db:schema:bootstrap:local
 ```
 
 Local development commands must never write to remote D1.
+The local bootstrap groups complete SQLite statements into bounded batches;
+trigger bodies remain intact when the complete schema exceeds one request.
 
 Applied migrations are immutable. Follow-up changes use a new monotonically
 numbered file; never rewrite production history after deployment.

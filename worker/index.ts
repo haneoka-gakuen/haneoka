@@ -28,6 +28,7 @@ export { OfficialRankingCollector } from "./official-ranking-collector";
 import { handleOfficialPlayerApi } from "./official-player-api";
 import { cleanupUnverifiedAccounts } from "./account-lifecycle";
 import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
+import { maintainOfficialStorage } from "./official-ranking-maintenance";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
 import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, atlasReferenceSource, atlasReferenceSprite, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
@@ -4316,6 +4317,12 @@ const worker: ExportedHandler<Env> = {
         env.OFFICIAL_RANKING_COLLECTOR.getByName(region).pruneObservations(region))).catch((error: unknown) => {
         console.warn(JSON.stringify({ event: "official_ranking_prune_failed", error: error instanceof Error ? error.name : "Error" }));
       }));
+      ctx.waitUntil((async () => {
+        for (const region of OFFICIAL_RANKING_REGIONS) {
+          try { await maintainOfficialStorage(env, region); }
+          catch (error) { console.warn(JSON.stringify({ event: "official_storage_maintenance_failed", region, code: error instanceof Error ? error.name : "Error" })); }
+        }
+      })());
       ctx.waitUntil(Promise.all(OFFICIAL_RANKING_REGIONS.map(async (region) => {
         if (officialRegionEnabled(env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) {
           await env.OFFICIAL_RANKING_COLLECTOR.getByName(region).ensureScheduled(region);
