@@ -99,6 +99,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Reclaim unused hosted runner runtimes
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /opt/ghc
+          df -h /
       - run: corepack enable
       - uses: actions/setup-node@v7
         with:
@@ -123,10 +128,14 @@ jobs:
         run: |
           for partition in 0 1 2 3; do
             mkdir -p ".output/static-render-parts/$partition"
-            tar --zstd -xf ".output/static-render-archives/static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-$partition/static-render-part.tar.zst" -C ".output/static-render-parts/$partition"
+            archive=".output/static-render-archives/static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-$partition/static-render-part.tar.zst"
+            tar --zstd -xf "$archive" -C ".output/static-render-parts/$partition"
+            rm -- "$archive"
           done
           node scripts/build/static-build-shards.mjs merge-render --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --parts .output/static-render-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-render-merged
+          rm -rf -- .output/static-render-parts .output/static-render-archives
           cp -a .output/static-render-merged/. .output/
+          rm -rf -- .output/static-render-merged
           pnpm finalize:frontend
           node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
       - uses: actions/upload-artifact@v7
