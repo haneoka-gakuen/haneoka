@@ -1,8 +1,8 @@
 // L3 — GEB
-// Input: Parsed chart, native canvas skin, viewport height and optional highlighted time range.
+// Input: Immutable parsed chart, native canvas skin, viewport height and optional highlighted time range.
 // Output: Clipped flat-chart panels, a selected panel range or a numbered timing excerpt.
 // Pos: [Map](L2-2.md); shared flat rendering for the player and team-builder timing guide.
-// Effects/Dependencies: Draws the supplied canvas with Cassiopeia note, ribbon and lane primitives.
+// Effects/Dependencies: Caches geometry by chart identity and draws the supplied canvas with Cassiopeia primitives.
 import {
   interpolateNoteLine,
   isPairNoteOperateType,
@@ -83,6 +83,53 @@ export const countNoteKinds = (chart: ChartDocument): { tap: number; flick: numb
   return counts;
 };
 
+type OverviewGeometry = {
+  notes: ChartNote[];
+  judged: ChartNote[];
+  simultaneous: { timeMs: number; notes: readonly [ChartNote, ChartNote] }[];
+  lines: { kind: ChartDocument["lines"][number]["kind"]; nodes: ChartNote[] }[];
+};
+const overviewGeometry = new WeakMap<ChartDocument, OverviewGeometry>();
+function prepareOverviewGeometry(chart: ChartDocument): OverviewGeometry {
+  const known = overviewGeometry.get(chart);
+  if (known) return known;
+  const byId = new Map(chart.notes.map((note) => [note.id, note]));
+  const notes = chart.notes
+    .filter((note) => note.visible && note.judged)
+    .sort((a, b) => a.timeMs - b.timeMs || a.id - b.id);
+  const judged = chart.notes.filter((note) => note.judged).sort((a, b) => a.timeMs - b.timeMs || a.id - b.id);
+  const pairs = new Map<number, ChartNote[]>();
+  notes.forEach((note) => {
+    if (!isPairNoteOperateType(note.operateType)) return;
+    const group = pairs.get(note.tick) || [];
+    group.push(note);
+    pairs.set(note.tick, group);
+  });
+  const simultaneous = [...pairs.values()].flatMap((group) => {
+    group.sort((a, b) => a.id - b.id);
+    return group.slice(1).map((note, index) => ({ timeMs: note.timeMs, notes: [group[index]!, note] as const }));
+  });
+  const lines = chart.lines.map((line) => ({
+    kind: line.kind,
+    nodes: line.noteIds
+      .map((id) => byId.get(id))
+      .filter((note): note is ChartNote => Boolean(note) && note!.indexInLine !== null)
+      .sort((a, b) => a.timeMs - b.timeMs || a.id - b.id),
+  }));
+  const prepared = { notes, judged, simultaneous, lines };
+  overviewGeometry.set(chart, prepared);
+  return prepared;
+}
+function firstAtTime(notes: readonly { timeMs: number }[], timeMs: number): number {
+  let low = 0, high = notes.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (notes[middle]!.timeMs < timeMs) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 export function chartOverviewLayout(durationMs: number, viewportHeight: number) {
   const presentation = chartCanvasOverviewPresentation();
   const height = Math.max(360, viewportHeight);
@@ -123,29 +170,7 @@ export function drawDetailedChartOverview(
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
 
-  const byId = new Map(chart.notes.map((note) => [note.id, note]));
-  const notes = chart.notes
-    .filter((note) => note.visible && note.judged)
-    .sort((a, b) => a.timeMs - b.timeMs || a.id - b.id);
-  const judged = chart.notes.filter((note) => note.judged).sort((a, b) => a.timeMs - b.timeMs || a.id - b.id);
-  const pairs = new Map<number, ChartNote[]>();
-  notes.forEach((note) => {
-    if (!isPairNoteOperateType(note.operateType)) return;
-    const group = pairs.get(note.tick) || [];
-    group.push(note);
-    pairs.set(note.tick, group);
-  });
-  const simultaneous = [...pairs.values()].flatMap((group) => {
-    group.sort((a, b) => a.id - b.id);
-    return group.slice(1).map((note, index) => ({ timeMs: note.timeMs, notes: [group[index]!, note] as const }));
-  });
-  const lines = chart.lines.map((line) => ({
-    kind: line.kind,
-    nodes: line.noteIds
-      .map((id) => byId.get(id))
-      .filter((note): note is ChartNote => Boolean(note) && note!.indexInLine !== null)
-      .sort((a, b) => a.timeMs - b.timeMs || a.id - b.id),
-  }));
+  const { notes, judged, simultaneous, lines } = prepareOverviewGeometry(chart);
   const localX = (scorePosition: number) =>
     panelWidth / 2 +
     ((scorePosition / 24) * presentation.bandCount - presentation.bandCount / 2) * presentation.laneWidth;
@@ -258,7 +283,7 @@ export function drawDetailedChartOverview(
     });
 
     lines.forEach((line) => {
-      if (line.nodes.length < 2) return;
+      if (line.nodes.length < 2 || line.nodes.at(-1)!.timeMs <= panelStart || line.nodes[0]!.timeMs >= panelEnd) return;
       const top = yAt(line.nodes.at(-1)!.timeMs, panel);
       const lineHeight = yAt(line.nodes[0]!.timeMs, panel) - top;
       const style = createChartCanvasRibbonStyle(
@@ -285,8 +310,9 @@ export function drawDetailedChartOverview(
         drawChartCanvasRibbon(context, samples, style, presentation.longAlpha);
       }
     });
-    notes.forEach((note) => {
-      if (note.timeMs < panelStart || note.timeMs >= panelEnd) return;
+    const firstNote = firstAtTime(notes, panelStart), lastNote = firstAtTime(notes, panelEnd);
+    for (let index = firstNote; index < lastNote; index++) {
+      const note = notes[index]!;
       const noteBounds = bounds(note);
       skin.drawFlatNote(context, {
         kind: kindOf(note),
@@ -298,7 +324,7 @@ export function drawDetailedChartOverview(
         stageWidth: presentation.stageWidth,
         scale: presentation.noteScale,
       });
-    });
+    }
     if (excerpt) {
       context.strokeStyle = excerpt.color;
       context.fillStyle = excerpt.color;

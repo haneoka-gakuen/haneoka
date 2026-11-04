@@ -1836,16 +1836,23 @@ export class ChartSimulator extends LitElement {
     const dpr = devicePixelRatio || 1, previous = this.overviewRender;
     if (previous?.chart === chart && previous.skin === skin && previous.height === layout.height
       && previous.dpr === dpr && previous.first === first && previous.last === last) return;
+    const reusable = previous?.chart === chart && previous.skin === skin && previous.height === layout.height && previous.dpr === dpr;
+    const old = [...strip.querySelectorAll<HTMLCanvasElement>("canvas")];
+    const chunks = new Map(old.map(canvas => [Number(canvas.dataset.chunk), canvas]));
     const canvases: HTMLCanvasElement[] = [];
     for (let chunk = first; chunk < last; chunk += 1) {
-      const canvas = document.createElement("canvas");
-      canvas.style.left = `${chunk * chunkWidth}px`;
-      drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, {
-        first: chunk * panelsPerCanvas, count: panelsPerCanvas,
-      });
+      let canvas = reusable ? chunks.get(chunk) : undefined;
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.dataset.chunk = String(chunk);
+        canvas.style.left = `${chunk * chunkWidth}px`;
+        drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, {
+          first: chunk * panelsPerCanvas, count: panelsPerCanvas,
+        });
+      }
       canvases.push(canvas);
     }
-    for (const canvas of strip.querySelectorAll("canvas")) canvas.width = canvas.height = 0;
+    for (const canvas of old) if (!canvases.includes(canvas)) canvas.width = canvas.height = 0;
     strip.replaceChildren(...canvases);
     this.overviewRender = { chart, skin, height: layout.height, dpr, first, last };
   }
