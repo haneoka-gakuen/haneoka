@@ -658,3 +658,5 @@ Deploy the batch reader and additive migration before enabling the writer. Keep 
 A region, board and aligned rank interval may be read at most once within 150 seconds. The Worker persists admission and the original response in the regional Durable Object, shared by regular collection, explicit windows and population probes. Callback retries replay the same receipt. Reused observations retain their original identity and time; a transient probe can be promoted to a stored window without a new game request. An incomplete or failed admission defers that window until expiry while other boards continue. Finals reuse only observations captured after their cutoff. Event point windows also supply the legacy top-point projection from the same request.
 
 Initial window admission respects the last stored observation time during cutover. Regular collection follows the earliest active head-window expiry, so an early cache hit does not defer that board for another full cycle.
+
+Unchanged player profiles harvested across boards share a 150-second persistence window. Changed profiles and explicit player lookups persist immediately.

@@ -718,17 +718,21 @@ const PLAYER_COLUMNS = `profile_id AS profileId, found, profile_json AS profile,
 const PLAYER_BATCH = 98;
 
 export async function saveOfficialPlayers(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
-  players: ReadonlyArray<{ profileId: string; found: boolean; profile: unknown; totalFavorite: string | null; observedAtMs: number }>): Promise<void> {
+  players: ReadonlyArray<{ profileId: string; found: boolean; profile: unknown; totalFavorite: string | null; observedAtMs: number }>,
+  minimumObservationMs = 0): Promise<void> {
   const { db } = storage(env);
   const statement = db.prepare(`INSERT INTO official_player_profiles
     (region, profile_id, found, profile_json, total_favorite, observed_at_ms) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(region, profile_id) DO UPDATE SET found = excluded.found, profile_json = excluded.profile_json,
       total_favorite = COALESCE(excluded.total_favorite, official_player_profiles.total_favorite),
       observed_at_ms = excluded.observed_at_ms
-    WHERE excluded.observed_at_ms >= official_player_profiles.observed_at_ms`);
+    WHERE excluded.observed_at_ms >= official_player_profiles.observed_at_ms
+      AND (excluded.observed_at_ms-official_player_profiles.observed_at_ms >= ?
+        OR excluded.found IS NOT official_player_profiles.found OR excluded.profile_json IS NOT official_player_profiles.profile_json
+        OR excluded.total_favorite IS NOT NULL AND excluded.total_favorite IS NOT official_player_profiles.total_favorite)`);
   if (players.length)
     await db.batch(players.map((player) => statement.bind(region, player.profileId, player.found ? 1 : 0,
-      player.profile ? JSON.stringify(player.profile) : null, player.totalFavorite, player.observedAtMs)));
+      player.profile ? JSON.stringify(player.profile) : null, player.totalFavorite, player.observedAtMs, minimumObservationMs)));
 }
 
 /** Event boards already carry each player's card, so these cost no extra game request. */
@@ -741,7 +745,7 @@ export async function harvestOfficialPlayers(env: OfficialRankingStoreBindings, 
       ? [{ profileId: id, found: true, profile, totalFavorite: null, observedAtMs }]
       : [];
   });
-  await saveOfficialPlayers(env, region, players);
+  await saveOfficialPlayers(env, region, players, 150_000);
 }
 
 export async function readOfficialPlayer(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
