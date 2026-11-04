@@ -100,6 +100,7 @@
     "@haneoka/cassiopeia-host-web": "workspace:*",
     "@haneoka/cassiopeia-plugin-our-notes": "workspace:*",
     "@haneoka/cassiopeia-plugin-sekai": "workspace:*",
+    "@haneoka/cassiopeia-plugin-sonolus": "workspace:*",
     "@haneoka/cassiopeia-renderer-three": "workspace:*",
     "@haneoka/cassiopeia-ui-vue": "workspace:*",
     "@haneoka/chart-editor": "workspace:*",

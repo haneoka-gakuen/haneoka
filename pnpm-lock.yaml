@@ -224,6 +224,9 @@ importers:
       '@haneoka/cassiopeia-plugin-sekai':
         specifier: workspace:*
         version: link:.dependencies/cassiopeia-plugin-sekai
+      '@haneoka/cassiopeia-plugin-sonolus':
+        specifier: workspace:*
+        version: link:.dependencies/cassiopeia-plugin-sonolus
       '@haneoka/cassiopeia-renderer-three':
         specifier: workspace:*
         version: link:.dependencies/cassiopeia-renderer-three
