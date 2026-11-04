@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: 完整构建、server 配置、生产者指纹与可选增量基线。
-# Output: 不可变 release、清单及本地选择结果。
+# Output: 不可变 release、包含复用媒体的清单及本地选择结果。
 # Pos: [Map](L2-2.md)；资源构建到 release 组装的边界。
 # Effects/Dependencies: 创建／复制文件、编译存储并写清单和本地指针；R2 发布另行执行。
 """Assemble an immutable release from one complete build."""
@@ -207,6 +207,12 @@ def _expected_delta_paths(build, server: str, source_id: str | None = None) -> t
                 output_path = str(output.get("path") or "")
                 if output_path:
                     expected.add(output_path)
+
+    card_videos_file = build.metadata / "card-videos.json"
+    if card_videos_file.is_file():
+        expected.add("metadata/card-videos.json")
+        for clips in read_json(card_videos_file).get("cards", {}).values():
+            expected.update(output["path"] for output in clips.values())
 
     assets_pngs: set[str] = set()
     for document_name in ("live2d.json", "spine.json", "home-spots.json"):
