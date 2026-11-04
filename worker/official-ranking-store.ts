@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Reused catalog payloads, immutable observations, D1 indexes, daily/final archives and durable retired-payload cleanup.
+// Output: Immediate durable observations, immutable R2 batches, D1 indexes, daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import type { GameRecordsRegion } from "../src/lib/game-records";
@@ -23,6 +23,11 @@ interface ObservationRow {
 }
 
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+const BATCH_PAYLOADS = false;
+const INLINE_PAYLOAD_BYTES = 256 * 1024;
+const BATCH_PAYLOAD_BYTES = 2 * 1024 * 1024;
+const BATCH_DELAY_MS = 60_000;
+const BATCH_CONTRACT = "haneoka:official-observation-batch/1";
 export const OFFICIAL_RANKING_STALE_MS = 1_200_000;
 
 export async function officialDigest(text: string): Promise<string> {
@@ -35,12 +40,71 @@ function storage(env: OfficialRankingStoreBindings): { db: D1Database; bucket: R
   return { db: env.DB, bucket: env.OFFICIAL_RANKING_DATA };
 }
 
-async function readPayload<T>(bucket: R2Bucket, key: string, expectedHash: string): Promise<T> {
-  const object = await bucket.get(key);
-  if (!object || object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_unavailable");
-  const body = await object.text();
+async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, expectedHash: string): Promise<T> {
+  const { db, bucket } = storage(env);
+  const batched = key.startsWith("official/2/");
+  let body = batched ? await db.prepare("SELECT body_json FROM official_observation_payloads WHERE payload_key=? AND payload_hash=?")
+    .bind(key, expectedHash).first<string>("body_json") : null;
+  if (body === null) {
+    const object = await bucket.get(key);
+    if (!object || object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_unavailable");
+    body = await object.text();
+    if (batched) {
+      const batch = JSON.parse(body) as { contract: string; payloads: Record<string, string> };
+      if (batch.contract !== BATCH_CONTRACT || typeof batch.payloads?.[expectedHash] !== "string") throw new Error("official_payload_integrity");
+      body = batch.payloads[expectedHash]!;
+    }
+  }
   if (await officialDigest(body) !== expectedHash) throw new Error("official_payload_integrity");
   return JSON.parse(body) as T;
+}
+
+async function prepareObservationPayload(env: OfficialRankingStoreBindings,
+  observation: { region: string; snapshotId: string }, kind: string, body: string, hash: string) {
+  const { db, bucket } = storage(env);
+  if (!BATCH_PAYLOADS || new TextEncoder().encode(body).byteLength > INLINE_PAYLOAD_BYTES) {
+    const key = `official/1/${observation.region}/${kind}/${observation.snapshotId}/${hash}.json`;
+    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+    return { key, statements: [] as D1PreparedStatement[] };
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify({ [hash]: body })).byteLength;
+  const now = Date.now();
+  const pending = await db.prepare(`SELECT payload_key FROM official_observation_batches
+    WHERE region=? AND created_at_ms>? AND byte_size+?<=? ORDER BY created_at_ms LIMIT 1`)
+    .bind(observation.region, now - BATCH_DELAY_MS, bytes, BATCH_PAYLOAD_BYTES).first<{ payload_key: string }>();
+  if (!pending) {
+    const count = await db.prepare("SELECT COUNT(*) AS count FROM official_observation_batches WHERE region=?")
+      .bind(observation.region).first<number>("count");
+    if ((count ?? 0) >= 64) throw new Error("official_archive_backlog");
+  }
+  const key = pending?.payload_key ?? `official/2/${observation.region}/batches/${crypto.randomUUID()}.json`;
+  return { key, statements: [
+    db.prepare(`INSERT INTO official_observation_batches (payload_key,region,created_at_ms,byte_size)
+      VALUES (?,?,?,0) ON CONFLICT(payload_key) DO NOTHING`).bind(key, observation.region, now),
+    db.prepare("INSERT INTO official_observation_payloads (payload_key,payload_hash,body_json) VALUES (?,?,?)").bind(key, hash, body),
+    db.prepare("UPDATE official_observation_batches SET byte_size=byte_size+? WHERE payload_key=?").bind(bytes, key),
+  ] };
+}
+
+/** Only mature batches are sealed; writers never append after the one-minute window. */
+export async function flushOfficialPayloads(env: OfficialRankingStoreBindings, region: GameRecordsRegion): Promise<number> {
+  const { db, bucket } = storage(env);
+  const { results } = await db.prepare(`SELECT payload_key FROM official_observation_batches
+    WHERE region=? AND created_at_ms<=? ORDER BY created_at_ms LIMIT 8`).bind(region, Date.now() - BATCH_DELAY_MS)
+    .all<{ payload_key: string }>();
+  for (const { payload_key: key } of results) {
+    const { results: payloads } = await db.prepare("SELECT payload_hash,body_json FROM official_observation_payloads WHERE payload_key=?")
+      .bind(key).all<{ payload_hash: string; body_json: string }>();
+    if (!await bucket.head(key)) {
+      const body = JSON.stringify({ contract: BATCH_CONTRACT, payloads: Object.fromEntries(payloads.map((row) => [row.payload_hash, row.body_json])) });
+      await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+    }
+    await db.batch([
+      db.prepare("DELETE FROM official_observation_payloads WHERE payload_key=?").bind(key),
+      db.prepare("DELETE FROM official_observation_batches WHERE payload_key=?").bind(key),
+    ]);
+  }
+  return results.length;
 }
 
 export async function saveOfficialCatalog(env: OfficialRankingStoreBindings, catalog: OfficialCatalog): Promise<void> {
@@ -195,11 +259,11 @@ export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings,
 }
 
 export async function readOfficialCatalog(env: OfficialRankingStoreBindings, region: GameRecordsRegion): Promise<OfficialCatalog | null> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const row = await db.prepare("SELECT payload_key, payload_hash, observed_at_ms FROM official_ranking_catalogs WHERE region = ?")
     .bind(region).first<Pick<ObservationRow, "payload_key" | "payload_hash"> & { observed_at_ms: number }>();
   if (!row) return null;
-  const catalog = await readPayload<OfficialCatalog>(bucket, row.payload_key, row.payload_hash);
+  const catalog = await readPayload<OfficialCatalog>(env, row.payload_key, row.payload_hash);
   if (catalog.region !== region) throw new Error("official_region_mismatch");
   return { ...catalog, catalogObservedAtMs: row.observed_at_ms };
 }
@@ -253,20 +317,21 @@ export async function readOfficialFinalArchives(env: OfficialRankingStoreBinding
 }
 
 export async function saveOfficialObservation(env: OfficialRankingStoreBindings, observation: OfficialObservation): Promise<void> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
   const hash = await officialDigest(body);
-  const previous = await db.prepare("SELECT payload_hash FROM official_ranking_observations WHERE region = ? AND snapshot_id = ?")
-    .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
+  const previous = await db.prepare("SELECT payload_key,payload_hash FROM official_ranking_observations WHERE region = ? AND snapshot_id = ?")
+    .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
-    if (!observation.error) await saveDailyObservation(db, `event/${observation.eventId}/${observation.kind}/${observation.challengeId}`, observation, `official/1/${observation.region}/observations/${observation.snapshotId}/${hash}.json`, hash);
+    if (!observation.error) await saveDailyObservation(db, `event/${observation.eventId}/${observation.kind}/${observation.challengeId}`, observation, previous.payload_key, hash);
     return;
   }
-  const key = `official/1/${observation.region}/observations/${observation.snapshotId}/${hash}.json`;
-  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  const payload = await prepareObservationPayload(env, observation, "observations", body, hash);
+  const key = payload.key;
   await db.batch([
+    ...payload.statements,
     db.prepare(`INSERT INTO official_ranking_observations
       (region, snapshot_id, event_id, board_kind, challenge_id, observed_at_ms, payload_key, payload_hash, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
@@ -312,9 +377,9 @@ const POINT_BOARD = "point";
 const boardKey = (kind: OfficialObservation["kind"], challengeId: string): [string, string] =>
   kind === "point" ? ["challenge", POINT_BOARD] : [kind, challengeId];
 
-async function observationPayload(bucket: R2Bucket, row: ObservationRow, region: GameRecordsRegion, eventId: string,
+async function observationPayload(env: OfficialRankingStoreBindings, row: ObservationRow, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string): Promise<StoredOfficialObservation> {
-  const observation = await readPayload<OfficialObservation>(bucket, row.payload_key, row.payload_hash);
+  const observation = await readPayload<OfficialObservation>(env, row.payload_key, row.payload_hash);
   if (observation.region !== region || observation.eventId !== eventId || observation.kind !== kind || observation.challengeId !== challengeId) {
     throw new Error("official_observation_identity_mismatch");
   }
@@ -323,23 +388,23 @@ async function observationPayload(bucket: R2Bucket, row: ObservationRow, region:
 
 export async function readOfficialLatest(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string): Promise<StoredOfficialObservation | null> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const row = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_ranking_observations
     WHERE region = ? AND event_id = ? AND board_kind = ? AND challenge_id = ? AND error IS NULL
     ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`).bind(region, eventId, ...boardKey(kind, challengeId)).first<ObservationRow>();
-  return row ? observationPayload(bucket, row, region, eventId, kind, challengeId) : null;
+  return row ? observationPayload(env, row, region, eventId, kind, challengeId) : null;
 }
 
 export async function readOfficialHistory(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string, after: number): Promise<{ observations: StoredOfficialObservation[]; nextCursor: number }> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const { results } = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_ranking_observations
     WHERE region = ? AND event_id = ? AND board_kind = ? AND challenge_id = ? AND cursor > ?
     ORDER BY cursor LIMIT 100`).bind(region, eventId, ...boardKey(kind, challengeId), after).all<ObservationRow>();
   const observations: StoredOfficialObservation[] = [];
   let bytes = 0;
   for (const row of results) {
-    const observation = await observationPayload(bucket, row, region, eventId, kind, challengeId);
+    const observation = await observationPayload(env, row, region, eventId, kind, challengeId);
     const size = new TextEncoder().encode(JSON.stringify(observation)).byteLength;
     if (observations.length && bytes + size > MAX_PAYLOAD_BYTES / 2) break;
     observations.push(observation);
@@ -379,16 +444,15 @@ export async function readOfficialBoardStatus(env: OfficialRankingStoreBindings,
 }
 
 export async function saveOfficialArenaObservation(env: OfficialRankingStoreBindings, observation: OfficialArenaObservation): Promise<void> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
   const hash = await officialDigest(body);
-  const previous = await db.prepare("SELECT payload_hash FROM official_arena_ranking_observations WHERE region = ? AND snapshot_id = ?")
-    .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
+  const previous = await db.prepare("SELECT payload_key,payload_hash FROM official_arena_ranking_observations WHERE region = ? AND snapshot_id = ?")
+    .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
   }
-  const key = `official/1/${observation.region}/arena/${observation.snapshotId}/${hash}.json`;
   await db.prepare(`INSERT INTO official_arena_finals
     (region,board_key,season_id,due_at_ms,arena_json,catalog_observed_at_ms,last_attempt_at_ms)
     SELECT region,?,season_id,due_at_ms,arena_json,catalog_observed_at_ms,? FROM official_arena_finals
@@ -396,13 +460,14 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       last_attempt_at_ms=MAX(official_arena_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
     .bind(`arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation.observedAtMs,
       observation.region, `arena/${observation.seasonId}/${observation.bandId}/1`).run();
+  const payload = previous ? { key: previous.payload_key, statements: [] } : await prepareObservationPayload(env, observation, "arena", body, hash);
+  const key = payload.key;
   if (!previous) {
-    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
-    await db.prepare(`INSERT INTO official_arena_ranking_observations
+    await db.batch([...payload.statements, db.prepare(`INSERT INTO official_arena_ranking_observations
     (region, snapshot_id, season_id, band_id, start_rank, end_rank, max_rank, observed_at_ms, payload_key, payload_hash, error)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
     .bind(observation.region, observation.snapshotId, observation.seasonId, observation.bandId, observation.startRank,
-      observation.endRank, observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null).run();
+      observation.endRank, observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null)]);
   }
   if (!observation.error && observation.players) {
     const profiles: Record<string, number> = {};
@@ -436,19 +501,20 @@ async function dropReplaced(env: OfficialRankingStoreBindings, table: string,
   if (replaced.snapshot_id === observation.snapshotId || replaced.observed_at_ms > observation.observedAtMs) return;
   const { db } = storage(env);
   await db.prepare(`DELETE FROM ${table} WHERE region = ? AND snapshot_id = ?
-    AND NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key = ?)
-    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key = ?)
-    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key = ?)`)
-    .bind(observation.region, replaced.snapshot_id, replaced.payload_key, replaced.payload_key, replaced.payload_key).run();
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE region=? AND snapshot_id=?)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE region=? AND snapshot_id=?)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE region=? AND snapshot_id=?)`)
+    .bind(observation.region, replaced.snapshot_id, observation.region, replaced.snapshot_id,
+      observation.region, replaced.snapshot_id, observation.region, replaced.snapshot_id).run();
 }
 
 export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<void> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
   const hash = await officialDigest(body);
-  const previous = await db.prepare("SELECT payload_hash FROM official_event_window_observations WHERE region = ? AND snapshot_id = ?")
-    .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
+  const previous = await db.prepare("SELECT payload_key,payload_hash FROM official_event_window_observations WHERE region = ? AND snapshot_id = ?")
+    .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous && previous.payload_hash !== hash) throw new Error("official_observation_conflict");
   await db.prepare(`INSERT INTO official_ranking_finals
     (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms,last_attempt_at_ms)
@@ -457,14 +523,14 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
       last_attempt_at_ms=MAX(official_ranking_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
     .bind(`event-window/${observation.eventId}/${observation.startRank}`, observation.observedAtMs,
       observation.region, `event/${observation.eventId}/point/`).run();
-  const key = `official/1/${observation.region}/event-window/${observation.snapshotId}/${hash}.json`;
+  const payload = previous ? { key: previous.payload_key, statements: [] } : await prepareObservationPayload(env, observation, "event-window", body, hash);
+  const key = payload.key;
   if (!previous) {
-    await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
-    await db.prepare(`INSERT INTO official_event_window_observations
+    await db.batch([...payload.statements, db.prepare(`INSERT INTO official_event_window_observations
       (region, snapshot_id, event_id, start_rank, end_rank, max_rank, observed_at_ms, payload_key, payload_hash, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
       .bind(observation.region, observation.snapshotId, observation.eventId, observation.startRank, observation.endRank,
-        observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null).run();
+        observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null)]);
   }
   if (observation.error || !observation.players) return;
   const profiles: Record<string, number> = {};
@@ -510,11 +576,11 @@ export async function readOfficialEventWindows(env: OfficialRankingStoreBindings
 /** The latest window of an event's point board starting at `start`. */
 export async function readOfficialEventWindow(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   start: number): Promise<OfficialEventWindow | null> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const row = await db.prepare(`SELECT payload_key, payload_hash FROM official_event_window_metadata
     WHERE region = ? AND event_id = ? AND start_rank = ?`).bind(region, eventId, start).first<{ payload_key: string; payload_hash: string }>();
   if (!row) return null;
-  const observation = await readPayload<OfficialEventWindow>(bucket, row.payload_key, row.payload_hash);
+  const observation = await readPayload<OfficialEventWindow>(env, row.payload_key, row.payload_hash);
   if (observation.region !== region || observation.eventId !== eventId) throw new Error("official_observation_identity_mismatch");
   return observation;
 }
@@ -530,7 +596,7 @@ export async function readOfficialEventMaxRank(env: OfficialRankingStoreBindings
 }
 
 export async function readOfficialPayload<T>(env: OfficialRankingStoreBindings, key: string, hash: string): Promise<T> {
-  return readPayload<T>(storage(env).bucket, key, hash);
+  return readPayload<T>(env, key, hash);
 }
 
 export interface OfficialArenaWindowMetadata {
@@ -558,19 +624,18 @@ export async function readOfficialArenaSearchWindows(env: OfficialRankingStoreBi
 
 export async function readOfficialArenaSearchMatch(env: OfficialRankingStoreBindings,
   metadata: OfficialArenaWindowMetadata): Promise<OfficialArenaObservation> {
-  const { bucket } = storage(env);
-  return readPayload<OfficialArenaObservation>(bucket, metadata.payloadKey, metadata.payloadHash);
+  return readPayload<OfficialArenaObservation>(env, metadata.payloadKey, metadata.payloadHash);
 }
 
 /** The latest successful aligned window of a league board that contains `rank`. */
 export async function readOfficialArenaLatest(env: OfficialRankingStoreBindings, region: GameRecordsRegion, seasonId: string,
   bandId: string, rank: number): Promise<(OfficialArenaObservation & { cursor: number }) | null> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const row = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_arena_ranking_observations
     WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank = ? AND end_rank >= ? AND error IS NULL
     ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`).bind(region, seasonId, bandId, Math.floor((rank - 1) / 100) * 100 + 1, rank).first<ObservationRow>();
   if (!row) return null;
-  const observation = await readPayload<OfficialArenaObservation>(bucket, row.payload_key, row.payload_hash);
+  const observation = await readPayload<OfficialArenaObservation>(env, row.payload_key, row.payload_hash);
   if (observation.region !== region || observation.seasonId !== seasonId || observation.bandId !== bandId) {
     throw new Error("official_observation_identity_mismatch");
   }
@@ -588,35 +653,35 @@ export async function readOfficialArenaMetadata(env: OfficialRankingStoreBinding
 
 export async function saveOfficialArenaPopulation(env: OfficialRankingStoreBindings,
   observation: OfficialArenaPopulationObservation): Promise<void> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
   const hash = await officialDigest(body);
-  const previous = await db.prepare("SELECT payload_hash FROM official_arena_population_observations WHERE region = ? AND snapshot_id = ?")
-    .bind(observation.region, observation.snapshotId).first<{ payload_hash: string }>();
+  const previous = await db.prepare("SELECT payload_key,payload_hash FROM official_arena_population_observations WHERE region = ? AND snapshot_id = ?")
+    .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
-    await saveDailyObservation(db, `population/${observation.seasonId}/${observation.bandId}`, observation, `official/1/${observation.region}/arena-population/${observation.snapshotId}/${hash}.json`, hash);
+    await saveDailyObservation(db, `population/${observation.seasonId}/${observation.bandId}`, observation, previous.payload_key, hash);
     return;
   }
-  const key = `official/1/${observation.region}/arena-population/${observation.snapshotId}/${hash}.json`;
-  await bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
-  await db.prepare(`INSERT INTO official_arena_population_observations
+  const payload = await prepareObservationPayload(env, observation, "arena-population", body, hash);
+  const key = payload.key;
+  await db.batch([...payload.statements, db.prepare(`INSERT INTO official_arena_population_observations
     (region, snapshot_id, season_id, band_id, max_rank, observed_at_ms, payload_key, payload_hash)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
     .bind(observation.region, observation.snapshotId, observation.seasonId, observation.bandId, observation.maxRank,
-      observation.observedAtMs, key, hash).run();
+      observation.observedAtMs, key, hash)]);
   await saveDailyObservation(db, `population/${observation.seasonId}/${observation.bandId}`, observation, key, hash);
 }
 
 export async function readOfficialArenaPopulation(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
   seasonId: string, bandId: string): Promise<OfficialArenaPopulationObservation | null> {
-  const { db, bucket } = storage(env);
+  const { db } = storage(env);
   const row = await db.prepare(`SELECT cursor, payload_key, payload_hash FROM official_arena_population_observations
     WHERE region = ? AND season_id = ? AND band_id = ? ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`)
     .bind(region, seasonId, bandId).first<ObservationRow>();
   if (!row) return null;
-  const observation = await readPayload<OfficialArenaPopulationObservation>(bucket, row.payload_key, row.payload_hash);
+  const observation = await readPayload<OfficialArenaPopulationObservation>(env, row.payload_key, row.payload_hash);
   if (observation.region !== region || observation.seasonId !== seasonId || observation.bandId !== bandId) {
     throw new Error("official_observation_identity_mismatch");
   }
@@ -741,10 +806,10 @@ export const OFFICIAL_KEEP_ALL_MS = 12 * 3_600_000;
 const JST_MS = 9 * 3_600_000;
 const PAYLOAD_DELETE_GRACE_MS = 300_000;
 
-function archivePayloadUnreferenced(alias: "o" | "g"): string {
-  return `NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key=${alias}.payload_key)
-    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key=${alias}.payload_key)
-    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key=${alias}.payload_key)
+function archiveObservationUnreferenced(alias: "o"): string {
+  return `NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)
     AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)
     AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata WHERE region=${alias}.region AND snapshot_id=${alias}.snapshot_id)`;
 }
@@ -752,11 +817,15 @@ function archivePayloadUnreferenced(alias: "o" | "g"): string {
 async function deleteRetiredPayloads(env: OfficialRankingStoreBindings, region: GameRecordsRegion, limit: number): Promise<void> {
   const { db, bucket } = storage(env);
   const { results } = await db.prepare(`SELECT payload_key FROM official_observation_payload_gc AS g
-    WHERE g.region=? AND queued_at_ms<=? AND ${archivePayloadUnreferenced("g")}
-    AND NOT EXISTS (SELECT 1 FROM official_ranking_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
-    AND NOT EXISTS (SELECT 1 FROM official_arena_ranking_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
-    AND NOT EXISTS (SELECT 1 FROM official_event_window_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
-    AND NOT EXISTS (SELECT 1 FROM official_arena_population_observations WHERE region=g.region AND snapshot_id=g.snapshot_id AND payload_key=g.payload_key)
+    WHERE g.region=? AND queued_at_ms<=?
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_daily WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_finals WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_finals WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_ranking_observations WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_ranking_observations WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_event_window_observations WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_arena_population_observations WHERE payload_key=g.payload_key)
+    AND NOT EXISTS (SELECT 1 FROM official_observation_batches WHERE payload_key=g.payload_key)
     ORDER BY queued_at_ms,payload_key LIMIT ?`).bind(region, Date.now() - PAYLOAD_DELETE_GRACE_MS, limit).all<{ payload_key: string }>();
   if (!results.length) return;
   await bucket.delete(results.map((row) => row.payload_key));
@@ -779,8 +848,8 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
   };
   await take("official_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_ranking_observations AS o
     WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_finals AS f WHERE f.payload_key = o.payload_key) AND EXISTS (SELECT 1 FROM official_ranking_observations AS later
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.region=o.region AND d.snapshot_id=o.snapshot_id) AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_finals AS f WHERE f.region=o.region AND f.snapshot_id=o.snapshot_id) AND EXISTS (SELECT 1 FROM official_ranking_observations AS later
       WHERE later.region = o.region AND later.event_id = o.event_id AND later.board_kind = o.board_kind
         AND later.challenge_id = o.challenge_id AND (later.observed_at_ms, later.cursor) > (o.observed_at_ms, o.cursor)
         AND (o.error IS NOT NULL OR later.error IS NULL)
@@ -788,22 +857,22 @@ export async function pruneOfficialObservations(env: OfficialRankingStoreBinding
     ORDER BY o.observed_at_ms LIMIT ?`, region, before, JST_MS, JST_MS);
   await take("official_arena_ranking_observations", `SELECT o.cursor, o.payload_key FROM official_arena_ranking_observations AS o
     WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
-      (SELECT 1 FROM official_arena_finals AS f WHERE f.payload_key = o.payload_key) AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.region=o.region AND d.snapshot_id=o.snapshot_id) AND NOT EXISTS
+      (SELECT 1 FROM official_arena_finals AS f WHERE f.region=o.region AND f.snapshot_id=o.snapshot_id) AND NOT EXISTS (SELECT 1 FROM official_arena_window_metadata AS m
       WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, region, orphaned);
   await take("official_event_window_observations", `SELECT o.cursor, o.payload_key FROM official_event_window_observations AS o
     WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_finals AS f WHERE f.payload_key = o.payload_key) AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.region=o.region AND d.snapshot_id=o.snapshot_id) AND NOT EXISTS
+      (SELECT 1 FROM official_ranking_finals AS f WHERE f.region=o.region AND f.snapshot_id=o.snapshot_id) AND NOT EXISTS (SELECT 1 FROM official_event_window_metadata AS m
       WHERE m.region = o.region AND m.snapshot_id = o.snapshot_id) ORDER BY o.observed_at_ms LIMIT ?`, region, orphaned);
   await take("official_arena_population_observations", `SELECT o.cursor, o.payload_key FROM official_arena_population_observations AS o
     WHERE o.region=? AND o.observed_at_ms < ? AND NOT EXISTS
-      (SELECT 1 FROM official_ranking_daily AS d WHERE d.payload_key = o.payload_key) AND NOT EXISTS
-      (SELECT 1 FROM official_arena_finals AS f WHERE f.payload_key = o.payload_key) AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
+      (SELECT 1 FROM official_ranking_daily AS d WHERE d.region=o.region AND d.snapshot_id=o.snapshot_id) AND NOT EXISTS
+      (SELECT 1 FROM official_arena_finals AS f WHERE f.region=o.region AND f.snapshot_id=o.snapshot_id) AND EXISTS (SELECT 1 FROM official_arena_population_observations AS later
       WHERE later.region = o.region AND later.season_id = o.season_id AND later.band_id = o.band_id
         AND later.observed_at_ms > o.observed_at_ms) ORDER BY o.observed_at_ms LIMIT ?`, region, before);
   const retired = doomed.length ? await db.batch<{ payload_key: string }>(doomed.map((row) => db.prepare(
-    `DELETE FROM ${row.table} AS o WHERE cursor=? AND payload_key=? AND ${archivePayloadUnreferenced("o")} RETURNING payload_key`)
+    `DELETE FROM ${row.table} AS o WHERE cursor=? AND payload_key=? AND ${archiveObservationUnreferenced("o")} RETURNING payload_key`)
     .bind(row.cursor, row.key))) : [];
   await deleteRetiredPayloads(env, region, limit);
   return retired.reduce((count, result) => count + result.results.length, 0);

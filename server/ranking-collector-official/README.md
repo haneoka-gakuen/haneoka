@@ -646,3 +646,9 @@ The admin form accepts email and password. A saved Global account owns TW, EN an
 For an existing pool, a temporary gzip/base64 `bootstrapAccounts` value in the private Global login configuration can supply verified SDK sessions, regional configurations and the original SDK device IDs. The normal email/password form matches its email, encrypts the supplied password and adopts those sessions without a game or SDK login. Clear the bootstrap value after both accounts are present and regional reads succeed. An unattended one-time migration may also supply the password in this private payload; remove the payload after verifying the encrypted database records. Imported SDK device IDs remain stable in `official_platform_devices`; new accounts use their account UUID.
 
 JP creation needs no form fields. `POST /api/v1/admin/collector-guest-accounts` accepts an empty JSON body with the normal administrative idempotency key, or a stable `guestId` for browser retry recovery. The server assigns the label.
+
+### Observation payload batches
+
+The Worker commits small observation bodies and their indexes in one D1 transaction, so current rankings and history are readable immediately. Its regional scheduled recovery seals one-minute batches into immutable R2 objects, with a 2 MiB batch limit and a 256 KiB per-body limit. Larger observations retain their standalone R2 format. Each original JSON body and SHA-256 remains intact. Pending bodies are removed only after R2 confirms persistence; failed uploads retry from D1, with at most 64 pending batches per region. Shared objects remain protected until every observation and archive reference is retired.
+
+Deploy the batch reader and additive migration before enabling the writer. Keep batch-reading support when reverting later collector changes. The container callback contract and sampling cadence do not change.
