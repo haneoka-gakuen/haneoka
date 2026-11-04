@@ -4093,6 +4093,7 @@
   },
   "account": {
     "page": {
+      "loadFailed": "无法加载账号信息",
       "signOut": "退出登录",
       "loading": "正在加载…",
       "unavailableTitle": "账号服务不可用",
