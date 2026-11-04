@@ -9,7 +9,10 @@ function entityId(value: string | null): string | undefined {
 }
 /** Preserve the original public URL while serving its generated document. */
 export function providerEntityFromUrl(url: URL): ProviderEntityLocator | undefined {
-  const parts = url.pathname.split("/").filter(Boolean);
+  const parts = url.pathname
+    .replace(/\/index\.html$/u, "/")
+    .split("/")
+    .filter(Boolean);
   const locale = parts[0];
   if (!isLocale(locale) || parts[1] !== "community") return;
   const namespace = parts[2];
