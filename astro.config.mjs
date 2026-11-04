@@ -141,10 +141,10 @@ export default defineConfig({
         },
       },
     },
-    resolve: { dedupe: ["lit"] },
+    resolve: { dedupe: ["lit", "three"] },
     server: {
       fs: { allow: workspaceFiles },
-      watch: { ignored: ["**/data/**", "**/tmp/**", "**/.output/**", "**/.dependencies/**/target/**"] },
+      watch: { ignored: ["**/data/**", "**/tmp/**", "**/.output/**", "**/.dependencies/**"] },
       ...(proxyTarget || providerTarget
         ? {
             proxy: {

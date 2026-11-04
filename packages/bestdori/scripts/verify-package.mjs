@@ -1,9 +1,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
-const manifest = JSON.parse(
-  await readFile(new URL("package.json", root), "utf8"),
-);
+const manifest = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
 
 for (const path of ["dist/index.js", "dist/index.d.ts", "LICENSE", "README.md"]) {
   await access(new URL(path, root));
@@ -13,20 +11,10 @@ if (manifest.exports?.["./story-editor"]) {
   throw new Error("The editor-specific Bestdori export must not be published");
 }
 
-for (const dependencyGroup of [
-  "dependencies",
-  "peerDependencies",
-  "devDependencies",
-  "optionalDependencies",
-]) {
+for (const dependencyGroup of ["dependencies", "peerDependencies", "devDependencies", "optionalDependencies"]) {
   const dependencies = manifest[dependencyGroup] ?? {};
-  if (
-    Object.hasOwn(dependencies, "@haneoka/altair") ||
-    Object.hasOwn(dependencies, "@haneoka/altair-plugin-adv")
-  ) {
-    throw new Error(
-      `${dependencyGroup} must not couple the neutral Bestdori package to Altair`,
-    );
+  if (Object.hasOwn(dependencies, "@haneoka/altair") || Object.hasOwn(dependencies, "@haneoka/altair-plugin-adv")) {
+    throw new Error(`${dependencyGroup} must not couple the neutral Bestdori package to Altair`);
   }
 }
 
@@ -44,10 +32,7 @@ const publishedSource = (
   )
 ).join("\n");
 
-if (
-  publishedSource.includes("@haneoka/altair") ||
-  publishedSource.includes("story-editor")
-) {
+if (/@haneoka\/altair(?:["'/]|$)/u.test(publishedSource) || publishedSource.includes("story-editor")) {
   throw new Error("Editor-specific code remains in the Bestdori publish output");
 }
 

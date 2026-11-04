@@ -1,4 +1,5 @@
 import { canonicalEntityTarget, type CommunityEntityTarget } from "./community-entity-guard";
+import { publishedCommunityStory } from "./community-stories";
 import { communitySonolusRows } from "./community-charts";
 import { communityChartPath } from "../src/lib/community-chart-route";
 
@@ -41,11 +42,26 @@ function matchCache(env: Env): PinnedMatchCache | undefined {
 }
 function rememberMatch(cache: PinnedMatchCache | undefined, key: string, match: Match) {
   if (!cache || match.status === "unknown" || match.ambiguous) return;
-  const row = match.row && Object.fromEntries(TITLE_FIELDS.map((field) => {
-    const value = match.row![field];
-    return [field, Array.isArray(value) ? value.slice(0, 5).map((label) => typeof label === "string" ? label : null) : typeof value === "string" ? value : undefined];
-  }));
-  const value: Match = { status: match.status, ...(match.routeId ? { routeId: match.routeId } : {}), ...(row ? { row } : {}) };
+  const row =
+    match.row &&
+    Object.fromEntries(
+      TITLE_FIELDS.map((field) => {
+        const value = match.row![field];
+        return [
+          field,
+          Array.isArray(value)
+            ? value.slice(0, 5).map((label) => (typeof label === "string" ? label : null))
+            : typeof value === "string"
+              ? value
+              : undefined,
+        ];
+      }),
+    );
+  const value: Match = {
+    status: match.status,
+    ...(match.routeId ? { routeId: match.routeId } : {}),
+    ...(row ? { row } : {}),
+  };
   const bytes = (key.length + JSON.stringify(value).length) * 2;
   if (bytes > 16384) return;
   const previous = cache.entries.get(key);
@@ -307,7 +323,10 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
         } catch {
           return { status: "unknown" };
         }
-      })().then((match) => { rememberMatch(cache, key, match); return match; });
+      })().then((match) => {
+        rememberMatch(cache, key, match);
+        return match;
+      });
       matches.set(key, pending);
     }
     return pending;
@@ -317,6 +336,29 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
     target: CommunityEntityTarget,
     context: { server?: Server; locale?: Locale; discovery?: boolean } = {},
   ): Promise<CommunityCatalogEntityDescriptor | null> {
+    if (target.entityType === "community-stories") {
+      const row = await publishedCommunityStory(env, target.originalId);
+      if (!row || (context.discovery && row.visibility !== "public")) return null;
+      const locale = context.locale ?? "en";
+      return {
+        type: target.entityType,
+        originalId: row.id,
+        titles: Object.fromEntries(LOCALES.map((locale) => [locale, row.title])),
+        availability: { jp: "present", intl: "present" },
+        locators: {
+          jp: {
+            routeKind: "community-stories",
+            routeId: row.id,
+            detailPath: `/jp/${locale}/community-stories/${row.id}/`,
+          },
+          intl: {
+            routeKind: "community-stories",
+            routeId: row.id,
+            detailPath: `/intl/${locale}/community-stories/${row.id}/`,
+          },
+        },
+      };
+    }
     if (target.entityType === "community-charts") {
       if (!/^[0-9a-f-]{36}$/u.test(target.originalId)) return null;
       const row = (await communitySonolusRows(env, `haneoka-community-${target.originalId}`))[0];

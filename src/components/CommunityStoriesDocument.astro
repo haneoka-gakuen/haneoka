@@ -1,0 +1,16 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import { t } from "../i18n/messages";
+import type { Locale } from "../i18n/locales";
+import "../styles/catalog.css";
+import "../styles/story.css";
+interface Props {locale:Locale;server:string;entity?:boolean}
+const {locale,server,entity}=Astro.props,titleKey="community.stories.title",title=t(locale,titleKey);
+---
+<Base locale={locale} route="/community/stories" title={title} titleKey={titleKey} canonicalRoute={entity?undefined:`/${server}/${locale}/community-stories/`}>
+ <AppShell locale={locale} server={server} route="/community/stories" title={title} titleKey={titleKey}>
+  <community-stories class="community-stories page" locale={locale} server={server}></community-stories>
+ </AppShell>
+</Base>
+<script>import "../lit/community-stories";</script>

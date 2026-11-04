@@ -55,6 +55,7 @@ const appPages: Array<[string, string]> = [
   ["/community/activity", "community.page.activity"],
   ["/community/tags", "community.page.tags"],
   ["/community/playlists", "community.page.playlistPage.title"],
+  ["/community/stories", "community.stories.title"],
   ["/community/charts", "community.charts.title"],
   ["/community/gbp/songs", "community.page.songsBestDori"],
   ["/community/sekai/songs", "community.page.sekai.title"],
@@ -106,9 +107,21 @@ export const ROUTES: RouteDefinition[] = [
       resource: `anon-tokyo/${key}`,
     }),
   ),
-  { route: "/catalog/tgw-card", kind: "tgw-card", key: "tgw-card", titleKey: "catalog.tgwCard.card", resource: "tgw-card" },
+  {
+    route: "/catalog/tgw-card",
+    kind: "tgw-card",
+    key: "tgw-card",
+    titleKey: "catalog.tgwCard.card",
+    resource: "tgw-card",
+  },
   { route: "/catalog/circle", kind: "catalog", key: "circle", titleKey: "navigation.circle", resource: "circle" },
-  { route: "/catalog/challenge", kind: "catalog", key: "challenge", titleKey: "navigation.challenge", resource: "challenge" },
+  {
+    route: "/catalog/challenge",
+    kind: "catalog",
+    key: "challenge",
+    titleKey: "navigation.challenge",
+    resource: "challenge",
+  },
   { route: "/catalog/studio", kind: "studio", key: "studio", titleKey: "catalog.studio.title", resource: "studio" },
   { route: "/catalog/player-ranks", kind: "level-exp", key: "player-ranks", titleKey: "catalog.progression.playerRank" },
   { route: "/catalog/friendship-ranks", kind: "level-exp", key: "friendship-ranks", titleKey: "catalog.progression.friendshipRank" },
@@ -122,9 +135,20 @@ export const ROUTES: RouteDefinition[] = [
     resource: "missions",
   },
   { route: "/catalog/assets", kind: "notice", key: "assets", titleKey: "navigation.assets" },
-  { route: "/catalog/events/tracker", kind: "event-tracker", key: "event-tracker", titleKey: "tools.eventTracker.title" },
+  {
+    route: "/catalog/events/tracker",
+    kind: "event-tracker",
+    key: "event-tracker",
+    titleKey: "tools.eventTracker.title",
+  },
   { route: "/song-puzzle", kind: "song-puzzle", key: "song-puzzle", titleKey: "tools.songPuzzle.title" },
-  { route: "/tools/song-puzzle", kind: "song-puzzle", key: "song-puzzle-legacy", titleKey: "tools.songPuzzle.title", staticRedirect: "/song-puzzle" },
+  {
+    route: "/tools/song-puzzle",
+    kind: "song-puzzle",
+    key: "song-puzzle-legacy",
+    titleKey: "tools.songPuzzle.title",
+    staticRedirect: "/song-puzzle",
+  },
   { route: "/stamp-maker", kind: "stamp-maker", key: "stamp-maker", titleKey: "tools.stampMaker.title" },
   {
     route: "/tools/stamp-maker",
@@ -159,7 +183,8 @@ const LEGAL_PAGE_MESSAGES: Readonly<Record<string, string>> = {
 export const legalPageMessageRoot = (page: string): string => LEGAL_PAGE_MESSAGES[page] ?? page;
 
 export const titleOf = (route: RouteDefinition, locale: Locale): string => {
-  if (route.page) return String(group<Record<string, unknown>>(locale, legalPageMessageRoot(route.page)).title ?? route.key);
+  if (route.page)
+    return String(group<Record<string, unknown>>(locale, legalPageMessageRoot(route.page)).title ?? route.key);
   const fallback = route.key.replaceAll("-", " ");
   return route.titleKey ? t(locale, route.titleKey, fallback) : fallback;
 };

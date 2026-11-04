@@ -667,7 +667,7 @@ async function runCommand(command, args, { timeoutMs, signal } = {}) {
     const onAbort = () => terminate(signal.reason || mediaError('CANCELLED', 'The media job was cancelled.'));
     child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
     child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
-    child.once('error', (error) => settle(mediaError('COMMAND_UNAVAILABLE', `The media converter could not start (${command}).`), null));
+    child.once('error', () => settle(mediaError('COMMAND_UNAVAILABLE', `The media converter could not start (${command}).`), null));
     child.once('exit', (code, signalName) => {
       if (code === 0) settle(null, { stdout, stderr });
       else {
@@ -702,13 +702,23 @@ async function hydrateOutputMetadata(job) {
     const filePath = job.outputMap.get(output.name);
     const fileStat = await stat(filePath);
     output.bytes = fileStat.size;
-    if (!output.mediaType.startsWith('video/')) {
+    if (output.mediaType.startsWith('video/')) {
+      const probe = await ffprobe(filePath);
+      const video = probe.streams.find((stream) => stream.codec_type === 'video');
+      if (!video) throw mediaError('INVALID_OUTPUT', 'The converted video has no video stream.');
+      output.width = parseInteger(video.width);
+      output.height = parseInteger(video.height);
+      output.durationSeconds = parseFinite(video.duration ?? probe.format?.duration);
+      output.fps = parseFrameRate(video.avg_frame_rate || video.r_frame_rate);
+      if (output.durationSeconds == null || output.durationSeconds <= 0)
+        throw mediaError('INVALID_OUTPUT', 'The converted video duration is invalid.');
+    } else {
       const image = await identifyImage(filePath);
       output.width = image.width;
       output.height = image.height;
-      if (!Number.isSafeInteger(output.width) || output.width <= 0 || !Number.isSafeInteger(output.height) || output.height <= 0)
-        throw mediaError('INVALID_OUTPUT', 'The converted media dimensions are invalid.');
     }
+    if (!Number.isSafeInteger(output.width) || output.width <= 0 || !Number.isSafeInteger(output.height) || output.height <= 0)
+      throw mediaError('INVALID_OUTPUT', 'The converted media dimensions are invalid.');
     output.sha256 = await hashFile(filePath);
   }
 }

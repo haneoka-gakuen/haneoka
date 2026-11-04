@@ -53,6 +53,7 @@ const thread = (env: Env, target: CommunityEntityTarget) =>
     .bind(target.entityType, target.originalId)
     .first<Thread>();
 const knownTypes = new Set([
+  "community-stories",
   "community-charts",
   "cards",
   "support-cards",
@@ -165,11 +166,14 @@ function initializeThread(
     statements: [insert, bind, revision, seal],
     // A zero-row conditional comment INSERT is not an SQLite error. Make a
     // rejected first comment fail this same transaction so no empty carrier survives.
-    acceptedCommentGuard: (commentId) => env.DB.prepare(`
+    acceptedCommentGuard: (commentId) =>
+      env.DB.prepare(
+        `
       INSERT INTO community_entity_thread(entity_type,original_id,post_id,created_at)
       SELECT NULL,NULL,NULL,NULL WHERE NOT EXISTS (
         SELECT 1 FROM community_comment WHERE id=? AND post_id=?
-      )`).bind(commentId,postId),
+      )`,
+      ).bind(commentId, postId),
   };
 }
 
@@ -371,7 +375,12 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
     focus.search = "";
     focus.searchParams.set("commentId", candidate.id);
     focus.searchParams.set("commentsOnly", "true");
-    const response = await communityEntityCommentBackend.readFocused(commentReadRequest(request), env, candidate.postId, focus);
+    const response = await communityEntityCommentBackend.readFocused(
+      commentReadRequest(request),
+      env,
+      candidate.postId,
+      focus,
+    );
     if (response.status >= 400) continue;
     const data = (await response.json()) as { comments: Array<{ id: string; rootId?: string }> };
     const comment = data.comments.find((row) => row.id === candidate.id);
@@ -396,10 +405,19 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
   return json(request, { entries, nextCursor, sort });
 }
 
-async function recommendations(request: Request, env: Env, url: URL, resolver: CommunityEntityResolver): Promise<Response> {
-  const server = url.searchParams.get("server") ?? "intl", locale = url.searchParams.get("locale") ?? "en";
-  if (!["jp", "intl"].includes(server) || !locales.includes(locale as Locale)
-    || ["server", "locale"].some((key) => url.searchParams.getAll(key).length > 1))
+async function recommendations(
+  request: Request,
+  env: Env,
+  url: URL,
+  resolver: CommunityEntityResolver,
+): Promise<Response> {
+  const server = url.searchParams.get("server") ?? "intl",
+    locale = url.searchParams.get("locale") ?? "en";
+  if (
+    !["jp", "intl"].includes(server) ||
+    !locales.includes(locale as Locale) ||
+    ["server", "locale"].some((key) => url.searchParams.getAll(key).length > 1)
+  )
     return error(request, 400, "invalid_context", "Use a supported display server and locale");
   const descriptors = new Map<string, Promise<CommunityEntityDescriptor | null>>();
   return communityEntityCommentBackend.recommendations(request, env, url, async (candidate) => {
@@ -407,17 +425,30 @@ async function recommendations(request: Request, env: Env, url: URL, resolver: C
     const key = JSON.stringify([target.entityType, target.originalId]);
     let resolved = descriptors.get(key);
     if (!resolved) {
-      resolved = measureCommunityRead("catalog", () => resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale, discovery: true }));
+      resolved = measureCommunityRead("catalog", () =>
+        resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale, discovery: true }),
+      );
       descriptors.set(key, resolved);
     }
     const descriptor = await resolved;
-    if (!descriptor || descriptor.type !== target.entityType || descriptor.originalId !== target.originalId) return null;
-    const focus = new URL(`${PREFIX}${encodeURIComponent(target.entityType)}/${encodeURIComponent(target.originalId)}`, url);
+    if (!descriptor || descriptor.type !== target.entityType || descriptor.originalId !== target.originalId)
+      return null;
+    const focus = new URL(
+      `${PREFIX}${encodeURIComponent(target.entityType)}/${encodeURIComponent(target.originalId)}`,
+      url,
+    );
     focus.searchParams.set("commentId", candidate.id);
     focus.searchParams.set("commentsOnly", "true");
-    const response = await communityEntityCommentBackend.readFocused(commentReadRequest(request), env, candidate.threadId, focus);
+    const response = await communityEntityCommentBackend.readFocused(
+      commentReadRequest(request),
+      env,
+      candidate.threadId,
+      focus,
+    );
     if (!response.ok) return null;
-    const data = (await response.json()) as { comments?: Array<Record<string, unknown> & { id: string; rootId?: string }> };
+    const data = (await response.json()) as {
+      comments?: Array<Record<string, unknown> & { id: string; rootId?: string }>;
+    };
     const comment = data.comments?.find((value) => value.id === candidate.id);
     if (!comment) return null;
     const entityRef = entityValue(descriptor);
@@ -426,9 +457,12 @@ async function recommendations(request: Request, env: Env, url: URL, resolver: C
     const link = new URL(path, url);
     link.searchParams.set("commentId", comment.id);
     return {
-      kind: "entity-comment", id: comment.id,
-      comment: { ...comment, threadId: candidate.threadId }, entityRef,
-      focusedCommentId: comment.id, rootId: comment.rootId ?? comment.id,
+      kind: "entity-comment",
+      id: comment.id,
+      comment: { ...comment, threadId: candidate.threadId },
+      entityRef,
+      focusedCommentId: comment.id,
+      rootId: comment.rootId ?? comment.id,
       deepLink: link.pathname + link.search + link.hash,
       adminOnlyContext: candidate.visibility === "private",
     };
@@ -442,9 +476,10 @@ export async function handleCommunityEntityRequest(
   resolver: CommunityEntityResolver,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const mixedRecommendations = url.pathname === "/api/v1/community/posts"
-    && url.searchParams.get("scope") === "recommended"
-    && (request.method === "GET" || request.method === "HEAD");
+  const mixedRecommendations =
+    url.pathname === "/api/v1/community/posts" &&
+    url.searchParams.get("scope") === "recommended" &&
+    (request.method === "GET" || request.method === "HEAD");
   const recognized =
     mixedRecommendations ||
     url.pathname.startsWith(PREFIX) ||
@@ -503,11 +538,20 @@ export async function handleCommunityEntityRequest(
   const write = request.method === "POST" && path[2] === "comments";
   if (!write && request.method !== "GET" && request.method !== "HEAD")
     return error(request, 405, "method_not_allowed", "Method not allowed");
-  const allowedQuery=["server","locale","commentsSort","commentsCursor","commentId","commentsRoot"];
-  if([...url.searchParams.keys()].some(key=>!allowedQuery.includes(key)) || allowedQuery.some(key=>url.searchParams.getAll(key).length>1))return error(request,400,"invalid_query","Use one value per supported entity-comment query");
-  const sortValue=url.searchParams.get("commentsSort");
-  if(sortValue!==null && sortValue!=="hot" && sortValue!=="latest")return error(request,400,"invalid_comment_sort","Use hot or latest");
-  for(const key of ["commentId","commentsRoot"]){const value=url.searchParams.get(key);if(value!==null && !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/iu.test(value))return error(request,400,"invalid_comment_id","Use a comment UUID");}
+  const allowedQuery = ["server", "locale", "commentsSort", "commentsCursor", "commentId", "commentsRoot"];
+  if (
+    [...url.searchParams.keys()].some((key) => !allowedQuery.includes(key)) ||
+    allowedQuery.some((key) => url.searchParams.getAll(key).length > 1)
+  )
+    return error(request, 400, "invalid_query", "Use one value per supported entity-comment query");
+  const sortValue = url.searchParams.get("commentsSort");
+  if (sortValue !== null && sortValue !== "hot" && sortValue !== "latest")
+    return error(request, 400, "invalid_comment_sort", "Use hot or latest");
+  for (const key of ["commentId", "commentsRoot"]) {
+    const value = url.searchParams.get(key);
+    if (value !== null && !/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/iu.test(value))
+      return error(request, 400, "invalid_comment_id", "Use a comment UUID");
+  }
   const server = url.searchParams.get("server") ?? "intl",
     locale = url.searchParams.get("locale") ?? "en";
   if (
@@ -517,7 +561,9 @@ export async function handleCommunityEntityRequest(
   )
     return error(request, 400, "invalid_context", "Use a supported display server and locale");
   const [resolved, sessionRead, threadRead] = await Promise.allSettled([
-    measureCommunityRead("catalog", () => resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale })),
+    measureCommunityRead("catalog", () =>
+      resolver(env, target, { server: server as "jp" | "intl", locale: locale as Locale }),
+    ),
     getAuthSession(request, env, { authoritative: true }),
     measureCommunityRead("thread", () => thread(env, target)),
   ]);
@@ -527,7 +573,8 @@ export async function handleCommunityEntityRequest(
     return error(request, 404, "entity_not_found", "The original entity is unavailable or unresolved");
   if (sessionRead.status === "rejected") throw sessionRead.reason;
   if (threadRead.status === "rejected") throw threadRead.reason;
-  const session = sessionRead.value, existing = threadRead.value;
+  const session = sessionRead.value,
+    existing = threadRead.value;
   const userId = session?.user?.id ?? null;
   const forumId = existing?.forumId ?? (await defaultForum(env, userId));
   if (

@@ -18,6 +18,7 @@ interface ModerationQueueMessage {
 }
 
 interface CaseRow {
+  decisionToken?: string;
   entityId: string;
   entityKind: ModerationEntityKind;
   entityRevision: number;
@@ -50,6 +51,7 @@ interface ModerationInvariantRow {
 }
 
 interface AttachmentContentRow {
+  storyResource: number;
   byteSize: number | null;
   fileName: string;
   mediaType:
@@ -634,7 +636,7 @@ const recordDecision = async (
        SET status = ?, source = ?, categories_json = ?, reason_code = ?, model_id = ?,
            reviewer_user_id = ?, decision_token = ?, updated_at = ?, completed_at = ?
        WHERE id = ? AND entity_kind = ? AND entity_id = ? AND entity_revision = ? AND status = ?
-         ${source === "appeal" ? "" : "AND source NOT IN ('appeal', 'manual')"}
+         ${source === "appeal" || (source === "manual" && moderationCase.decisionToken) ? "" : "AND source NOT IN ('appeal', 'manual')"}
          AND NOT EXISTS (
            SELECT 1 FROM community_moderation_case AS newer_case
            WHERE newer_case.entity_kind = community_moderation_case.entity_kind
@@ -671,6 +673,7 @@ const recordDecision = async (
                AND community_profile.pending_display_name IS NOT NULL
            ))
          )
+         ${moderationCase.decisionToken ? "AND decision_token=?" : ""}
          ${leaseCondition}`,
     ).bind(
       decision.verdict,
@@ -687,6 +690,7 @@ const recordDecision = async (
       moderationCase.entityId,
       moderationCase.entityRevision,
       moderationCase.status,
+      ...(moderationCase.decisionToken ? [moderationCase.decisionToken] : []),
       ...leaseValues,
     ),
     env.DB.prepare(
@@ -737,6 +741,27 @@ const recordDecision = async (
     now,
   );
   if (moderationNotification) statements.push(moderationNotification);
+  if (moderationCase.entityKind === "attachment") {
+    statements.push(
+      env.DB.prepare(
+        `UPDATE community_story_blob SET moderation_status=CASE
+      WHEN ?='block' THEN 'block' WHEN moderation_status='block' AND ? NOT IN ('manual','appeal') THEN 'block'
+      ELSE ? END,updated_at=? WHERE hash=(SELECT sha256 FROM community_attachment WHERE id=?)
+      AND EXISTS(SELECT 1 FROM community_moderation_case WHERE id=? AND status=? AND source=? AND decision_token=?)`,
+      ).bind(
+        decision.verdict,
+        source,
+        decision.verdict,
+        now,
+        moderationCase.entityId,
+        moderationCase.id,
+        decision.verdict,
+        source,
+        decisionToken,
+      ),
+    );
+  }
+
   if (moderationCase.entityKind === "attachment" && decision.verdict === "allow") {
     statements.push(
       env.DB.prepare(
@@ -1749,7 +1774,7 @@ const moderateTextChunkWithAi = async (
   throw failure;
 };
 
-const moderateTextWithAi = async (
+export const moderateTextWithAi = async (
   env: Env,
   value: string,
   entityKind: "comment" | "post" | "profile-name" | "text-attachment",
@@ -1809,7 +1834,7 @@ const parseVisionResponse = (value: unknown): ModerationDecision | null => {
   };
 };
 
-const toBase64 = (bytes: Uint8Array): string => {
+export const toBase64 = (bytes: Uint8Array): string => {
   const chunkSize = 0x8000;
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
@@ -1836,7 +1861,7 @@ const prepareVisionDataUri = (
   }
 };
 
-const moderateImageWithAi = async (
+export const moderateImageWithAi = async (
   env: Env,
   bytes: Uint8Array,
   mediaType: Exclude<AttachmentContentRow["mediaType"], "text/plain">,
@@ -2115,6 +2140,7 @@ const decideEntity = async (
 
   const attachment = await env.DB.prepare(
     `SELECT attachment.object_key AS objectKey, attachment.original_name AS fileName,
+            EXISTS(SELECT 1 FROM community_story_upload scope WHERE scope.attachment_id=attachment.id) AS storyResource,
             attachment.media_type AS mediaType, attachment.byte_size AS byteSize,
             attachment.sha256, attachment.r2_etag AS r2Etag, attachment.r2_version AS r2Version,
             attachment.status, attachment.purpose,
@@ -2157,6 +2183,19 @@ const decideEntity = async (
           sha256: attachment.moderationSha256,
         }
       : null;
+  if (attachment.storyResource && attachment.sha256) {
+    const previous = await env.DB.prepare(`SELECT prior.status AS verdict,prior.model_id AS model
+      FROM community_attachment same JOIN community_moderation_case prior ON prior.entity_id=same.id AND prior.entity_kind='attachment'
+      WHERE same.sha256=? AND same.id<>? AND same.deleted_at IS NULL AND same.status IN ('ready','rejected') AND same.moderation_status=prior.status
+        AND prior.status IN ('allow','block') AND prior.source IN ('ai','manual','appeal')
+        AND (prior.source IN ('manual','appeal') OR (prior.policy_generation=? AND prior.policy_version=?))
+        AND NOT EXISTS(SELECT 1 FROM community_moderation_case newer WHERE newer.entity_id=prior.entity_id
+          AND newer.entity_kind='attachment' AND newer.entity_revision=prior.entity_revision AND newer.policy_generation>prior.policy_generation)
+      ORDER BY CASE prior.status WHEN 'block' THEN 0 ELSE 1 END,prior.updated_at DESC LIMIT 1`)
+      .bind(attachment.sha256,moderationCase.entityId,POLICY_GENERATION,POLICY_VERSION)
+      .first<{verdict:ModerationVerdict;model:string|null}>();
+    if (previous) return {decision:{categories:[],reasonCode:`reuse.content_${previous.verdict}`,verdict:previous.verdict},model:previous.model || "content-review-cache"};
+  }
   const bytes = await readR2Bytes(env, moderationObject || attachment);
   if (attachment.mediaType === "text/plain") {
     let text: string;
@@ -2804,7 +2843,11 @@ const processQueueMessage = async (env: Env, message: Message<unknown>): Promise
     if (failureKind === "model") {
       if (attempt >= MAX_JOB_ATTEMPTS) {
         try {
-          await allowAfterModerationFailure(env, row, lease);
+          const storyUpload = row.entityKind === "attachment" && await env.DB.prepare(
+            "SELECT attachment_id FROM community_story_upload WHERE attachment_id=?",
+          ).bind(row.entityId).first();
+          if (storyUpload) await recordAttachmentReview(env,row,lease,"system.story_moderation_unavailable");
+          else await allowAfterModerationFailure(env, row, lease);
         } catch (commitError) {
           await recoverAfterCommitFailure(commitError);
         }
@@ -2859,7 +2902,10 @@ const processQueueMessage = async (env: Env, message: Message<unknown>): Promise
 };
 
 export const handleModerationQueue = async (batch: MessageBatch, env: Env): Promise<void> => {
-  for (const message of batch.messages) await processQueueMessage(env, message);
+  const { handleStoryResourceCheck } = await import("./community-story-moderation");
+  for (const message of batch.messages) {
+    if (!(await handleStoryResourceCheck(env, message))) await processQueueMessage(env, message);
+  }
 };
 
 interface DispatchableModerationJobRow {
@@ -4277,3 +4323,45 @@ export const decideModerationManually = async (
   }
   return { ok: true, unchanged: false };
 };
+
+/** Staff review shares the same immutable case, decision event and entity CAS as automatic review. */
+export async function resolveStoryAttachmentModeration(
+  env: Env,
+  input: {
+    caseId: string;
+    expectedStatus: "pending" | "review" | "allow" | "block";
+    expectedToken?: string;
+    decision: ModerationVerdict;
+    reviewerUserId: string;
+  },
+): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `SELECT c.id,c.entity_id AS entityId,c.entity_kind AS entityKind,
+    c.entity_revision AS entityRevision,c.policy_generation AS policyGeneration,c.policy_version AS policyVersion,c.source,c.status,c.decision_token AS decisionToken
+    FROM community_moderation_case c JOIN community_attachment a ON a.id=c.entity_id
+    JOIN community_media_job media ON media.attachment_id=a.id AND media.state='ready'
+    WHERE c.id=? AND c.entity_kind='attachment' AND c.status=? AND (? IS NULL OR c.decision_token=?)
+    AND a.deleted_at IS NULL AND a.status IN ('scanning','review','ready','rejected')
+    AND EXISTS(SELECT 1 FROM community_story_asset sa WHERE sa.attachment_id=a.id)
+    AND NOT EXISTS(SELECT 1 FROM community_moderation_case newer WHERE newer.entity_kind=c.entity_kind
+      AND newer.entity_id=c.entity_id AND newer.entity_revision=c.entity_revision AND newer.policy_generation>c.policy_generation)`,
+  )
+    .bind(input.caseId, input.expectedStatus,input.expectedToken ?? null,input.expectedToken ?? null)
+    .first<CaseRow>();
+  if (!row) return false;
+  try { await recordDecision(
+    env,
+    row,
+    { verdict: input.decision, categories: [], reasonCode: `manual.story_asset.${input.decision}` },
+    "manual",
+    "moderator",
+    input.reviewerUserId,
+    null,
+    null,
+  ); } catch (error) {
+    const current = await env.DB.prepare("SELECT decision_token AS token FROM community_moderation_case WHERE id=?").bind(row.id).first<{token:string}>();
+    if (!current || current.token !== row.decisionToken) return false;
+    throw error;
+  }
+  return true;
+}

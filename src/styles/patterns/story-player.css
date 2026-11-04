@@ -1,0 +1,21 @@
+@layer patterns {
+  .story-player-host {
+    display: block;
+    height: 100%;
+    min-height: 0;
+  }
+  .story-player-layout {
+    display: grid;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .story-player-layout > vega-story-stage {
+    grid-row: 1 / -1;
+  }
+  .app-shell__main:has(.story-player-layout) {
+    overflow: hidden;
+    scrollbar-gutter: auto;
+  }
+}

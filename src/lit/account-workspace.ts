@@ -248,8 +248,10 @@ export class AccountWorkspace extends LitElement {
     if (typeof init.body === "string" && !headers.has("content-type")) headers.set("content-type", "application/json");
     const signal = init.signal ? AbortSignal.any([this.lifetime.signal, init.signal]) : this.lifetime.signal;
     // A plain read AccountDocument.astro already started at document start.
-    const early = (init.method ?? "GET") === "GET" && init.body === undefined && init.headers === undefined
-      ? takeEarlyRead(url) : null;
+    const early =
+      (init.method ?? "GET") === "GET" && init.body === undefined && init.headers === undefined
+        ? takeEarlyRead(url)
+        : null;
     const adopted = early ? await readEarlyJson<Value | null>(early, signal) : undefined;
     if (adopted !== undefined) {
       signal.throwIfAborted();
@@ -326,7 +328,8 @@ export class AccountWorkspace extends LitElement {
       this.sessions = [];
       this.accounts = [];
       this.appeals = [];
-      if (this.session) await Promise.all([this.loadProfile(signal, speculative), this.loadSecurity(signal, speculative)]);
+      if (this.session)
+        await Promise.all([this.loadProfile(signal, speculative), this.loadSecurity(signal, speculative)]);
       if (current()) this.phase = "ready";
     } catch (error) {
       if (!current()) return;
@@ -351,14 +354,17 @@ export class AccountWorkspace extends LitElement {
     };
   }
 
-  private async loadProfile(signal?: AbortSignal, speculative?: ReturnType<AccountWorkspace["signedInReads"]>): Promise<void> {
+  private async loadProfile(
+    signal?: AbortSignal,
+    speculative?: ReturnType<AccountWorkspace["signedInReads"]>,
+  ): Promise<void> {
     const ownSignal = this.profileRequests.begin();
     const userId = this.user()?.id;
     const init: RequestInit = { signal: signal ? AbortSignal.any([signal, ownSignal]) : ownSignal };
     const [value, appeals] = await Promise.all([
       speculative?.profile ?? this.request("/api/v1/account/profile", init),
       this.user()?.emailVerified
-        ? speculative?.appeals ?? this.request("/api/v1/community/appeals", init)
+        ? (speculative?.appeals ?? this.request("/api/v1/community/appeals", init))
         : Promise.resolve<Value>({}),
     ]);
     if (!this.isConnected || !this.profileRequests.current(ownSignal) || userId !== this.user()?.id) return;
@@ -956,7 +962,7 @@ export class AccountWorkspace extends LitElement {
       `;
     return html`
       <section class="page page--compact account-page">
-${
+        ${
           this.phase === "error"
             ? html`
                 <section class="account-state surface surface--outlined">

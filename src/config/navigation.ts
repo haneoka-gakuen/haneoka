@@ -48,7 +48,16 @@ const BESTDORI_STORY_ICONS: Record<(typeof BESTDORI_STORY_ROUTES)[number], strin
 };
 
 /** Project Sekai story sections, in the game's story menu order. */
-export const SEKAI_STORY_SECTIONS = ["event", "unit", "character", "card", "area", "special", "mysekai", "live"] as const;
+export const SEKAI_STORY_SECTIONS = [
+  "event",
+  "unit",
+  "character",
+  "card",
+  "area",
+  "special",
+  "mysekai",
+  "live",
+] as const;
 const SEKAI_STORY_ICONS: Record<(typeof SEKAI_STORY_SECTIONS)[number], string> = {
   event: "event",
   unit: "groups",
@@ -82,7 +91,13 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
     match: ["/catalog"],
     exclude: ["/catalog/stories", "/catalog/live2d", "/catalog/spine", "/catalog/assets", "/catalog/help"],
   },
-  { id: "stories", route: "/catalog/stories", icon: "auto_stories", label: "navigation.stories", match: ["/catalog/stories"] },
+  {
+    id: "stories",
+    route: "/catalog/stories",
+    icon: "auto_stories",
+    label: "navigation.stories",
+    match: ["/catalog/stories"],
+  },
   {
     id: "tools",
     route: "/tools",
@@ -183,6 +198,7 @@ const sections: NavSection[] = [
       { route: "/song-progress", icon: "check_circle", label: "catalog.songProgress.title" },
       { route: "/gacha-history", icon: "history", label: "catalog.gachaHistory.title" },
       { route: "/stamp-maker", icon: "image", label: "tools.stampMaker.title" },
+      { route: "/story-creation", icon: "edit_note", label: "community.stories.editor" },
       { route: "/chart-editor/create", icon: "edit", label: "navigation.chartEditor" },
     ],
   },
@@ -228,6 +244,7 @@ const sections: NavSection[] = [
         { route: "/community/activity", icon: "comment", label: "community.page.activity" },
       ] },
       { route: "/community/playlists", icon: "queue_music", label: "community.page.playlistPage.title" },
+      { route: "/community/stories", icon: "auto_stories", label: "community.stories.title" },
       { route: "/community/charts", icon: "music_note", label: "community.charts.title" },
       // Last in the tree: its boards are a live directory that loads after
       // the page, and at the end it can grow without moving any row.
@@ -283,12 +300,23 @@ const catalogHub: Array<NavItem & { resource?: string; countKey?: string }> = [
   { route: "/catalog/characters", icon: "group", label: "navigation.characters", resource: "characters" },
   { route: "/catalog/member-cards", icon: "style", label: "navigation.memberCards", resource: "cards" },
   { route: "/catalog/support-cards", icon: "collections", label: "navigation.supportCards", resource: "support-cards" },
-  { route: "/catalog/stories", icon: "auto_stories", label: "navigation.stories", resource: "stories", countKey: "episodes" },
+  {
+    route: "/catalog/stories",
+    icon: "auto_stories",
+    label: "navigation.stories",
+    resource: "stories",
+    countKey: "episodes",
+  },
   { route: "/catalog/comics", icon: "menu_book", label: "navigation.comics", resource: "comics" },
   { route: "/catalog/events", icon: "event", label: "navigation.events", resource: "events" },
   { route: "/catalog/arena", icon: "emoji_events", label: "navigation.arena", resource: "arena" },
   { route: "/catalog/gacha", icon: "redeem", label: "navigation.gacha", resource: "gacha" },
-  { route: "/catalog/login-campaigns", icon: "event_available", label: "navigation.loginCampaigns", resource: "login-campaigns" },
+  {
+    route: "/catalog/login-campaigns",
+    icon: "event_available",
+    label: "navigation.loginCampaigns",
+    resource: "login-campaigns",
+  },
   { route: "/catalog/missions", icon: "fact_check", label: "navigation.systemNavMissions", resource: "missions" },
   { route: "/catalog/passes", icon: "workspace_premium", label: "navigation.systemNavPasses", resource: "passes" },
   { route: "/catalog/tgw-card", icon: "credit_card", label: "catalog.tgwCard.card", resource: "tgw-card" },

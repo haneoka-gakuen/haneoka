@@ -1,7 +1,8 @@
 import { getAuthSession } from "./auth";
+import { storyResourceReviewAsset, storyAssetContent, decideStoryResourceReview } from "./community-story-assets";
 import { avatarUrlSelect } from "./avatar-url";
 import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
-import { decideModerationManually, resolveModerationAppeal } from "./moderation";
+import { decideModerationManually, resolveModerationAppeal, resolveStoryAttachmentModeration } from "./moderation";
 import { readAdminPost, readAdminAttachment, readAdminStatistics } from "./admin-content";
 import { readAdminUser } from "./admin-user-details";
 import { officialDigest, readOfficialDailyArchives, readOfficialFinalArchives } from "./official-ranking-store";
@@ -10,7 +11,15 @@ import { globalLoginConfiguration } from "./official-account-jobs";
 import { listGuestAccounts, removeGuestAccount } from "./official-guest-accounts";
 import { listAdminCreations, readAdminCreation, removeAdminCreation, type CreationKind } from "./admin-creations";
 import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
-import { USER_ROLES, isUserRole, isStaffRole, type UserRole, type StaffRole, type StoredUserRole, type MemberTier } from "../src/lib/user-roles";
+import {
+  USER_ROLES,
+  isUserRole,
+  isStaffRole,
+  type UserRole,
+  type StaffRole,
+  type StoredUserRole,
+  type MemberTier,
+} from "../src/lib/user-roles";
 import { effectiveUserRoleSql } from "./user-roles";
 import { isPublicResourceServer, readSiteSettings } from "./site-settings";
 
@@ -25,7 +34,8 @@ const PACKAGE_UPLOAD_TTL_MS = 24 * 60 * 60 * 1_000;
 const RESOURCE_OWNER = "haneoka-gakuen";
 const RESOURCE_REPOSITORY = "haneoka";
 const RESOURCE_WORKFLOW = "resource-pipeline.yml";
-const resourceWorkflow = (server: string) => isPublicResourceServer(server) ? RESOURCE_WORKFLOW : "build-validation.yml";
+const resourceWorkflow = (server: string) =>
+  isPublicResourceServer(server) ? RESOURCE_WORKFLOW : "build-validation.yml";
 const RESOURCE_REF = "main";
 const CAS_PREFIX = "cas/v1/sha256";
 const PACKAGE_LEASE_PREFIX = "private/v1/package-leases";
@@ -104,6 +114,7 @@ interface OverviewRow {
   totalUsers: number;
   reviewComments: number;
   reviewPosts: number;
+  reviewStoryAssets: number;
   pendingDisplayNames: number;
   totalComments: number;
 }
@@ -805,6 +816,7 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
        (SELECT COUNT(*) FROM community_content_report WHERE status IN ('pending', 'reviewing')) AS pendingReports,
        (SELECT COUNT(*) FROM community_comment WHERE moderation_status IN ('pending', 'review') AND deleted_at IS NULL) AS reviewComments,
        (SELECT COUNT(*) FROM community_post WHERE moderation_status IN ('pending', 'review') AND deleted_at IS NULL) AS reviewPosts,
+       (${storyAssetReviewRows} SELECT count(*) FROM reviews WHERE automatic=0 AND status IN ('pending','review')) AS reviewStoryAssets,
        (SELECT COUNT(*) FROM community_profile WHERE display_name_status = 'pending' AND pending_display_name IS NOT NULL AND deleted_at IS NULL) AS pendingDisplayNames,
        (SELECT COUNT(*) FROM community_comment WHERE deleted_at IS NULL) AS totalComments,
        (SELECT COUNT(*) FROM resource_package_upload WHERE status = 'ready') AS readyPackages,
@@ -821,6 +833,7 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
       pendingReports: counts.pendingReports,
       reviewComments: counts.reviewComments,
       reviewPosts: counts.reviewPosts,
+      reviewStoryAssets: counts.reviewStoryAssets,
       pendingDisplayNames: counts.pendingDisplayNames,
       totalComments: counts.totalComments,
       publishedPosts: counts.publishedPosts,
@@ -855,7 +868,11 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
   if (query.length > 100) return error(request, 400, "invalid_query", "q must not exceed 100 characters");
 
   let visitFilter;
-  try { visitFilter = adminVisitFilter(url); } catch { return error(request,400,"invalid_geo_filter","Invalid latest-visit filter"); }
+  try {
+    visitFilter = adminVisitFilter(url);
+  } catch {
+    return error(request, 400, "invalid_geo_filter", "Invalid latest-visit filter");
+  }
   const conditions: string[] = visitFilter.sql === "1" ? [] : [visitFilter.sql];
   const values: BindValue[] = [...visitFilter.values];
   if (role) {
@@ -877,7 +894,15 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
         OR profile.handle LIKE ? ESCAPE '\\' COLLATE NOCASE)`,
     );
     const pattern = `${escapeLike(query)}%`;
-    values.push(query, query, /^[1-9][0-9]{0,15}$/.test(query) && Number.isSafeInteger(Number(query)) ? Number(query) : null, pattern, pattern, pattern, pattern);
+    values.push(
+      query,
+      query,
+      /^[1-9][0-9]{0,15}$/.test(query) && Number.isSafeInteger(Number(query)) ? Number(query) : null,
+      pattern,
+      pattern,
+      pattern,
+      pattern,
+    );
   }
   if (cursor && typeof cursor.sort === "string") {
     conditions.push("(account.createdAt < ? OR (account.createdAt = ? AND account.id < ?))");
@@ -1234,12 +1259,16 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
   const authorId = url.searchParams.get("authorId");
   if (authorId && !SAFE_ID_PATTERN.test(authorId)) return error(request, 400, "invalid_author", "authorId is invalid");
 
-  const forumValues=url.searchParams.getAll("forumId");
-  if(forumValues.length>1 || (forumValues.length && !UUID_PATTERN.test(forumValues[0]!))) return error(request,400,"invalid_forum","forumId must be a UUID");
-  const forumId=forumValues[0] ?? null;
+  const forumValues = url.searchParams.getAll("forumId");
+  if (forumValues.length > 1 || (forumValues.length && !UUID_PATTERN.test(forumValues[0]!)))
+    return error(request, 400, "invalid_forum", "forumId must be a UUID");
+  const forumId = forumValues[0] ?? null;
   const conditions: string[] = [];
   const values: BindValue[] = [];
-  if(forumId){conditions.push("post.forum_id=?");values.push(forumId);}
+  if (forumId) {
+    conditions.push("post.forum_id=?");
+    values.push(forumId);
+  }
   if (moderationStatus) {
     conditions.push("post.moderation_status = ?");
     values.push(moderationStatus);
@@ -1307,7 +1336,7 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
   }));
   return json(request, {
     posts,
-    filters:{forumId},
+    filters: { forumId },
     nextCursor: last && result.results.length === limit ? encodeCursor({ sort: last.createdAt, id: last.id }) : null,
   });
 };
@@ -1487,7 +1516,10 @@ const getPostRevisionHistoryPage = async (
         byteSize: attachment.byteSize,
         sha256: attachment.sha256,
         status: attachment.status,
-        contentUrl: attachment.byteSize !== null ? `${ADMIN_PREFIX}/attachments/${encodeURIComponent(attachment.attachmentId)}/content` : null,
+        contentUrl:
+          attachment.byteSize !== null
+            ? `${ADMIN_PREFIX}/attachments/${encodeURIComponent(attachment.attachmentId)}/content`
+            : null,
         position: attachment.position,
       });
       attachmentsByRevision.set(attachment.revisionNumber, attachments);
@@ -2216,6 +2248,120 @@ const decideAppeal = async (request: Request, env: Env, appealId: string): Promi
   return json(request, { appeal: appealValue(appeal), operation: operationValue(operation) });
 };
 
+const storyAssetReviewRows = `WITH reviews AS (
+    SELECT c.id,c.status,c.created_at AS createdAt,a.id AS attachmentId,a.original_name AS fileName,
+      a.media_type AS mediaType,a.width,a.height,a.byte_size AS bytes,
+      '/api/v1/admin/attachments/'||a.id||'/content' AS contentUrl,
+      COALESCE((SELECT '/api/v1/admin/attachments/'||a.id||'/content?variant='||variant.kind
+        FROM community_attachment_variant variant WHERE variant.attachment_id=a.id
+        AND variant.kind IN ('thumb','poster') AND variant.media_type LIKE 'image/%'
+        ORDER BY CASE variant.kind WHEN 'thumb' THEN 0 ELSE 1 END LIMIT 1),
+        CASE WHEN a.media_type LIKE 'image/%' THEN '/api/v1/admin/attachments/'||a.id||'/content' END) AS thumbnailUrl,
+      (c.status='pending' AND NOT EXISTS(SELECT 1 FROM community_moderation_job job WHERE job.case_id=c.id AND job.status='failed')) AS automatic,
+      c.decision_token AS reviewToken
+    FROM community_moderation_case c JOIN community_attachment a ON a.id=c.entity_id
+    JOIN community_media_job media ON media.attachment_id=a.id
+    WHERE c.entity_kind='attachment' AND c.status IN ('pending','review','allow','block')
+    AND a.deleted_at IS NULL AND a.status IN ('scanning','review','ready','rejected') AND media.state='ready'
+    AND EXISTS(SELECT 1 FROM community_story_asset sa WHERE sa.attachment_id=a.id)
+    AND NOT EXISTS(SELECT 1 FROM community_moderation_case newer WHERE newer.entity_kind=c.entity_kind AND newer.entity_id=c.entity_id
+      AND newer.entity_revision=c.entity_revision AND newer.policy_generation>c.policy_generation)
+    UNION ALL
+    SELECT review.id,review.status,review.created_at,NULL,review.file_name,review.media_type,NULL,NULL,b.byte_size,
+      '/api/v1/admin/story-asset-reviews/'||review.id||'/content',
+      CASE WHEN review.media_type='image/svg+xml' THEN '/api/v1/admin/story-asset-reviews/'||review.id||'/content' END,
+      (review.status='review' AND EXISTS(SELECT 1 FROM community_story_resource_check check_job WHERE check_job.review_id=review.id AND check_job.status IN ('queued','processing'))),
+      COALESCE(review.decision_operation_id,review.id)
+    FROM community_story_resource_review review JOIN community_story_blob b ON b.hash=review.blob_hash
+    WHERE review.status IN ('review','allow','block') AND b.state='active'
+      AND EXISTS(SELECT 1 FROM community_story_asset asset WHERE asset.blob_hash=b.hash)
+  )`;
+const getStoryAssetReviews = async (request: Request, env: Env, url: URL): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const query = (url.searchParams.get("q") || "").slice(0, 120),
+    queue = url.searchParams.get("queue") || "review",
+    filter = queue === "automatic" ? "automatic=1" : queue === "allow" ? "automatic=0 AND status='allow'" : queue === "block" ? "automatic=0 AND status='block'" : "automatic=0 AND status IN ('pending','review')",
+    before = /^(\d+):([a-f0-9-]{36})$/u.exec(url.searchParams.get("before") || "");
+  const result = await env.DB.prepare(`${storyAssetReviewRows} SELECT * FROM reviews
+    WHERE (${filter}) AND fileName LIKE ?1 AND (?2 IS NULL OR createdAt<?2 OR (createdAt=?2 AND id<?3)) ORDER BY createdAt DESC,id DESC LIMIT 101`)
+    .bind(`%${query}%`,before ? Number(before[1]) : null,before ? before[2]! : null).all<JsonObject>();
+  const count = await env.DB.prepare(`${storyAssetReviewRows} SELECT COALESCE(sum(automatic=0 AND status IN ('pending','review')),0) AS attention,COALESCE(sum(automatic=1),0) AS automatic,
+    COALESCE(sum(automatic=0 AND status='allow'),0) AS allowed,COALESCE(sum(automatic=0 AND status='block'),0) AS blocked,
+    COALESCE(sum(fileName LIKE ?1 AND (${filter})),0) AS matched FROM reviews`).bind(`%${query}%`).first<{attention:number;automatic:number;allowed:number;blocked:number;matched:number}>();
+  const rows = result.results.slice(0, 100),
+    last = rows.at(-1);
+  return json(request, {
+    items: rows,
+    total: count?.matched ?? 0,
+    pendingTotal: count?.attention ?? 0,
+    automaticTotal: count?.automatic ?? 0,
+    allowedTotal: count?.allowed ?? 0,
+    blockedTotal: count?.blocked ?? 0,
+    next: result.results.length > 100 && last ? `${last.createdAt}:${last.id}` : null,
+  });
+};
+const decideStoryAssetReview = async (request: Request, env: Env, caseId: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  if (
+    !body ||
+    (body.decision !== "allow" && body.decision !== "block") ||
+    (body.expectedStatus !== "pending" && body.expectedStatus !== "review" && body.expectedStatus !== "allow" && body.expectedStatus !== "block") ||
+    (body.expectedToken !== undefined && typeof body.expectedToken !== "string") ||
+    ((body.expectedStatus === "allow" || body.expectedStatus === "block") && !body.expectedToken)
+  )
+    return error(request, 422, "invalid_body", "Invalid review decision");
+  const started = await startOperation(
+    request,
+    env,
+    access,
+    "moderation.story_asset.decide",
+    "moderation-case",
+    caseId,
+  );
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  const resource = await env.DB.prepare("SELECT id FROM community_story_resource_review WHERE id=?").bind(caseId).first();
+  if (resource) {
+    const changed = await decideStoryResourceReview(env, {id:caseId,decision:body.decision,
+      expectedStatus:body.expectedStatus,...(body.expectedToken === undefined ? {} : {expectedToken:body.expectedToken}),reviewerId:access.userId,operationId:started.operationId});
+    if (!changed) {
+      await failOperation(env,started.operationId,"version_conflict");
+      return error(request,409,"version_conflict","Review changed");
+    }
+    const operation = await findOperation(env,access.userId,request.headers.get("Idempotency-Key")!.trim());
+    return json(request,{operation:operationValue(operation!)});
+  }
+  let changed: boolean;
+  try {
+    changed = await resolveStoryAttachmentModeration(env, {
+      caseId,
+      expectedStatus: body.expectedStatus,
+      ...(body.expectedToken === undefined ? {} : {expectedToken: body.expectedToken}),
+      decision: body.decision,
+      reviewerUserId: access.userId,
+    });
+  } catch (failure) {
+    await failOperation(env, started.operationId, "review_conflict");
+    throw failure;
+  }
+  if (!changed) {
+    await failOperation(env, started.operationId, "version_conflict");
+    return error(request, 409, "version_conflict", "Review changed");
+  }
+  const operation = await transitionOperation(
+    env,
+    started.operationId,
+    "succeeded",
+    { caseId, decision: body.decision },
+    caseId,
+    null,
+  );
+  return json(request, { operation: operationValue(operation) });
+};
+
 const findReportForAdmin = async (env: Env, reportId: string): Promise<ContentReportRow | null> =>
   env.DB.prepare(
     `SELECT report.id, report.reporter_user_id AS reporterUserId,
@@ -2690,7 +2836,19 @@ const putUserRole = async (request: Request, env: Env, userId: string): Promise<
        WHERE EXISTS (
          SELECT 1 FROM community_profile WHERE user_id = ? AND role = ? AND member_tier = ? AND version = ?
        )`,
-    ).bind(crypto.randomUUID(), userId, target.role, role, access.userId, reasonCode, now, userId, storedRole, memberTier, version + 1),
+    ).bind(
+      crypto.randomUUID(),
+      userId,
+      target.role,
+      role,
+      access.userId,
+      reasonCode,
+      now,
+      userId,
+      storedRole,
+      memberTier,
+      version + 1,
+    ),
   ]);
   if (Number(results[0]?.meta.changes || 0) !== 1 || Number(results[1]?.meta.changes || 0) !== 1) {
     await failOperation(env, started.operationId, "role_change_conflict");
@@ -4687,9 +4845,9 @@ const putSiteSettings = async (request: Request, env: Env): Promise<Response> =>
   if (!body) return error(request, 400, "invalid_body", "A JSON body is required");
   const version = expectedVersion(body);
   const roles = body.contentAccessRoles;
-  if (!Array.isArray(roles) || roles.some(role => !isUserRole(role)) || new Set(roles).size !== roles.length)
+  if (!Array.isArray(roles) || roles.some((role) => !isUserRole(role)) || new Set(roles).size !== roles.length)
     return error(request, 422, "invalid_site_settings", "Valid unique contentAccessRoles are required");
-  const allowedRoles = USER_ROLES.filter(role => roles.includes(role));
+  const allowedRoles = USER_ROLES.filter((role) => roles.includes(role));
   if (version === null || typeof body.showRestrictedContent !== "boolean")
     return error(request, 422, "invalid_site_settings", "showRestrictedContent and expectedVersion are required");
   const started = await startOperation(request, env, access, "site.content_visibility.update", "site_setting", "1");
@@ -4699,13 +4857,25 @@ const putSiteSettings = async (request: Request, env: Env): Promise<Response> =>
     const updated = await env.DB.prepare(
       `UPDATE site_setting SET show_test_server_content = ?, test_content_roles = ?, version = version + 1, updated_at = ?
        WHERE id = 1 AND version = ?`,
-    ).bind(body.showRestrictedContent ? 1 : 0, JSON.stringify(allowedRoles), Date.now(), version).run();
+    )
+      .bind(body.showRestrictedContent ? 1 : 0, JSON.stringify(allowedRoles), Date.now(), version)
+      .run();
     if (Number(updated.meta.changes || 0) !== 1) {
       await failOperation(env, started.operationId, "version_conflict");
       return error(request, 409, "version_conflict", "Site settings changed; refresh and retry");
     }
-    const operation = await transitionOperation(env, started.operationId, "succeeded",
-      { showRestrictedContent: body.showRestrictedContent, contentAccessRoles: [...allowedRoles], version: version + 1 }, null, null);
+    const operation = await transitionOperation(
+      env,
+      started.operationId,
+      "succeeded",
+      {
+        showRestrictedContent: body.showRestrictedContent,
+        contentAccessRoles: [...allowedRoles],
+        version: version + 1,
+      },
+      null,
+      null,
+    );
     return json(request, { operation: operationValue(operation), siteSettings: await readSiteSettings(env) });
   } catch (failure) {
     await failOperation(env, started.operationId, "site_settings_update_failed");
@@ -4737,8 +4907,30 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
   if (segments.some((segment) => segment === null))
     return error(request, 404, "route_not_found", "API route not found");
   const path = segments as string[];
+  if (method === "GET" && path.length === 1 && path[0] === "story-asset-reviews")
+    return getStoryAssetReviews(request, env, url);
+  if (method === "GET" && path.length===3 && path[0]==="story-asset-reviews" && path[2]==="content") {
+    const access=await requireStaff(request,env,"admin");
+    if(access instanceof Response)return access;
+    const asset=UUID_PATTERN.test(path[1] || "") ? await storyResourceReviewAsset(env,path[1]!) : null;
+    return asset ? storyAssetContent(request,env,asset) : error(request,404,"media_missing","Resource not found");
+  }
+  if (method === "POST" && path.length === 3 && path[0] === "story-asset-reviews" && path[2] === "decision")
+    return UUID_PATTERN.test(path[1] || "")
+      ? decideStoryAssetReview(request, env, path[1]!)
+      : error(request, 404, "not_found", "Review not found");
 
-  if ((path[0] === "charts" || path[0] === "playlists") &&
+  if (method === "GET" && path[0] === "stories" && path.length >= 4 && (path[2] === "runtime" || path[2] === "assets")) {
+    const access = await requireStaff(request, env, "admin");
+    if (access instanceof Response) return access;
+    const revision = Number(path[3]);
+    if (!UUID_PATTERN.test(path[1] || "") || !Number.isSafeInteger(revision) || revision < 1 ||
+        (path[2] === "runtime" ? path.length !== 4 : path.length < 5))
+      return error(request, 404, "content_not_found", "Content not found");
+    const { readCommunityStoryForAdmin } = await import("./community-stories");
+    return readCommunityStoryForAdmin(request, env, path[1]!, revision, path[2] === "assets" ? path.slice(4).join("/") : undefined);
+  }
+  if ((path[0] === "charts" || path[0] === "playlists" || path[0] === "stories") &&
       ((method === "GET" && (path.length === 1 || path.length === 2)) || (method === "DELETE" && path.length === 2)))
     return handleAdminCreations(request, env, path[0], path[1]);
 
@@ -4755,7 +4947,12 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     return path[0] === "posts" ? readAdminPost(request, env, id) : readAdminAttachment(request, env, id);
   }
 
-  if (method === "GET" && path.length === 2 && path[0] === "statistics" && (path[1] === "series" || path[1] === "geo")) {
+  if (
+    method === "GET" &&
+    path.length === 2 &&
+    path[0] === "statistics" &&
+    (path[1] === "series" || path[1] === "geo")
+  ) {
     const access = await requireStaff(request, env, "admin");
     if (access instanceof Response) return access;
     return path[1] === "series" ? readAdminSeries(request, env) : readAdminGeo(request, env);
@@ -4765,7 +4962,9 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
     const access = await requireStaff(request, env, "admin");
     if (access instanceof Response) return access;
     const id = path[1] || "";
-    return SAFE_ID_PATTERN.test(id) ? readAdminUser(request, env, id) : error(request,400,"invalid_user_id","Invalid Haneoka account identifier");
+    return SAFE_ID_PATTERN.test(id)
+      ? readAdminUser(request, env, id)
+      : error(request, 400, "invalid_user_id", "Invalid Haneoka account identifier");
   }
 
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);

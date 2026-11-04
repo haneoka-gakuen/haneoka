@@ -2206,6 +2206,7 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
       `SELECT id FROM community_attachment
        WHERE id IN (${placeholders}) AND owner_user_id = ?
          AND purpose = 'post' AND deleted_at IS NULL
+         AND NOT EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id)
          AND byte_size = declared_size AND sha256 IS NOT NULL AND r2_etag IS NOT NULL AND r2_version IS NOT NULL
          AND ((status = 'ready' AND moderation_status = 'allow')
               OR (status IN ('scanning', 'review') AND moderation_status IN ('pending', 'review')))`,

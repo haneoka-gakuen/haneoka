@@ -156,7 +156,7 @@ async function renderModelImage(input: Extract<ResourceImageRequest, { kind: "li
   const runtime = await loadCubismWebRuntime<{
     CubismModelViewer: new (options: { canvas: HTMLCanvasElement; frameControl: "manual"; onError(error: unknown): void }) => Viewer & { advanceFrame(seconds: number): boolean };
     createCubismWebRuntimeAdapter(options: unknown): { prepare(version: number, signal: AbortSignal): Promise<void> };
-  }>(apiBase);
+  }>();
   const core = Object.fromEntries(Object.entries(CUBISM_CORE_URLS).map(([name, url]) => [name, new URL(url, apiBase).href]));
   await runtime.createCubismWebRuntimeAdapter({ runtime: core }).prepare(3, signal);
   const canvas = document.createElement("canvas"); document.body.append(canvas);

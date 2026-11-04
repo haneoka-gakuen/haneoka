@@ -162,6 +162,8 @@ export function isCoreFallbackShell(pathname: string): boolean {
   return false;
 }
 export function staticDocumentLookupPath(pathname: string): string | undefined {
+  const story = /^\/(jp|intl)\/(ja|en|zh-TW|zh-CN|ko)\/community-stories\/[0-9a-f-]{36}\/?$/u.exec(pathname);
+  if (story) return coreStaticDocumentPath(`/${story[1]}/${story[2]}/community-stories/_/`);
   const chartShell = communityChartShellPath(pathname);
   if (chartShell) return coreStaticDocumentPath(chartShell);
   if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;

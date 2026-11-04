@@ -28,6 +28,7 @@ interface NativeOutput {
   sha256?: string;
 }
 interface NativeJob {
+  source: { width: number; height: number };
   jobId: string;
   state: string;
   progress: number;
@@ -74,6 +75,11 @@ export async function enqueueNativeMediaJob(env: Env, id: string): Promise<void>
     .bind(now, now, id)
     .run();
   const job = await jobRow(env, id);
+  if (job?.state === "ready" && (await sourceRow(env, id))?.status === "scanning") {
+    await scheduleEntityModeration(env,"attachment",id,
+      {categories:[],normalizedText:"",reasonCode:"deterministic.media_preview_valid",verdict:"allow"},1);
+    return;
+  }
   if (job?.state !== "queued") return;
   await env.MEDIA_QUEUE.send({ attachmentId: id, version: 1 });
 }
@@ -354,6 +360,10 @@ async function processMedia(env: Env, id: string): Promise<void> {
       ),
     );
     statements.push(
+      env.DB.prepare(
+        `UPDATE community_attachment SET width=?,height=?,updated_at=? WHERE id=? AND status='scanning' AND deleted_at IS NULL
+         AND EXISTS(SELECT 1 FROM community_media_job WHERE attachment_id=? AND lease_token=?)`,
+      ).bind(result.source.width,result.source.height,Date.now(),id,id,token),
       env.DB.prepare(
         "UPDATE community_media_job SET state='ready',progress=1,lease_token=NULL,lease_until=NULL,updated_at=? WHERE attachment_id=? AND lease_token=? AND EXISTS(SELECT 1 FROM community_attachment WHERE id=? AND status='scanning' AND deleted_at IS NULL)",
       ).bind(Date.now(), id, token, id),

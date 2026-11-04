@@ -97,3 +97,133 @@
 	path = .dependencies/render-shaders
 	url = https://github.com/haneoka-gakuen/render-shaders.git
 	branch = main
+
+[submodule "altair"]
+	path = .dependencies/altair
+	url = https://github.com/haneoka-gakuen/altair.git
+	branch = main
+
+[submodule "altair-plugin-adv"]
+	path = .dependencies/altair-plugin-adv
+	url = https://github.com/haneoka-gakuen/altair-plugin-adv.git
+	branch = main
+
+[submodule "altair-plugin-bestdori"]
+	path = .dependencies/altair-plugin-bestdori
+	url = https://github.com/haneoka-gakuen/altair-plugin-bestdori.git
+	branch = main
+
+[submodule "altair-plugin-drafts"]
+	path = .dependencies/altair-plugin-drafts
+	url = https://github.com/haneoka-gakuen/altair-plugin-drafts.git
+	branch = main
+
+[submodule "altair-plugin-flow"]
+	path = .dependencies/altair-plugin-flow
+	url = https://github.com/haneoka-gakuen/altair-plugin-flow.git
+	branch = main
+
+[submodule "altair-plugin-haneoka"]
+	path = .dependencies/altair-plugin-haneoka
+	url = https://github.com/haneoka-gakuen/altair-plugin-haneoka.git
+	branch = main
+
+[submodule "altair-plugin-history"]
+	path = .dependencies/altair-plugin-history
+	url = https://github.com/haneoka-gakuen/altair-plugin-history.git
+	branch = main
+
+[submodule "altair-plugin-marketplace"]
+	path = .dependencies/altair-plugin-marketplace
+	url = https://github.com/haneoka-gakuen/altair-plugin-marketplace.git
+	branch = main
+
+[submodule "altair-plugin-models"]
+	path = .dependencies/altair-plugin-models
+	url = https://github.com/haneoka-gakuen/altair-plugin-models.git
+	branch = main
+
+[submodule "altair-plugin-prose"]
+	path = .dependencies/altair-plugin-prose
+	url = https://github.com/haneoka-gakuen/altair-plugin-prose.git
+	branch = main
+
+[submodule "altair-plugin-vega-preview"]
+	path = .dependencies/altair-plugin-vega-preview
+	url = https://github.com/haneoka-gakuen/altair-plugin-vega-preview.git
+	branch = main
+
+[submodule "altair-plugin-webgal"]
+	path = .dependencies/altair-plugin-webgal
+	url = https://github.com/haneoka-gakuen/altair-plugin-webgal.git
+	branch = main
+
+[submodule "altair-plugin-workspace-browser"]
+	path = .dependencies/altair-plugin-workspace-browser
+	url = https://github.com/haneoka-gakuen/altair-plugin-workspace-browser.git
+	branch = main
+
+[submodule "altair-preset-full"]
+	path = .dependencies/altair-preset-full
+	url = https://github.com/haneoka-gakuen/altair-preset-full.git
+	branch = main
+
+[submodule "vega-example-first-light"]
+	path = .dependencies/vega-example-first-light
+	url = https://github.com/haneoka-gakuen/vega-example-first-light.git
+	branch = main
+
+[submodule "vega-marketplace"]
+	path = .dependencies/vega-marketplace
+	url = https://github.com/haneoka-gakuen/vega-marketplace.git
+	branch = main
+
+[submodule "vega-plugin-composite"]
+	path = .dependencies/vega-plugin-composite
+	url = https://github.com/haneoka-gakuen/vega-plugin-composite.git
+	branch = main
+
+[submodule "vega-plugin-ending"]
+	path = .dependencies/vega-plugin-ending
+	url = https://github.com/haneoka-gakuen/vega-plugin-ending.git
+	branch = main
+
+[submodule "vega-plugin-richtext-bbcode"]
+	path = .dependencies/vega-plugin-richtext-bbcode
+	url = https://github.com/haneoka-gakuen/vega-plugin-richtext-bbcode.git
+	branch = main
+
+[submodule "vega-plugin-richtext-html"]
+	path = .dependencies/vega-plugin-richtext-html
+	url = https://github.com/haneoka-gakuen/vega-plugin-richtext-html.git
+	branch = main
+
+[submodule "vega-plugin-richtext-latex"]
+	path = .dependencies/vega-plugin-richtext-latex
+	url = https://github.com/haneoka-gakuen/vega-plugin-richtext-latex.git
+	branch = main
+
+[submodule "vega-plugin-richtext-markdown"]
+	path = .dependencies/vega-plugin-richtext-markdown
+	url = https://github.com/haneoka-gakuen/vega-plugin-richtext-markdown.git
+	branch = main
+
+[submodule "vega-plugin-richtext-typst"]
+	path = .dependencies/vega-plugin-richtext-typst
+	url = https://github.com/haneoka-gakuen/vega-plugin-richtext-typst.git
+	branch = main
+
+[submodule "vega-plugin-spine"]
+	path = .dependencies/vega-plugin-spine
+	url = https://github.com/haneoka-gakuen/vega-plugin-spine.git
+	branch = main
+
+[submodule "vega-plugin-webgal"]
+	path = .dependencies/vega-plugin-webgal
+	url = https://github.com/haneoka-gakuen/vega-plugin-webgal.git
+	branch = main
+
+[submodule "vega-preset-full"]
+	path = .dependencies/vega-preset-full
+	url = https://github.com/haneoka-gakuen/vega-preset-full.git
+	branch = main

@@ -2,7 +2,12 @@ import { forumReadSql, forumPermissionSql, canAccessAttachmentForum } from "./co
 import { COMMUNITY_UPLOAD_LIMITS } from "../src/config/community";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
-import { enqueueNativeMediaJob, retryNativeMediaJob, cleanupNativeMediaStorage, mediaPresentation } from "./community-media";
+import {
+  enqueueNativeMediaJob,
+  retryNativeMediaJob,
+  cleanupNativeMediaStorage,
+  mediaPresentation,
+} from "./community-media";
 import { inspectCommunityText, type TextInspection } from "./moderation";
 
 type UploadMediaType =
@@ -40,6 +45,7 @@ interface AttachmentRow {
   objectKey: string;
   ownerUserId: string;
   purpose: "avatar" | "post";
+  storyResource: number;
   r2UploadId: string | null;
   r2Etag: string | null;
   r2Version: string | null;
@@ -157,6 +163,7 @@ const attachmentColumns = `
   community_attachment.id,
   community_attachment.owner_user_id AS ownerUserId,
   community_attachment.purpose,
+  EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id) AS storyResource,
   community_attachment.idempotency_key AS idempotencyKey,
   community_attachment.object_key AS objectKey,
   community_attachment.original_name AS fileName,
@@ -305,6 +312,7 @@ const attachmentValue = (row: AttachmentRow): JsonObject => ({
   downloadUrl:
     row.status === "ready" && row.moderationStatus === "allow" ? `${PREFIX}/attachments/${row.id}/content` : null,
   failureCode: row.failureCode,
+  scope: row.storyResource ? "story" : "post",
 });
 
 const findAttachment = async (env: Env, id: string): Promise<AttachmentRow | null> =>
@@ -313,6 +321,9 @@ const findAttachment = async (env: Env, id: string): Promise<AttachmentRow | nul
 const requireActiveUser = async (request: Request, env: Env): Promise<{ userId: string } | { response: Response }> => {
   const session = await getAuthSession(request, env);
   if (!session?.user?.id) return { response: error(request, 401, "authentication_required", "Sign in required") };
+  const actor = request.headers.get("X-Haneoka-Actor");
+  if (actor !== null && actor !== session.user.id)
+    return { response: error(request, 409, "identity_changed", "Account changed") };
   if (!session.user.emailVerified) {
     return { response: error(request, 403, "email_verification_required", "Verify the account email first") };
   }
@@ -345,6 +356,9 @@ const createIntent = async (request: Request, env: Env): Promise<Response> => {
   const rawFileName = body?.fileName;
   const rawMediaType = body?.mediaType;
   const rawSize = body?.size;
+  const storyResource = body?.scope === "story";
+  if (body?.scope !== undefined && body.scope !== "story" && body.scope !== "post")
+    return error(request, 400, "invalid_body", "Invalid upload scope");
   if (typeof rawFileName !== "string" || typeof rawMediaType !== "string" || typeof rawSize !== "number") {
     return error(request, 400, "invalid_body", "fileName, mediaType, and size are required");
   }
@@ -370,7 +384,12 @@ const createIntent = async (request: Request, env: Env): Promise<Response> => {
     .bind(access.userId, idempotencyKey)
     .first<AttachmentRow>();
   if (existing) {
-    if (existing.fileName !== fileName || existing.mediaType !== mediaType || existing.declaredSize !== rawSize) {
+    if (
+      existing.fileName !== fileName ||
+      existing.mediaType !== mediaType ||
+      existing.declaredSize !== rawSize ||
+      !!existing.storyResource !== storyResource
+    ) {
       return error(request, 409, "idempotency_conflict", "This Idempotency-Key was used for a different file");
     }
     return json(request, { attachment: attachmentValue(existing) });
@@ -402,26 +421,36 @@ const createIntent = async (request: Request, env: Env): Promise<Response> => {
   }
   let inserted: D1Result;
   try {
-    inserted = await env.DB.prepare(
+    const insertion = env.DB.prepare(
       `INSERT OR IGNORE INTO community_attachment
          (id, owner_user_id, purpose, idempotency_key, object_key, r2_upload_id, original_name, media_type,
           declared_size, status, moderation_status, expires_at, created_at, updated_at)
        VALUES (?, ?, 'post', ?, ?, ?, ?, ?, ?, 'reserved', 'pending', ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        access.userId,
-        idempotencyKey,
-        objectKey,
-        multipart.uploadId,
-        fileName,
-        mediaType,
-        rawSize,
-        expiresAt,
-        now,
-        now,
-      )
-      .run();
+    ).bind(
+      id,
+      access.userId,
+      idempotencyKey,
+      objectKey,
+      multipart.uploadId,
+      fileName,
+      mediaType,
+      rawSize,
+      expiresAt,
+      now,
+      now,
+    );
+    const results = await env.DB.batch([
+      insertion,
+      ...(storyResource
+        ? [
+            env.DB.prepare(
+              `INSERT OR IGNORE INTO community_story_upload(attachment_id,created_at)
+        SELECT id,? FROM community_attachment WHERE id=? AND owner_user_id=?`,
+            ).bind(now, id, access.userId),
+          ]
+        : []),
+    ]);
+    inserted = results[0]!;
   } catch (databaseError) {
     await multipart.abort().catch(() => undefined);
     console.error(
@@ -472,6 +501,36 @@ const dimensionsAllowed = (width: number, height: number, limits: ImageLimits): 
   (limits.maximumPixels === Number.MAX_SAFE_INTEGER ||
     (Number.isSafeInteger(width * height) && width * height <= limits.maximumPixels));
 
+const validImageEditorTrailer = (bytes: Uint8Array): boolean => {
+  const marker = "cameralbum!";
+  if (
+    bytes.length < marker.length + 12 ||
+    bytes.length > 8192 ||
+    ascii(bytes, 0, 4) !== "vivo" ||
+    ascii(bytes, bytes.length - marker.length, marker.length) !== marker
+  )
+    return false;
+  const end = bytes.length - marker.length - 4;
+  if (new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(end, false) !== end - 4) return false;
+  try {
+    const value: unknown = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes.subarray(4, end)),
+    );
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const metadata = value as Record<string, unknown>;
+    return (
+      Number.isSafeInteger(metadata.version) &&
+      Object.entries(metadata).every(
+        ([key, value]) =>
+          (key === "version" || /^com\.vivo\.[a-zA-Z0-9_.-]+$/u.test(key)) &&
+          ["string", "number", "boolean"].includes(typeof value),
+      )
+    );
+  } catch {
+    return false;
+  }
+};
+
 const inspectPngContainer = (bytes: Uint8Array, limits: ImageLimits): ImageDimensions | string => {
   if (!startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) || bytes.length < 45) {
     return "invalid_png_container";
@@ -496,7 +555,8 @@ const inspectPngContainer = (bytes: Uint8Array, limits: ImageLimits): ImageDimen
     if (type === "acTL") return "animated_images_not_allowed";
     offset += length + 12;
     if (type === "IEND") {
-      if (length !== 0 || offset !== bytes.length) return "invalid_png_container";
+      if (length !== 0 || (offset !== bytes.length && !validImageEditorTrailer(bytes.subarray(offset))))
+        return "invalid_png_container";
       endSeen = true;
       break;
     }
@@ -786,12 +846,20 @@ class PngChunkInspector {
   private finalChunk = false;
   private ended = false;
   private failure: string | undefined;
+  private trailer = new Uint8Array(0);
 
   update(bytes: Uint8Array): void {
     let offset = 0;
     while (offset < bytes.length && !this.failure) {
       if (this.ended) {
-        this.failure = "invalid_png_container";
+        if (this.trailer.length + bytes.length - offset > 8192) {
+          this.failure = "invalid_png_container";
+          return;
+        }
+        const trailer = new Uint8Array(this.trailer.length + bytes.length - offset);
+        trailer.set(this.trailer);
+        trailer.set(bytes.subarray(offset), this.trailer.length);
+        this.trailer = trailer;
         return;
       }
       if (this.remaining) {
@@ -824,7 +892,12 @@ class PngChunkInspector {
   }
 
   finish(): string | undefined {
-    return this.failure || (this.ended ? undefined : "invalid_png_container");
+    return (
+      this.failure ||
+      (this.ended && (!this.trailer.length || validImageEditorTrailer(this.trailer))
+        ? undefined
+        : "invalid_png_container")
+    );
   }
 }
 
@@ -882,9 +955,6 @@ const inspectCompletedMedia = (
     const height = view.getUint32(20, false);
     if (!dimensionsAllowed(width, height, DEFAULT_IMAGE_LIMITS)) {
       return { height: null, reason: "invalid_image_dimensions", width: null };
-    }
-    if (tail.length < 12 || !startsWith(tail.subarray(tail.length - 12), [0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44])) {
-      return { height: null, reason: "invalid_png_container", width: null };
     }
     return { height, width };
   }
@@ -1763,7 +1833,8 @@ const getMetadata = async (request: Request, env: Env, id: string): Promise<Resp
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const attachment = await findAttachment(env, id);
-  if (!await canAccessAttachmentForum(env,id,access.userId)) return error(request,404,"attachment_not_found","Attachment not found");
+  if (!(await canAccessAttachmentForum(env, id, access.userId)))
+    return error(request, 404, "attachment_not_found", "Attachment not found");
   if (
     !attachment ||
     attachment.ownerUserId !== access.userId ||
@@ -1782,7 +1853,8 @@ const retryAttachment = async (request: Request, env: Env, id: string): Promise<
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const attachment = await findAttachment(env, id);
-  if (!await canAccessAttachmentForum(env,id,access.userId)) return error(request,404,"attachment_not_found","Attachment not found");
+  if (!(await canAccessAttachmentForum(env, id, access.userId)))
+    return error(request, 404, "attachment_not_found", "Attachment not found");
   if (
     !attachment ||
     attachment.ownerUserId !== access.userId ||
@@ -1860,7 +1932,7 @@ const downloadAttachment = async (request: Request, env: Env, id: string): Promi
        ON attachment_owner_profile.user_id = community_attachment.owner_user_id
      LEFT JOIN community_attachment_variant AS variant
        ON variant.attachment_id = community_attachment.id AND variant.kind = ?
-     WHERE community_attachment.id = ? AND (post.id IS NULL OR ${forumReadSql("post","?")}) LIMIT 1`,
+     WHERE community_attachment.id = ? AND (post.id IS NULL OR ${forumReadSql("post", "?")}) LIMIT 1`,
   )
     .bind(knownVariant ? variantKind : null, id, userId)
     .first<DownloadAccessRow>();
@@ -1999,6 +2071,7 @@ const deleteAttachment = async (request: Request, env: Env, id: string): Promise
            SELECT 1 FROM community_profile_avatar AS avatar WHERE avatar.attachment_id = community_attachment.id
          )
          AND NOT EXISTS (SELECT 1 FROM community_chart_revision AS chart_cover WHERE chart_cover.cover_attachment_id = community_attachment.id)
+         AND NOT EXISTS (SELECT 1 FROM community_story_asset AS story_asset WHERE story_asset.attachment_id = community_attachment.id)
          AND NOT EXISTS (
            SELECT 1
            FROM community_moderation_case AS moderation_case
@@ -2068,7 +2141,7 @@ const linkAttachments = async (request: Request, env: Env, postId: string): Prom
   if (!attachmentIds)
     return error(request, 422, "invalid_attachment_ids", `Provide 1-${MAX_ATTACHMENTS_PER_POST} unique attachment IDs`);
   const post = await env.DB.prepare(
-    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id","post.author_id","post")} LIMIT 1`,
+    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id", "post.author_id", "post")} LIMIT 1`,
   )
     .bind(postId)
     .first<PostOwnerRow>();
@@ -2095,6 +2168,7 @@ const linkAttachments = async (request: Request, env: Env, postId: string): Prom
     const candidates = await env.DB.prepare(
       `SELECT id FROM community_attachment
        WHERE id IN (${placeholders}) AND owner_user_id = ? AND purpose = 'post'
+         AND NOT EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id)
          AND status = 'ready' AND moderation_status = 'allow' AND deleted_at IS NULL`,
     )
       .bind(...additions, access.userId)
@@ -2141,7 +2215,7 @@ const unlinkAttachment = async (
   const access = await requireActiveUser(request, env);
   if ("response" in access) return access.response;
   const post = await env.DB.prepare(
-    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id","post.author_id","post")} LIMIT 1`,
+    `SELECT author_id AS authorId FROM community_post AS post WHERE id = ? AND deleted_at IS NULL AND ${forumPermissionSql("post.forum_id", "post.author_id", "post")} LIMIT 1`,
   )
     .bind(postId)
     .first<PostOwnerRow>();
@@ -2183,6 +2257,7 @@ export const cleanupCommunityUploads = async (env: Env): Promise<void> => {
          )
          AND NOT EXISTS (SELECT 1 FROM community_playlist AS cover_playlist WHERE cover_playlist.cover_attachment_id = attachment.id)
          AND NOT EXISTS (SELECT 1 FROM community_chart_revision AS chart_cover WHERE chart_cover.cover_attachment_id = attachment.id)
+         AND NOT EXISTS (SELECT 1 FROM community_story_asset AS story_asset WHERE story_asset.attachment_id = attachment.id)
          AND NOT EXISTS (
            SELECT 1
            FROM community_moderation_case AS moderation_case

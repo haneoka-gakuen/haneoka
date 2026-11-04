@@ -365,7 +365,21 @@
     "server/ranking-collector-official/setup.py",
     "server/ranking-collector-official/core/api.py",
     "server/ranking-collector-official/core/history.py",
-    "server/ranking-collector-official/core/regions.py"
+    "server/ranking-collector-official/core/regions.py",
+    "scripts/build/story-studio.mjs",
+    "src/lib/story-creation/community.ts",
+    "src/lib/story-creation/project.ts",
+    "src/lib/story-creation/types.ts",
+    "src/lit/community-stories.ts",
+    "src/lit/story-asset-reviews.ts",
+    "src/lit/story-creation-workspace.ts",
+    "worker/community-stories.ts",
+    "worker/community-story-assets.ts",
+    "worker/community-story-moderation.ts",
+    "worker/svg-rasterizer.ts",
+    "tooling/local-containers/entrypoint.sh",
+    "tooling/local-containers/docker.sh",
+    "src/lit/story-workspace.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

@@ -69,7 +69,16 @@ const namespaceRootKeys: Readonly<Record<MainI18nNamespace, readonly string[]>> 
   story: ["story"],
   voice: ["media.voice", "media.audio"],
   media: ["media"],
-  account: ["account", "community.page.appeal", "community.page.appealStatement", "community.page.submitAppeal", "community.page.appealSubmitted", "community.page.appealFailed", "home.dashboard.privacy", "home.dashboard.terms"],
+  account: [
+    "account",
+    "community.page.appeal",
+    "community.page.appealStatement",
+    "community.page.submitAppeal",
+    "community.page.appealSubmitted",
+    "community.page.appealFailed",
+    "home.dashboard.privacy",
+    "home.dashboard.terms",
+  ],
   community: ["community"],
   editor: ["editors"],
   legal: ["legal"],
@@ -140,7 +149,8 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
         .slice(releaseServerFromPath(rawPathname) ? 2 : 1)
         .join("/")}`
     : rawPathname;
-  if (pathname === "/" || pathname === "" || pathname === "/announcements" || pathname.startsWith("/announcements/")) return HOME_I18N_NAMESPACE;
+  if (pathname === "/" || pathname === "" || pathname === "/announcements" || pathname.startsWith("/announcements/"))
+    return HOME_I18N_NAMESPACE;
   if (pathname === "/calendar" || pathname.startsWith("/calendar/")) return CALENDAR_I18N_NAMESPACE;
   if (pathname === "/download") return DOWNLOAD_I18N_NAMESPACE;
   if (pathname === "/about" || pathname === "/join" || pathname === "/sponsor" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {
@@ -151,14 +161,23 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return ADMIN_I18N_NAMESPACE;
   if (pathname === "/community" || pathname.startsWith("/community/")) return COMMUNITY_I18N_NAMESPACE;
   if (
-    pathname === "/stamp-maker" || pathname.startsWith("/stamp-maker/") ||
-    pathname === "/tools/stamp-maker" || pathname.startsWith("/tools/stamp-maker/")
+    pathname === "/stamp-maker" ||
+    pathname.startsWith("/stamp-maker/") ||
+    pathname === "/tools/stamp-maker" ||
+    pathname.startsWith("/tools/stamp-maker/")
   )
     return STAMP_MAKER_I18N_NAMESPACE;
   if (pathname === "/song-puzzle" || pathname.startsWith("/song-puzzle/")) return SONG_PUZZLE_I18N_NAMESPACE;
   if (/^\/team-builder(\/|$)/u.test(pathname)) return TEAM_BUILDER_I18N_NAMESPACE;
   if (/^\/(?:catalog\/)?events\/tracker(?:\/|$)/u.test(pathname)) return EVENT_TRACKER_I18N_NAMESPACE;
   if (pathname.includes("anon-tokyo")) return ANON_I18N_NAMESPACE;
+  if (
+    pathname === "/story-creation" ||
+    pathname.startsWith("/story-creation/") ||
+    pathname === "/community-stories" ||
+    pathname.startsWith("/community-stories/")
+  )
+    return COMMUNITY_I18N_NAMESPACE;
   if (pathname === "/charts" || pathname.startsWith("/charts/")) return COMMUNITY_I18N_NAMESPACE;
   if (pathname.includes("chart-editor") || pathname.includes("story-editor")) return EDITOR_I18N_NAMESPACE;
   if (pathname.includes("stories")) return STORY_I18N_NAMESPACE;
@@ -172,12 +191,20 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
 /** Transitive feature dependencies are explicit and shared by SSR and client loading. */
 const namespaceDependencies: Partial<Record<MainI18nNamespace, readonly MainI18nNamespace[]>> = {
   catalog: ["media"],
-  home: ["catalog", "media"], calendar: ["catalog"], story: ["catalog", "media"],
-  voice: ["catalog", "media"], editor: ["catalog", "media", "story", "community"],
-  anon: ["catalog", "media"], spine: ["catalog", "media"], live2d: ["catalog", "media"],
-  songSlidePuzzle: ["catalog"], stampMaker: ["catalog", "media"], teamBuilder: ["catalog", "media"],
+  home: ["catalog", "media"],
+  calendar: ["catalog"],
+  story: ["catalog", "media"],
+  voice: ["catalog", "media"],
+  editor: ["catalog", "media", "story", "community"],
+  anon: ["catalog", "media"],
+  spine: ["catalog", "media"],
+  live2d: ["catalog", "media"],
+  songSlidePuzzle: ["catalog"],
+  stampMaker: ["catalog", "media"],
+  teamBuilder: ["catalog", "media"],
   eventTracker: ["catalog", "media"],
-  community: ["catalog", "media", "story"], admin: ["catalog", "community"],
+  community: ["catalog", "media", "story"],
+  admin: ["catalog", "community"],
 };
 export const namespaceDependencyClosure = (requested: readonly MainI18nNamespace[]): readonly MainI18nNamespace[] => {
   const paths = new Set<MainI18nNamespace>([COMMON_I18N_NAMESPACE]);

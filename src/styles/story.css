@@ -27,21 +27,9 @@
     display: block;
     min-height: 0;
   }
-  story-workspace[data-player-active="true"] {
-    height: 100%;
-  }
   .story-detail--page {
     min-width: 0;
     min-height: 0;
-  }
-  .story-detail--page[data-view="play"] {
-    display: grid;
-    height: 100%;
-    grid-template-rows: minmax(0, 1fr);
-  }
-  .app-shell__main:has(.story-detail--page[data-view="play"]) {
-    overflow: hidden;
-    scrollbar-gutter: auto;
   }
 
   .story-detail[data-story-fullscreen="true"] > vega-story-stage {
@@ -185,8 +173,10 @@
     min-width: 0;
     min-height: 0;
   }
-  vega-story-stage {
+  .story-detail:not(.story-detail--page) > vega-story-stage {
     grid-row: 2 / -1;
+  }
+  vega-story-stage {
     overflow: hidden;
     background: #111317;
   }

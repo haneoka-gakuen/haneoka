@@ -1,9 +1,20 @@
-import { providerFetch, providerEdgeCache, type ProviderSourceReader, type ProviderExecutionContext, type ProviderFetchInit } from "./provider-source";
+import {
+  providerFetch,
+  providerEdgeCache,
+  type ProviderSourceReader,
+  type ProviderExecutionContext,
+  type ProviderFetchInit,
+} from "./provider-source";
 let sourceReader: ProviderSourceReader | undefined;
-export function setSekaiSourceReader(reader?: ProviderSourceReader): void { sourceReader = reader; }
-const sourceResponse = (input: RequestInfo | URL, init?: ProviderFetchInit): Promise<Response> => sourceReader ? sourceReader.response(input, init) : providerFetch(input, init);
+export function setSekaiSourceReader(reader?: ProviderSourceReader): void {
+  sourceReader = reader;
+}
+const sourceResponse = (input: RequestInfo | URL, init?: ProviderFetchInit): Promise<Response> =>
+  sourceReader ? sourceReader.response(input, init) : providerFetch(input, init);
 import { BESTDORI_CACHE_POLICY, bestdoriCacheControl } from "@haneoka/bestdori/cache-policy";
-import { convertBestdoriScenario, type BestdoriScenarioBase } from "@haneoka/bestdori/scenario";
+import { convertBestdoriScenario } from "@haneoka/bestdori/scenario";
+import { sekaiScenarioBase } from "@haneoka/bestdori/sekai";
+export { sekaiScenarioBase } from "@haneoka/bestdori/sekai";
 import { VEGA_ADV_OPCODE } from "@haneoka/vega-protocol/opcodes";
 import { SEKAI_UNITS as UNITS, sekaiUnitBands } from "../src/lib/sekai-units";
 
@@ -29,7 +40,19 @@ const isRegion = (value: string): value is SekaiRegion => value in SOURCES;
 const MASTER_ORIGIN = "https://sekai-world.github.io";
 const ASSET_ORIGIN = "https://storage.sekai.best";
 export const SEKAI_API_PREFIX = "/api/v1/sekai";
-export { songRecords as projectSekaiSongs, unitRecords as projectSekaiBands, storyList as projectSekaiEventStories, unitStoryList as projectSekaiUnitStories, characterStoryList as projectSekaiCharacterStories, cardStoryList as projectSekaiCardStories, areaTalkList as projectSekaiAreaStories, specialStoryList as projectSekaiSpecialStories, mysekaiTalkList as projectSekaiMySekaiStories, virtualLiveList as projectSekaiLiveStories, storyDetail as projectSekaiStory };
+export {
+  songRecords as projectSekaiSongs,
+  unitRecords as projectSekaiBands,
+  storyList as projectSekaiEventStories,
+  unitStoryList as projectSekaiUnitStories,
+  characterStoryList as projectSekaiCharacterStories,
+  cardStoryList as projectSekaiCardStories,
+  areaTalkList as projectSekaiAreaStories,
+  specialStoryList as projectSekaiSpecialStories,
+  mysekaiTalkList as projectSekaiMySekaiStories,
+  virtualLiveList as projectSekaiLiveStories,
+  storyDetail as projectSekaiStory,
+};
 /** Bump when a projection changes so cached responses are not reused. */
 const RESPONSE_VERSION = "7";
 const JSON_CACHE_CONTROL = bestdoriCacheControl(BESTDORI_CACHE_POLICY.catalog);
@@ -57,12 +80,16 @@ const master = (region: SekaiRegion, name: string): Promise<Obj[]> => {
   const url = `${MASTER_ORIGIN}/${SOURCES[region].master}/${name}.json`;
   let pending = masterFlights.get(url);
   if (!pending) {
-    pending = (sourceReader ? sourceReader.json(url).then(value => value as Obj[]) : sourceResponse(url, { cf: { cacheTtl: BESTDORI_CACHE_POLICY.upstream.edgeTtlSeconds, cacheEverything: true } })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`${name} ${region}: HTTP ${response.status}`);
-        return (await response.json()) as Obj[];
-      }))
-      .finally(() => masterFlights.delete(url));
+    pending = (
+      sourceReader
+        ? sourceReader.json(url).then((value) => value as Obj[])
+        : sourceResponse(url, {
+            cf: { cacheTtl: BESTDORI_CACHE_POLICY.upstream.edgeTtlSeconds, cacheEverything: true },
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(`${name} ${region}: HTTP ${response.status}`);
+            return (await response.json()) as Obj[];
+          })
+    ).finally(() => masterFlights.delete(url));
     masterFlights.set(url, pending);
   }
   return pending;
@@ -272,105 +299,6 @@ const storyList = async (region: SekaiRegion): Promise<Obj> => {
   return Object.fromEntries(items);
 };
 
-const lowerFirst = (key: string) => key.charAt(0).toLowerCase() + key.slice(1);
-const camel = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(camel)
-    : value && typeof value === "object"
-      ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [lowerFirst(key), camel(entry)]))
-      : value;
-
-/** Keeps a Sekai Character2dId clear of BanG Dream's character ids, which the converter gives icons. */
-const CHARACTER_ID_BASE = 1_000_000;
-const character = (value: unknown): { characterId?: number } =>
-  Number(value) > 0 ? { characterId: CHARACTER_ID_BASE + Number(value) } : {};
-
-/**
- * The game's scenario asset is the same structure the Bestdori converter
- * reads, with capitalised keys, `Character2dId`/`FacialName` in place of
- * `characterId`/`expressionName`, and its own asset layout.
- */
-export const sekaiScenarioBase = (
-  source: Obj,
-  effects: ReadonlyMap<string, string> = new Map(),
-  voices?: ReadonlySet<string>,
-): BestdoriScenarioBase => {
-  const asset = (path: string) => `/assets/jp/${path}`;
-  const rows = (key: string) => (camel(source[key] ?? []) as Obj[]) ?? [];
-  const background = (name: unknown) => asset(`scenario/background/${String(name)}/${String(name)}.webp`);
-  const bgm = (name: unknown) =>
-    name ? `BESTDORI##URL:${asset(`sound/scenario/bgm/${String(name)}/${String(name)}.mp3`)}` : "";
-  return {
-    scenarioSceneId: String(source.ScenarioId),
-    firstBgm: bgm(source.FirstBgm),
-    ...(source.FirstBackground
-      ? { firstBackground: background(source.FirstBackground), firstBackgroundBundleName: "BESTDORI##URL" }
-      : {}),
-    appearCharacters: rows("AppearCharacters").map((entry) => ({
-      ...character(entry.character2dId),
-      costumeType: String(entry.costumeType ?? ""),
-    })),
-    layoutData: rows("LayoutData").map((layout) => ({
-      type: Number(layout.type),
-      ...character(layout.character2dId),
-      costumeType: String(layout.costumeType ?? ""),
-      motionName: String(layout.motionName ?? ""),
-      expressionName: String(layout.facialName ?? ""),
-      sideFrom: Number(layout.sideFrom),
-      sideFromOffsetX: Number(layout.sideFromOffsetX),
-      sideTo: Number(layout.sideTo),
-      sideToOffsetX: Number(layout.sideToOffsetX),
-      depthType: Number(layout.depthType),
-      moveSpeedType: Number(layout.moveSpeedType),
-    })),
-    snippets: rows("Snippets").map((snippet) => ({
-      actionType: Number(snippet.action),
-      progressType: Number(snippet.progressBehavior),
-      referenceIndex: Number(snippet.referenceIndex),
-      delay: Number(snippet.delay),
-    })),
-    talkData: rows("TalkData").map((talk) => ({
-      talkCharacters: ((talk.talkCharacters as Obj[]) ?? []).map((entry) => ({
-        ...character(entry.character2dId),
-      })),
-      windowDisplayName: String(talk.windowDisplayName ?? ""),
-      body: String(talk.body ?? ""),
-      lipSyncMode: Number(talk.lipSync),
-      motions: ((talk.motions as Obj[]) ?? []).map((motion) => ({
-        ...character(motion.character2dId),
-        motionName: String(motion.motionName ?? ""),
-        expressionName: String(motion.facialName ?? ""),
-        timingSyncValue: Number(motion.timingSyncValue),
-      })),
-      voices: ((talk.voices as Obj[]) ?? [])
-        .filter((voice) => !voices || voices.has(`${String(voice.voiceId)}.mp3`))
-        .map((voice) => ({
-          ...character(voice.character2dId),
-          voiceId: String(voice.voiceId),
-          volume: Number(voice.volume),
-        })),
-      whenFinishCloseWindow: Number(talk.whenFinishCloseWindow),
-    })),
-    soundData: rows("SoundData").map((sound) => {
-      const effect = effects.get(String(sound.se));
-      return {
-        bgm: bgm(sound.bgm),
-        volume: Number(sound.volume),
-        ...(effect ? { se: asset(effect), seBundleName: "BESTDORI##URL" } : {}),
-      };
-    }),
-    specialEffectData: rows("SpecialEffectData").map((effect) =>
-      effect.effectType === 7
-        ? { effectType: 7, stringVal: "BESTDORI##URL", stringValSub: background(effect.stringVal) }
-        : {
-            effectType: Number(effect.effectType),
-            stringVal: String(effect.stringVal ?? ""),
-            duration: Number(effect.duration),
-          },
-    ),
-  };
-};
-
 /**
  * An event's own effects sit beside its scenarios; the rest are in the shared
  * pack. The scenario does not say which, and a few names exist in neither, so
@@ -547,7 +475,12 @@ const otherSource = async (storyId: string): Promise<ScenarioSource | undefined>
     // The opening's area conversation is stored with its action set.
     if (id.startsWith("op")) {
       const set = (await master("jp", "actionSets")).find((entry) => entry.scenarioId === id);
-      if (set) return adv(id, `scenario/actionset/group${Math.floor(Number(set.id) / 100)}/${id}.asset`, "sound/actionset/voice");
+      if (set)
+        return adv(
+          id,
+          `scenario/actionset/group${Math.floor(Number(set.id) / 100)}/${id}.asset`,
+          "sound/actionset/voice",
+        );
     }
     const bundle = id.startsWith("op") ? story.assetbundleName : episode.assetbundleName;
     return adv(id, `scenario/special/${String(bundle)}/${id}.asset`, "sound/scenario/voice");
@@ -563,7 +496,9 @@ const otherSource = async (storyId: string): Promise<ScenarioSource | undefined>
       effects: "",
       voices: `mysekai/talk/voice/${id}/`,
       script: async () => {
-        const response = await sourceResponse(`${ASSET_ORIGIN}/${SOURCES.jp.assets}/mysekai/talk/scenario/talk/${id}.lua.txt`);
+        const response = await sourceResponse(
+          `${ASSET_ORIGIN}/${SOURCES.jp.assets}/mysekai/talk/scenario/talk/${id}.lua.txt`,
+        );
         if (!response.ok) throw new Error(`${id}: HTTP ${response.status}`);
         return scriptScenario(id, mysekaiLines(await response.text()));
       },
@@ -624,7 +559,14 @@ const storyDetail = async (region: SekaiRegion, storyId: string): Promise<Obj> =
       scenario = (await response.json()) as Obj;
     }
     const { story, commandSources } = convertBestdoriScenario(
-      { Base: sekaiScenarioBase(scenario, await soundEffects(scenario, source.effects), voices) },
+      {
+        Base: sekaiScenarioBase(
+          scenario,
+          await soundEffects(scenario, source.effects),
+          voices,
+          (path) => `/assets/jp/${path}`,
+        ),
+      },
       {
         server,
         voiceBundle,
@@ -640,7 +582,7 @@ const storyDetail = async (region: SekaiRegion, storyId: string): Promise<Obj> =
         const next = story.commands[commandIndex + 1];
         if (!next) throw new Error(`${scenarioId}: choice has no continuation`);
         const labels = String(effect.StringVal).split("/");
-        if (labels.length < 2 || labels.some(label => !label.trim()))
+        if (labels.length < 2 || labels.some((label) => !label.trim()))
           throw new Error(`${scenarioId}: invalid choice labels`);
         const key = `sekai-choice-${commandIndex}-continue`;
         next.key = key;
@@ -652,7 +594,9 @@ const storyDetail = async (region: SekaiRegion, storyId: string): Promise<Obj> =
           choices: labels.map((label, choiceValue) => ({ choiceValue, text: [label, "", "", "", ""], nextKey: key })),
         });
       }
-      story.commands.forEach((command, index) => { command.index = index; });
+      story.commands.forEach((command, index) => {
+        command.index = index;
+      });
     }
     const stage = story.runtime.stage;
     story.runtime.stages[BACKGROUND_STAGE_REF] = {
@@ -819,11 +763,14 @@ const specialStoryList = async (): Promise<Obj> => {
   const now = Date.now();
   const stories = (await master("jp", "specialStories")).filter((story) => Number(story.startAt) <= now);
   const id = (story: Obj, episode: Obj) => `special.${Number(story.id)}-${Number(episode.episodeNo)}`;
-  const present = await uploaded(stories.flatMap((story) => (story.episodes as Obj[]).map((episode) => id(story, episode))));
+  const present = await uploaded(
+    stories.flatMap((story) => (story.episodes as Obj[]).map((episode) => id(story, episode))),
+  );
   return record(
-    stories
-      .flatMap((story) =>
-        (story.episodes as Obj[]).filter((episode) => present.has(id(story, episode))).map((episode) =>
+    stories.flatMap((story) =>
+      (story.episodes as Obj[])
+        .filter((episode) => present.has(id(story, episode)))
+        .map((episode) =>
           listItem(
             id(story, episode),
             // Newest first, as the game lists them.
@@ -836,7 +783,7 @@ const specialStoryList = async (): Promise<Obj> => {
             },
           ),
         ),
-      ),
+    ),
   );
 };
 
@@ -1117,7 +1064,11 @@ const facialExpression = async (path: string): Promise<Obj> => {
 
 /* ------------------------------------------------------------------ routes */
 
-export async function handleSekaiApi(ctx: ProviderExecutionContext, request: Request, url: URL): Promise<Response | null> {
+export async function handleSekaiApi(
+  ctx: ProviderExecutionContext,
+  request: Request,
+  url: URL,
+): Promise<Response | null> {
   const route = /^\/api\/v1\/sekai\/([a-z]+)\/(.+)$/.exec(url.pathname);
   if (!route || !isRegion(route[1]!)) return null;
   const region = route[1];

@@ -10,7 +10,11 @@ import path from "node:path";
 import { staticDocumentLookupPath, coreStaticDocumentPath } from "./lib/static-documents";
 import { writeStaticDocument } from "./server/static-documents";
 import { readProviderStaticData } from "./server/provider-static-data";
-import { providerEntityManifestEntry, providerEntityRoot, readProviderEntityPayload } from "./server/provider-entity-manifest";
+import {
+  providerEntityManifestEntry,
+  providerEntityRoot,
+  readProviderEntityPayload,
+} from "./server/provider-entity-manifest";
 import { providerEntityFromUrl, providerEntityPhysicalPath } from "./lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "./lib/provider-entity-data";
 import { withMaterialStylePreloads } from "./server/material-ssr-styles";
@@ -25,12 +29,23 @@ export const onRequest = defineMiddleware(async (context, next) => {
       return new Response("Not found", { status: 404 });
     }
   }
-  if (import.meta.env.DEV && context.url.pathname.startsWith("/provider-static/") && context.url.pathname.endsWith(".json")) {
-    if (!fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))) return new Response("Not found", { status: 404 });
+  if (
+    import.meta.env.DEV &&
+    context.url.pathname.startsWith("/provider-static/") &&
+    context.url.pathname.endsWith(".json")
+  ) {
+    if (!fs.existsSync(path.join(providerEntityRoot(), "manifest.json")))
+      return new Response("Not found", { status: 404 });
     const entry = providerEntityManifestEntry(context.url.pathname, true);
-    return entry ? Response.json(readProviderEntityPayload(entry), { headers: { "Cache-Control": "no-cache", ETag: `"${entry.sha256}"` } }) : new Response("Not found", { status: 404 });
+    return entry
+      ? Response.json(readProviderEntityPayload(entry), {
+          headers: { "Cache-Control": "no-cache", ETag: `"${entry.sha256}"` },
+        })
+      : new Response("Not found", { status: 404 });
   }
   if (import.meta.env.DEV) {
+    const story = /^\/(jp|intl)\/(ja|en|zh-TW|zh-CN|ko)\/community-stories\/[0-9a-f-]{36}\/?$/u.exec(context.url.pathname);
+    if (story) return context.rewrite(new URL(`/${story[1]}/${story[2]}/community-stories/_/${context.url.search}`, context.url));
     const legacyChart = legacyCommunityChartRedirectTarget(context.url.pathname, context.url.search);
     if (legacyChart && (context.request.method === "GET" || context.request.method === "HEAD")) return context.redirect(legacyChart, 308);
     chartShell = communityChartShellPath(context.url.pathname);
@@ -46,7 +61,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
         return context.rewrite(target);
       }
     }
-    const community = /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/(posts\/[^/]+(?:\/edit)?|users\/[^/]+|forums\/[^/]+)\/?$/u.exec(context.url.pathname);
+    const community =
+      /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/(posts\/[^/]+(?:\/edit)?|users\/[^/]+|forums\/[^/]+)\/?$/u.exec(
+        context.url.pathname,
+      );
     if (community) {
       const target = new URL(`/${community[1]}/community/${community[2]!.startsWith("forums/") ? "forums/" : "feeds/"}`, context.url);
       target.search = context.url.search;
@@ -65,9 +83,18 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
   }
   const pathname = staticDocumentLookupPath(context.url.pathname);
-  if (!import.meta.env.PROD || !context.isPrerendered || !pathname || !pathname.endsWith(".html") || coreStaticDocumentPath(pathname) || response.status !== 200) return response;
+  if (
+    !import.meta.env.PROD ||
+    !context.isPrerendered ||
+    !pathname ||
+    !pathname.endsWith(".html") ||
+    coreStaticDocumentPath(pathname) ||
+    response.status !== 200
+  )
+    return response;
   const record = await writeStaticDocument(pathname, await response.text());
   return new Response(`<!-- static-document:${record.sha256} -->`, {
-    status: 200, headers: { "Content-Type": "text/html; charset=utf-8" },
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
   });
 });

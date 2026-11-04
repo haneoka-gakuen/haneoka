@@ -92,6 +92,7 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "menu-item";
+      item.disabled = entry.target.matches(":disabled");
       item.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemradio");
       if (entry.checked !== undefined) item.setAttribute("aria-checked", String(entry.checked));
       const leading = entry.icon?.cloneNode(true) as Element | undefined;
@@ -118,7 +119,7 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement) {
   menu.style.right = `${Math.max(8, Math.round(innerWidth - rect.right))}px`;
   menu.style.left = "auto";
   menu.showPopover();
-  menu.querySelector<HTMLElement>(".menu-item")?.focus();
+  menu.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus();
 }
 
 /** Re-fits the bar: restores every action, then overflows from the lowest priority until the title fits. */
