@@ -23,7 +23,7 @@ interface ObservationRow {
 }
 
 const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
-const BATCH_PAYLOADS = false;
+const BATCH_PAYLOADS = true;
 const INLINE_PAYLOAD_BYTES = 256 * 1024;
 const BATCH_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const BATCH_DELAY_MS = 60_000;
@@ -40,11 +40,13 @@ function storage(env: OfficialRankingStoreBindings): { db: D1Database; bucket: R
   return { db: env.DB, bucket: env.OFFICIAL_RANKING_DATA };
 }
 
-async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, expectedHash: string): Promise<T> {
+type PayloadBatchCache = Map<string, Record<string, string>>;
+
+async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, expectedHash: string, batches?: PayloadBatchCache): Promise<T> {
   const { db, bucket } = storage(env);
   const batched = key.startsWith("official/2/");
-  let body = batched ? await db.prepare("SELECT body_json FROM official_observation_payloads WHERE payload_key=? AND payload_hash=?")
-    .bind(key, expectedHash).first<string>("body_json") : null;
+  let body = batches?.get(key)?.[expectedHash] ?? (batched ? await db.prepare("SELECT body_json FROM official_observation_payloads WHERE payload_key=? AND payload_hash=?")
+    .bind(key, expectedHash).first<string>("body_json") : null);
   if (body === null) {
     const object = await bucket.get(key);
     if (!object || object.size > MAX_PAYLOAD_BYTES) throw new Error("official_payload_unavailable");
@@ -52,6 +54,8 @@ async function readPayload<T>(env: OfficialRankingStoreBindings, key: string, ex
     if (batched) {
       const batch = JSON.parse(body) as { contract: string; payloads: Record<string, string> };
       if (batch.contract !== BATCH_CONTRACT || typeof batch.payloads?.[expectedHash] !== "string") throw new Error("official_payload_integrity");
+      batches?.clear();
+      batches?.set(key, batch.payloads);
       body = batch.payloads[expectedHash]!;
     }
   }
@@ -378,8 +382,8 @@ const boardKey = (kind: OfficialObservation["kind"], challengeId: string): [stri
   kind === "point" ? ["challenge", POINT_BOARD] : [kind, challengeId];
 
 async function observationPayload(env: OfficialRankingStoreBindings, row: ObservationRow, region: GameRecordsRegion, eventId: string,
-  kind: OfficialObservation["kind"], challengeId: string): Promise<StoredOfficialObservation> {
-  const observation = await readPayload<OfficialObservation>(env, row.payload_key, row.payload_hash);
+  kind: OfficialObservation["kind"], challengeId: string, batches?: PayloadBatchCache): Promise<StoredOfficialObservation> {
+  const observation = await readPayload<OfficialObservation>(env, row.payload_key, row.payload_hash, batches);
   if (observation.region !== region || observation.eventId !== eventId || observation.kind !== kind || observation.challengeId !== challengeId) {
     throw new Error("official_observation_identity_mismatch");
   }
@@ -402,9 +406,10 @@ export async function readOfficialHistory(env: OfficialRankingStoreBindings, reg
     WHERE region = ? AND event_id = ? AND board_kind = ? AND challenge_id = ? AND cursor > ?
     ORDER BY cursor LIMIT 100`).bind(region, eventId, ...boardKey(kind, challengeId), after).all<ObservationRow>();
   const observations: StoredOfficialObservation[] = [];
+  const batches: PayloadBatchCache = new Map();
   let bytes = 0;
   for (const row of results) {
-    const observation = await observationPayload(env, row, region, eventId, kind, challengeId);
+    const observation = await observationPayload(env, row, region, eventId, kind, challengeId, batches);
     const size = new TextEncoder().encode(JSON.stringify(observation)).byteLength;
     if (observations.length && bytes + size > MAX_PAYLOAD_BYTES / 2) break;
     observations.push(observation);
