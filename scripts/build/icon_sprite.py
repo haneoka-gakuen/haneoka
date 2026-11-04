@@ -24,8 +24,8 @@ from pathlib import Path
 import json
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE_DIRS = [ROOT / "src", ROOT / "packages"]
-SCAN_SUFFIXES = {".astro", ".ts"}
+SOURCE_DIRS = [ROOT / "src", ROOT / "packages", ROOT / ".dependencies/altair/packages/ui-react/src"]
+SCAN_SUFFIXES = {".astro", ".ts", ".tsx"}
 ICON_COLLECTION = ROOT / "node_modules" / "@iconify-json" / "material-symbols" / "icons.json"
 OUTPUT_SPRITE = ROOT / "public" / "icons.svg"
 # Iconify normalises every icon body to a 24x24 viewBox, y-down.

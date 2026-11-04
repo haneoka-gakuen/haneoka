@@ -5170,7 +5170,8 @@
       "importStory": "Our Notes のストーリーを読み込む",
       "assetServer": "サーバー",
       "assetEmpty": "素材はありません",
-      "storyCount": "{count} 件のストーリー"
+      "storyCount": "{count} 件のストーリー",
+      "selectStory": "ストーリーを選択"
     }
   },
   "legal": {

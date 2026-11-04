@@ -47,6 +47,39 @@ export function storyCastMedia(
   `;
 }
 
+export function storyCardMedia(episode: Record<string, unknown>) {
+  const thumbnails = episode.cardThumbnails as Record<string, unknown> | undefined;
+  const images = episode.cardImages as Record<string, unknown> | undefined;
+  const variants = ["normal", "trained"].flatMap((key) => {
+    const image = String(thumbnails?.[key] || images?.[key] || (key === "normal" ? episode.cardImage || "" : ""));
+    return image ? [{ image, fallback: String(images?.[key] || "") }] : [];
+  });
+  return variants.length
+    ? html`
+        <span class="story-card-media">
+          ${variants.map(
+      ({ image, fallback }) => html`
+        <img data-src=${image} data-fallback=${fallback} alt="" decoding="async" @error=${nextImageCandidate} />
+      `,
+    )}
+        </span>
+      `
+    : undefined;
+}
+
+export function storyThumbnailMedia(image: string, fallback = "") {
+  return html`
+    <img
+      class="story-thumbnail"
+      data-src=${image}
+      data-fallback=${fallback}
+      style="width:100%;height:auto;aspect-ratio:16/9;object-fit:fill"
+      alt=""
+      @error=${nextImageCandidate}
+    />
+  `;
+}
+
 export function storyEpisodeGroup(title: string, count: number, content: unknown) {
   return html`
     <section class="story-episode-group">

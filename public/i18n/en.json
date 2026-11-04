@@ -5170,7 +5170,8 @@
       "importStory": "Import Our Notes story",
       "assetServer": "Server",
       "assetEmpty": "No assets",
-      "storyCount": "{count} stories"
+      "storyCount": "{count} stories",
+      "selectStory": "Choose story"
     }
   },
   "legal": {

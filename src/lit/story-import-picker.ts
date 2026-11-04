@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: 固定服务器故事目录、角色与乐队及编辑器导入回调。
+// Input: Our Notes／GBP／SEKAI 故事目录、角色与乐队及编辑器选择或导入回调。
 // Output: 复用故事页卡片、演出／主页对话媒体和筛选的故事选择器。
 // Pos: [Map](L2-2.md)；故事编辑器新建与服务器故事目录之间的选择入口。
 // Effects/Dependencies: 公开 GET 与图片惰性加载；断开时取消请求并释放观察器。
@@ -8,10 +8,12 @@ import type { StudioAssetSource } from "@haneoka/altair/studio-host";
 import { haneokaResourceRequestUrl } from "@haneoka/altair-plugin-haneoka/public-resource-url";
 import { clientText } from "../i18n/client";
 import { episodeArtwork, episodeIdentityArtwork, spotArtwork } from "../lib/story-artwork";
+import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
+import { providerRegionForLocale } from "../lib/provider-page-data";
 import { readReleaseServer } from "../lib/release-server";
 import { storyTile } from "./shared/story-tile";
 import { localizedText, uiText } from "./shared/catalog";
-import { storyCastMedia, storyEpisodeGroup } from "./ui/story-media";
+import { storyCastMedia, storyEpisodeGroup, storyCardMedia, storyThumbnailMedia } from "./ui/story-media";
 import { selectionPane } from "./ui/selection-pane";
 import { chooserGroup } from "./ui/chooser-filters";
 import { filterChip } from "./ui/controls";
@@ -42,6 +44,8 @@ export class StoryImportPicker extends LitElement {
   static properties = {
     locale: {},
     origin: {},
+    provider: {},
+    selectOnly: { attribute: false },
     importing: { state: true },
     loading: { state: true },
     error: { state: true },
@@ -51,24 +55,37 @@ export class StoryImportPicker extends LitElement {
     selected: { state: true },
     filters: { state: true },
     rows: { state: true },
+    cardEpisodes: { state: true },
+    cardEpisode: { state: true },
+    cardLoading: { state: true },
+    cardError: { state: true },
     importStory: { attribute: false },
   };
   declare locale: string;
   declare origin: string;
+  declare provider: StudioAssetSource["provider"];
+  declare selectOnly: boolean;
   declare importing: boolean;
   declare loading: boolean;
   declare error: string;
   declare query: string;
-  declare server: ReturnType<typeof readReleaseServer>;
+  declare server: string;
   declare filtersOpen: boolean;
   declare selected: string;
   declare filters: Record<Axis, string>;
   declare rows: Row[];
-  declare importStory: (source: StudioAssetSource, storyId: string) => Promise<void>;
+  declare private cardEpisodes: Row[];
+  declare private cardEpisode: string;
+  declare private cardLoading: boolean;
+  declare private cardError: string;
+  private cardRequest?: AbortController;
+  declare importStory: (source: StudioAssetSource, storyId: string, title: string) => Promise<void>;
   constructor() {
     super();
     this.locale = "en";
     this.origin = "https://haneoka.org";
+    this.provider = "haneoka";
+    this.selectOnly = false;
     this.importing = false;
     this.loading = true;
     this.error = "";
@@ -78,6 +95,10 @@ export class StoryImportPicker extends LitElement {
     this.selected = "";
     this.filters = { category: "", chapter: "", band: "", character: "", episode: "" };
     this.rows = [];
+    this.cardEpisodes = [];
+    this.cardEpisode = "";
+    this.cardLoading = false;
+    this.cardError = "";
   }
   private source?: StudioAssetSource;
   private chapters: Record<string, Row> = {};
@@ -93,11 +114,13 @@ export class StoryImportPicker extends LitElement {
   private text = (value: unknown) => localizedText(value, this.locale);
   override disconnectedCallback() {
     this.request?.abort();
+    this.cardRequest?.abort();
     this.images?.disconnect();
     super.disconnectedCallback();
   }
   protected override firstUpdated() {
     this.querySelector<HTMLDialogElement>("dialog")?.showModal();
+    if (this.provider !== "haneoka") this.server = providerRegionForLocale(this.locale);
     void this.load();
   }
   protected override updated() {
@@ -107,6 +130,11 @@ export class StoryImportPicker extends LitElement {
   }
   private async load() {
     this.request?.abort();
+    this.cardRequest?.abort();
+    this.cardEpisodes = [];
+    this.cardEpisode = "";
+    this.cardLoading = false;
+    this.cardError = "";
     const controller = (this.request = new AbortController());
     this.loading = true;
     this.error = "";
@@ -114,6 +142,10 @@ export class StoryImportPicker extends LitElement {
     this.selected = "";
     this.filters = { category: "", chapter: "", band: "", character: "", episode: "" };
     try {
+      if (this.provider !== "haneoka") {
+        await this.loadProvider(controller.signal);
+        return;
+      }
       const read = async (resource: string) => {
         const response = await fetch(new URL(`/api/v1/servers/${this.server}/${resource}`, this.origin), {
           signal: controller.signal,
@@ -158,7 +190,65 @@ export class StoryImportPicker extends LitElement {
       if (!controller.signal.aborted) this.loading = false;
     }
   }
+  private async loadProvider(signal: AbortSignal) {
+    const base = `/api/v1/${this.provider === "sekai" ? "sekai" : "garupa/bestdori"}/${this.server}/`;
+    const read = async (resource: string): Promise<Record<string, Row>> => {
+      const url = new URL(base + resource, this.origin);
+      url.searchParams.set("lang", this.locale);
+      url.searchParams.set("projection", BESTDORI_CATALOG_VERSION);
+      const response = await fetch(url, { signal, credentials: "omit", referrerPolicy: "no-referrer" });
+      if (!response.ok) throw new Error("story_catalog_unavailable");
+      return response.json();
+    };
+    const sections =
+      this.provider === "sekai"
+        ? ["event", "unit", "character", "card", "area", "special", "mysekai", "live"]
+        : ["event", "band", "main", "afterlive"];
+    const [collections, characters, bands, cards] = await Promise.all([
+      Promise.all(
+        sections.map(async (section) =>
+          Object.values(await read(`stories/${section}`)).map((row) => ({ ...row, templateCategory: section })),
+        ),
+      ),
+      this.provider === "bestdori" ? read("characters") : {},
+      this.provider === "bestdori" ? read("bands") : {},
+      this.provider === "bestdori" ? read("cards") : {},
+    ]);
+    signal.throwIfAborted();
+    this.source = { provider: this.provider, origin: this.origin, server: this.server };
+    this.characters = characters;
+    this.bands = bands;
+    this.spots = new Map();
+    this.filters = { ...this.filters, category: this.provider === "sekai" ? "unit" : "band" };
+    this.rows = [
+      ...collections.flat(),
+      ...Object.values(cards as Record<string, Row>)
+        .filter((card) => card.hasStory)
+        .map((card) => ({
+          ...card,
+          storyId: `card:${card.cardId}`,
+          title: card.prefix,
+          chapterId: `card:${card.cardId}`,
+          chapterKey: `bestdori:card:${card.cardId}`,
+          chapterName: card.prefix,
+          characterIds: card.characterId ? [card.characterId] : [],
+          templateCategory: "card",
+          isCardTemplate: true,
+        })),
+    ];
+    this.chapters = Object.fromEntries(
+      this.rows.map((row) => [
+        String(row.chapterKey || row.chapterId),
+        {
+          chapterName: row.chapterName,
+          bandId: row.bandId,
+          banner: row.image || row.thumbnail,
+        },
+      ]),
+    );
+  }
   private category(row: Row) {
+    if (this.provider !== "haneoka") return String(row.templateCategory);
     const key = String(row.chapterKey);
     return key.startsWith("asset_")
       ? key.slice(6)
@@ -170,7 +260,7 @@ export class StoryImportPicker extends LitElement {
   }
   private values(row: Row, axis: Axis): string[] {
     if (axis === "category") return [this.category(row)];
-    if (axis === "chapter") return [String(row.chapterId)];
+    if (axis === "chapter") return [String(row.chapterKey || row.chapterId)];
     if (axis === "character") return ((row.characterIds as number[]) ?? []).map(String);
     if (axis === "band")
       return row.bandId
@@ -185,7 +275,12 @@ export class StoryImportPicker extends LitElement {
     return [row.isAnotherEpisode ? "perspective" : row.isExtraEpisode ? "extra" : "main"];
   }
   private label(axis: Axis, value: string): string {
-    if (axis === "category") return uiText(this.locale, categories[value]!);
+    if (axis === "category") {
+      if (this.provider === "bestdori")
+        return uiText(this.locale, `story.navigation.bestdori${value[0]!.toUpperCase()}${value.slice(1)}`);
+      if (this.provider === "sekai") return clientText(this.locale, `community.page.sekai.stories.${value}`);
+      return uiText(this.locale, categories[value]!);
+    }
     if (axis === "band") return this.text(this.bands[value]?.bandName);
     if (axis === "character") return this.text(this.characters[value]?.characterName);
     if (axis === "episode")
@@ -193,10 +288,10 @@ export class StoryImportPicker extends LitElement {
         this.locale,
         `story.labels.${value === "perspective" ? "perspectiveStory" : value === "extra" ? "extraStory" : "bandStory"}`,
       );
-    const row = this.rows.find((item) => String(item.chapterId) === value);
+    const row = this.rows.find((item) => String(item.chapterKey || item.chapterId) === value);
     return row && String(row.chapterKey).startsWith("asset_")
       ? this.label("category", this.category(row))
-      : this.text(this.chapters[value]?.chapterName) || this.text(row?.chapterName);
+      : this.text(row?.chapterName) || this.text(this.chapters[value]?.chapterName);
   }
   private acceptsStory(row: Row, except?: Axis) {
     const search = `${this.text(row.title)} ${this.text(row.chapterName)} ${row.storyId} ${row.scriptAsset}`
@@ -218,24 +313,75 @@ export class StoryImportPicker extends LitElement {
   }
   private url = (source: unknown) =>
     source && this.source
-      ? haneokaResourceRequestUrl(new URL(String(source), this.origin).href, {
-          ...this.source,
-          releaseId: this.source.releaseId!,
-        })
+      ? this.provider !== "haneoka"
+        ? new URL(String(source), this.origin).href
+        : haneokaResourceRequestUrl(new URL(String(source), this.origin).href, {
+            ...this.source,
+            releaseId: this.source.releaseId!,
+          })
       : "";
   private close = () => {
     if (!this.importing) this.dispatchEvent(new CustomEvent("story-picker-close", { bubbles: true }));
   };
   private choose(axis: Axis, value: string) {
-    this.filters = { ...this.filters, [axis]: this.filters[axis] === value ? "" : value };
+    this.filters = {
+      ...this.filters,
+      [axis]: this.filters[axis] === value && (axis !== "category" || this.provider === "haneoka") ? "" : value,
+    };
     this.selected = "";
   }
+  private async selectStory(id: string) {
+    if (this.importing) return;
+    this.cardRequest?.abort();
+    this.selected = id;
+    this.cardEpisodes = [];
+    this.cardEpisode = "";
+    this.cardLoading = false;
+    this.cardError = "";
+    const row = this.rows.find((row) => String(row.storyId) === id);
+    if (!row?.isCardTemplate) return;
+    const controller = (this.cardRequest = new AbortController());
+    this.cardLoading = true;
+    try {
+      const url = new URL(`/api/v1/garupa/bestdori/${this.server}/cards/${row.cardId}`, this.origin);
+      url.searchParams.set("lang", this.locale);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+      });
+      if (!response.ok) throw new Error("story_catalog_unavailable");
+      const card: Row = await response.json();
+      controller.signal.throwIfAborted();
+      this.cardEpisodes = ((card.episodes as Row[]) || []).map((episode) => ({
+        ...episode,
+        storyId: `card.${episode.resourceSetName}.${episode.scenarioId}`,
+      }));
+      this.cardEpisode = String(this.cardEpisodes[0]?.storyId || "");
+      if (!this.cardEpisodes.length) this.cardError = this.t("empty");
+    } catch {
+      if (!controller.signal.aborted) this.cardError = this.t("assetLoadFailed");
+    } finally {
+      if (!controller.signal.aborted) this.cardLoading = false;
+    }
+  }
   private async submit() {
-    if (!this.source || !this.selected || this.importing) return;
+    if (!this.source || !this.selected || this.importing || this.cardLoading) return;
+    if (this.rows.find((row) => String(row.storyId) === this.selected)?.isCardTemplate && !this.cardEpisode) return;
     this.importing = true;
     this.error = "";
     try {
-      await this.importStory(this.source, this.selected);
+      const row = this.rows.find((row) => String(row.storyId) === this.selected)!;
+      await this.importStory(
+        this.source,
+        row.isCardTemplate ? this.cardEpisode : this.selected,
+        (row.isCardTemplate
+          ? this.text(this.cardEpisodes.find((episode) => episode.storyId === this.cardEpisode)?.title)
+          : "") ||
+          this.text(row.title) ||
+          this.text(row.chapterName) ||
+          this.selected,
+      );
       this.importing = false;
       this.close();
     } catch {
@@ -249,7 +395,7 @@ export class StoryImportPicker extends LitElement {
     const rows = this.rows.filter((row) => this.acceptsStory(row));
     return selectionPane({
       id: "story-import",
-      title: this.t("importStory"),
+      title: this.selectOnly ? this.t("selectStory") : this.t("importStory"),
       closeLabel: this.t("close"),
       close: this.close,
       searchLabel: uiText(this.locale, "story.labels.searchStories"),
@@ -266,7 +412,7 @@ export class StoryImportPicker extends LitElement {
       quickFilters: chooserGroup(
         uiText(this.locale, "catalog.fields.type"),
         html`
-          ${["", ...this.counts("category").keys()].map((value) =>
+          ${[...(this.provider === "haneoka" ? [""] : []), ...this.counts("category").keys()].map((value) =>
             filterChip({
               label: value
                 ? `${this.label("category", value)} (${this.counts("category").get(value)})`
@@ -283,7 +429,7 @@ export class StoryImportPicker extends LitElement {
         ${chooserGroup(
           this.t("assetServer"),
           html`
-            ${["jp", "intl"].map((server) =>
+            ${(this.provider === "haneoka" ? ["jp", "intl"] : ["jp", "en", "tw", "cn", "kr"]).map((server) =>
               filterChip({
                 label: this.t(`assetRegions.${server}`),
                 selected: this.server === server,
@@ -297,7 +443,7 @@ export class StoryImportPicker extends LitElement {
             )}
           `,
         )}${axes
-          .filter((axis) => axis !== "category")
+          .filter((axis) => axis !== "category" && (this.provider === "haneoka" || axis !== "episode"))
           .map((axis) =>
             facet(
               uiText(this.locale, axisLabels[axis]),
@@ -310,25 +456,27 @@ export class StoryImportPicker extends LitElement {
             ),
           )}
       `,
-      groups: ["band", "event"].includes(this.filters.category)
-        ? ["main", "extra", "perspective"]
-            .map((kind) => ({
-              title: uiText(
-                this.locale,
-                `story.labels.${kind === "main" ? (this.filters.category === "event" ? "eventStory" : "bandStory") : kind === "extra" ? "extraStory" : "perspectiveStory"}`,
-              ),
-              values: new Set(
-                rows.filter((row) => this.values(row, "episode").includes(kind)).map((row) => String(row.storyId)),
-              ),
-            }))
-            .filter((group) => group.values.size)
-        : undefined,
+      groups:
+        this.provider === "haneoka" && ["band", "event"].includes(this.filters.category)
+          ? ["main", "extra", "perspective"]
+              .map((kind) => ({
+                title: uiText(
+                  this.locale,
+                  `story.labels.${kind === "main" ? (this.filters.category === "event" ? "eventStory" : "bandStory") : kind === "extra" ? "extraStory" : "perspectiveStory"}`,
+                ),
+                values: new Set(
+                  rows.filter((row) => this.values(row, "episode").includes(kind)).map((row) => String(row.storyId)),
+                ),
+              }))
+              .filter((group) => group.values.size)
+          : undefined,
       renderGroup: storyEpisodeGroup,
       kind: "story",
       disabled: this.importing,
       items: rows.map((row) => {
         const category = this.category(row),
-          chapter = this.chapters[String(row.chapterId)],
+          chapter =
+            this.chapters[String(this.provider === "haneoka" ? row.chapterId : row.chapterKey || row.chapterId)],
           spot = this.spots.get(String(row.storyId));
         const people = ((row.characterIds as number[]) ?? []).map((id) => this.characters[id] ?? {});
         const band = this.bands[String(row.bandId || chapter?.bandId || 0)];
@@ -349,31 +497,68 @@ export class StoryImportPicker extends LitElement {
             imageCandidates: localeTaggedCandidates(rawImage, this.locale).map(this.url),
             identityImage: this.url(identityImage),
             referrerPolicy: "no-referrer",
-            natural: !["home", "afterlive"].includes(category),
-            fit: "cover",
-            media: ["home", "afterlive"].includes(category)
-              ? storyCastMedia(
-                  people.map((person) => ({
-                    name: this.text(person.characterName),
-                    image: this.url(person.faceImage || person.thumbnailImage),
-                  })),
-                  category === "home" ? this.url(spotArtwork(spot)) : "",
-                  "no-referrer",
-                )
-              : undefined,
+            natural: this.provider === "haneoka" && !["home", "afterlive"].includes(category),
+            fit: this.provider === "haneoka" ? "cover" : "fill",
+            media: row.isCardTemplate
+              ? storyCardMedia(row)
+              : this.provider !== "haneoka" && category !== "afterlive"
+                ? storyThumbnailMedia(this.url(rawImage))
+                : ["home", "afterlive"].includes(category)
+                  ? storyCastMedia(
+                      people.map((person) => ({
+                        name: this.text(person.characterName),
+                        image: this.url(person.faceImage || person.thumbnailImage),
+                      })),
+                      category === "home" ? this.url(spotArtwork(spot)) : "",
+                      "no-referrer",
+                    )
+                  : undefined,
           }),
         };
       }),
       selected: this.selected,
-      select: (id) => {
-        if (!this.importing) this.selected = id;
-      },
+      select: (id) => void this.selectStory(id),
       countLabel:
         this.loading || this.importing
           ? this.t("loading")
           : this.t("storyCount").replace("{count}", String(rows.length)),
       emptyLabel: this.t("empty"),
       preview: html`
+        ${this.cardLoading ? loadingState(this.t("loading"), { local: true }) : nothing}
+        ${
+          this.cardEpisodes.length
+            ? html`
+                <label class="field">
+                  <span>${uiText(this.locale, "story.labels.episode")}</span>
+                  <select
+                    .value=${this.cardEpisode}
+                    ?disabled=${this.importing}
+                    @change=${(event: Event) => {
+                      this.cardEpisode = (event.target as HTMLSelectElement).value;
+                    }}
+                  >
+                    ${this.cardEpisodes.map(
+                      (episode) => html`
+                        <option value=${String(episode.storyId)}>
+                          ${this.text(episode.title) || String(episode.scenarioId)}
+                        </option>
+                      `,
+                    )}
+                  </select>
+                </label>
+              `
+            : nothing
+        }
+        ${
+          this.cardError
+            ? html`
+                <span role="alert">${this.cardError}</span>
+                <button class="button button--text" @click=${() => void this.selectStory(this.selected)}>
+                  ${this.t("retry")}
+                </button>
+              `
+            : nothing
+        }
         ${this.loading || this.importing ? loadingState(this.t("loading"), { local: true }) : nothing}${
           this.error
             ? html`
@@ -387,17 +572,23 @@ export class StoryImportPicker extends LitElement {
           ?disabled=${this.importing}
           @click=${() => {
             this.query = "";
-            this.filters = { category: "", chapter: "", band: "", character: "", episode: "" };
+            this.filters = {
+              category: this.provider === "haneoka" ? "" : this.provider === "sekai" ? "unit" : "band",
+              chapter: "",
+              band: "",
+              character: "",
+              episode: "",
+            };
           }}
         >
           ${uiText(this.locale, "common.actions.clear")}
         </button>
         <button
           class="button button--filled"
-          ?disabled=${this.loading || this.importing || !rows.some((row) => row.storyId === this.selected)}
+          ?disabled=${this.loading || this.importing || this.cardLoading || !rows.some((row) => String(row.storyId) === this.selected && (!row.isCardTemplate || !!this.cardEpisode))}
           @click=${() => void this.submit()}
         >
-          ${this.t("importStory")}
+          ${this.selectOnly ? this.t("selectStory") : this.t("importStory")}
         </button>
       `,
     });

@@ -5170,7 +5170,8 @@
       "importStory": "匯入 Our Notes 故事",
       "assetServer": "伺服器",
       "assetEmpty": "暫無素材",
-      "storyCount": "{count} 篇故事"
+      "storyCount": "{count} 篇故事",
+      "selectStory": "選擇故事"
     }
   },
   "legal": {

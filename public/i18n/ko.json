@@ -5170,7 +5170,8 @@
       "importStory": "Our Notes 스토리 가져오기",
       "assetServer": "서버",
       "assetEmpty": "소재 없음",
-      "storyCount": "스토리 {count}개"
+      "storyCount": "스토리 {count}개",
+      "selectStory": "스토리 선택"
     }
   },
   "legal": {

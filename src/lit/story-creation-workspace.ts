@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: 网页账户、Altair 同源宿主会话与社区故事版本。
-// Output: 网站内故事制作、导入导出、云保存和发布。
+// Input: 网页账户、Altair 同源宿主会话、工程模板来源与社区故事版本。
+// Output: 网站内故事制作、导入导出、云保存和发布；向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
 // Effects/Dependencies: 延迟加载 iframe、账户与云 API；销毁时释放消息通道、请求和应用栏。
 import { LitElement, html, nothing } from "lit";
@@ -15,6 +15,8 @@ import {
   type StudioAssetCatalogue,
   type StudioAssetSource,
   type StudioAssetRequest,
+  type StudioStoryPickerRequest,
+  type StudioStoryPickerResult,
 } from "@haneoka/altair/studio-host";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { setAppBarActions, clearAppBarActions, setAppBarIdentity, clearAppBarIdentity } from "../lib/app-bar";
@@ -104,6 +106,7 @@ export class StoryCreationWorkspace extends LitElement {
   declare private assetQuery: string;
   declare private assetSelected: string;
   declare private assetFiltersOpen: boolean;
+  private storyPickerRequest?: StudioStoryPickerRequest;
   private assetPath = "";
   private assetGeneration = 0;
   private assetImages?: LazyImages;
@@ -383,10 +386,10 @@ export class StoryCreationWorkspace extends LitElement {
           if (client === this.client) this.notify(error);
         });
     });
-    client.onIntent((action) => {
+    client.onIntent((action, value) => {
       if (action === "save") void this.save();
       else if (action === "publish") void this.showPublication();
-      else void this.action(action);
+      else void this.action(action, value);
     });
     client.onDownload((value) => this.download(value));
     this.themeObserver = new MutationObserver(() => void this.configure());
@@ -475,6 +478,7 @@ export class StoryCreationWorkspace extends LitElement {
       theme: style.colorScheme === "dark" || document.documentElement.dataset.theme === "dark" ? "dark" : "light",
       tokens,
       fontFamily: style.getPropertyValue("--app-font").trim() || style.fontFamily,
+      iconSprite: new URL("/icons.svg", location.href).href,
       fontStylesheets: [
         new URL(robotoFontStyles, location.href).href,
         new URL(latinFontStyles, location.href).href,
@@ -566,10 +570,13 @@ export class StoryCreationWorkspace extends LitElement {
       if (this.activeOperation === operation) this.activeOperation = undefined;
     }
   }
-  private async action(action: StudioAction) {
+  private async action(action: StudioAction, value?: unknown) {
     if (action === "stories") {
       await import("./story-import-picker");
-      if (this.isConnected) this.storyPickerOpen = true;
+      if (this.isConnected) {
+        this.storyPickerRequest = value as StudioStoryPickerRequest | undefined;
+        this.storyPickerOpen = true;
+      }
       return;
     }
     if (action === "assets") {
@@ -1290,17 +1297,32 @@ export class StoryCreationWorkspace extends LitElement {
               <story-import-picker
                 .locale=${this.locale}
                 .origin=${this.resourceOrigin || location.origin}
-                .importStory=${async (source: StudioAssetSource, storyId: string) => {
-          const client = this.client;
-          if (!client) throw new Error("studio_unavailable");
-          const state = await client.request<StudioState>("import-source", { source, storyId });
-          if (client !== this.client) throw new DOMException("Project changed", "AbortError");
-          this.state = state;
-          this.rememberProject();
-        }}
+                .provider=${this.storyPickerRequest?.provider || "haneoka"}
+                .selectOnly=${!!this.storyPickerRequest}
+                .importStory=${async (source: StudioAssetSource, storyId: string, title: string) => {
+                  const client = this.client;
+                  if (!client) throw new Error("studio_unavailable");
+                  if (this.storyPickerRequest) {
+                    await client.request("select-story", {
+                      requestId: this.storyPickerRequest.requestId,
+                      selection: { source, storyId, title },
+                    } satisfies StudioStoryPickerResult);
+                    this.storyPickerRequest = undefined;
+                    return;
+                  }
+                  const state = await client.request<StudioState>("import-source", { source, storyId });
+                  if (client !== this.client) throw new DOMException("Project changed", "AbortError");
+                  this.state = state;
+                  this.rememberProject();
+                }}
                 @story-picker-close=${() => {
-          this.storyPickerOpen = false;
-        }}
+                  this.storyPickerOpen = false;
+                  if (this.storyPickerRequest) {
+                    const result = { requestId: this.storyPickerRequest.requestId } satisfies StudioStoryPickerResult;
+                    this.storyPickerRequest = undefined;
+                    void this.client?.request("select-story", result).catch((error) => this.notify(error));
+                  }
+                }}
               ></story-import-picker>
             `
           : nothing

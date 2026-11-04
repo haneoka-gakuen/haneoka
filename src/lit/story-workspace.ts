@@ -68,7 +68,7 @@ import { specList } from "./ui/spec";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { tile } from "./ui/tile";
 import { storyTile } from "./shared/story-tile";
-import { storyCastMedia, storyEpisodeGroup } from "./ui/story-media";
+import { storyCastMedia, storyEpisodeGroup, storyCardMedia, storyThumbnailMedia } from "./ui/story-media";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { dialogueRow } from "./ui/dialogue-row";
 import { characterPair } from "./ui/character-pair";
@@ -1360,35 +1360,8 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private episodeMedia(episode: JsonRecord) {
-    if (this.isCardSection()) {
-      const thumbnails = episode.cardThumbnails as JsonRecord | undefined;
-      const images = episode.cardImages as JsonRecord | undefined;
-      const variants = ["normal", "trained"].flatMap((key) => {
-        const image = String(thumbnails?.[key] || images?.[key] || (key === "normal" ? episode.cardImage || "" : ""));
-        return image ? [{ image, fallback: String(images?.[key] || "") }] : [];
-      });
-      if (variants.length)
-        return html`
-          <span class="story-card-media">
-            ${variants.map(
-              ({ image, fallback }) => html`
-                <img data-src=${image} data-fallback=${fallback} alt="" decoding="async" @error=${this.imageError} />
-              `,
-            )}
-          </span>
-        `;
-      return undefined;
-    }
-    if (this.isProvider() && this.mode !== "afterlive")
-      return html`
-        <img
-          class="story-thumbnail"
-          data-src=${this.episodeImage(episode)}
-          style="width:100%;height:auto;aspect-ratio:16/9;object-fit:fill"
-          alt=""
-          @error=${this.imageError}
-        />
-      `;
+    if (this.isCardSection()) return storyCardMedia(episode);
+    if (this.isProvider() && this.mode !== "afterlive") return storyThumbnailMedia(this.episodeImage(episode));
     if (!["home", "afterlive"].includes(this.mode)) return undefined;
     const spot = this.episodeSpot(episode);
     const image = this.spotPreview(spot);
