@@ -5,6 +5,7 @@
 // Effects/Dependencies: D1、邮件／OAuth、访问策略和后台审核；配置来自 Env，不记录真实凭据。
 import { backgroundWork } from "./request-work";
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { isLocalHostname, isSiteHostname, siteOrigin } from "../src/lib/site-origin";
 import { APIError } from "better-auth/api";
 import { bearer, captcha } from "better-auth/plugins";
 import { communityAccessState } from "./access";
@@ -62,9 +63,6 @@ interface UserData {
   name?: string | undefined;
 }
 
-const localHost = (hostname: string): boolean =>
-  hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-
 const TURNSTILE_ACTION_REGISTER = "account_register";
 const TURNSTILE_ACTION_SIGN_IN = "account_sign_in";
 
@@ -114,7 +112,8 @@ const isProviderId = (value: string): value is ProviderId =>
 
 const authBaseURL = (request: Request, env: Env): string => {
   const requestURL = new URL(request.url);
-  if (localHost(requestURL.hostname)) return requestURL.origin;
+  if (isLocalHostname(requestURL.hostname)) return requestURL.origin;
+  if (isSiteHostname(requestURL.hostname)) return siteOrigin(requestURL);
   return String(env.BETTER_AUTH_URL || requestURL.origin).replace(/\/$/, "");
 };
 

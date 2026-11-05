@@ -3,6 +3,7 @@
 // Output: 与网页共用原生皮肤、画布及排版的 PNG Blob。
 // Pos: [Map](../L2-2.md)；公开浏览器谱面导出。
 // Effects/Dependencies: 获取固定 release 的谱面、原生图集和五语标签；释放皮肤与 Blob URL。
+import { siteOrigin } from "../site-origin";
 import { createHaneokaClient, type HaneokaLocale, type HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import { ApiClientError } from "../../../packages/api-client/src/index";
 import { buildChart, parseScore } from "@haneoka/cassiopeia-plugin-our-notes";
@@ -36,7 +37,7 @@ export async function renderChartImage(options: NativeChartImageOptions) {
   if (!Number.isInteger(height) || height < 360 || height > 1440) throw new RangeError("height must be between 360 and 1440");
   if (server !== "jp" && server !== "intl") throw new TypeError("server must be jp or intl");
   if (options.timeZone !== undefined) new Intl.DateTimeFormat("en", { timeZone: options.timeZone });
-  const apiBase = new URL(options.apiBase ?? "https://haneoka.org/api/v1/");
+  const apiBase = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`);
   apiBase.pathname = apiBase.pathname.replace(/\/?$/u, "/");
   const signal = options.signal ?? new AbortController().signal;
   const identityUrl = new URL(`servers/${server}/release?projection=identity`, apiBase);

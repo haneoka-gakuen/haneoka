@@ -9,6 +9,7 @@
 
   "routes": [
     { "pattern": "haneoka.org/*", "zone_name": "haneoka.org" },
+    { "pattern": "haneoka.com/*", "zone_name": "haneoka.org" },
   ],
 
   // Resource dispatch currently reads a fine-grained Actions:write token from

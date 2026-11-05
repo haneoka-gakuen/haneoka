@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { ARENA_PROJECTION } from "../src/lib/arena";
+import { isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
 import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument } from "../src/lib/community-chart-route";
@@ -3061,13 +3062,13 @@ function ourNotesSonolusRevision(releases: readonly Release[]): string {
   return `our-notes:${releases.map((release) => `${release.server}@${release.releaseId}`).join(",")}`;
 }
 
-function ourNotesSonolusCatalogProvider(env: Env, releases: readonly Release[], revision: string) {
+function ourNotesSonolusCatalogProvider(env: Env, releases: readonly Release[], revision: string, origin: string) {
   return {
     async load() {
       const catalogs = await Promise.all(
         releases.map(async (release) => {
           const catalog = await new ReleaseChartCatalogProvider({
-            mediaBaseUrl: "https://haneoka.org",
+            mediaBaseUrl: origin,
             onInvalidCharts: (names) => {
               console.warn(`Ignoring invalid Sonolus charts from ${release.server}/${release.releaseId}`, names);
             },
@@ -3117,7 +3118,7 @@ function isBestdoriSonolusCatalogRequest(url: URL): boolean {
   );
 }
 
-function bestdoriSonolusCatalogProvider(upstreamBase: string | undefined, revision: string) {
+function bestdoriSonolusCatalogProvider(upstreamBase: string | undefined, revision: string, origin: string) {
   return {
     async load() {
       const { bands, songs } = await loadBestdoriSonolusCatalog(upstreamBase);
@@ -3126,7 +3127,7 @@ function bestdoriSonolusCatalogProvider(upstreamBase: string | undefined, revisi
         encodeText: encodeSonolusLocalizedText,
         chartDataId: (songId, difficulty) => `bestdori:${songId}:${difficulty}`,
         levelName: (songId, difficulty) => sonolusLevelName("gbp", songId, difficulty),
-        mediaBaseUrl: "https://haneoka.org",
+        mediaBaseUrl: origin,
       });
       if (projection.invalidChartNames.length) {
         console.warn("Ignoring invalid Bestdori Sonolus charts", projection.invalidChartNames);
@@ -3158,15 +3159,16 @@ function bestdoriSonolusDataProvider(upstreamBase: string | undefined): RuntimeC
 
 const sonolusThumbnailCache = new RevisionCache<JsonObject | undefined>(3);
 
-function sonolusThumbnailDocument(value: JsonValue, fallback: JsonObject | undefined): JsonValue {
-  if (Array.isArray(value)) return value.map((entry) => sonolusThumbnailDocument(entry, fallback));
+function sonolusThumbnailDocument(value: JsonValue, fallback: JsonObject | undefined, origin: string): JsonValue {
+  if (Array.isArray(value)) return value.map((entry) => sonolusThumbnailDocument(entry, fallback, origin));
   if (!isJsonObject(value)) return value;
   const result: JsonObject = {};
   for (const [key, entry] of Object.entries(value)) {
     if ((key === "thumbnail" || key === "cover") && isJsonObject(entry)) {
       const url = typeof entry.url === "string" && entry.url ? entry.url : undefined;
-      result[key] = url ? { ...entry, url: new URL(url, `https://${CANONICAL_HOST}`).href } : (fallback ?? entry);
-    } else result[key] = sonolusThumbnailDocument(entry, fallback);
+      result[key] = url ? { ...entry, url: siteAssetUrl(url, origin) } : (fallback ?? entry);
+    } else if (key === "url" && typeof entry === "string" && entry) result[key] = siteAssetUrl(entry, origin);
+    else result[key] = sonolusThumbnailDocument(entry, fallback, origin);
   }
   return result;
 }
@@ -3183,7 +3185,7 @@ function sonolusServerBanner(value: unknown): JsonObject | undefined {
   };
 }
 
-function sonolusFallbackThumbnail(value: JsonValue | null): JsonObject | undefined {
+function sonolusFallbackThumbnail(value: JsonValue | null, origin: string): JsonObject | undefined {
   if (!isJsonObject(value) || !isJsonObject(value.thumbnail)) return undefined;
   const { hash, url } = value.thumbnail;
   if (
@@ -3193,7 +3195,7 @@ function sonolusFallbackThumbnail(value: JsonValue | null): JsonObject | undefin
     url !== `/sonolus/repository/${hash}`
   )
     return undefined;
-  return { hash, url: new URL(url, `https://${CANONICAL_HOST}`).href };
+  return { hash, url: new URL(url, origin).href };
 }
 
 // The engine + presentation payload is a server-agnostic global asset published
@@ -3258,7 +3260,7 @@ async function localizeStaticSonolusDocument(
   fallbackThumbnail?: JsonObject,
 ): Promise<Response> {
   if (response.status < 200 || response.status >= 300) return response;
-  const document = sonolusThumbnailDocument(parseJson(await response.text()), fallbackThumbnail);
+  const document = sonolusThumbnailDocument(parseJson(await response.text()), fallbackThumbnail, siteOrigin(new URL(request.url)));
   const body = JSON.stringify(localizeSonolusDocument(document, localization, OUR_NOTES_SONOLUS_ITEM_LABELS));
   const headers = new Headers(response.headers);
   headers.delete("Content-Range");
@@ -3313,7 +3315,8 @@ async function handleSonolus(
     /^[a-f0-9]{64}$/u.test(payloadState.revision)
       ? payloadState.revision
       : "unversioned";
-  const ourNotesRevision = `identity-text-v8-playlists-ruby:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const origin = siteOrigin(assetUrl);
+  const ourNotesRevision = `identity-text-v9-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   let revision = isBestdoriCatalog
     ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
     : ourNotesRevision;
@@ -3326,12 +3329,12 @@ async function handleSonolus(
     const readRawJson = async (releasePath: string) =>
       (await readGlobalSonolusJson(env, releasePath)) ?? readReleaseJson(env, canonicalRelease, releasePath);
     const thumbnail = await sonolusThumbnailCache.getOrCreate(ourNotesRevision, async () =>
-      sonolusFallbackThumbnail(await readRawJson("runtime/sonolus/thumbnail-fallback")),
+      sonolusFallbackThumbnail(await readRawJson("runtime/sonolus/thumbnail-fallback"), origin),
     );
     fallbackThumbnail = thumbnail;
     const readJson = async (releasePath: string) => {
       const value = await readRawJson(releasePath);
-      return value === null ? null : sonolusThumbnailDocument(value, thumbnail);
+      return value === null ? null : sonolusThumbnailDocument(value, thumbnail, origin);
     };
     const communityRows = isCommunityCatalog ? await communitySonolusRows(env, communityName) : [];
     if (isCommunityCatalog)
@@ -3340,8 +3343,8 @@ async function handleSonolus(
     const catalogProvider =
       communityProviders?.catalogProvider ??
       (isBestdoriCatalog
-        ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision)
-        : ourNotesSonolusCatalogProvider(env, releases, revision));
+        ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision, origin)
+        : ourNotesSonolusCatalogProvider(env, releases, revision, origin));
     const dataProvider =
       communityProviders?.dataProvider ??
       (isBestdoriCatalog
@@ -3388,7 +3391,7 @@ async function handleSonolus(
       },
       revision,
       searchParams: assetUrl.searchParams,
-      sonolusBaseUrl: `https://${CANONICAL_HOST}`,
+      sonolusBaseUrl: origin,
       ...(serverBanner ? { serverBanner } : {}),
     });
     if (projected) {
@@ -3481,10 +3484,9 @@ async function handleSonolus(
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
-function redirectToCanonical(url: URL): Response {
+function redirectToHttps(url: URL): Response {
   const target = new URL(url);
   target.protocol = "https:";
-  target.hostname = CANONICAL_HOST;
   target.port = "";
   return new Response(null, {
     status: 308,
@@ -3852,6 +3854,20 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       } })
       .transform(response);
   }
+  const url = new URL(request.url);
+  if (isSiteHostname(url.hostname) && url.hostname !== CANONICAL_HOST && response.headers.get("Content-Type")?.includes("text/html")) {
+    const origin = siteOrigin(url);
+    response = new HTMLRewriter()
+      .on("a[href]", { element(element) {
+        element.setAttribute("href", siteLink(element.getAttribute("href")!, origin));
+      } })
+      .on("img[src], audio[src], video[src], source[src]", { element(element) {
+        const source = element.getAttribute("src")!;
+        element.setAttribute("src", siteLink(source, origin));
+      } })
+      .on(".sonolus-hub__server", { element(element) { element.setInnerContent(url.hostname); } })
+      .transform(response);
+  }
   return restricted ? privateResourceResponse(response) : response;
 }
 
@@ -3896,7 +3912,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   // Sonolus "Share" links address `/{type}/{name}` on the server address.
   const sonolusShareTarget =
     request.method === "GET" || request.method === "HEAD"
-      ? sonolusShareRedirectTarget(url.pathname, url.search, CANONICAL_HOST)
+      ? sonolusShareRedirectTarget(url.pathname, url.search, new URL(siteOrigin(url)).host)
       : undefined;
   if (sonolusShareTarget) {
     return new Response(null, {
@@ -3958,12 +3974,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       headers: { Location: target.toString(), "Cache-Control": "no-store", Vary: "Cookie, Accept-Language" },
     });
   }
-  if (url.hostname === CANONICAL_HOST && url.protocol !== "https:") return redirectToCanonical(url);
-  const dynamicHost =
-    url.hostname === CANONICAL_HOST ||
-    url.hostname === "localhost" ||
-    url.hostname === "127.0.0.1" ||
-    url.hostname === "[::1]";
+  if (isSiteHostname(url.hostname) && url.protocol !== "https:") return redirectToHttps(url);
+  const dynamicHost = isSiteHostname(url.hostname) || isLocalHostname(url.hostname);
   if (dynamicHost) {
     const registration = await handleAccountRegistrationRequest(request, env);
     if (registration) return registration;
@@ -4031,15 +4043,13 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       }
       if (target.username || target.password || target.hash) return null;
       if (
-        [url.origin, "https://haneoka.org"].includes(target.origin) &&
+        (target.origin === url.origin || isSiteOrigin(target.origin)) &&
         /^\/(?:assets|runtime|objects)\/(?:jp|intl)\//u.test(target.pathname) &&
         target.searchParams.getAll("release").length === 1 &&
         /^r-[a-f0-9]{20}$/u.test(target.searchParams.get("release") || "") &&
         [...target.searchParams.keys()].every((key) => key === "release")
       )
-        return target.origin === url.origin
-          ? handleScopedRequest(new Request(new URL(target.pathname + target.search, url.origin)), env, ctx)
-          : fetch(target, { redirect: "manual" });
+        return handleScopedRequest(new Request(new URL(target.pathname + target.search, url.origin)), env, ctx);
       if (target.origin === "https://bestdori.com" && target.pathname.startsWith("/assets/"))
         return fetch(target, { redirect: "manual" });
       return null;

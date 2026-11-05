@@ -1,1 +1,3 @@
-export const SONOLUS_SERVER_LINK = "https://open.sonolus.com/haneoka.org";
+import { siteOrigin } from "../lib/site-origin";
+
+export const sonolusServerLink = () => `https://open.sonolus.com/${new URL(siteOrigin()).host}`;

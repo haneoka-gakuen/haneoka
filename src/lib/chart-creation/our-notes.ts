@@ -1,3 +1,4 @@
+import { siteOrigin } from "../site-origin";
 import { compileOurNotesCreation } from "./native-compile";
 export { compileOurNotesCreation } from "./native-compile";
 import { OUR_NOTES_BUNDLED_NOTE_ATLASES } from "@haneoka/cassiopeia-plugin-our-notes";
@@ -47,7 +48,7 @@ export async function mountOurNotesCreationPreview(
     import("../../../packages/embed-cassiopeia/src/style.css"),
   ]);
   options.signal?.throwIfAborted();
-  const apiBase = options.apiBase ?? "https://haneoka.org/api/v1/",
+  const apiBase = options.apiBase ?? `${siteOrigin()}/api/v1/`,
     assetBase = new URL("/", apiBase).href;
   const packagedTextures = new Set(Object.values(OUR_NOTES_BUNDLED_NOTE_ATLASES).map((atlas) => atlas.textureUrl));
   const pinnedFetcher = createPinnedPublicFetcher(options.identity, options);

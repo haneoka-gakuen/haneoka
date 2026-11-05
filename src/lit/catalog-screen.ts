@@ -140,7 +140,7 @@ import "../styles/character-profile.css";
 import "../styles/character-pair.css";
 import "../styles/story-media.css";
 import { CHARACTER_ART } from "../config/character-art";
-import { SONOLUS_SERVER_LINK } from "../config/sonolus";
+import { sonolusServerLink } from "../config/sonolus";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
 import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
@@ -6059,7 +6059,7 @@ export class CatalogScreen extends LitElement {
     if (this.settings.origin === "sekai") return "";
     const source = this.isProvider() ? "gbp" : this.itemSourceServer(item);
     if (source !== "gbp" && source !== "jp" && source !== "intl") return "";
-    return `${SONOLUS_SERVER_LINK}/levels/${encodeURIComponent(releaseChartLevelName(source, String(Number(item.musicId || 0)), difficulty))}`;
+    return `${sonolusServerLink()}/levels/${encodeURIComponent(releaseChartLevelName(source, String(Number(item.musicId || 0)), difficulty))}`;
   }
   private chartPageTitle(item: Item) {
     const chart = this.chartRow(item);

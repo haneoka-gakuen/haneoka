@@ -1,3 +1,4 @@
+import { siteOrigin } from "../site-origin";
 import type { ChartNote } from "@haneoka/cassiopeia";
 import { NoteDirection, NoteOperateType, interpolateNoteLine } from "@haneoka/cassiopeia";
 import type { OurNotesAssetManifest, RenderDirection, RenderNoteKind } from "@haneoka/cassiopeia-plugin-our-notes";
@@ -70,7 +71,7 @@ export async function loadOurNotesCreationCanvasSkin(
         import("@haneoka/cassiopeia-ui-vue/overview"),
       ]);
     controller.signal.throwIfAborted();
-    const apiBase = options.apiBase ?? "https://haneoka.org/api/v1/";
+    const apiBase = options.apiBase ?? `${siteOrigin()}/api/v1/`;
     const publicBase = new URL("/", apiBase).href;
     const packaged = new Set(Object.values(OUR_NOTES_BUNDLED_NOTE_ATLASES).map((atlas) => atlas.textureUrl));
     const pinnedFetcher = createPinnedPublicFetcher(identity, options);

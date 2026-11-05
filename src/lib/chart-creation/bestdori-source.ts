@@ -1,3 +1,4 @@
+import { siteOrigin } from "../site-origin";
 import { BESTDORI_SS_LANE_BASIS, bestdoriChartToSs } from "../../../packages/bestdori/src/chart";
 import { BESTDORI_CATALOG_VERSION } from "../../../packages/bestdori/src/resources";
 import { isBestdoriServer, type BestdoriServer } from "../../../packages/bestdori/src/transport";
@@ -42,7 +43,7 @@ export interface BestdoriCreatorIdentity {
 }
 function base(options: BestdoriCreatorOptions) {
   if (!isBestdoriServer(options.region)) throw new Error("invalid_bestdori_region");
-  const url = new URL(options.apiBase ?? "https://haneoka.org/api/v1/garupa/bestdori/");
+  const url = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/garupa/bestdori/`);
   if (!["https:", "http:"].includes(url.protocol) || url.search || url.hash)
     throw new Error("invalid_bestdori_api_base");
   if (!url.pathname.endsWith("/")) url.pathname += "/";
