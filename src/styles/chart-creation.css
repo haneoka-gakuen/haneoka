@@ -170,14 +170,18 @@
     grid-template-rows: minmax(0, 1fr) 32px;
     background: var(--md-sys-color-surface-container);
   }
-  .chart-creation__editor {
+  .chart-creation__editor,
+  .chart-creation__overlay {
+    grid-area: 1 / 1;
     display: block;
     inline-size: 100%;
     block-size: 100%;
     min-block-size: 0;
     cursor: crosshair;
   }
-  .chart-creation__editor:focus-visible {
+  .chart-creation__overlay { pointer-events: none; }
+  .chart-creation__editor:focus-visible,
+  .chart-creation__editor:focus-visible + .chart-creation__overlay {
     outline: 2px solid var(--md-sys-color-primary);
     outline-offset: -2px;
   }

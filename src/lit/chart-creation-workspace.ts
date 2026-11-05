@@ -2,7 +2,7 @@
 // Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
 // Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
-// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何随原生谱面缓存；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
+// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何随原生谱面缓存；静态谱面与指针分层绘制，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -352,6 +352,15 @@ export class ChartCreationWorkspace extends LitElement {
   private canvasController?: AbortController;
   private flatChart?: { project:Project; value?:ReturnType<typeof compileOurNotesCreation> };
   private flatLines?: { chart: ChartDocument; lines: { kind: ChartDocument["lines"][number]["kind"]; noteIds: number[]; points: ChartNote[] }[] };
+  private paintBackdrop?: {
+    project: Project; base: Project; theme: OurNotesCreationCanvasSkin | undefined; waveform: unknown;
+    width: number; height: number; ratio: number; start: number; span: number; laneStart: number; laneSpan: number;
+    snap: number; locale: string; selected: Set<string>; scale: number;
+  };
+  private tempoSnapshot?: { project: Project; value: TempoMap };
+  private visibleSelectionSnapshot?: { project: Project; scope: unknown; nodes: ReturnType<typeof chartSelectionNodes> };
+  private readonly invalidatePaintBackdrop = () => { this.paintBackdrop = undefined; this.paint(); };
+
   declare private canvasLoading: boolean;
   declare private canvasFailed: boolean;
   private canvasSkin: ChartSkin = {
@@ -553,8 +562,9 @@ export class ChartCreationWorkspace extends LitElement {
     this.panelMedia = matchMedia("(max-width: 959px)");
     this.panelMedia.addEventListener("change", this.mediaChanged);
     this.mediaChanged();
-    this.appearanceObserver ??= new MutationObserver(() => this.paint());
+    this.appearanceObserver ??= new MutationObserver(this.invalidatePaintBackdrop);
     this.appearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-seed"] });
+    document.fonts.addEventListener("loadingdone", this.invalidatePaintBackdrop);
     document.addEventListener("keydown", this.keydown);
     window.addEventListener("beforeunload", this.beforeUnload);
     this.unlocale = initializeI18nClient().subscribe((catalog) => {
@@ -635,6 +645,10 @@ export class ChartCreationWorkspace extends LitElement {
     void this.canvasTheme?.dispose();this.canvasTheme=undefined;
     this.observer?.disconnect();
     this.appearanceObserver?.disconnect();
+    document.fonts.removeEventListener("loadingdone", this.invalidatePaintBackdrop);
+    for (const canvas of this.querySelectorAll<HTMLCanvasElement>(".chart-creation__editor, .chart-creation__overlay")) canvas.width = canvas.height = 0;
+    this.paintBackdrop = undefined;
+    this.tempoSnapshot = undefined; this.visibleSelectionSnapshot = undefined;
     this.unlocale?.();
     void this.operation.then(() => this.store.close()).catch(() => {});
     void this.patternStore.close().catch(() => {});
@@ -1241,14 +1255,20 @@ export class ChartCreationWorkspace extends LitElement {
     });
   }
   private selectionNodes(project = this.chart) {
+    if (this.visibleSelectionSnapshot?.project === project && this.visibleSelectionSnapshot.scope === this.collectionScope)
+      return this.visibleSelectionSnapshot.nodes;
     if (this.selectionSnapshot?.project !== project)
       this.selectionSnapshot = { project, nodes: chartSelectionNodes(project) };
     const visible = this.scopeIds(project);
-    return this.selectionSnapshot.nodes.filter(entry => visible.has(entry.note.id));
+    const nodes = this.selectionSnapshot.nodes.filter(entry => visible.has(entry.note.id));
+    this.visibleSelectionSnapshot = { project, scope: this.collectionScope, nodes };
+    return nodes;
   }
   private map() {
-    const p = this.chart;
-    return new TempoMap(p.tempos, { resolution: p.resolution, audioOffset: p.audioOffset });
+    const project = this.chart;
+    if (this.tempoSnapshot?.project !== project)
+      this.tempoSnapshot = { project, value: new TempoMap(project.tempos, { resolution: project.resolution, audioOffset: project.audioOffset }) };
+    return this.tempoSnapshot.value;
   }
   private frameProjectStart() {
     const project = this.chart;
@@ -2096,10 +2116,12 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private paint() {
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
-    if (!canvas) return;
+    const overlay = this.querySelector<HTMLCanvasElement>(".chart-creation__overlay");
+    if (!canvas || !overlay) return;
     const width = canvas.clientWidth,
       height = canvas.clientHeight,
-      ratio = Math.min(devicePixelRatio || 1, 2);
+      ratio = Math.min(devicePixelRatio || 1, 2),
+      rect = canvas.getBoundingClientRect();
     if (
       this.gesture &&
       (Math.abs(width - this.gesture.rect.width) > 1 || Math.abs(height - this.gesture.rect.height) > 1)
@@ -2111,8 +2133,10 @@ export class ChartCreationWorkspace extends LitElement {
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
     }
-    const ctx = canvas.getContext("2d");
-    if (!ctx || !width || !height) return;
+    if (overlay.width !== canvas.width || overlay.height !== canvas.height) { overlay.width = canvas.width; overlay.height = canvas.height; }
+    const backgroundContext = canvas.getContext("2d"), interactionContext = overlay.getContext("2d");
+    if (!backgroundContext || !interactionContext || !width || !height) return;
+    let ctx = backgroundContext;
     const style = getComputedStyle(this),
       color = (name: string) => style.getPropertyValue(`--md-sys-color-${name}`).trim();
     const chart = this.pastePlacement?.candidate ?? this.gesture?.candidate ?? this.widthSession?.candidate ?? this.continuationCandidate(canvas) ?? this.chart,
@@ -2129,6 +2153,19 @@ export class ChartCreationWorkspace extends LitElement {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     const fullStageWidth=width*chart.laneBasis/laneSpan;
     const stageLeft = Math.max(0, x(0)), stageRight = Math.min(width, x(chart.laneBasis));
+    const display = this.editingProject(chart), cached = this.paintBackdrop;
+    const waveform = this.audio?.analysis.waveform;
+    let reuse = Boolean(cached && cached.project === display && cached.base === this.chart && cached.theme === this.canvasTheme &&
+      cached.waveform === waveform && cached.width === width && cached.height === height && cached.ratio === ratio &&
+      cached.start === this.windowStart && cached.span === this.secondsPerScreen && cached.laneStart === this.laneStart &&
+      cached.laneSpan === laneSpan && cached.snap === this.snap && cached.locale === this.locale && cached.selected.size === this.selectedIds.size);
+    if (reuse) for (const id of this.selectedIds) if (!cached!.selected.has(id)) { reuse = false; break; }
+    const skin = this.canvasTheme?.skin;
+    const scale = reuse ? cached!.scale : skin?.scaleForFlatNoteBodyHeight(fullStageWidth, 18) ?? 1;
+    if (!reuse) {
+      this.paintBackdrop = undefined;
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.setLineDash([]);
+
     if(this.canvasTheme){
       ctx.fillStyle=color("surface-container-high");ctx.fillRect(0,0,width,height);
       ctx.fillStyle=color("scrim");if(stageRight > stageLeft)ctx.fillRect(stageLeft,0,stageRight-stageLeft,height);
@@ -2219,7 +2256,6 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.restore();
     }
     const previewing = chart !== this.chart;
-    const display = this.editingProject(chart);
     const projection=this.flatProjection(display);
     const baseNodes = previewing ? new Map(this.selectionNodes(this.chart).map(item => [item.note.id, item])) : undefined;
     const changed = new Set(previewing ? this.selectionNodes(chart).filter(item => {
@@ -2227,9 +2263,7 @@ export class ChartCreationWorkspace extends LitElement {
       return !old || old.lane !== item.lane || old.size !== item.size || old.note.tick !== item.note.tick ||
         old.note.type !== item.note.type || old.note.direction !== item.note.direction || old.note.visible !== item.note.visible;
     }).map(item => item.note.id) : []);
-    const skin=this.canvasTheme?.skin;
     const nativeY=(timeMs:number)=>timeToViewportY(timeMs/1000+chart.audioOffset,{startSeconds:this.windowStart,pixelsPerSecond:height/this.secondsPerScreen,height});
-    const scale=skin?.scaleForFlatNoteBodyHeight(fullStageWidth,18)??1;
     if(skin&&projection){
       ctx.save();
       const changedNative = new Set([...changed].flatMap(id => projection.sourceMap.notesForCanonical(id)));
@@ -2294,6 +2328,18 @@ export class ChartCreationWorkspace extends LitElement {
     };
     for(const line of display.lines)line.points.forEach((note,i)=>{const shape=resolveLinePointShape(line.points,i);overlay(note,shape.lane,shape.size,line.kind==="guide"?"guide":i===0?"slide-start":i===line.points.length-1?"slide-end":"slide-node")});
     for(const note of display.singles)overlay(note,note.lane,note.size);
+      this.paintBackdrop = { project: display, base: this.chart, theme: this.canvasTheme, waveform,
+        width, height, ratio, start: this.windowStart, span: this.secondsPerScreen, laneStart: this.laneStart, laneSpan,
+        snap: this.snap, locale: this.locale, selected: new Set(this.selectedIds), scale };
+    }
+    ctx = interactionContext;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, overlay.width, overlay.height);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.setLineDash([]);
+    ctx.imageSmoothingEnabled = backgroundContext.imageSmoothingEnabled;
+    ctx.imageSmoothingQuality = backgroundContext.imageSmoothingQuality;
+    ctx.filter = backgroundContext.filter;
+    ctx.shadowBlur = backgroundContext.shadowBlur; ctx.shadowColor = backgroundContext.shadowColor;
+    ctx.shadowOffsetX = backgroundContext.shadowOffsetX; ctx.shadowOffsetY = backgroundContext.shadowOffsetY;
     if (this.gesture?.kind === "box" && this.gesture.moved) {
       const g = this.gesture,
         x = Math.min(g.x, g.endX) - g.rect.left,
@@ -2316,7 +2362,6 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.fillStyle=color("primary");ctx.beginPath();ctx.moveTo(0,playhead-5);ctx.lineTo(8,playhead);ctx.lineTo(0,playhead+5);ctx.closePath();ctx.fill();
     }
     const cursorOutput = this.querySelector<HTMLOutputElement>("[data-cursor]");
-    const rect = canvas.getBoundingClientRect();
     const cursorX = this.cursor ? this.cursor.clientX - rect.left : -1;
     const cursorY = this.cursor ? this.cursor.clientY - rect.top : -1;
     const showCursor = Boolean(!this.pastePlacement && this.cursor && this.stageMode === "edit" && !this.busy && this.canvasTheme &&
@@ -4419,6 +4464,7 @@ export class ChartCreationWorkspace extends LitElement {
               @contextmenu=${(event: MouseEvent) => { if (this.hasProject) event.preventDefault(); }}
               @auxclick=${(event: MouseEvent) => { if (event.button === 1) event.preventDefault(); }}
             ></canvas>
+            <canvas class="chart-creation__overlay" aria-hidden="true" ?hidden=${this.stageMode !== "edit"}></canvas>
             ${this.hasProject && this.stageMode === "edit" && (this.canvasLoading || this.canvasFailed) ? html`<div class="chart-studio__skin-state">${this.canvasLoading ? loadingState(this.c("loading"),{local:true}) : html`<button class="button button--tonal" @click=${()=>void this.ensureCanvasSkin(true)}>${this.c("retry")}</button>`}</div>` : nothing}
             <output class="chart-studio__cursor" data-cursor aria-live="off" hidden></output>
             ${this.stageMode === "preview" && this.previewPlayback ? html`
