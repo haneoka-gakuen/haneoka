@@ -29,7 +29,7 @@ import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } 
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { variants as githubVariants } from "@thesvg/icons/github";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
-import { SONOLUS_SERVER_LINK } from "../config/sonolus";
+import { sonolusServerLink } from "../config/sonolus";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { repeat } from "lit/directives/repeat.js";
@@ -655,7 +655,7 @@ export class HomeDashboard extends LitElement {
       html`
         <a
           class="icon-button"
-          href=${SONOLUS_SERVER_LINK}
+          href=${sonolusServerLink()}
           aria-label="Sonolus"
           title="Sonolus"
           target="_blank"

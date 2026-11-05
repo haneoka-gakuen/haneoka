@@ -3,6 +3,7 @@
 // Output: 默认社区推荐排序、三种集合视图、歌曲双栏详情／响应式评论、推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
+import { sonolusServerLink } from "../config/sonolus";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import { LitElement, html, nothing } from "lit";
@@ -412,7 +413,7 @@ export class CommunityCharts extends LitElement {
         onPlay: row.audioUrl ? () => void this.playSong(row) : undefined,
         onChart: () => void this.openChart(row),
         sonolus: row.publishedRevision
-          ? `https://open.sonolus.com/haneoka.org/levels/${chartLevelName(row.id)}`
+          ? `${sonolusServerLink()}/levels/${chartLevelName(row.id)}`
           : undefined,
       })}
       ${

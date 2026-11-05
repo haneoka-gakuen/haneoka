@@ -1,3 +1,4 @@
+import { siteOrigin } from "../site-origin";
 import { withUiMarksProjection } from "../ui-marks";
 import type { HaneokaLocale, HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import { readBytes } from "../../../packages/embed-core/src/io";
@@ -66,7 +67,7 @@ export async function loadPublicCreationSongCardData(
 ): Promise<CreationSongCardData> {
   options = { ...options, identity: { ...options.identity } };
   options.signal.throwIfAborted();
-  const base = new URL(options.apiBase ?? "https://haneoka.org/api/v1/");
+  const base = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`);
   if (!base.pathname.endsWith("/")) base.pathname += "/";
   const fetcher = createPinnedPublicFetcher(options.identity, options);
   const read = async (resource: string) => {

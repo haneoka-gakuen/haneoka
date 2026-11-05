@@ -1,3 +1,4 @@
+import { siteAssetUrl, siteOrigin } from "../site-origin";
 import {
   createHaneokaClient,
   type HaneokaLocale,
@@ -59,8 +60,8 @@ export function pinnedPublicUrl(
     !identity.sourceId
   )
     throw new Error("invalid_release");
-  const base = new URL(options.apiBase ?? "https://haneoka.org/api/v1/"),
-    url = new URL(path, base);
+  const base = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`),
+    url = new URL(siteAssetUrl(new URL(path, base).href, base.origin));
   const server = encodeURIComponent(identity.server),
     apiPath = `${base.pathname.replace(/\/?$/u, "/")}servers/${server}/`;
   if (
@@ -112,7 +113,7 @@ function client(
 ) {
   const transport = identity ? createPinnedPublicFetcher(identity, options) : (options.fetcher ?? fetch);
   return createHaneokaClient({
-    baseUrl: options.apiBase ?? "https://haneoka.org/api/v1/",
+    baseUrl: options.apiBase ?? `${siteOrigin()}/api/v1/`,
     transport: async (request) => {
       const response = await transport(request);
       try {
@@ -191,7 +192,7 @@ function catalogueCache(fetcher: EmbedFetcher) {
   return cache;
 }
 function catalogueScope(options: PublicCreationCatalogueOptions) {
-  const base = new URL(options.apiBase ?? "https://haneoka.org/api/v1/");
+  const base = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`);
   if (!base.pathname.endsWith("/")) base.pathname += "/";
   return `${base.href}\0${options.server}\0${options.locale}`;
 }

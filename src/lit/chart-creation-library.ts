@@ -1,3 +1,4 @@
+import { siteAssetUrl } from "../lib/site-origin";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -300,7 +301,7 @@ export class ChartCreationLibrary extends LitElement {
   private image(source: unknown) {
     if (typeof source !== "string" || !source) return "";
     if (this.filterCatalog) return this.filterCatalog.assetUrl(source);
-    return this.provider !== "haneoka" ? new URL(source, "https://haneoka.org").href : this.identity ? pinnedPublicUrl(source, this.identity) : "";
+    return this.provider !== "haneoka" ? siteAssetUrl(source) : this.identity ? pinnedPublicUrl(source, this.identity) : "";
   }
   private renderFilters() {
     const { bands: fallbackBands, rows } = this.searchIndex();
@@ -360,7 +361,7 @@ export class ChartCreationLibrary extends LitElement {
         const ref: Extract<ChartMediaRef, { kind: "server" }> = this.provider === "bestdori"
           ? { kind: "server", provider: "bestdori", server: this.bestdoriRegion, songId: this.chosen }
           : { kind: "server", provider: "our-notes", server: this.identity!.server, releaseId: this.identity!.releaseId, songId: this.chosen };
-        await this.onChooseMedia({ ref, url: this.provider === "haneoka" ? pinnedPublicUrl(url, this.identity!) : new URL(url, "https://haneoka.org").href, title: songTitle(selected as CatalogueRecord, this.locale).text }, controller.signal);
+        await this.onChooseMedia({ ref, url: this.provider === "haneoka" ? pinnedPublicUrl(url, this.identity!) : siteAssetUrl(url), title: songTitle(selected as CatalogueRecord, this.locale).text }, controller.signal);
         controller.signal.throwIfAborted(); this.close();
       } catch { if (!controller.signal.aborted) this.error = this.t("loadFailed"); }
       finally { if (this.controller === controller) { this.busy = false; this.controller = undefined; } }

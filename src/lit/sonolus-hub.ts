@@ -3,7 +3,8 @@ import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { SonolusHubPageData } from "../server/tool-page-data";
-import { SONOLUS_SERVER_LINK } from "../config/sonolus";
+import { sonolusServerLink } from "../config/sonolus";
+import { siteLink, siteOrigin } from "../lib/site-origin";
 import { communityChartPath } from "../lib/chart-creation/community-types";
 import { readReleaseServer } from "../lib/release-server";
 import { preferredLocale, uiText } from "./shared/catalog";
@@ -30,7 +31,6 @@ interface Section {
   items: Item[];
 }
 const SONOLUS_LOCALE: Record<string, string> = { "zh-CN": "zhs", "zh-TW": "zht", ja: "ja", en: "en", ko: "ko" };
-const HOST = new URL(SONOLUS_SERVER_LINK).pathname.replace(/^\//u, "");
 
 /** The site's Sonolus server: what it serves, opened straight in the Sonolus app. */
 export class SonolusHub extends LitElement {
@@ -63,7 +63,7 @@ export class SonolusHub extends LitElement {
     if (!payload) void this.load();
   }
   preparePage(payload: SonolusHubPageData) {
-    this.banner = String((payload.info.banner as Row | undefined)?.url || "");
+    this.banner = this.path(String((payload.info.banner as Row | undefined)?.url || ""));
     this.levels = this.sections(payload.levels, "cover");
     this.playlists = this.sections(payload.playlists, "thumbnail");
   }
@@ -94,11 +94,9 @@ export class SonolusHub extends LitElement {
       return text;
     }
   }
-  /** The server answers with absolute haneoka.org URLs; the page loads them from its own origin. */
   private path(url: string) {
     if (!url) return "";
-    const parsed = new URL(url, typeof location === "undefined" ? "https://haneoka.org" : location.origin);
-    return parsed.hostname === "haneoka.org" ? `${parsed.pathname}${parsed.search}` : url;
+    return siteLink(url);
   }
   private sections(document: Row, image: "cover" | "thumbnail"): Section[] {
     const sections = Array.isArray(document.sections) ? (document.sections as Row[]) : [];
@@ -116,12 +114,12 @@ export class SonolusHub extends LitElement {
   private async load() {
     const read = async (path: string) => (await fetch(path, { headers: { accept: "application/json" } })).json() as Promise<Row>;
     const [info, levels, playlists] = await Promise.all([read("/sonolus/info"), read("/sonolus/levels/info"), read("/sonolus/playlists/info")]);
-    this.banner = String(((info.banner as Row | undefined)?.url as string | undefined) || "");
+    this.banner = this.path(String(((info.banner as Row | undefined)?.url as string | undefined) || ""));
     this.levels = this.sections(levels, "cover");
     this.playlists = this.sections(playlists, "thumbnail");
   }
   private openLink(type: "levels" | "playlists", name: string) {
-    return `${SONOLUS_SERVER_LINK}/${type}/${encodeURIComponent(name)}`;
+    return `${sonolusServerLink()}/${type}/${encodeURIComponent(name)}`;
   }
   private sectionLabel(title: string) {
     if (title === "#RANDOM") return this.text("random", "Random");
@@ -152,7 +150,7 @@ export class SonolusHub extends LitElement {
     `;
   }
   private async copy() {
-    await navigator.clipboard?.writeText(HOST);
+    await navigator.clipboard?.writeText(new URL(siteOrigin()).host);
     snackbar(this.text("copied", "Copied"));
   }
   render() {
@@ -162,9 +160,9 @@ export class SonolusHub extends LitElement {
           ${this.banner ? html`<img class="sonolus-hub__banner" src=${this.banner} alt="" width="960" height="320" decoding="async" />` : html`<span class="sonolus-hub__banner"></span>`}
           <div class="sonolus-hub__actions">
             <img src="/images/sonolus-icon.png" alt="" width="40" height="40" />
-            <code class="sonolus-hub__server">${HOST}</code>
+            <code class="sonolus-hub__server">${new URL(siteOrigin()).host}</code>
             ${iconButton({ icon: "content_copy", label: this.text("copy", "Copy server address"), onClick: () => void this.copy() })}
-            <a class="button sonolus-hub__open" href=${SONOLUS_SERVER_LINK} target="_blank" rel="noreferrer">
+            <a class="button sonolus-hub__open" href=${sonolusServerLink()} target="_blank" rel="noreferrer">
               ${icon("open_in_new", 18)}${this.text("open", "Open in Sonolus")}
             </a>
             <a class="button button--tonal" href=${communityChartPath(readReleaseServer(), this.locale)}>${clientText(this.locale, "community.charts.title")}</a>

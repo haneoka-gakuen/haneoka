@@ -3,6 +3,7 @@
 // Output: 在调用者设备运行的配队引擎句柄与令牌所有者的 Engine 输入。
 // Pos: [Map](../L2-2.md)；公开浏览器计算入口。
 // Effects/Dependencies: 读取 release DTO，创建本地 Worker；库存只在调用者设备内传递。
+import { siteOrigin } from "../site-origin";
 import { EngineClient } from "../team-builder/engine/client";
 import type { TeamBuilderData } from "../team-builder/data";
 import type { SavedTeam } from "../team-builder/sync/box-view";
@@ -28,7 +29,7 @@ export interface TeamDataOptions {
 
 /** Reads the token owner's cards and bonuses; pass the result into `run` on this device. */
 export async function fetchTeamData(options: TeamDataOptions) {
-  const url = new URL(`team-data/${options.server ?? "intl"}`, new URL(options.apiBase ?? "https://haneoka.org/api/v1/"));
+  const url = new URL(`team-data/${options.server ?? "intl"}`, new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`));
   const response = await fetch(url, {
     signal: options.signal,
     credentials: "omit",
@@ -46,7 +47,7 @@ export async function fetchTeamData(options: TeamDataOptions) {
 }
 
 export async function createTeamBuilder(options: LocalTeamBuilderOptions = {}) {
-  const apiBase = new URL(options.apiBase ?? "https://haneoka.org/api/v1/");
+  const apiBase = new URL(options.apiBase ?? `${siteOrigin()}/api/v1/`);
   apiBase.pathname = apiBase.pathname.replace(/\/?$/u, "/");
   const server = options.server ?? "intl";
   if (server !== "jp" && server !== "intl") throw new TypeError("server must be jp or intl");

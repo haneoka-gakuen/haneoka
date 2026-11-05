@@ -273,9 +273,9 @@ const copyFor = (message: AuthEmailMessage): EmailCopy => {
 const renderEmail = (message: AuthEmailMessage, safeURL: string): { html: string; subject: string; text: string } => {
   const copy = copyFor(message);
   const greeting = copy.greeting(message.userName.trim());
-  const siteURL = "https://haneoka.org/";
+  const siteURL = new URL("/", safeURL).href;
   // Public PNG works in mail image proxies and clients without SVG support.
-  const logoURL = "https://haneoka.org/apple-touch-icon.png";
+  const logoURL = new URL("/apple-touch-icon.png", siteURL).href;
   const text = [
     copy.heading,
     "",
@@ -326,7 +326,7 @@ const renderEmail = (message: AuthEmailMessage, safeURL: string): { html: string
         </td></tr>
       </table>
       <!--[if mso]></td></tr></table><![endif]-->
-      <p style="margin:18px 0 0;font-size:12px;line-height:20px;color:#777680"><a href="${siteURL}" style="color:#555994;text-decoration:none">Haneoka</a> &nbsp;/&nbsp; haneoka.org</p>
+      <p style="margin:18px 0 0;font-size:12px;line-height:20px;color:#777680"><a href="${siteURL}" style="color:#555994;text-decoration:none">Haneoka</a> &nbsp;/&nbsp; ${new URL(siteURL).hostname}</p>
     </td></tr>
   </table>
 </body>
