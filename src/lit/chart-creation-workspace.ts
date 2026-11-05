@@ -2,7 +2,7 @@
 // Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
 // Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
-// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何随原生谱面缓存；静态谱面与指针分层绘制，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
+// Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何与路径采样索引随原生谱面及节奏映射缓存；静态谱面与指针分层绘制，命中投影随视口缓存，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -353,12 +353,14 @@ export class ChartCreationWorkspace extends LitElement {
   private flatChart?: { project:Project; value?:ReturnType<typeof compileOurNotesCreation> };
   private flatLines?: { chart: ChartDocument; lines: { kind: ChartDocument["lines"][number]["kind"]; noteIds: number[]; points: ChartNote[] }[] };
   private paintBackdrop?: {
-    project: Project; base: Project; theme: OurNotesCreationCanvasSkin | undefined; waveform: unknown;
+    project: Project; base: Project; scope: ChartCollectionScope; theme: OurNotesCreationCanvasSkin | undefined; waveform: unknown;
     width: number; height: number; ratio: number; start: number; span: number; laneStart: number; laneSpan: number;
-    snap: number; locale: string; selected: Set<string>; scale: number;
+    snap: number; locale: string; selected: ReadonlySet<string>; scale: number;
+    hits: { id: string; left: number; right: number; y: number }[];
   };
   private tempoSnapshot?: { project: Project; value: TempoMap };
   private visibleSelectionSnapshot?: { project: Project; scope: unknown; nodes: ReturnType<typeof chartSelectionNodes> };
+  private lineSamplingSnapshot?: { project: Project; map: TempoMap; sample: (line: NoteLine, tick: number) => ReturnType<typeof sampleLineSpan> };
   private readonly invalidatePaintBackdrop = () => { this.paintBackdrop = undefined; this.paint(); };
 
   declare private canvasLoading: boolean;
@@ -649,6 +651,7 @@ export class ChartCreationWorkspace extends LitElement {
     for (const canvas of this.querySelectorAll<HTMLCanvasElement>(".chart-creation__editor, .chart-creation__overlay")) canvas.width = canvas.height = 0;
     this.paintBackdrop = undefined;
     this.tempoSnapshot = undefined; this.visibleSelectionSnapshot = undefined;
+    this.lineSamplingSnapshot = undefined;
     this.unlocale?.();
     void this.operation.then(() => this.store.close()).catch(() => {});
     void this.patternStore.close().catch(() => {});
@@ -2155,11 +2158,10 @@ export class ChartCreationWorkspace extends LitElement {
     const stageLeft = Math.max(0, x(0)), stageRight = Math.min(width, x(chart.laneBasis));
     const display = this.editingProject(chart), cached = this.paintBackdrop;
     const waveform = this.audio?.analysis.waveform;
-    let reuse = Boolean(cached && cached.project === display && cached.base === this.chart && cached.theme === this.canvasTheme &&
+    const reuse = Boolean(cached && cached.project === display && cached.base === this.chart && cached.scope === this.collectionScope && cached.theme === this.canvasTheme &&
       cached.waveform === waveform && cached.width === width && cached.height === height && cached.ratio === ratio &&
       cached.start === this.windowStart && cached.span === this.secondsPerScreen && cached.laneStart === this.laneStart &&
-      cached.laneSpan === laneSpan && cached.snap === this.snap && cached.locale === this.locale && cached.selected.size === this.selectedIds.size);
-    if (reuse) for (const id of this.selectedIds) if (!cached!.selected.has(id)) { reuse = false; break; }
+      cached.laneSpan === laneSpan && cached.snap === this.snap && cached.locale === this.locale && cached.selected === this.selectedIds);
     const skin = this.canvasTheme?.skin;
     const scale = reuse ? cached!.scale : skin?.scaleForFlatNoteBodyHeight(fullStageWidth, 18) ?? 1;
     if (!reuse) {
@@ -2328,10 +2330,16 @@ export class ChartCreationWorkspace extends LitElement {
     };
     for(const line of display.lines)line.points.forEach((note,i)=>{const shape=resolveLinePointShape(line.points,i);overlay(note,shape.lane,shape.size,line.kind==="guide"?"guide":i===0?"slide-start":i===line.points.length-1?"slide-end":"slide-node")});
     for(const note of display.singles)overlay(note,note.lane,note.size);
-      this.paintBackdrop = { project: display, base: this.chart, theme: this.canvasTheme, waveform,
+      const hits: NonNullable<ChartCreationWorkspace["paintBackdrop"]>["hits"] = [];
+      for (const item of this.selectionNodes(chart)) {
+        const at = y(item.note.tick);
+        if (at >= -12 && at <= height + 12) hits.push({ id: item.note.id, left: x(item.lane), right: x(item.lane + item.size), y: at });
+      }
+      this.paintBackdrop = { project: display, base: this.chart, scope: this.collectionScope, theme: this.canvasTheme, waveform,
         width, height, ratio, start: this.windowStart, span: this.secondsPerScreen, laneStart: this.laneStart, laneSpan,
-        snap: this.snap, locale: this.locale, selected: new Set(this.selectedIds), scale };
+        snap: this.snap, locale: this.locale, selected: this.selectedIds, scale, hits };
     }
+    const hits = this.paintBackdrop!.hits;
     ctx = interactionContext;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, overlay.width, overlay.height);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.setLineDash([]);
@@ -2376,8 +2384,9 @@ export class ChartCreationWorkspace extends LitElement {
       const lane = edited?.lane ?? Math.round(viewportXToAuthoredLane(cursorX, width, this.laneView(chart)));
       const cursorLane = action?.kind === "resize-right" && edited ? lane + edited.size : lane;
       const at = y(tick);
-      const hovered = !action && !this.pending ? this.selectionNodes(this.chart).find(item =>
-        Math.abs(y(item.note.tick) - cursorY) <= 12 && cursorX >= x(item.lane) - 8 && cursorX <= x(item.lane + item.size) + 8) : undefined;
+      const hovered = !action && !this.pending ? chart === this.chart
+        ? hits.find(item => Math.abs(item.y - cursorY) <= 12 && cursorX >= item.left - 8 && cursorX <= item.right + 8)
+        : this.selectionNodes(this.chart).find(item => Math.abs(y(item.note.tick) - cursorY) <= 12 && cursorX >= x(item.lane) - 8 && cursorX <= x(item.lane + item.size) + 8) : undefined;
       const lineTail = this.activeLine()?.points.at(-1);
       const lineTool = ["hold", "guide"].includes(this.tool);
       const nodeTarget = !action && !this.widthSession && (this.tool === "node" || lineTool && !this.pending && !hovered && (!lineTail || tick <= lineTail.tick))
@@ -2413,9 +2422,8 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.beginPath();ctx.moveTo(0, at);ctx.lineTo(width, at);ctx.moveTo(x(cursorLane), 0);ctx.lineTo(x(cursorLane), height);ctx.stroke();
       ctx.restore();
       if (cursorOutput) cursorOutput.textContent = `${map.tickToSeconds(tick).toFixed(3)} s / ${this.t("beat")} ${tick / chart.resolution} / ${this.t("lane")} ${Number(lane.toFixed(2))}${edited ? ` / ${this.t("width")} ${Number(edited.size.toFixed(2))}` : ""}${lane < 0 || lane > chart.laneBasis ? ` / ${this.t("creation.outside_stage")}` : ""}${action?.error ? ` / ${action.error}` : ""}`;
-      const nearby = this.selectionNodes(chart).find(item => this.selectedIds.has(item.note.id) &&
-        Math.abs(y(item.note.tick) - cursorY) <= 12 &&
-        Math.min(Math.abs(x(item.lane) - cursorX), Math.abs(x(item.lane + item.size) - cursorX)) <= 8);
+      const nearby = hits.find(item => this.selectedIds.has(item.id) && Math.abs(item.y - cursorY) <= 12 &&
+        Math.min(Math.abs(item.left - cursorX), Math.abs(item.right - cursorX)) <= 8);
       const editing = ["select", "tap", "flick", "trace", "hold", "guide"].includes(this.tool);
       canvas.style.cursor = this.pan || action?.kind === "move" ? "grabbing" : this.tool === "pan" ? "grab"
         : editing && (nearby || action?.kind.startsWith("resize")) ? "ew-resize" : editing && hovered ? "grab"
@@ -3073,7 +3081,10 @@ export class ChartCreationWorkspace extends LitElement {
     </section>`;
   }
   private lineSampler(project: Project) {
-    const projection = this.flatProjection(project), map = this.map();
+    const map = this.map();
+    if (this.lineSamplingSnapshot?.project === project && this.lineSamplingSnapshot.map === map)
+      return this.lineSamplingSnapshot.sample;
+    const projection = this.flatProjection(project);
     const nativeNotes = new Map(projection?.chart.notes.map(note => [note.id, note]));
     const lines = new Map(project.lines.map(line => {
       const ids = projection?.sourceMap.linesForCanonical(line.id);
@@ -3082,7 +3093,7 @@ export class ChartCreationWorkspace extends LitElement {
         .filter((note): note is ChartNote => !!note && note.indexInLine !== null).sort((a, b) => a.timeMs - b.timeMs);
       return [line.id, points] as const;
     }));
-    return (line: NoteLine, tick: number) => {
+    const sample = (line: NoteLine, tick: number) => {
       const shape = sampleLineSpan(line, tick);
       if (!shape) return;
       const points = lines.get(line.id), at = (map.tickToSeconds(tick) - project.audioOffset) * 1000;
@@ -3094,6 +3105,8 @@ export class ChartCreationWorkspace extends LitElement {
       }
       return shape;
     };
+    this.lineSamplingSnapshot = { project, map, sample };
+    return sample;
   }
   private nodeTarget(tick: number, lane?: number, tolerance = 0, kind?: "long" | "guide") {
     const project = this.chart, selected = this.selectedConnectorIds();

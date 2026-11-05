@@ -214,6 +214,8 @@
     "packages/sonolus-core/src/index.ts",
     "packages/sonolus/src/index.ts",
     "packages/sonolus/src/protocol.ts",
+    "packages/sonolus/scripts/build-original-assets.ts",
+    "packages/sonolus/scripts/pack-original-note-skins.ts",
     "packages/ui/src/index.ts",
     "packages/community-media/worker.ts",
     "packages/community-media/server.mjs",

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Validated release/Source assets, compiled engine facets and native packing contracts.
+// Output: Original Sonolus skin, particle and audio resources with engine-reference coverage checks.
+// Pos: [Map](../L2-2.md); original Sonolus resource generator.
+// Effects/Dependencies: Reads release caches and engine artifacts; writes resource packs, engine draw tables and cache receipts.
 import {
   copyFileSync,
   cpSync,
@@ -13,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   buildNativeNoteSkinPacks,
+  isOptionalOriginalSkinSprite,
   decodeRgba8Png,
   encodeRgba8Png,
 } from "./pack-original-note-skins.ts";
@@ -484,21 +490,8 @@ try {
     const available = new Set(
       defaultSkin.sprites.map((sprite) => String(sprite.name)),
     );
-    // Slot sprites belong to the retired PJS slot archetypes (no-ops here), and
-    // getArrowSpriteIndex only reaches the first four Up tiers, so packs whose
-    // authored atlas ships four Up arrows are complete for every reachable draw.
-    const optional = (name: string): boolean =>
-      name.startsWith("Our Notes Slot ") ||
-      // Native outside boundaries select the right cap, mirrored on the left.
-      // Authored left tier 6 is empty and remains absent from these packs.
-      /^Our Notes Native (Tap|Slide|End|Flick|FlickLeft|FlickRight|Trace|Node) Left 6$/.test(
-        name,
-      ) ||
-      /Our Notes Flick Arrow (Red|Yellow) Up [5-8]$/.test(name) ||
-      // Exactly one skin marker exists per pack (the packer enforces it).
-      /Our Notes Native Flick Arrow Animation Skin \d{3}$/.test(name);
     const missing = [...referencedNames].filter(
-      (name) => !available.has(name) && !optional(name),
+      (name) => !available.has(name) && !isOptionalOriginalSkinSprite(name),
     );
     if (missing.length) {
       throw new Error(

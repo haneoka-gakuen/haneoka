@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Native note atlases, common skin texture and the engine lane-clip contract.
+// Output: Three original note skins with shared-atlas UV slices and optional sprite coverage rules.
+// Pos: [Map](../L2-2.md); native Sonolus note skin packer.
+// Effects/Dependencies: Decodes PNGs and writes skin data and texture resources.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deflateSync, gzipSync, inflateSync } from "node:zlib";
@@ -9,6 +14,7 @@ import {
   type BundledNoteSkin,
   type NoteSkinDefinition,
 } from "@haneoka/cassiopeia-plugin-our-notes";
+import { isLaneClippedSprite, laneClipInterval, laneClipSpriteName, LANE_CLIP_CELLS } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/nativeLaneClipContract.ts";
 
 type VertexComponent = "x1" | "y1" | "x2" | "y2" | "x3" | "y3" | "x4" | "y4";
 type SpriteTransform = Record<VertexComponent, Partial<Record<VertexComponent, number>>>;
@@ -761,6 +767,13 @@ function createSkinSprites(
   ) {
     throw new Error(`${skinName} skin.data must contain exactly one selected native animation marker`);
   }
+  const clipped = sprites.filter(sprite => isLaneClippedSprite(sprite.name));
+  for (const sprite of clipped) {
+    for (let node = 2; node < LANE_CLIP_CELLS * 2; node++) {
+      const uv = laneClipInterval(node);
+      sprites.push({ ...sprite, name: laneClipSpriteName(sprite.name, node), x: sprite.x + sprite.w * uv.start, w: sprite.w * uv.span });
+    }
+  }
   return sprites;
 }
 
@@ -772,13 +785,13 @@ function validateBounds(
 ): void {
   for (const sprite of sprites) {
     if (
-      ![sprite.x, sprite.y, sprite.w, sprite.h].every(Number.isInteger) ||
+      ![sprite.x, sprite.y, sprite.w, sprite.h].every(Number.isFinite) ||
       sprite.x < 0 ||
       sprite.y < 0 ||
       sprite.w <= 0 ||
       sprite.h <= 0
     ) {
-      throw new Error(`${skinName} sprite ${sprite.name} has invalid integer bounds`);
+      throw new Error(`${skinName} sprite ${sprite.name} has invalid bounds`);
     }
     if (sprite.x + sprite.w > width || sprite.y + sprite.h > height) {
       throw new Error(`${skinName} sprite ${sprite.name} is outside ${width}x${height}`);
@@ -1030,6 +1043,16 @@ export interface NativeNoteSkinPackSummary {
   sprites: number;
   nativeSprites: number;
   nativeArea: number;
+}
+
+export function isOptionalOriginalSkinSprite(name: string): boolean {
+  const base = name.replace(/ Lane Clip \d+$/u, "");
+  // Outside boundaries use the mirrored right cap; authored left tier 6 is empty.
+  // Only four Up tiers are reachable, and each pack has one animation marker.
+  return base.startsWith("Our Notes Slot ") ||
+    /^Our Notes Native (Tap|Slide|End|Flick|FlickLeft|FlickRight|Trace|Node) Left 6$/u.test(base) ||
+    /Our Notes Flick Arrow (Red|Yellow) Up [5-8]$/u.test(base) ||
+    /Our Notes Native Flick Arrow Animation Skin \d{3}$/u.test(base);
 }
 
 export function buildNativeNoteSkinPacks(
