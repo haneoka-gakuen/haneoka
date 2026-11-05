@@ -89,6 +89,7 @@ async function search(
     region,
     `event/${eventId}`,
     windows,
+    searchedTo,
     lookup.value,
     lookup.after,
     lookup.kind === "id",

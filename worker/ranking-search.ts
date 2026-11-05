@@ -53,6 +53,7 @@ export async function searchRankingWindows<T extends SearchWindow>(
   region: string,
   board: string,
   windows: T[],
+  maximum: number,
   query: string,
   after: number,
   exact: boolean,
@@ -75,18 +76,10 @@ export async function searchRankingWindows<T extends SearchWindow>(
       `SELECT json_extract(p.value,'$.rank') AS rank,
     json_extract(p.value,'$.profileId') AS profileId,json_extract(p.value,'$.name') AS name,
     json_extract(p.value,'$.point') AS point,w.start_rank+CAST(p.key AS INTEGER) AS position FROM official_ranking_search_windows AS w,json_each(w.players_json) AS p
-    WHERE w.region=? AND w.board_key=? AND w.start_rank<=? AND w.start_rank+CAST(p.key AS INTEGER)>? AND (json_extract(p.value,'$.profileId')=?
+    WHERE w.region=? AND w.board_key=? AND w.start_rank<=? AND w.start_rank+CAST(p.key AS INTEGER)<=? AND w.start_rank+CAST(p.key AS INTEGER)>? AND (json_extract(p.value,'$.profileId')=?
       OR (?=0 AND instr(json_extract(p.value,'$.search'),?)>0)) ORDER BY w.start_rank,CAST(p.key AS INTEGER) LIMIT 101`,
     )
-    .bind(
-      region,
-      board,
-      Math.max(0, ...windows.map((row) => row.startRank)),
-      after,
-      query,
-      exact ? 1 : 0,
-      normalizeRankingQuery(query),
-    )
+    .bind(region, board, maximum, maximum, after, query, exact ? 1 : 0, normalizeRankingQuery(query))
     .all<RankingPlayerMatchDto & { position: number }>();
   // A player can move between independently collected windows; keep their best observed rank.
   const seen = new Set<string>();

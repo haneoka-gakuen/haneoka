@@ -252,6 +252,7 @@ async function search(
     region,
     `arena/${seasonId}/${bandId}`,
     windows.filter((row) => row.startRank <= searchedTo),
+    searchedTo,
     lookup.value,
     lookup.after,
     lookup.kind === "id",
