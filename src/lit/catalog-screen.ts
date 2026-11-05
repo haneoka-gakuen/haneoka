@@ -3,6 +3,7 @@
 // Output: 目录筛选、排序、视图、实体详情、激奏边界时机、媒体及关联评论交互。
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
+import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { withUiMarksProjection } from "../lib/ui-marks";
@@ -6800,7 +6801,7 @@ export class CatalogScreen extends LitElement {
   }
   private renderEntityDiscussion(item: Item) {
     const target = this.detailCommentTarget(item);
-    if (!target || typeof window === "undefined" || !this.isConnected) return nothing;
+    if (!target || typeof window === "undefined" || !this.isConnected || !communityVisible()) return nothing;
     const key = JSON.stringify([target.type, target.id]);
     if (this.commentsActivationKey !== key) {
       this.resetCommentsActivation();

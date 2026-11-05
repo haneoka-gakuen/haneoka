@@ -68,6 +68,7 @@
   ],
   "excluded_policy": "External repositories, preserved vendor code and generated Worker binding types are owned by their source or generator; do not add GEB headers.",
   "core_files": [
+    "src/lib/site-community.ts",
     "src/lib/site-origin.ts",
     "src/server/render-provider.ts",
     "src/lit/runtime/viewport-render-loop.ts",

@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；前端请求与静态文档的连接点。
 // Effects/Dependencies: 开发读取本地载荷；生产预渲染可写静态文档；调用下游渲染。
 import { defineMiddleware } from "astro:middleware";
+import { communityPagesEnabled, communityVisibilityHtml, isCommunityPagePath, isCommunityCommentRequest } from "./lib/site-community";
 import {
   communityStoryShellPath,
   legacyCommunityStoryRedirectTarget,
@@ -33,6 +34,11 @@ import { providerEntityHtmlPath } from "./lib/provider-entity-data";
 import { withMaterialStylePreloads } from "./server/material-ssr-styles";
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  const community = import.meta.env.DEV
+    ? communityPagesEnabled(context.url.hostname, process.env.COMMUNITY_HIDDEN_HOSTS)
+    : true;
+  if (!community && (isCommunityPagePath(context.url.pathname) || isCommunityCommentRequest(context.url)))
+    return new Response("Not found", { status: 404 });
   let chartShell: string | undefined;
   let chartPath: string | undefined;
   let storyPath: string | undefined;
@@ -103,7 +109,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (response.body && response.status === 200 && response.headers.get("Content-Type")?.startsWith("text/html")) {
     const headers = new Headers(response.headers);
     for (const name of ["Content-Length", "Content-Encoding", "ETag"]) headers.delete(name);
-    const html = withMaterialStylePreloads(await response.text());
+    const rendered = withMaterialStylePreloads(await response.text());
+    const html = import.meta.env.DEV ? communityVisibilityHtml(rendered, community, context.url.origin) : rendered;
     response = new Response(
       storyPath
         ? rewriteCommunityStoryDocument(html, storyPath, "https://haneoka.org")

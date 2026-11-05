@@ -1,3 +1,4 @@
+import { communityVisible } from "../lib/site-community";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import "./views/entity-comments-view";
 import { LitElement, nothing } from "lit";
@@ -130,6 +131,7 @@ export class EntityComments extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    if (!communityVisible()) return;
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     window.addEventListener("haneoka:entity-comments-presentation-ready", this.onPresentation, {
       signal: this.lifetime.signal,
@@ -160,6 +162,7 @@ export class EntityComments extends LitElement {
     super.disconnectedCallback();
   }
   protected updated(changed: Map<string, unknown>) {
+    if (!communityVisible()) return;
     if (changed.has("locale")) void this.prepareMessages().catch(() => {});
     const identity = JSON.stringify([this.entityType, this.entityId]);
     const context = JSON.stringify([identity, this.server, this.uiLocale(), this.focusId()]);
@@ -784,6 +787,7 @@ export class EntityComments extends LitElement {
     },
   };
   render() {
+    if (!communityVisible()) return nothing;
     const view = entityCommentsPresentation();
     if (!view || !this.entityType || !this.entityId) return nothing;
     if (!this.messagesReady) return this.messagesError

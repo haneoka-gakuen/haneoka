@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { ARENA_PROJECTION } from "../src/lib/arena";
+import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
 import { isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
@@ -3827,6 +3828,10 @@ const WORKER_FIRST_PREFIXES = [
 ];
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const communityUrl = new URL(request.url);
+  if (!communityPagesEnabled(communityUrl.hostname, env.COMMUNITY_HIDDEN_HOSTS)
+    && (isCommunityPagePath(communityUrl.pathname) || isCommunityCommentRequest(communityUrl)))
+    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   const restricted = restrictedResourceRequest(request);
   if (restricted && !(await testContentAllowed(request, env)))
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
