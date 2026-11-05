@@ -1,3 +1,4 @@
+import { communityVisible } from "../lib/site-community";
 import { CONTENT_SOURCE_IDS } from "../lib/content-access-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { withUiMarksProjection } from "../lib/ui-marks";
@@ -835,6 +836,7 @@ export class HomeDashboard extends LitElement {
       if (currentPanel()) this.arena = { catalog: compactArenaCatalog(catalog), marks: arenaRuleMarkNames(marks), server };
     })().catch(() => undefined);
     try {
+      if (!communityVisible()) return;
       const bootstrap = await readCommunityBootstrap<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), signal);
       if (!currentPanel()) return;
       const viewer = bootstrap.viewer;
@@ -999,15 +1001,17 @@ export class HomeDashboard extends LitElement {
     if (!this.canMove(id, delta)) return;
     const order = [...this.order],
       from = order.indexOf(id),
-      to = from + delta;
+      to = order.indexOf(this.layoutOrder()[this.layoutOrder().indexOf(id) + delta]!);
     [order[from], order[to]] = [order[to]!, order[from]!];
     this.order = order;
     this.persist();
   }
+  private layoutOrder() {
+    return this.order.filter(id => id !== "community" || communityVisible());
+  }
   private canMove(id: ModuleId, delta: number) {
-    const from = this.order.indexOf(id),
-      to = from + delta;
-    return from >= 0 && to >= 0 && to < this.order.length;
+    const order = this.layoutOrder(), from = order.indexOf(id), to = from + delta;
+    return from >= 0 && to >= 0 && to < order.length;
   }
   private toggle(id: ModuleId) {
     this.hiddenModules = { ...this.hiddenModules, [id]: !this.hiddenModules[id] };
@@ -2446,7 +2450,7 @@ export class HomeDashboard extends LitElement {
           <ul class="layout-list" role="list">
             ${this.order.map(
               (id, index) => html`
-                <li class=${this.hiddenModules[id] ? "is-hidden" : ""}>
+                <li class=${this.hiddenModules[id] ? "is-hidden" : ""} data-community-feature=${id === "community" ? "" : nothing}>
                   <button
                     class="icon-button"
                     type="button"

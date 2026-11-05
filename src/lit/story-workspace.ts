@@ -3,6 +3,7 @@
 // Output: 故事集合链接、独立阅读页、共享文本与 Vega 播放控制。
 // Pos: [Map](L2-2.md)；各来源故事阅读与播放的统一宿主。
 // Effects/Dependencies: 按需请求资源与播放器，接管实体应用栏，离开释放媒体和请求。
+import { communityVisible } from "../lib/site-community";
 import { storyCreationPath } from "../lib/community-story-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -551,6 +552,7 @@ export class StoryWorkspace extends LitElement {
     return { id: String(id), server, type: "stories" };
   }
   private storyCommentsRouteAllowed(): boolean {
+    if (!communityVisible()) return false;
     const view = this.ownerDocument.defaultView;
     if (!view || view.top !== view) return false;
     if (this.reader) return true;

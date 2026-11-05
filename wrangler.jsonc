@@ -16,6 +16,7 @@
   // `wrangler secret put GITHUB_ACTIONS_TOKEN`; migrate this to a GitHub App
   // installation token when automated credential rotation is introduced.
   "vars": {
+    "COMMUNITY_HIDDEN_HOSTS": "haneoka.com",
     "ADMIN_PACKAGE_MAX_BYTES": "2147483648",
     "BETTER_AUTH_URL": "https://haneoka.org",
     "AUTH_EMAIL_FROM": "noreply@haneoka.org",

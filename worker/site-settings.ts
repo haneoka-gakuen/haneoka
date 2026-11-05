@@ -6,6 +6,7 @@ import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { USER_ROLES, isUserRole, type UserRole } from "../src/lib/user-roles";
 import { WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id";
+import { COMMUNITY_VISIBILITY_ATTRIBUTE, communityVisibilityCss, communityPagesEnabled } from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 
 export type SiteSettings = {
@@ -140,12 +141,13 @@ export async function applySiteSettings(
   headers.set("Vary", [...vary].join(", "));
   headers.delete("Content-Length");
   const assetEtag = headers.get("ETag");
+  const community = communityPagesEnabled(new URL(request.url).hostname, env.COMMUNITY_HIDDEN_HOSTS);
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilers = settings ? spoilerCookieEnabled(request.headers.get("Cookie")) : false;
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -163,6 +165,7 @@ export async function applySiteSettings(
     .on("html", {
       element(element) {
         element.setAttribute(WEB_BUILD_ATTRIBUTE, buildId);
+        element.setAttribute(COMMUNITY_VISIBILITY_ATTRIBUTE, community ? "1" : "0");
         element.removeAttribute("data-show-test-server-content");
         element.setAttribute("data-content-access", allowed ? "1" : "0");
         if (scope) {
@@ -177,6 +180,9 @@ export async function applySiteSettings(
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
       },
     })
+    .on("head", { element(element) {
+      element.append(`<style data-community-visibility>${communityVisibilityCss(new URL(request.url).origin)}</style>`, { html: true });
+    } })
     .on("story-workspace[data-provider-entity-shell]", {
       element(element) {
         if (providerId) element.setAttribute("entity-id", providerId);

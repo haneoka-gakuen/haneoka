@@ -115,6 +115,15 @@ Hotlink Protection to Off for that rule, allowing images referenced by `.com`
 pages. Validate both domains' pages, images, session API, OAuth redirect URLs,
 Sonolus resources and download routes after deployment.
 
+Set `COMMUNITY_HIDDEN_HOSTS` to a comma-separated list of hostnames that hide
+community pages and comments. The production default is `haneoka.com`;
+`haneoka.org` keeps the complete community. Hidden hosts return 404 for
+community documents, legacy community routes and comment APIs, and hide the
+navigation entry, home recommendations, community links and comment sections.
+Authentication, account tools and private cloud synchronization remain available.
+Clear the value to restore the community, and reload the page. Local Astro
+development accepts the same environment variable for its local hostname.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), and

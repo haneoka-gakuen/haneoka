@@ -1,4 +1,5 @@
 ---
+import { isCommunityPagePath } from "../lib/site-community";
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
 import HubArtwork from "./HubArtwork.astro";
@@ -27,7 +28,7 @@ const href = (route: string) => resourceCollectionHref(route, server, locale) ??
         <h2><I18nText keyName={entry.label} locale={locale} /></h2>
         <span class="destination-hub__open"><Icon name="arrow_forward" size={20} /></span>
       </div>;
-      return tile.related ? <div class={`${className} destination-hub__tile--compound`}>
+      return tile.related ? <div class={`${className} destination-hub__tile--compound`} data-community-feature={isCommunityPagePath(tile.route) ? "" : undefined}>
         {art}
         <div class="destination-hub__related">
           {[tile.route, ...tile.related].map(route => { const item = hubEntry(route); return <a class="button button--tonal state-layer" href={href(route)} data-hub-route={route}><Icon name={item.icon} size={22} /><I18nText keyName={item.label} locale={locale} /></a>; })}
