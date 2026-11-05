@@ -538,6 +538,9 @@
     justify-content: space-between;
     gap: 8px 16px;
   }
+  .song-ranking-page .ranking-search {
+    min-inline-size: 0;
+  }
   .song-ranking-page .ranking-jump {
     display: flex;
     align-items: center;
@@ -557,6 +560,9 @@
     color: var(--md-sys-color-on-secondary-container);
   }
   @media (max-width: 600px) {
+    .song-ranking-page .ranking-search {
+      inline-size: 100%;
+    }
     .song-ranking-page .ranking-jump {
       flex: 1 1 100%;
     }

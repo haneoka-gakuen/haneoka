@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: Complete score boards or paged point boards, active page state and card catalogues.
-// Output: Shared ranking rows, app-bar player search, match selection, rank jumps and pagination.
+// Output: Shared ranking rows, player search beside rank jumps, match selection, rank jumps and pagination.
 // Pos: [Map](L2-2.md); common leaderboard implementation for songs, events and Arena.
-// Effects/Dependencies: Reads saved ranking APIs; cancels obsolete board/search requests and restores app-bar ownership.
+// Effects/Dependencies: Reads saved ranking APIs; cancels obsolete board/search requests and restores page actions.
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
@@ -23,7 +23,7 @@ import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { RankingCardCatalog } from "../lib/game-records";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { clearAppBarActions, setAppBarActions, clearAppBarSearch, setAppBarSearch } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import {
   GAME_RECORDS_REGIONS as REGIONS,
   defaultGameRecordsRegion as defaultRegion,
@@ -195,7 +195,6 @@ export class SongRanking extends GameRecordsCardsElement {
   disconnectedCallback() {
     this.rankingRequests.cancel();
     this.searchRequests.cancel();
-    clearAppBarSearch(this.pageAppBarOwner);
     this.lifetime?.abort();
     this.lifetime = undefined;
     window.clearTimeout(this.retryTimer);
@@ -518,20 +517,6 @@ export class SongRanking extends GameRecordsCardsElement {
 
   private syncChrome() {
     if (!this.embedded) setAppBarActions(this.pageAppBarOwner, this.renderPageActions(), this);
-    if (this.active && !this.limit)
-      setAppBarSearch(this.pageAppBarOwner, {
-        value: this.query,
-        label: clientText(this.locale, "catalog.arena.ranking.playerSearch", "Player ID or username"),
-        onInput: (value) => {
-          this.query = value;
-          this.searchRequests.cancel();
-          this.searching = false;
-        },
-        onSubmit: (value) => {
-          if (value.trim() && !this.searching) void this.search(value.trim());
-        },
-      });
-    else clearAppBarSearch(this.pageAppBarOwner);
   }
 
   private scrollToTarget() {
@@ -692,29 +677,63 @@ export class SongRanking extends GameRecordsCardsElement {
     const t = (key: string, fallback: string) => clientText(this.locale, `catalog.arena.ranking.${key}`, fallback);
     return html`
       <div class="ranking-controls">
-        <form
-          class="ranking-jump"
-          @submit=${(event: SubmitEvent) => {
+        <div class="ranking-search cluster">
+          <form
+            class="ranking-jump"
+            @submit=${(event: SubmitEvent) => {
             event.preventDefault();
             const rank = Number(new FormData(event.currentTarget as HTMLFormElement).get("rank"));
             if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
           }}
-        >
-          <label class="field">
-            <input
-              name="rank"
-              type="number"
-              inputmode="numeric"
-              min="1"
-              max=${maximum || nothing}
-              step="1"
-              required
-              placeholder=${t("jump", "Go to rank")}
-              aria-label=${t("jump", "Go to rank")}
-            />
-          </label>
-          <button class="button button--tonal" type="submit">${icon("arrow_forward")}${t("go", "Go")}</button>
-        </form>
+          >
+            <label class="field">
+              <input
+                name="rank"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                max=${maximum || nothing}
+                step="1"
+                required
+                placeholder=${t("jump", "Go to rank")}
+                aria-label=${t("jump", "Go to rank")}
+              />
+            </label>
+            <button class="button button--tonal" type="submit">${icon("arrow_forward")}${t("go", "Go")}</button>
+          </form>
+          <form
+            class="ranking-jump"
+            @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          const value = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim();
+          if (value && !this.searching) void this.search(value);
+        }}
+          >
+            <label class="field">
+              <input
+                name="query"
+                type="search"
+                maxlength="100"
+                required
+                .value=${this.query}
+                placeholder=${t("playerSearch", "Player ID or username")}
+                aria-label=${t("playerSearch", "Player ID or username")}
+                @input=${(event: InputEvent) => {
+              this.query = (event.target as HTMLInputElement).value;
+              this.searchRequests.cancel();
+              this.searching = false;
+            }}
+              />
+            </label>
+            <button
+              class="button button--tonal"
+              type="submit"
+              ?disabled=${this.searching || (!this.windowed && this.phase !== "ready")}
+            >
+              ${icon("search")}${t("find", "Find")}
+            </button>
+          </form>
+        </div>
         <span class="cluster">
           ${
             this.windowed
