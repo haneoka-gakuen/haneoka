@@ -116,6 +116,30 @@
   margin-inline: auto;
 }
 
+.sheet--detail.sheet--detail-page {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  display: grid;
+  width: 100%;
+  min-height: 100%;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: visible;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  transition: none;
+}
+.sheet--detail.sheet--detail-page > .sheet__body {
+  min-height: auto;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+}
+
 /* Bottom sheet: compact windows, or anything that is a list of choices. */
 .sheet--bottom {
   inset: auto 0 0;

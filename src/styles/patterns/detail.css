@@ -15,13 +15,53 @@
 /* The layout supplies the page gutter; inner sections share that edge.
  * Keep these rules in the same layer as section padding. */
 .detail-layout {
+  display: grid;
   min-width: 0;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  gap: 28px;
+  align-items: start;
+  padding: 24px;
+}
+.detail-layout__media {
+  position: sticky;
+  top: 24px;
+  min-width: 0;
+}
+.detail-layout:not(:has(.detail-layout__media > *)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.detail-layout__media:empty {
+  display: none;
+}
+.detail-layout__content {
+  min-width: 0;
+}
+.pane-sections {
+  display: grid;
+  min-width: 0;
+  align-content: start;
 }
 .detail-layout__content > .detail-section {
   padding-inline: 0;
 }
 .detail-layout__content > .detail-section:first-child {
   padding-block-start: 0;
+}
+@media (max-width: 959px) {
+  .detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+    gap: 24px;
+  }
+  .detail-layout__media {
+    position: static;
+  }
+}
+@media (max-width: 599px) {
+  .detail-layout {
+    padding: 12px;
+    gap: 20px;
+  }
 }
 
 /* ---------- Section ---------- */

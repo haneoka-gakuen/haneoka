@@ -95,40 +95,6 @@
   /* ==========================================================================
    Detail pane variants
    ========================================================================== */
-  /* Canonical entity routes are pages, not modal panes. Keep the same detail
-     markup and feature styling, but return scrolling and document flow to the
-     shell's main surface. Bestdori/local catalogue details do not carry this
-     class and remain genuine dialogs. */
-  .sheet--detail.sheet--detail-page {
-    position: static;
-    inset: auto;
-    z-index: auto;
-    display: grid;
-    width: 100%;
-    min-height: 100%;
-    grid-template-rows: minmax(0, 1fr);
-    overflow: visible;
-    border-radius: 0;
-    box-shadow: none;
-    /* The shell's pane is the page background, as on collection pages. */
-    background: transparent;
-    transform: none;
-    opacity: 1;
-    visibility: visible;
-    transition: none;
-  }
-  .sheet--detail.sheet--detail-page > .sheet__body {
-    min-height: auto;
-    overflow: visible;
-    overscroll-behavior: auto;
-    scrollbar-gutter: auto;
-  }
-
-  .pane-sections {
-    display: grid;
-    min-width: 0;
-    align-content: start;
-  }
   /* ---------- song detail (ported) ---------- */
   .song-detail-subheading {
     margin: 12px 0 4px;
