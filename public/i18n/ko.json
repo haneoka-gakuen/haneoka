@@ -966,7 +966,6 @@
         "loading": "랭킹을 불러오는 중",
         "updated": "업데이트",
         "observed": "수집 시각",
-        "officialSource": "게임 공식 랭킹",
         "stale": "캐시된 결과를 표시 중",
         "error": "랭킹을 사용할 수 없습니다",
         "retry": "다시 시도",
@@ -1592,6 +1591,8 @@
         "next": "다음 100명",
         "points": "아레나 pt",
         "playerId": "플레이어 ID",
+        "playerSearch": "플레이어 ID 또는 이름",
+        "searchResults": "일치하는 플레이어",
         "find": "찾기",
         "notFound": "상위 {count}위 안에 없음"
       },

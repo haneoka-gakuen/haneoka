@@ -966,7 +966,6 @@
         "loading": "ランキングを読み込み中",
         "updated": "更新",
         "observed": "取得日時",
-        "officialSource": "ゲーム公式ランキング",
         "stale": "キャッシュ済みの結果を表示中",
         "error": "ランキングを利用できません",
         "retry": "再試行",
@@ -1592,6 +1591,8 @@
         "next": "次の100人",
         "points": "アリーナpt",
         "playerId": "プレイヤーID",
+        "playerSearch": "プレイヤーID・プレイヤー名",
+        "searchResults": "該当するプレイヤー",
         "find": "検索",
         "notFound": "上位{count}位内に見つかりません"
       },

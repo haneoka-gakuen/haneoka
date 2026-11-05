@@ -1,5 +1,6 @@
 @layer pages {
   song-ranking,
+  arena-ranking,
   event-tracker {
     display: block;
     min-width: 0;
@@ -204,7 +205,6 @@
   .song-ranking__card-media--support .song-ranking__player-media img {
     object-fit: contain;
   }
-
 
   .song-ranking__regions.settings-options {
     gap: 4px;
@@ -528,5 +528,53 @@
   }
   .song-ranking__more--placeholder {
     visibility: hidden;
+  }
+}
+
+@layer pages {
+  .song-ranking-page .ranking-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+  .song-ranking-page .ranking-search {
+    min-inline-size: 0;
+  }
+  .song-ranking-page .ranking-jump {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-inline-size: 0;
+  }
+  .song-ranking-page .ranking-jump .field {
+    inline-size: 168px;
+    min-inline-size: 0;
+  }
+  .song-ranking-page .ranking-jump .button {
+    flex: 0 0 auto;
+  }
+  .song-ranking-page [data-target="true"] {
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  @media (max-width: 600px) {
+    .song-ranking-page .ranking-search {
+      inline-size: 100%;
+    }
+    .song-ranking-page .ranking-jump {
+      flex: 1 1 100%;
+    }
+    .song-ranking-page .ranking-jump .field {
+      flex: 1 1 auto;
+    }
+  }
+}
+
+@layer pages {
+  .song-ranking-page .song-ranking__row--bare {
+    grid-template-columns: max(32px, calc(var(--rank-digits, 2) * 10px)) 36px minmax(0, 1fr) minmax(88px, auto);
   }
 }

@@ -87,6 +87,7 @@ interface CollectorRun {
   eventSweepWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
   /** Admitted requests; progress narrows these to the subset actually attempted. */
   attempted?: { player: string[]; song: string[]; card: string[] };
+  songOnly?: boolean;
 }
 interface DemandInterest {
   id: string;
@@ -118,6 +119,8 @@ interface CollectorState {
   lookup?: CollectorRun | null;
   lookupFailures?: number;
   lookupNextAtMs?: number;
+  songLookupNextAtMs?: number;
+  songLookupFailures?: number;
   lookupLastFailure?: OfficialCollectorFailure | null;
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
@@ -1489,7 +1492,13 @@ export class OfficialRankingCollector extends Container<Env> {
       const hadRequests = Boolean(state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length);
       for (const field of ["playerInterests", "songInterests", "cardInterests"] as const)
         state[field] = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
-      const playerLookups = live(state.playerInterests), songRankings = live(state.songInterests, 4), cardImages = live(state.cardInterests, 32);
+      const playerLookups = live(state.playerInterests), cardImages = live(state.cardInterests, 32);
+      const songRankings = !playerLookups.length && !cardImages.length ? live(state.songInterests, 1) : [];
+      if (songRankings.length && (state.songLookupNextAtMs ?? 0) > now) {
+        await this.ctx.storage.put("collectorState", state);
+        await this.queueLookup(region, state.songLookupNextAtMs!);
+        return null;
+      }
       if (!playerLookups.length && !songRankings.length && !cardImages.length) {
         this.deleteSchedules("runLookup");
         if (hadRequests) await this.ctx.storage.put("collectorState", state);
@@ -1499,6 +1508,18 @@ export class OfficialRankingCollector extends Container<Env> {
       try { pool = await this.poolFor(region); } catch { return null; }
       if (!pool) return null;
       this.synchronizePool(state, pool);
+      if (songRankings.length) {
+        const idle = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
+          && account.availableAtMs <= now && !state.accounts?.[account.identity]?.held
+          && !state.accounts?.[account.identity]?.blocked[account.authGeneration]
+          && (state.accounts?.[account.identity]?.cooldownUntilMs ?? 0) <= now
+          && (state.accounts?.[account.identity]?.leaseUntilMs ?? 0) <= now);
+        if (idle.length < 2) {
+          await this.ctx.storage.put("collectorState", state);
+          await this.queueLookup(region, Math.max(now + 30_000, state.nextAtMs ?? 0));
+          return null;
+        }
+      }
       const config = this.accountFor(state, pool);
       if (!config) {
         const available = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause && !state.accounts?.[account.identity]?.held
@@ -1513,21 +1534,23 @@ export class OfficialRankingCollector extends Container<Env> {
       }
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const runId = crypto.randomUUID().replaceAll("-", "");
+      const duration = songRankings.length ? 30_000 : LOOKUP_MS;
+      if (songRankings.length) state.songLookupNextAtMs = now + 60_000;
       state.lookup = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
-        authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + LOOKUP_MS,
+        authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + duration,
         pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {},
-        attempted: { player: playerLookups, song: songRankings, card: cardImages } };
+        attempted: { player: playerLookups, song: songRankings, card: cardImages }, songOnly: Boolean(songRankings.length) };
       const health = state.accounts?.[config.identity];
-      if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + LOOKUP_MS + 15_000; }
+      if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + duration + 15_000; }
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
       this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
       await this.ctx.storage.put("collectorState", state);
-      await this.queueLookup(region, now + LOOKUP_MS + 15_001);
+      await this.queueLookup(region, now + duration + 15_001);
       return { contract: "haneoka:official-ranking-job/1", mode: "lookup", region, runId, credentialGeneration: config.generation,
         capabilities: ["player-demand-v1", "demand-progress-v1"], playerLookups, songRankings, cardImages, arenaProgress: [], arenaWindows: [],
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
-        callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + LOOKUP_MS };
+        callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + duration };
     });
     if (!job) return;
     let failed = false;
@@ -1555,7 +1578,10 @@ export class OfficialRankingCollector extends Container<Env> {
         lookup.complete = true;
         if (busy) {
           delete lookup.attempted;
-          state.lookupNextAtMs = Date.now() + 1_000;
+          if (!lookup.songOnly) state.lookupNextAtMs = Date.now() + 1_000;
+        } else if (failed && lookup.songOnly) {
+          state.songLookupFailures = (state.songLookupFailures ?? 0) + 1;
+          state.songLookupNextAtMs = Math.max(state.songLookupNextAtMs ?? 0, Date.now() + recoveryDelay(state.songLookupFailures));
         } else if (failed) {
           state.lookupFailures = (state.lookupFailures ?? 0) + 1;
           state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);
@@ -1574,8 +1600,11 @@ export class OfficialRankingCollector extends Container<Env> {
         delete lookup.attempted;
       }
       await this.ctx.storage.put("collectorState", state);
-      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)
-        await this.queueLookup(region, Math.max(Date.now() + 1_000, state.lookupNextAtMs ?? 0));
+      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length) {
+        const next = state.playerInterests?.length || state.cardInterests?.length
+          ? state.lookupNextAtMs ?? 0 : Math.max(state.lookupNextAtMs ?? 0, state.songLookupNextAtMs ?? 0);
+        await this.queueLookup(region, Math.max(Date.now() + 1_000, next));
+      }
       else this.deleteSchedules("runLookup");
       return !failed;
     });
@@ -1629,10 +1658,15 @@ export class OfficialRankingCollector extends Container<Env> {
             lookup.attempted = processed;
         }
         lookup.complete = true;
-        if (update.status === "ok") {
+        if (update.status === "ok" && lookup.songOnly) {
+          state.songLookupFailures = 0;
+        } else if (update.status === "ok") {
           state.lookupFailures = 0;
           state.lookupNextAtMs = 0;
           state.lookupLastFailure = null;
+        } else if (update.status === "failed" && transientCollectorFailure(update.failure) && lookup.songOnly) {
+          state.songLookupFailures = (state.songLookupFailures ?? 0) + 1;
+          state.songLookupNextAtMs = Math.max(state.songLookupNextAtMs ?? 0, Date.now() + recoveryDelay(state.songLookupFailures));
         } else if (update.status === "failed" && transientCollectorFailure(update.failure)) {
           state.lookupFailures = (state.lookupFailures ?? 0) + 1;
           state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);

@@ -19,7 +19,7 @@ Unofficial database, tools and community for *BanG Dream! Our Notes*, at [haneok
 - Chart editor with an on-demand beginner guide, practice chart, compact original-note tools, direct canvas editing, three flick directions, SEKAI chart import into Our Notes, Bestdori-style shortcuts, cloud drafts, version history, publishing and remixes; authors can continue editing their charts from the detail page
 - Community charts ranked by the shared post recommendation system, with latest, popularity and difficulty sorting
 - Gekiso Arena schedule, rankings, song rules and team building
-- Event trackers, player lookup, song rankings and calendars
+- Event trackers, player lookup, song rankings and calendars; rankings share player ID and username search
 - Song jacket puzzles with original-game openings, screenshot recognition, local progress, faster solving and independent step-by-step replay
 - Community posts, playlists and accounts
 - Embeddable players and a [public API](https://docs.haneoka.org)

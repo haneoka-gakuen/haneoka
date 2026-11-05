@@ -3251,3 +3251,14 @@ END;
 UPDATE official_observation_payload_gc
   SET queued_at_ms=MAX(queued_at_ms,(SELECT initialized_at_ms FROM official_storage_sweeps WHERE region=official_observation_payload_gc.region))
   WHERE region IN ('jp','tw','en','kr');
+
+-- 0076: current-window player names and IDs for complete-board search.
+CREATE TABLE IF NOT EXISTS official_ranking_search_windows (
+  region TEXT NOT NULL CHECK (region IN ('jp', 'tw', 'en', 'kr')),
+  board_key TEXT NOT NULL,
+  start_rank INTEGER NOT NULL CHECK (start_rank >= 1),
+  snapshot_id TEXT NOT NULL,
+  observed_at_ms INTEGER NOT NULL,
+  players_json TEXT NOT NULL,
+  PRIMARY KEY (region, board_key, start_rank)
+);

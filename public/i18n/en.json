@@ -966,7 +966,6 @@
         "loading": "Loading ranking",
         "updated": "Updated",
         "observed": "Collected",
-        "officialSource": "Official game rankings",
         "stale": "Showing cached results",
         "error": "Ranking unavailable",
         "retry": "Retry",
@@ -1592,6 +1591,8 @@
         "next": "Next 100",
         "points": "Arena pt",
         "playerId": "Player ID",
+        "playerSearch": "Player ID or username",
+        "searchResults": "Matching players",
         "find": "Find",
         "notFound": "Not in the top {count}"
       },

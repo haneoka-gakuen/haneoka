@@ -1,19 +1,30 @@
 // L3 — GEB
-// Input: Region, Arena season, league band, rank window, tier thresholds or profile ID, and saved official snapshots.
-// Output: Normalized Arena league rankings, per-tier populations and exact profile lookups within the top 2000.
+// Input: Region, Arena season, league band, rank window, tier thresholds, player ID or username, and saved official snapshots.
+// Output: Normalized Arena league rankings, per-tier populations and player ID and username lookups across the complete board.
 // Pos: [Map](L2.md); Arena read adapter beside song rankings using the account-pool collector.
 // Effects/Dependencies: Reads D1/private R2 snapshots; missing windows register bounded regional interests, never game RPCs.
 import type {
   ArenaPopulationDto,
   ArenaSearchDto,
+  ArenaPlayerSearchDto,
   ArenaRankingDto,
   ArenaRankingRowDto,
   GameRecordsRegion,
   SongRankingCardDto,
 } from "../src/lib/game-records";
+import { searchRankingWindows } from "./ranking-search";
 import { officialProfileCard } from "./official-ranking-api";
 import { playerCard } from "./official-player-api";
-import { readOfficialArenaLatest, readOfficialArenaMetadata, readOfficialArenaPopulation, readOfficialArenaSearchMatch, readOfficialArenaSearchWindows, readOfficialCatalog, readOfficialPlayers, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import {
+  readOfficialArenaLatest,
+  readOfficialArenaMetadata,
+  readOfficialArenaPopulation,
+  readOfficialArenaSearchMatch,
+  readOfficialArenaSearchWindows,
+  readOfficialCatalog,
+  readOfficialPlayers,
+  type OfficialRankingStoreBindings,
+} from "./official-ranking-store";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
@@ -22,7 +33,7 @@ export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
 const PREFIX = "/api/v1/game/records";
 const REGIONS: readonly GameRecordsRegion[] = ["jp", "tw", "en", "kr"];
 const WINDOW = 100;
-const SEARCH_DEPTH = 2000;
+const SEARCH_DEPTH = Number.MAX_SAFE_INTEGER;
 const CARD_DEMAND = 16;
 
 class ArenaFailure extends Error {
@@ -180,35 +191,92 @@ async function population(env: ArenaRankingBindings, region: GameRecordsRegion, 
       count: counts.get(threshold)! - (thresholds[index + 1] === undefined ? 0 : counts.get(thresholds[index + 1]!)!) })) };
 }
 
-async function search(env: ArenaRankingBindings, region: GameRecordsRegion, seasonId: string,
-  bandId: string, profileId: string): Promise<ArenaSearchDto> {
+export type RankingSearch = { kind: "id" | "query"; value: string; after: number };
+
+export function rankingSearchQuery(url: URL): RankingSearch | null {
+  const key = url.searchParams.has("query") ? "query" : "profileId";
+  const value = (url.searchParams.get(key) ?? "").trim();
+  if (
+    url.searchParams.getAll(key).length !== 1 ||
+    [...url.searchParams.keys()].some((name) => name !== key && name !== "after") ||
+    !value ||
+    value.length > 100 ||
+    (key === "profileId" && !/^[1-9][0-9]{0,18}$/u.test(value))
+  )
+    return null;
+  const rawAfter = url.searchParams.get("after");
+  if (
+    rawAfter !== null &&
+    (!/^[0-9]{1,9}$/u.test(rawAfter) || key !== "query" || url.searchParams.getAll("after").length !== 1)
+  )
+    return null;
+  return { kind: key === "profileId" ? "id" : "query", value, after: Number(rawAfter ?? 0) };
+}
+
+async function search(
+  env: ArenaRankingBindings,
+  region: GameRecordsRegion,
+  seasonId: string,
+  bandId: string,
+  lookup: RankingSearch,
+): Promise<ArenaSearchDto | ArenaPlayerSearchDto> {
   const windows = await readOfficialArenaSearchWindows(env, region, seasonId, bandId, SEARCH_DEPTH);
-  const latest = windows.reduce<(typeof windows)[number] | null>((result, row) =>
-    !result || row.observedAtMs >= result.observedAtMs ? row : result, null);
+  const latest = windows.reduce<(typeof windows)[number] | null>(
+    (result, row) => (!result || row.observedAtMs >= result.observedAtMs ? row : result),
+    null,
+  );
   if (latest?.maxRank == null) return pending([1]);
-  const searchedTo = Math.min(SEARCH_DEPTH, latest.maxRank), missing: number[] = [];
+  const searchedTo = latest.maxRank,
+    missing: number[] = [];
   const byStart = new Map(windows.map((row) => [row.startRank, row]));
-  let observedAtMs = latest.observedAtMs;
-  for (let start = 1; start <= searchedTo; start += WINDOW) {
-    const metadata = byStart.get(start), length = Math.min(WINDOW, searchedTo - start + 1);
-    if (!metadata || metadata.playerCount < length || metadata.endRank < start + length - 1) {
-      missing.push(start);
-      continue;
-    }
-    const index = JSON.parse(metadata.profileIndex) as Record<string, number>;
-    const position = index[profileId];
-    if (position !== undefined && position >= start && position < start + length) {
-      const source = await readOfficialArenaSearchMatch(env, metadata);
-      if (source.region !== region || source.seasonId !== seasonId || source.bandId !== bandId
-        || source.snapshotId !== metadata.snapshotId) throw new Error("official_observation_identity_mismatch");
-      const row = arenaRankingRow(source.players?.[position - start], position, region);
-      if (row.profileId !== profileId) throw new Error("official_profile_index_mismatch");
-      return { region, seasonId, bandId, profileId, searchedTo, observedAtMs: source.observedAtMs, row };
-    }
-    observedAtMs = Math.min(observedAtMs, metadata.observedAtMs);
+  for (let start = 1; start <= searchedTo && missing.length < 20; start += WINDOW) {
+    const metadata = byStart.get(start),
+      length = Math.min(WINDOW, searchedTo - start + 1);
+    if (!metadata || metadata.playerCount < length || metadata.endRank < start + length - 1) missing.push(start);
   }
   if (missing.length) return pending(missing);
-  return { region, seasonId, bandId, profileId, searchedTo, observedAtMs, row: null };
+  const batches = new Map<string, Record<string, string>>();
+  const load = async (metadata: (typeof windows)[number]) => {
+    const source = await readOfficialArenaSearchMatch(env, metadata, batches);
+    if (
+      source.region !== region ||
+      source.seasonId !== seasonId ||
+      source.bandId !== bandId ||
+      source.snapshotId !== metadata.snapshotId
+    )
+      throw new Error("official_observation_identity_mismatch");
+    return source.players ?? [];
+  };
+  const matches = await searchRankingWindows(
+    env.DB!,
+    region,
+    `arena/${seasonId}/${bandId}`,
+    windows.filter((row) => row.startRank <= searchedTo),
+    searchedTo,
+    lookup.value,
+    lookup.after,
+    lookup.kind === "id",
+    load,
+  );
+  if (!matches) return pending();
+  const observedAtMs = windows.reduce((time, row) => Math.min(time, row.observedAtMs), latest.observedAtMs);
+  if (lookup.kind === "query")
+    return { region, seasonId, bandId, query: lookup.value, searchedTo, observedAtMs, ...matches };
+  const match = matches.matches.find((row) => row.profileId === lookup.value);
+  const metadata = match && byStart.get(Math.floor((match.rank - 1) / 100) * 100 + 1);
+  const players = metadata ? await load(metadata) : [];
+  const raw = players.find(
+    (value, index) => arenaRankingRow(value, metadata!.startRank + index, region).profileId === lookup.value,
+  );
+  return {
+    region,
+    seasonId,
+    bandId,
+    profileId: lookup.value,
+    searchedTo,
+    observedAtMs,
+    row: raw ? arenaRankingRow(raw, match!.rank, region) : null,
+  };
 }
 
 function json(request: Request, body: unknown, status = 200, retryAfter: number | null = null): Response {
@@ -219,51 +287,73 @@ function json(request: Request, body: unknown, status = 200, retryAfter: number 
 }
 
 /** Missing snapshot interests are queued; game requests stay in the regional collector. */
-export async function handleArenaRankingApi(request: Request, ctx: ExecutionContext, url: URL,
-  env: ArenaRankingBindings): Promise<Response | null> {
+export async function handleArenaRankingApi(
+  request: Request,
+  ctx: ExecutionContext,
+  url: URL,
+  env: ArenaRankingBindings,
+): Promise<Response | null> {
   const route = new RegExp(
-    `^${PREFIX}/([a-z]+)/arena/seasons/([1-9][0-9]{0,9})/leagues/([1-9][0-9]{0,9})/(ranking|population|search)$`, "u",
+    `^${PREFIX}/([a-z]+)/arena/seasons/([1-9][0-9]{0,9})/leagues/([1-9][0-9]{0,9})/(ranking|population|search)$`,
+    "u",
   ).exec(url.pathname);
   if (!route) return null;
   if (request.method !== "GET" && request.method !== "HEAD")
     return json(request, { error: { kind: "method_not_allowed" } }, 405);
-  const region = route[1] as GameRecordsRegion, seasonId = route[2]!, bandId = route[3]!, operation = route[4];
+  const region = route[1] as GameRecordsRegion,
+    seasonId = route[2]!,
+    bandId = route[3]!,
+    operation = route[4];
   if (!REGIONS.includes(region)) return json(request, { error: { kind: "not_found" } }, 404);
   try {
     if (operation === "search") {
-      const profileId = url.searchParams.get("profileId") ?? "";
-      if (!/^[1-9][0-9]{0,18}$/u.test(profileId) || url.searchParams.getAll("profileId").length !== 1
-        || [...url.searchParams.keys()].some((key) => key !== "profileId"))
-        return json(request, { error: { kind: "invalid_request" } }, 400);
+      const lookup = rankingSearchQuery(url);
+      if (!lookup) return json(request, { error: { kind: "invalid_request" } }, 400);
       if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending([1]);
-      return json(request, await search(env, region, seasonId, bandId, profileId));
+      return json(request, await search(env, region, seasonId, bandId, lookup));
     }
     if (operation === "ranking") {
       const raw = url.searchParams.get("start") ?? "1";
-      if (!/^[1-9][0-9]{0,8}$/u.test(raw) || [...url.searchParams.keys()].some((key) => key !== "start")
-        || url.searchParams.getAll("start").length > 1)
+      if (
+        !/^[1-9][0-9]{0,8}$/u.test(raw) ||
+        [...url.searchParams.keys()].some((key) => key !== "start") ||
+        url.searchParams.getAll("start").length > 1
+      )
         return json(request, { error: { kind: "invalid_request" } }, 400);
       if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending();
       return json(request, await ranking(env, ctx, region, seasonId, bandId, Number(raw)));
     }
-    const raw = url.searchParams.get("thresholds") ?? "", thresholds = raw.split(",").map(Number);
-    if (!/^(0|[1-9][0-9]{0,8})(,(0|[1-9][0-9]{0,8})){0,31}$/u.test(raw)
-      || thresholds.some((value, index) => index > 0 && value <= thresholds[index - 1]!)
-      || url.searchParams.getAll("thresholds").length !== 1 || [...url.searchParams.keys()].some((key) => key !== "thresholds"))
+    const raw = url.searchParams.get("thresholds") ?? "",
+      thresholds = raw.split(",").map(Number);
+    if (
+      !/^(0|[1-9][0-9]{0,8})(,(0|[1-9][0-9]{0,8})){0,31}$/u.test(raw) ||
+      thresholds.some((value, index) => index > 0 && value <= thresholds[index - 1]!) ||
+      url.searchParams.getAll("thresholds").length !== 1 ||
+      [...url.searchParams.keys()].some((key) => key !== "thresholds")
+    )
       return json(request, { error: { kind: "invalid_request" } }, 400);
     if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending();
     return json(request, await population(env, region, seasonId, bandId, thresholds));
   } catch (error) {
     let failure = error instanceof ArenaFailure ? error : new ArenaFailure(503, "unavailable");
     if (failure.kind === "pending") {
+      if (!failure.windows.length) return json(request, { error: { kind: "pending", retryAfter: 3 } }, 503, 3);
       try {
         const collector = env.OFFICIAL_RANKING_COLLECTOR?.getByName(region);
         if (!collector) throw new Error("collector_unavailable");
-        const thresholds = operation === "population" ? (url.searchParams.get("thresholds") ?? "").split(",").map(Number) : [];
+        const thresholds =
+          operation === "population" ? (url.searchParams.get("thresholds") ?? "").split(",").map(Number) : [];
         const demand = await collector.requestArenaWindows(region, seasonId, bandId, failure.windows, thresholds);
         failure = new ArenaFailure(503, demand.kind, demand.retryAfter);
-      } catch { failure = new ArenaFailure(503, "unavailable"); }
+      } catch {
+        failure = new ArenaFailure(503, "unavailable");
+      }
     }
-    return json(request, { error: { kind: failure.kind, retryAfter: failure.retryAfter } }, failure.status, failure.retryAfter);
+    return json(
+      request,
+      { error: { kind: failure.kind, retryAfter: failure.retryAfter } },
+      failure.status,
+      failure.retryAfter,
+    );
   }
 }

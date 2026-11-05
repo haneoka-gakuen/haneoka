@@ -138,10 +138,6 @@ class Demand:
         """Returns the receipt that ended demand, or None when every request in budget finished."""
         pool, self.sampler.pool = self.sampler.pool, pool_from_file(DESCRIPTORS)
         try:
-            for music_id in self.job.get('songRankings', [])[:4]:
-                if not self.room(1):
-                    return None
-                self.song(int(music_id))
             if not self.lookup:
                 self.cards()
             for profile_id in self.job.get('playerLookups', [])[:8 if self.lookup else 16]:
@@ -150,6 +146,10 @@ class Demand:
                 self.player(profile_id)
             if self.lookup:
                 self.cards()
+            for music_id in self.job.get('songRankings', [])[:1]:
+                if not self.room(1):
+                    break
+                self.song(int(music_id))
         except DemandStopped as stopped:
             return stopped.receipt
         finally:

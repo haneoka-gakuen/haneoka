@@ -966,7 +966,6 @@
         "loading": "正在載入排行榜",
         "updated": "更新時間",
         "observed": "採集時間",
-        "officialSource": "遊戲官方榜單",
         "stale": "目前顯示快取結果",
         "error": "無法取得排行榜",
         "retry": "重試",
@@ -1592,6 +1591,8 @@
         "next": "下 100 名",
         "points": "舞台 pt",
         "playerId": "玩家 ID",
+        "playerSearch": "玩家 ID 或使用者名稱",
+        "searchResults": "符合的玩家",
         "find": "查詢",
         "notFound": "前 {count} 名中未找到"
       },
