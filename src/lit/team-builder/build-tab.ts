@@ -833,7 +833,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     (s.goal === "power" && s.powerSong);
   return toolLayout(
     host,
-    html`
+    () => html`
       ${leading ?? nothing}
       ${
         host.tab === "build"

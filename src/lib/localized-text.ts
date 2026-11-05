@@ -17,6 +17,8 @@ export interface LocalizedValue {
 }
 
 const localeCache = new Map<string, string>();
+const fallbackCache = new Map<string, readonly string[]>();
+const languageIdentities = new Map<string, string>();
 const canonicalLocale = (locale: string): string => {
   const cached = localeCache.get(locale);
   if (cached) return cached;
@@ -33,9 +35,11 @@ const canonicalLocale = (locale: string): string => {
  */
 export function localizedFallbacks(locale: string): string[] {
   const requested = canonicalLocale(locale);
+  const cached = fallbackCache.get(requested);
+  if (cached) return [...cached];
   const language = normalizeAuthorLocale(requested) ? new Intl.Locale(requested) : undefined;
   const script = language?.maximize().script;
-  return [
+  const fallbacks = [
     ...new Set(
       language?.language === "zh" && script === "Hans"
         ? [requested, "zh-CN", "zh-Hans", "zh-TW", "zh-Hant", "ja", "en", "ko"]
@@ -44,6 +48,9 @@ export function localizedFallbacks(locale: string): string[] {
           : [...contentLocaleFallbacks(requested), "ja", "en", "zh-TW", "zh-CN", "ko"],
     ),
   ];
+  if (fallbackCache.size >= 128) fallbackCache.clear();
+  fallbackCache.set(requested, fallbacks);
+  return [...fallbacks];
 }
 
 export function resolveLocalizedText(value: unknown, locale: string, sourceLocale?: string): LocalizedValue {
@@ -108,8 +115,13 @@ const presentRelationshipValue = (value: unknown): unknown =>
     : value;
 
 const relationshipLanguageIdentity = (lang: string): string => {
+  const cached = languageIdentities.get(lang);
+  if (cached) return cached;
   const tag = normalizeAuthorLocale(lang);
-  return tag && tag !== "und" ? new Intl.Locale(tag).maximize().toString() : lang;
+  const identity = tag && tag !== "und" ? new Intl.Locale(tag).maximize().toString() : lang;
+  if (languageIdentities.size >= 128) languageIdentities.clear();
+  languageIdentities.set(lang, identity);
+  return identity;
 };
 
 const relationshipValue = (

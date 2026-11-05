@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 共享编译后的 WASM 模块和四张固定谱面的下载，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 共享编译后的 WASM 模块和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -319,7 +319,7 @@ export class EngineClient {
   }
   get phases() { return [...new Set(this.pool.map(worker => worker.currentPhase).filter((phase): phase is NonNullable<typeof phase> => phase !== null))]; }
   prefetch(songs: readonly SongRef[]) {
-    if (songs.length <= 4) for (const song of songs) void this.downloads.load(song).catch(() => {});
+    this.downloads.prefetch(songs);
   }
   /** Warm the requested part of the pool after the first Worker is ready. */
   warm(count = this.pool.length) {
@@ -433,6 +433,8 @@ export class EngineClient {
     }
     let stopped = false;
     let lastShown = -Infinity;
+    const joint = request.aggregation === "mean" || request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared";
+    const snapshotInterval = joint ? Math.min(1000, Math.max(100, requestChartSongs(request).length * 20)) : 100;
     let cpChallenge: EngineHit | undefined;
     const publish = (response: EngineResponse, force = false) => {
       if (stopped) return;
@@ -458,7 +460,7 @@ export class EngineClient {
         return total;
       }, { initializationMs: 0, networkMs: 0, computationMs: 0, wallMs: clock() - started });
       latest.elapsedMs = clock() - started;
-      if (!force && (hadCandidate || !latest.overall.length) && clock() - lastShown < 100) return;
+      if (!force && (hadCandidate || !latest.overall.length) && clock() - lastShown < snapshotInterval) return;
       lastShown = clock();
       if (force && responseKey !== null && latest.results.length <= 4 && latest.stopReason === "complete" && !latest.error && completeResponse(latest)) {
         this.completed = { key: responseKey, response: structuredClone(latest) };

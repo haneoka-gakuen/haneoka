@@ -2990,6 +2990,8 @@
       "worstTimingScore": "最差时序分数",
       "nominalTimingScore": "名义时序分数",
       "timingFramePlanScore": "提前 {ms} ms 方案",
+      "timingAnalysis": "判定时序",
+      "timingFailed": "无法计算判定时序",
       "timingGuide": "凹分教程",
       "criterionMeanHelp": "按 120 种技能顺序的平均分排序，适合日常游玩。",
       "criterionMaxHelp": "按最佳技能顺序的单次分数排序，适合反复重开冲榜。",

@@ -25,17 +25,24 @@ const localeTags = Object.fromEntries(supportedLocales.map(({ value, tag }) => [
 
 const normalizeTagInput = (value: unknown): string =>
   typeof value === "string" ? value.trim().replaceAll("_", "-") : "";
+const canonicalTags = new Map<string, string | null>();
+const scripts = new Map<string, string>();
 
 /** Return the canonical BCP 47 representation, or null for invalid input. */
 export const normalizeLanguageTag = (value: unknown): string | null => {
   const input = normalizeTagInput(value);
   if (!input) return null;
-
+  const cached = canonicalTags.get(input);
+  if (cached !== undefined) return cached;
+  let tag: string | null;
   try {
-    return Intl.getCanonicalLocales(input)[0] ?? null;
+    tag = Intl.getCanonicalLocales(input)[0] ?? null;
   } catch {
-    return null;
+    tag = null;
   }
+  if (canonicalTags.size >= 128) canonicalTags.clear();
+  canonicalTags.set(input, tag);
+  return tag;
 };
 
 /** Match a BCP 47 tag to one of the five locales supported by the product. */
@@ -69,11 +76,17 @@ export const normalizeAuthorLocale = (value: unknown): AuthorLocale | null => no
 export const scriptForLanguageTag = (value: unknown): string => {
   const tag = normalizeLanguageTag(value);
   if (!tag || tag === "und") return "und";
+  const cached = scripts.get(tag);
+  if (cached) return cached;
+  let script: string;
   try {
-    return new Intl.Locale(tag).maximize().script || "und";
+    script = new Intl.Locale(tag).maximize().script || "und";
   } catch {
-    return "und";
+    script = "und";
   }
+  if (scripts.size >= 128) scripts.clear();
+  scripts.set(tag, script);
+  return script;
 };
 
 /** UI copy falls back only to the Japanese source before exposing its key. */

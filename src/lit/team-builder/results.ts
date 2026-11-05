@@ -2,7 +2,7 @@
 // Input: 冻结的自动／手动配队请求、结果、设置与目录。
 // Output: 排名卡片、共用评分详情、所选技能顺序、可折叠谱面片段与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按请求隔离后台时间线缓存；折叠的顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
+// Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
 import { resultMetric } from "./result-metric";
@@ -614,9 +614,9 @@ function timelineKey(host: TeamBuilder, hit: EngineHit) {
   return `${detailState(host, hit).id}|${resultSettings(host, hit).route}|${hitKey(hit)}`;
 }
 
-function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
+function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number, withTiming = false) {
   const { timelines } = detailState(host, hit);
-  const key = `${timelineKey(host, hit)}|${index}`;
+  const key = `${timelineKey(host, hit)}|${index}|${withTiming ? "timing" : "chart"}`;
   const value = timelines.get(key);
   if (value) return value;
   const request = resultInputs(host, hit);
@@ -635,7 +635,7 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number) {
         song: hit.song,
         eventOrder: ORDERS[index]!.map((slot) => hit.members[slot]!),
         play: "play" in request.goal ? request.goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
-        ...(request.goal.kind === "score" || request.goal.kind === "event"
+        ...(withTiming && (request.goal.kind === "score" || request.goal.kind === "event")
           ? {
               timing: {
                 player: request.player,
@@ -818,10 +818,14 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const value = score.orders[current]!;
   const inputs = resultInputs(host, hit);
   const master = host.master;
-  const reserveTiming = inputs?.goal.kind === "score" && !!master && hit.snaps.some(key => {
+  const reserveTiming = (inputs?.goal.kind === "score" || inputs?.goal.kind === "event") && !!master && hit.snaps.some(key => {
     const snap = inputs.snaps.find(row => row.key === key);
     return snap && master.snaps.get(snap.cardId)?.supportSkillIds.some(id => master.supportSkills.get(id)?.some(row => row.type === 2001));
   });
+  const timingKey = `${key}|timing`;
+  const timingOpen = host.expanded.has(timingKey);
+  const timingResult = reserveTiming && timingOpen ? orderTimeline(host, hit, current, true) : undefined;
+  const timing = typeof timingResult === "object" ? timingResult.timing : undefined;
   const rank = score.orders.filter((other) => other > value).length + 1;
   const gap = (other: number) => (other === best.value ? "±0" : `−${format(host, best.value - other)}`);
   const choose = (index: number) => {
@@ -909,9 +913,25 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
           <dt>${host.t("orderGap", "From best")}</dt>
           <dd>${gap(value)}</dd>
         </div>
-        ${timingRow(host, typeof requested === "object" ? requested.timing : undefined, reserveTiming, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
       </dl>
-      ${timingDetails(host, hit, current, typeof requested === "object" ? requested.timing : undefined, reserveTiming)}
+      ${reserveTiming ? accordion({
+        id: `tb-timing-analysis-${key.replace(/[^a-z0-9]/giu, "-")}`,
+        label: host.t("timingAnalysis", "Judgement timing"),
+        expanded: timingOpen,
+        metadata: timingResult === "loading" ? host.common("common.states.loading", "Loading")
+          : timingResult === "error" ? host.t("timingFailed", "Timing could not be calculated") : nothing,
+        onExpandedChange: (open) => {
+          if (open) host.expanded.add(timingKey);
+          else host.expanded.delete(timingKey);
+          host.requestUpdate();
+        },
+        content: html`<div class="stack stack--flex">
+          <dl class="spec-list spec-list--split spec-list--numeric">
+            ${timingRow(host, timing, true, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
+          </dl>
+          ${timingDetails(host, hit, current, timing, true)}
+        </div>`,
+      }) : nothing}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
         ${
           typeof timeline === "object"
@@ -1146,6 +1166,8 @@ export function renderHit(
 ): TemplateResult {
   const key = hitKey(hit);
   const expanded = host.expanded.has(key);
+  const songsKey = `${key}|songs`;
+  const songsExpanded = host.expanded.has(songsKey);
   const reference = host.comparison.idFor(host, hit);
   const compared = !!reference && host.comparison.items.some((item) => item.id === reference);
   const stale = options.stale ?? host.stale;
@@ -1177,23 +1199,32 @@ export function renderHit(
       ${options.content ?? nothing} ${formation(host, hit)}
       ${
         hit.aggregate
-          ? html`
-              <section class="stack">
-                <h3 class="detail-section-title">${host.t("arena.scoreDetails", "Scores by song")}</h3>
-                ${hit.aggregate.songs.map(
-          (part) => html`
+          ? accordion({
+              id: `tb-songs-${key.replace(/[^a-z0-9]/giu, "-")}`,
+              label: host.t("arena.scoreDetails", "Scores by song"),
+              metadata: String(hit.aggregate.songs.length),
+              expanded: songsExpanded,
+              onExpandedChange: (open) => {
+                if (open) host.expanded.add(songsKey);
+                else host.expanded.delete(songsKey);
+                host.requestUpdate();
+              },
+              content: cache(songsExpanded ? html`<div class="stack">
+                ${hit.aggregate.songs.map((part) => {
+                  const metric = resultMetric(host, part, resultSettings(host));
+                  return html`
             <div class="surface stack">
               ${part.song ? resultSong(host, part.song) : nothing}
               <div class="row row--between row--wrap">
-                <span class="supporting-text">${resultMetric(host, part, resultSettings(host)).label}</span>
-                <strong class="tabular">${format(host, resultMetric(host, part, resultSettings(host)).value, resultMetric(host, part, resultSettings(host)).digits)}</strong>
+                <span class="supporting-text">${metric.label}</span>
+                <strong class="tabular">${format(host, metric.value, metric.digits)}</strong>
               </div>
               <div class="cluster">${chips(host, part, true)}</div>
             </div>
-          `,
-        )}
-              </section>
-            `
+          `;
+                })}
+              </div>` : nothing),
+            })
           : nothing
       }
       <div class="tb-hit__actions">

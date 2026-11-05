@@ -2990,6 +2990,8 @@
       "worstTimingScore": "最悪タイミングのスコア",
       "nominalTimingScore": "基準タイミングのスコア",
       "timingFramePlanScore": "{ms} ms 前倒し",
+      "timingAnalysis": "判定タイミング",
+      "timingFailed": "タイミングを計算できませんでした",
       "timingGuide": "タイミング手順",
       "criterionMeanHelp": "120 通りのスキル順の平均スコアで比較。普段のプレイ向け。",
       "criterionMaxHelp": "最良のスキル順でのスコアで比較。繰り返し挑戦して記録を狙う場合に。",

@@ -3,7 +3,7 @@ import { crossServerPublicCache } from "../../lib/cross-server/cache";
 import type { SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
 import { html, nothing } from "lit";
-import { clientText } from "../../i18n/client";
+import { clientText, getI18nClient } from "../../i18n/client";
 import { formatList } from "../shared/catalog";
 import { resolveLocalizedText, resolveRelationshipText } from "../../lib/localized-text";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../../lib/song-performer";
@@ -100,6 +100,9 @@ export class Catalog {
   }
   private performerRegistry?: PerformerRegistry;
   private readonly songRows = new Map<number, Record<string, unknown>>();
+  private readonly songTiles = new Map<string, TileOptions>();
+  private readonly songTitles = new Map<string, string>();
+  private songMessages: object | undefined;
   constructor(
     private readonly host: TeamBuilder,
     readonly data: TeamBuilderData,
@@ -109,6 +112,8 @@ export class Catalog {
     this.visuals = visuals;
     this.performerRegistry = undefined;
     this.songRows.clear();
+    this.songTiles.clear();
+    this.songTitles.clear();
   }
   serverMark(collection: string, id: number) {
     const cross = this.data.crossServer;
@@ -340,7 +345,13 @@ export class Catalog {
     return resolveRelationshipText(this.songPerformer(id).names, this.host.locale).text;
   }
   songTitle(id: number) {
-    return songTitle(this.song(id), this.host.locale).text;
+    const key = `${this.host.locale}:${id}`;
+    let title = this.songTitles.get(key);
+    if (title === undefined) {
+      title = songTitle(this.song(id), this.host.locale).text;
+      this.songTitles.set(key, title);
+    }
+    return title;
   }
   songBands(id: number): number[] {
     const song = this.data.songs[String(id)];
@@ -355,6 +366,14 @@ export class Catalog {
     return row ? `${difficultyKey(row).toUpperCase()} ${row.displayLevel ?? row.playLevel ?? ""}` : "";
   }
   songOptions(id: number, difficulty?: number): TileOptions {
+    const messages = getI18nClient()?.current();
+    if (messages !== this.songMessages) {
+      this.songTiles.clear();
+      this.songMessages = messages;
+    }
+    const key = `${this.host.locale}:${id}:${difficulty ?? "default"}`;
+    const cached = this.songTiles.get(key);
+    if (cached) return cached;
     const song = this.song(id);
     const rows = this.difficultyRows(id);
     const row =
@@ -378,7 +397,9 @@ export class Catalog {
       [],
       row,
     );
-    return { ...options, aspectRatio: 1, serverMark: this.serverMark("songs", id) };
+    const tile = { ...options, aspectRatio: 1, serverMark: this.serverMark("songs", id) };
+    this.songTiles.set(key, tile);
+    return tile;
   }
   /** Events with a live point table (searchable event goals). */
   events() {

@@ -104,6 +104,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
 }
 
 export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown) {
+  const settings = () => typeof body === "function" ? body() : body;
   const summary = conditionSummary(host);
   const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
   const footer = html`
@@ -138,7 +139,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
                           ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: () => host.closeConditions() })}
                           <h2 id="tb-conditions-title">${host.t("conditionsTitle", "Conditions")}</h2>
                         </header>
-                        <div class="tb-config-body stack">${body}</div>
+                        <div class="tb-config-body stack">${settings()}</div>
                         ${footer}
                       </dialog>
                     `
@@ -147,7 +148,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
             `
           : html`
               <aside class="tb-config" aria-label=${host.t("conditionsTitle", "Conditions")}>
-                <div class="tb-config-body stack">${mode}${body}</div>
+                <div class="tb-config-body stack">${mode}${settings()}</div>
                 ${footer}
               </aside>
             `

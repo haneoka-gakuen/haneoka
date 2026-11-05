@@ -2990,6 +2990,8 @@
       "worstTimingScore": "Worst-timing score",
       "nominalTimingScore": "Nominal-timing score",
       "timingFramePlanScore": "{ms} ms plan",
+      "timingAnalysis": "Judgement timing",
+      "timingFailed": "Timing could not be calculated",
       "timingGuide": "Timing guide",
       "criterionMeanHelp": "Rank by the average of 120 skill orders for everyday play.",
       "criterionMaxHelp": "Rank by the best skill order for repeated attempts at a high score.",
