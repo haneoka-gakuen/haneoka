@@ -403,7 +403,9 @@
     "src/lib/song-puzzle/patterns.ts",
     "src/lib/song-puzzle/portfolio.ts",
     "src/lib/song-puzzle/exact.ts",
-    "src/lib/song-puzzle/storage.ts"
+    "src/lib/song-puzzle/storage.ts",
+    "src/lib/render-quality.ts",
+    "src/lit/ui/render-quality-settings.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

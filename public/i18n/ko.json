@@ -1665,6 +1665,8 @@
   },
   "media": {
     "rendering": {
+      "frameRateLimit": "최대 프레임 레이트",
+      "unlimited": "무제한",
       "title": "그래픽",
       "resolution": "렌더링 해상도",
       "native": "원본",

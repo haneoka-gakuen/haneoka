@@ -1,4 +1,9 @@
-import { LitElement, html, type PropertyValues } from "lit";
+// L3 — GEB
+// Input: 当前语言、画面偏好与故事设置可见性。
+// Output: 共用分辨率、锐度和故事帧率选择器。
+// Pos: [Map](L2-2.md)；播放器设置中的共享画面控件。
+// Effects/Dependencies: 订阅本地偏好，加载消息并即时保存选择。
+import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { initializeI18nClient } from "../../i18n/client";
 import { isLocale } from "../../i18n/locales";
 import type { Catalog } from "@haneoka/i18n";
@@ -6,6 +11,7 @@ import {
   observeRenderQuality,
   readRenderQuality,
   writeRenderQuality,
+  STORY_FRAME_RATE_LIMITS,
   type RenderQuality,
 } from "../../lib/render-quality";
 import "../../styles/components/render-quality.css";
@@ -15,9 +21,11 @@ export class RenderQualitySettings extends LitElement {
     locale: { type: String },
     settings: { state: true },
     catalog: { state: true },
+    story: { type: Boolean },
   };
   declare locale: string;
   declare settings: RenderQuality;
+  declare story: boolean;
   private stopObserving?: () => void;
   declare private catalog: Catalog;
   private catalogRequest?: AbortController;
@@ -27,6 +35,7 @@ export class RenderQualitySettings extends LitElement {
     this.catalog = initializeI18nClient().current();
     this.locale = "en";
     this.settings = readRenderQuality();
+    this.story = false;
   }
 
   createRenderRoot() {
@@ -75,6 +84,25 @@ export class RenderQualitySettings extends LitElement {
     return html`
       <section class="render-quality-settings">
         <h4>${this.text("title")}</h4>
+        ${this.story ? html`
+          <label class="render-quality-settings__row">
+            <span>${this.text("frameRateLimit")}</span>
+            <select
+              aria-label=${this.text("frameRateLimit")}
+              .value=${String(this.settings.storyFrameRateLimit)}
+              @change=${(event: Event) => writeRenderQuality({
+                ...this.settings,
+                storyFrameRateLimit: Number((event.currentTarget as HTMLSelectElement).value),
+              })}
+            >
+              ${STORY_FRAME_RATE_LIMITS.map((limit) => html`
+                <option value=${String(limit)} ?selected=${limit === this.settings.storyFrameRateLimit}>
+                  ${limit === 0 ? this.text("unlimited") : `${limit} FPS`}
+                </option>
+              `)}
+            </select>
+          </label>
+        ` : nothing}
         <label class="render-quality-settings__row">
           <span>${this.text("resolution")}</span>
           <select

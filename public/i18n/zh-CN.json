@@ -1665,6 +1665,8 @@
   },
   "media": {
     "rendering": {
+      "frameRateLimit": "帧率上限",
+      "unlimited": "无上限",
       "title": "画质",
       "resolution": "渲染分辨率",
       "native": "原始",

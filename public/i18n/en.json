@@ -1666,6 +1666,8 @@
   "media": {
     "rendering": {
       "title": "Graphics",
+      "frameRateLimit": "Frame rate limit",
+      "unlimited": "Unlimited",
       "resolution": "Render resolution",
       "native": "Native",
       "quality": "Quality",

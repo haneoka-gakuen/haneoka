@@ -1665,6 +1665,8 @@
   },
   "media": {
     "rendering": {
+      "frameRateLimit": "フレームレート上限",
+      "unlimited": "無制限",
       "title": "画質",
       "resolution": "描画解像度",
       "native": "ネイティブ",

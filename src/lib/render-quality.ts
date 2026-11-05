@@ -1,24 +1,36 @@
+// L3 — GEB
+// Input: 本地画面偏好与渲染器设置端口。
+// Output: 跨页面同步的空间重建与故事帧率上限。
+// Pos: [Map](L2-2.md)；浏览器画面设置持久化与即时应用。
+// Effects/Dependencies: 读写 localStorage，广播设置事件并更新活动渲染器。
 export interface RenderQuality {
   readonly factor: 1 | 1.3 | 1.5;
   readonly sharpness: number;
+  readonly storyFrameRateLimit: number;
 }
 
 export interface SpatialUpscalingTarget {
   setSpatialUpscaling(settings: RenderQuality): void;
+  setFrameRateLimit?(limit: number): void;
 }
 
-export const DEFAULT_RENDER_QUALITY: RenderQuality = Object.freeze({ factor: 1, sharpness: 0.8705505633 });
+export const STORY_FRAME_RATE_LIMITS: readonly number[] = [30, 60, 90, 120, 144, 165, 240, 360, 0];
+export const DEFAULT_RENDER_QUALITY: RenderQuality = Object.freeze({ factor: 1, sharpness: 0.8705505633, storyFrameRateLimit: 30 });
 const STORAGE_KEY = "haneoka:render-quality:v1";
 const CHANGE_EVENT = "haneoka:render-quality";
 let current: RenderQuality | undefined;
 
 function normalize(value: Partial<RenderQuality> | null): RenderQuality {
+  const storyFrameRateLimit = value?.storyFrameRateLimit ?? DEFAULT_RENDER_QUALITY.storyFrameRateLimit;
   return {
     factor: value?.factor === 1.3 || value?.factor === 1.5 ? value.factor : 1,
     sharpness:
       typeof value?.sharpness === "number" && Number.isFinite(value.sharpness)
         ? Math.max(0, Math.min(1, value.sharpness))
         : DEFAULT_RENDER_QUALITY.sharpness,
+    storyFrameRateLimit: STORY_FRAME_RATE_LIMITS.includes(storyFrameRateLimit)
+      ? storyFrameRateLimit
+      : DEFAULT_RENDER_QUALITY.storyFrameRateLimit,
   };
 }
 
@@ -58,6 +70,8 @@ export function observeRenderQuality(listener: (settings: RenderQuality) => void
 }
 
 export function applyRenderQuality(target: unknown, settings = readRenderQuality()): void {
-  if (target && typeof (target as SpatialUpscalingTarget).setSpatialUpscaling === "function")
-    (target as SpatialUpscalingTarget).setSpatialUpscaling(settings);
+  if (!target) return;
+  const renderer = target as SpatialUpscalingTarget;
+  if (typeof renderer.setSpatialUpscaling === "function") renderer.setSpatialUpscaling(settings);
+  renderer.setFrameRateLimit?.(settings.storyFrameRateLimit);
 }
