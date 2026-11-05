@@ -131,8 +131,11 @@ export async function searchRankingWindows<T extends SearchWindow>(
             )
             .bind(region, board)
             .all<SearchWindow>();
-          const current = new Map(refreshed.map((row) => [row.startRank, row.observedAtMs]));
-          const remaining = pending.filter((row) => (current.get(row.startRank) ?? -1) < row.observedAtMs);
+          const current = new Map(refreshed.map((row) => [row.startRank, row]));
+          const remaining = pending.filter((row) => {
+            const stored = current.get(row.startRank);
+            return !stored || (stored.observedAtMs <= row.observedAtMs && stored.snapshotId !== row.snapshotId);
+          });
           for (const window of remaining.slice(0, 12)) {
             if (Date.now() - now >= 20_000) break;
             await saveRankingSearchWindow(db, region, board, window, await load(window));
