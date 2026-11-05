@@ -966,7 +966,6 @@
         "loading": "Loading ranking",
         "updated": "Updated",
         "observed": "Collected",
-        "officialSource": "Official game rankings",
         "stale": "Showing cached results",
         "error": "Ranking unavailable",
         "retry": "Retry",

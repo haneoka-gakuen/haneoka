@@ -451,7 +451,6 @@ export class SongRanking extends GameRecordsCardsElement {
                   `
                 : nothing
           }
-          <span class="song-ranking__fetched">${this.label("officialSource", "Official game rankings")}</span>
         </div>
         ${
           this.phase === "error" && !this.rows.length

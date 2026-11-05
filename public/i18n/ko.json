@@ -966,7 +966,6 @@
         "loading": "랭킹을 불러오는 중",
         "updated": "업데이트",
         "observed": "수집 시각",
-        "officialSource": "게임 공식 랭킹",
         "stale": "캐시된 결과를 표시 중",
         "error": "랭킹을 사용할 수 없습니다",
         "retry": "다시 시도",

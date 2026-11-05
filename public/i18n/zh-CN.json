@@ -966,7 +966,6 @@
         "loading": "正在加载排行榜",
         "updated": "更新时间",
         "observed": "采集时间",
-        "officialSource": "游戏官方榜单",
         "stale": "正在显示缓存结果",
         "error": "无法获取排行榜",
         "retry": "重试",
