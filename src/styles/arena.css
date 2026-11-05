@@ -357,9 +357,6 @@
   }
 
   /* Leaderboard */
-  .arena-ranking__list--compact .song-ranking__row--bare {
-    grid-template-columns: max(32px, calc(var(--rank-digits, 2) * 10px)) 36px minmax(0, 1fr) minmax(88px, auto);
-  }
   .arena-ranking__tier {
     white-space: nowrap;
     display: inline-flex;
@@ -373,38 +370,6 @@
   .arena-ranking__tier img {
     flex: 0 0 auto;
     object-fit: contain;
-  }
-  .arena-ranking__controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px 16px;
-  }
-  .arena-ranking__search {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-  }
-  .arena-ranking__jump {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .arena-ranking__jump .field {
-    inline-size: 168px;
-  }
-  .arena-ranking__jump .button {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-  arena-ranking [data-target="true"] {
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-secondary-container);
-    color: var(--md-sys-color-on-secondary-container);
-  }
-  .arena-ranking__window {
-    font-variant-numeric: tabular-nums;
   }
 
   /* Schedule, songs and rewards */
@@ -683,13 +648,6 @@
     }
     .arena-usage__list {
       grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
-    .arena-ranking__search,
-    .arena-ranking__jump {
-      flex: 1 1 100%;
-    }
-    .arena-ranking__jump .field {
-      flex: 1 1 auto;
     }
     .arena-population li {
       grid-template-columns: 28px minmax(64px, 88px) minmax(0, 1fr) 56px;

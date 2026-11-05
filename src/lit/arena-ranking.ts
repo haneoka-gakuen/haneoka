@@ -82,6 +82,10 @@ export class ArenaRanking extends SongRanking {
     super.refresh();
   }
 
+  protected get skeletonDecks() {
+    return !this.eventId && !this.limit;
+  }
+
   protected renderRow(entry: SongRankingRowDto) {
     const row = entry as ArenaRankingRowDto;
     const tier = arenaTier(this.ranks, row.point, this.observedAt);
@@ -97,7 +101,7 @@ export class ArenaRanking extends SongRanking {
         : clientText(this.locale, "catalog.arena.ranking.points", "Points"),
       target: row.rank === this.target,
       bare: this.limit > 0,
-      ...(this.limit ? { cards: undefined } : {}),
+      ...(this.limit || !row.cards.length ? { cards: undefined } : {}),
       detail: this.eventId
         ? nothing
         : html`

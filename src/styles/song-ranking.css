@@ -1,5 +1,6 @@
 @layer pages {
   song-ranking,
+  arena-ranking,
   event-tracker {
     display: block;
     min-width: 0;
@@ -569,5 +570,11 @@
     .song-ranking-page .ranking-jump .field {
       flex: 1 1 auto;
     }
+  }
+}
+
+@layer pages {
+  .song-ranking-page .song-ranking__row--bare {
+    grid-template-columns: max(32px, calc(var(--rank-digits, 2) * 10px)) 36px minmax(0, 1fr) minmax(88px, auto);
   }
 }

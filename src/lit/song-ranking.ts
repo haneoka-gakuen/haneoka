@@ -349,14 +349,12 @@ export class SongRanking extends GameRecordsCardsElement {
       ...(this.points || this.summary || this.limit ? { cards: undefined } : {}),
     });
   }
-  /**
-   * The first page of a ranking is always 20 rows, so while it loads the
-   * list is drawn as 20 placeholder rows built from the same grid, media
-   * boxes and text lines as a real row: when the data arrives every row
-   * fills in place and nothing below the list moves.
-   */
+  protected get skeletonDecks() {
+    return !this.points && !this.summary && !this.limit;
+  }
+
   private renderSkeleton() {
-    const rows = Array.from({ length: 20 });
+    const rows = Array.from({ length: this.limit || 20 });
     return html`
       <ol
         class="song-ranking__list song-ranking__list--skeleton"
@@ -366,9 +364,17 @@ export class SongRanking extends GameRecordsCardsElement {
         ${rows.map(
           () => html`
             <li class="song-ranking__entry" aria-hidden="true">
-              <div class=${`song-ranking__row${this.points || this.summary ? " song-ranking__row--points" : ""}`}>
+              <div
+                class=${`song-ranking__row${this.skeletonDecks ? "" : " song-ranking__row--points"}${this.limit ? " song-ranking__row--bare" : ""}`}
+              >
                 <span class="song-ranking__rank"><span class="skeleton-line">00</span></span>
-                <span class="song-ranking__namecard song-ranking__namecard--empty"></span>
+                ${
+                  this.limit
+                    ? nothing
+                    : html`
+                        <span class="song-ranking__namecard song-ranking__namecard--empty"></span>
+                      `
+                }
                 <span class="song-ranking__avatar"><span class="song-ranking__initial"></span></span>
                 <span class="song-ranking__player-copy">
                   <strong><span class="skeleton-line"> </span></strong>
@@ -378,7 +384,7 @@ export class SongRanking extends GameRecordsCardsElement {
                   <strong><span class="skeleton-line">00,000,000</span></strong>
                 </span>
                 ${
-                  this.points || this.summary
+                  !this.skeletonDecks
                     ? nothing
                     : html`
                         <span class="song-ranking__deck-preview">
@@ -400,10 +406,16 @@ export class SongRanking extends GameRecordsCardsElement {
           `,
         )}
       </ol>
-      <span class="button button--tonal song-ranking__more song-ranking__more--placeholder" aria-hidden="true">
-        ${this.label("showMore", "Show top 100")}
-      </span>
-      ${loadingState(this.label("loading", "Loading ranking"))}
+      ${
+        !this.limit && !this.windowed
+          ? html`
+              <span class="button button--tonal song-ranking__more song-ranking__more--placeholder" aria-hidden="true">
+                ${this.label("showMore", "Show top 100")}
+              </span>
+              ${loadingState(this.label("loading", "Loading ranking"))}
+            `
+          : nothing
+      }
     `;
   }
 
@@ -681,10 +693,10 @@ export class SongRanking extends GameRecordsCardsElement {
           <form
             class="ranking-jump"
             @submit=${(event: SubmitEvent) => {
-            event.preventDefault();
-            const rank = Number(new FormData(event.currentTarget as HTMLFormElement).get("rank"));
-            if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
-          }}
+              event.preventDefault();
+              const rank = Number(new FormData(event.currentTarget as HTMLFormElement).get("rank"));
+              if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
+            }}
           >
             <label class="field">
               <input
@@ -704,10 +716,10 @@ export class SongRanking extends GameRecordsCardsElement {
           <form
             class="ranking-jump"
             @submit=${(event: SubmitEvent) => {
-          event.preventDefault();
-          const value = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim();
-          if (value && !this.searching) void this.search(value);
-        }}
+              event.preventDefault();
+              const value = String(new FormData(event.currentTarget as HTMLFormElement).get("query") ?? "").trim();
+              if (value && !this.searching) void this.search(value);
+            }}
           >
             <label class="field">
               <input
@@ -719,10 +731,10 @@ export class SongRanking extends GameRecordsCardsElement {
                 placeholder=${t("playerSearch", "Player ID or username")}
                 aria-label=${t("playerSearch", "Player ID or username")}
                 @input=${(event: InputEvent) => {
-              this.query = (event.target as HTMLInputElement).value;
-              this.searchRequests.cancel();
-              this.searching = false;
-            }}
+                  this.query = (event.target as HTMLInputElement).value;
+                  this.searchRequests.cancel();
+                  this.searching = false;
+                }}
               />
             </label>
             <button
