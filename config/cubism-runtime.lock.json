@@ -1,30 +1,30 @@
 {
   "schemaVersion": 2,
-  "runtimeId": "haneoka-cubism-web-runtime-v2-b34bc1071f63",
+  "runtimeId": "haneoka-cubism-web-runtime-v2-8afd14f10d67",
   "managedRoots": {
     "target": [
       "public/Core",
-      "public/cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63",
+      "public/cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67",
       "public/licenses/cubism-framework"
     ],
     "output": [
       "Core",
-      "cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63",
+      "cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67",
       "licenses/cubism-framework"
     ]
   },
   "files": [
     {
       "source": "Framework/vega-cubism-web-runtime.mjs",
-      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63/vega-cubism-web-runtime.mjs",
-      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63/vega-cubism-web-runtime.mjs",
-      "bytes": 558145,
-      "sha256": "b34bc1071f63673f06aeb7e2ebfe826777ae8c5baa0e55be419cff5f80ea1254"
+      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67/vega-cubism-web-runtime.mjs",
+      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67/vega-cubism-web-runtime.mjs",
+      "bytes": 558847,
+      "sha256": "8afd14f10d6781e7a1da86771f6cb5c9f726f603522755b1153636ab99dfe4bc"
     },
     {
       "source": "Framework/vega-cubism-web-viewer.mjs",
-      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63/vega-cubism-web-viewer.mjs",
-      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-b34bc1071f63/vega-cubism-web-viewer.mjs",
+      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67/vega-cubism-web-viewer.mjs",
+      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-8afd14f10d67/vega-cubism-web-viewer.mjs",
       "bytes": 25651,
       "sha256": "16490cdf1ac51e0dfdef31e13b3d33f71af0f1b47048cdf69acd45432ea50494"
     },
