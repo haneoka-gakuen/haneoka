@@ -304,6 +304,7 @@ export class VegaStoryStage extends LitElement {
       ]);
       if (!active()) return;
       const resolvedRuntime = resolveStoryRuntimeAssets(merge(runtime, story.runtime), server);
+      Object.assign(resolvedRuntime, { adaptiveRenderScaleEnabled: true, adaptiveRenderScaleMin: 0.5 });
       if (matchMedia("(pointer: coarse)").matches) {
         // Bound speculative residency; the renderer still protects every visible actor.
         Object.assign(resolvedRuntime, {
@@ -313,7 +314,7 @@ export class VegaStoryStage extends LitElement {
         });
       }
       const hydrated = project
-        ? (story as AdvStory)
+        ? ({ ...story, runtime: resolvedRuntime } as AdvStory)
         : (hydrateStoryPayload({
             ...story,
             assets: {
@@ -697,9 +698,16 @@ export class VegaStoryStage extends LitElement {
 
   private startTransportLoop() {
     cancelAnimationFrame(this.transportFrame);
-    const paint = () => {
+    let previousPaint = -Infinity;
+    let preparedCommand = -1;
+    const paint = (time: number) => {
       const handle = this.handle;
       if (!handle) return;
+      if (time - previousPaint < 100) {
+        this.transportFrame = requestAnimationFrame(paint);
+        return;
+      }
+      previousPaint = time;
       const state = handle.player.state;
       if (state.error && state.error !== this.playbackError) {
         this.playbackError = state.error;
@@ -707,7 +715,8 @@ export class VegaStoryStage extends LitElement {
         this.phase = "error";
         this.issue = uiText(this.locale, "common.states.error");
       }
-      if (state.ready) {
+      if (state.ready && preparedCommand !== state.commandIndex) {
+        preparedCommand = state.commandIndex;
         const sounds = handle.player.SoundManager as typeof handle.player.SoundManager & {
           prepareForCommand?(index: number): void;
         };
