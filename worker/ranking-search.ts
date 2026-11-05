@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Saved ranking windows, their current snapshot identities and a player query.
-// Output: Complete-board player matches or bounded missing/indexing work.
+// Output: Direct ID hits from window metadata and complete-board name matches with bounded indexing work.
 // Pos: [Map](L2.md); shared search index for Arena and event point windows.
 // Effects/Dependencies: Reads/writes compact D1 window indexes; callers load retained payloads and queue missing windows.
 import type { RankingPlayerMatchDto } from "../src/lib/game-records";
@@ -15,6 +15,39 @@ interface SearchPlayer extends RankingPlayerMatchDto {
 }
 const object = (value: unknown) => (value && typeof value === "object" ? (value as Record<string, unknown>) : {});
 export const normalizeRankingQuery = (value: string) => value.normalize("NFKC").toLowerCase();
+
+export interface RankingProfileWindow extends SearchWindow {
+  endRank: number;
+  maxRank: number | null;
+  playerCount: number;
+  payloadKey: string;
+  payloadHash: string;
+  position: number;
+}
+
+/** ID lookup uses the existing per-window ID map and loads only its matching payload. */
+export async function findRankingProfileWindow(
+  db: D1Database,
+  region: string,
+  board: { seasonId: string; bandId: string } | { eventId: string },
+  profileId: string,
+): Promise<RankingProfileWindow | null> {
+  const arena = "seasonId" in board;
+  const table = arena ? "official_arena_window_metadata" : "official_event_window_metadata";
+  const identity = arena ? "season_id=? AND band_id=?" : "event_id=?";
+  const values = arena ? [board.seasonId, board.bandId] : [board.eventId];
+  const path = `$."${profileId}"`;
+  return db
+    .prepare(
+      `SELECT start_rank AS startRank,end_rank AS endRank,max_rank AS maxRank,
+    player_count AS playerCount,snapshot_id AS snapshotId,observed_at_ms AS observedAtMs,
+    payload_key AS payloadKey,payload_hash AS payloadHash,json_extract(profile_index,?) AS position
+    FROM ${table} WHERE region=? AND ${identity} AND json_type(profile_index,?) IS NOT NULL
+    ORDER BY observed_at_ms DESC,start_rank LIMIT 1`,
+    )
+    .bind(path, region, ...values, path)
+    .first<RankingProfileWindow>();
+}
 
 export async function saveRankingSearchWindow(
   db: D1Database,

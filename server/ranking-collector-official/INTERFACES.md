@@ -161,3 +161,5 @@ A region secret holds a single account or `haneoka:official-ranking-account-pool
 Only enabled, ready entries are scheduled. Pauses are stored against the real identity and credential digest, so changing an ID, label or pool format does not clear them. `/status` exposes only the counts `{accounts, enabled, ready, paused, coolingDown, leased}`.
 
 Point and Arena search also accept the existing `profileId` parameter. A `query` response contains `matches`, `searchedTo`, `observedAtMs` and `nextCursor`; pass `after={nextCursor}` with the same query for the next 100 matches. Missing windows or index backfill return `pending`, never an incomplete negative result. Index backfill reads at most twelve saved windows per request and adds no game RPCs or R2 copies.
+
+Exact player IDs use the existing window ID maps and fetch only the matching snapshot. A known ID is returned immediately even when username indexes or unrelated rank windows are incomplete.
