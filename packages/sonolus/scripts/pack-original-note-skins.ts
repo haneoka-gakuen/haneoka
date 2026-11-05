@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Native note atlases, common skin texture and the engine lane-clip contract.
-// Output: Three original note skins, virtual UV slicing and optional sprite coverage rules.
+// Output: Three original note skins, compact original sprite references and optional coverage rules.
 // Pos: [Map](../L2-2.md); native Sonolus note skin packer.
 // Effects/Dependencies: Decodes PNGs and writes skin data and texture resources.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import {
   type BundledNoteSkin,
   type NoteSkinDefinition,
 } from "@haneoka/cassiopeia-plugin-our-notes";
-import { isLaneClippedSprite, laneClipInterval, laneClipSpriteName, LANE_CLIP_CELLS } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/nativeLaneClipContract.ts";
+import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 
 type VertexComponent = "x1" | "y1" | "x2" | "y2" | "x3" | "y3" | "x4" | "y4";
 type SpriteTransform = Record<VertexComponent, Partial<Record<VertexComponent, number>>>;
@@ -1038,17 +1038,8 @@ export interface NativeNoteSkinPackSummary {
   nativeArea: number;
 }
 
-export function appendNativeLaneClipSkinSprites(sprites: readonly SkinSprite[]): SkinSprite[] {
-  const original = sprites.filter(sprite => !/ Lane Clip \d+$/u.test(sprite.name));
-  const result = [...original];
-  for (const sprite of original) {
-    if (!isLaneClippedSprite(sprite.name)) continue;
-    for (let node = 2; node < LANE_CLIP_CELLS * 2; node++) {
-      const uv = laneClipInterval(node);
-      result.push({ ...sprite, name: laneClipSpriteName(sprite.name, node), x: sprite.x + sprite.w * uv.start, w: sprite.w * uv.span });
-    }
-  }
-  return result;
+export function restoreNativeSkinSprites(sprites: readonly SkinSprite[]): SkinSprite[] {
+  return sprites.filter(sprite => !isNativeLaneClipReference(sprite.name));
 }
 
 export function isOptionalOriginalSkinSprite(name: string): boolean {

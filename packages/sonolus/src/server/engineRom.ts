@@ -1,6 +1,12 @@
+// L3 — GEB
+// Input: Compiled engine facets, their ROM and reachable lane-clip metadata rules.
+// Output: Engine resources with unchanged programs and compact skin references.
+// Pos: [Map](../../L2-2.md); shared engine resource loader for both hosts.
+// Effects/Dependencies: Reads artifacts, filters unused virtual references and gzip-encodes metadata.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { compactNativeSkinReferences } from "../shared/nativeLaneClipReferences.ts";
 
 const programFiles = {
   playData: "EnginePlayData",
@@ -11,6 +17,17 @@ const programFiles = {
 
 type EngineResourceData = Record<keyof typeof programFiles | "configuration", Buffer> & { rom?: Buffer };
 type ProgramNode = { value?: number; func?: string; args?: number[] };
+
+function compactSkinReferences(bytes: Buffer): Buffer {
+  const program = JSON.parse(gunzipSync(bytes).toString("utf8")) as {
+    skin: { sprites: Array<{ name: string; id: number }> };
+  };
+  const original = program.skin.sprites;
+  const sprites = compactNativeSkinReferences(original);
+  if (sprites.length === original.length) return bytes;
+  program.skin.sprites = sprites;
+  return gzipSync(JSON.stringify(program));
+}
 
 export function referencesEngineRom(bytes: Buffer, name: string): boolean {
   const program = JSON.parse(gunzipSync(bytes).toString("utf8")) as { nodes?: ProgramNode[] };
@@ -37,7 +54,9 @@ export function loadEngineResources(engineDirectory: string): EngineResourceData
   const resources = Object.fromEntries(
     Object.entries({ ...programFiles, configuration: "EngineConfiguration" }).map(([key, file]) => [
       key,
-      readFileSync(resolve(engineDirectory, file)),
+      key === "configuration"
+        ? readFileSync(resolve(engineDirectory, file))
+        : compactSkinReferences(readFileSync(resolve(engineDirectory, file))),
     ]),
   ) as EngineResourceData;
   const references = Object.entries(programFiles)

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated release/Source assets, compiled engine facets and native packing contracts.
-// Output: Original Sonolus resources, virtual lane-clip UV references after atlas qualification and thumbnails, and engine-reference coverage checks.
+// Output: Original Sonolus resources and thumbnails with compact skin references and engine-reference coverage checks.
 // Pos: [Map](../L2-2.md); original Sonolus resource generator.
 // Effects/Dependencies: Reads release caches and engine artifacts; writes resource packs, engine draw tables and cache receipts.
 import {
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   buildNativeNoteSkinPacks,
-  appendNativeLaneClipSkinSprites,
+  restoreNativeSkinSprites,
   isOptionalOriginalSkinSprite,
   decodeRgba8Png,
   encodeRgba8Png,
@@ -32,6 +32,7 @@ import {
   nativeParticlePresencePolicy,
 } from "../src/shared/particlePacks.ts";
 import { buildPresentationThumbnails } from "./presentation-thumbnails.ts";
+import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 import {
   particleCacheKey,
   restoreParticleCache,
@@ -440,10 +441,10 @@ try {
   for (const pack of nativeSkinPacks) {
     const file = resolve(pack.outputDirectory, "skin.data");
     const data = JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as {
-      sprites: Parameters<typeof appendNativeLaneClipSkinSprites>[0];
+      sprites: Parameters<typeof restoreNativeSkinSprites>[0];
     };
     const originalCount = data.sprites.length;
-    data.sprites = appendNativeLaneClipSkinSprites(data.sprites);
+    data.sprites = restoreNativeSkinSprites(data.sprites);
     pack.sprites += data.sprites.length - originalCount;
     writeFileSync(file, gzipSync(JSON.stringify(data)));
   }
@@ -490,7 +491,7 @@ try {
           );
         }
         const name = (sprite as { name: string }).name;
-        if (name.startsWith("Our Notes ")) referencedNames.add(name);
+        if (name.startsWith("Our Notes ") && !isNativeLaneClipReference(name)) referencedNames.add(name);
       }
     }
     const defaultSkin = JSON.parse(

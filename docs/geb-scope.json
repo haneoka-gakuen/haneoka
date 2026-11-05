@@ -216,6 +216,8 @@
     "packages/sonolus/src/protocol.ts",
     "packages/sonolus/scripts/build-original-assets.ts",
     "packages/sonolus/scripts/pack-original-note-skins.ts",
+    "packages/sonolus/src/server/engineRom.ts",
+    "packages/sonolus/src/shared/nativeLaneClipReferences.ts",
     "packages/ui/src/index.ts",
     "packages/community-media/worker.ts",
     "packages/community-media/server.mjs",
