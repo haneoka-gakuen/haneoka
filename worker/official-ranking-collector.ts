@@ -87,6 +87,7 @@ interface CollectorRun {
   eventSweepWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
   /** Admitted requests; progress narrows these to the subset actually attempted. */
   attempted?: { player: string[]; song: string[]; card: string[] };
+  songOnly?: boolean;
 }
 interface DemandInterest {
   id: string;
@@ -119,6 +120,7 @@ interface CollectorState {
   lookupFailures?: number;
   lookupNextAtMs?: number;
   songLookupNextAtMs?: number;
+  songLookupFailures?: number;
   lookupLastFailure?: OfficialCollectorFailure | null;
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
@@ -1491,9 +1493,6 @@ export class OfficialRankingCollector extends Container<Env> {
       for (const field of ["playerInterests", "songInterests", "cardInterests"] as const)
         state[field] = (state[field] ?? []).filter((entry) => now - entry.requestedAtMs < DEMAND_TTL_MS);
       const playerLookups = live(state.playerInterests), cardImages = live(state.cardInterests, 32);
-      const primaryBusy = Boolean(state.run && !state.run.complete && now <= state.run.deadlineMs + 15_000)
-        || Boolean(state.arenaInterests?.length || state.eventInterests?.length)
-        || Boolean(state.nextAtMs && state.nextAtMs <= now + 45_000);
       const songRankings = !playerLookups.length && !cardImages.length ? live(state.songInterests, 1) : [];
       if (songRankings.length && (state.songLookupNextAtMs ?? 0) > now) {
         await this.ctx.storage.put("collectorState", state);
@@ -1509,7 +1508,7 @@ export class OfficialRankingCollector extends Container<Env> {
       try { pool = await this.poolFor(region); } catch { return null; }
       if (!pool) return null;
       this.synchronizePool(state, pool);
-      if (songRankings.length && primaryBusy) {
+      if (songRankings.length) {
         const idle = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
           && account.availableAtMs <= now && !state.accounts?.[account.identity]?.held
           && !state.accounts?.[account.identity]?.blocked[account.authGeneration]
@@ -1540,7 +1539,7 @@ export class OfficialRankingCollector extends Container<Env> {
       state.lookup = { id: runId, token, generation: config.generation, accountIdentity: config.identity,
         authGeneration: config.authGeneration, apiOrigin: String(config.credentials.origin), startedAtMs: now, deadlineMs: now + duration,
         pendingAttempt: null, resolvedAttempt: false, complete: false, catalog: null, checkpoints: {},
-        attempted: { player: playerLookups, song: songRankings, card: cardImages } };
+        attempted: { player: playerLookups, song: songRankings, card: cardImages }, songOnly: Boolean(songRankings.length) };
       const health = state.accounts?.[config.identity];
       if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + duration + 15_000; }
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
@@ -1579,7 +1578,10 @@ export class OfficialRankingCollector extends Container<Env> {
         lookup.complete = true;
         if (busy) {
           delete lookup.attempted;
-          state.lookupNextAtMs = Date.now() + 1_000;
+          if (!lookup.songOnly) state.lookupNextAtMs = Date.now() + 1_000;
+        } else if (failed && lookup.songOnly) {
+          state.songLookupFailures = (state.songLookupFailures ?? 0) + 1;
+          state.songLookupNextAtMs = Math.max(state.songLookupNextAtMs ?? 0, Date.now() + recoveryDelay(state.songLookupFailures));
         } else if (failed) {
           state.lookupFailures = (state.lookupFailures ?? 0) + 1;
           state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);
@@ -1598,8 +1600,11 @@ export class OfficialRankingCollector extends Container<Env> {
         delete lookup.attempted;
       }
       await this.ctx.storage.put("collectorState", state);
-      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)
-        await this.queueLookup(region, Math.max(Date.now() + 1_000, state.lookupNextAtMs ?? 0));
+      if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length) {
+        const next = state.playerInterests?.length || state.cardInterests?.length
+          ? state.lookupNextAtMs ?? 0 : Math.max(state.lookupNextAtMs ?? 0, state.songLookupNextAtMs ?? 0);
+        await this.queueLookup(region, Math.max(Date.now() + 1_000, next));
+      }
       else this.deleteSchedules("runLookup");
       return !failed;
     });
@@ -1653,10 +1658,15 @@ export class OfficialRankingCollector extends Container<Env> {
             lookup.attempted = processed;
         }
         lookup.complete = true;
-        if (update.status === "ok") {
+        if (update.status === "ok" && lookup.songOnly) {
+          state.songLookupFailures = 0;
+        } else if (update.status === "ok") {
           state.lookupFailures = 0;
           state.lookupNextAtMs = 0;
           state.lookupLastFailure = null;
+        } else if (update.status === "failed" && transientCollectorFailure(update.failure) && lookup.songOnly) {
+          state.songLookupFailures = (state.songLookupFailures ?? 0) + 1;
+          state.songLookupNextAtMs = Math.max(state.songLookupNextAtMs ?? 0, Date.now() + recoveryDelay(state.songLookupFailures));
         } else if (update.status === "failed" && transientCollectorFailure(update.failure)) {
           state.lookupFailures = (state.lookupFailures ?? 0) + 1;
           state.lookupNextAtMs = Date.now() + recoveryDelay(state.lookupFailures);
