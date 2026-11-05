@@ -191,14 +191,14 @@ async function population(env: ArenaRankingBindings, region: GameRecordsRegion, 
       count: counts.get(threshold)! - (thresholds[index + 1] === undefined ? 0 : counts.get(thresholds[index + 1]!)!) })) };
 }
 
-export type RankingSearch = { kind: "id" | "query"; value: string; after: number };
+export type RankingSearch = { kind: "id" | "query"; value: string; after: number; partial: boolean };
 
 export function rankingSearchQuery(url: URL): RankingSearch | null {
   const key = url.searchParams.has("query") ? "query" : "profileId";
   const value = (url.searchParams.get(key) ?? "").trim();
   if (
     url.searchParams.getAll(key).length !== 1 ||
-    [...url.searchParams.keys()].some((name) => name !== key && name !== "after") ||
+    [...url.searchParams.keys()].some((name) => name !== key && name !== "after" && name !== "partial") ||
     !value ||
     value.length > 100 ||
     (key === "profileId" && !/^[1-9][0-9]{0,18}$/u.test(value))
@@ -210,11 +210,14 @@ export function rankingSearchQuery(url: URL): RankingSearch | null {
     (!/^[0-9]{1,9}$/u.test(rawAfter) || key !== "query" || url.searchParams.getAll("after").length !== 1)
   )
     return null;
-  return { kind: key === "profileId" ? "id" : "query", value, after: Number(rawAfter ?? 0) };
+  const partial = url.searchParams.get("partial");
+  if (partial !== null && (partial !== "1" || key !== "query" || url.searchParams.getAll("partial").length !== 1)) return null;
+  return { kind: key === "profileId" ? "id" : "query", value, after: Number(rawAfter ?? 0), partial: partial === "1" };
 }
 
 async function search(
   env: ArenaRankingBindings,
+  ctx: ExecutionContext,
   region: GameRecordsRegion,
   seasonId: string,
   bandId: string,
@@ -228,6 +231,12 @@ async function search(
       readOfficialArenaMetadata(env,region,seasonId,bandId),
     ]);
     if (match) {
+      if (lookup.kind === "query" && match.cachedPlayer) {
+        const player = JSON.parse(match.cachedPlayer) as {rank:number;profileId:string;name:string;point:number};
+        if (player.profileId !== id) throw new Error("official_profile_index_mismatch");
+        return {region,seasonId,bandId,query:lookup.value,searchedTo:board?.maxRank ?? match.maxRank ?? player.rank,observedAtMs:match.observedAtMs,
+          matches:[{rank:player.rank,profileId:player.profileId,name:player.name,point:player.point}],nextCursor:null};
+      }
       const source = await readOfficialArenaSearchMatch(env,match);
       if (source.region!==region || source.seasonId!==seasonId || source.bandId!==bandId || source.snapshotId!==match.snapshotId)
         throw new Error("official_observation_identity_mismatch");
@@ -252,7 +261,7 @@ async function search(
       length = Math.min(WINDOW, searchedTo - start + 1);
     if (!metadata || metadata.playerCount < length || metadata.endRank < start + length - 1) missing.push(start);
   }
-  if (missing.length) return pending(missing);
+  if (missing.length && (!lookup.partial || exactId)) return pending(missing);
   if (exactId) {
     const base = {region,seasonId,bandId,searchedTo,observedAtMs:latest.observedAtMs};
     return lookup.kind === "id" ? {...base,profileId:id,row:null}
@@ -280,10 +289,16 @@ async function search(
     lookup.after,
     lookup.kind === "id",
     load,
+    ctx,
   );
-  if (!matches) return pending();
-  const observedAtMs = windows.reduce((time, row) => Math.min(time, row.observedAtMs), latest.observedAtMs);
-  return { region, seasonId, bandId, query: lookup.value, searchedTo, observedAtMs, ...matches };
+  if (!lookup.partial && !matches.complete) return pending();
+  let retryAfter: number | null = matches.complete ? null : 3;
+  if (lookup.partial && missing.length && matches.complete) {
+    const demand = await env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region,seasonId,bandId,missing);
+    retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+  }
+  return { region, seasonId, bandId, query: lookup.value, searchedTo, ...matches,
+    complete:matches.complete && !missing.length, retryAfter };
 }
 
 function json(request: Request, body: unknown, status = 200, retryAfter: number | null = null): Response {
@@ -317,7 +332,7 @@ export async function handleArenaRankingApi(
       const lookup = rankingSearchQuery(url);
       if (!lookup) return json(request, { error: { kind: "invalid_request" } }, 400);
       if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending([1]);
-      return json(request, await search(env, region, seasonId, bandId, lookup));
+      return json(request, await search(env, ctx, region, seasonId, bandId, lookup));
     }
     if (operation === "ranking") {
       const raw = url.searchParams.get("start") ?? "1";

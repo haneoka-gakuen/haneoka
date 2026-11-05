@@ -863,6 +863,8 @@ export class ArenaWorkspace extends LitElement {
         .rankIcons=${this.catalog?.images?.ranks ?? {}}
         .rankName=${(rank: ArenaRank) => this.name(rank.name)}
         .limit=${limit}
+        .summaryHeading=${limit ? heading(this.t("top10"),"rewards") : nothing}
+        .summaryActions=${limit ? html`<button class="icon-button" type="button" aria-label=${this.t("tabs.ranking")} title=${this.t("tabs.ranking")} @click=${() => this.select({tab:"ranking"})}>${icon("chevron_right",24)}</button>` : nothing}
         .catalogs=${this.cards}
         @arena-ranking-rows=${(event: CustomEvent<ArenaRankingDto | null>) => {
           if (!limit) this.ranking = event.detail;
@@ -880,12 +882,6 @@ export class ArenaWorkspace extends LitElement {
             ? html`
                 ${this.renderPopulation(league)}
                 <section class="surface stack arena-end">
-                  <div class="row row--between">
-                    ${heading(this.t("top10"), "rewards")}
-                    <button class="button button--text" type="button" @click=${() => this.select({ tab: "ranking" })}>
-                      ${this.t("tabs.ranking")}${icon("chevron_right", 18)}
-                    </button>
-                  </div>
                   ${this.rankingElement(season, league, 10)}
                 </section>
               `

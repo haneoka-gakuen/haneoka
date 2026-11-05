@@ -60,6 +60,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
 
 async function search(
   env: ArenaRankingBindings,
+  ctx: ExecutionContext,
   region: GameRecordsRegion,
   eventId: string,
   lookup: RankingSearch,
@@ -72,6 +73,12 @@ async function search(
       readOfficialEventMaxRank(env,region,eventId),
     ]);
     if (match) {
+      if (lookup.kind === "query" && match.cachedPlayer) {
+        const player = JSON.parse(match.cachedPlayer) as {rank:number;profileId:string;name:string;point:number};
+        if (player.profileId !== id) throw new Error("official_profile_index_mismatch");
+        return {region,eventId,query:lookup.value,searchedTo:maximum ?? match.maxRank ?? player.rank,observedAtMs:match.observedAtMs,
+          matches:[{rank:player.rank,profileId:player.profileId,name:player.name,point:player.point}],nextCursor:null};
+      }
       const source = await readOfficialPayload<OfficialEventWindow>(env,match.payloadKey,match.payloadHash);
       if (source.region!==region || source.eventId!==eventId || source.snapshotId!==match.snapshotId)
         throw new Error("official_observation_identity_mismatch");
@@ -89,7 +96,7 @@ async function search(
   const missing: number[] = [];
   for (let start = 1; start <= searchedTo && missing.length < 20; start += 100)
     if (!byStart.has(start)) missing.push(start);
-  if (missing.length || maximum === null) throw new PendingWindows(missing.length ? missing : [searchedTo]);
+  if ((!lookup.partial || exactId) && (missing.length || maximum === null)) throw new PendingWindows(missing.length ? missing : [searchedTo]);
   if (exactId) {
     const base = {region,eventId,searchedTo,observedAtMs:Date.now()};
     return lookup.kind === "id" ? {...base,profileId:id,row:null}
@@ -117,10 +124,16 @@ async function search(
     lookup.after,
     lookup.kind === "id",
     load,
+    ctx,
   );
-  if (!matches) throw new PendingWindows([]);
-  const observedAtMs = windows.reduce((time, row) => Math.min(time, row.observedAtMs), Date.now());
-  return { region, eventId, query: lookup.value, searchedTo, observedAtMs, ...matches };
+  if (!lookup.partial && !matches.complete) throw new PendingWindows([]);
+  let retryAfter: number | null = matches.complete ? null : 3;
+  if (lookup.partial && (missing.length || maximum === null) && matches.complete) {
+    const demand = await env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region,eventId,missing.length ? missing : [searchedTo]);
+    retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+  }
+  return { region, eventId, query: lookup.value, searchedTo, ...matches,
+    complete:matches.complete && !missing.length && maximum!==null, retryAfter };
 }
 
 function json(request: Request, body: unknown, status = 200, retryAfter: number | null = null): Response {
@@ -162,7 +175,7 @@ export async function handleEventPointRankingApi(
     return json(
       request,
       await (operation === "search"
-        ? search(env, region, eventId, lookup!)
+        ? search(env, ctx, region, eventId, lookup!)
         : ranking(env, ctx, region, eventId, Number(raw))),
     );
   } catch (error) {

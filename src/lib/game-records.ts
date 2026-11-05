@@ -116,6 +116,8 @@ export interface ArenaPlayerSearchDto extends Omit<ArenaSearchDto, "profileId" |
   query: string;
   matches: RankingPlayerMatchDto[];
   nextCursor: number | null;
+  complete?: boolean;
+  retryAfter?: number | null;
 }
 
 export interface EventPointPlayerSearchDto extends Omit<ArenaPlayerSearchDto, "seasonId" | "bandId"> {

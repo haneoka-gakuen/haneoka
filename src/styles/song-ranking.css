@@ -555,6 +555,31 @@
   .song-ranking-page .ranking-jump .button {
     flex: 0 0 auto;
   }
+  .song-ranking-page .ranking-jump--rank .field {
+    inline-size: 96px;
+  }
+  .song-ranking-page .ranking-secondary,
+  .song-ranking-page .ranking-pagination,
+  .song-ranking-page .ranking-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-inline-size: 0;
+  }
+  .song-ranking-page .ranking-secondary {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .song-ranking-page .ranking-status {
+    white-space: nowrap;
+  }
+  .song-ranking-page .ranking-timestamp {
+    min-inline-size: 9ch;
+    white-space: nowrap;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
   .song-ranking-page [data-target="true"] {
     border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-secondary-container);
@@ -563,6 +588,13 @@
   @media (max-width: 600px) {
     .song-ranking-page .ranking-search {
       inline-size: 100%;
+    }
+    .song-ranking-page .ranking-secondary {
+      inline-size: 100%;
+      justify-content: space-between;
+    }
+    .song-ranking-page .ranking-window {
+      font-size: var(--md-sys-typescale-label-medium-size);
     }
     .song-ranking-page .ranking-jump {
       flex: 1 1 100%;
@@ -576,5 +608,22 @@
 @layer pages {
   .song-ranking-page .song-ranking__row--bare {
     grid-template-columns: max(32px, calc(var(--rank-digits, 2) * 10px)) 36px minmax(0, 1fr) minmax(88px, auto);
+  }
+}
+
+@layer pages {
+  @container (max-width: 1000px) {
+    .song-ranking-page .ranking-top {
+      display: none;
+    }
+  }
+}
+
+@layer pages {
+  .song-ranking-page .ranking-summary-heading .ranking-timestamp {
+    min-inline-size: 0;
+    max-inline-size: 104px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
