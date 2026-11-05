@@ -781,7 +781,6 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
   const ids = (s.scope === "theoretical" ? Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number) : [...owned.keys()])
     .filter((id) => matchesCardFilters(host, kind, id, filters))
     .sort((a, b) => b - a);
-  const chosen = new Set(s.required[kind]);
   return selectionPane({
     id: "tb-required-picker",
     title: host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
@@ -804,8 +803,9 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     selectedValues: new Set(s.required[kind].map(String)),
     select: (value) => {
       const id = Number(value);
-      const list = chosen.has(id) ? s.required[kind].filter((item) => item !== id) : [...s.required[kind], id];
-      host.updateSettings({ required: { ...s.required, [kind]: list } });
+      const required = host.searchSettings.required;
+      const list = required[kind].includes(id) ? required[kind].filter((item) => item !== id) : [...required[kind], id];
+      host.updateSettings({ required: { ...required, [kind]: list } });
     },
     countLabel: host.t("cardCount", "{count} cards", { count: ids.length }),
     emptyLabel: host.t("noMatches", "No cards match"),

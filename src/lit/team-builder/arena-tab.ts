@@ -55,14 +55,14 @@ export class ArenaController {
   private scheduleKey = "";
   private physicsKey = "";
   constructor(private readonly host: TeamBuilder) {}
-  restore() {
+  restore(required: BuildSettings["required"] = { members: [], snaps: [] }) {
     const saved = objectRow(this.host.view?.prefs.arena);
     const initial = defaults();
     this.draft = {
       ...initial,
       ...saved,
       customized: saved.customized === true || saved.automatic === false,
-      build: restoreBuildSettings({ ...objectRow(saved.build), goal: "gekiso" }),
+      build: { ...restoreBuildSettings({ ...objectRow(saved.build), goal: "gekiso" }), required },
       rule: { ...initial.rule, ...objectRow(saved.rule) },
     } as ArenaDraft;
     const requested = this.host.requestedArenaLeague;
@@ -131,7 +131,8 @@ export class ArenaController {
     if (patch.automatic === false && this.draft.automatic && !this.draft.customized && !patch.rule)
       patch.rule = structuredClone(this.rule);
     this.draft = { ...this.draft, ...patch };
-    this.host.write([{ key: "pref.arena", value: this.draft as unknown as BoxValue }]);
+    const { required: _required, ...build } = this.draft.build;
+    this.host.write([{ key: "pref.arena", value: { ...this.draft, build } as unknown as BoxValue }]);
     this.sync();
     this.host.requestUpdate();
   }

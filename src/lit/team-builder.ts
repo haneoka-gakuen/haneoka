@@ -700,22 +700,24 @@ export class TeamBuilder extends LitElement {
     if (!controller.signal.aborted && this.catalog === catalog) this.requestUpdate();
   }
   private adopt(snapshot: BoxSnapshot) {
-    const ownerChanged = this.snapshot?.owner !== snapshot.owner;
+    const ownerChanged = !this.snapshot || this.snapshot.owner !== snapshot.owner;
     if (ownerChanged) this.resetTasks();
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
     if (versionChanged || ownerChanged) {
+      const required = this.settings.required;
       this.view = readBox(snapshot.entries);
       const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
       this.settings = restoreBuildSettings(
         stored && typeof stored === "object" ? (stored as Partial<BuildSettings>) : {},
       );
+      if (!ownerChanged) this.settings.required = required;
       if (this.settings.goal === "event" || this.settings.goal === "plan") {
         this.settings = { ...this.settings, rewardMode: this.settings.goal, goal: "score" };
         if (ownerChanged && this.tab === "build") this.tab = "pt";
       }
       this.songComparison.restore();
-      this.arena.restore();
+      this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
       this.engine?.prefetch(this.searchSettings.songs);
     }
     this.requestUpdate();
