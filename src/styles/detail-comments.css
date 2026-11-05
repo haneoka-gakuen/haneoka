@@ -8,6 +8,7 @@
     margin-top: 20px;
   }
   .detail-layout > .detail-layout__comments {
+    grid-column: 1 / -1;
     margin-top: 0;
   }
   .detail-layout__left {
@@ -127,9 +128,6 @@
       max-block-size: none;
       overflow: visible;
       padding-inline-end: 0;
-    }
-    .detail-layout__comments {
-      grid-column: 1 / -1;
     }
   }
   @media (max-width: 599px) {

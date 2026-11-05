@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区谱面目录／详情、语言与账户可见状态。
-// Output: 默认社区推荐排序、三种集合视图、歌曲详情摘要／推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
+// Output: 默认社区推荐排序、三种集合视图、歌曲双栏详情／响应式评论、推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
 import "@material/web/select/outlined-select.js";
@@ -25,6 +25,7 @@ import { difficultyBadge } from "./ui/difficulty-picker";
 import { facet } from "./ui/facet";
 import { renderPane, paneSection } from "./ui/pane";
 import { detailLayout } from "./ui/detail-layout";
+import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
@@ -67,6 +68,7 @@ export class CommunityCharts extends LitElement {
     versions: { state: true },
     versionsExpanded: { state: true },
     chartMode: { state: true },
+    commentsCompact: { state: true },
   };
   declare locale: string;
   declare server: string;
@@ -86,11 +88,13 @@ export class CommunityCharts extends LitElement {
   declare private versions: ChartVersion[];
   private controller?: AbortController;
   private unlocale?: () => void;
+  private unmedia?: () => void;
   private images = new LazyImages();
   private chartId = "";
   private chartPage = false;
   private playerSource = "";
   declare private chartMode: "simple" | "watch";
+  declare private commentsCompact: boolean;
   constructor() {
     super();
     this.locale = "en";
@@ -109,6 +113,7 @@ export class CommunityCharts extends LitElement {
     this.versionsExpanded = false;
     this.versions = [];
     this.chartMode = "simple";
+    this.commentsCompact = matches("(max-width: 959px)");
   }
   createRenderRoot() {
     return this;
@@ -122,6 +127,10 @@ export class CommunityCharts extends LitElement {
   }
   override connectedCallback() {
     super.connectedCallback();
+    this.commentsCompact = matches("(max-width: 959px)");
+    this.unmedia = watchMedia("(max-width: 959px)", (value) => {
+      this.commentsCompact = value;
+    });
     this.server = readReleaseServer();
     const url = navigationDocumentUrl();
     const chartDocument = parseCommunityChartDocument(url.pathname);
@@ -156,6 +165,7 @@ export class CommunityCharts extends LitElement {
   override disconnectedCallback() {
     this.controller?.abort();
     this.unlocale?.();
+    this.unmedia?.();
     this.images.disconnect();
     clearBrowseBar();
     clearAppBarSearch("community-charts");
@@ -623,7 +633,7 @@ export class CommunityCharts extends LitElement {
             `,
             {
               hasMedia: !!row.coverUrl,
-              placement: "bottom",
+              placement: this.commentsCompact ? "bottom" : "media",
               comments: row.publishedRevision
                 ? html`
                     <entity-comments
