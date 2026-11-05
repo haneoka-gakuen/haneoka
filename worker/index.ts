@@ -3860,6 +3860,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     const media: HTMLRewriterElementContentHandlers = { element(element) {
       element.setAttribute("src", siteLink(element.getAttribute("src")!, origin));
     } };
+    let hostnameWritten = false;
     response = new HTMLRewriter()
       .on("a[href]", { element(element) {
         element.setAttribute("href", siteLink(element.getAttribute("href")!, origin));
@@ -3868,7 +3869,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       .on("audio[src]", media)
       .on("video[src]", media)
       .on("source[src]", media)
-      .on(".sonolus-hub__server", { element(element) { element.setInnerContent(url.hostname); } })
+      .on(".sonolus-hub__server", {
+        element() { hostnameWritten = false; },
+        text(text) { text.replace(hostnameWritten ? "" : url.hostname); hostnameWritten = true; },
+      })
       .transform(response);
   }
   return restricted ? privateResourceResponse(response) : response;
