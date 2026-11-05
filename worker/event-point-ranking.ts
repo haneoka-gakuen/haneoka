@@ -129,8 +129,14 @@ async function search(
   if (!lookup.partial && !matches.complete) throw new PendingWindows([]);
   let retryAfter: number | null = matches.complete ? null : 3;
   if (lookup.partial && (missing.length || maximum === null) && matches.complete) {
-    const demand = await env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region,eventId,missing.length ? missing : [searchedTo]);
-    retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+    const queued = Promise.resolve().then(() => env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region,eventId,missing.length ? missing : [searchedTo]));
+    if (matches.matches.length) {
+      ctx.waitUntil(queued.catch(() => undefined));
+      retryAfter = 30;
+    } else {
+      const demand = await queued;
+      retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+    }
   }
   return { region, eventId, query: lookup.value, searchedTo, ...matches,
     complete:matches.complete && !missing.length && maximum!==null, retryAfter };

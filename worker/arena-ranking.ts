@@ -294,8 +294,14 @@ async function search(
   if (!lookup.partial && !matches.complete) return pending();
   let retryAfter: number | null = matches.complete ? null : 3;
   if (lookup.partial && missing.length && matches.complete) {
-    const demand = await env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region,seasonId,bandId,missing);
-    retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+    const queued = Promise.resolve().then(() => env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region,seasonId,bandId,missing));
+    if (matches.matches.length) {
+      ctx.waitUntil(queued.catch(() => undefined));
+      retryAfter = 30;
+    } else {
+      const demand = await queued;
+      retryAfter = demand?.kind === "pending" ? demand.retryAfter : null;
+    }
   }
   return { region, seasonId, bandId, query: lookup.value, searchedTo, ...matches,
     complete:matches.complete && !missing.length, retryAfter };
