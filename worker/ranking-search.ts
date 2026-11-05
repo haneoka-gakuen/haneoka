@@ -126,11 +126,11 @@ export async function searchRankingWindows<T extends SearchWindow>(
         try {
           const { results: refreshed } = await db
             .prepare(
-              `SELECT start_rank AS startRank,observed_at_ms AS observedAtMs
+              `SELECT start_rank AS startRank,snapshot_id AS snapshotId,observed_at_ms AS observedAtMs
           FROM official_ranking_search_windows WHERE region=? AND board_key=?`,
             )
             .bind(region, board)
-            .all<{ startRank: number; observedAtMs: number }>();
+            .all<SearchWindow>();
           const current = new Map(refreshed.map((row) => [row.startRank, row.observedAtMs]));
           const remaining = pending.filter((row) => (current.get(row.startRank) ?? -1) < row.observedAtMs);
           for (const window of remaining.slice(0, 12)) {
