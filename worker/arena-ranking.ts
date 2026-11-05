@@ -12,7 +12,7 @@ import type {
   GameRecordsRegion,
   SongRankingCardDto,
 } from "../src/lib/game-records";
-import { searchRankingWindows } from "./ranking-search";
+import { searchRankingWindows, findRankingProfileWindow, normalizeRankingQuery } from "./ranking-search";
 import { officialProfileCard } from "./official-ranking-api";
 import { playerCard } from "./official-player-api";
 import {
@@ -220,6 +220,24 @@ async function search(
   bandId: string,
   lookup: RankingSearch,
 ): Promise<ArenaSearchDto | ArenaPlayerSearchDto> {
+  const id = normalizeRankingQuery(lookup.value);
+  const exactId = lookup.kind === "id" || /^[1-9][0-9]{10,18}$/u.test(id);
+  if (exactId && !lookup.after) {
+    const [match, board] = await Promise.all([
+      findRankingProfileWindow(env.DB!,region,{seasonId,bandId},id),
+      readOfficialArenaMetadata(env,region,seasonId,bandId),
+    ]);
+    if (match) {
+      const source = await readOfficialArenaSearchMatch(env,match);
+      if (source.region!==region || source.seasonId!==seasonId || source.bandId!==bandId || source.snapshotId!==match.snapshotId)
+        throw new Error("official_observation_identity_mismatch");
+      const row = arenaRankingRow(source.players?.[match.position-match.startRank],match.position,region);
+      if (row.profileId!==id) throw new Error("official_profile_index_mismatch");
+      const base = {region,seasonId,bandId,searchedTo:board?.maxRank ?? source.maxRank ?? row.rank,observedAtMs:source.observedAtMs};
+      return lookup.kind === "id" ? {...base,profileId:id,row}
+        : {...base,query:lookup.value,matches:[{rank:row.rank,profileId:row.profileId,name:row.name,point:row.point}],nextCursor:null};
+    }
+  }
   const windows = await readOfficialArenaSearchWindows(env, region, seasonId, bandId, SEARCH_DEPTH);
   const latest = windows.reduce<(typeof windows)[number] | null>(
     (result, row) => (!result || row.observedAtMs >= result.observedAtMs ? row : result),
@@ -235,6 +253,11 @@ async function search(
     if (!metadata || metadata.playerCount < length || metadata.endRank < start + length - 1) missing.push(start);
   }
   if (missing.length) return pending(missing);
+  if (exactId) {
+    const base = {region,seasonId,bandId,searchedTo,observedAtMs:latest.observedAtMs};
+    return lookup.kind === "id" ? {...base,profileId:id,row:null}
+      : {...base,query:lookup.value,matches:[],nextCursor:null};
+  }
   const batches = new Map<string, Record<string, string>>();
   const load = async (metadata: (typeof windows)[number]) => {
     const source = await readOfficialArenaSearchMatch(env, metadata, batches);
@@ -260,23 +283,7 @@ async function search(
   );
   if (!matches) return pending();
   const observedAtMs = windows.reduce((time, row) => Math.min(time, row.observedAtMs), latest.observedAtMs);
-  if (lookup.kind === "query")
-    return { region, seasonId, bandId, query: lookup.value, searchedTo, observedAtMs, ...matches };
-  const match = matches.matches.find((row) => row.profileId === lookup.value);
-  const metadata = match && byStart.get(Math.floor((match.rank - 1) / 100) * 100 + 1);
-  const players = metadata ? await load(metadata) : [];
-  const raw = players.find(
-    (value, index) => arenaRankingRow(value, metadata!.startRank + index, region).profileId === lookup.value,
-  );
-  return {
-    region,
-    seasonId,
-    bandId,
-    profileId: lookup.value,
-    searchedTo,
-    observedAtMs,
-    row: raw ? arenaRankingRow(raw, match!.rank, region) : null,
-  };
+  return { region, seasonId, bandId, query: lookup.value, searchedTo, observedAtMs, ...matches };
 }
 
 function json(request: Request, body: unknown, status = 200, retryAfter: number | null = null): Response {
