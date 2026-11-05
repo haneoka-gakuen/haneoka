@@ -3857,14 +3857,17 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const url = new URL(request.url);
   if (isSiteHostname(url.hostname) && url.hostname !== CANONICAL_HOST && response.headers.get("Content-Type")?.includes("text/html")) {
     const origin = siteOrigin(url);
+    const media: HTMLRewriterElementContentHandlers = { element(element) {
+      element.setAttribute("src", siteLink(element.getAttribute("src")!, origin));
+    } };
     response = new HTMLRewriter()
       .on("a[href]", { element(element) {
         element.setAttribute("href", siteLink(element.getAttribute("href")!, origin));
       } })
-      .on("img[src], audio[src], video[src], source[src]", { element(element) {
-        const source = element.getAttribute("src")!;
-        element.setAttribute("src", siteLink(source, origin));
-      } })
+      .on("img[src]", media)
+      .on("audio[src]", media)
+      .on("video[src]", media)
+      .on("source[src]", media)
       .on(".sonolus-hub__server", { element(element) { element.setInnerContent(url.hostname); } })
       .transform(response);
   }
