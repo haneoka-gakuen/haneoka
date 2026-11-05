@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated release/Source assets, compiled engine facets and native packing contracts.
-// Output: Original Sonolus resources, virtual lane-clip UV references after atlas qualification, and engine-reference coverage checks.
+// Output: Original Sonolus resources, virtual lane-clip UV references after atlas qualification and thumbnails, and engine-reference coverage checks.
 // Pos: [Map](../L2-2.md); original Sonolus resource generator.
 // Effects/Dependencies: Reads release caches and engine artifacts; writes resource packs, engine draw tables and cache receipts.
 import {
@@ -435,6 +435,7 @@ try {
   console.log(`Simple row slices: ${rows.mergedTriples} triples merged, unchanged atlas dimensions`);
   const loopFrames = buildNativeLoopFrameAssets(out);
   console.log(`Slide loop frames: ${loopFrames.length} single-cycle effects`);
+  buildPresentationThumbnails(out);
 
   for (const pack of nativeSkinPacks) {
     const file = resolve(pack.outputDirectory, "skin.data");
@@ -568,7 +569,6 @@ try {
       2,
     ) + "\n",
   );
-  buildPresentationThumbnails(out);
   console.log(
     `${particleBuild.reused ? "reused verified" : "rebuilt qualified"} native particles and phase16 ROM: ${particleEffectCount} profile effects`,
   );
