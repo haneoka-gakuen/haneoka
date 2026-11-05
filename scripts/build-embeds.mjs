@@ -374,6 +374,7 @@ files.set(
         module: cubismFile("Framework/vega-cubism-web-runtime.mjs"),
         core: {
           cubismCoreUrl: cubismFile("Core/live2dcubismcore.js"),
+          cubismWasmUrl: cubismFile("Core/live2dcubismcore.wasm"),
           cubism2CoreUrl: cubismFile("Core/live2d.min.js"),
           motionSyncCoreUrl: cubismFile("Core/CRI/live2dcubismmotionsynccore.min.js"),
         },

@@ -9,7 +9,7 @@ inputs:
   key:
     description: Object key of the validated runtime archive.
     required: false
-    default: private/cubism-runtime/85d0af2c81c17292d63acfe4a49c1fca6f2eee386bc2ddd2228e17eb4bd78dd3.tar.gz
+    default: private/cubism-runtime/87faec193f3b4f4bff881e4c814016cb077f010b00178381b60687fe8296b3ee.tar.gz
 
 runs:
   using: composite
@@ -47,6 +47,12 @@ runs:
         extract_runtime_file "Framework/vega-cubism-web-viewer.mjs"
         extract_runtime_file "Framework/LICENSE.md"
         extract_runtime_file "Core/live2dcubismcore.js"
+        extract_runtime_file "Core/live2dcubismcore.wasm"
+        extract_runtime_file "Core/licenses/Live2D-Core-LICENSE.md"
+        extract_runtime_file "Core/licenses/wasi-libc-LICENSE.txt"
+        extract_runtime_file "Core/licenses/wasi-libc-LICENSE-MIT.txt"
+        extract_runtime_file "Core/licenses/wasi-libc-LICENSE-APACHE.txt"
+        extract_runtime_file "Core/licenses/wasi-libc-LICENSE-APACHE-LLVM.txt"
         extract_runtime_file "Core/live2d.min.js"
         extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.min.js"
         extract_runtime_file "Core/CRI/live2dcubismmotionsynccore.d.ts"

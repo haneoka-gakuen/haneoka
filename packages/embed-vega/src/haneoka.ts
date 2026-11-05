@@ -99,6 +99,7 @@ export interface CubismEmbedOptions {
   readonly moduleUrl: string;
   readonly runtime: {
     readonly cubismCoreUrl: string;
+    readonly cubismWasmUrl?: string;
     readonly cubism2CoreUrl?: string;
     readonly motionSyncCoreUrl?: string;
   };

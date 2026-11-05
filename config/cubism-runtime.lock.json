@@ -1,30 +1,30 @@
 {
   "schemaVersion": 2,
-  "runtimeId": "haneoka-cubism-web-runtime-v1-f4cb7fac825b",
+  "runtimeId": "haneoka-cubism-web-runtime-v2-88a8f08e2216",
   "managedRoots": {
     "target": [
       "public/Core",
-      "public/cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b",
+      "public/cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216",
       "public/licenses/cubism-framework"
     ],
     "output": [
       "Core",
-      "cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b",
+      "cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216",
       "licenses/cubism-framework"
     ]
   },
   "files": [
     {
       "source": "Framework/vega-cubism-web-runtime.mjs",
-      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b/vega-cubism-web-runtime.mjs",
-      "output": "cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b/vega-cubism-web-runtime.mjs",
-      "bytes": 533423,
-      "sha256": "f4cb7fac825b1a6b277781aa8301386a731c9d892bb39d309a668289bcb8f87f"
+      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216/vega-cubism-web-runtime.mjs",
+      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216/vega-cubism-web-runtime.mjs",
+      "bytes": 553937,
+      "sha256": "88a8f08e2216e0d2d35102c98342ac975957d9a8ed96d1057e7ae5c38644f4a6"
     },
     {
       "source": "Framework/vega-cubism-web-viewer.mjs",
-      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b/vega-cubism-web-viewer.mjs",
-      "output": "cubism-runtime/haneoka-cubism-web-runtime-v1-f4cb7fac825b/vega-cubism-web-viewer.mjs",
+      "target": "public/cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216/vega-cubism-web-viewer.mjs",
+      "output": "cubism-runtime/haneoka-cubism-web-runtime-v2-88a8f08e2216/vega-cubism-web-viewer.mjs",
       "bytes": 25651,
       "sha256": "16490cdf1ac51e0dfdef31e13b3d33f71af0f1b47048cdf69acd45432ea50494"
     },
@@ -76,6 +76,48 @@
       "output": "Core/CRI/RedistributableFiles.txt",
       "bytes": 271,
       "sha256": "408ded6e78c1cb7898adb5f4756b4d497e0cc660b3b64504160d9d0d39c03b3a"
+    },
+    {
+      "source": "Core/live2dcubismcore.wasm",
+      "target": "public/Core/live2dcubismcore.wasm",
+      "output": "Core/live2dcubismcore.wasm",
+      "bytes": 115280,
+      "sha256": "e4f6273770ff3b56e2e4830931239ad78e6ece43221cdbb33cfc463e701ad9ab"
+    },
+    {
+      "source": "Core/licenses/wasi-libc-LICENSE.txt",
+      "target": "public/Core/licenses/wasi-libc-LICENSE.txt",
+      "output": "Core/licenses/wasi-libc-LICENSE.txt",
+      "bytes": 910,
+      "sha256": "2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a"
+    },
+    {
+      "source": "Core/licenses/wasi-libc-LICENSE-MIT.txt",
+      "target": "public/Core/licenses/wasi-libc-LICENSE-MIT.txt",
+      "output": "Core/licenses/wasi-libc-LICENSE-MIT.txt",
+      "bytes": 1023,
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "source": "Core/licenses/wasi-libc-LICENSE-APACHE.txt",
+      "target": "public/Core/licenses/wasi-libc-LICENSE-APACHE.txt",
+      "output": "Core/licenses/wasi-libc-LICENSE-APACHE.txt",
+      "bytes": 10847,
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "source": "Core/licenses/wasi-libc-LICENSE-APACHE-LLVM.txt",
+      "target": "public/Core/licenses/wasi-libc-LICENSE-APACHE-LLVM.txt",
+      "output": "Core/licenses/wasi-libc-LICENSE-APACHE-LLVM.txt",
+      "bytes": 12243,
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    },
+    {
+      "source": "Core/licenses/Live2D-Core-LICENSE.md",
+      "target": "public/Core/licenses/Live2D-Core-LICENSE.md",
+      "output": "Core/licenses/Live2D-Core-LICENSE.md",
+      "bytes": 520,
+      "sha256": "b81e37048010ef1d336106151201a0323c3309cae44aecdedf57831fe88fa991"
     }
   ]
 }

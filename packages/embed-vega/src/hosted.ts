@@ -5,7 +5,10 @@ import type { CubismEmbedOptions } from "./haneoka.js";
 
 /** The default chat template keeps its images beside `ChatLINE`, while its icons stay inside it. */
 const chatTemplateAsset = (path: string) =>
-  path.replace(/(\/Adv\/Chat\/Data\/_template\/data)\/ChatLINE\/(back|chatwindow_image|lock|stamp)\.png$/u, "$1/$2.png");
+  path.replace(
+    /(\/Adv\/Chat\/Data\/_template\/data)\/ChatLINE\/(back|chatwindow_image|lock|stamp)\.png$/u,
+    "$1/$2.png",
+  );
 import type { MountStoryOptions, StoryEmbedEvent, StoryEmbedHandle, StoryEmbedSnapshot } from "./types.js";
 
 export type HaneokaStoryStage = "manifest" | "modules" | "runtime" | "data" | "resources" | "ready";
@@ -55,6 +58,7 @@ interface RuntimeDescriptor {
   module: { url: string; bytes: number; sha256: string };
   core: {
     cubismCoreUrl: { url: string; bytes: number; sha256: string };
+    cubismWasmUrl?: { url: string; bytes: number; sha256: string };
     cubism2CoreUrl: { url: string; bytes: number; sha256: string };
     motionSyncCoreUrl: { url: string; bytes: number; sha256: string };
   };
@@ -100,7 +104,6 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
   let release: string | undefined;
   let phase: StoryEmbedSnapshot["phase"] = "loading";
   let child: StoryEmbedHandle | undefined;
-  let boot: Promise<void>;
   let disposal: Promise<void> | undefined;
   const emit = (event: HaneokaStoryEvent) => {
     for (const fn of [...listeners]) {
@@ -197,7 +200,7 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
     },
     { once: true },
   );
-  boot = Promise.resolve().then(async () => {
+  const boot = Promise.resolve().then(async () => {
     try {
       controller.signal.throwIfAborted();
       change("manifest");
@@ -263,6 +266,7 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
           moduleUrl: runtimeUrl(descriptor.module),
           runtime: {
             cubismCoreUrl: runtimeUrl(descriptor.core.cubismCoreUrl),
+            ...(descriptor.core.cubismWasmUrl ? { cubismWasmUrl: runtimeUrl(descriptor.core.cubismWasmUrl) } : {}),
             cubism2CoreUrl: runtimeUrl(descriptor.core.cubism2CoreUrl),
             motionSyncCoreUrl: runtimeUrl(descriptor.core.motionSyncCoreUrl),
           },
