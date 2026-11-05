@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated release/Source assets, compiled engine facets and native packing contracts.
-// Output: Original Sonolus skin, particle and audio resources with engine-reference coverage checks.
+// Output: Original Sonolus resources, virtual lane-clip UV references after atlas qualification, and engine-reference coverage checks.
 // Pos: [Map](../L2-2.md); original Sonolus resource generator.
 // Effects/Dependencies: Reads release caches and engine artifacts; writes resource packs, engine draw tables and cache receipts.
 import {
@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   buildNativeNoteSkinPacks,
+  appendNativeLaneClipSkinSprites,
   isOptionalOriginalSkinSprite,
   decodeRgba8Png,
   encodeRgba8Png,
@@ -434,6 +435,17 @@ try {
   console.log(`Simple row slices: ${rows.mergedTriples} triples merged, unchanged atlas dimensions`);
   const loopFrames = buildNativeLoopFrameAssets(out);
   console.log(`Slide loop frames: ${loopFrames.length} single-cycle effects`);
+
+  for (const pack of nativeSkinPacks) {
+    const file = resolve(pack.outputDirectory, "skin.data");
+    const data = JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as {
+      sprites: Parameters<typeof appendNativeLaneClipSkinSprites>[0];
+    };
+    const originalCount = data.sprites.length;
+    data.sprites = appendNativeLaneClipSkinSprites(data.sprites);
+    pack.sprites += data.sprites.length - originalCount;
+    writeFileSync(file, gzipSync(JSON.stringify(data)));
+  }
 
   const referencedParticleNames = new Set<string>();
 
