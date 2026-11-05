@@ -11,7 +11,7 @@ import { loadOurNotesCreationCanvasSkin } from "../chart-creation/native-canvas-
 import { createPinnedPublicFetcher, pinnedPublicUrl } from "../chart-creation/public-songs";
 import { readBytes } from "../../../packages/embed-core/src/io";
 import { resolveLocalizedText } from "../localized-text";
-import { drawDetailedChartOverview } from "../../lit/runtime/chart-overview-renderer";
+import { drawDetailedChartOverview, loadChartCanvasFonts } from "../../lit/runtime/chart-overview-renderer";
 import { completeChartOverviewMeta, composeChartOverviewImage, chartImageFileName } from "../../lit/runtime/chart-image-export";
 import { createChartOverviewMeta } from "./chart-meta";
 
@@ -97,7 +97,8 @@ export async function renderChartImage(options: NativeChartImageOptions) {
       jacket: typeof song.jacketUrl === "string" ? pinnedPublicUrl(song.jacketUrl, identity, { apiBase: apiBase.href }) : undefined,
     });
     const canvas = document.createElement("canvas");
-    drawDetailedChartOverview(canvas, chart, skin.skin, height);
+    const fontFamily = await loadChartCanvasFonts(locale);
+    drawDetailedChartOverview(canvas, chart, skin.skin, height, undefined, undefined, fontFamily);
     const completed = completeChartOverviewMeta(meta, chart, label);
     const blob = await composeChartOverviewImage(canvas, completed);
     if (!blob) throw new Error("chart_image_failed");

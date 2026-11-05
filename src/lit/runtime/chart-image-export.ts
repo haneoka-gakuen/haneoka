@@ -4,12 +4,7 @@
 // Pos: [Map](L2-2.md)；网页和程序化导出共用的图片排版。
 // Effects/Dependencies: 解码图片、加载字体、绘制 Canvas；下载创建并回收 Blob URL。
 import type { ChartDocument } from "@haneoka/cassiopeia";
-import { countNoteKinds } from "./chart-overview-renderer";
-const fontStackFor = (locale: string): string => {
-  const preferred = ({ "zh-CN": "SC", "zh-TW": "TC", ko: "KR", ja: "JP", en: "JP" } as Record<string, string>)[locale] || "JP";
-  const families = ["Roboto Variable", "Noto Sans Variable", `Noto Sans ${preferred} Variable`, "Noto Sans JP Variable", "Noto Sans TC Variable", "Noto Sans SC Variable", "Noto Sans KR Variable"];
-  return [...new Set(families)].map(family => `"${family}"`).join(", ") + ", sans-serif";
-};
+import { chartCanvasFontFamily, countNoteKinds } from "./chart-overview-renderer";
 const DIFFICULTY_COLORS: Record<string, string> = {
   easy: "#48cadc",
   normal: "#56ce79",
@@ -175,13 +170,7 @@ const ensureFonts = async (meta: ChartOverviewExportMeta): Promise<void> => {
     .join(" ")} 0123456789 Lv.${meta.displayLevel}`;
   const weights = ["400 32px", "500 20px", "400 18px", "500 12px"];
   await Promise.allSettled(
-    weights.flatMap((weight) => [
-      document.fonts.load(`${weight} "Roboto Variable"`, sample),
-      document.fonts.load(`${weight} "Noto Sans JP Variable"`, sample),
-      document.fonts.load(`${weight} "Noto Sans SC Variable"`, sample),
-      document.fonts.load(`${weight} "Noto Sans TC Variable"`, sample),
-      document.fonts.load(`${weight} "Noto Sans KR Variable"`, sample),
-    ]),
+    weights.map(weight => document.fonts.load(`${weight} ${chartCanvasFontFamily(meta.locale)}`, sample)),
   );
 };
 
@@ -237,7 +226,7 @@ export async function composeChartOverviewImage(
   canvas: HTMLCanvasElement,
   meta: ChartOverviewExportMeta,
 ): Promise<Blob | undefined> {
-  const fontStack = fontStackFor(meta.locale);
+  const fontStack = chartCanvasFontFamily(meta.locale);
   const cssWidth = Number.parseFloat(canvas.style.width || "") || canvas.width;
   const cssHeight = Number.parseFloat(canvas.style.height || "") || canvas.height;
   if (!canvas.width || !canvas.height || !cssWidth || !cssHeight) return undefined;

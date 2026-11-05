@@ -132,7 +132,7 @@ export class EditorAudioFeedback {
       try {
         const signal = lease.controller.signal, fetcher = createPinnedPublicFetcher(identity);
         const source = ourNotesNoteSoundsForRelease(identity.server, group);
-        const keys = ["perfect", "flick", "flickDirection", "trace", "just", "slide"] as const;
+        const keys = ["perfect", "flick", "flickDirection", "trace", "type10", "just", "slide"] as const;
         const resources = new Map<string, Promise<string>>();
         const resource = (key: string) => {
           let pending = resources.get(key);

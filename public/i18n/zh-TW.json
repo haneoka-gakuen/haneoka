@@ -1882,6 +1882,7 @@
       "withDetails": "{0}（{1}）"
     },
     "chartPlayer": {
+      "overviewPosition": "譜面位置",
       "play": "播放",
       "pause": "暫停",
       "loop": "循環",

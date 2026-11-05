@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
-// Output: 分块 2D 概览、按需装载的 3D 观看、独立进度控件与完整 PNG／分页 PNG ZIP 下载。
+// Output: 使用网页字体并支持指针／键盘位置查询的分块 2D 概览、按需 3D 观看和完整 PNG／分页 PNG ZIP。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
 // Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
@@ -76,7 +76,7 @@ import {
   type OurNotesRenderer,
 } from "@haneoka/cassiopeia-renderer-three";
 import { WEB_HOST, createWebHostPlugin, type MediaClock, type NoteSoundPlayer } from "@haneoka/cassiopeia-host-web";
-import { chartOverviewLayout, drawDetailedChartOverview, loadDetailedOverviewSkin } from "./chart-overview-renderer";
+import { chartCanvasFontFamily, chartOverviewLayout, chartOverviewPoint, drawDetailedChartOverview, loadChartCanvasFonts, loadDetailedOverviewSkin } from "./chart-overview-renderer";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
 import {
@@ -94,6 +94,7 @@ import "../ui/render-quality-settings";
 const uiLabelPaths: Readonly<Record<string, string>> = {
   bpm: "catalog.analysis.fields.bpm",
   close: "common.actions.close",
+  combo: "catalog.items.combo",
   collapse: "common.actions.collapse",
   effects: "catalog.fields.effects",
   error: "common.states.error",
@@ -173,7 +174,9 @@ type ChartUiKey =
   | "loading"
   | "runtimeError"
   | "collapse"
-  | "expand";
+  | "expand"
+  | "combo"
+  | "overviewPosition";
 
 type NoteSoundSwap = {
   controller: AbortController;
@@ -318,9 +321,13 @@ export class ChartSimulator extends LitElement {
     skin: NonNullable<ChartSimulator["overviewSkin"]>;
     height: number;
     dpr: number;
+    fontFamily: string;
     first: number;
     last: number;
   };
+  private overviewPointer?: { clientX: number; clientY: number };
+  private overviewPointerFrame = 0;
+  private overviewCursor?: ReturnType<typeof chartOverviewPoint>;
   private assets?: OurNotesAssetManifest;
   private renderer?: OurNotesRenderer;
   private stageLoading?: Promise<void>;
@@ -462,6 +469,7 @@ export class ChartSimulator extends LitElement {
     void Promise.all([import("@material/web/slider/slider.js"), import("@material/web/progress/circular-progress.js")]);
     void this.load();
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
+    document.fonts.addEventListener("loadingdone", this.overviewFontsChanged);
   }
   disconnectedCallback() {
     this.stopRenderQuality?.();
@@ -470,6 +478,7 @@ export class ChartSimulator extends LitElement {
     this.viewportFullscreen.dispose();
     this.transportVisibility.dispose();
     document.removeEventListener("fullscreenchange", this.fullscreenChanged);
+    document.fonts.removeEventListener("loadingdone", this.overviewFontsChanged);
     super.disconnectedCallback();
   }
   updated(changed: Map<PropertyKey, unknown>) {
@@ -489,6 +498,7 @@ export class ChartSimulator extends LitElement {
     if (text !== this.transportTimeText) { this.transportTimeText = text; this.transportTimeSecond = Number.NaN; }
     if (slider !== this.transportTimeSlider) { this.transportTimeSlider = slider; this.transportTimeTick = Number.NaN; }
     this.syncTransportTime();
+    if (changed.has("locale")) void loadChartCanvasFonts(this.locale).then(this.overviewFontsChanged);
     if (changed.has("mode")) {
       if (this.mode === "simple") {
         cancelAnimationFrame(this.animationFrame);
@@ -496,6 +506,7 @@ export class ChartSimulator extends LitElement {
       } else if (this.overviewPhase === "ready" && this.phase !== "ready" && this.loadAbort) {
         void this.loadStage(this.loadAbort.signal);
       }
+      this.hideOverviewCursor();
       this.resize();
     } else if (this.mode === "simple" && changed.has("overviewPhase")) requestAnimationFrame(() => this.drawOverview());
   }
@@ -876,7 +887,7 @@ export class ChartSimulator extends LitElement {
             ? this.communityChart(JSON.parse(source) as CommunityChartPlayback)
             : this.runtime().require(OUR_NOTES_RULES).parse(source);
       this.assets = assets;
-      const skin = await loadDetailedOverviewSkin(assets);
+      const [skin] = await Promise.all([loadDetailedOverviewSkin(assets), loadChartCanvasFonts(this.locale)]);
       if (signal.aborted) {
         skin.dispose();
         return;
@@ -1077,7 +1088,7 @@ export class ChartSimulator extends LitElement {
     try {
       const replacement = this.runtime()
         .require(WEB_HOST)
-        .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, target)));
+        .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, target)), { mediaElement: this.clock?.audio });
       swap.player = replacement;
       if (this.playing) await replacement.unlock();
       else await replacement.load();
@@ -1177,7 +1188,7 @@ export class ChartSimulator extends LitElement {
     clock.audio.addEventListener("durationchange", updateDuration);
     this.noteSounds = this.runtime()
       .require(WEB_HOST)
-      .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, this.noteSeGroup)));
+      .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, this.noteSeGroup)), { mediaElement: clock.audio });
     void this.noteSounds.load().catch((error: unknown) => {
       if (!signal.aborted) console.warn("Unable to load chart note sounds", error);
     });
@@ -1833,10 +1844,10 @@ export class ChartSimulator extends LitElement {
     const panelsPerCanvas = 8, chunkWidth = layout.panelWidth * panelsPerCanvas;
     const first = Math.floor(host.scrollLeft / chunkWidth);
     const last = Math.min(Math.ceil(layout.panelCount / panelsPerCanvas), Math.ceil((host.scrollLeft + host.clientWidth) / chunkWidth));
-    const dpr = devicePixelRatio || 1, previous = this.overviewRender;
+    const dpr = devicePixelRatio || 1, previous = this.overviewRender, fontFamily = chartCanvasFontFamily(this.locale);
     if (previous?.chart === chart && previous.skin === skin && previous.height === layout.height
-      && previous.dpr === dpr && previous.first === first && previous.last === last) return;
-    const reusable = previous?.chart === chart && previous.skin === skin && previous.height === layout.height && previous.dpr === dpr;
+      && previous.dpr === dpr && previous.fontFamily === fontFamily && previous.first === first && previous.last === last) return;
+    const reusable = previous?.chart === chart && previous.skin === skin && previous.height === layout.height && previous.dpr === dpr && previous.fontFamily === fontFamily;
     const old = [...strip.querySelectorAll<HTMLCanvasElement>("canvas")];
     const chunks = new Map(old.map(canvas => [Number(canvas.dataset.chunk), canvas]));
     const canvases: HTMLCanvasElement[] = [];
@@ -1848,19 +1859,92 @@ export class ChartSimulator extends LitElement {
         canvas.style.left = `${chunk * chunkWidth}px`;
         drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, {
           first: chunk * panelsPerCanvas, count: panelsPerCanvas,
-        });
+        }, fontFamily);
       }
       canvases.push(canvas);
     }
     for (const canvas of old) if (!canvases.includes(canvas)) canvas.width = canvas.height = 0;
     strip.replaceChildren(...canvases);
-    this.overviewRender = { chart, skin, height: layout.height, dpr, first, last };
+    this.overviewRender = { chart, skin, height: layout.height, dpr, fontFamily, first, last };
+    this.refreshOverviewCursor();
   }
+  private overviewFontsChanged = () => {
+    this.overviewRender = undefined;
+    this.drawOverview();
+  };
+  private overviewScrolled = () => {
+    this.drawOverview();
+    this.refreshOverviewCursor();
+  };
+  private moveOverviewPointer = (event: PointerEvent) => {
+    this.overviewPointer = { clientX: event.clientX, clientY: event.clientY };
+    if (!this.overviewPointerFrame) this.overviewPointerFrame = requestAnimationFrame(() => {
+      this.overviewPointerFrame = 0;
+      this.refreshOverviewCursor();
+    });
+  };
+  private leaveOverviewPointer = (event: PointerEvent) => {
+    if (event.pointerType === "mouse") this.hideOverviewCursor();
+  };
+  private hideOverviewCursor() {
+    cancelAnimationFrame(this.overviewPointerFrame);
+    this.overviewPointerFrame = 0;
+    this.overviewPointer = undefined;
+    this.overviewCursor = undefined;
+    const cursor = this.querySelector<HTMLElement>("[data-overview-cursor]");
+    if (cursor) cursor.hidden = true;
+  }
+  private refreshOverviewCursor() {
+    const host = this.querySelector<HTMLElement>(".chart-simple-overview"), chart = this.chart;
+    if (!host || !chart || this.mode !== "simple") return;
+    const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
+    if (this.overviewPointer) {
+      const rect = host.getBoundingClientRect();
+      this.overviewCursor = chartOverviewPoint(chart, layout.height,
+        this.overviewPointer.clientX - rect.left + host.scrollLeft, this.overviewPointer.clientY - rect.top);
+    }
+    const point = this.overviewCursor, cursor = host.querySelector<HTMLElement>("[data-overview-cursor]");
+    if (!point || !cursor) return;
+    const panel = Math.min(layout.panelCount - 1, Math.floor(point.timeMs / layout.panelDuration));
+    const y = layout.height - (point.timeMs - panel * layout.panelDuration) / layout.panelDuration * layout.height;
+    const timeMs = Math.floor(point.timeMs), minutes = Math.floor(timeMs / 60_000);
+    const text = `${minutes ? `${minutes}:` : ""}${String(Math.floor(timeMs / 1000) % 60).padStart(2, "0")}.${String(timeMs % 1000).padStart(3, "0")}`;
+    cursor.hidden = false;
+    cursor.style.transform = `translate(${panel * layout.panelWidth}px, ${y}px)`;
+    cursor.style.width = `${layout.panelWidth}px`;
+    cursor.toggleAttribute("data-first-panel", panel === 0);
+    cursor.style.setProperty("--chart-cursor-stage-width", `${layout.stageWidth}px`);
+    cursor.style.setProperty("--chart-cursor-label-offset", `${Math.max(10, Math.min(layout.height - 10, y)) - y}px`);
+    cursor.querySelector("[data-overview-time]")!.textContent = text;
+    cursor.querySelector("[data-overview-combo]")!.textContent = String(point.combo);
+    host.setAttribute("aria-valuenow", String(timeMs));
+    host.setAttribute("aria-valuetext", `${text} · ${this.ui("combo")} ${point.combo}`);
+  }
+  private overviewKeydown = (event: KeyboardEvent) => {
+    const host = event.currentTarget as HTMLElement, chart = this.chart;
+    if (!chart) return;
+    const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
+    const current = this.overviewCursor?.timeMs ?? 0;
+    const next = event.key === "Home" ? 0 : event.key === "End" ? chart.durationMs
+      : event.key === "ArrowRight" ? current + layout.panelDuration : event.key === "ArrowLeft" ? current - layout.panelDuration
+      : event.key === "ArrowUp" ? current + (event.shiftKey ? 1000 : 100) : event.key === "ArrowDown" ? current - (event.shiftKey ? 1000 : 100) : undefined;
+    if (event.key === "Escape") { this.hideOverviewCursor(); event.preventDefault(); return; }
+    if (next === undefined) return;
+    event.preventDefault(); this.overviewPointer = undefined;
+    const timeMs = Math.max(0, Math.min(chart.durationMs, next));
+    const panel = Math.min(layout.panelCount - 1, Math.floor(timeMs / layout.panelDuration));
+    this.overviewCursor = chartOverviewPoint(chart, layout.height, panel * layout.panelWidth,
+      layout.height - (timeMs - panel * layout.panelDuration) / layout.panelDuration * layout.height);
+    const left = this.overviewCursor.panel * layout.panelWidth;
+    if (left < host.scrollLeft || left + layout.panelWidth > host.scrollLeft + host.clientWidth) host.scrollTo({ left });
+    this.refreshOverviewCursor();
+  };
   /** Downloads every overview panel, paging oversized images into a PNG archive. */
   async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
     const host = this.querySelector<HTMLElement>(".chart-simple-overview");
     const chart = this.chart, skin = this.overviewSkin;
     if (!host || this.overviewPhase !== "ready" || !chart || !skin) return;
+    await loadChartCanvasFonts(this.locale);
     const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
     const payload = completeChartOverviewMeta({ ...meta, locale: this.locale }, chart, key => this.ui(key));
     const fileName = chartImageFileName(payload), canvas = document.createElement("canvas");
@@ -2305,6 +2389,7 @@ export class ChartSimulator extends LitElement {
     this.overviewSkin?.dispose();
     this.overviewSkin = undefined;
     this.overviewRender = undefined;
+    this.hideOverviewCursor();
     const strip = this.querySelector(".chart-simple-overview__strip");
     for (const canvas of strip?.querySelectorAll("canvas") ?? []) canvas.width = canvas.height = 0;
     strip?.replaceChildren();
@@ -2375,7 +2460,7 @@ export class ChartSimulator extends LitElement {
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
   }
   private ui(key: ChartUiKey) {
-    if (key === "collapse" || key === "expand") return uiText(this.locale, uiLabelPaths[key] ?? key);
+    if (key === "collapse" || key === "expand" || key === "combo") return uiText(this.locale, uiLabelPaths[key] ?? key);
     return uiText(this.locale, `media.chartPlayer.${key}`);
   }
   private renderSettingSlider(
@@ -2664,8 +2749,15 @@ export class ChartSimulator extends LitElement {
                 `
               : nothing
         }
-        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"} @scroll=${this.drawOverview}>
+        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"}
+          role="slider" tabindex="0" aria-label=${`${this.label} · ${this.ui("overviewPosition")}`}
+          aria-valuemin="0" aria-valuemax=${this.chart?.durationMs ?? 0} aria-valuenow=${Math.floor(this.overviewCursor?.timeMs ?? 0)}
+          @scroll=${this.overviewScrolled} @pointermove=${this.moveOverviewPointer} @pointerdown=${this.moveOverviewPointer}
+          @pointerleave=${this.leaveOverviewPointer} @keydown=${this.overviewKeydown} @blur=${this.hideOverviewCursor}>
           <div class="chart-simple-overview__strip" role="img" aria-label=${this.label}></div>
+          <div class="chart-simple-overview__cursor" data-overview-cursor hidden aria-hidden="true">
+            <span data-overview-time></span><i></i><span data-overview-combo></span>
+          </div>
         </div>
         <div
           class="chart-runtime__stage"

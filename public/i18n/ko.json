@@ -1882,6 +1882,7 @@
       "withDetails": "{0} ({1})"
     },
     "chartPlayer": {
+      "overviewPosition": "채보 위치",
       "play": "재생",
       "pause": "일시 정지",
       "loop": "반복",

@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: Immutable parsed chart, native canvas skin, viewport height and optional highlighted time range.
-// Output: Clipped flat-chart panels, a selected panel range or a numbered timing excerpt.
+// Input: Immutable chart, native canvas skin, website fonts, viewport and optional highlighted time range.
+// Output: Lane-clipped flat-chart panels, pointer timing/count data or a numbered timing excerpt.
 // Pos: [Map](L2-2.md); shared flat rendering for the player and team-builder timing guide.
 // Effects/Dependencies: Caches geometry by chart identity and draws the supplied canvas with Cassiopeia primitives.
 import {
@@ -28,6 +28,19 @@ import {
 import { chartCanvasOverviewPresentation } from "@haneoka/cassiopeia-ui-vue/overview";
 
 export const loadDetailedOverviewSkin = (assets: OurNotesAssetManifest) => loadChartCanvasSkin(assets);
+
+export function chartCanvasFontFamily(locale = document.documentElement.lang): string {
+  const inherited = getComputedStyle(document.documentElement).getPropertyValue("--app-font").trim();
+  if (inherited) return inherited;
+  const preferred = ({ "zh-CN": "SC", "zh-TW": "TC", ko: "KR", ja: "JP" } as Record<string, string>)[locale] ?? "JP";
+  return `"Roboto Variable", "Noto Sans ${preferred} Variable", sans-serif`;
+}
+
+export async function loadChartCanvasFonts(locale?: string, sample = "0123456789:. #") {
+  const family = chartCanvasFontFamily(locale);
+  await Promise.allSettled([400, 500, 700].map(weight => document.fonts.load(`${weight} 12px ${family}`, sample)));
+  return family;
+}
 
 const kindOf = (note: ChartNote): RenderNoteKind => {
   switch (note.operateType) {
@@ -120,11 +133,11 @@ function prepareOverviewGeometry(chart: ChartDocument): OverviewGeometry {
   overviewGeometry.set(chart, prepared);
   return prepared;
 }
-function firstAtTime(notes: readonly { timeMs: number }[], timeMs: number): number {
+function firstAtTime(notes: readonly { timeMs: number }[], timeMs: number, inclusive = false): number {
   let low = 0, high = notes.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (notes[middle]!.timeMs < timeMs) low = middle + 1;
+    if (notes[middle]!.timeMs < timeMs || inclusive && notes[middle]!.timeMs === timeMs) low = middle + 1;
     else high = middle;
   }
   return low;
@@ -136,7 +149,15 @@ export function chartOverviewLayout(durationMs: number, viewportHeight: number) 
   const panelDuration = (height / presentation.heightPerSecond) * 1000;
   const panelWidth = presentation.laneWidth * 13;
   const panelCount = Math.max(1, Math.ceil(durationMs / panelDuration));
-  return { height, panelDuration, panelWidth, panelCount, width: panelCount * panelWidth };
+  return { height, panelDuration, panelWidth, panelCount, width: panelCount * panelWidth, stageWidth: presentation.stageWidth };
+}
+
+export function chartOverviewPoint(chart: ChartDocument, viewportHeight: number, x: number, y: number) {
+  const layout = chartOverviewLayout(chart.durationMs, viewportHeight);
+  const panel = Math.max(0, Math.min(layout.panelCount - 1, Math.floor(x / layout.panelWidth)));
+  const timeMs = Math.round(Math.max(0, Math.min(chart.durationMs, panel * layout.panelDuration
+    + (layout.height - Math.max(0, Math.min(layout.height, y))) / layout.height * layout.panelDuration)));
+  return { panel, timeMs, combo: firstAtTime(prepareOverviewGeometry(chart).judged, timeMs, true) };
 }
 
 export function drawDetailedChartOverview(
@@ -151,6 +172,7 @@ export function drawDetailedChartOverview(
     color: string;
   },
   panelRange?: { first: number; count: number },
+  fontFamily = chartCanvasFontFamily(),
 ): void {
   const presentation = chartCanvasOverviewPresentation();
   const startMs = excerpt?.startMs ?? 0;
@@ -204,7 +226,7 @@ export function drawDetailedChartOverview(
 
     const left = panelWidth / 2 - presentation.stageWidth / 2;
     const right = panelWidth / 2 + presentation.stageWidth / 2;
-    context.font = `${presentation.laneWidth}px Arial`;
+    context.font = `400 ${presentation.laneWidth}px ${fontFamily}`;
     context.textBaseline = "middle";
     for (const change of chart.bpmChanges) {
       const next = chart.bpmChanges[chart.bpmChanges.indexOf(change) + 1];
@@ -234,8 +256,8 @@ export function drawDetailedChartOverview(
         yAt(time, panel),
       );
     context.textAlign = "left";
-    for (let combo = 50; combo < judged.length; combo += 50) {
-      const note = judged[combo];
+    for (let combo = 50; combo <= judged.length; combo += 50) {
+      const note = judged[combo - 1];
       if (note && note.timeMs >= panelStart && note.timeMs < panelEnd)
         context.fillText(String(combo), right + 5, yAt(note.timeMs, panel));
     }
@@ -267,6 +289,10 @@ export function drawDetailedChartOverview(
       context.fillText(`#${event.index + 1}`, right + 14, y);
     });
 
+    context.save();
+    context.beginPath();
+    context.rect(left, 0, right - left, height);
+    context.clip();
     const worldToCss = presentation.stageWidth / OUR_NOTES_LIVE_GEOMETRY.laneWidth;
     const simultaneousHeight = OUR_NOTES_LIVE_GEOMETRY.simultaneousLineSize[1] * worldToCss;
     context.fillStyle = "#fff";
@@ -325,19 +351,23 @@ export function drawDetailedChartOverview(
         scale: presentation.noteScale,
       });
     }
+    context.restore();
     if (excerpt) {
       context.strokeStyle = excerpt.color;
       context.fillStyle = excerpt.color;
       context.lineWidth = 2;
-      context.font = `bold ${presentation.laneWidth}px Arial`;
+      context.font = `700 ${presentation.laneWidth}px ${fontFamily}`;
       context.textAlign = "center";
       for (const highlight of excerpt.highlights) {
         const marked = highlight.targets.filter(note => note.timeMs >= panelStart && note.timeMs < panelEnd);
         for (const note of marked) {
           const box = bounds(note);
           const y = yAt(note.timeMs, panel);
+          context.save();
+          context.beginPath(); context.rect(left, 0, right - left, height); context.clip();
           context.strokeRect(box.left - 4, y - presentation.laneWidth / 2 - 4,
             box.right - box.left + 8, presentation.laneWidth + 8);
+          context.restore();
         }
         if (marked.length) context.fillText(String(highlight.step), right + 18, yAt(highlight.timeMs, panel));
       }

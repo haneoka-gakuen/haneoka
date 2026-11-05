@@ -78,6 +78,7 @@ class TimingChartPreview extends LitElement {
         loadOurNotesCreationCanvasSkin({ schema: "haneoka-resource-release-identity-v1",
           server: source.identity.server, releaseId: source.identity.releaseId, sourceId: source.identity.sourceId! }, { signal, locale: this.locale,
           apiBase: new URL("/api/v1/", window.location.href).href }),
+        renderer.loadChartCanvasFonts(this.locale),
       ]);
       signal.throwIfAborted();
       const score = parseScore(raw);
