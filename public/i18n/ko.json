@@ -5195,7 +5195,10 @@
       "assetServer": "서버",
       "assetEmpty": "소재 없음",
       "storyCount": "스토리 {count}개",
-      "selectStory": "스토리 선택"
+      "selectStory": "스토리 선택",
+      "assistant": "AI 도우미",
+      "cinematic": "영화 연출",
+      "ai-settings": "AI 서비스"
     }
   },
   "legal": {

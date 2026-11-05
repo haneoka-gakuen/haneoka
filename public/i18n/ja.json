@@ -5195,7 +5195,10 @@
       "assetServer": "サーバー",
       "assetEmpty": "素材はありません",
       "storyCount": "{count} 件のストーリー",
-      "selectStory": "ストーリーを選択"
+      "selectStory": "ストーリーを選択",
+      "assistant": "AIアシスタント",
+      "cinematic": "映画風の演出",
+      "ai-settings": "AIサービス"
     }
   },
   "legal": {

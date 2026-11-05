@@ -5195,7 +5195,10 @@
       "assetServer": "服务器",
       "assetEmpty": "暂无素材",
       "storyCount": "{count} 篇故事",
-      "selectStory": "选择故事"
+      "selectStory": "选择故事",
+      "assistant": "AI 助手",
+      "cinematic": "一键电影感",
+      "ai-settings": "AI 服务"
     }
   },
   "legal": {

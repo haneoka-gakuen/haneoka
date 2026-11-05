@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 网页账户、Altair 同源宿主会话、工程模板来源与社区故事版本。
-// Output: 网站内故事制作、导入导出、云保存和发布；向制作器同步主题、字体与 Material 图标。
+// Output: 网站内故事制作、导入导出、云保存和发布；应用栏连接 AI 服务、修改提案和全工程分镜，向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
 // Effects/Dependencies: 初始化后开放操作；延迟加载 iframe、账户与云 API，销毁时释放消息通道、请求和应用栏。
 import { LitElement, html, nothing } from "lit";
@@ -156,7 +156,7 @@ export class StoryCreationWorkspace extends LitElement {
       this.state?.busy ||
       (action === "undo" && !this.state?.canUndo) ||
       (action === "redo" && !this.state?.canRedo) ||
-      (!this.state?.projectId && !["new", "import", "stories", "folder", "library"].includes(action));
+      (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action));
     return html`
       <button
         class="icon-button"
@@ -268,6 +268,7 @@ export class StoryCreationWorkspace extends LitElement {
           ${this.t("publish")}
         </button>
         ${this.actionButton("undo", icon("undo"))} ${this.actionButton("redo", icon("redo"))}
+        ${this.actionButton("assistant", icon("auto_awesome"))} ${this.actionButton("cinematic", icon("movie_filter"))} ${this.actionButton("ai-settings", icon("settings_suggest"))}
         ${this.actionButton("assets", icon("perm_media"))} ${this.actionButton("import", icon("upload_file"))}
         ${this.actionButton("stories", icon("auto_stories"))}
         ${this.actionButton("export-game", icon("sports_esports"))}

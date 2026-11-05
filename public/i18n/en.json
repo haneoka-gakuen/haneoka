@@ -5195,7 +5195,10 @@
       "assetServer": "Server",
       "assetEmpty": "No assets",
       "storyCount": "{count} stories",
-      "selectStory": "Choose story"
+      "selectStory": "Choose story",
+      "assistant": "AI assistant",
+      "cinematic": "Cinematic direction",
+      "ai-settings": "AI services"
     }
   },
   "legal": {
