@@ -84,6 +84,8 @@
     "src/lib/team-builder/gekiso-timing.ts",
     "worker/official-ranking-api.ts",
     "worker/arena-ranking.ts",
+    "worker/ranking-search.ts",
+    "src/lit/song-ranking.ts",
     "worker/event-point-ranking.ts",
     "worker/moenotes-fallback.ts",
     "worker/retired-game-files.ts",

@@ -1,40 +1,58 @@
+// L3 — GEB
+// Input: Complete score boards or paged point boards, active page state and card catalogues.
+// Output: Shared ranking rows, app-bar player search, match selection, rank jumps and pagination.
+// Pos: [Map](L2-2.md); common leaderboard implementation for songs, events and Arena.
+// Effects/Dependencies: Reads saved ranking APIs; cancels obsolete board/search requests and restores app-bar ownership.
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
 import { playerProfileHref, validPlayerProfileId } from "../lib/player-profile-route";
 import { navigateDetailPage } from "../lib/detail-navigation";
 import "@material/web/progress/linear-progress.js";
+import { clientText } from "../i18n/client";
 import { html, nothing, type PropertyValues } from "lit";
 import { preferredLocale, fetchJson, JsonResponseError } from "./shared/catalog";
 import type { ReleaseServer } from "../lib/release-server";
 import { RequestScope } from "../lib/request-scope";
 import { icon } from "./ui/icon";
+import { snackbar } from "../lib/snackbar";
+import { modal } from "./ui/modal";
 import { iconButton } from "./ui/controls";
 import "../styles/settings.css";
 import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { RankingCardCatalog } from "../lib/game-records";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions, clearAppBarSearch, setAppBarSearch } from "../lib/app-bar";
 import {
   GAME_RECORDS_REGIONS as REGIONS,
   defaultGameRecordsRegion as defaultRegion,
   gameRecordsRegionPicker,
 } from "./shared/game-records";
 
-import type { GameRecordsRegion, GameRankingDto, SongRankingRowDto, GameRecordsErrorDto } from "../lib/game-records";
+import type {
+  GameRecordsRegion,
+  GameRankingDto,
+  SongRankingRowDto,
+  GameRecordsErrorDto,
+  ArenaRankingDto,
+  RankingPlayerMatchDto,
+  ArenaPlayerSearchDto,
+} from "../lib/game-records";
 import { formatDate } from "../lib/date-format";
 type Region = GameRecordsRegion;
 type Phase = "idle" | "loading" | "ready" | "error";
 
 type RankingEntry = SongRankingRowDto;
 interface RankingCache {
+  data: GameRankingDto;
   rows: RankingEntry[];
   snapshotId?: string;
   provider?: "official" | "moenotes";
   storedAt: number;
   reportedAt: number;
   stale: boolean;
+  maxRank?: number | null;
 }
 
 const CACHE_TTL = 5 * 60 * 1000;
@@ -56,6 +74,13 @@ export class SongRanking extends GameRecordsCardsElement {
     rows: { state: true },
     stale: { state: true },
     expanded: { state: true },
+    active: { type: Boolean },
+    limit: { type: Number },
+    start: { state: true },
+    target: { state: true },
+    searching: { state: true },
+    searchMatches: { state: true },
+    nextSearchCursor: { state: true },
   };
 
   declare locale: string;
@@ -73,6 +98,16 @@ export class SongRanking extends GameRecordsCardsElement {
   declare stale: boolean;
   declare expanded: boolean;
 
+  declare active: boolean;
+  declare limit: number;
+  declare protected start: number;
+  declare protected target: number;
+  declare private searching: boolean;
+  declare private searchMatches: RankingPlayerMatchDto[] | null;
+  declare private nextSearchCursor: number | null;
+  protected windowed = false;
+  private query = "";
+  private searchRequests = new RequestScope();
   private rankingRequests = new RequestScope();
   private lifetime?: AbortController;
   private cache = new Map<string, RankingCache>();
@@ -96,6 +131,13 @@ export class SongRanking extends GameRecordsCardsElement {
     this.rows = [];
     this.stale = false;
     this.expanded = false;
+    this.active = true;
+    this.limit = 0;
+    this.start = 1;
+    this.target = 0;
+    this.searching = false;
+    this.searchMatches = null;
+    this.nextSearchCursor = null;
   }
 
   private initializePage() {
@@ -128,7 +170,10 @@ export class SongRanking extends GameRecordsCardsElement {
     super.connectedCallback();
     this.lifetime = new AbortController();
     addEventListener("haneoka:locale-ready", this.onLocale, { signal: this.lifetime.signal });
-    if (this.hasAttribute("data-prerendered")) void this.updateComplete.then(() => { if (this.isConnected) this.initializePage(); });
+    if (this.hasAttribute("data-prerendered"))
+      void this.updateComplete.then(() => {
+        if (this.isConnected) this.initializePage();
+      });
     else this.initializePage();
   }
   preparePage(cards: Partial<Record<"jp" | "intl", RankingCardCatalog>>) {
@@ -144,11 +189,13 @@ export class SongRanking extends GameRecordsCardsElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    if (!this.embedded) setAppBarActions(this.pageAppBarOwner, this.renderPageActions(), this);
+    this.syncChrome();
   }
 
   disconnectedCallback() {
     this.rankingRequests.cancel();
+    this.searchRequests.cancel();
+    clearAppBarSearch(this.pageAppBarOwner);
     this.lifetime?.abort();
     this.lifetime = undefined;
     window.clearTimeout(this.retryTimer);
@@ -161,7 +208,11 @@ export class SongRanking extends GameRecordsCardsElement {
     this.requestUpdate();
   };
 
-  private rankingUrl(region: Region) {
+  protected get boardTitle() {
+    return this.rankingTitle || this.label("title", "Song ranking");
+  }
+
+  protected rankingUrl(region: Region) {
     return this.rankingEndpoint || `/api/v1/game/records/${region}/songs/${encodeURIComponent(this.songId)}/ranking`;
   }
 
@@ -183,6 +234,7 @@ export class SongRanking extends GameRecordsCardsElement {
       this.rows = cached.rows;
       this.phase = "ready";
       this.stale = cached.stale;
+      this.rankingLoaded(cached.data);
       return;
     }
     const endpoint = this.rankingUrl(region);
@@ -191,7 +243,7 @@ export class SongRanking extends GameRecordsCardsElement {
     this.phase = "loading";
     this.stale = Boolean(cached);
     try {
-      const value = await fetchJson<GameRankingDto>(endpoint, {
+      const value = await fetchJson<GameRankingDto & Partial<ArenaRankingDto>>(endpoint, {
         signal,
         cache: "no-store",
         credentials: "same-origin",
@@ -199,18 +251,22 @@ export class SongRanking extends GameRecordsCardsElement {
       });
       if (!this.currentRanking(signal, region, endpoint)) return;
       const entry = {
+        data: value,
         rows: value.snapshotId && value.snapshotId === cached?.snapshotId ? cached.rows : value.rows.slice(0, 100),
         snapshotId: value.snapshotId,
         provider: value.provider,
         storedAt: Date.now(),
         reportedAt: value.observedAtMs ?? value.fetchedAtMs ?? 0,
         stale: value.stale,
+        maxRank: value.maxRank,
       };
       this.cache.set(endpoint, entry);
       if (this.cache.size > 16) this.cache.delete(this.cache.keys().next().value!);
       this.rows = entry.rows;
       this.phase = "ready";
       this.stale = entry.stale;
+      this.rankingLoaded(value);
+      if (this.target) void this.updateComplete.then(() => this.scrollToTarget());
     } catch (error) {
       if (!this.currentRanking(signal, region, endpoint)) return;
       if (error instanceof JsonResponseError) {
@@ -227,6 +283,7 @@ export class SongRanking extends GameRecordsCardsElement {
       this.rows = notFound ? [] : cached?.rows || [];
       this.phase = notFound ? "ready" : "error";
       this.stale = !notFound && Boolean(cached);
+      this.rankingLoaded(notFound ? null : (cached?.data ?? null));
     }
   }
 
@@ -250,7 +307,7 @@ export class SongRanking extends GameRecordsCardsElement {
     if (this.phase !== "ready") void this.loadRanking(region, true);
   }
 
-  private refresh() {
+  protected refresh() {
     if (Date.now() < this.retryAt) return;
     this.rankingRequests.cancel();
     void this.loadRanking(this.region, true);
@@ -270,15 +327,27 @@ export class SongRanking extends GameRecordsCardsElement {
     `;
   }
 
-  private renderRow(entry: RankingEntry) {
-    const score = entry.scoreExact ? BigInt(entry.scoreExact).toLocaleString(this.locale) : this.formatScore(entry.score);
+  protected renderRow(entry: RankingEntry) {
+    const score = entry.scoreExact
+      ? BigInt(entry.scoreExact).toLocaleString(this.locale)
+      : this.formatScore(entry.score);
     return this.renderRankingRow({
       ...entry,
+      target: entry.rank === this.target,
+      bare: this.limit > 0,
       level: this.levelFromExp(this.sourceCatalog()?.playerLevels, entry.rankExp),
-      href: entry.profileId ? playerProfileHref(this.locale, this.region, entry.profileId, this.rankingUrl(this.region), navigationDocumentUrl()) : "",
+      href: entry.profileId
+        ? playerProfileHref(
+            this.locale,
+            this.region,
+            entry.profileId,
+            this.rankingUrl(this.region),
+            navigationDocumentUrl(),
+          )
+        : "",
       score,
       scoreLabel: this.points ? this.label("points", "Points") : this.label("score", "Score"),
-      ...(this.points || this.summary ? { cards: undefined } : {}),
+      ...(this.points || this.summary || this.limit ? { cards: undefined } : {}),
     });
   }
   /**
@@ -290,7 +359,11 @@ export class SongRanking extends GameRecordsCardsElement {
   private renderSkeleton() {
     const rows = Array.from({ length: 20 });
     return html`
-      <ol class="song-ranking__list song-ranking__list--skeleton" aria-busy="true" aria-label=${this.label("loading", "Loading ranking")}>
+      <ol
+        class="song-ranking__list song-ranking__list--skeleton"
+        aria-busy="true"
+        aria-label=${this.label("loading", "Loading ranking")}
+      >
         ${rows.map(
           () => html`
             <li class="song-ranking__entry" aria-hidden="true">
@@ -299,10 +372,12 @@ export class SongRanking extends GameRecordsCardsElement {
                 <span class="song-ranking__namecard song-ranking__namecard--empty"></span>
                 <span class="song-ranking__avatar"><span class="song-ranking__initial"></span></span>
                 <span class="song-ranking__player-copy">
-                  <strong><span class="skeleton-line">\u00a0</span></strong>
-                  <small class="song-ranking__player-stats"><span class="skeleton-line">\u00a0</span></small>
+                  <strong><span class="skeleton-line"> </span></strong>
+                  <small class="song-ranking__player-stats"><span class="skeleton-line"> </span></small>
                 </span>
-                <span class="song-ranking__score"><strong><span class="skeleton-line">00,000,000</span></strong></span>
+                <span class="song-ranking__score">
+                  <strong><span class="skeleton-line">00,000,000</span></strong>
+                </span>
                 ${
                   this.points || this.summary
                     ? nothing
@@ -312,7 +387,9 @@ export class SongRanking extends GameRecordsCardsElement {
                             () => html`
                               <span class="song-ranking__deck-slot">
                                 <span class="song-ranking__card"><span class="song-ranking__card-media"></span></span>
-                                <span class="song-ranking__card"><span class="song-ranking__card-media song-ranking__card-media--support"></span></span>
+                                <span class="song-ranking__card">
+                                  <span class="song-ranking__card-media song-ranking__card-media--support"></span>
+                                </span>
                               </span>
                             `,
                           )}
@@ -333,8 +410,8 @@ export class SongRanking extends GameRecordsCardsElement {
 
   private renderRanking() {
     const cached = this.cache.get(this.rankingUrl(this.region));
-    const visible = this.rows.slice(0, this.expanded ? 100 : 20);
-    const showMore = this.rows.length > 20 && !this.expanded;
+    const visible = this.rows.slice(0, this.limit || (this.windowed || this.expanded ? 100 : 20));
+    const showMore = !this.limit && !this.windowed && this.rows.length > 20 && !this.expanded;
     const failed = this.rankingFailure?.kind;
     const failureText =
       failed === "pending" && this.retryAt > 0
@@ -356,7 +433,11 @@ export class SongRanking extends GameRecordsCardsElement {
                   </p>
                 `
               : this.phase === "loading" && !this.rows.length
-                ? html`<p class="song-ranking__fetched" aria-hidden="true"><span class="skeleton-line">${this.label("updated", "Updated")} / 00/00/0000, 00:00:00</span></p>`
+                ? html`
+                    <p class="song-ranking__fetched" aria-hidden="true">
+                      <span class="skeleton-line">${this.label("updated", "Updated")} / 00/00/0000, 00:00:00</span>
+                    </p>
+                  `
                 : nothing
           }
           <span class="song-ranking__fetched">${this.label("officialSource", "Official game rankings")}</span>
@@ -378,7 +459,7 @@ export class SongRanking extends GameRecordsCardsElement {
                     <ol
                       class="song-ranking__list"
                       style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
-                      aria-label=${this.rankingTitle || this.label("title", "Song ranking")}
+                      aria-label=${this.boardTitle}
                     >
                       ${visible.map((entry) => this.renderRow(entry))}
                     </ol>
@@ -401,18 +482,257 @@ export class SongRanking extends GameRecordsCardsElement {
     `;
   }
 
+  protected rankingLoaded(_value: GameRankingDto | null) {}
+
+  protected get identityProperties() {
+    return ["rankingEndpoint", "region", "songId"];
+  }
+
+  protected willUpdate(changed: PropertyValues) {
+    if (this.identityProperties.some((key) => changed.has(key))) {
+      this.start = 1;
+      this.target = 0;
+      this.query = "";
+      this.searchMatches = null;
+      this.searchRequests.cancel();
+      this.searching = false;
+    }
+  }
+
   updated(changed: PropertyValues) {
     if (changed.has("cardCatalogData") && this.cardCatalogData) this.cardCatalogs = this.cardCatalogData;
     if (
-      this.embedded &&
-      ((changed.has("rankingEndpoint") && changed.get("rankingEndpoint") !== undefined) ||
-        (changed.has("region") && changed.get("region") !== undefined))
+      this.identityProperties.some((key) => changed.has(key) && changed.get(key) !== undefined) ||
+      (this.windowed && changed.has("start") && changed.get("start") !== undefined)
     ) {
-      this.rankingRequests.cancel();
       this.expanded = false;
       void this.loadRanking(this.region);
     }
+    if (!this.active) {
+      this.searchRequests.cancel();
+      this.searching = false;
+      this.searchMatches = null;
+    }
+    this.syncChrome();
+  }
+
+  private syncChrome() {
     if (!this.embedded) setAppBarActions(this.pageAppBarOwner, this.renderPageActions(), this);
+    if (this.active && !this.limit)
+      setAppBarSearch(this.pageAppBarOwner, {
+        value: this.query,
+        label: clientText(this.locale, "catalog.arena.ranking.playerSearch", "Player ID or username"),
+        onInput: (value) => {
+          this.query = value;
+          this.searchRequests.cancel();
+          this.searching = false;
+        },
+        onSubmit: (value) => {
+          if (value.trim() && !this.searching) void this.search(value.trim());
+        },
+      });
+    else clearAppBarSearch(this.pageAppBarOwner);
+  }
+
+  private scrollToTarget() {
+    this.querySelector<HTMLElement>(`[data-rank="${this.target}"]`)?.scrollIntoView({ block: "center" });
+  }
+
+  protected jump(rank: number) {
+    this.target = rank;
+    this.searchMatches = null;
+    if (this.windowed) this.start = Math.floor((rank - 1) / 100) * 100 + 1;
+    else this.expanded = true;
+    void this.updateComplete.then(() => this.scrollToTarget());
+  }
+
+  protected async findPlayers(
+    query: string,
+    signal: AbortSignal,
+    after = 0,
+  ): Promise<{ matches: RankingPlayerMatchDto[]; searchedTo: number; nextCursor?: number | null }> {
+    if (this.windowed) {
+      const url = new URL(this.rankingUrl(this.region), location.origin);
+      url.pathname = url.pathname.replace(/\/ranking$/u, "/search");
+      url.search = new URLSearchParams({ query, ...(after ? { after: String(after) } : {}) }).toString();
+      for (;;) {
+        try {
+          return await fetchJson<ArenaPlayerSearchDto>(url.pathname + url.search, { signal });
+        } catch (error) {
+          const failure = error instanceof JsonResponseError ? (error.body as GameRecordsErrorDto | null)?.error : null;
+          if (failure?.kind !== "pending" || !failure.retryAfter || signal.aborted) throw error;
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => {
+              window.clearTimeout(timer);
+              reject(signal.reason);
+            };
+            const timer = window.setTimeout(
+              () => {
+                signal.removeEventListener("abort", abort);
+                resolve();
+              },
+              Math.max(3, failure.retryAfter!) * 1000,
+            );
+            signal.addEventListener("abort", abort, { once: true });
+          });
+        }
+      }
+    }
+    const normalized = query.normalize("NFKC").toLowerCase();
+    return {
+      searchedTo: this.rows.length,
+      matches: this.rows
+        .filter((row) => row.profileId === query || row.name.normalize("NFKC").toLowerCase().includes(normalized))
+        .map((row) => ({ rank: row.rank, profileId: row.profileId, name: row.name, point: row.score ?? 0 })),
+    };
+  }
+
+  private async search(query: string, after = 0) {
+    const signal = this.searchRequests.begin();
+    this.searching = true;
+    try {
+      const result = await this.findPlayers(query, signal, after);
+      if (!this.searchRequests.current(signal)) return;
+      this.nextSearchCursor = result.nextCursor ?? null;
+      if (after) {
+        const seen = new Set(this.searchMatches?.flatMap((row) => row.profileId ?? []) ?? []);
+        this.searchMatches = [
+          ...(this.searchMatches ?? []),
+          ...result.matches.filter((row) => {
+            if (!row.profileId) return true;
+            if (seen.has(row.profileId)) return false;
+            seen.add(row.profileId);
+            return true;
+          }),
+        ];
+      } else if (result.matches.length === 1 && !this.nextSearchCursor) this.jump(result.matches[0]!.rank);
+      else if (result.matches.length) this.searchMatches = result.matches;
+      else
+        snackbar(
+          clientText(this.locale, "catalog.arena.ranking.notFound", "Not in the top {count}").replace(
+            "{count}",
+            result.searchedTo.toLocaleString(this.locale),
+          ),
+        );
+    } catch {
+      if (this.searchRequests.current(signal)) snackbar(this.label("error", "Ranking unavailable"));
+    } finally {
+      if (this.searchRequests.current(signal)) this.searching = false;
+    }
+  }
+
+  private renderMatches() {
+    if (!this.searchMatches) return nothing;
+    const close = () => {
+      this.searchMatches = null;
+    };
+    return html`
+      <dialog
+        class="dialog"
+        ${modal(close)}
+        aria-label=${clientText(this.locale, "catalog.arena.ranking.searchResults", "Matching players")}
+      >
+        <div class="dialog__surface">
+          <header class="dialog__header">
+            <h2>${clientText(this.locale, "catalog.arena.ranking.searchResults", "Matching players")}</h2>
+          </header>
+          <div class="dialog__body">
+            <ul class="list">
+              ${this.searchMatches.map(
+                (row) => html`
+                  <li>
+                    <button
+                      class="list-item list-item--two-line list-item--interactive"
+                      type="button"
+                      @click=${() => this.jump(row.rank)}
+                    >
+                      <span class="list-item__leading" aria-label=${this.label("rank", "Rank")}>
+                        ${row.rank.toLocaleString(this.locale)}
+                      </span>
+                      <span class="list-item__body">
+                        <span class="list-item__headline">
+                          ${row.name || this.label("privatePlayer", "Unknown player")}
+                        </span>
+                        <span class="list-item__supporting">${row.profileId || "—"}</span>
+                      </span>
+                      <span class="list-item__trailing">${icon("arrow_forward")}</span>
+                    </button>
+                  </li>
+                `,
+              )}
+            </ul>
+          </div>
+          <footer class="dialog__actions">
+            ${
+              this.nextSearchCursor
+                ? html`
+                    <button
+                      class="button button--tonal"
+                      type="button"
+                      ?disabled=${this.searching}
+                      @click=${() => void this.search(this.query.trim(), this.nextSearchCursor!)}
+                    >
+                      ${clientText(this.locale, "catalog.arena.ranking.next", "Next 100")}
+                    </button>
+                  `
+                : nothing
+            }
+            <button class="button button--text" type="button" @click=${close}>
+              ${clientText(this.locale, "common.actions.close", "Close")}
+            </button>
+          </footer>
+        </div>
+      </dialog>
+    `;
+  }
+
+  private renderControls() {
+    if (this.limit) return nothing;
+    const maximum = this.windowed ? this.cache.get(this.rankingUrl(this.region))?.maxRank : this.rows.length;
+    const t = (key: string, fallback: string) => clientText(this.locale, `catalog.arena.ranking.${key}`, fallback);
+    return html`
+      <div class="ranking-controls">
+        <form
+          class="ranking-jump"
+          @submit=${(event: SubmitEvent) => {
+            event.preventDefault();
+            const rank = Number(new FormData(event.currentTarget as HTMLFormElement).get("rank"));
+            if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
+          }}
+        >
+          <label class="field">
+            <input
+              name="rank"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max=${maximum || nothing}
+              step="1"
+              required
+              placeholder=${t("jump", "Go to rank")}
+              aria-label=${t("jump", "Go to rank")}
+            />
+          </label>
+          <button class="button button--tonal" type="submit">${icon("arrow_forward")}${t("go", "Go")}</button>
+        </form>
+        <span class="cluster">
+          ${
+            this.windowed
+              ? html`
+                  ${iconButton({ icon: "first_page", label: t("top", "Top"), disabled: this.start === 1, onClick: () => (this.start = 1) })}
+                  ${iconButton({ icon: "chevron_left", label: t("previous", "Previous 100"), disabled: this.start === 1, onClick: () => (this.start = Math.max(1, this.start - 100)) })}
+                  <span class="md-body-medium">
+                    ${this.start.toLocaleString(this.locale)}–${Math.min(this.start + 99, maximum ?? Infinity).toLocaleString(this.locale)}
+                    / ${maximum?.toLocaleString(this.locale) ?? "—"}
+                  </span>
+                  ${iconButton({ icon: "chevron_right", label: t("next", "Next 100"), disabled: maximum != null && this.start + 100 > maximum, onClick: () => (this.start += 100) })}
+                `
+              : nothing
+          }
+          ${iconButton({ icon: "refresh", label: this.label("refresh", "Refresh ranking"), disabled: this.phase === "loading" || Date.now() < this.retryAt, onClick: () => this.refresh() })}
+        </span>
+      </div>
+    `;
   }
 
   public refreshRanking() {
@@ -420,19 +740,22 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   render() {
-    const loading = this.phase === "loading";
+    const loading = this.phase === "loading" || this.searching;
     return html`
-      <section class="song-ranking-page" aria-label=${this.rankingTitle || this.label("title", "Song ranking")}>
+      <section class="song-ranking-page" aria-label=${this.boardTitle}>
         <div class="song-ranking__progress" aria-hidden=${loading ? nothing : "true"}>
           ${
-   loading
-     ? html`
-         <md-linear-progress indeterminate aria-label=${this.label("loading", "Loading ranking")}></md-linear-progress>
-       `
-     : nothing
- }
+            loading
+              ? html`
+                  <md-linear-progress
+                    indeterminate
+                    aria-label=${this.label("loading", "Loading ranking")}
+                  ></md-linear-progress>
+                `
+              : nothing
+          }
         </div>
-        ${this.renderRanking()}
+        ${this.renderControls()} ${this.renderRanking()} ${this.renderMatches()}
       </section>
     `;
   }

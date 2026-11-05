@@ -118,7 +118,7 @@ still stored. Background sweep cursors advance after successful window storage.
 
 Demand-only jobs have durable wake-ups and advertise `demand-progress-v1`.
 Completion reports the IDs actually attempted, so budget-deferred requests stay
-queued for another batch. Players and songs precede card downloads, with a
+queued for another batch. Player lookups precede card downloads, with a
 bounded player batch. Transient service failures retry after 15–120 seconds;
 read-only job expiration does not invalidate an account session.
 
@@ -671,3 +671,5 @@ Official payload readers accept plain JSON and gzip envelopes with an 8 MiB deco
 The two-minute maintenance trigger scans one bounded page per region, prioritizing shared batches. Completed inventory rounds pause for one day. Only canonical collector JSON names are eligible; original card images, unknown objects and legacy provider history are outside this sweep. Objects older than one day with no D1 reference enter the existing durable quarantine queue. Deletion rechecks every live index, archive, metadata and pending-batch reference after five minutes. The grace period follows the last retired member of a shared object. Superseded catalog payloads also enter this queue.
 
 Lossless compression preserves all original body hashes. Shared envelopes older than twelve hours may discard members with no remaining reference after quarantine, provided this saves at least 25% of the original envelope and 64 KiB of stored bytes. Current, daily and final snapshots remain protected. Each region processes at most 64 payloads, 32 MiB or twenty seconds per maintenance turn, with retry checkpoints. Regions run sequentially outside the game-collection mutation queues. Inspect `official_storage_sweeps` and `official_payload_maintenance` for progress and retry states. Apply migration 0075 before activating this version.
+
+Ordinary song rankings remain on demand. Queued player/card demand takes priority. A song job uses a spare account, leaving another idle account available when primary collection is running or due within 45 seconds; otherwise it waits. Each region starts at most one song job per minute, handling one song with a 30-second budget. They do not expand the periodic sweep.

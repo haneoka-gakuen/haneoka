@@ -12,10 +12,10 @@ The prefix is `/api/v2/game/records/{region}`, with `region` one of `jp`, `tw`, 
 | `/events/{id}/total/latest` | Latest observation of the total board |
 | `/events/{id}/latest` | Latest top 100 of the point board, when the event has one |
 | `/events/{id}/points/ranking?start=` | One window of 100 of the point board |
-| `/events/{id}/points/search?profileId=` | A player within the point board's top 2000 |
+| `/events/{id}/points/search?query=` | Player ID or username matches across the complete point board |
 | `/arena/seasons/{season}/leagues/{band}/ranking?start=` | One window of 100 of a league |
 | `/arena/seasons/{season}/leagues/{band}/population?thresholds=` | Players per division |
-| `/arena/seasons/{season}/leagues/{band}/search?profileId=` | A player within a league's top 2000 |
+| `/arena/seasons/{season}/leagues/{band}/search?query=` | Player ID or username matches across the complete league |
 
 Replace `latest` with `history?after={cursor}` for observations and `nextCursor`, 100 per page. Failures stay in the history.
 
@@ -159,3 +159,5 @@ A region secret holds a single account or `haneoka:official-ranking-account-pool
 ```
 
 Only enabled, ready entries are scheduled. Pauses are stored against the real identity and credential digest, so changing an ID, label or pool format does not clear them. `/status` exposes only the counts `{accounts, enabled, ready, paused, coolingDown, leased}`.
+
+Point and Arena search also accept the existing `profileId` parameter. A `query` response contains `matches`, `searchedTo`, `observedAtMs` and `nextCursor`; pass `after={nextCursor}` with the same query for the next 100 matches. Missing windows or index backfill return `pending`, never an incomplete negative result. Index backfill reads at most twelve saved windows per request and adds no game RPCs or R2 copies.

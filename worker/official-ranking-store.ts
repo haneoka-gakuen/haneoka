@@ -3,6 +3,7 @@
 // Output: Immediate durable observations, gzip-compatible R2 payloads, D1 indexes, daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
+import { saveRankingSearchWindow } from "./ranking-search";
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
 
@@ -566,6 +567,7 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       .bind(observation.region, observation.seasonId, observation.bandId, observation.startRank, observation.endRank,
         observation.maxRank ?? null, observation.players.length, JSON.stringify(profiles), observation.snapshotId,
         observation.observedAtMs, key, hash).run();
+    await saveRankingSearchWindow(db, observation.region, `arena/${observation.seasonId}/${observation.bandId}`, observation, observation.players);
     await saveDailyObservation(db, `arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation, key, hash);
     if (replaced) await dropReplaced(env, "official_arena_ranking_observations", observation, replaced);
   }
@@ -628,13 +630,13 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
     WHERE excluded.observed_at_ms >= official_event_window_metadata.observed_at_ms`)
     .bind(observation.region, observation.eventId, observation.startRank, observation.endRank, observation.maxRank ?? null,
       observation.players.length, JSON.stringify(profiles), observation.snapshotId, observation.observedAtMs, key, hash).run();
+  await saveRankingSearchWindow(db, observation.region, `event/${observation.eventId}`, observation, observation.players);
   await saveDailyObservation(db, `event-window/${observation.eventId}/${observation.startRank}`, observation, key, hash);
   if (replaced) await dropReplaced(env, "official_event_window_observations", observation, replaced);
 }
 
 export interface OfficialEventWindowMetadata {
   startRank: number;
-  profileIndex: string;
   snapshotId: string;
   observedAtMs: number;
   payloadKey: string;
@@ -644,9 +646,9 @@ export interface OfficialEventWindowMetadata {
 export async function readOfficialEventWindows(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   depth: number): Promise<OfficialEventWindowMetadata[]> {
   const { db } = storage(env);
-  const { results } = await db.prepare(`SELECT start_rank AS startRank, profile_index AS profileIndex, snapshot_id AS snapshotId,
+  const { results } = await db.prepare(`SELECT start_rank AS startRank, snapshot_id AS snapshotId,
     observed_at_ms AS observedAtMs, payload_key AS payloadKey, payload_hash AS payloadHash FROM official_event_window_metadata
-    WHERE region = ? AND event_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank LIMIT 20`)
+    WHERE region = ? AND event_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank`)
     .bind(region, eventId, depth).all<OfficialEventWindowMetadata>();
   return results;
 }
@@ -673,8 +675,8 @@ export async function readOfficialEventMaxRank(env: OfficialRankingStoreBindings
   return row?.maxRank != null && (row.fullEnd === null || row.maxRank >= row.fullEnd) ? row.maxRank : null;
 }
 
-export async function readOfficialPayload<T>(env: OfficialRankingStoreBindings, key: string, hash: string): Promise<T> {
-  return readPayload<T>(env, key, hash);
+export async function readOfficialPayload<T>(env: OfficialRankingStoreBindings, key: string, hash: string, batches?: PayloadBatchCache): Promise<T> {
+  return readPayload<T>(env, key, hash, batches);
 }
 
 export interface OfficialArenaWindowMetadata {
@@ -682,7 +684,6 @@ export interface OfficialArenaWindowMetadata {
   endRank: number;
   maxRank: number | null;
   playerCount: number;
-  profileIndex: string;
   snapshotId: string;
   observedAtMs: number;
   payloadKey: string;
@@ -693,16 +694,16 @@ export async function readOfficialArenaSearchWindows(env: OfficialRankingStoreBi
   seasonId: string, bandId: string, depth: number): Promise<OfficialArenaWindowMetadata[]> {
   const { db } = storage(env);
   const { results } = await db.prepare(`SELECT start_rank AS startRank, end_rank AS endRank, max_rank AS maxRank,
-    player_count AS playerCount, profile_index AS profileIndex, snapshot_id AS snapshotId, observed_at_ms AS observedAtMs,
+    player_count AS playerCount, snapshot_id AS snapshotId, observed_at_ms AS observedAtMs,
     payload_key AS payloadKey, payload_hash AS payloadHash FROM official_arena_window_metadata
-    WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank LIMIT 20`)
+    WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank BETWEEN 1 AND ? ORDER BY start_rank`)
     .bind(region, seasonId, bandId, depth).all<OfficialArenaWindowMetadata>();
   return results;
 }
 
 export async function readOfficialArenaSearchMatch(env: OfficialRankingStoreBindings,
-  metadata: OfficialArenaWindowMetadata): Promise<OfficialArenaObservation> {
-  return readPayload<OfficialArenaObservation>(env, metadata.payloadKey, metadata.payloadHash);
+  metadata: OfficialArenaWindowMetadata, batches?: PayloadBatchCache): Promise<OfficialArenaObservation> {
+  return readPayload<OfficialArenaObservation>(env, metadata.payloadKey, metadata.payloadHash, batches);
 }
 
 /** The latest successful aligned window of a league board that contains `rank`. */

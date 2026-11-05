@@ -1592,6 +1592,8 @@
         "next": "下 100 名",
         "points": "舞台 pt",
         "playerId": "玩家 ID",
+        "playerSearch": "玩家 ID 或用户名",
+        "searchResults": "匹配的玩家",
         "find": "查找",
         "notFound": "前 {count} 名中未找到"
       },

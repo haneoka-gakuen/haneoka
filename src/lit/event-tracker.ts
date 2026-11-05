@@ -511,6 +511,7 @@ export class EventTracker extends LitElement {
                       readable
                         ? html`
                             <song-ranking
+                              .active=${activeBoard === "challenge"}
                               embedded
                               .locale=${this.locale}
                               .server=${this.sourceServer()}
@@ -539,6 +540,7 @@ export class EventTracker extends LitElement {
             ${renderDetailSectionHeading(this.label("totalRanking", "Total song ranking"), "works")}
             ${totalReadable ? html`
               <song-ranking
+                .active=${activeBoard === "total"}
                 embedded
                 .locale=${this.locale}
                 .server=${this.sourceServer()}
@@ -557,6 +559,7 @@ export class EventTracker extends LitElement {
             pointsReadable
               ? html`
                   <arena-ranking
+                    .active=${activeBoard === "points"}
                     .locale=${this.locale}
                     .region=${this.region}
                     .eventId=${Number(event.id)}

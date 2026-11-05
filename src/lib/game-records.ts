@@ -93,7 +93,7 @@ export interface EventPointSearchDto extends Omit<ArenaSearchDto, "seasonId" | "
   eventId: string;
 }
 
-/** A player found by profile ID among the board's top `searchedTo` ranks; `row` is null when absent. */
+/** A player found by profile ID across the board's `searchedTo` ranks; `row` is null when absent. */
 export interface ArenaSearchDto {
   region: GameRecordsRegion;
   seasonId: string;
@@ -102,6 +102,24 @@ export interface ArenaSearchDto {
   searchedTo: number;
   observedAtMs: number;
   row: ArenaRankingRowDto | null;
+}
+
+export interface RankingPlayerMatchDto {
+  rank: number;
+  profileId: string | null;
+  name: string;
+  point: number;
+}
+
+/** ID or normalized username substring matches across the board's `searchedTo` ranks. */
+export interface ArenaPlayerSearchDto extends Omit<ArenaSearchDto, "profileId" | "row"> {
+  query: string;
+  matches: RankingPlayerMatchDto[];
+  nextCursor: number | null;
+}
+
+export interface EventPointPlayerSearchDto extends Omit<ArenaPlayerSearchDto, "seasonId" | "bandId"> {
+  eventId: string;
 }
 
 /** Players per rank tier, found by locating each tier's lowest point threshold on the board. */

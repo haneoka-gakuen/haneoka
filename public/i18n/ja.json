@@ -1592,6 +1592,8 @@
         "next": "次の100人",
         "points": "アリーナpt",
         "playerId": "プレイヤーID",
+        "playerSearch": "プレイヤーID・プレイヤー名",
+        "searchResults": "該当するプレイヤー",
         "find": "検索",
         "notFound": "上位{count}位内に見つかりません"
       },

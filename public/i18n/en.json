@@ -1592,6 +1592,8 @@
         "next": "Next 100",
         "points": "Arena pt",
         "playerId": "Player ID",
+        "playerSearch": "Player ID or username",
+        "searchResults": "Matching players",
         "find": "Find",
         "notFound": "Not in the top {count}"
       },

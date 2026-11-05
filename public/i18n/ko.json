@@ -1592,6 +1592,8 @@
         "next": "다음 100명",
         "points": "아레나 pt",
         "playerId": "플레이어 ID",
+        "playerSearch": "플레이어 ID 또는 이름",
+        "searchResults": "일치하는 플레이어",
         "find": "찾기",
         "notFound": "상위 {count}위 안에 없음"
       },
