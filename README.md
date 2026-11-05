@@ -93,9 +93,10 @@ Never commit credentials, private packages, or licensed runtime files.
 
 `haneoka.org` and `haneoka.com` use the same Worker, accounts, D1 databases and
 R2 buckets. `haneoka.com` remains on external DNS and is registered as a
-Cloudflare for SaaS custom hostname in the `haneoka.org` zone. Both hostnames
-have explicit Worker routes; `/downloads/*` belongs to the download Worker.
-Keep the existing `.org` entry active while adding and verifying `.com`.
+Cloudflare for SaaS custom hostname in the `haneoka.org` zone. `haneoka.org`
+uses a Workers Custom Domain with Cloudflare-managed DNS and certificates;
+`haneoka.com` uses an explicit Worker route. `/downloads/*` belongs to the
+download Worker on both domains.
 
 Authentication, account email links, media and Sonolus URLs use the current
 allowed hostname. Search canonical URLs stay on `haneoka.org`. Login cookies

@@ -8,7 +8,7 @@
   "preview_urls": false,
 
   "routes": [
-    { "pattern": "haneoka.org/*", "zone_name": "haneoka.org" },
+    { "pattern": "haneoka.org", "custom_domain": true },
     { "pattern": "haneoka.com/*", "zone_name": "haneoka.org" },
   ],
 
