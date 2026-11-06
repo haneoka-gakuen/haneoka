@@ -1886,9 +1886,9 @@
   }
 
   /* ---------- Growth editor ---------- */
-  .tb-editor {
-    width: min(600px, calc(100vw - 32px));
-    max-height: min(92dvh, 860px);
+  .team-builder .tb-editor {
+    width: min(1024px, calc(100vw - 48px));
+    max-height: min(92dvh, 1040px);
   }
   .tb-editor__header {
     display: grid;
@@ -1933,6 +1933,151 @@
   .tb-editor__fields {
     display: grid;
     gap: var(--md-sys-spacing-2);
+  }
+  .team-builder .tb-editor__layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
+    align-items: start;
+    gap: var(--md-sys-spacing-6);
+  }
+  .team-builder .tb-editor__settings,
+  .team-builder .tb-editor__skills {
+    display: grid;
+    min-width: 0;
+    gap: var(--md-sys-spacing-4);
+  }
+  .team-builder .tb-editor__section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-sys-spacing-3);
+    margin-block-end: var(--md-sys-spacing-2);
+  }
+  .team-builder .tb-editor__section-heading > span,
+  .team-builder .tb-editor-stat dt,
+  .team-builder .tb-editor-stat__comparison {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .team-builder .tb-editor__stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--md-sys-spacing-2);
+    margin: 0;
+  }
+  .team-builder .tb-editor-stat {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+    gap: var(--md-sys-spacing-1);
+    padding: var(--md-sys-spacing-3) var(--md-sys-spacing-4);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+    font-variant-numeric: tabular-nums;
+  }
+  .team-builder .tb-editor-stat dd {
+    margin: 0;
+  }
+  .team-builder .tb-editor-stat__value {
+    font: var(--md-sys-typescale-headline-small-weight) var(--md-sys-typescale-headline-small-size) /
+      var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  }
+  .team-builder .tb-editor-stat__comparison {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--md-sys-spacing-1) var(--md-sys-spacing-2);
+  }
+  .team-builder .tb-editor-stat__delta.is-changed {
+    color: var(--md-sys-color-primary);
+    font-weight: var(--md-sys-typescale-label-large-weight);
+  }
+  .team-builder .tb-editor__bonuses {
+    margin-block: var(--md-sys-spacing-2);
+  }
+  .team-builder .tb-editor-skill {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    min-width: 0;
+    padding: var(--md-sys-spacing-3) var(--md-sys-spacing-4);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+  }
+  .team-builder .tb-editor-skill__header {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+  }
+  .team-builder .tb-editor-skill__header > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .team-builder .tb-editor-skill__header > img {
+    flex-shrink: 0;
+    object-fit: contain;
+  }
+  .team-builder .tb-editor-skill__header h3 {
+    margin: 0;
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .team-builder .tb-editor-skill__kind {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-medium-size);
+  }
+  .team-builder .tb-editor-skill__level {
+    display: inline-flex;
+    flex-shrink: 0;
+    min-inline-size: 5rem;
+    justify-content: center;
+    gap: var(--md-sys-spacing-1);
+    font-variant-numeric: tabular-nums;
+  }
+  .team-builder .tb-editor-skill > .pt-field { grid-column: 1 / -1; grid-row: 2; }
+  .team-builder .tb-editor-skill__effect--current { grid-column: 1 / -1; grid-row: 3; }
+  .team-builder .tb-editor-skill__comparison { display: contents; }
+  .team-builder .tb-editor-skill__comparison > .md-accordion__heading { grid-area: 1 / 2; }
+  .team-builder .tb-editor-skill__comparison > .md-accordion__panel { grid-column: 1 / -1; grid-row: 4; }
+  .team-builder .tb-editor-skill .tb-growth-field__label {
+    display: none;
+  }
+  .team-builder .tb-editor-skill .tb-stages {
+    margin-block-start: var(--md-sys-spacing-3);
+  }
+  .team-builder .tb-editor-skill__effect {
+    min-block-size: max(2lh, 48px);
+    margin-block: var(--md-sys-spacing-3);
+    color: var(--md-sys-color-on-surface);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    white-space: pre-line;
+  }
+  .team-builder .tb-editor-skill__effect mark {
+    color: var(--md-sys-color-primary);
+    background: transparent;
+    font-weight: var(--md-sys-typescale-title-small-weight);
+  }
+  .team-builder .tb-editor-skill__effect--current { display: grid; white-space: normal; }
+  .team-builder .tb-editor-skill__effect--current > span { grid-area: 1 / 1; white-space: pre-line; }
+  .team-builder .tb-editor-skill__effect--current > .tb-editor-skill__error { white-space: normal; }
+  .team-builder .tb-editor-skill__measure {
+    visibility: hidden;
+    pointer-events: none;
+    font-weight: var(--md-sys-typescale-title-small-weight);
+  }
+  .team-builder .tb-editor-skill .md-accordion__trigger { min-height: 48px; padding: var(--md-sys-spacing-2); border-radius: var(--md-sys-shape-corner-medium); }
+  .team-builder .tb-editor-skill .md-accordion__panel {
+    padding-inline: 0;
+  }
+  @media (max-width: 799px) {
+    .team-builder .tb-editor__layout {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .team-builder .tb-editor__stat-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   .tb-editor__fields > .pt-field + .pt-field {
     padding-block-start: var(--md-sys-spacing-2);
@@ -2020,6 +2165,11 @@
     width: 24px;
     height: 24px;
   }
+  .team-builder .tb-editor .tb-stage .tb-stage__mark--small {
+    filter: drop-shadow(0 0 1px var(--md-sys-color-outline))
+      drop-shadow(0 1px 1px color-mix(in srgb, var(--md-sys-color-outline) 45%, transparent));
+    opacity: 1;
+  }
   .tb-stage:not([aria-checked="true"]) .tb-stage__mark {
     filter: grayscale(0.6);
     opacity: 0.7;
@@ -2089,7 +2239,7 @@
     border-block-start: 1px solid var(--md-sys-color-outline-variant);
   }
   @media (max-width: 599px) {
-    .tb-editor {
+    .team-builder .tb-editor {
       width: 100vw;
       max-width: 100vw;
       height: 100dvh;

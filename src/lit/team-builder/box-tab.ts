@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Box ownership and growth, catalogue limits and per-card editor state.
+// Output: Card entry and editing controls with live stat and skill comparisons.
+// Pos: [Map](../L2-2.md); My cards and its member / Snapshot editor.
+// Effects/Dependencies: Saves each explicit edit through BoxStore; public skill details are loaded by card-editor-preview.
 import { CARD_SKILL_FACETS } from "../../lib/catalog-filters";
 import { matchesCardFilters, renderCardFilters } from "./card-filters";
 import { ptField } from "./pt-fields";
@@ -16,6 +21,7 @@ import type { TeamBuilder } from "../team-builder";
 import { renderResourceSort, sortedCards } from "./catalog-sort";
 import { chooserGroup } from "../ui/chooser-filters";
 import { actionMenu } from "../ui/action-menu";
+import { cardEditorPreview } from "./card-editor-preview";
 
 type Kind = "members" | "snaps";
 interface Row {
@@ -300,6 +306,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
   };
   const p = prefix(kind);
   const owned = kind === "members" ? host.view.members.get(cardId) : host.view.snaps.get(cardId);
+  const preview = cardEditorPreview(host);
   const characterId = kind === "members" ? catalog.member(cardId)?.characterId : undefined;
   const characterRequired = characterId !== undefined && !owned?.lock && [...host.view.members.values()].some(
     (row) => row.cardId !== cardId && row.lock && catalog.member(row.cardId)?.characterId === characterId,
@@ -349,12 +356,12 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
   const levelField = (value: number | null, cap: number) => ptField(host, fieldKey("lvl"), html`
     <div class="tb-growth-field">
       <span class="tb-growth-field__label">
-        <span>${host.t("level", "Level")}</span>
+        <span>${host.t("editorPreview.terms.level", "Level")}</span>
         <output>${value === null ? unset : html`Lv.<strong>${Math.min(value, cap)}</strong> / ${cap}`}</output>
       </span>
       <div class="tb-level">
-        ${iconButton({ icon: "remove", label: `${host.t("level", "Level")} −1`, disabled: value !== null && value <= 1, onClick: () => write("lvl", Math.max(1, Math.min(cap, (value ?? 2) - 1))) })}
-        <input class="tb-level__value" type="number" inputmode="numeric" min="1" max=${cap} step="1" placeholder="—" aria-label=${host.t("level", "Level")}
+        ${iconButton({ icon: "remove", label: `${host.t("editorPreview.terms.level", "Level")} −1`, disabled: value !== null && value <= 1, onClick: () => write("lvl", Math.max(1, Math.min(cap, (value ?? 2) - 1))) })}
+        <input class="tb-level__value" type="number" inputmode="numeric" min="1" max=${cap} step="1" placeholder="—" aria-label=${host.t("editorPreview.terms.level", "Level")}
           .value=${live(value === null ? "" : String(Math.min(value, cap)))}
           @input=${(event: Event) => {
             const input = event.currentTarget as HTMLInputElement;
@@ -370,30 +377,31 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
             input.value = next === null ? "" : String(next);
             write("lvl", next);
           }} />
-        ${iconButton({ icon: "add", label: `${host.t("level", "Level")} +1`, disabled: value !== null && value >= cap, onClick: () => write("lvl", Math.min(cap, (value ?? 0) + 1)) })}
-        <md-slider class="md3-slider" min="1" max=${cap} .value=${live(Math.min(value ?? cap, cap))} aria-label=${host.t("level", "Level")}
+        ${iconButton({ icon: "add", label: `${host.t("editorPreview.terms.level", "Level")} +1`, disabled: value !== null && value >= cap, onClick: () => write("lvl", Math.min(cap, (value ?? 0) + 1)) })}
+        <md-slider class="md3-slider" min="1" max=${cap} .value=${live(Math.min(value ?? cap, cap))} aria-label=${host.t("editorPreview.terms.level", "Level")}
           @change=${(event: Event) => write("lvl", Number((event.currentTarget as HTMLInputElement).value))}></md-slider>
         <button class="button button--tonal button--small" type="button" ?disabled=${value === cap} @click=${() => write("lvl", cap)}>MAX</button>
       </div>
     </div>
   `);
   let fields: TemplateResult;
+  let skills: TemplateResult;
   if (kind === "members") {
     const row = owned as OwnedMember | undefined;
     const limits = catalog.memberLimits(cardId, row?.awake ?? null)!;
-    const card = catalog.member(cardId);
-    const skillIcon = (group: "live" | "gekiso", id: number | undefined) => String(catalog.data.skills[group]?.[String(id)]?.icon ?? "") || undefined;
     fields = html`
-      ${stages(host.t("training", "Training"), "awk", row?.awake ?? null, limits.awake, trainingFace)}
+      ${stages(host.t("editorPreview.terms.training", "Training"), "awk", row?.awake ?? null, limits.awake, trainingFace)}
       ${levelField(row?.level ?? null, limits.levelCap)}
-      ${stages(host.t("awakening", "Awakening"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.memberRanks, host.t("awakening", "Awakening"), (stage) => stage))}
-      ${stages(host.t("liveSkill", "Live skill"), "sk", row?.skill ?? null, limits.liveSkillLevel, number, skillIcon("live", card?.liveSkillId))}
-      ${host.master!.members.get(cardId)?.gekisoSkillId ? stages(host.t("gekisoSkill", "GEKISO skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel, number, skillIcon("gekiso", card?.gekisoSkillId)) : nothing}
+      ${stages(host.t("editorPreview.terms.awakening", "Awaken"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.memberRanks, host.t("editorPreview.terms.awakening", "Awaken"), (stage) => stage))}
     `;
+    skills = html`${preview.skill("leader")}
+      ${preview.skill("live", 0, stages(host.t("editorPreview.terms.liveSkill", "LIVE Skill"), "sk", row?.skill ?? null, limits.liveSkillLevel, number))}
+      ${preview.skill("gekisou", 0, stages(host.t("editorPreview.terms.gekisouSkill", "GEKISO Skill"), "gsk", row?.gekisoSkill ?? null, limits.gekisoSkillLevel, number))}`;
   } else {
     const row = owned as OwnedSnap | undefined;
     const limits = catalog.snapLimits(cardId, row?.rank ?? null)!;
-    fields = html`${stages(host.t("limitBreak", "Limit break"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.supportRanks, host.t("limitBreak", "Limit break"), (stage) => stage - 1))}${levelField(row?.level ?? null, limits.levelCap)}`;
+    fields = html`${stages(host.t("editorPreview.terms.limitBreak", "Limit Break"), "rnk", row?.rank ?? null, limits.rank, rankFace(marks.supportRanks, host.t("editorPreview.terms.limitBreak", "Limit Break"), (stage) => stage - 1))}${levelField(row?.level ?? null, limits.levelCap)}`;
+    skills = html`${(["support", "gekisouSupport"] as const).map(group => [0, 1].map(slot => preview.skill(group, slot)))}`;
   }
   const flag = (label: string, field: "use" | "lock", value: boolean, disabled = false) => html`
     <label class="tb-switch-row">
@@ -414,11 +422,17 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
       </header>
       <div class="tb-editor__body">
-        <div class="tb-editor__fields">${fields}</div>
+        ${preview.statistics}
+        <div class="tb-editor__layout">
+        <section class="tb-editor__settings">
+        <div class="tb-editor__fields">${fields}${preview.bonuses}</div>
         ${ptField(host, fieldKey("use"), html`<div class="tb-editor__flags">
           ${flag(host.t("useInSearch", "Use in team search"), "use", owned?.use ?? false)}
           ${flag(characterRequired ? host.t("requiredOnePerCharacter", "One required card per character") : host.t("required", "Always include"), "lock", owned?.lock ?? false, characterRequired)}
         </div>`)}
+        </section>
+        <div class="tb-editor__skills">${skills}</div>
+        </div>
       </div>
       <footer class="tb-editor__actions">
         <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
