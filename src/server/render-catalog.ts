@@ -5,6 +5,7 @@ import type { Locale } from "../i18n/locales";
 import type { CatalogCollectionPayload } from "./catalog-collection";
 import { resourcePath, resourceKindForCollection } from "../lib/resource-route";
 import { eventSongPayload } from "./event-song-release";
+import { eventStoryPayload } from "./story-visibility";
 
 export async function renderCatalog(config: string, payload: EntityPayload, locale: Locale): Promise<string> {
   return (await renderCatalogPage(config, payload, locale)).body;
@@ -16,7 +17,7 @@ export async function renderCatalogPage(
   locale: Locale,
   section?: string,
 ): Promise<StaticWorkspacePage> {
-  payload = await eventSongPayload(payload);
+  payload = await eventStoryPayload(await eventSongPayload(payload));
   const route = resourcePath({
     server: payload.server,
     locale,

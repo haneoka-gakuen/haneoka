@@ -202,6 +202,7 @@ const groups: Group[] = [
 ];
 const japaneseLabel = "settings.labels.forceJapaneseTitles";
 const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
+const spoilerLabel = "settings.labels.showSpoilerContent";
 ---
 
 <Base locale={locale} route="/settings" title={title} titleKey="navigation.settings">
@@ -342,6 +343,14 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
                 )}
                 {group.name === "locale" && (
                   <div class="settings-toggle">
+                    <label for="spoiler-content"><Icon name="visibility" size={20} /><I18nText keyName={spoilerLabel} fallback="Show spoiler content" locale={locale} /></label>
+                    <md-switch id="spoiler-content" data-spoiler-content selected icons
+                      aria-label={t(locale, spoilerLabel, "Show spoiler content")}
+                      data-i18n-aria-label={spoilerLabel} data-i18n-aria-label-fallback="Show spoiler content"></md-switch>
+                  </div>
+                )}
+                {group.name === "locale" && (
+                  <div class="settings-toggle">
                     <label for="difficulty-estimates">
                       <Icon name="bar_chart" size={20} />
                       <span>
@@ -389,6 +398,8 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
   } from "../lib/date-format";
   import { japaneseSongTitles, setJapaneseSongTitles } from "../lib/song-display";
   import { difficultyEstimatesEnabled, setDifficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
+  import { spoilerContentEnabled, observeSpoilerContent } from "../lib/spoiler-content";
+  import { setPageSpoilers } from "../lib/spoiler-navigation";
   import { isReleaseServer, readSelectedReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
 
@@ -437,9 +448,11 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
     const controller = new AbortController();
     const { signal } = controller;
     let stopDifficultyDisplay: (() => void) | undefined;
+    let stopSpoilerDisplay: (() => void) | undefined;
     disposeSettings = () => {
       controller.abort();
       stopDifficultyDisplay?.();
+      stopSpoilerDisplay?.();
     };
     const updateSummary = (group: string) => {
       const selected = settings.querySelector<HTMLInputElement>(`input[name="${group}"]:checked`);
@@ -459,6 +472,13 @@ const estimatedDifficultyLabel = "settings.labels.showDifficultyEstimates";
         .forEach((group) => updateSummary(group.dataset.settingsGroup!));
     };
     select("theme", document.documentElement.dataset.themePreference || "system");
+    const spoilers = settings.querySelector<HTMLElement & {selected:boolean}>("[data-spoiler-content]");
+    if (spoilers) {
+      const sync = () => { spoilers.selected = spoilerContentEnabled(); };
+      sync();
+      stopSpoilerDisplay = observeSpoilerContent(sync);
+      spoilers.addEventListener("change", () => setPageSpoilers(spoilers.selected), {signal});
+    }
     revealSeasons(settings);
     select("seed", currentSeed());
     const effects = settings.querySelector<HTMLElement & { selected: boolean }>("[data-season-effects]");

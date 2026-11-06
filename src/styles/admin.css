@@ -3,6 +3,10 @@
     display: block;
     height: 100%;
   }
+  .admin-page .admin-visibility {
+    --chip-height: var(--md-comp-control-height-touch);
+    --button-height: var(--md-comp-control-height-touch);
+  }
   admin-workspace .admin-story-preview {
     position: relative;
     contain: layout paint;

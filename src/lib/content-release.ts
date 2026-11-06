@@ -1,5 +1,7 @@
 import { navigationDocumentUrl } from "./document-url";
-import { currentVisibilityPolicy } from "./content-policy-browser";
+import { spoilerContentEnabled } from "./spoiler-content";
+import { contentPublished } from "./content-publication";
+import { currentContentGroup, currentVisibilityPolicy } from "./content-policy-browser";
 import {
   DEFAULT_VISIBILITY_RULE,
   inferredVisibilityType,
@@ -14,15 +16,7 @@ export function showUnreleasedContent(): boolean {
 }
 
 function released(value: unknown, now: number): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return true;
-  const row = value as Record<string, unknown>;
-  const time = row.publicStartAt ?? row.releasedAt ?? row.publishedAt ?? row.releaseAt ?? row.startAt;
-  const first = Array.isArray(time) ? time.find((entry) => Number(entry) > 0) : time;
-  const timestamp = typeof first === "string" && !Number.isFinite(Number(first)) ? Date.parse(first) : Number(first);
-  const event = currentVisibilityPolicy().eventChallengeSongs ? Number(row.eventPublishedAt) : 0;
-  return (
-    (!(timestamp > now) || (event > 0 && event <= now)) && (!row.catalogMetadata || released(row.catalogMetadata, now))
-  );
+  return contentPublished(value, now);
 }
 
 export function isReleasedContent(value: unknown): boolean {
@@ -36,12 +30,15 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const kind = visibilityType(resource);
   const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
+  if (released(value, Date.now())) return true;
+  if (showUnreleasedContent()) return true;
+  if (!rule.groups.includes(currentContentGroup())) return false;
   const identity = id ?? (kind ? visibilityId(kind, row) : "");
   if (rule.hide.includes(identity)) return false;
   if (rule.show.includes(identity)) return true;
   if (rule.mode === "hidden") return false;
   if (rule.mode === "visible") return true;
-  return (rule.mode === "spoiler" && showUnreleasedContent()) || released(value, Date.now());
+  return rule.mode === "spoiler" && spoilerContentEnabled();
 }
 
 export function releasedContent<T>(value: T): T {

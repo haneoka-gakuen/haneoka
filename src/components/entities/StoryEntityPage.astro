@@ -13,6 +13,7 @@ import { resolveLocalizedText } from "../../lib/localized-text";
 import { episodeArtwork, spotArtwork } from "../../lib/story-artwork";
 import { serializePageData } from "../../lib/page-data";
 import { isReleasedContent } from "../../lib/content-release";
+import { withContentSource } from "../../lib/content-publication";
 import { renderStoryPage } from "../../server/render-catalog";
 import "../../lit/story-workspace";
 import "../../styles/story.css";
@@ -72,6 +73,7 @@ const body = rendered.body;
 ---
 
 <Base
+  publication={withContentSource(payload.episodes[page.storyId] || {},server)}
   locale={locale}
   route={sectionRoute}
   canonicalRoute={canonical ? canonicalHref : undefined}

@@ -1,5 +1,12 @@
-import { crossServerDisplayRow, type CrossCatalogDTO, type CrossCatalogEntry, type CrossCatalogIdentity, type CrossCatalogRow } from "./catalog";
+import {
+  crossServerDisplayRow,
+  type CrossCatalogDTO,
+  type CrossCatalogEntry,
+  type CrossCatalogIdentity,
+  type CrossCatalogRow,
+} from "./catalog";
 import { releasedCatalog } from "./releases";
+import { withContentSource } from "../content-publication";
 
 /** Pin media to its actual source release, including nested runtime records. */
 export function pinCrossCatalogValue(value: unknown, identity: CrossCatalogIdentity): unknown {
@@ -12,7 +19,9 @@ export function pinCrossCatalogValue(value: unknown, identity: CrossCatalogIdent
   }
   if (Array.isArray(value)) return value.map((entry) => pinCrossCatalogValue(entry, identity));
   if (value && typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, pinCrossCatalogValue(entry, identity)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, pinCrossCatalogValue(entry, identity)]),
+    );
   return value;
 }
 
@@ -21,12 +30,13 @@ export function crossCatalogPresentation(dto: CrossCatalogDTO) {
   const byId = new Map<string, CrossCatalogEntry>();
   const project = (entry: CrossCatalogEntry) => {
     const variant = entry.perServer[entry.displayServer]!;
-    const row = crossServerDisplayRow(entry);
-    for (const supplement of entry.content.supplements) if (supplement.classification === "source-asset") {
-      const field = supplement.field.split(".")[0]!;
-      if (variant.row[field] === undefined) delete row[field];
-      else row[field] = structuredClone(variant.row[field]);
-    }
+    const row = withContentSource(crossServerDisplayRow(entry), variant.identity.server);
+    for (const supplement of entry.content.supplements)
+      if (supplement.classification === "source-asset") {
+        const field = supplement.field.split(".")[0]!;
+        if (variant.row[field] === undefined) delete row[field];
+        else row[field] = structuredClone(variant.row[field]);
+      }
     const pinned = pinCrossCatalogValue(row, variant.identity) as CrossCatalogRow;
     entries.set(pinned, entry);
     byId.set(`${variant.identity.server}:${variant.id}`, entry);

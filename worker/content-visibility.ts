@@ -3,6 +3,17 @@ import {
   parseVisibilityPolicy,
   type ContentVisibilitySettings,
 } from "../src/lib/content-visibility-policy";
+import { getAuthSession } from "./auth";
+import { communityAccessState } from "./access";
+import type { UserGroup } from "../src/lib/user-roles";
+
+export async function contentUserGroup(request: Request, env: Env): Promise<UserGroup> {
+  if (!request.headers.has("Cookie") && !request.headers.has("Authorization")) return "guest";
+  const session = await getAuthSession(request, env).catch(() => null);
+  if (!session?.user?.id) return "guest";
+  const profile = await communityAccessState(env, session.user.id, []);
+  return profile?.status === "active" ? profile.role : "guest";
+}
 
 export async function readContentVisibility(env: Env): Promise<ContentVisibilitySettings> {
   const row = await env.DB.withSession("first-primary")
@@ -20,14 +31,15 @@ export async function handleContentVisibilityRequest(request: Request, env: Env)
   if (new URL(request.url).pathname !== "/api/v1/content-visibility") return null;
   if (request.method !== "GET" && request.method !== "HEAD")
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
-  const settings = await readContentVisibility(env);
-  const etag = `"visibility-${settings.version}"`;
+  const [settings, group] = await Promise.all([readContentVisibility(env), contentUserGroup(request, env)]);
+  const etag = `"visibility-v3-${settings.version}-${group}"`;
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "public, max-age=0, must-revalidate",
+    "Cache-Control": "private, no-store",
+    Vary: "Cookie, Authorization",
     ETag: etag,
   };
   return request.headers.get("If-None-Match") === etag
     ? new Response(null, { status: 304, headers })
-    : new Response(request.method === "HEAD" ? null : JSON.stringify(settings), { headers });
+    : new Response(request.method === "HEAD" ? null : JSON.stringify({ ...settings, group }), { headers });
 }

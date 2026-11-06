@@ -5,8 +5,12 @@ import {
   type ContentVisibilityPolicy,
   type ContentVisibilitySettings,
 } from "./content-visibility-policy";
-import { SPOILER_CONTENT_EVENT } from "./spoiler-content";
+import { SPOILER_CONTENT_EVENT, spoilerContentEnabled } from "./spoiler-content";
+import { RequestScope } from "./request-scope";
+import { isUserGroup, type UserGroup } from "./user-roles";
 
+const requests = new RequestScope();
+let installed = false;
 let parsed = "",
   policy = DEFAULT_VISIBILITY_POLICY;
 export function currentVisibilityPolicy(): ContentVisibilityPolicy {
@@ -22,20 +26,38 @@ export function currentVisibilityPolicy(): ContentVisibilityPolicy {
   }
   return policy;
 }
-export const visibilityPolicyKey = (): string => JSON.stringify(currentVisibilityPolicy());
-export function applyVisibilitySettings(settings: ContentVisibilitySettings): void {
+export function currentContentGroup(): UserGroup {
+  const group = typeof document === "undefined" ? undefined : document.documentElement?.dataset.contentGroup;
+  return isUserGroup(group) ? group : "guest";
+}
+export const visibilityPolicyKey = (): string =>
+  JSON.stringify([currentContentGroup(), spoilerContentEnabled(), currentVisibilityPolicy()]);
+export function applyVisibilitySettings(settings: ContentVisibilitySettings & { group?: UserGroup }): void {
+  const previous = visibilityPolicyKey();
   document.documentElement.dataset.contentVisibilityPolicy = JSON.stringify(settings.policy);
   document.documentElement.dataset.contentVisibilityVersion = String(settings.version);
-  dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
+  if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
+  if (previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
+}
+function refreshVisibility(): void {
+  const signal = requests.begin();
+  void fetch("/api/v1/content-visibility", { credentials: "same-origin", cache: "no-store", signal })
+    .then(async (response) => {
+      if (response.ok) {
+        const settings = (await response.json()) as ContentVisibilitySettings & { group: UserGroup };
+        if (requests.current(signal)) applyVisibilitySettings(settings);
+      }
+    })
+    .catch(() => undefined);
 }
 export function installContentVisibility(): void {
-  if (!document.documentElement.dataset.contentVisibilityPolicy)
-    void fetch("/api/v1/content-visibility")
-      .then(async (response) => {
-        if (response.ok) applyVisibilitySettings((await response.json()) as ContentVisibilitySettings);
-      })
-      .catch(() => undefined);
+  if (installed) return;
+  installed = true;
+  if (!document.documentElement.dataset.contentVisibilityPolicy) refreshVisibility();
+  addEventListener("haneoka:session-changed", refreshVisibility);
+  document.addEventListener("astro:page-load", refreshVisibility);
   document.addEventListener("astro:before-swap", (event) => {
+    requests.cancel();
     const next = (event as Event & { newDocument: Document }).newDocument;
     const current = document.documentElement.dataset;
     if (

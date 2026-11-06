@@ -1,3 +1,5 @@
+import { USER_GROUPS, isUserGroup, type UserGroup } from "./user-roles";
+
 export const VISIBILITY_TYPES = [
   "cards",
   "support-cards",
@@ -32,12 +34,13 @@ export const VISIBILITY_TYPES = [
   "anon-tokyo",
 ] as const;
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
-export const VISIBILITY_MODES = ["spoiler", "released", "visible", "hidden"] as const;
+export const VISIBILITY_MODES = ["spoiler", "visible", "hidden"] as const;
 export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
 export type VisibilityRule = {
   mode: VisibilityMode;
   show: string[];
   hide: string[];
+  groups: UserGroup[];
 };
 export type ContentVisibilityPolicy = {
   eventChallengeSongs: boolean;
@@ -48,7 +51,12 @@ export type ContentVisibilitySettings = {
   version: number;
   updatedAt: number;
 };
-export const DEFAULT_VISIBILITY_RULE: VisibilityRule = { mode: "spoiler", show: [], hide: [] };
+export const DEFAULT_VISIBILITY_RULE: VisibilityRule = {
+  mode: "spoiler",
+  show: [],
+  hide: [],
+  groups: [...USER_GROUPS],
+};
 export const DEFAULT_VISIBILITY_POLICY: ContentVisibilityPolicy = { eventChallengeSongs: true, types: {} };
 export const VISIBILITY_WORKSPACES = [
   "catalog-screen",
@@ -92,17 +100,26 @@ export function parseVisibilityPolicy(value: unknown): ContentVisibilityPolicy |
   for (const [kind, value] of Object.entries(policy.types)) {
     if (visibilityType(kind) !== kind || !value || typeof value !== "object" || Array.isArray(value)) return null;
     const rule = value as Record<string, unknown>;
-    if (!(VISIBILITY_MODES as readonly unknown[]).includes(rule.mode)) return null;
+    const mode = rule.mode === "released" ? "hidden" : rule.mode;
+    if (!(VISIBILITY_MODES as readonly unknown[]).includes(mode)) return null;
     const validIds = (ids: unknown): ids is string[] =>
       Array.isArray(ids) &&
       ids.length <= 100 &&
       ids.every((id) => typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(id)) &&
       new Set(ids).size === ids.length;
     if (!validIds(rule.show) || !validIds(rule.hide)) return null;
-    if (rule.mode !== "spoiler" || rule.show.length || rule.hide.length)
-      types[kind as VisibilityType] = { mode: rule.mode as VisibilityMode, show: [...rule.show], hide: [...rule.hide] };
+    const groups = rule.groups === undefined ? USER_GROUPS : rule.groups;
+    if (!Array.isArray(groups) || !groups.every(isUserGroup) || new Set(groups).size !== groups.length) return null;
+    const allowed = USER_GROUPS.filter((group) => groups.includes(group));
+    if (mode !== "spoiler" || rule.show.length || rule.hide.length || allowed.length !== USER_GROUPS.length)
+      types[kind as VisibilityType] = {
+        mode: mode as VisibilityMode,
+        show: [...rule.show],
+        hide: [...rule.hide],
+        groups: allowed,
+      };
   }
-  return { eventChallengeSongs: policy.eventChallengeSongs, types };
+  return { eventChallengeSongs: true, types };
 }
 
 const ID_FIELDS: Partial<Record<VisibilityType, readonly string[]>> = {

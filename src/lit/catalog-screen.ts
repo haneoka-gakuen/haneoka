@@ -10,6 +10,7 @@ import { isContentVisible, showUnreleasedContent } from "../lib/content-release"
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
 import { visibilityPolicyKey } from "../lib/content-policy-browser";
+import { withContentSource, withEventStoryVisibility } from "../lib/content-publication";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import catalogPageRollout from "../../config/catalog-page-rollout.json";
 import { CatalogPageRefresh } from "../lib/catalog-page-refresh";
@@ -1102,7 +1103,7 @@ export class CatalogScreen extends LitElement {
   }
   private unionPrimaryRow(entry: CrossCatalogEntry, itemEntries = this.unionItems): Item {
     const variant = entry.perServer[entry.displayServer]!;
-    const row = crossServerDisplayRow(entry);
+    const row = withContentSource(crossServerDisplayRow(entry),variant.identity.server);
     // Shared text may supplement this presentation; primary artwork remains on its own source.
     for (const supplement of entry.content.supplements)
       if (supplement.classification === "source-asset") {
@@ -2157,6 +2158,8 @@ export class CatalogScreen extends LitElement {
     if (item && isContentVisible(this.settings.resource, item, this.itemId(item))) {
       const title = this.itemTitleValue(item);
       updateEntityHeading(this, this.settings.chartPage ? this.chartPageTitle(item) : title.text, title.locale);
+    } else if (item) {
+      updateEntityHeading(this, this.label("unavailable", "Unavailable"));
     }
     syncEntityNavigation();
     this.renderEntityChrome();
@@ -2623,7 +2626,12 @@ export class CatalogScreen extends LitElement {
     if (this.settings.chartPage && typeof window !== "undefined" && this.isConnected) await this.ensureChartPlayer();
   }
   async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false): Promise<() => void> {
+    if (payload.server) payload = {...payload,item:withContentSource(payload.item,payload.server)};
     const identity = nativeMetaIdentity(payload), relatedSongs = payload.aux?.songs as Record<string, Item> | undefined;
+    if (this.isConnected && identity && payload.resource === "events" && payload.item.story) {
+      const stories = await crossServerPublicCache().readCollection("stories",identity).catch(() => ({}));
+      payload = {...payload,item:withEventStoryVisibility(payload.item,stories,identity.server)};
+    }
     if (this.isConnected && identity && ((payload.resource === "songs" && needsEventSongRelease(payload.item)) || Object.values(relatedSongs || {}).some(needsEventSongRelease))) {
       const releases = await crossServerPublicCache().readEventSongReleases(identity).catch(() => ({}));
       payload = { ...payload, item: payload.resource === "songs" ? withEventSongRelease(payload.item, releases) : payload.item,

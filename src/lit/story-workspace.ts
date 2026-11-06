@@ -106,6 +106,7 @@ import { readPageData } from "../lib/page-data";
 import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isReleasedContent } from "../lib/content-release";
+import { withContentSource } from "../lib/content-publication";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -398,7 +399,7 @@ export class StoryWorkspace extends LitElement {
   protected update(changed: Map<string, unknown>): void {
     if (changed.has("reader") && this.reader) {
       this.stopStoryPlayback();
-      this.detailEpisode = this.reader.story;
+      this.detailEpisode = this.origin === "release" ? withContentSource(this.reader.story, this.reader.server) : this.reader.story;
       this.entityId = this.episodeId(this.reader.story);
       this.pageServer = this.reader.server;
       this.detailMode = "text";
@@ -427,7 +428,7 @@ export class StoryWorkspace extends LitElement {
     this.chapters = recordValues(payload.chapters);
     this.unionStories = undefined;
     this.unionChapters.clear();
-    this.episodes = payload.episodes;
+    this.episodes = Object.fromEntries(Object.entries(payload.episodes).map(([id, episode]) => [id, withContentSource(episode, payload.server)]));
     this.storyEvents = payload.storyEvents;
     this.spots = payload.homeSpots;
     this.characters = payload.characters;
@@ -733,8 +734,8 @@ export class StoryWorkspace extends LitElement {
     if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
     this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
-    if (this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode)) {
-      const title = this.episodeTitleValue(this.detailEpisode);
+    if (this.entityId && this.detailEpisode) {
+      const title = isReleasedContent(this.detailEpisode) ? this.episodeTitleValue(this.detailEpisode) : {text: uiText(this.locale, "common.states.unavailable"), locale: this.locale};
       updateEntityHeading(this, title.text, title.locale);
       if (this.reader) {
         const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
@@ -1061,7 +1062,7 @@ export class StoryWorkspace extends LitElement {
     ]);
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
     this.chapters = recordValues(stories.chapters);
-    this.episodes = (stories.episodes as Record<string, JsonRecord>) || {};
+    this.episodes = Object.fromEntries(Object.entries((stories.episodes as Record<string, JsonRecord>) || {}).map(([id, episode]) => [id, withContentSource(episode, server)]));
     this.storyEvents = Array.isArray(stories.storyEvents) ? stories.storyEvents : [];
     this.spots = recordValues(stories.homeSpots);
     this.characters = recordValues(characters);
@@ -1200,19 +1201,19 @@ export class StoryWorkspace extends LitElement {
       // Events own their rail destination and run newest first; the chapter
       // itself (banner, episodes, description) renders exactly like a band's.
       return this.chapters
-        .filter((c) => eventIds.has(String(c.chapterId)))
+        .filter((c) => eventIds.has(String(c.chapterId)) && this.visibleChapterEpisodes(c).length > 0)
         .sort((a, b) => this.eventStartAt(b) - this.eventStartAt(a) || Number(b.chapterId) - Number(a.chapterId));
     }
     if (this.mode === "band")
       return this.chapters
         .filter(
           (c) =>
-            Number(c.chapterId) < 900000 && !eventIds.has(String(c.chapterId)) && this.chapterEpisodes(c).length > 0,
+            Number(c.chapterId) < 900000 && !eventIds.has(String(c.chapterId)) && this.visibleChapterEpisodes(c).length > 0,
         )
         .sort((a, b) => Number(a.chapterSort) - Number(b.chapterSort));
     if (this.mode === "birthday")
       return this.chapters
-        .filter((c) => !eventIds.has(String(c.chapterId)) && this.chapterEpisodes(c).length > 0)
+        .filter((c) => !eventIds.has(String(c.chapterId)) && this.visibleChapterEpisodes(c).length > 0)
         .sort((a, b) => this.releaseValue(b) - this.releaseValue(a) || Number(b.chapterId) - Number(a.chapterId));
     const key = this.mode === "link" ? "asset_linkstory" : `asset_${this.mode}`;
     return this.chapters.filter((c) => this.chapterKind(c) === key);
@@ -1234,6 +1235,9 @@ export class StoryWorkspace extends LitElement {
               ? episode.storyCategory !== "birthday"
               : true)),
     );
+  }
+  private visibleChapterEpisodes(chapter: JsonRecord | undefined) {
+    return this.chapterEpisodes(chapter).filter(isReleasedContent);
   }
   private chapterOf(episode: JsonRecord) {
     if (this.isProvider())
@@ -1562,7 +1566,7 @@ export class StoryWorkspace extends LitElement {
         label: (event ? this.text(name) : "") || this.chapterName(chapter) || String(chapter.chapterId || ""),
         language: resolveLocalizedText(event ? name : chapter.chapterName, this.locale).locale,
         image: String(chapter.banner || chapter.image || chapter.icon || ""),
-        meta: `${this.chapterEpisodes(chapter).length} ${uiText(this.locale, "story.labels.episodes")}`,
+        meta: `${this.visibleChapterEpisodes(chapter).length} ${uiText(this.locale, "story.labels.episodes")}`,
       };
     });
   }

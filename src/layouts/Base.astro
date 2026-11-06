@@ -8,6 +8,7 @@ import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../
 import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
 import { themeCharacters } from "../server/theme-characters";
+import { publicationFields } from "../lib/content-publication";
 import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex } from "../lib/seo";
 interface Props {
   locale: Locale;
@@ -23,6 +24,7 @@ interface Props {
   /** Entity artwork used by Pagefind result cards. Empty pages clear its automatic image. */
   searchImage?: string;
   searchTitle?: string;
+  publication?: Record<string, unknown>;
 }
 const {
   locale,
@@ -72,22 +74,17 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
   <head>
     <script is:inline data-astro-rerun>
       try {
-        const url = new URL(document.documentElement.dataset.navigationHref || location.href);
-        const value = url.searchParams.get("spoiler");
-        if (value !== null) sessionStorage.setItem("haneoka.page-spoilers", value);
-        else {
-          const stored = sessionStorage.getItem("haneoka.page-spoilers");
-          if (stored !== null) {
-            url.searchParams.set("spoiler", stored);
-            history.replaceState(history.state, "", url);
-          }
-        }
+        let stored = null;
+        try { stored = localStorage.getItem("haneoka:spoiler-content:v1"); } catch {}
+        document.documentElement.dataset.spoilerContent = stored !== "0" ? "1" : "0";
+        document.cookie = `haneoka.spoilers=${stored !== "0" ? "1" : "0"}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
       } catch {}
     </script>
     <style is:inline>
       @layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
     </style>
     <meta charset="utf-8" />
+    {Astro.props.publication && <meta name="haneoka-content-publication" content={JSON.stringify(publicationFields(Astro.props.publication))} />}
     <script>
       import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
     </script>
@@ -261,7 +258,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { signedInHint } from "../lib/community-viewer";
       import { installUpdateCheck } from "../lib/update-check";
       import { installFullscreen } from "../lib/fullscreen";
-      import { installSpoilerNavigation, refreshSpoilerPreference } from "../lib/spoiler-navigation";
+      import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installContentVisibility } from "../lib/content-policy-browser";
       installSpoilerNavigation();
       installContentVisibility();
@@ -271,7 +268,6 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       installFullscreen();
       const refreshDocumentAccess = () => {
         if (signedInHint() || document.documentElement.dataset.contentAccess === "1") void refreshContentAccess();
-        if (signedInHint()) void refreshSpoilerPreference();
       };
       refreshDocumentAccess();
       if ("serviceWorker" in navigator)

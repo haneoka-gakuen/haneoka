@@ -1,8 +1,6 @@
-import { SPOILER_CONTENT_EVENT } from "./spoiler-content";
-import { RequestScope } from "./request-scope";
+import { setSpoilerContentEnabled, spoilerContentEnabled, SPOILER_STORAGE_KEY } from "./spoiler-content";
 import { navigationDocumentUrl } from "./document-url";
 
-const requests = new RequestScope();
 let installed = false;
 const pageUrl = (url: URL) =>
   url.origin === location.origin &&
@@ -15,8 +13,8 @@ function syncLink(anchor: HTMLAnchorElement) {
   const target = new URL(raw, location.href);
   if (!pageUrl(target)) return;
   const value = navigationDocumentUrl().searchParams.get("spoiler");
-  if (value === null) target.searchParams.delete("spoiler");
-  else target.searchParams.set("spoiler", value);
+  if (value === null || target.searchParams.has("spoiler")) return;
+  target.searchParams.set("spoiler", value);
   const href = `${target.pathname}${target.search}${target.hash}`;
   if (href !== raw) anchor.setAttribute("href", href);
 }
@@ -27,33 +25,8 @@ function syncLinks(root: ParentNode) {
 }
 
 export function setPageSpoilers(enabled: boolean): void {
-  const target = new URL(location.href);
-  target.searchParams.set("spoiler", enabled ? "1" : "0");
-  history.replaceState(history.state, "", target);
-  try {
-    sessionStorage.setItem("haneoka.page-spoilers", enabled ? "1" : "0");
-  } catch {}
+  setSpoilerContentEnabled(enabled);
   syncLinks(document);
-  dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
-}
-
-export async function refreshSpoilerPreference(): Promise<void> {
-  const signal = requests.begin();
-  try {
-    const response = await fetch("/api/v1/account/spoilers", { credentials: "same-origin", cache: "no-store", signal });
-    if (!response.ok) return;
-    const value = (await response.json()) as { allowed: boolean; enabled: boolean };
-    if (!requests.current(signal)) return;
-    document.documentElement.dataset.spoilerPreferenceAllowed = value.allowed ? "1" : "0";
-    dispatchEvent(new Event("haneoka:spoiler-preference"));
-    if (value.allowed && value.enabled && !new URL(location.href).searchParams.has("spoiler")) {
-      const target = new URL(location.href);
-      target.searchParams.set("spoiler", "1");
-      location.replace(target);
-    }
-  } catch {
-    /* The current URL keeps its state. */
-  }
 }
 
 export function installSpoilerNavigation(): void {
@@ -72,10 +45,10 @@ export function installSpoilerNavigation(): void {
     const value = new URL(location.href).searchParams.get("spoiler");
     if (value !== null) target.searchParams.set("spoiler", value);
   });
-  document.addEventListener("astro:page-load", () => syncLinks(document));
-  addEventListener("haneoka:session-changed", () => {
-    requests.cancel();
-    delete document.documentElement.dataset.spoilerPreferenceAllowed;
-    dispatchEvent(new Event("haneoka:spoiler-preference"));
+  document.addEventListener("astro:page-load", () => {
+    syncLinks(document);
+  });
+  window.addEventListener("storage", (event) => {
+    if (event.key === SPOILER_STORAGE_KEY || event.key === null) setPageSpoilers(spoilerContentEnabled());
   });
 }

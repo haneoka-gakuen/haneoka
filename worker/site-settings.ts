@@ -1,15 +1,20 @@
 import { isPublicReleaseServer as isPublicResourceServer } from "../src/lib/temporary-public-routing";
 export { isPublicReleaseServer as isPublicResourceServer } from "../src/lib/temporary-public-routing";
-import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
 import { withPrimaryD1 } from "./d1-session";
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { USER_ROLES, isUserRole, type UserRole } from "../src/lib/user-roles";
 import { WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id";
-import { COMMUNITY_VISIBILITY_ATTRIBUTE, communityVisibilityCss, communityPagesEnabled } from "../src/lib/site-community";
+import {
+  COMMUNITY_VISIBILITY_ATTRIBUTE,
+  communityVisibilityCss,
+  communityPagesEnabled,
+} from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
-import { readContentVisibility } from "./content-visibility";
-import { VISIBILITY_WORKSPACES, visibilityType } from "../src/lib/content-visibility-policy";
+import { contentUserGroup, readContentVisibility } from "./content-visibility";
+import { DEFAULT_VISIBILITY_RULE, VISIBILITY_WORKSPACES, visibilityType } from "../src/lib/content-visibility-policy";
+import { contentPublished } from "../src/lib/content-publication";
+import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
 import { parseResourceRoute } from "../src/lib/resource-route";
 
 export type SiteSettings = {
@@ -68,9 +73,13 @@ export function requestedResourceServers(request: Request): string[] {
 export const restrictedResourceRequest = (request: Request): boolean =>
   requestedResourceServers(request).some((server) => !isPublicResourceServer(server));
 
-export async function contentSourceScope(env: Env): Promise<{ sources: string[]; sourceFamilies: Record<string, "jp" | "intl"> }> {
+export async function contentSourceScope(
+  env: Env,
+): Promise<{ sources: string[]; sourceFamilies: Record<string, "jp" | "intl"> }> {
   const result = await env.DB.withSession("first-primary")
-    .prepare("SELECT slug, region FROM resource_server WHERE status = 'active' AND slug NOT IN ('jp', 'intl') AND slug NOT LIKE '%-cbt' ORDER BY slug")
+    .prepare(
+      "SELECT slug, region FROM resource_server WHERE status = 'active' AND slug NOT IN ('jp', 'intl') AND slug NOT LIKE '%-cbt' ORDER BY slug",
+    )
     .all<{ slug: string; region: string }>();
   return {
     sources: result.results.map((row) => row.slug),
@@ -126,26 +135,25 @@ export async function applySiteSettings(
   env: Env,
 ): Promise<Response> {
   if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/html")) return response;
-  const visibility = await readContentVisibility(env);
-  const customVisibility = !visibility.policy.eventChallengeSongs || Object.keys(visibility.policy.types).length > 0;
+  const [visibility, group] = await Promise.all([readContentVisibility(env), contentUserGroup(request, env)]);
+  const rules = visibility.policy;
+  const preference = spoilerCookieEnabled(request.headers.get("Cookie"));
+  const customVisibility = !preference || Object.keys(rules.types).length > 0;
   const resource = parseResourceRoute(new URL(request.url).pathname);
   const kind = resource && visibilityType(resource.kind);
-  const rule = kind && visibility.policy.types[kind];
-  const hideIdentity = Boolean(resource?.id && rule && (rule.hide.includes(resource.id) || (rule.mode === "hidden" && !rule.show.includes(resource.id))));
+  const rule = kind ? (rules.types[kind] ?? DEFAULT_VISIBILITY_RULE) : undefined;
   const allowed = settings ? await testContentAllowed(request, env, settings) : false;
   const scope = allowed ? await contentSourceScope(env) : undefined;
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", settings ? "private, max-age=0, must-revalidate" : "public, max-age=0, must-revalidate");
+  headers.set("Cache-Control", "private, max-age=0, must-revalidate");
   const vary = new Set(
     (headers.get("Vary") || "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
   );
-  if (settings) {
-    vary.add("Cookie");
-    vary.add("Authorization");
-  }
+  vary.add("Cookie");
+  vary.add("Authorization");
   vary.add("Accept-Encoding");
   headers.set("Vary", [...vary].join(", "));
   headers.delete("Content-Length");
@@ -153,10 +161,23 @@ export async function applySiteSettings(
   const community = communityPagesEnabled(new URL(request.url).hostname, env.COMMUNITY_HIDDEN_HOSTS);
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
-  const spoilers = settings ? spoilerCookieEnabled(request.headers.get("Cookie")) : false;
+  const spoilerValue = new URL(request.url).searchParams.get("spoiler");
+  const override = Number.isFinite(Number(spoilerValue)) && Number(spoilerValue) !== 0;
+  const spoilers = override || preference;
+  let published = true;
+  const hideIdentity = () =>
+    Boolean(
+      !published &&
+      !override &&
+      resource?.id &&
+      rule &&
+      (!rule.groups.includes(group) ||
+        rule.hide.includes(resource.id) ||
+        (!rule.show.includes(resource.id) && (rule.mode === "hidden" || (rule.mode === "spoiler" && !preference)))),
+    );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:visibility-${visibility.version}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:visibility-v3-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -189,23 +210,53 @@ export async function applySiteSettings(
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
         element.setAttribute("data-content-visibility-policy", JSON.stringify(visibility.policy));
         element.setAttribute("data-content-visibility-version", String(visibility.version));
+        element.setAttribute("data-content-group", group);
       },
     })
-    .on("head", { element(element) {
-      element.append(`<style data-community-visibility>${communityVisibilityCss(new URL(request.url).origin)}</style>`, { html: true });
-    } })
+    .on("head", {
+      element(element) {
+        element.append(
+          `<style data-community-visibility>${communityVisibilityCss(new URL(request.url).origin)}</style>`,
+          { html: true },
+        );
+      },
+    })
     .on(VISIBILITY_WORKSPACES.map((tag) => `${tag}[data-prerendered]`).join(", "), {
       element(element) {
         if (customVisibility) element.removeAttribute("data-prerendered");
       },
     })
     .on(VISIBILITY_WORKSPACES.map((tag) => `${tag} > *`).join(", "), {
-      element(element) { if (customVisibility && element.tagName !== "script") element.remove(); },
+      element(element) {
+        if (customVisibility && element.tagName !== "script") element.remove();
+      },
     })
-    .on("home-dashboard[data-prerendered]", { element(element) { if (customVisibility) element.removeAttribute("data-prerendered"); } })
-    .on("home-dashboard > *", { element(element) { if (customVisibility && element.tagName !== "script") element.remove(); } })
-    .on("h1", { element(element) { if (hideIdentity) element.setInnerContent(""); } })
-    .on("title", { element(element) { if (hideIdentity) element.setInnerContent("haneoka"); } })
+    .on("home-dashboard[data-prerendered]", {
+      element(element) {
+        if (customVisibility) element.removeAttribute("data-prerendered");
+      },
+    })
+    .on("home-dashboard > *", {
+      element(element) {
+        if (customVisibility && element.tagName !== "script") element.remove();
+      },
+    })
+    .on('meta[name="haneoka-content-publication"]', {
+      element(element) {
+        const value = element.getAttribute("content");
+        if (value) published = contentPublished(JSON.parse(value));
+      },
+    })
+    .on("h1", {
+      element(element) {
+        if (hideIdentity()) element.setInnerContent("");
+      },
+    })
+    .on("title", {
+      element(element) {
+        if (hideIdentity()) element.setInnerContent("haneoka");
+      },
+    })
     .on("story-workspace[data-provider-entity-shell]", {
       element(element) {
         if (providerId) element.setAttribute("entity-id", providerId);

@@ -5,11 +5,10 @@
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
 import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
-import { refreshSpoilerPreference } from "../lib/spoiler-navigation";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
 import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, VISIBILITY_MODES, parseVisibilityPolicy,
   type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
-import { USER_ROLES, isUserRole } from "../lib/user-roles";
+import { USER_GROUPS, USER_ROLES, isUserRole, type UserGroup } from "../lib/user-roles";
 import { modal } from "./ui/modal";
 import "../styles/admin-forums.css";
 import {
@@ -97,6 +96,7 @@ export class AdminWorkspace extends LitElement {
     visibilityExpanded: { state: true },
     visibilityIdDrafts: { state: true },
     visibilityInvalid: { state: true },
+    visibilityBulkGroups: { state: true },
     section: { type: String },
     phase: { state: true },
     staff: { state: true },
@@ -175,6 +175,7 @@ export class AdminWorkspace extends LitElement {
   declare private visibilityExpanded: string;
   declare private visibilityIdDrafts: Record<string, string>;
   declare private visibilityInvalid: boolean;
+  declare private visibilityBulkGroups: UserGroup[];
   private visibilityDraftVersion?: number;
   declare staff: Value;
   declare error: string;
@@ -293,6 +294,7 @@ export class AdminWorkspace extends LitElement {
     this.visibilityExpanded = "";
     this.visibilityIdDrafts = {};
     this.visibilityInvalid = false;
+    this.visibilityBulkGroups = [...USER_GROUPS];
     this.staff = {};
     this.error = "";
     this.busy = "";
@@ -816,27 +818,11 @@ export class AdminWorkspace extends LitElement {
       } else await this.load(false);
     });
   }
-  private changeSpoilerAccess(event: Event, role: string) {
-    const control = event.currentTarget as HTMLElement & { checked: boolean };
-    const settings = this.document.spoilerSettings as Value | undefined;
-    if (!settings || this.busy) return;
-    const roles = new Set(settings.roles as string[]);
-    if (control.checked) roles.add(role); else roles.delete(role);
-    control.checked = (settings.roles as string[]).includes(role);
-    void this.mutate("spoiler-settings", async (assertCurrent) => {
-      const result = await this.request("/api/v1/admin/spoiler-settings", {
-        method: "PUT", body: JSON.stringify({ roles: USER_ROLES.filter((value) => roles.has(value)), expectedVersion: settings.version }),
-      });
-      assertCurrent();
-      this.document = { ...this.document, spoilerSettings: result.spoilerSettings };
-      await refreshSpoilerPreference();
-    });
-  }
   private changeVisibilityRule(kind: VisibilityType, patch: Partial<VisibilityRule>) {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
     this.visibilityDraftVersion ??= settings.version;
     const current = this.visibilityDraft ?? settings.policy;
-    this.visibilityDraft = { ...current, types: { ...current.types, [kind]: { ...(current.types[kind] ?? DEFAULT_VISIBILITY_RULE), ...patch } } };
+    this.visibilityDraft = { ...current, types: { ...current.types, [kind]: { ...DEFAULT_VISIBILITY_RULE, ...current.types[kind], ...patch } } };
   }
   private saveVisibility() {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
@@ -857,24 +843,39 @@ export class AdminWorkspace extends LitElement {
       snackbar(this.label("visibilitySaved", "Content visibility saved"));
     });
   }
+  private applyVisibilityGroups() {
+    const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
+    this.visibilityDraftVersion ??= settings.version;
+    const policy = this.visibilityDraft ?? settings.policy;
+    this.visibilityDraft = { ...policy, types: Object.fromEntries(VISIBILITY_TYPES.map((kind) => [
+      kind, { ...DEFAULT_VISIBILITY_RULE, ...policy.types[kind], groups: [...this.visibilityBulkGroups] },
+    ])) };
+  }
   private renderVisibilitySettings() {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings | undefined;
     if (!settings) return nothing;
     const policy = this.visibilityDraft ?? settings.policy;
-    const modes = { spoiler: "visibilityModeSpoiler", released: "visibilityModeReleased", visible: "visibilityModeVisible", hidden: "visibilityModeHidden" };
+    const modes = { spoiler: "visibilityModeSpoiler", visible: "visibilityModeVisible", hidden: "visibilityModeHidden" };
     const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
     return html`
-      <section class="admin-summary surface stack">
+      <section class="admin-summary surface stack admin-visibility">
         <h3 class="detail-section-title">${this.label("contentVisibility", "Content visibility")}</h3>
-        <label class="row row--between">
-          <span>${this.label("eventChallengeSongs", "Released event challenge songs")}</span>
-          <md-switch .selected=${policy.eventChallengeSongs} ?disabled=${Boolean(this.busy)}
-            aria-label=${this.label("eventChallengeSongs", "Released event challenge songs")}
-            @change=${(event: Event) => { this.visibilityDraftVersion ??= settings.version; this.visibilityDraft = { ...policy, eventChallengeSongs: (event.currentTarget as HTMLElement & {selected:boolean}).selected }; }}></md-switch>
-        </label>
+        <div class="stack stack--tight">
+          <span class="md-label-large">${this.label("visibilityBulkGroups", "Default groups for all categories")}</span>
+          <div class="chip-set" role="group" aria-label=${this.label("visibilityBulkGroups", "Default groups for all categories")}>
+            ${USER_GROUPS.map((group) => html`<label class="chip">
+              <md-checkbox .checked=${this.visibilityBulkGroups.includes(group)} ?disabled=${Boolean(this.busy)}
+                aria-label=${`${this.label("visibilityBulkGroups", "Default groups for all categories")} / ${this.label(`roles.${group}`, group)}`}
+                @change=${(event: Event) => { this.visibilityBulkGroups = USER_GROUPS.filter((value) => value === group ? (event.currentTarget as HTMLElement & {checked: boolean}).checked : this.visibilityBulkGroups.includes(value)); }}></md-checkbox>
+              ${this.label(`roles.${group}`, group)}
+            </label>`)}
+          </div>
+          <button class="button button--outlined" ?disabled=${Boolean(this.busy)}
+            @click=${() => this.applyVisibilityGroups()}>${this.label("visibilityApplyAll", "Apply groups to all categories")}</button>
+        </div>
         <div class="stack">
           ${VISIBILITY_TYPES.map((kind) => {
-            const rule = policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
+            const rule = { ...DEFAULT_VISIBILITY_RULE, ...policy.types[kind] };
             const title = this.label(`visibilityTypes.${kind}`, kind);
             return accordion({ id: `visibility-${kind}`, label: title,
               metadata: html`<span class="md-label-medium">${this.label(modes[rule.mode], rule.mode)}</span>`,
@@ -887,6 +888,17 @@ export class AdminWorkspace extends LitElement {
                   @change=${(event: Event) => this.changeVisibilityRule(kind, {mode:(event.currentTarget as HTMLElement & {value:VisibilityRule["mode"]}).value})}>
                   ${VISIBILITY_MODES.map((mode) => html`<md-select-option value=${mode}><div slot="headline">${this.label(modes[mode], mode)}</div></md-select-option>`)}
                 </md-outlined-select>
+                <div class="stack stack--tight">
+                  <span class="md-label-large">${this.label("visibilityGroups", "Visible user groups")}</span>
+                  <div class="chip-set" role="group" aria-label=${`${title} / ${this.label("visibilityGroups", "Visible user groups")}`}>
+                    ${USER_GROUPS.map((group) => html`<label class="chip">
+                      <md-checkbox .checked=${rule.groups.includes(group)} ?disabled=${Boolean(this.busy)}
+                        aria-label=${`${title} / ${this.label(`roles.${group}`, group)}`}
+                        @change=${(event:Event)=>this.changeVisibilityRule(kind,{groups:USER_GROUPS.filter((value)=>value === group ? (event.currentTarget as HTMLElement&{checked:boolean}).checked : rule.groups.includes(value))})}></md-checkbox>
+                      ${this.label(`roles.${group}`, group)}
+                    </label>`)}
+                  </div>
+                </div>
                   <md-outlined-text-field type="textarea" rows="2" label=${this.label("visibilityShowIds", "Always visible IDs")}
                     .value=${this.visibilityIdDrafts[`${kind}:show`] ?? rule.show.join("\n")} ?disabled=${Boolean(this.busy)}
                     ?error=${this.visibilityInvalid && !parseVisibilityPolicy({eventChallengeSongs:true,types:{[kind]:rule}})}
@@ -2653,7 +2665,6 @@ export class AdminWorkspace extends LitElement {
       </section>
     `;
     const access = this.document.siteSettings as Value | undefined;
-    const spoilers = this.document.spoilerSettings as Value | undefined;
     return html`
       <div class="admin-overview">
         <section class="admin-work-queue" aria-labelledby="admin-queue-heading">
@@ -2686,21 +2697,6 @@ export class AdminWorkspace extends LitElement {
         </div>
         ${this.renderAnalytics()}${this.renderStatistics()}
         ${this.renderVisibilitySettings()}
-        ${spoilers ? html`
-          <section class="admin-summary surface stack">
-            <h3 class="detail-section-title">${this.label("spoilerSettings", "Spoiler content settings")}</h3>
-            <div class="chip-set" role="group" aria-label=${this.label("contentAccessGroups", "Allowed account groups")}>
-              ${USER_ROLES.map((role) => html`
-                <label class="chip">
-                  <md-checkbox aria-label=${this.label(`roles.${role}`, role)}
-                    .checked=${(spoilers.roles as string[]).includes(role)} ?disabled=${Boolean(this.busy)}
-                    @change=${(event: Event) => this.changeSpoilerAccess(event, role)}></md-checkbox>
-                  ${this.label(`roles.${role}`, role)}
-                </label>
-              `)}
-            </div>
-          </section>
-        ` : nothing}
         ${
           access
             ? html`

@@ -23,6 +23,7 @@ import { serializePageData } from "../../lib/page-data";
 import { defaultSongTitle } from "../../lib/song-display";
 import { isReleasedContent } from "../../lib/content-release";
 import { eventSongPayload } from "../../server/event-song-release";
+import { eventStoryPayload } from "../../server/story-visibility";
 
 interface Props {
   page: SearchableCatalogPage;
@@ -54,7 +55,7 @@ const seoTitleValues = Object.fromEntries(
     ];
   }),
 ) as Record<Locale, string>;
-const payload = await eventSongPayload(await catalogPageData(server, page.resource, page.id, locale, "full"));
+const payload = await eventStoryPayload(await eventSongPayload(await catalogPageData(server, page.resource, page.id, locale, "full")));
 const released = isReleasedContent(payload.item);
 const pageDataId=`catalog-page-${page.resource}-${page.id}`;
 const nativeMetaReference = process.env.NATIVE_META_REFERENCE_RECEIPTS_JSON && page.resource === "songs"
@@ -85,6 +86,7 @@ const entity = canonical
 ---
 
 <Base
+  publication={payload.item}
   locale={locale}
   route={route}
   canonicalRoute={canonical ? canonicalHref : undefined}
