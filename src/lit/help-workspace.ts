@@ -1,5 +1,6 @@
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -254,6 +255,7 @@ export class HelpWorkspace extends LitElement {
     return Array.isArray(category?.subcategories) ? (category.subcategories as JsonRecord[]) : [];
   }
   render() {
+    if (this.entityId && !isContentVisible(this.mode === "tips" ? "help-tips" : "help", {}, this.entityId)) return nothing;
     const entries = this.filteredEntries();
     if (this.entityId) {
       clearAppBarActions("help");

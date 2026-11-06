@@ -6,6 +6,9 @@
 import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
 import { refreshSpoilerPreference } from "../lib/spoiler-navigation";
+import { applyVisibilitySettings } from "../lib/content-policy-browser";
+import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, VISIBILITY_MODES, parseVisibilityPolicy,
+  type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
 import { USER_ROLES, isUserRole } from "../lib/user-roles";
 import { modal } from "./ui/modal";
 import "../styles/admin-forums.css";
@@ -90,6 +93,10 @@ const icon = (name: string, size = 20) => html`
 
 export class AdminWorkspace extends LitElement {
   static properties = {
+    visibilityDraft: { state: true },
+    visibilityExpanded: { state: true },
+    visibilityIdDrafts: { state: true },
+    visibilityInvalid: { state: true },
     section: { type: String },
     phase: { state: true },
     staff: { state: true },
@@ -164,6 +171,10 @@ export class AdminWorkspace extends LitElement {
   declare section: Section;
   declare phase: "loading" | "ready" | "error";
   declare document: Value;
+  declare private visibilityDraft: ContentVisibilityPolicy | null;
+  declare private visibilityExpanded: string;
+  declare private visibilityIdDrafts: Record<string, string>;
+  declare private visibilityInvalid: boolean;
   declare staff: Value;
   declare error: string;
   declare busy: string;
@@ -277,6 +288,10 @@ export class AdminWorkspace extends LitElement {
     this.section = "overview";
     this.phase = "loading";
     this.document = {};
+    this.visibilityDraft = null;
+    this.visibilityExpanded = "";
+    this.visibilityIdDrafts = {};
+    this.visibilityInvalid = false;
     this.staff = {};
     this.error = "";
     this.busy = "";
@@ -811,6 +826,77 @@ export class AdminWorkspace extends LitElement {
       this.document = { ...this.document, spoilerSettings: result.spoilerSettings };
       await refreshSpoilerPreference();
     });
+  }
+  private changeVisibilityRule(kind: VisibilityType, patch: Partial<VisibilityRule>) {
+    const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
+    const current = this.visibilityDraft ?? settings.policy;
+    this.visibilityDraft = { ...current, types: { ...current.types, [kind]: { ...(current.types[kind] ?? DEFAULT_VISIBILITY_RULE), ...patch } } };
+  }
+  private saveVisibility() {
+    const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
+    const policy = parseVisibilityPolicy(this.visibilityDraft);
+    if (!policy) { this.visibilityInvalid = true; this.error = this.label("visibilityInvalid", "Invalid content visibility settings"); return; }
+    this.visibilityInvalid = false;
+    void this.mutate("content-visibility", async (assertCurrent) => {
+      const result = await this.request("/api/v1/admin/content-visibility", {
+        method: "PUT", body: JSON.stringify({ policy, expectedVersion: settings.version }),
+      });
+      assertCurrent();
+      const saved = result.visibilitySettings as unknown as ContentVisibilitySettings;
+      this.document = { ...this.document, visibilitySettings: saved };
+      this.visibilityDraft = null;
+      this.visibilityIdDrafts = {};
+      applyVisibilitySettings(saved);
+      snackbar(this.label("visibilitySaved", "Content visibility saved"));
+    });
+  }
+  private renderVisibilitySettings() {
+    const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings | undefined;
+    if (!settings) return nothing;
+    const policy = this.visibilityDraft ?? settings.policy;
+    const modes = { spoiler: "visibilityModeSpoiler", released: "visibilityModeReleased", visible: "visibilityModeVisible", hidden: "visibilityModeHidden" };
+    const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
+    return html`
+      <section class="admin-summary surface stack">
+        <h3 class="detail-section-title">${this.label("contentVisibility", "Content visibility")}</h3>
+        <label class="row row--between">
+          <span>${this.label("eventChallengeSongs", "Released event challenge songs")}</span>
+          <md-switch .selected=${policy.eventChallengeSongs} ?disabled=${Boolean(this.busy)}
+            aria-label=${this.label("eventChallengeSongs", "Released event challenge songs")}
+            @change=${(event: Event) => { this.visibilityDraft = { ...policy, eventChallengeSongs: (event.currentTarget as HTMLElement & {selected:boolean}).selected }; }}></md-switch>
+        </label>
+        <div class="stack">
+          ${VISIBILITY_TYPES.map((kind) => {
+            const rule = policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
+            const title = this.label(`visibilityTypes.${kind}`, kind);
+            return accordion({ id: `visibility-${kind}`, label: title,
+              metadata: html`<span class="md-label-medium">${this.label(modes[rule.mode], rule.mode)}</span>`,
+              expanded: this.visibilityExpanded === kind,
+              onExpandedChange: (expanded) => { this.visibilityExpanded = expanded ? kind : ""; },
+              content: html`<div class="stack">
+                <md-outlined-select label=${this.label("visibilityMode", "Display rule")}
+                  aria-label=${`${title} / ${this.label("visibilityMode", "Display rule")}`}
+                  .value=${rule.mode} ?disabled=${Boolean(this.busy)}
+                  @change=${(event: Event) => this.changeVisibilityRule(kind, {mode:(event.currentTarget as HTMLElement & {value:VisibilityRule["mode"]}).value})}>
+                  ${VISIBILITY_MODES.map((mode) => html`<md-select-option value=${mode}><div slot="headline">${this.label(modes[mode], mode)}</div></md-select-option>`)}
+                </md-outlined-select>
+                  <md-outlined-text-field type="textarea" rows="2" label=${this.label("visibilityShowIds", "Always visible IDs")}
+                    .value=${this.visibilityIdDrafts[`${kind}:show`] ?? rule.show.join("\n")} ?disabled=${Boolean(this.busy)}
+                    ?error=${this.visibilityInvalid && !parseVisibilityPolicy({eventChallengeSongs:true,types:{[kind]:rule}})}
+                    aria-label=${`${title} / ${this.label("visibilityShowIds", "Always visible IDs")}`}
+                    @input=${(event: Event) => { const value=(event.currentTarget as HTMLElement & {value:string}).value; this.visibilityIdDrafts={...this.visibilityIdDrafts,[`${kind}:show`]:value}; this.changeVisibilityRule(kind, {show:ids(value)}); }}></md-outlined-text-field>
+                  <md-outlined-text-field type="textarea" rows="2" label=${this.label("visibilityHideIds", "Always hidden IDs")}
+                    .value=${this.visibilityIdDrafts[`${kind}:hide`] ?? rule.hide.join("\n")} ?disabled=${Boolean(this.busy)}
+                    ?error=${this.visibilityInvalid && !parseVisibilityPolicy({eventChallengeSongs:true,types:{[kind]:rule}})}
+                    aria-label=${`${title} / ${this.label("visibilityHideIds", "Always hidden IDs")}`}
+                    @input=${(event: Event) => { const value=(event.currentTarget as HTMLElement & {value:string}).value; this.visibilityIdDrafts={...this.visibilityIdDrafts,[`${kind}:hide`]:value}; this.changeVisibilityRule(kind, {hide:ids(value)}); }}></md-outlined-text-field>
+              </div>` });
+          })}
+        </div>
+        <button class="button button--filled button--full" ?disabled=${!this.visibilityDraft || Boolean(this.busy)}
+          @click=${() => this.saveVisibility()}>${this.label("saveVisibility", "Save content visibility")}</button>
+      </section>
+    `;
   }
   private addRestriction(user: Value, kind: "sign_in" | "upload" | "write", event: Event) {
     const container = (event.currentTarget as HTMLElement).closest(".admin-action-panel");
@@ -2592,6 +2678,7 @@ export class AdminWorkspace extends LitElement {
           ])}
         </div>
         ${this.renderAnalytics()}${this.renderStatistics()}
+        ${this.renderVisibilitySettings()}
         ${spoilers ? html`
           <section class="admin-summary surface stack">
             <h3 class="detail-section-title">${this.label("spoilerSettings", "Spoiler content settings")}</h3>

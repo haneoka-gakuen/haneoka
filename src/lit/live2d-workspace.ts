@@ -1,4 +1,5 @@
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import type { CubismModelMetadata } from "../lib/cubism-model-metadata";
@@ -1341,7 +1342,7 @@ export class Live2DWorkspace extends LitElement {
       });
   }
   updated() {
-    if (this.entityId && this.detail)
+    if (this.entityId && this.detail && isContentVisible("live2d", this.detail, this.entityId))
       updateEntityHeading(
         this,
         [...new Set([this.characterName(this.detail), this.modelTitle(this.detail)].filter(Boolean))].join(" / "),
@@ -2318,6 +2319,8 @@ export class Live2DWorkspace extends LitElement {
     `;
   }
   render() {
+    if (this.entityId && !isContentVisible("live2d", this.detail || {}, this.entityId))
+      return nothing;
     return this.renderCatalogWorkspace();
   }
 }

@@ -6,8 +6,10 @@
 import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isReleasedContent, showUnreleasedContent } from "../lib/content-release";
+import { isContentVisible, showUnreleasedContent } from "../lib/content-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
+import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
+import { visibilityPolicyKey } from "../lib/content-policy-browser";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import catalogPageRollout from "../../config/catalog-page-rollout.json";
 import { CatalogPageRefresh } from "../lib/catalog-page-refresh";
@@ -411,6 +413,7 @@ interface Config {
 /** The document lib/entity-graph.ts emits for one entity. */
 interface EntityPayload {
   schema: string;
+  resource?: string;
   server?: string;
   releaseId?: string;
   sourceId?: string;
@@ -1154,11 +1157,12 @@ export class CatalogScreen extends LitElement {
     }
   }
   private unionPresentationScope(): string {
-    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showRestrictedContent(), showUnreleasedContent(), [...OFFICIAL_CATALOG_SERVERS]]);
+    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showRestrictedContent(), showUnreleasedContent(), visibilityPolicyKey(), [...OFFICIAL_CATALOG_SERVERS]]);
   }
   private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
     return JSON.stringify([
       scopeKey,
+      dto.entries.flatMap((entry) => Object.values(entry.perServer).flatMap((variant) => variant?.row.eventPublishedAt ? [[variant.identity.server, variant.id, variant.row.eventPublishedAt]] : [])),
       ...(OFFICIAL_CATALOG_SERVERS).map((server) => {
         const pin = dto.identities[server];
         return [server, pin?.releaseId || "", pin?.sourceId || "", dto.sourceAvailability[server]];
@@ -2150,7 +2154,7 @@ export class CatalogScreen extends LitElement {
   private syncEntityChrome() {
     if (!this.isConnected || !this.settings.entityContext) return;
     const item = this.selected;
-    if (item && isReleasedContent(item)) {
+    if (item && isContentVisible(this.settings.resource, item, this.itemId(item))) {
       const title = this.itemTitleValue(item);
       updateEntityHeading(this, this.settings.chartPage ? this.chartPageTitle(item) : title.text, title.locale);
     }
@@ -2159,7 +2163,7 @@ export class CatalogScreen extends LitElement {
   }
   private renderEntityChrome() {
     const item = this.selected;
-    if (item && this.detailReady && isReleasedContent(item)) {
+    if (item && this.detailReady && isContentVisible(this.settings.resource, item, this.itemId(item))) {
       setAppBarIdentity(
         this.entityAppBarOwner,
         html`
@@ -2589,6 +2593,27 @@ export class CatalogScreen extends LitElement {
       this.phase = "ready";
     }
     this.ensureBandSelection();
+    if (this.isConnected && payload.catalogs?.songs) void this.enrichEventCollection(payload, config);
+  }
+  private async enrichEventCollection(payload: CatalogCollectionPayload, config: string): Promise<void> {
+    const dto = payload.catalogs!.songs!;
+    const scope = this.unionPresentationScope();
+    const sources = Object.values(dto.identities).filter((identity) => identity && dto.entries.some((entry) => {
+      const row = entry.perServer[identity.server]?.row;
+      return row && needsEventSongRelease(row);
+    }));
+    if (!sources.length) return;
+    const releases = Object.fromEntries(await Promise.all(sources.map(async (identity) => [identity!.server,
+      await crossServerPublicCache().readEventSongReleases(identity!).catch(() => ({}))] as const)));
+    if (!this.isConnected || this.unionPresentationScope() !== scope || this.unionCatalog !== dto) return;
+    let changed = false;
+    const entries = dto.entries.map((entry) => ({ ...entry, perServer: Object.fromEntries(Object.entries(entry.perServer).map(([server, variant]) => {
+      if (!variant) return [server, variant];
+      const row = withEventSongRelease(variant.row, releases[server] || {});
+      changed ||= row !== variant.row;
+      return [server, { ...variant, row }];
+    })) }));
+    if (changed) this.prepareCollection({ ...payload, catalogs: { ...payload.catalogs, songs: { ...dto, entries } } }, config);
   }
   async prepareEntity(payload: EntityPayload, config: string = this.config, signal?: AbortSignal): Promise<void> {
     const commit = await this.stageEntity(payload, config);
@@ -2598,6 +2623,12 @@ export class CatalogScreen extends LitElement {
     if (this.settings.chartPage && typeof window !== "undefined" && this.isConnected) await this.ensureChartPlayer();
   }
   async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false): Promise<() => void> {
+    const identity = nativeMetaIdentity(payload), relatedSongs = payload.aux?.songs as Record<string, Item> | undefined;
+    if (this.isConnected && identity && ((payload.resource === "songs" && needsEventSongRelease(payload.item)) || Object.values(relatedSongs || {}).some(needsEventSongRelease))) {
+      const releases = await crossServerPublicCache().readEventSongReleases(identity).catch(() => ({}));
+      payload = { ...payload, item: payload.resource === "songs" ? withEventSongRelease(payload.item, releases) : payload.item,
+        aux: { ...payload.aux, ...(relatedSongs ? { songs: withEventSongReleases(relatedSongs, releases) } : {}) } };
+    }
     const settings = JSON.parse(config || "{}") as Config;
     const profile = profiles[settings.resource] ?? fallbackProfile;
     const card = ["member", "support"].includes(profile.presentation);
@@ -3085,7 +3116,7 @@ export class CatalogScreen extends LitElement {
     // result count is measured against — not the whole catalogue.
     const source = (this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
-      : this.expandedItems()).filter(isReleasedContent);
+      : this.expandedItems()).filter((item) => isContentVisible(this.settings.resource, item, this.itemId(item)));
     const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     const direction = this.order === "asc" ? 1 : -1;
     const now = Date.now();
@@ -4920,7 +4951,7 @@ export class CatalogScreen extends LitElement {
     const { items, source } = this.results();
     const kind = this.profile.presentation;
     if (this.settings.entityContext) {
-      if (this.selected && !isReleasedContent(this.selected))
+      if (this.selected && !isContentVisible(this.settings.resource, this.selected, this.itemId(this.selected)))
         return emptyState({ title: this.label("unavailable", "Unavailable") });
       if (this.selected && this.detailReady)
         return this.settings.chartPage ? this.renderChartPage(this.selected) : this.renderDetail(this.selected);
@@ -5014,13 +5045,13 @@ export class CatalogScreen extends LitElement {
   private railBands(): Item[] {
     if (this.profile.presentation === "character") {
       const available = new Set(this.items.map((item) => Number(item.bandId)));
-      return this.bands.filter(
+      return this.bands.filter((band) => isContentVisible("bands", band)).filter(
         (band) =>
           Number.isSafeInteger(Number(band.bandId)) && Number(band.bandId) > 0 && available.has(Number(band.bandId)),
       );
     }
     const available = new Set(this.items.map((item) => Number(item.bandId || 0)).filter(Boolean));
-    return this.bands.filter((band) => available.has(Number(band.bandId || 0)));
+    return this.bands.filter((band) => available.has(Number(band.bandId || 0)) && isContentVisible("bands", band));
   }
   /** A band rail always has one band selected. */
   private ensureBandSelection(preferred = this.activeBand) {
@@ -6076,7 +6107,7 @@ export class CatalogScreen extends LitElement {
     return suffix ? `${this.itemTitle(item)} — ${suffix}` : this.itemTitle(item);
   }
   private ensureChartPlayer() {
-    if (this.selected && !isReleasedContent(this.selected)) return Promise.resolve();
+    if (this.selected && !isContentVisible(this.settings.resource, this.selected, this.itemId(this.selected))) return Promise.resolve();
     return (this.chartPlayerProvision ??= import("./runtime/chart-simulator").then(() => undefined));
   }
   private chartPageHref(item: Item) {

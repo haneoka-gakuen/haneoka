@@ -4,6 +4,7 @@ import { loadCrossServerCatalogs } from "./bundle";
 import type { CrossCatalogReader } from "./load";
 import { OFFICIAL_CATALOG_SERVERS, type CrossCatalogResource, type OfficialCatalogServer, type CrossCatalogDTO, type CrossCatalogSnapshot } from "./catalog";
 import { visibleContentServers } from "../content-visibility";
+import { needsEventSongRelease, withEventSongReleases } from "../event-song-release";
 
 /** Reuse already rendered source rows when adding a new optional source to a home seed. */
 export function crossCatalogSeedSources(catalogs: Partial<Record<CrossCatalogResource, CrossCatalogDTO>>): CrossCatalogSnapshot[] {
@@ -29,7 +30,12 @@ function reader(options: { signal?: AbortSignal; fetcher?: typeof fetch; revalid
   const cache = crossServerPublicCache(options.fetcher);
   return {
     readIdentity: (server) => cache.readIdentity(server, options.signal, options.revalidate),
-    readCollection: (resource, identity) => cache.readCollection(resource, identity, options.signal),
+    readCollection: async (resource, identity) => {
+      const value = await cache.readCollection(resource, identity, options.signal);
+      if (resource !== "songs" || !Object.values(value as Record<string, Record<string, unknown>>).some(needsEventSongRelease)) return value;
+      const releases = await cache.readEventSongReleases(identity, options.signal).catch(() => ({}));
+      return withEventSongReleases(value as Record<string, Record<string, unknown>>, releases);
+    },
     readEntity: (resource, identity, id) => cache.readEntity(resource, identity, id, options.signal),
   };
 }

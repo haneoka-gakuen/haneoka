@@ -12,6 +12,7 @@ import EventTrackerPage from "./pages/EventTrackerPage.astro";
 import { nativeMetaPublicationFor } from "../server/native-meta-publication";
 import { staticCatalogRelease } from "../lib/static-catalog-source";
 import { catalogCollectionData, catalogCollectionDescription } from "../server/catalog-collection";
+import { eventSongCollection } from "../server/event-song-release";
 import { renderCatalogCollection } from "../server/render-catalog";
 import { serializePageData } from "../lib/page-data";
 import { catalogSystemData } from "../server/catalog-system-data";
@@ -59,7 +60,7 @@ const screenConfig =
     : "";
 const canonicalRoute = explicitCanonicalRoute ?? (server ? resourceCollectionHref(entry.route, server, locale) : undefined);
 const collectionPayload = entry.kind === "catalog" && entry.resource
-  ? await catalogCollectionData(entry.resource, server || "intl", locale)
+  ? await eventSongCollection(await catalogCollectionData(entry.resource, server || "intl", locale))
   : undefined;
 const collectionPage = collectionPayload ? renderCatalogCollection(screenConfig, collectionPayload, locale) : undefined;
 const collectionDataId = `catalog-collection-${entry.resource}`;

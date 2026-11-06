@@ -3,6 +3,7 @@ import type { CrossCatalogIdentity, CrossCatalogResource, OfficialCatalogServer 
 import { crossCatalogApi } from "./definitions";
 import { visibleContentServers } from "../content-visibility";
 import { isPublicReleaseServer } from "../temporary-public-routing";
+import { eventSongReleases, type EventSongReleases } from "../event-song-release";
 
 interface Pending {
   controller: AbortController;
@@ -174,6 +175,29 @@ export class CrossServerPublicCache {
       return value;
     };
     return publicSource ? this.observe(key, load, signal) : load(signal);
+  }
+  async readEventSongReleases(identity: CrossCatalogIdentity, signal?: AbortSignal): Promise<EventSongReleases> {
+    if (!visibleContentServers([identity.server]).length) throw new Error("Source access is unavailable");
+    signal?.throwIfAborted();
+    const key = JSON.stringify(["event-song-releases", identity]);
+    const cached = isPublicReleaseServer(identity.server) ? this.documents.get(key) : undefined;
+    if (cached) return structuredClone(cached.value) as EventSongReleases;
+    return await this.observe(key, async (requestSignal) => {
+      const query = new URLSearchParams({ release: identity.releaseId, v: "4" });
+      const fetcher = this.fetcher;
+      let response = await fetcher(`/api/v1/servers/${identity.server}/song-release-times?release=${identity.releaseId}`, { signal: requestSignal });
+      if (response.status === 404) {
+        await response.body?.cancel();
+        response = await fetcher(`/api/v1/team-builder/${identity.server}?${query}`, { signal: requestSignal });
+      }
+      if (!response.ok) throw new Error("Event songs are unavailable");
+      const data = await response.json() as { identity: CrossCatalogIdentity; releases?: EventSongReleases; events?: unknown; challengeMusicTable?: { rows: unknown[] } };
+      if (data.identity.server !== identity.server || data.identity.releaseId !== identity.releaseId || data.identity.sourceId !== identity.sourceId)
+        throw new Error("Event song release mismatch");
+      const releases = data.releases ?? eventSongReleases(data.events, data.challengeMusicTable?.rows);
+      if (isPublicReleaseServer(identity.server)) this.store(key, releases, JSON.stringify(releases).length);
+      return releases;
+    }, signal) as EventSongReleases;
   }
 
   readCollection(resource: PublicDocumentResource, identity: CrossCatalogIdentity, signal?: AbortSignal) {

@@ -4,7 +4,8 @@ import "@material/web/list/list-item.js";
 import "@material/web/divider/divider.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { readPageData } from "../lib/page-data";
-import { isReleasedContent } from "../lib/content-release";
+import { isContentVisible } from "../lib/content-release";
+import { parseResourceRoute } from "../lib/resource-route";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -251,9 +252,16 @@ export class CalendarPage extends LitElement {
     return this.data
       ? calendarOccurrences(this.data, days[0]!, days.at(-1)!, this.zone).filter((item) =>
           (item.facets ?? []).some((key) => this.categories.has(key)) &&
-          (item.kind === "character" || item.kind === "cast" || item.sourceUrl || isReleasedContent({ startAt: item.gameWindow?.startAtMs ?? item.startAtMs })),
+          this.occurrenceVisible(item),
         )
       : [];
+  }
+  private occurrenceVisible(item: CalendarOccurrence): boolean {
+    const kind = {character:"characters", cast:"", event:"events", gacha:"gacha", login:"login-campaigns", pass:"passes", live:"real-lives", "game-live":"real-lives", arena:"arena"}[item.kind];
+    if (!kind) return true;
+    const route = item.href ? parseResourceRoute(new URL(item.href, "https://calendar.invalid").pathname) : undefined;
+    const startAt = item.kind === "character" || item.sourceUrl ? 0 : item.gameWindow?.startAtMs ?? item.startAtMs;
+    return isContentVisible(kind, {startAt}, route?.id ?? item.id);
   }
   private get availableFacets(): CalendarFacet[] {
     if (!this.data) return [...CALENDAR_FACETS];
@@ -405,7 +413,7 @@ export class CalendarPage extends LitElement {
     return new Intl.DateTimeFormat(this.locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(calendarDateUtc(this.selected));
   }
   private get arenaShown() {
-    return Boolean(this.data?.arena) && this.categories.has("arena");
+    return Boolean(this.data?.arena) && this.categories.has("arena") && isContentVisible("arena", this.data?.arena);
   }
   private get arenaContext(): ArenaRuleContext | null {
     const arena = this.data?.arena;

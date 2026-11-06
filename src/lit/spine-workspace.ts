@@ -1,4 +1,5 @@
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -631,7 +632,7 @@ export class SpineWorkspace extends LitElement {
       });
   }
   updated() {
-    if (this.entityId && this.detail) updateEntityHeading(this, this.modelTitle(this.detail));
+    if (this.entityId && this.detail && isContentVisible("spine", this.detail, this.entityId)) updateEntityHeading(this, this.modelTitle(this.detail));
     this.removeSsrStageWhenOwned();
     // Collection details are modal panes; canonical entity routes are ordinary
     // page flow and must leave focus in the shell/document.
@@ -1254,6 +1255,8 @@ export class SpineWorkspace extends LitElement {
     `;
   }
   render() {
+    if (this.entityId && !isContentVisible("spine", this.detail || {}, this.entityId))
+      return nothing;
     return this.renderCatalogWorkspace();
   }
 }

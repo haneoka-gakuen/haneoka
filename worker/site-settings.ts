@@ -8,6 +8,9 @@ import { USER_ROLES, isUserRole, type UserRole } from "../src/lib/user-roles";
 import { WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id";
 import { COMMUNITY_VISIBILITY_ATTRIBUTE, communityVisibilityCss, communityPagesEnabled } from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
+import { readContentVisibility } from "./content-visibility";
+import { VISIBILITY_WORKSPACES, visibilityType } from "../src/lib/content-visibility-policy";
+import { parseResourceRoute } from "../src/lib/resource-route";
 
 export type SiteSettings = {
   showRestrictedContent: boolean;
@@ -123,6 +126,12 @@ export async function applySiteSettings(
   env: Env,
 ): Promise<Response> {
   if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/html")) return response;
+  const visibility = await readContentVisibility(env);
+  const customVisibility = !visibility.policy.eventChallengeSongs || Object.keys(visibility.policy.types).length > 0;
+  const resource = parseResourceRoute(new URL(request.url).pathname);
+  const kind = resource && visibilityType(resource.kind);
+  const rule = kind && visibility.policy.types[kind];
+  const hideIdentity = Boolean(resource?.id && rule && (rule.hide.includes(resource.id) || (rule.mode === "hidden" && !rule.show.includes(resource.id))));
   const allowed = settings ? await testContentAllowed(request, env, settings) : false;
   const scope = allowed ? await contentSourceScope(env) : undefined;
   const headers = new Headers(response.headers);
@@ -147,7 +156,7 @@ export async function applySiteSettings(
   const spoilers = settings ? spoilerCookieEnabled(request.headers.get("Cookie")) : false;
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:visibility-${visibility.version}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}:spoilers-${spoilers ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -178,11 +187,25 @@ export async function applySiteSettings(
         if (settings) element.setAttribute("data-site-settings-version", String(settings.version));
         else element.removeAttribute("data-site-settings-version");
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
+        element.setAttribute("data-content-visibility-policy", JSON.stringify(visibility.policy));
+        element.setAttribute("data-content-visibility-version", String(visibility.version));
       },
     })
     .on("head", { element(element) {
       element.append(`<style data-community-visibility>${communityVisibilityCss(new URL(request.url).origin)}</style>`, { html: true });
     } })
+    .on(VISIBILITY_WORKSPACES.map((tag) => `${tag}[data-prerendered]`).join(", "), {
+      element(element) {
+        if (customVisibility) element.removeAttribute("data-prerendered");
+      },
+    })
+    .on(VISIBILITY_WORKSPACES.map((tag) => `${tag} > *`).join(", "), {
+      element(element) { if (customVisibility && element.tagName !== "script") element.remove(); },
+    })
+    .on("home-dashboard[data-prerendered]", { element(element) { if (customVisibility) element.removeAttribute("data-prerendered"); } })
+    .on("home-dashboard > *", { element(element) { if (customVisibility && element.tagName !== "script") element.remove(); } })
+    .on("h1", { element(element) { if (hideIdentity) element.setInnerContent(""); } })
+    .on("title", { element(element) { if (hideIdentity) element.setInnerContent("haneoka"); } })
     .on("story-workspace[data-provider-entity-shell]", {
       element(element) {
         if (providerId) element.setAttribute("entity-id", providerId);

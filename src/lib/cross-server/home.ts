@@ -1,6 +1,7 @@
 import { assertStaticServer, staticCatalogRelease, fetchStaticCatalog } from "../static-catalog-source";
 import { loadCrossServerCatalogs } from "./bundle";
 import { homeEventDisplay } from "../home-event-display";
+import { staticEventSongs } from "../../server/event-song-release";
 import {
   OFFICIAL_CATALOG_SERVERS, type CrossCatalogDTO, type CrossCatalogRow, type CrossCatalogResource,
   type CrossCatalogIdentity, type OfficialCatalogServer,
@@ -10,7 +11,7 @@ const HOME_FIELDS = {
   cards: ["cardId", "assetId", "prefix", "characterId", "cardType", "rarity", "releasedAt"],
   "support-cards": ["supportCardId", "assetId", "prefix", "cardName", "characterId", "characterIds", "cardType", "rarity", "releasedAt"],
   songs: ["musicId", "musicTitle", "bandId", "bandIds", "bandName", "artistId", "artistName", "musicType", "publishedAt", "jacketUrl", "jacketThumbUrl",
-    "vocalCharacterIds", "composer", "lyricist", "arranger"],
+    "vocalCharacterIds", "composer", "lyricist", "arranger", "eventPublishedAt"],
   characters: ["characterId", "characterName", "englishName", "nickname", "bandId", "bandPart", "colorCode", "birthday", "slug",
     "faceImage", "thumbnailImage", "profileImage", "voiceActor", "description"],
   bands: ["bandId", "bandName", "description", "logo", "icon", "color", "colorCode"],
@@ -49,7 +50,10 @@ export async function loadStaticCrossServerHome(selectedServer: OfficialCatalogS
       const identity = await staticCatalogRelease(server);
       return { ...identity, server };
     },
-    readCollection: (resource: CrossCatalogResource, identity: CrossCatalogIdentity) => fetchStaticCatalog(resource, identity.server, identity),
+    readCollection: async (resource: CrossCatalogResource, identity: CrossCatalogIdentity) => {
+      const value = await fetchStaticCatalog(resource, identity.server, identity);
+      return resource === "songs" ? staticEventSongs(value as Record<string, CrossCatalogRow>, identity) : value;
+    },
     readEntity: (resource: CrossCatalogResource, identity: CrossCatalogIdentity, id: string) => fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, identity.server, identity),
   };
   const catalogs = await loadCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands", "events"], { selectedServer, locale, reader, servers: ["jp", "intl"] });

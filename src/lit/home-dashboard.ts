@@ -1,7 +1,8 @@
 import { communityVisible } from "../lib/site-community";
 import { CONTENT_SOURCE_IDS } from "../lib/content-access-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isReleasedContent } from "../lib/content-release";
+import { isContentVisible, isReleasedContent } from "../lib/content-release";
+import { needsEventSongRelease } from "../lib/event-song-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
@@ -721,7 +722,7 @@ export class HomeDashboard extends LitElement {
         homeKind: "support-cards",
       })),
     ];
-    this.birthdayGacha = values(documents.gacha, "entries");
+    this.birthdayGacha = values(documents.gacha, "entries").filter((row) => isContentVisible("gacha", row));
     this.birthdayGachaServer = this.sourceServer();
     const birthdayStories = documents.stories?.birthdayStories;
     this.birthdayStories =
@@ -796,6 +797,11 @@ export class HomeDashboard extends LitElement {
       ),
     );
     this.seed = undefined;
+    if (Object.values(documents.songs || {}).some((row) => needsEventSongRelease(row as JsonRecord))) {
+      const catalogs = await fetchCrossServerCatalogs(["songs"], server, this.locale, { signal }).catch(() => ({}));
+      if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+      this.crossServerCatalogs = { ...this.crossServerCatalogs, ...catalogs };
+    }
     this.applyDocuments(documents);
     if (results.every((result) => result.status === "rejected")) this.phase = "error";
   }
@@ -1087,7 +1093,10 @@ export class HomeDashboard extends LitElement {
         names = profile.name as string[] | undefined;
       const match = birthdays?.[0]?.match(/^(\d{1,2})月(\d{1,2})日$/);
       if (!match || !names) return [];
-      const catalog = this.characterFor(String(profile.slug || ""), names);
+      const catalog = this.characterFor(String(profile.slug || ""), names) ||
+        [...(this.sourceRelations.characters[this.sourceServer()]?.values() || [])].find((row) =>
+          Array.isArray(row.characterName) && row.characterName.some((name) => names.includes(String(name))));
+      if (!isContentVisible("characters", catalog || {})) return [];
       const band = this.bands.find((entry) => Number(entry.bandId) === Number(catalog?.bandId));
       return [
         {

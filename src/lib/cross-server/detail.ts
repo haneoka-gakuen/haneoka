@@ -27,7 +27,7 @@ export async function loadCrossServerDetail(
       const value = await reader.readEntity(entry.resource, { ...variant.identity }, variant.id);
       if (!object(value)) throw new Error("Cross-server entity must be an object");
       if (String(crossCatalogRowId(entry.resource, value)) !== variant.id) throw new Error("Cross-server entity identity mismatch");
-      variant.row = structuredClone(value);
+      variant.row = { ...structuredClone(value), ...(variant.row.eventPublishedAt !== undefined ? { eventPublishedAt: variant.row.eventPublishedAt } : {}) };
       const images = value.images;
       if (images !== undefined) variant.assets.images = structuredClone(images);
       fullSources.push(server);

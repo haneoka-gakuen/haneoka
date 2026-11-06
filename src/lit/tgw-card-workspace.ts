@@ -1,5 +1,6 @@
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isContentVisible } from "../lib/content-release";
 /**
  * T.G.W CARD — the game's membership benefits ladder.
  *
@@ -124,7 +125,7 @@ export class TgwCardWorkspace extends LitElement {
     };
   }
   private applyTiers(entities: Tier[], pointName: unknown, hash: string) {
-    this.tiers = entities;
+    this.tiers = entities.filter((tier) => isContentVisible("tgw-card", tier, String(tier.id)));
     this.pointName = pointName;
     this.selectedSource = "";
     const hashed = Number(/^#tgw-rank-(\d+)$/u.exec(hash)?.[1] || 0);

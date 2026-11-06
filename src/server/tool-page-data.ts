@@ -18,6 +18,7 @@ import type { HaneokaReleaseIdentity } from "../../packages/api-client/src/haneo
 import { rankingCardCatalog } from "../lib/ranking-card-catalog";
 import { PUBLIC_RELEASE_SERVERS, isPublicReleaseServer } from "../lib/temporary-public-routing.ts";
 import { staticBuildJson } from "./static-input-store";
+import { staticEventSongs } from "./event-song-release";
 let rankingCards:
   | Promise<{
       intl: Awaited<ReturnType<typeof rankingCardCatalog>>;
@@ -105,7 +106,7 @@ export function publicSongsPageData(server: string): Promise<PublicSongsPageData
           );
           return {
             identity: { schema: "haneoka-resource-release-identity-v1" as const, ...identity },
-            songs: objectRow(songs) as Record<string, Record<string, unknown>>,
+            songs: await staticEventSongs(objectRow(songs) as Record<string, Record<string, unknown>>, identity),
             bands: objectRow(bands),
             characters: objectRow(characters),
             marks: objectRow(marks),
@@ -301,7 +302,7 @@ export function songPuzzlePageData(server: string): Promise<SongPuzzlePageData> 
           ["songs", "bands", "characters", "ui-marks"].map((resource) => fetchStaticCatalog(resource, peer, identity)),
         );
         return {
-          songs: objectRow(songs) as Record<string, Record<string, unknown>>,
+          songs: await staticEventSongs(objectRow(songs) as Record<string, Record<string, unknown>>, identity),
           cardData: {
             identity: { schema: "haneoka-resource-release-identity-v1" as const, ...identity, server: peer },
             bands: objectRow(bands), characters: objectRow(characters),

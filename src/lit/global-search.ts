@@ -12,10 +12,13 @@ import { filterChip, segmented } from "./ui/controls";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { readCommunityViewer, CommunityRealmChanged } from "../lib/community-viewer";
 import { JsonResponseError } from "./shared/catalog";
-import { isReleasedContent, showUnreleasedContent } from "../lib/content-release";
+import { isContentVisible, showUnreleasedContent } from "../lib/content-release";
 import { parseResourceRoute } from "../lib/resource-route";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { crossCatalogRows, isCrossCatalogResource } from "../lib/cross-server/definitions";
+import { needsEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
+import { visibilityPolicyKey } from "../lib/content-policy-browser";
+import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -121,7 +124,6 @@ const resultData = (result: SearchResult): SearchResult => ({
 export class GlobalSearch extends LitElement {
   private serviceOffset = 0;
   private async releasedResults(rows: SearchResult[]): Promise<SearchResult[]> {
-    if (showUnreleasedContent()) return rows;
     const cache = crossServerPublicCache();
     const collections = new Map<string, Promise<Record<string, RecordValue>>>();
     const visible = await Promise.all(rows.map(async (row) => {
@@ -132,13 +134,15 @@ export class GlobalSearch extends LitElement {
       const key = `${route.server}:${resource}`;
       let pending = collections.get(key);
       if (!pending) {
-        pending = cache.readIdentity(route.server).then(async (identity) =>
-          crossCatalogRows(resource, await cache.readCollection(resource, identity)),
-        );
+        pending = cache.readIdentity(route.server).then(async (identity) => {
+          const entries = crossCatalogRows(resource, await cache.readCollection(resource, identity));
+          return resource === "songs" && Object.values(entries).some(needsEventSongRelease)
+            ? withEventSongReleases(entries, await cache.readEventSongReleases(identity).catch(() => ({}))) : entries;
+        });
         collections.set(key, pending);
       }
       const item = (await pending)[route.id];
-      return !!item && isReleasedContent(item);
+      return !!item && isContentVisible(resource, item, route.id);
     }));
     return rows.filter((_, index) => visible[index]);
   }
@@ -175,6 +179,7 @@ export class GlobalSearch extends LitElement {
   private lifetime?: AbortController;
   private timer?: number;
   private composing = false;
+  private policyChanged = () => this.search();
   constructor() {
     super();
     this.locale = "en"; this.query = ""; this.scope = "all"; this.recent = []; this.kind = ""; this.kinds = {};
@@ -196,6 +201,7 @@ export class GlobalSearch extends LitElement {
   }
   connectedCallback() {
     super.connectedCallback();
+    addEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     if (this.hasAttribute("data-prerendered")) void this.updateComplete.then(() => this.connectSearch());
     else this.connectSearch();
   }
@@ -254,6 +260,7 @@ export class GlobalSearch extends LitElement {
     this.recent = readRecent();
   }
   disconnectedCallback() {
+    removeEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     ++this.generation;
     window.clearTimeout(this.timer); this.communityRequest?.abort(); this.lifetime?.abort();
     super.disconnectedCallback();
@@ -361,7 +368,7 @@ export class GlobalSearch extends LitElement {
     if (!append) { this.results = []; this.hits = []; this.consumed = 0; this.catalogMore = false; this.kinds = {}; this.fromService = false; }
     const query = this.query.trim(), locale = this.locale, scope = this.scope, server = readReleaseServer();
     const current = () => this.isConnected && generation === this.generation && locale === this.locale && server === readReleaseServer();
-    const key = JSON.stringify([locale, server, scope, query, showUnreleasedContent()]);
+    const key = JSON.stringify([locale, server, scope, query, showUnreleasedContent(), visibilityPolicyKey()]);
     this.catalogBusy = true; this.catalogError = "";
     try {
       if ((!append || this.fromService) && (await this.loadService(append, current))) return;

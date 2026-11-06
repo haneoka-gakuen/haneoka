@@ -1,5 +1,6 @@
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isContentVisible } from "../lib/content-release";
 import { clientText } from "../i18n/client";
 import { renderAnonTokyoDetails } from "./shared/anon-tokyo-detail";
 import { LitElement, html, nothing } from "lit";
@@ -594,6 +595,7 @@ export class AnonTokyoWorkspace extends LitElement {
     return this.text(item.description) || `#${item.rawId}`;
   }
   render() {
+    if (this.mode === "outfits" && !isContentVisible("anon-tokyo", {}, this.selectedItem)) return nothing;
     if (this.phase === "loading") return loadingState(uiText(this.locale, "common.states.loading"));
     if (this.phase === "error" || !this.document)
       return errorState(
@@ -620,7 +622,7 @@ export class AnonTokyoWorkspace extends LitElement {
     return this.mode === "outfits" ? this.renderOutfits() : this.renderCollection();
   }
   private renderCollection() {
-    const source = this.collection();
+    const source = this.collection().filter((item) => isContentVisible("anon-tokyo", item, String(item.id)));
     const keys = [
       "entityGroup",
       "categoryId",

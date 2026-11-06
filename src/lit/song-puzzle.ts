@@ -11,6 +11,8 @@ import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import { isReleasedContent } from "../lib/content-release";
+import { needsEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
+import { crossServerPublicCache } from "../lib/cross-server/cache";
 import type { SongPuzzlePageData } from "../server/tool-page-data";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -581,7 +583,9 @@ export class SongPuzzle extends LitElement {
         response.headers.get("x-haneoka-source-id") !== source
       )
         throw new Error("identity");
-      const data = (await response.json()) as Record<string, Record<string, unknown>>;
+      let data = (await response.json()) as Record<string, Record<string, unknown>>;
+      if (Object.values(data).some(needsEventSongRelease)) data = withEventSongReleases(data,
+        await crossServerPublicCache().readEventSongReleases({server: sourceServer, releaseId: release, sourceId: source}, controller.signal).catch(() => ({})));
       const read = async (resource: string) => {
         const url = new URL(catalogUrl(resource, "", sourceServer), location.origin);
         url.searchParams.set("release", release);

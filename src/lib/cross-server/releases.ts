@@ -1,14 +1,14 @@
-import { isReleasedContent, showUnreleasedContent } from "../content-release";
+import { isContentVisible } from "../content-release";
 import { mergeCrossServerCatalog, type CrossCatalogDTO, type CrossCatalogSnapshot } from "./catalog";
 
 export function releasedCatalog(dto: CrossCatalogDTO): CrossCatalogDTO {
-  if (showUnreleasedContent()) return dto;
+  if (dto.entries.every((entry) => Object.values(entry.perServer).every((variant) => !variant || isContentVisible(dto.resource, variant.row, variant.id)))) return dto;
   const sources: CrossCatalogSnapshot[] = Object.entries(dto.identities).flatMap(([server, identity]) => {
     if (!identity) return [];
     const collection = Object.fromEntries(
       dto.entries.flatMap((entry) => {
         const variant = entry.perServer[server];
-        return variant && isReleasedContent(variant.row) ? [[variant.id, variant.row]] : [];
+        return variant && isContentVisible(dto.resource, variant.row, variant.id) ? [[variant.id, variant.row]] : [];
       }),
     );
     return [

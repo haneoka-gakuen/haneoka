@@ -1,5 +1,6 @@
 import { CONTENT_SOURCE_IDS } from "../../lib/content-access-state";
 import { isReleasedContent } from "../../lib/content-release";
+import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";
 import type { SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
@@ -47,6 +48,7 @@ type GrowthValues = {
 };
 
 export class Catalog {
+  private eventReleases?: EventSongReleases;
   visuals: Visuals | null = null;
   private readonly songMetadata = new Map<
     string,
@@ -58,7 +60,8 @@ export class Catalog {
     return this.data.crossServer?.identities[server] ?? this.data.identity;
   }
   songVisible(id: number) {
-    return isReleasedContent(this.data.songs[String(id)]);
+    const releases = this.eventReleases ??= eventSongReleases(this.data.events, this.data.crossServer?.challengeMusics ?? this.data.challengeMusicTable?.rows);
+    return isReleasedContent(withEventSongRelease(this.data.songs[String(id)] || {}, releases));
   }
   chartMetadata(song: SongRef) {
     return this.songMetadata.get(this.songIdentity(song.songId).server)?.[String(song.songId)]?.[

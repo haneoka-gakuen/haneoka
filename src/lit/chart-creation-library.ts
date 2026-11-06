@@ -14,6 +14,9 @@ import { localizedFallbacks, resolveLocalizedText } from "../lib/localized-text"
 import { creationSongCard, createCreationSongCardData, defaultCreationDifficulty, loadPublicCreationSongCardData, type CreationSongCardData } from "../lib/chart-creation/song-card";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { isReleasedContent } from "../lib/content-release";
+import { needsEventSongRelease, withEventSongRelease } from "../lib/event-song-release";
+import { crossServerPublicCache } from "../lib/cross-server/cache";
+import { visibilityPolicyKey } from "../lib/content-policy-browser";
 import { songTitle } from "../lib/song-display";
 import { readReleaseServer } from "../lib/release-server";
 import { beginLoading } from "../lib/loading-progress";
@@ -90,6 +93,7 @@ export class ChartCreationLibrary extends LitElement {
   private indexLoaded = false;
   private indexLocale = "";
   private searchSnapshot?: {
+    policy: string;
     items: { id: string; value: CreationSong }[];
     locale: string;
     context: CreationSongCardData | undefined;
@@ -252,6 +256,11 @@ export class ChartCreationLibrary extends LitElement {
       if (this.controller !== controller || !this.isConnected || !this.opened) return;
       this.identity = "release" in page ? page.release : undefined;
       this.items = page.items;
+      if (provider === "haneoka" && this.identity && this.items.some((item) => needsEventSongRelease(item.value as unknown as CatalogueRecord))) {
+        const releases = await crossServerPublicCache().readEventSongReleases(this.identity, controller.signal).catch(() => ({}));
+        controller.signal.throwIfAborted();
+        this.items = this.items.map((item) => ({...item, value: withEventSongRelease(item.value as unknown as CatalogueRecord, releases) as unknown as CreationSong}));
+      }
       this.indexLoaded = true;
       void this.loadFilters();
       report.finish();
@@ -404,7 +413,7 @@ export class ChartCreationLibrary extends LitElement {
     }
   }
   private searchIndex() {
-    if (this.searchSnapshot?.items === this.items && this.searchSnapshot.locale === this.locale && this.searchSnapshot.context === this.filterCatalog)
+    if (this.searchSnapshot?.items === this.items && this.searchSnapshot.locale === this.locale && this.searchSnapshot.context === this.filterCatalog && this.searchSnapshot.policy === visibilityPolicyKey())
       return this.searchSnapshot;
     const bandCharacters = new Map<string, string[]>();
     for (const [id, character] of this.filterCatalog?.characters ?? []) {
@@ -433,7 +442,7 @@ export class ChartCreationLibrary extends LitElement {
     const bands = [...new Map(rows.map(({ value }) => [
       String(this.record(value).bandId ?? ""), resolveLocalizedText(value.bandName, this.locale).text,
     ] as [string, string])).entries()].filter(([id, name]) => id && name);
-    return this.searchSnapshot = { items: this.items, locale: this.locale, context: this.filterCatalog, rows, bands };
+    return this.searchSnapshot = { items: this.items, locale: this.locale, context: this.filterCatalog, rows, bands, policy: visibilityPolicyKey() };
   }
   private categoryMark(item: CatalogueRecord) {
     const labels = ["", "original", "virtual", "jpop", "anime", "game"];

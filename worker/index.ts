@@ -16,6 +16,8 @@ import { handleResourceImage } from "./resource-image";
 import { semanticOwnersConflict } from "../src/lib/cross-server/content";
 import { handleContentAccessRequest } from "./content-access";
 import { handleSpoilerPreferenceRequest } from "./spoiler-settings";
+import { handleContentVisibilityRequest } from "./content-visibility";
+import { eventSongReleases } from "../src/lib/event-song-release";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
 import catalogPageRollout from "../config/catalog-page-rollout.json";
@@ -2359,6 +2361,15 @@ async function handleCatalogApiRequest(
   }
   const tail = cleanRelativePath(rawTail);
   if (!tail) return errorResponse(request, 404, "route_not_found", "API route not found");
+  if (tail === "song-release-times") {
+    const response = await edgeCached(releaseCacheRequest(request, release.releaseId), ctx, API_CACHE_TTL, async () => {
+      const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) =>
+        readReleaseJson(env, release, `objects/master/${table}.json`)));
+      return jsonResponse(request, { identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },
+        releases: eventSongReleases(events, challenges) }, CATALOG_API_CACHE_CONTROL);
+    }, CATALOG_API_CACHE_CONTROL);
+    return releaseResponseHeaders(response, release);
+  }
   if (tail === "ui-marks") {
     const cacheRequest = releaseCacheRequest(
       new Request(withUiMarksProjection(request.url), request),
@@ -4013,6 +4024,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (contentAccess) return contentAccess;
     const spoilerPreference = await handleSpoilerPreferenceRequest(request, env);
     if (spoilerPreference) return spoilerPreference;
+    const contentVisibility = await handleContentVisibilityRequest(request, env);
+    if (contentVisibility) return contentVisibility;
     const appAccount = await handleAppAccountRequest(request, env);
     if (appAccount) return appAccount;
     const search = await handleSearchRequest(request, env.DB);

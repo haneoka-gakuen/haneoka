@@ -10,7 +10,7 @@ import { filterChip } from "../ui/controls";
 import { cardRarityName } from "../shared/rarity-icon";
 import type { TeamBuilder } from "../team-builder";
 import type { BoxFilters } from "./types";
-import { isReleasedContent } from "../../lib/content-release";
+import { isContentVisible } from "../../lib/content-release";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -53,7 +53,7 @@ function cardQuery(host: TeamBuilder, query: string): CatalogQuery {
 export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps", id: number, f: BoxFilters): boolean {
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
-  if (!card || !isReleasedContent(card)) return false;
+  if (!card || !isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(id))) return false;
   if (!matchesSelections(catalog.bandIds(kind, id).map(String), f.bands.map(String)) ||
       !matchesSelections(catalog.characterIds(kind, id).map(String), f.characters.map(String)) ||
       !matchesSelections([String(card.attribute)], f.attributes.map(String)) ||
@@ -89,7 +89,7 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
 export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch: Partial<BoxFilters>) => void) {
   const catalog = host.catalog!;
   const kind = f.kind;
-  const cards = Object.values(kind === "members" ? catalog.data.members : catalog.data.snapshots).filter(isReleasedContent);
+  const cards = Object.values(kind === "members" ? catalog.data.members : catalog.data.snapshots).filter((card) => isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(card.id)));
   const label = (key: string) => clientText(host.locale, (uiLabelPaths[key] ?? key), key);
   const all = host.common("common.states.all", "All");
   const group = (title: string, values: string[], options: {value: string; label: string; image?: string; imageOnly?: boolean}[], change: (values: string[]) => void) => chooserGroup(title, html`
