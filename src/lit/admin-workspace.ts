@@ -175,6 +175,7 @@ export class AdminWorkspace extends LitElement {
   declare private visibilityExpanded: string;
   declare private visibilityIdDrafts: Record<string, string>;
   declare private visibilityInvalid: boolean;
+  private visibilityDraftVersion?: number;
   declare staff: Value;
   declare error: string;
   declare busy: string;
@@ -595,6 +596,10 @@ export class AdminWorkspace extends LitElement {
     this.phase = error ? "error" : "loading";
   }
   private refresh() {
+    this.visibilityDraft = null;
+    this.visibilityDraftVersion = undefined;
+    this.visibilityIdDrafts = {};
+    this.visibilityInvalid = false;
     if (!this.isConnected) return;
     if (this.privateAccess.signal.aborted) this.privateAccess = new AbortController();
     void this.load(false);
@@ -829,6 +834,7 @@ export class AdminWorkspace extends LitElement {
   }
   private changeVisibilityRule(kind: VisibilityType, patch: Partial<VisibilityRule>) {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
+    this.visibilityDraftVersion ??= settings.version;
     const current = this.visibilityDraft ?? settings.policy;
     this.visibilityDraft = { ...current, types: { ...current.types, [kind]: { ...(current.types[kind] ?? DEFAULT_VISIBILITY_RULE), ...patch } } };
   }
@@ -839,12 +845,13 @@ export class AdminWorkspace extends LitElement {
     this.visibilityInvalid = false;
     void this.mutate("content-visibility", async (assertCurrent) => {
       const result = await this.request("/api/v1/admin/content-visibility", {
-        method: "PUT", body: JSON.stringify({ policy, expectedVersion: settings.version }),
+        method: "PUT", body: JSON.stringify({ policy, expectedVersion: this.visibilityDraftVersion ?? settings.version }),
       });
       assertCurrent();
       const saved = result.visibilitySettings as unknown as ContentVisibilitySettings;
       this.document = { ...this.document, visibilitySettings: saved };
       this.visibilityDraft = null;
+      this.visibilityDraftVersion = undefined;
       this.visibilityIdDrafts = {};
       applyVisibilitySettings(saved);
       snackbar(this.label("visibilitySaved", "Content visibility saved"));
@@ -863,7 +870,7 @@ export class AdminWorkspace extends LitElement {
           <span>${this.label("eventChallengeSongs", "Released event challenge songs")}</span>
           <md-switch .selected=${policy.eventChallengeSongs} ?disabled=${Boolean(this.busy)}
             aria-label=${this.label("eventChallengeSongs", "Released event challenge songs")}
-            @change=${(event: Event) => { this.visibilityDraft = { ...policy, eventChallengeSongs: (event.currentTarget as HTMLElement & {selected:boolean}).selected }; }}></md-switch>
+            @change=${(event: Event) => { this.visibilityDraftVersion ??= settings.version; this.visibilityDraft = { ...policy, eventChallengeSongs: (event.currentTarget as HTMLElement & {selected:boolean}).selected }; }}></md-switch>
         </label>
         <div class="stack">
           ${VISIBILITY_TYPES.map((kind) => {
