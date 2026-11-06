@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: 冻结的自动／手动配队请求、结果、设置与目录。
-// Output: 排名卡片、共用评分详情、所选技能顺序、可折叠谱面片段与导出上下文。
+// Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
+// Output: 排名卡片、结果／已存队伍共用编队、评分详情、所选技能顺序与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
@@ -20,6 +20,7 @@ import { skillTimeline } from "../shared/skill-timeline";
 import { ORDERS } from "../../lib/team-builder/engine/order-equivalence";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
+import type { CardGrowth } from "../shared/card-growth";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { sectionHeading } from "./catalog";
 import { renderChecklist } from "./tool-layout";
@@ -372,28 +373,30 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
   ].slice(0, 3);
 }
 
-/** Slot order with the leader (slot 0) in the centre, as in the game's formation screen. */
-export const centred = (length: number) => [1, 2, 0, 3, 4].filter((index) => index < length);
+interface FormationSlot {
+  member: number;
+  snap: number | null;
+  memberGrowth?: CardGrowth | null;
+  snapGrowth?: CardGrowth | null;
+  title?: string;
+  flag?: TemplateResult;
+}
 
-export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
+export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0): TemplateResult {
   const catalog = host.catalog!;
-  const order = centred(hit.members.length);
+  const order = slots.map((_, index) => index).filter((index) => index !== leader);
+  if (leader >= 0) order.splice(Math.min(2, order.length), 0, leader);
   return html`
     <ol class="tb-formation" aria-label=${host.t("formation", "Formation")}>
       ${order.map((index) => {
-        const member = cardIdOf(hit.members[index]!);
-        const snapKey = hit.snaps[index];
-        const snap = snapKey ? cardIdOf(snapKey) : null;
-        const memberGrowth = resultGrowth(host, "members", hit.members[index]!);
-        const snapGrowth = snapKey ? resultGrowth(host, "snaps", snapKey) : null;
+        const { member, snap, memberGrowth, snapGrowth, title, flag } = slots[index]!;
         const memberOptions = catalog.cardOptions("members", member, memberGrowth);
         const snapOptions = snap !== null ? catalog.cardOptions("snaps", snap, snapGrowth) : null;
-        const owned = host.view?.members.get(member);
         return html`
           <li
-            class=${`tb-slot${index === 0 ? " is-leader" : ""}`}
-            aria-label=${index === 0 ? host.t("leader", "Leader") : nothing}
-            title=${`${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`}
+            class=${`tb-slot${index === leader ? " is-leader" : ""}`}
+            aria-label=${index === leader ? host.t("leader", "Leader") : nothing}
+            title=${title ?? catalog.characterName(catalog.member(member)?.characterId ?? 0)}
           >
             <button
               class="tb-slot__member"
@@ -426,20 +429,29 @@ export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
                     `
               }
             </button>
-            ${
-              owned
-                ? nothing
-                : resultSettings(host).scope === "theoretical"
-                  ? html`
-                      <span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>
-                    `
-                  : nothing
-            }
+            ${flag ?? nothing}
           </li>
         `;
       })}
     </ol>
   `;
+}
+
+export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
+  const catalog = host.catalog!;
+  return teamFormation(host, hit.members.map((key, index) => {
+    const member = cardIdOf(key);
+    const snapKey = hit.snaps[index];
+    return {
+      member,
+      snap: snapKey ? cardIdOf(snapKey) : null,
+      memberGrowth: resultGrowth(host, "members", key),
+      snapGrowth: snapKey ? resultGrowth(host, "snaps", snapKey) : null,
+      title: `${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`,
+      flag: !host.view?.members.has(member) && resultSettings(host).scope === "theoretical"
+        ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : undefined,
+    };
+  }));
 }
 
 function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): TemplateResult {

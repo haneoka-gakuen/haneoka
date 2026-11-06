@@ -1014,6 +1014,7 @@
   }
   .tb-slot__snap {
     width: 100%;
+    min-block-size: 48px;
     aspect-ratio: 16 / 9;
     align-items: center;
   }
@@ -2214,23 +2215,6 @@
   }
   .tb-saved__name {
     flex: 1 1 auto;
-  }
-  .tb-saved__cards {
-    display: grid;
-    margin: 0;
-    padding: 0;
-    gap: 4px;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    list-style: none;
-  }
-  .tb-saved__card {
-    overflow: hidden;
-    aspect-ratio: 3 / 4;
-    border-radius: var(--md-sys-shape-corner-small);
-  }
-  .tb-saved__card.is-leader {
-    outline: 3px solid var(--md-sys-color-primary);
-    outline-offset: -3px;
   }
   .tb-saved__song {
     display: flex;

@@ -11,7 +11,7 @@ import { tileMedia } from "../ui/tile";
 import { specList } from "../ui/spec";
 import { sectionHeading } from "./catalog";
 import { songRulesControl } from "./song-rules";
-import { renderResultDetails, resultSong, saveTeam } from "./results";
+import { renderResultDetails, resultSong, saveTeam, teamFormation } from "./results";
 import { accordion } from "../ui/accordion";
 import { attachManualResults, clearManualOrders, manualOrderScore, manualResultHit, manualResultRequest, manualResultSettings, snapshotManualResults } from "./manual-results";
 import { resultRequest } from "./score-goal";
@@ -709,22 +709,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                     },
                                   })}
                                 </div>
-                                <ol class="tb-saved__cards" aria-label=${host.t("formation", "Formation")}>
-                                  ${[
-                                    ...team.members.filter((id) => id !== team.leader).slice(0, 2),
-                                    ...team.members.filter((id) => id === team.leader),
-                                    ...team.members.filter((id) => id !== team.leader).slice(2),
-                                  ].map((id) => {
-                                    const options = catalog.cardOptions("members", id);
-                                    return options
-                                      ? html`
-                                          <li class=${`tb-saved__card${team.leader === id ? " is-leader" : ""}`} title=${options.label}>
-                                            ${tileMedia({ ...options, marks: [] })}
-                                          </li>
-                                        `
-                                      : nothing;
-                                  })}
-                                </ol>
+                                ${teamFormation(host, team.members.map((member, index) => ({
+                                  member,
+                                  snap: team.snaps[index] ?? null,
+                                })), team.leader === null ? -1 : team.members.indexOf(team.leader))}
                                 ${
                                   team.song
                                     ? html`
