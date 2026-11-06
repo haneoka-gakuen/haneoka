@@ -102,7 +102,7 @@ export const DEFAULT_FARMING: FarmingSettings = {
   requireGrowth: true, unknownPolicy: "min", includeMemory: false,
   fullRanking: false, k: 1, timeLimit: null, ptCycle: false,
 };
-export const CUSTOM_ACCURACY = false;
+export const CUSTOM_ACCURACY = true;
 export const DEFAULT_SETTINGS: BuildSettings = {
   aggregation: "individual",
   rewardMode: "recommendation",
