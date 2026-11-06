@@ -31,6 +31,9 @@
     "not_found_handling": "none",
     // HTML receives current site policy; hashed scripts, styles and fonts stay direct.
     "run_worker_first": [
+      "/sitemap.xml",
+      "/sitemap-*.xml",
+      "/robots.txt",
       "/404",
       "/404.html",
       "/api/*",

@@ -89,41 +89,6 @@ Forks must configure their own Cloudflare Worker, D1 database, R2 buckets,
 email sender, Turnstile widget, OAuth applications, domains, and secrets.
 Never commit credentials, private packages, or licensed runtime files.
 
-### Production domains
-
-`haneoka.org` and `haneoka.com` use the same Worker, accounts, D1 databases and
-R2 buckets. `haneoka.com` remains on external DNS and is registered as a
-Cloudflare for SaaS custom hostname in the `haneoka.org` zone. `haneoka.org`
-uses a Workers Custom Domain with Cloudflare-managed DNS and certificates;
-`haneoka.com` uses an explicit Worker route. `/downloads/*` belongs to the
-download Worker on both domains.
-
-Authentication, account email links, media and Sonolus URLs use the current
-allowed hostname. Search canonical URLs stay on `haneoka.org`. Login cookies
-and browser storage are separate for each domain; cloud data uses the same
-account. `BETTER_AUTH_URL` remains the canonical fallback for background jobs.
-
-Register both `https://haneoka.org/api/auth/callback/<provider>` and
-`https://haneoka.com/api/auth/callback/<provider>` in each enabled OAuth
-provider's application. Keep `noreply@haneoka.org` as the verified email sender.
-If Turnstile is enabled, allow both hostnames in the widget and
-`TURNSTILE_ALLOWED_HOSTNAMES`.
-
-Cloudflare Hotlink Protection checks the SaaS zone's domain. Add a Configuration
-Rule with expression `starts_with(http.referer, "https://haneoka.com/")` and set
-Hotlink Protection to Off for that rule, allowing images referenced by `.com`
-pages. Validate both domains' pages, images, session API, OAuth redirect URLs,
-Sonolus resources and download routes after deployment.
-
-Set `COMMUNITY_HIDDEN_HOSTS` to a comma-separated list of hostnames that hide
-community pages and comments. The production default is `haneoka.com`;
-`haneoka.org` keeps the complete community. Hidden hosts return 404 for
-community documents, legacy community routes and comment APIs, and hide the
-navigation entry, home recommendations, community links and comment sections.
-Authentication, account tools and private cloud synchronization remain available.
-Clear the value to restore the community, and reload the page. Local Astro
-development accepts the same environment variable for its local hostname.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), and

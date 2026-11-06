@@ -5,6 +5,7 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { ARENA_PROJECTION } from "../src/lib/arena";
 import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
+import { serveSiteDiscovery } from "./site-discovery";
 import { isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
@@ -3862,11 +3863,23 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const url = new URL(request.url);
   if (isSiteHostname(url.hostname) && url.hostname !== CANONICAL_HOST && response.headers.get("Content-Type")?.includes("text/html")) {
     const origin = siteOrigin(url);
+    const metadata: HTMLRewriterElementContentHandlers = { element(element) {
+      const attribute = element.tagName === "link" ? "href" : "content";
+      element.setAttribute(attribute, siteAssetUrl(element.getAttribute(attribute)!, origin));
+    } };
     const media: HTMLRewriterElementContentHandlers = { element(element) {
       element.setAttribute("src", siteLink(element.getAttribute("src")!, origin));
     } };
     let hostnameWritten = false;
+    let structuredData = "";
     response = new HTMLRewriter()
+      .on('link[rel="canonical"], link[rel="alternate"][hreflang]', metadata)
+      .on('meta[property="og:url"]', metadata)
+      .on('script[type="application/ld+json"]', { text(text) {
+        structuredData += text.text;
+        text.replace(text.lastInTextNode ? structuredData.replaceAll(`https://${CANONICAL_HOST}/`, `${origin}/`) : "", { html: true });
+        if (text.lastInTextNode) structuredData = "";
+      } })
       .on("a[href]", { element(element) {
         element.setAttribute("href", siteLink(element.getAttribute("href")!, origin));
       } })
@@ -3989,6 +4002,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (isSiteHostname(url.hostname) && url.protocol !== "https:") return redirectToHttps(url);
   const dynamicHost = isSiteHostname(url.hostname) || isLocalHostname(url.hostname);
   if (dynamicHost) {
+    const discovery = await serveSiteDiscovery(request, env);
+    if (discovery) return discovery;
     const registration = await handleAccountRegistrationRequest(request, env);
     if (registration) return registration;
     const auth = await handleAuthRequest(request, env);
