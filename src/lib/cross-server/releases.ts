@@ -1,0 +1,26 @@
+import { isReleasedContent, showUnreleasedContent } from "../content-release";
+import { mergeCrossServerCatalog, type CrossCatalogDTO, type CrossCatalogSnapshot } from "./catalog";
+
+export function releasedCatalog(dto: CrossCatalogDTO): CrossCatalogDTO {
+  if (showUnreleasedContent()) return dto;
+  const sources: CrossCatalogSnapshot[] = Object.entries(dto.identities).flatMap(([server, identity]) => {
+    if (!identity) return [];
+    const collection = Object.fromEntries(
+      dto.entries.flatMap((entry) => {
+        const variant = entry.perServer[server];
+        return variant && isReleasedContent(variant.row) ? [[variant.id, variant.row]] : [];
+      }),
+    );
+    return [
+      {
+        identity,
+        collections: dto.sourceAvailability[server] === "loaded" ? { [dto.resource]: collection } : {},
+        documents: dto.documents[server] ? { [dto.resource]: dto.documents[server] } : {},
+      },
+    ];
+  });
+  return {
+    ...dto,
+    ...mergeCrossServerCatalog(sources, dto.resource, { selectedServer: dto.selectedServer, locale: dto.locale }),
+  };
+}

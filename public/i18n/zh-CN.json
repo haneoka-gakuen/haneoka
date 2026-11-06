@@ -4213,6 +4213,7 @@
       "statusSuspended": "已暂停",
       "statusDeleted": "已注销",
       "accountManagement": "账号管理",
+      "showSpoilerContent": "显示剧透内容",
       "adminConsole": "管理后台",
       "uploadAvatar": "上传",
       "cancelAvatar": "取消选择",
@@ -6111,6 +6112,7 @@
       "showRestrictedContent": "显示未公开内容",
       "showRestrictedContentHint": "仅所选身份组可以访问这些内容，公开页面保持不变。",
       "contentAccessGroups": "允许访问的身份组",
+      "spoilerSettings": "剧透内容设置",
       "access": {
         "signInRequired": "请重新登录",
         "forbidden": "需要管理员权限"

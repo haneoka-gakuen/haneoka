@@ -4,6 +4,7 @@ import "@material/web/list/list-item.js";
 import "@material/web/divider/divider.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { readPageData } from "../lib/page-data";
+import { isReleasedContent } from "../lib/content-release";
 import { resolveLocalizedText } from "../lib/localized-text";
 import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -249,7 +250,8 @@ export class CalendarPage extends LitElement {
     const days = this.days;
     return this.data
       ? calendarOccurrences(this.data, days[0]!, days.at(-1)!, this.zone).filter((item) =>
-          (item.facets ?? []).some((key) => this.categories.has(key)),
+          (item.facets ?? []).some((key) => this.categories.has(key)) &&
+          (item.kind === "character" || item.kind === "cast" || item.sourceUrl || isReleasedContent({ startAt: item.gameWindow?.startAtMs ?? item.startAtMs })),
         )
       : [];
   }

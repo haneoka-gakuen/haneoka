@@ -10,6 +10,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
+import { isReleasedContent } from "../lib/content-release";
 import type { SongPuzzlePageData } from "../server/tool-page-data";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -435,7 +436,8 @@ export class SongPuzzle extends LitElement {
   }
   private renderSongPicker() {
     const query = this.query.normalize("NFKC").toLocaleLowerCase(this.locale).trim();
-    const filtered = this.songs.filter(
+    const visible = this.songs.filter((song) => isReleasedContent(song.row));
+    const filtered = visible.filter(
       (song) =>
         (!this.pickerBand || localizedText(song.band, this.locale) === this.pickerBand) &&
         (!query ||
@@ -444,7 +446,7 @@ export class SongPuzzle extends LitElement {
             .toLocaleLowerCase(this.locale)
             .includes(query)),
     );
-    const bands = [...new Set(this.songs.map((song) => localizedText(song.band, this.locale)).filter(Boolean))];
+    const bands = [...new Set(visible.map((song) => localizedText(song.band, this.locale)).filter(Boolean))];
     return selectionPane({
       id: "puzzle-song-picker",
       title: this.text("song"),

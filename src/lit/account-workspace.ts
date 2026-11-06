@@ -17,6 +17,9 @@ import { snackbar } from "../lib/snackbar";
 import { appCall, inApp, type DeviceSave } from "../lib/app-bridge";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
+import { showUnreleasedContent } from "../lib/content-release";
+import { setPageSpoilers } from "../lib/spoiler-navigation";
+import "@material/web/switch/switch.js";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
   close: "common.actions.close",
@@ -86,6 +89,8 @@ export class AccountWorkspace extends LitElement {
     appealOpen: { state: true },
     captchaToken: { state: true },
     captchaFailed: { state: true },
+    spoilerAllowed: { state: true },
+    spoilerEnabled: { state: true },
   };
   declare phase: "loading" | "ready" | "error";
   declare config: Value;
@@ -115,6 +120,8 @@ export class AccountWorkspace extends LitElement {
   declare appealOpen: boolean;
   declare captchaToken: string;
   declare captchaFailed: boolean;
+  declare private spoilerAllowed: boolean;
+  declare private spoilerEnabled: boolean;
   private lifetime = new AbortController();
   private readonly loadRequests = new RequestScope();
   private readonly profileRequests = new RequestScope();
@@ -150,6 +157,8 @@ export class AccountWorkspace extends LitElement {
     this.appealOpen = false;
     this.captchaToken = "";
     this.captchaFailed = false;
+    this.spoilerAllowed = false;
+    this.spoilerEnabled = false;
   }
 
   createRenderRoot() {
@@ -160,6 +169,7 @@ export class AccountWorkspace extends LitElement {
     super.connectedCallback();
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     addEventListener("haneoka:locale-ready", this.onLocale);
+    addEventListener("haneoka:spoiler-preference", this.onSpoilerPreference);
     void Promise.all([
       import("@material/web/progress/circular-progress.js"),
       import("@material/web/textfield/outlined-text-field.js"),
@@ -183,6 +193,10 @@ export class AccountWorkspace extends LitElement {
   };
 
   private readonly onLocale = () => this.requestUpdate();
+  private readonly onSpoilerPreference = () => {
+    this.spoilerAllowed = document.documentElement.dataset.spoilerPreferenceAllowed === "1";
+    this.spoilerEnabled = showUnreleasedContent();
+  };
   disconnectedCallback() {
     removeEventListener("haneoka-app-accounts", this.loadDeviceSaves);
     this.lifetime.abort();
@@ -190,6 +204,7 @@ export class AccountWorkspace extends LitElement {
     this.profileRequests.cancel();
     this.securityRequests.cancel();
     removeEventListener("haneoka:locale-ready", this.onLocale);
+    removeEventListener("haneoka:spoiler-preference", this.onSpoilerPreference);
     this.cancelAvatar();
     this.removeTurnstile();
     super.disconnectedCallback();
@@ -227,6 +242,8 @@ export class AccountWorkspace extends LitElement {
     if (this.session) rememberSignedIn(false);
     this.session = null;
     this.profile = null;
+    this.spoilerAllowed = false;
+    this.spoilerEnabled = false;
     this.sessions = [];
     this.accounts = [];
     this.appeals = [];
@@ -359,11 +376,12 @@ export class AccountWorkspace extends LitElement {
     const ownSignal = this.profileRequests.begin(signal ?? this.lifetime.signal);
     const userId = this.user()?.id;
     const init: RequestInit = { signal: ownSignal };
-    const [value, appeals] = await Promise.all([
+    const [value, appeals, spoilers] = await Promise.all([
       speculative?.profile ?? this.request("/api/v1/account/profile", init),
       this.user()?.emailVerified
         ? (speculative?.appeals ?? this.request("/api/v1/community/appeals", init))
         : Promise.resolve<Value>({}),
+      this.request("/api/v1/account/spoilers", init),
     ]);
     if (!this.isConnected || !this.profileRequests.current(ownSignal) || userId !== this.user()?.id) return;
     // A speculative read answered for whoever the cookie named; keep it only
@@ -371,6 +389,9 @@ export class AccountWorkspace extends LitElement {
     const seed = (value.profile as Value | undefined)?.avatarSeed;
     if (speculative && typeof seed === "string" && seed !== userId) return this.loadProfile(signal);
     this.profile = (value.profile as Value) || null;
+    this.spoilerAllowed = spoilers.userId === userId && spoilers.allowed === true;
+    if (!new URL(location.href).searchParams.has("spoiler") && this.spoilerAllowed && spoilers.enabled === true) setPageSpoilers(true);
+    this.spoilerEnabled = showUnreleasedContent();
     void refreshContentAccess();
     this.appeals = Array.isArray(appeals.appeals) ? (appeals.appeals as Value[]) : [];
   }
@@ -1871,6 +1892,16 @@ export class AccountWorkspace extends LitElement {
     const user = this.user() || {};
     return html`
       <section class="account-section">
+        ${this.spoilerAllowed ? html`
+          <section class="surface account-block">
+            <label class="row row--between">
+              <span>${this.label("showSpoilerContent", "Show spoiler content")}</span>
+              <md-switch .selected=${this.spoilerEnabled} ?disabled=${this.busy}
+                aria-label=${this.label("showSpoilerContent", "Show spoiler content")}
+                @change=${(event: Event) => void this.changeSpoilers(event)}></md-switch>
+            </label>
+          </section>
+        ` : nothing}
         <article class="account-danger">
           <header>
             <span>${icon("warning", 22)}</span>
@@ -1898,6 +1929,18 @@ export class AccountWorkspace extends LitElement {
         </article>
       </section>
     `;
+  }
+
+  private async changeSpoilers(event: Event) {
+    const control = event.currentTarget as HTMLElement & { selected: boolean };
+    const enabled = control.selected;
+    control.selected = this.spoilerEnabled;
+    const result = await this.action(() => this.request("/api/v1/account/spoilers", {
+      method: "PUT", headers: this.ownerHeaders(), body: JSON.stringify({ enabled }),
+    }));
+    if (!result || !this.isConnected) return;
+    this.spoilerEnabled = result.enabled === true;
+    setPageSpoilers(this.spoilerEnabled);
   }
 }
 

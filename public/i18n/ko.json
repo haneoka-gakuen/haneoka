@@ -4213,6 +4213,7 @@
       "statusSuspended": "일시 정지됨",
       "statusDeleted": "비활성화됨",
       "accountManagement": "계정 관리",
+      "showSpoilerContent": "스포일러 콘텐츠 표시",
       "adminConsole": "관리자 화면",
       "uploadAvatar": "업로드",
       "cancelAvatar": "선택 취소",
@@ -6111,6 +6112,7 @@
       "showRestrictedContent": "미공개 콘텐츠 표시",
       "showRestrictedContentHint": "선택한 회원 그룹만 접근할 수 있습니다. 공개 페이지에는 표시되지 않습니다.",
       "contentAccessGroups": "접근을 허용할 회원 그룹",
+      "spoilerSettings": "스포일러 콘텐츠 설정",
       "access": {
         "signInRequired": "다시 로그인하세요",
         "forbidden": "관리자 권한이 필요합니다"

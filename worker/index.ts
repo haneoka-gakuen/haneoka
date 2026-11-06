@@ -15,6 +15,7 @@ import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
 import { semanticOwnersConflict } from "../src/lib/cross-server/content";
 import { handleContentAccessRequest } from "./content-access";
+import { handleSpoilerPreferenceRequest } from "./spoiler-settings";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
 import catalogPageRollout from "../config/catalog-page-rollout.json";
@@ -4010,6 +4011,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (auth) return auth;
     const contentAccess = await handleContentAccessRequest(request, env);
     if (contentAccess) return contentAccess;
+    const spoilerPreference = await handleSpoilerPreferenceRequest(request, env);
+    if (spoilerPreference) return spoilerPreference;
     const appAccount = await handleAppAccountRequest(request, env);
     if (appAccount) return appAccount;
     const search = await handleSearchRequest(request, env.DB);

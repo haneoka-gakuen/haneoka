@@ -4213,6 +4213,7 @@
       "statusSuspended": "一時停止中",
       "statusDeleted": "無効化済み",
       "accountManagement": "アカウント管理",
+      "showSpoilerContent": "ネタバレを表示",
       "adminConsole": "管理画面",
       "uploadAvatar": "アップロード",
       "cancelAvatar": "選択を取り消す",
@@ -6111,6 +6112,7 @@
       "showRestrictedContent": "未公開コンテンツを表示",
       "showRestrictedContentHint": "選択したユーザー区分のみアクセスできます。公開ページには表示されません。",
       "contentAccessGroups": "アクセスを許可するユーザー区分",
+      "spoilerSettings": "ネタバレ表示設定",
       "access": {
         "signInRequired": "もう一度ログインしてください",
         "forbidden": "管理者権限が必要です"

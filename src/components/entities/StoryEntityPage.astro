@@ -12,6 +12,7 @@ import { asRecord } from "../../lib/static-catalog-source";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { episodeArtwork, spotArtwork } from "../../lib/story-artwork";
 import { serializePageData } from "../../lib/page-data";
+import { isReleasedContent } from "../../lib/content-release";
 import { renderStoryPage } from "../../server/render-catalog";
 import "../../lit/story-workspace";
 import "../../styles/story.css";
@@ -41,6 +42,8 @@ const seoTitleValues = Object.fromEntries(
 ) as Record<Locale, string>;
 const payload = await catalogEntityData(server, "stories", page.storyId) as StoryPayload | undefined;
 if (!payload) throw new Error(`Missing story page data: ${server}/${page.storyId}`);
+const released = isReleasedContent(payload.episodes[page.storyId]);
+const displayTitle = released ? page.titles[locale] : sectionTitle;
 const storyArtwork = (() => {
   const episode = payload.episodes[page.storyId];
   if (!episode) return "";
@@ -74,25 +77,26 @@ const body = rendered.body;
   canonicalRoute={canonical ? canonicalHref : undefined}
   title={sectionTitle}
   titleKey={sectionRouteDefinition.titleKey}
-  description={page.descriptions[locale]}
-  seoTitleValues={seoTitleValues}
-  seoDescriptionValues={page.descriptions}
-  searchImage={storyArtwork}
-  searchTitle={resolveLocalizedText(payload.episodes[page.storyId]?.title, locale).text || page.titles[locale]}
+  noindex={!released}
+  description={released ? page.descriptions[locale] : undefined}
+  seoTitleValues={released ? seoTitleValues : undefined}
+  seoDescriptionValues={released ? page.descriptions : undefined}
+  searchImage={released ? storyArtwork : undefined}
+  searchTitle={released ? resolveLocalizedText(payload.episodes[page.storyId]?.title, locale).text || page.titles[locale] : sectionTitle}
 >
   <AppShell
     locale={locale}
     route={sectionRoute}
     server={server}
-    title={canonical ? page.titles[locale] : sectionTitle}
+    title={canonical ? displayTitle : sectionTitle}
     titleKey={canonical ? undefined : sectionRouteDefinition.titleKey}
     entity={
       canonical
         ? {
-            title: page.titles[locale],
+            title: displayTitle,
             backHref: returnTo || storyCollectionPath({ server, locale, mode: page.mode }),
-            previous,
-            next,
+            previous: released ? previous : undefined,
+            next: released ? next : undefined,
           }
         : undefined
     }

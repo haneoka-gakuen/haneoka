@@ -24,6 +24,7 @@ import {
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import type { ArenaPopulationDto, ArenaRankingDto, GameRecordsRegion } from "../lib/game-records";
 import { readPageData } from "../lib/page-data";
+import { isReleasedContent } from "../lib/content-release";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { resourcePath, releaseServerFromPath, type ReleaseServer } from "../lib/resource-route";
@@ -254,7 +255,7 @@ export class ArenaWorkspace extends LitElement {
 
   /* ---------- state and URL ---------- */
   private seasons() {
-    return Object.values(this.catalog?.entries || {}).sort((a, b) => a.startAt - b.startAt);
+    return Object.values(this.catalog?.entries || {}).filter(isReleasedContent).sort((a, b) => a.startAt - b.startAt);
   }
   private season() {
     const seasons = this.seasons();

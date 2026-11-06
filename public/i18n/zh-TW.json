@@ -4213,6 +4213,7 @@
       "statusSuspended": "已暫停",
       "statusDeleted": "已註銷",
       "accountManagement": "帳號管理",
+      "showSpoilerContent": "顯示劇透內容",
       "adminConsole": "管理後台",
       "uploadAvatar": "上傳",
       "cancelAvatar": "取消選擇",
@@ -6111,6 +6112,7 @@
       "showRestrictedContent": "顯示未公開內容",
       "showRestrictedContentHint": "僅所選身分組可以存取這些內容，公開頁面維持不變。",
       "contentAccessGroups": "允許存取的身分組",
+      "spoilerSettings": "劇透內容設定",
       "access": {
         "signInRequired": "請重新登入",
         "forbidden": "需要管理員權限"

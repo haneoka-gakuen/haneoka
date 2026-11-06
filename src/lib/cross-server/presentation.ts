@@ -1,4 +1,5 @@
 import { crossServerDisplayRow, type CrossCatalogDTO, type CrossCatalogEntry, type CrossCatalogIdentity, type CrossCatalogRow } from "./catalog";
+import { releasedCatalog } from "./releases";
 
 /** Pin media to its actual source release, including nested runtime records. */
 export function pinCrossCatalogValue(value: unknown, identity: CrossCatalogIdentity): unknown {
@@ -18,7 +19,7 @@ export function pinCrossCatalogValue(value: unknown, identity: CrossCatalogIdent
 export function crossCatalogPresentation(dto: CrossCatalogDTO) {
   const entries = new WeakMap<CrossCatalogRow, CrossCatalogEntry>();
   const byId = new Map<string, CrossCatalogEntry>();
-  const items = dto.entries.map((entry) => {
+  const project = (entry: CrossCatalogEntry) => {
     const variant = entry.perServer[entry.displayServer]!;
     const row = crossServerDisplayRow(entry);
     for (const supplement of entry.content.supplements) if (supplement.classification === "source-asset") {
@@ -31,7 +32,10 @@ export function crossCatalogPresentation(dto: CrossCatalogDTO) {
     byId.set(`${variant.identity.server}:${variant.id}`, entry);
     if (!byId.has(variant.id) || entry.inSelectedServer) byId.set(variant.id, entry);
     return pinned;
-  });
-  return { dto, items, entries, byId };
+  };
+  const allItems = dto.entries.map(project);
+  const visible = releasedCatalog(dto);
+  const items = visible === dto ? allItems : visible.entries.map(project);
+  return { dto, items, allItems, entries, byId };
 }
 export type CrossCatalogPresentation = ReturnType<typeof crossCatalogPresentation>;

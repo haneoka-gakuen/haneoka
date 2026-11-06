@@ -22,6 +22,7 @@ import {
 } from "../src/lib/user-roles";
 import { effectiveUserRoleSql } from "./user-roles";
 import { isPublicResourceServer, readSiteSettings } from "./site-settings";
+import { readSpoilerSettings } from "./spoiler-settings";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -825,6 +826,7 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
   if (!counts) throw new Error("Admin overview query returned no row");
   return json(request, {
     siteSettings: await readSiteSettings(env),
+    spoilerSettings: await readSpoilerSettings(env),
     overview: {
       activeUsers: counts.activeUsers,
       blockedPosts: counts.blockedPosts,
@@ -4883,6 +4885,34 @@ const putSiteSettings = async (request: Request, env: Env): Promise<Response> =>
   }
 };
 
+const putSpoilerSettings = async (request: Request, env: Env): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  const roles = body?.roles;
+  if (version === null || !Array.isArray(roles) || roles.some((role) => !isUserRole(role)) || new Set(roles).size !== roles.length)
+    return error(request, 422, "invalid_settings", "Valid roles and expectedVersion are required");
+  const started = await startOperation(request, env, access, "site.spoiler_visibility.update", "spoiler_setting", "1");
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  try {
+    const updated = await env.DB.prepare(
+      "UPDATE spoiler_setting SET roles = ?, version = version + 1, updated_at = ? WHERE id = 1 AND version = ?",
+    ).bind(JSON.stringify(USER_ROLES.filter((role) => roles.includes(role))), Date.now(), version).run();
+    if (Number(updated.meta.changes || 0) !== 1) {
+      await failOperation(env, started.operationId, "version_conflict");
+      return error(request, 409, "version_conflict", "Settings changed; refresh and retry");
+    }
+    const settings = await readSpoilerSettings(env);
+    const operation = await transitionOperation(env, started.operationId, "succeeded", { roles: settings.roles, version: settings.version }, null, null);
+    return json(request, { operation: operationValue(operation), spoilerSettings: settings });
+  } catch (failure) {
+    await failOperation(env, started.operationId, "settings_update_failed");
+    throw failure;
+  }
+};
+
 export const handleAdminRequest = async (request: Request, env: Env): Promise<Response | null> => {
   const url = new URL(request.url);
   if (url.pathname !== ADMIN_PREFIX && !url.pathname.startsWith(`${ADMIN_PREFIX}/`)) return null;
@@ -4970,6 +5000,7 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "overview") return getOverview(request, env);
   if (method === "PUT" && path.length === 1 && path[0] === "site-settings") return putSiteSettings(request, env);
+  if (method === "PUT" && path.length === 1 && path[0] === "spoiler-settings") return putSpoilerSettings(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "users") return getUsers(request, env, url);
   if (method === "GET" && path.length === 1 && path[0] === "posts") return getPosts(request, env, url);
   if (method === "GET" && path.length === 3 && path[0] === "posts" && path[2] === "history") {

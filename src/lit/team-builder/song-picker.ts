@@ -143,6 +143,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     catalog.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty);
   const allCharts = Object.keys(catalog.data.songs)
     .map(Number)
+    .filter((id) => catalog.songVisible(id))
     .sort((a, b) => b - a)
     .flatMap((songId) =>
       catalog

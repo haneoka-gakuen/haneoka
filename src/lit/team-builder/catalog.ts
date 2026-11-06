@@ -1,4 +1,5 @@
 import { CONTENT_SOURCE_IDS } from "../../lib/content-access-state";
+import { isReleasedContent } from "../../lib/content-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";
 import type { SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
@@ -55,6 +56,9 @@ export class Catalog {
   songIdentity(id: number) {
     const server = this.data.crossServer?.owners.songs?.[String(id)] ?? this.data.identity.server;
     return this.data.crossServer?.identities[server] ?? this.data.identity;
+  }
+  songVisible(id: number) {
+    return isReleasedContent(this.data.songs[String(id)]);
   }
   chartMetadata(song: SongRef) {
     return this.songMetadata.get(this.songIdentity(song.songId).server)?.[String(song.songId)]?.[
@@ -404,6 +408,7 @@ export class Catalog {
   /** Events with a live point table (searchable event goals). */
   events() {
     return [...this.master.events.values()]
+      .filter((event) => isReleasedContent(this.data.events[String(event.id)]))
       .filter((event) => event.livePoints.size || event.challengePoints.size || event.effects.length)
       .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))
       .map((event) => ({

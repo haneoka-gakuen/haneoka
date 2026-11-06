@@ -12,6 +12,10 @@ import { filterChip, segmented } from "./ui/controls";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { readCommunityViewer, CommunityRealmChanged } from "../lib/community-viewer";
 import { JsonResponseError } from "./shared/catalog";
+import { isReleasedContent, showUnreleasedContent } from "../lib/content-release";
+import { parseResourceRoute } from "../lib/resource-route";
+import { crossServerPublicCache } from "../lib/cross-server/cache";
+import { crossCatalogRows, isCrossCatalogResource } from "../lib/cross-server/definitions";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -115,6 +119,29 @@ const resultData = (result: SearchResult): SearchResult => ({
 });
 
 export class GlobalSearch extends LitElement {
+  private serviceOffset = 0;
+  private async releasedResults(rows: SearchResult[]): Promise<SearchResult[]> {
+    if (showUnreleasedContent()) return rows;
+    const cache = crossServerPublicCache();
+    const collections = new Map<string, Promise<Record<string, RecordValue>>>();
+    const visible = await Promise.all(rows.map(async (row) => {
+      const route = parseResourceRoute(new URL(row.url, location.origin).pathname);
+      if (!route?.id) return true;
+      const resource = route.kind === "member-cards" ? "cards" : route.kind;
+      if (!isCrossCatalogResource(resource)) return true;
+      const key = `${route.server}:${resource}`;
+      let pending = collections.get(key);
+      if (!pending) {
+        pending = cache.readIdentity(route.server).then(async (identity) =>
+          crossCatalogRows(resource, await cache.readCollection(resource, identity)),
+        );
+        collections.set(key, pending);
+      }
+      const item = (await pending)[route.id];
+      return !!item && isReleasedContent(item);
+    }));
+    return rows.filter((_, index) => visible[index]);
+  }
   static properties = {
     locale: { type: String }, query: { state: true }, scope: { state: true },
     catalogBusy: { state: true }, communityBusy: { state: true },
@@ -310,20 +337,22 @@ export class GlobalSearch extends LitElement {
     const server = readReleaseServer();
     if (server !== "jp" && server !== "intl") return false;
     if (this.scope === "help") return false;
-    const params = new URLSearchParams({ q: this.query.trim(), server, locale: this.locale, limit: "24", offset: String(append ? this.results.length : 0) });
+    const params = new URLSearchParams({ q: this.query.trim(), server, locale: this.locale, limit: "24", offset: String(append ? this.serviceOffset : 0) });
     if (this.scope === "catalog" || this.scope === "stories") params.set("section", this.scope);
     if (this.kind) params.set("kind", this.kind);
     const response = await fetch(`/api/v1/search?${params}`).catch(() => null);
     if (!response?.ok) return false;
     const data = (await response.json()) as ServiceResults;
     if (!current()) return true;
-    const rows = data.hits.map((hit): SearchResult => ({
+    const rows = await this.releasedResults(data.hits.map((hit): SearchResult => ({
       url: hit.url, excerpt: hit.excerpt,
       meta: { label: hit.title, ...(hit.image ? { image: hit.image } : {}), kind: hit.kind },
-    }));
+    })));
+    if (!current()) return true;
+    this.serviceOffset = (append ? this.serviceOffset : 0) + data.hits.length;
     this.results = append ? [...this.results, ...rows] : rows;
     this.total = data.total; this.kinds = data.kinds;
-    this.catalogMore = this.results.length < data.total;
+    this.catalogMore = this.serviceOffset < data.total;
     this.fromService = true;
     return true;
   }
@@ -332,7 +361,7 @@ export class GlobalSearch extends LitElement {
     if (!append) { this.results = []; this.hits = []; this.consumed = 0; this.catalogMore = false; this.kinds = {}; this.fromService = false; }
     const query = this.query.trim(), locale = this.locale, scope = this.scope, server = readReleaseServer();
     const current = () => this.isConnected && generation === this.generation && locale === this.locale && server === readReleaseServer();
-    const key = JSON.stringify([locale, server, scope, query]);
+    const key = JSON.stringify([locale, server, scope, query, showUnreleasedContent()]);
     this.catalogBusy = true; this.catalogError = "";
     try {
       if ((!append || this.fromService) && (await this.loadService(append, current))) return;
@@ -363,7 +392,8 @@ export class GlobalSearch extends LitElement {
         const rows = await Promise.all(batch.map(async (hit) => resultData(await hit.data())));
         if (!current()) return;
         this.consumed += batch.length; inspected += batch.length;
-        const visible = rows.filter((row) => scope === "all" || searchCategory(row.url).section === scope);
+        const visible = await this.releasedResults(rows.filter((row) => scope === "all" || searchCategory(row.url).section === scope));
+        if (!current()) return;
         added.push(...visible); this.results = [...this.results, ...visible];
       }
       if (!current()) return;

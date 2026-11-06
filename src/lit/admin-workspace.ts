@@ -5,6 +5,7 @@
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
 import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
+import { refreshSpoilerPreference } from "../lib/spoiler-navigation";
 import { USER_ROLES, isUserRole } from "../lib/user-roles";
 import { modal } from "./ui/modal";
 import "../styles/admin-forums.css";
@@ -793,6 +794,22 @@ export class AdminWorkspace extends LitElement {
         document.documentElement.dataset.siteSettingsVersion = String(saved.version);
         await refreshContentAccess();
       } else await this.load(false);
+    });
+  }
+  private changeSpoilerAccess(event: Event, role: string) {
+    const control = event.currentTarget as HTMLElement & { checked: boolean };
+    const settings = this.document.spoilerSettings as Value | undefined;
+    if (!settings || this.busy) return;
+    const roles = new Set(settings.roles as string[]);
+    if (control.checked) roles.add(role); else roles.delete(role);
+    control.checked = (settings.roles as string[]).includes(role);
+    void this.mutate("spoiler-settings", async (assertCurrent) => {
+      const result = await this.request("/api/v1/admin/spoiler-settings", {
+        method: "PUT", body: JSON.stringify({ roles: USER_ROLES.filter((value) => roles.has(value)), expectedVersion: settings.version }),
+      });
+      assertCurrent();
+      this.document = { ...this.document, spoilerSettings: result.spoilerSettings };
+      await refreshSpoilerPreference();
     });
   }
   private addRestriction(user: Value, kind: "sign_in" | "upload" | "write", event: Event) {
@@ -2543,6 +2560,7 @@ export class AdminWorkspace extends LitElement {
       </section>
     `;
     const access = this.document.siteSettings as Value | undefined;
+    const spoilers = this.document.spoilerSettings as Value | undefined;
     return html`
       <div class="admin-overview">
         <section class="admin-work-queue" aria-labelledby="admin-queue-heading">
@@ -2574,6 +2592,21 @@ export class AdminWorkspace extends LitElement {
           ])}
         </div>
         ${this.renderAnalytics()}${this.renderStatistics()}
+        ${spoilers ? html`
+          <section class="admin-summary surface stack">
+            <h3 class="detail-section-title">${this.label("spoilerSettings", "Spoiler content settings")}</h3>
+            <div class="chip-set" role="group" aria-label=${this.label("contentAccessGroups", "Allowed account groups")}>
+              ${USER_ROLES.map((role) => html`
+                <label class="chip">
+                  <md-checkbox aria-label=${this.label(`roles.${role}`, role)}
+                    .checked=${(spoilers.roles as string[]).includes(role)} ?disabled=${Boolean(this.busy)}
+                    @change=${(event: Event) => this.changeSpoilerAccess(event, role)}></md-checkbox>
+                  ${this.label(`roles.${role}`, role)}
+                </label>
+              `)}
+            </div>
+          </section>
+        ` : nothing}
         ${
           access
             ? html`

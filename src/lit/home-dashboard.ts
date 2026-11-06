@@ -1,6 +1,8 @@
 import { communityVisible } from "../lib/site-community";
 import { CONTENT_SOURCE_IDS } from "../lib/content-access-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isReleasedContent } from "../lib/content-release";
+import { releasedCatalog } from "../lib/cross-server/releases";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { communityStickerPreview } from "../lib/community-markup";
@@ -209,7 +211,7 @@ const icon = (name: string, size = 20) => html`
   </svg>
 `;
 const values = (value: unknown, key?: string): JsonRecord[] =>
-  key ? recordValues((value as JsonRecord | undefined)?.[key]) : recordValues(value);
+  (key ? recordValues((value as JsonRecord | undefined)?.[key]) : recordValues(value)).filter(isReleasedContent);
 const timestamp = (value: unknown) =>
   Array.isArray(value)
     ? Math.max(0, ...value.map(Number).filter((entry) => Number.isFinite(entry) && entry > 0))
@@ -521,7 +523,7 @@ export class HomeDashboard extends LitElement {
   private catalogRows(resource: "cards" | "support-cards" | "songs" | "events", fallback: unknown): JsonRecord[] {
     const catalog = this.crossServerCatalogs[resource];
     return catalog
-      ? catalog.entries.map((entry) => ({
+      ? releasedCatalog(catalog).entries.map((entry) => ({
           ...(resource === "events"
             ? pinCrossCatalogValue(homeEventDisplay({ ...entry.perServer[entry.displayServer]!.row, ...entry.nameOverrides }), entry.perServer[entry.displayServer]!.identity) as JsonRecord
             : crossServerDisplayRow(entry)),
@@ -2230,7 +2232,7 @@ export class HomeDashboard extends LitElement {
     const link = isPublicReleaseServer(server) ? `/${server}/${this.locale}/arena/` : "";
     const arena = this.arena;
     const now = Date.now();
-    const seasons = Object.values(arena?.catalog.entries || {}).sort((a, b) => a.startAt - b.startAt);
+    const seasons = Object.values(arena?.catalog.entries || {}).filter(isReleasedContent).sort((a, b) => a.startAt - b.startAt);
     const season =
       seasons.find((entry) => arenaContains(entry, now)) || seasons.find((entry) => entry.startAt > now) || seasons.at(-1);
     const context = arena && season ? { locale: this.locale, server: arena.server, catalog: arena.catalog, marks: arena.marks } : null;

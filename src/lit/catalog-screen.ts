@@ -6,6 +6,8 @@
 import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isReleasedContent, showUnreleasedContent } from "../lib/content-release";
+import { releasedCatalog } from "../lib/cross-server/releases";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import catalogPageRollout from "../../config/catalog-page-rollout.json";
 import { CatalogPageRefresh } from "../lib/catalog-page-refresh";
@@ -1152,7 +1154,7 @@ export class CatalogScreen extends LitElement {
     }
   }
   private unionPresentationScope(): string {
-    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showRestrictedContent(), [...OFFICIAL_CATALOG_SERVERS]]);
+    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showRestrictedContent(), showUnreleasedContent(), [...OFFICIAL_CATALOG_SERVERS]]);
   }
   private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
     return JSON.stringify([
@@ -1260,7 +1262,7 @@ export class CatalogScreen extends LitElement {
       bands[server] = ownBands;
     }
     const itemEntries = new WeakMap<Item, CrossCatalogEntry>();
-    const items = dto.entries.map((entry) => this.unionPrimaryRow(entry, itemEntries));
+    const items = releasedCatalog(dto).entries.map((entry) => this.unionPrimaryRow(entry, itemEntries));
     const complete = (["jp", "intl"] as const).every((server) => {
       const pin = dto.identities[server];
       return Boolean(
@@ -2148,7 +2150,7 @@ export class CatalogScreen extends LitElement {
   private syncEntityChrome() {
     if (!this.isConnected || !this.settings.entityContext) return;
     const item = this.selected;
-    if (item) {
+    if (item && isReleasedContent(item)) {
       const title = this.itemTitleValue(item);
       updateEntityHeading(this, this.settings.chartPage ? this.chartPageTitle(item) : title.text, title.locale);
     }
@@ -2157,7 +2159,7 @@ export class CatalogScreen extends LitElement {
   }
   private renderEntityChrome() {
     const item = this.selected;
-    if (item && this.detailReady) {
+    if (item && this.detailReady && isReleasedContent(item)) {
       setAppBarIdentity(
         this.entityAppBarOwner,
         html`
@@ -3081,9 +3083,9 @@ export class CatalogScreen extends LitElement {
     const facets = intersectCatalogFacets(this.facets, query.facets);
     // A roster shows one band at a time, so that band is the population the
     // result count is measured against — not the whole catalogue.
-    const source = this.hasBandRail()
+    const source = (this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
-      : this.expandedItems();
+      : this.expandedItems()).filter(isReleasedContent);
     const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     const direction = this.order === "asc" ? 1 : -1;
     const now = Date.now();
@@ -4918,6 +4920,8 @@ export class CatalogScreen extends LitElement {
     const { items, source } = this.results();
     const kind = this.profile.presentation;
     if (this.settings.entityContext) {
+      if (this.selected && !isReleasedContent(this.selected))
+        return emptyState({ title: this.label("unavailable", "Unavailable") });
       if (this.selected && this.detailReady)
         return this.settings.chartPage ? this.renderChartPage(this.selected) : this.renderDetail(this.selected);
       if (this.phase === "error")
@@ -6072,6 +6076,7 @@ export class CatalogScreen extends LitElement {
     return suffix ? `${this.itemTitle(item)} — ${suffix}` : this.itemTitle(item);
   }
   private ensureChartPlayer() {
+    if (this.selected && !isReleasedContent(this.selected)) return Promise.resolve();
     return (this.chartPlayerProvision ??= import("./runtime/chart-simulator").then(() => undefined));
   }
   private chartPageHref(item: Item) {

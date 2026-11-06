@@ -70,6 +70,20 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
 <!doctype html>
 <html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" transition:animate="none">
   <head>
+    <script is:inline data-astro-rerun>
+      try {
+        const url = new URL(document.documentElement.dataset.navigationHref || location.href);
+        const value = url.searchParams.get("spoiler");
+        if (value !== null) sessionStorage.setItem("haneoka.page-spoilers", value);
+        else {
+          const stored = sessionStorage.getItem("haneoka.page-spoilers");
+          if (stored !== null) {
+            url.searchParams.set("spoiler", stored);
+            history.replaceState(history.state, "", url);
+          }
+        }
+      } catch {}
+    </script>
     <style is:inline>
       @layer tokens, reset, base, layout, components, shell, patterns, motion, pages, utilities, accessibility;
     </style>
@@ -247,12 +261,15 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { signedInHint } from "../lib/community-viewer";
       import { installUpdateCheck } from "../lib/update-check";
       import { installFullscreen } from "../lib/fullscreen";
+      import { installSpoilerNavigation, refreshSpoilerPreference } from "../lib/spoiler-navigation";
+      installSpoilerNavigation();
       installUiFonts();
       installI18nDom();
       installUpdateCheck();
       installFullscreen();
       const refreshDocumentAccess = () => {
         if (signedInHint() || document.documentElement.dataset.contentAccess === "1") void refreshContentAccess();
+        if (signedInHint()) void refreshSpoilerPreference();
       };
       refreshDocumentAccess();
       if ("serviceWorker" in navigator)

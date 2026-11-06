@@ -105,6 +105,7 @@ import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
 import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { isReleasedContent } from "../lib/content-release";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -478,7 +479,7 @@ export class StoryWorkspace extends LitElement {
     const server = dto.selectedServer;
     this.unionStories = crossCatalogPresentation(dto);
     this.episodes = Object.fromEntries(
-      this.unionStories.items.map((row) => [this.unionStories!.entries.get(row)!.key, row]),
+      [...this.unionStories.allItems, ...this.unionStories.items].map((row) => [this.unionStories!.entries.get(row)!.key, row]),
     );
     this.unionChapters.clear();
     const chapters = new Map<string, JsonRecord>(),
@@ -732,7 +733,7 @@ export class StoryWorkspace extends LitElement {
     if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
     this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
-    if (this.entityId && this.detailEpisode) {
+    if (this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode)) {
       const title = this.episodeTitleValue(this.detailEpisode);
       updateEntityHeading(this, title.text, title.locale);
       if (this.reader) {
@@ -1256,6 +1257,9 @@ export class StoryWorkspace extends LitElement {
   }
   /** Every episode in the section, across every chapter. */
   private allEpisodes(): JsonRecord[] {
+    return this.sectionEpisodes().filter(isReleasedContent);
+  }
+  private sectionEpisodes(): JsonRecord[] {
     if (this.isCardSection()) return Object.values(this.episodes);
     if (this.origin === "release" && this.mode === "home") {
       const active = this.activeSpots();
@@ -2011,6 +2015,8 @@ export class StoryWorkspace extends LitElement {
 
   render() {
     if (this.entityId) {
+      if (this.detailEpisode && !isReleasedContent(this.detailEpisode))
+        return emptyState({ title: uiText(this.locale, "common.states.unavailable") });
       if (this.detailLoading) return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.detailError)
         return errorState(
@@ -2768,7 +2774,7 @@ export class StoryWorkspace extends LitElement {
   }
   private syncAppBarActions() {
     // An episode over the collection hands its modes to its own takeover of the bar.
-    const visible = Boolean(this.entityId && this.detailEpisode && !this.detailLoading && !this.detailError);
+    const visible = Boolean(this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode) && !this.detailLoading && !this.detailError);
     if (!visible) {
       if (this.appBarRegistered) {
         clearAppBarActions(this.appBarOwner);

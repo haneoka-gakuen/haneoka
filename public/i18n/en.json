@@ -4213,6 +4213,7 @@
       "statusSuspended": "Suspended",
       "statusDeleted": "Deactivated",
       "accountManagement": "Account management",
+      "showSpoilerContent": "Show spoiler content",
       "adminConsole": "Admin console",
       "uploadAvatar": "Upload",
       "cancelAvatar": "Cancel selection",
@@ -6111,6 +6112,7 @@
       "showRestrictedContent": "Show unpublished content",
       "showRestrictedContentHint": "Only selected account groups can access this content. Public pages remain unchanged.",
       "contentAccessGroups": "Allowed account groups",
+      "spoilerSettings": "Spoiler content settings",
       "access": {
         "signInRequired": "Sign in again",
         "forbidden": "Administrator access required"

@@ -2,6 +2,8 @@ import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
 import type { CrossCatalogDTO } from "../lib/cross-server/catalog";
 import { catalogServerMark, catalogSourceChoices } from "./shared/server-availability";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
+import { releasedContent } from "../lib/content-release";
+import { releasedCatalog } from "../lib/cross-server/releases";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -455,7 +457,7 @@ export class StampMaker extends LitElement {
   preparePage(payload: StampMakerPageData) {
     this.pageData = payload;
     this.server = payload.server;
-    this.catalog = payload.catalog;
+    this.catalog = releasedContent(payload.catalog);
     this.characters = payload.characters;
     this.bands = payload.bands;
     this.textless = payload.textless;
@@ -715,8 +717,8 @@ export class StampMaker extends LitElement {
   private async loadCatalog() {
     if (this.pageData && canUseStaticCatalogScope()) {
       this.crossStampCatalog = undefined;
-      this.catalog = Object.fromEntries(stampSourceServers().flatMap(server =>
-        Object.entries(this.pageData!.catalogs[server] ?? {})).reverse());
+      this.catalog = releasedContent(Object.fromEntries(stampSourceServers().flatMap(server =>
+        Object.entries(this.pageData!.catalogs[server] ?? {})).reverse()));
       this.catalogSettled = true;
       return;
     }
@@ -730,7 +732,7 @@ export class StampMaker extends LitElement {
     this.crossStampCatalog = undefined;
     const loading = beginLoading(this.t("choose"), { signal: request.signal });
     try {
-      const dto = await fetchCrossServerCatalog("stamps", readReleaseServer(), this.locale, { signal: request.signal });
+      const dto = releasedCatalog(await fetchCrossServerCatalog("stamps", readReleaseServer(), this.locale, { signal: request.signal }));
       if (request.signal.aborted || !this.isConnected) return;
       if (!stampChoicesFromCrossCatalog(dto, this.locale).length) throw new Error("Stamp catalog is empty");
       this.crossStampCatalog = dto;

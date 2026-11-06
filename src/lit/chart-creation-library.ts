@@ -13,6 +13,7 @@ import { clientText, initializeI18nClient } from "../i18n/client";
 import { localizedFallbacks, resolveLocalizedText } from "../lib/localized-text";
 import { creationSongCard, createCreationSongCardData, defaultCreationDifficulty, loadPublicCreationSongCardData, type CreationSongCardData } from "../lib/chart-creation/song-card";
 import type { PublicSongsPageData } from "../server/tool-page-data";
+import { isReleasedContent } from "../lib/content-release";
 import { songTitle } from "../lib/song-display";
 import { readReleaseServer } from "../lib/release-server";
 import { beginLoading } from "../lib/loading-progress";
@@ -418,7 +419,7 @@ export class ChartCreationLibrary extends LitElement {
       if (Array.isArray(band?.memberCharacterIds)) return band.memberCharacterIds.map(String);
       return bandCharacters.get(String(raw.bandId)) ?? [];
     };
-    const rows = this.items.map(({ id, value }) => ({
+    const rows = this.items.filter((item) => isReleasedContent(item.value)).map(({ id, value }) => ({
       id,
       value,
       bandIds: [...new Set([...(Array.isArray(this.record(value).bandIds) ? this.record(value).bandIds as unknown[] : []), this.record(value).bandId].filter((id) => id !== undefined && id !== null).map(String))],
