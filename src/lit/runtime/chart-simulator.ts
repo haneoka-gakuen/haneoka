@@ -2,7 +2,7 @@
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
 // Output: 使用网页字体并支持指针／键盘位置查询的分块 2D 概览、按需 3D 观看和完整 PNG／分页 PNG ZIP。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
-// Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
+// Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；音频缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
 import { LitElement, html, nothing } from "lit";
 import { NoColorSpace, TextureLoader, type Texture } from "three";
@@ -1214,8 +1214,21 @@ export class ChartSimulator extends LitElement {
     clock.audio.addEventListener("pause", () => {
       if (!ownsClock()) return;
       this.playing = false;
+      cancelAnimationFrame(this.animationFrame);
       void introContext?.suspend();
     });
+    const resumeFrames = () => {
+      if (ownsClock()) this.animateFrames();
+    };
+    const suspendFrames = () => {
+      if (!ownsClock() || (this.intro && this.intro.phase !== "complete")) return;
+      cancelAnimationFrame(this.animationFrame);
+      if (this.playing) this.draw();
+    };
+    clock.audio.addEventListener("playing", resumeFrames, { signal });
+    clock.audio.addEventListener("seeked", resumeFrames, { signal });
+    clock.audio.addEventListener("waiting", suspendFrames, { signal });
+    clock.audio.addEventListener("seeking", suspendFrames, { signal });
     clock.audio.addEventListener("ended", () => {
       if (!ownsClock()) return;
       this.playing = false;
@@ -2139,11 +2152,19 @@ export class ChartSimulator extends LitElement {
     }
   }
 
+  private shouldAnimateFrames() {
+    if (!this.playing || this.mode !== "watch") return false;
+    if (this.intro && this.intro.phase !== "complete") return true;
+    const audio = this.clock?.audio;
+    return Boolean(audio && !audio.paused && !audio.seeking && audio.readyState >= audio.HAVE_FUTURE_DATA);
+  }
   private animateFrames = () => {
     cancelAnimationFrame(this.animationFrame);
+    if (!this.shouldAnimateFrames()) return;
     const frame = () => {
+      if (!this.shouldAnimateFrames()) return;
       this.draw();
-      if (this.playing) this.animationFrame = requestAnimationFrame(frame);
+      if (this.shouldAnimateFrames()) this.animationFrame = requestAnimationFrame(frame);
     };
     this.animationFrame = requestAnimationFrame(frame);
   };
@@ -2193,7 +2214,7 @@ export class ChartSimulator extends LitElement {
     try {
       await Promise.all([sounds?.unlock(), clock.play()]);
     } catch (error) {
-      const cancelled = signal.aborted || this.clock !== clock || this.loadAbort?.signal !== signal;
+      const cancelled = signal.aborted || this.clock !== clock || this.loadAbort?.signal !== signal || clock.audio.paused;
       if (cancelled && error instanceof DOMException && error.name === "AbortError") return false;
       throw error;
     }
