@@ -13,32 +13,32 @@
     "masterdata.tar.gz": {
       "bytes": 1329480,
       "sha256": "00c1465d17d1bfa560ca38f727fa9d7ee394cf328bfac504792a1ea8a35c9fd0",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.300-c85e2e85/masterdata.tar.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.301-ef2b64b4/masterdata.tar.gz"
     },
     "resources.json.gz": {
-      "bytes": 8540127,
-      "sha256": "df688280b763de176ecc8a1338b03f862b077b047e4836194f0299578d775479",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.300-c85e2e85/resources.json.gz"
+      "bytes": 8540119,
+      "sha256": "c14953da126f438246843151a6568eb465c7ded0a4cfc20a53a06d9a2df895ac",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.301-ef2b64b4/resources.json.gz"
     },
     "spine.json.gz": {
-      "bytes": 113380,
-      "sha256": "f08ccc9ccd5403124b6b9873c3a04260c83146794f828eba45589a73cdece7a6",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.300-c85e2e85/spine.json.gz"
+      "bytes": 113382,
+      "sha256": "4b3c81cca31b7b6dc7e95a00c377f8a2ae5cc3900ec7b144b3edfe1b6f323ab9",
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.301-ef2b64b4/spine.json.gz"
     },
     "stories-intl.tar.gz": {
       "bytes": 3148572,
       "sha256": "fb2325a2f85b6677f0617b573e60d1ecd4de9fc72960b68e80eea3a737459bb8",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.300-c85e2e85/stories-intl.tar.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.301-ef2b64b4/stories-intl.tar.gz"
     },
     "tables.json.gz": {
       "bytes": 45904,
       "sha256": "d9ae5c1e3e71f454fbe4adbda5dd9044ee685252c2aec67687dd4faf4f73bca9",
-      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.300-c85e2e85/tables.json.gz"
+      "url": "https://github.com/haneoka-gakuen/haneoka/releases/download/feed-intl-1.1.0.301-ef2b64b4/tables.json.gz"
     }
   },
   "masterHash": "4fd97dac48eadfeb72efd51c9b837872",
   "masterSha256": "00c1465d17d1bfa560ca38f727fa9d7ee394cf328bfac504792a1ea8a35c9fd0",
-  "masterVersion": "1.1.0.300",
+  "masterVersion": "1.1.0.301",
   "models": {
     "input": "75a1e34f6fa733e91b03e39ae2bc1c08f7163a4a1200c604030d470fdba19af8",
     "metadata": {
@@ -52,12 +52,12 @@
   },
   "publishedMaster": {
     "hash": "4fd97dac48eadfeb72efd51c9b837872",
-    "version": "1.1.0.300"
+    "version": "1.1.0.301"
   },
-  "releaseId": "r-41a8c12c98cb0a3db359",
+  "releaseId": "r-add15d02dc69a2ba9fda",
   "server": "intl",
   "stories": {
-    "input": "8bdd64e7bd9e70d68af867f971ffc23f42fdffef363b29250ea3f60728e6e47a",
+    "input": "e96a5de011dc03364dd650e2d103439035da1dd4cfffa255be8d6a6b44408493",
     "metadata": {
       "files": 5105,
       "sha256": "dc80bdd035dc8c6b769bc89744fa503483f8dbfd956dac8901d6245dbbebb60b"
@@ -66,6 +66,6 @@
       "stories-intl.tar.gz"
     ]
   },
-  "tag": "feed-intl-1.1.0.300-c85e2e85",
+  "tag": "feed-intl-1.1.0.301-ef2b64b4",
   "versionSchema": 2
 }
