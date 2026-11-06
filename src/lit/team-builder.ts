@@ -5,7 +5,7 @@
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
 import { compileRewardPlan, effectiveRewardPlan, legacyRewardPlan } from "../lib/team-builder/reward-plan";
 import { resolveManualEvent } from "../lib/team-builder/manual-event";
-import { minimumEventBonusUnreachable } from "../lib/team-builder/constraint-feasibility";
+import { MAX_GEKISO_COUNT, minimumComboBonusUnreachable, minimumEventBonusUnreachable, validGekisoCount } from "../lib/team-builder/constraint-feasibility";
 import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
@@ -1073,6 +1073,7 @@ export class TeamBuilder extends LitElement {
     if (reason.startsWith("unreachable native judgement") || reason === "unreachable native input sequence") return this.t("timingUnreachable", "The judgement pattern cannot be reached");
     if (reason.startsWith("missing native")) return this.t("timingDataMissing", "Timing data is missing");
     if (reason === "just-window-input") return this.t("invalidCombo", "Enter a positive integer");
+    if (reason === "combo-input" || reason === "luck-samples-input") return this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min: reason === "combo-input" ? 1 : 0, max: MAX_GEKISO_COUNT });
     if (reason === "just-window-timing") return this.t("justWindowTiming", "JUST tap timing data is missing");
     if (reason === "just-window-random") return this.t("justWindowRandom", "Window targets are unavailable for this random skill");
     return reason;
@@ -1082,6 +1083,8 @@ export class TeamBuilder extends LitElement {
       issues: { field: string; message: string }[] = [];
     const add = (field: string, key: string, fallback: string) =>
       issues.push({ field, message: this.t(key, fallback) });
+    const countIssue = (field: string, min: number) => issues.push({ field,
+      message: this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min, max: MAX_GEKISO_COUNT }) });
     if (this.tab === "arena") issues.push(...this.arena.issues());
     const candidateCards = this.engineCards();
     if (!candidateCards.members.length) add("tb-cards", "needCardsShort", "Choose cards");
@@ -1150,16 +1153,16 @@ export class TeamBuilder extends LitElement {
     if (s.goal === "event" && s.rewardPlan && !compileRewardPlan(effectiveRewardPlan(s.rewardPlan, s.route === "challenge"), { songs: s.planChallengeSongs, consumption: s.challengePoints }))
       add("tb-reward-plan", "rewardPlan.invalidRate", "Enter conversion rates and challenge charts");
     const gekiso = s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live");
-    if (gekiso && this.hasMission("JustCount", s.songs) && (!Number.isInteger(s.justWindowMs) || s.justWindowMs < 0))
-      add("tb-just-window", "invalidCombo", "Enter a positive integer");
-    if (gekiso && (!Number.isInteger(s.minComboBonus) || s.minComboBonus < 1))
-      add("tb-combo", "invalidCombo", "Enter a positive integer");
+    if (gekiso && this.hasMission("JustCount", s.songs) && !validGekisoCount(s.justWindowMs, 0))
+      countIssue("tb-just-window", 0);
+    if (gekiso && !validGekisoCount(s.minComboBonus, 1))
+      countIssue("tb-combo", 1);
     if (s.goal === "gekiso" && s.gekisoSamplingMode === "manual" &&
-      (!Number.isInteger(resolveLuckSamples(s)) || resolveLuckSamples(s) < 0))
-      add("tb-luck-samples", "pt.invalidSamples", "Enter zero or a positive integer");
+      !validGekisoCount(resolveLuckSamples(s), 0))
+      countIssue("tb-luck-samples", 0);
     if (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live" && s.ptSamplingMode === "manual" &&
-      (!Number.isInteger(resolveLuckSamples(s, "rewards")) || resolveLuckSamples(s, "rewards") < 1))
-      add("tb-luck-samples", "invalidCombo", "Enter a positive integer");
+      !validGekisoCount(resolveLuckSamples(s, "rewards"), 1))
+      countIssue("tb-luck-samples", 1);
     if (!recommendation && s.goal === "gekiso" && s.gekisoPlacementMode === "opponents") {
       const parsed = parseOpponents(s.gekisoOpponents);
       if (parsed.empty) add("tb-placement", "needOpponents", "Enter opponent scores");
@@ -1197,10 +1200,14 @@ export class TeamBuilder extends LitElement {
     )
       add("tb-cards", "fixedBindingConflict", "Fixed Snapshots or bindings conflict");
     if (s.noSnaps && fixedSnaps.size) add("tb-cards", "fixedSnapConflict", "Remove fixed Snapshots or allow Snapshots");
-    if (this.master && s.minBonus !== null && s.goal === "event") {
+    if (this.master && (s.minBonus !== null && s.goal === "event" || gekiso && s.minComboBonus > 1)) {
       const request = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.request() : this.request();
-      if (request && minimumEventBonusUnreachable(this.master, request))
-        add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached");
+      if (request) {
+        if (minimumEventBonusUnreachable(this.master, request))
+          add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached");
+        if (gekiso && validGekisoCount(s.minComboBonus, 1) && minimumComboBonusUnreachable(this.master, request))
+          add("tb-combo", "minComboUnreachable", "Minimum base COMBO BONUS cannot be reached");
+      }
     }
     return issues;
   }

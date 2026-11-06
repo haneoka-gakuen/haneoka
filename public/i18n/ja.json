@@ -2718,6 +2718,8 @@
       "noSnaps": "スナップなし",
       "minBonus": "最低イベントボーナス（%）",
       "minBonusUnreachable": "最低イベントボーナスに届きません",
+      "minComboUnreachable": "最低基礎COMBO BONUSに届きません",
+      "invalidIntegerRange": "{min}～{max}の整数を入力してください",
       "resultCount": "結果数",
       "timeLimit": "時間制限",
       "noLimit": "最適と証明されるまで",

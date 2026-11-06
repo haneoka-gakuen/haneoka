@@ -2718,6 +2718,8 @@
       "noSnaps": "不帶快照",
       "minBonus": "最低活動加成（%）",
       "minBonusUnreachable": "最低活動加成無法達到",
+      "minComboUnreachable": "無法達到最低基礎 COMBO BONUS",
+      "invalidIntegerRange": "請輸入 {min}–{max} 的整數",
       "resultCount": "結果數",
       "timeLimit": "時間上限",
       "noLimit": "直到證明最優",

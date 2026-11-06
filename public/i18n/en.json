@@ -2718,6 +2718,8 @@
       "noSnaps": "No snapshots",
       "minBonus": "Minimum event bonus (%)",
       "minBonusUnreachable": "Minimum event bonus cannot be reached",
+      "minComboUnreachable": "Minimum base COMBO BONUS cannot be reached",
+      "invalidIntegerRange": "Enter an integer from {min} to {max}",
       "resultCount": "Results",
       "timeLimit": "Time limit",
       "noLimit": "Until proven",

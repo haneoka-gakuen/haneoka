@@ -20,6 +20,7 @@ import { toolLayout } from "./tool-layout";
 import { eventSection, gekisoSamplingAdvanced, justWindowControl, playConditions, songList } from "./build-tab";
 import { segmented } from "../ui/controls";
 import { clock } from "../../lib/team-builder/engine/execution";
+import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/constraint-feasibility";
 import { compareHits } from "../../lib/team-builder/engine/merge";
 import type { TeamBuilder } from "../team-builder";
 
@@ -45,12 +46,11 @@ function teamSpec(host: TeamBuilder, team = host.manual) {
 function manualSamplingReady(host: TeamBuilder): boolean {
   const goal = host.manualGoal();
   if (goal.kind !== "gekiso") return true;
-  const invalidSamples = !Number.isInteger(goal.seeds) || goal.seeds < 0;
+  const invalidSamples = !validGekisoCount(goal.seeds, 0);
   const window = host.hasMission("JustCount", goal.songs) ? host.searchSettings.justWindowMs : 0;
-  if (!invalidSamples && Number.isInteger(window) && window >= 0) return true;
+  if (!invalidSamples && validGekisoCount(window, 0)) return true;
   host.submitted = true;
-  host.error = invalidSamples ? host.t("pt.invalidSamples", "Enter zero or a positive integer")
-    : host.t("invalidCombo", "Enter a positive integer");
+  host.error = host.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min: 0, max: MAX_GEKISO_COUNT });
   host.requestUpdate();
   void host.focusInput(invalidSamples ? "tb-luck-samples" : "tb-just-window");
   return false;

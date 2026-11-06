@@ -25,6 +25,7 @@ import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMo
 import type { TeamBuilder } from "../team-builder";
 import { farmingConditions, missionSummary, parseOpponents } from "./workspace-state";
 import { ptField } from "./pt-fields";
+import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/constraint-feasibility";
 
 const GOALS = [
   { id: "score", icon: "music_note" },
@@ -57,14 +58,15 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
           data-tb-field
           type="number"
           min=${context === "rewards" ? "1" : "0"}
+          max=${String(MAX_GEKISO_COUNT)}
           step="1"
           inputmode="numeric"
           label=${host.t("pt.luckSamples", "Luck samples")}
           .value=${live(String(samples))}
-          ?error=${host.submitted && (!Number.isInteger(samples) || samples < (context === "rewards" ? 1 : 0))}
+          ?error=${host.submitted && !validGekisoCount(samples, context === "rewards" ? 1 : 0)}
           @change=${(e: Event) => host.updateSettings(context === "rewards"
             ? { ptLuckSamples: Number((e.target as HTMLInputElement).value) }
-            : { gekisoSeeds: Math.max(0, Math.floor(Number((e.target as HTMLInputElement).value) || 0)) })}
+            : { gekisoSeeds: Number((e.target as HTMLInputElement).value) })}
         ></md-outlined-text-field>
       ` : nothing}
     </div>
@@ -97,13 +99,14 @@ export function comboBonusControl(host: TeamBuilder): TemplateResult | typeof no
       data-tb-field
       type="number"
       min="1"
+      max=${String(MAX_GEKISO_COUNT)}
       step="1"
       inputmode="numeric"
       label=${host.t("minComboBonus", "Minimum base COMBO BONUS")}
       prefix-text="×"
       .value=${live(s.minComboBonus === 1 ? "" : String(s.minComboBonus))}
       placeholder=${host.t("unlimitedCombo", "No minimum")}
-      ?error=${host.submitted && (!Number.isInteger(s.minComboBonus) || s.minComboBonus < 1)}
+      ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-combo")}
       @change=${(event: Event) => host.updateSettings({ minComboBonus: (event.target as HTMLInputElement).value === "" ? 1 : Number((event.target as HTMLInputElement).value) })}
     ></md-outlined-text-field>
   `;
@@ -118,6 +121,7 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
       data-tb-field
       type="number"
       min="0"
+      max=${String(MAX_GEKISO_COUNT)}
       step="1"
       inputmode="numeric"
       label=${host.t("justWindow", "Ideal JUST tap window")}
@@ -125,7 +129,7 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
       suffix-text="ms"
       .value=${live(s.justWindowMs === 0 ? "" : String(s.justWindowMs))}
       placeholder=${host.t("unlimitedCombo", "No minimum")}
-      ?error=${host.submitted && (!Number.isInteger(s.justWindowMs) || s.justWindowMs < 0)}
+      ?error=${host.submitted && !validGekisoCount(s.justWindowMs, 0)}
       @change=${(event: Event) => host.updateSettings({ justWindowMs: Number((event.target as HTMLInputElement).value) })}
     ></md-outlined-text-field>
   `;

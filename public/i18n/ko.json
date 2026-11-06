@@ -2718,6 +2718,8 @@
       "noSnaps": "스냅 없음",
       "minBonus": "최소 이벤트 보너스 (%)",
       "minBonusUnreachable": "최소 이벤트 보너스에 도달할 수 없습니다",
+      "minComboUnreachable": "최소 기본 COMBO BONUS에 도달할 수 없습니다",
+      "invalidIntegerRange": "{min}~{max} 사이의 정수를 입력하세요",
       "resultCount": "결과 수",
       "timeLimit": "시간 제한",
       "noLimit": "최적이 증명될 때까지",
