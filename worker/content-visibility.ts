@@ -32,7 +32,7 @@ export async function handleContentVisibilityRequest(request: Request, env: Env)
   if (request.method !== "GET" && request.method !== "HEAD")
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   const [settings, group] = await Promise.all([readContentVisibility(env), contentUserGroup(request, env)]);
-  const etag = `"visibility-v3-${settings.version}-${group}"`;
+  const etag = `"visibility-v4-${settings.version}-${group}"`;
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "private, no-store",

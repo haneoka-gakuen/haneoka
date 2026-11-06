@@ -34,7 +34,7 @@ export const VISIBILITY_TYPES = [
   "anon-tokyo",
 ] as const;
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
-export const VISIBILITY_MODES = ["spoiler", "visible", "hidden"] as const;
+export const VISIBILITY_MODES = ["spoiler", "visible"] as const;
 export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
 export const RESTRICTED_CONTENT_DISPLAYS = ["hidden", "unpublished"] as const;
 export type VisibilityRule = {
@@ -105,7 +105,7 @@ export function parseVisibilityPolicy(value: unknown): ContentVisibilityPolicy |
   for (const [kind, value] of Object.entries(policy.types)) {
     if (visibilityType(kind) !== kind || !value || typeof value !== "object" || Array.isArray(value)) return null;
     const rule = value as Record<string, unknown>;
-    const mode = rule.mode === "released" ? "hidden" : rule.mode;
+    const mode = rule.mode === "released" || rule.mode === "hidden" ? "spoiler" : rule.mode;
     if (!(VISIBILITY_MODES as readonly unknown[]).includes(mode)) return null;
     const validIds = (ids: unknown): ids is string[] =>
       Array.isArray(ids) &&

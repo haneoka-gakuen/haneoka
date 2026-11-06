@@ -855,7 +855,7 @@ export class AdminWorkspace extends LitElement {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings | undefined;
     if (!settings) return nothing;
     const policy = this.visibilityDraft ?? settings.policy;
-    const modes = { spoiler: "visibilityModeSpoiler", visible: "visibilityModeVisible", hidden: "visibilityModeHidden" };
+    const modes = { spoiler: "visibilityModeSpoiler", visible: "visibilityModeVisible" };
     const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
     return html`
       <section class="admin-summary surface stack admin-visibility">

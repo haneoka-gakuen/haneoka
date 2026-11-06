@@ -36,7 +36,6 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   const identity = id ?? (kind ? visibilityId(kind, row) : "");
   if (rule.hide.includes(identity)) return false;
   if (rule.show.includes(identity)) return true;
-  if (rule.mode === "hidden") return false;
   if (rule.mode === "visible") return true;
   return rule.mode === "spoiler" && spoilerContentEnabled();
 }

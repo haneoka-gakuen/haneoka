@@ -174,11 +174,11 @@ export async function applySiteSettings(
       rule &&
       (!rule.groups.includes(group) ||
         rule.hide.includes(resource.id) ||
-        (!rule.show.includes(resource.id) && (rule.mode === "hidden" || (rule.mode === "spoiler" && !preference)))),
+        (!rule.show.includes(resource.id) && rule.mode === "spoiler" && !preference)),
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:visibility-v3-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:visibility-v4-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
