@@ -3,10 +3,11 @@
 // Output: 目录筛选、排序、视图、实体详情、激奏边界时机、媒体及关联评论交互。
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
+import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible, showUnreleasedContent } from "../lib/content-release";
+import { isContentListed, isContentVisible, showUnreleasedContent } from "../lib/content-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
 import { visibilityPolicyKey } from "../lib/content-policy-browser";
@@ -1267,7 +1268,7 @@ export class CatalogScreen extends LitElement {
       bands[server] = ownBands;
     }
     const itemEntries = new WeakMap<Item, CrossCatalogEntry>();
-    const items = releasedCatalog(dto).entries.map((entry) => this.unionPrimaryRow(entry, itemEntries));
+    const items = releasedCatalog(dto, isContentListed).entries.map((entry) => this.unionPrimaryRow(entry, itemEntries));
     const complete = (["jp", "intl"] as const).every((server) => {
       const pin = dto.identities[server];
       return Boolean(
@@ -2159,7 +2160,7 @@ export class CatalogScreen extends LitElement {
       const title = this.itemTitleValue(item);
       updateEntityHeading(this, this.settings.chartPage ? this.chartPageTitle(item) : title.text, title.locale);
     } else if (item) {
-      updateEntityHeading(this, this.label("unavailable", "Unavailable"));
+      updateEntityHeading(this, uiText(this.settings.locale, "common.states.unpublished"));
     }
     syncEntityNavigation();
     this.renderEntityChrome();
@@ -2183,6 +2184,10 @@ export class CatalogScreen extends LitElement {
         this,
       );
     } else {
+      if (item && !isContentVisible(this.settings.resource, item, this.itemId(item))) {
+        setAppBarActions(this.entityAppBarOwner, html``);
+        setAppBarIdentity(this.entityAppBarOwner, html``);
+      }
       clearAppBarActions(this.entityAppBarOwner);
       clearAppBarIdentity(this.entityAppBarOwner);
     }
@@ -3124,7 +3129,7 @@ export class CatalogScreen extends LitElement {
     // result count is measured against — not the whole catalogue.
     const source = (this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
-      : this.expandedItems()).filter((item) => isContentVisible(this.settings.resource, item, this.itemId(item)));
+      : this.expandedItems()).filter((item) => isContentListed(this.settings.resource, item, this.itemId(item)));
     const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     const direction = this.order === "asc" ? 1 : -1;
     const now = Date.now();
@@ -4960,7 +4965,7 @@ export class CatalogScreen extends LitElement {
     const kind = this.profile.presentation;
     if (this.settings.entityContext) {
       if (this.selected && !isContentVisible(this.settings.resource, this.selected, this.itemId(this.selected)))
-        return emptyState({ title: this.label("unavailable", "Unavailable") });
+        return unpublishedState(this.settings.locale);
       if (this.selected && this.detailReady)
         return this.settings.chartPage ? this.renderChartPage(this.selected) : this.renderDetail(this.selected);
       if (this.phase === "error")

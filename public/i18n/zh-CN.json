@@ -72,6 +72,8 @@
       "progress": "进度"
     },
     "states": {
+      "unpublishedDescription": "应游戏运营方要求，haneoka 暂不展示此内容。请于游戏内实装后查看。",
+      "unpublished": "尚未公开",
       "yes": "是",
       "no": "否",
       "notAvailable": "暂无内容",
@@ -6117,6 +6119,10 @@
       "contentVisibility": "内容显示",
       "visibilityBulkGroups": "所有分类的默认分组",
       "visibilityApplyAll": "将分组应用到所有分类",
+      "visibilityAllowOverride": "允许 spoiler 参数覆盖",
+      "visibilityRestrictedDisplay": "受限分组显示方式",
+      "visibilityRestrictedHidden": "完全不显示",
+      "visibilityRestrictedUnpublished": "显示图鉴条目，详情尚未公开",
       "visibilityGroups": "未上线内容默认可见分组",
       "visibilityMode": "未上线内容默认规则",
       "visibilityModeSpoiler": "跟随剧透开关",

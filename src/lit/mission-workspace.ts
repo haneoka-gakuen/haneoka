@@ -1,8 +1,10 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 
 import { LitElement, html, nothing } from "lit";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
@@ -232,7 +234,8 @@ export class MissionWorkspace extends LitElement {
   private unionMissions?: CrossCatalogPresentation;
   private syncEntityHeading() {
     if (!this.entityId || !this.missions[0]) return;
-    const title = this.name(this.missions[0].title) || this.entityId;
+    const title = isContentVisible("missions",this.missions[0],this.entityId)
+      ? this.name(this.missions[0].title) || this.entityId : uiText(this.locale,"common.states.unpublished");
     updateEntityHeading(this, title, this.locale);
     syncEntityNavigation();
   }
@@ -378,7 +381,7 @@ export class MissionWorkspace extends LitElement {
     return this.name(group.rows[0]?.group) || this.categoryLabel(group.category);
   }
   private groups() {
-    return groupMissions(this.missions, this.locale).filter(
+    return groupMissions(this.missions.filter((mission)=>isContentListed("missions",mission,String(mission.id))), this.locale).filter(
       (group) => this.mode === "all" || (this.mode === "limited" ? group.timed : !group.timed),
     );
   }
@@ -675,6 +678,8 @@ export class MissionWorkspace extends LitElement {
   }
 
   render() {
+    if (this.entityId && this.missions[0] && !isContentVisible("missions",this.missions[0],this.entityId))
+      return unpublishedState(this.locale);
     const groups = this.groups();
     const selected = this.groupKey ? groups.find((group) => group.key === this.groupKey) : undefined;
     return html`

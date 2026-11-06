@@ -1,3 +1,4 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { LitElement, html, nothing } from "lit";
 import { clientText } from "../i18n/client";
 import { localizedText } from "./shared/catalog";
@@ -9,7 +10,7 @@ import type { SkillCatalogEntry, SkillCatalogPayload, SkillFamily } from "../ser
 import { skillPageId } from "../lib/skill-page";
 import { setAppBarSearch } from "../lib/app-bar";
 import { clearBrowseBar, renderBrowse } from "./ui/browse";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { filterChip, inputChip } from "./ui/controls";
@@ -194,9 +195,11 @@ export class SkillsWorkspace extends LitElement {
     if (!data) return nothing;
     if (this.entityId) {
       const entry = data.entries.find((row) => skillPageId(row) === this.entityId);
-      return entry && isContentVisible("skills", entry, this.entityId) ? this.renderDetail(data, entry) : nothing;
+      return entry && !isContentVisible("skills", entry, this.entityId)
+        ? unpublishedState(this.locale)
+        : entry ? this.renderDetail(data, entry) : nothing;
     }
-    const source = data.entries.filter((entry) => (this.includeUnlinked || entry.cards.length > 0) && isContentVisible("skills", entry, skillPageId(entry)));
+    const source = data.entries.filter((entry) => (this.includeUnlinked || entry.cards.length > 0) && isContentListed("skills", entry, skillPageId(entry)));
     const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase(this.locale);
     const matches = (entry: SkillCatalogEntry, skip?: Facet) =>
       (skip === "family" || !this.facets.family.length || this.facets.family.includes(entry.family)) &&

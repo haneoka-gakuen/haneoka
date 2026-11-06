@@ -3,6 +3,7 @@
 // Output: 故事集合链接、独立阅读页、共享文本与 Vega 播放控制。
 // Pos: [Map](L2-2.md)；各来源故事阅读与播放的统一宿主。
 // Effects/Dependencies: 按需请求资源与播放器，接管实体应用栏，离开释放媒体和请求。
+import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
 import { storyCreationPath } from "../lib/community-story-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -105,7 +106,7 @@ import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
 import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isReleasedContent } from "../lib/content-release";
+import { isListedContent, isReleasedContent } from "../lib/content-release";
 import { withContentSource } from "../lib/content-publication";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
@@ -735,7 +736,7 @@ export class StoryWorkspace extends LitElement {
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
     this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
     if (this.entityId && this.detailEpisode) {
-      const title = isReleasedContent(this.detailEpisode) ? this.episodeTitleValue(this.detailEpisode) : {text: uiText(this.locale, "common.states.unavailable"), locale: this.locale};
+      const title = isReleasedContent(this.detailEpisode) ? this.episodeTitleValue(this.detailEpisode) : {text: uiText(this.locale, "common.states.unpublished"), locale: this.locale};
       updateEntityHeading(this, title.text, title.locale);
       if (this.reader) {
         const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
@@ -1237,7 +1238,7 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private visibleChapterEpisodes(chapter: JsonRecord | undefined) {
-    return this.chapterEpisodes(chapter).filter(isReleasedContent);
+    return this.chapterEpisodes(chapter).filter(isListedContent);
   }
   private chapterOf(episode: JsonRecord) {
     if (this.isProvider())
@@ -1261,7 +1262,7 @@ export class StoryWorkspace extends LitElement {
   }
   /** Every episode in the section, across every chapter. */
   private allEpisodes(): JsonRecord[] {
-    return this.sectionEpisodes().filter(isReleasedContent);
+    return this.sectionEpisodes().filter(isListedContent);
   }
   private sectionEpisodes(): JsonRecord[] {
     if (this.isCardSection()) return Object.values(this.episodes);
@@ -1951,6 +1952,7 @@ export class StoryWorkspace extends LitElement {
   }
   private async openVegaPlayer() {
     const episode = this.detailEpisode;
+    if (episode && !isReleasedContent(episode)) return;
     this.storyCommentsTextChoice = false;
     this.detailMode = "play";
     this.stopStoryPlayback();
@@ -2020,7 +2022,7 @@ export class StoryWorkspace extends LitElement {
   render() {
     if (this.entityId) {
       if (this.detailEpisode && !isReleasedContent(this.detailEpisode))
-        return emptyState({ title: uiText(this.locale, "common.states.unavailable") });
+        return unpublishedState(this.locale);
       if (this.detailLoading) return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.detailError)
         return errorState(
@@ -2780,6 +2782,10 @@ export class StoryWorkspace extends LitElement {
     // An episode over the collection hands its modes to its own takeover of the bar.
     const visible = Boolean(this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode) && !this.detailLoading && !this.detailError);
     if (!visible) {
+      if (this.entityId && this.detailEpisode && !isReleasedContent(this.detailEpisode)) {
+        setAppBarActions(this.appBarOwner, html``);
+        clearAppBarActions(this.appBarOwner);
+      }
       if (this.appBarRegistered) {
         clearAppBarActions(this.appBarOwner);
         this.appBarRegistered = false;

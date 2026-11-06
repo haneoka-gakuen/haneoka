@@ -1,5 +1,6 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -605,6 +606,7 @@ export class SpineWorkspace extends LitElement {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
     return this.models
+      .filter((model) => isContentListed("spine", model, String(model.id)))
       .filter((model) =>
         Object.entries(this.metaFilters).every(([key, value]) => !value || this.modelFacetValue(model, key) === value),
       )
@@ -1256,7 +1258,7 @@ export class SpineWorkspace extends LitElement {
   }
   render() {
     if (this.entityId && !isContentVisible("spine", this.detail || {}, this.entityId))
-      return nothing;
+      return unpublishedState(this.locale);
     return this.renderCatalogWorkspace();
   }
 }

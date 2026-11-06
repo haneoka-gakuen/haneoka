@@ -72,6 +72,8 @@
       "progress": "Progress"
     },
     "states": {
+      "unpublishedDescription": "At the game operator’s request, haneoka is withholding this content until its in-game release.",
+      "unpublished": "Not yet public",
       "yes": "Yes",
       "no": "No",
       "notAvailable": "Not available",
@@ -6117,6 +6119,10 @@
       "contentVisibility": "Content visibility",
       "visibilityBulkGroups": "Default groups for all categories",
       "visibilityApplyAll": "Apply groups to all categories",
+      "visibilityAllowOverride": "Allow spoiler parameter override",
+      "visibilityRestrictedDisplay": "Display for restricted groups",
+      "visibilityRestrictedHidden": "Hide completely",
+      "visibilityRestrictedUnpublished": "Show catalog entry; detail not yet public",
       "visibilityGroups": "Default visible groups for unreleased content",
       "visibilityMode": "Default for unreleased content",
       "visibilityModeSpoiler": "Follow spoiler setting",

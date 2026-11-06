@@ -36,11 +36,14 @@ export const VISIBILITY_TYPES = [
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
 export const VISIBILITY_MODES = ["spoiler", "visible", "hidden"] as const;
 export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
+export const RESTRICTED_CONTENT_DISPLAYS = ["hidden", "unpublished"] as const;
 export type VisibilityRule = {
   mode: VisibilityMode;
   show: string[];
   hide: string[];
   groups: UserGroup[];
+  restrictedDisplay: (typeof RESTRICTED_CONTENT_DISPLAYS)[number];
+  allowOverride: boolean;
 };
 export type ContentVisibilityPolicy = {
   eventChallengeSongs: boolean;
@@ -56,6 +59,8 @@ export const DEFAULT_VISIBILITY_RULE: VisibilityRule = {
   show: [],
   hide: [],
   groups: [...USER_GROUPS],
+  restrictedDisplay: "hidden",
+  allowOverride: true,
 };
 export const DEFAULT_VISIBILITY_POLICY: ContentVisibilityPolicy = { eventChallengeSongs: true, types: {} };
 export const VISIBILITY_WORKSPACES = [
@@ -111,12 +116,25 @@ export function parseVisibilityPolicy(value: unknown): ContentVisibilityPolicy |
     const groups = rule.groups === undefined ? USER_GROUPS : rule.groups;
     if (!Array.isArray(groups) || !groups.every(isUserGroup) || new Set(groups).size !== groups.length) return null;
     const allowed = USER_GROUPS.filter((group) => groups.includes(group));
-    if (mode !== "spoiler" || rule.show.length || rule.hide.length || allowed.length !== USER_GROUPS.length)
+    const restrictedDisplay = rule.restrictedDisplay === undefined ? "hidden" : rule.restrictedDisplay;
+    if (!(RESTRICTED_CONTENT_DISPLAYS as readonly unknown[]).includes(restrictedDisplay)) return null;
+    const allowOverride = rule.allowOverride === undefined ? true : rule.allowOverride;
+    if (typeof allowOverride !== "boolean") return null;
+    if (
+      mode !== "spoiler" ||
+      rule.show.length ||
+      rule.hide.length ||
+      allowed.length !== USER_GROUPS.length ||
+      restrictedDisplay !== "hidden" ||
+      !allowOverride
+    )
       types[kind as VisibilityType] = {
         mode: mode as VisibilityMode,
         show: [...rule.show],
         hide: [...rule.hide],
         groups: allowed,
+        restrictedDisplay: restrictedDisplay as VisibilityRule["restrictedDisplay"],
+        allowOverride,
       };
   }
   return { eventChallengeSongs: true, types };

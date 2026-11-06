@@ -12,7 +12,7 @@ import { filterChip, segmented } from "./ui/controls";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { readCommunityViewer, CommunityRealmChanged } from "../lib/community-viewer";
 import { JsonResponseError } from "./shared/catalog";
-import { isContentVisible, showUnreleasedContent } from "../lib/content-release";
+import { isContentListed, showUnreleasedContent } from "../lib/content-release";
 import { parseResourceRoute } from "../lib/resource-route";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { crossCatalogRows, isCrossCatalogResource } from "../lib/cross-server/definitions";
@@ -142,7 +142,7 @@ export class GlobalSearch extends LitElement {
         collections.set(key, pending);
       }
       const item = (await pending)[route.id];
-      return !!item && isContentVisible(resource, item, route.id);
+      return !!item && isContentListed(resource, item, route.id);
     }));
     return rows.filter((_, index) => visible[index]);
   }

@@ -6,7 +6,7 @@
 import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
-import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, VISIBILITY_MODES, parseVisibilityPolicy,
+import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, VISIBILITY_MODES, RESTRICTED_CONTENT_DISPLAYS, parseVisibilityPolicy,
   type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
 import { USER_GROUPS, USER_ROLES, isUserRole, type UserGroup } from "../lib/user-roles";
 import { modal } from "./ui/modal";
@@ -882,6 +882,18 @@ export class AdminWorkspace extends LitElement {
               expanded: this.visibilityExpanded === kind,
               onExpandedChange: (expanded) => { this.visibilityExpanded = expanded ? kind : ""; },
               content: html`<div class="stack">
+                <label class="control-row">
+                  <span class="control-row__label">${this.label("visibilityAllowOverride", "Allow spoiler parameter override")}</span>
+                  <md-switch .selected=${rule.allowOverride} ?disabled=${Boolean(this.busy)}
+                    aria-label=${`${title} / ${this.label("visibilityAllowOverride", "Allow spoiler parameter override")}`}
+                    @change=${(event: Event) => this.changeVisibilityRule(kind, {allowOverride:(event.currentTarget as HTMLElement & {selected:boolean}).selected})}></md-switch>
+                </label>
+                <md-outlined-select label=${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}
+                  aria-label=${`${title} / ${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}`}
+                  .value=${rule.restrictedDisplay} ?disabled=${Boolean(this.busy)}
+                  @change=${(event: Event) => this.changeVisibilityRule(kind, {restrictedDisplay:(event.currentTarget as HTMLElement & {value:VisibilityRule["restrictedDisplay"]}).value})}>
+                  ${RESTRICTED_CONTENT_DISPLAYS.map((value) => html`<md-select-option value=${value}><div slot="headline">${this.label(value === "hidden" ? "visibilityRestrictedHidden" : "visibilityRestrictedUnpublished", value)}</div></md-select-option>`)}
+                </md-outlined-select>
                 <md-outlined-select label=${this.label("visibilityMode", "Display rule")}
                   aria-label=${`${title} / ${this.label("visibilityMode", "Display rule")}`}
                   .value=${rule.mode} ?disabled=${Boolean(this.busy)}

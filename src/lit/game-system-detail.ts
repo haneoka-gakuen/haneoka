@@ -34,7 +34,7 @@ import { tile, tileMedia, type TileMark } from "./ui/tile";
 import { nextImageCandidate } from "./ui/lazy-images";
 import { episodeArtwork, episodeIdentityArtwork } from "../lib/story-artwork";
 import { storyTile } from "./shared/story-tile";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed } from "../lib/content-release";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { clientText } from "../i18n/client";
@@ -1234,7 +1234,7 @@ function renderEventRecruitments(c: Controller, item: Item) {
 function renderEventStory(c: Controller, item: Item) {
   const story = item.story && typeof item.story === "object" ? (item.story as Item) : null;
   if (!story) return nothing;
-  const episodes = eventRows(story.episodes).filter((episode)=>isContentVisible("stories",episode,String(episode.storyId || episode.storyKey)));
+  const episodes = eventRows(story.episodes).filter((episode)=>isContentListed("stories",episode,String(episode.storyId || episode.storyKey)));
   if (!episodes.length) return nothing;
   const groups = [
     ["eventMainEpisodes", "Main", episodes.filter((row) => !row.isExtraEpisode && !row.isAnotherEpisode)],

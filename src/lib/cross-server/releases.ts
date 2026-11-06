@@ -2,13 +2,12 @@ import { isContentVisible } from "../content-release";
 import { withContentSource } from "../content-publication";
 import { mergeCrossServerCatalog, type CrossCatalogDTO, type CrossCatalogSnapshot } from "./catalog";
 
-export function releasedCatalog(dto: CrossCatalogDTO): CrossCatalogDTO {
+export function releasedCatalog(dto: CrossCatalogDTO, visible = isContentVisible): CrossCatalogDTO {
   if (
     dto.entries.every((entry) =>
       Object.values(entry.perServer).every(
         (variant) =>
-          !variant ||
-          isContentVisible(dto.resource, withContentSource(variant.row, variant.identity.server), variant.id),
+          !variant || visible(dto.resource, withContentSource(variant.row, variant.identity.server), variant.id),
       ),
     )
   )
@@ -18,8 +17,7 @@ export function releasedCatalog(dto: CrossCatalogDTO): CrossCatalogDTO {
     const collection = Object.fromEntries(
       dto.entries.flatMap((entry) => {
         const variant = entry.perServer[server];
-        return variant &&
-          isContentVisible(dto.resource, withContentSource(variant.row, variant.identity.server), variant.id)
+        return variant && visible(dto.resource, withContentSource(variant.row, variant.identity.server), variant.id)
           ? [[variant.id, variant.row]]
           : [];
       }),

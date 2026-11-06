@@ -1,6 +1,6 @@
 import "./character-voices";
 import { characterSignatures } from "../config/character-signatures";
-import { isReleasedContent } from "../lib/content-release";
+import { isListedContent } from "../lib/content-release";
 import { modelTile } from "./ui/model-tile";
 import { resolveLocalizedText } from "../lib/localized-text";
 import type { SongPerformer } from "../lib/song-performer";
@@ -142,19 +142,19 @@ export class CharacterDetailArchive extends LitElement {
       String(left[key] || "").localeCompare(String(right[key] || ""), "en", { numeric: true });
     return {
       cards: values(c.detailAux.cards)
-        .filter(isReleasedContent)
+        .filter(isListedContent)
         .filter((entry) => Number(entry.characterId) === id)
         .sort(numeric("cardId")),
       supports: values(c.detailAux["support-cards"])
-        .filter(isReleasedContent)
+        .filter(isListedContent)
         .filter((entry) => c.itemCharacterIds(entry).includes(id))
         .sort(numeric("supportCardId")),
       stamps: values(c.detailAux.stamps)
-        .filter(isReleasedContent)
+        .filter(isListedContent)
         .filter((entry) => c.itemCharacterIds(entry).includes(id))
         .sort(numeric("stampId")),
       stories: values(c.detailAux.stories, "episodes")
-        .filter(isReleasedContent)
+        .filter(isListedContent)
         .filter((entry) => c.itemCharacterIds(entry).includes(id))
         .sort(
           (left, right) =>
@@ -172,7 +172,7 @@ export class CharacterDetailArchive extends LitElement {
           String(left.live2dKey || "").localeCompare(String(right.live2dKey || ""), "en", { numeric: true }),
         ),
       songs: values(c.detailAux.songs)
-        .filter(isReleasedContent)
+        .filter(isListedContent)
         .filter((entry) => c.songPerformer(entry).participantCharacterIds.includes(id))
         .sort(numeric("musicId")),
       voices: values(c.detailAux.voices, "entries")

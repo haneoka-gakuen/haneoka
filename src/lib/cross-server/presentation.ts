@@ -7,6 +7,7 @@ import {
 } from "./catalog";
 import { releasedCatalog } from "./releases";
 import { withContentSource } from "../content-publication";
+import { isContentListed } from "../content-release";
 
 /** Pin media to its actual source release, including nested runtime records. */
 export function pinCrossCatalogValue(value: unknown, identity: CrossCatalogIdentity): unknown {
@@ -44,7 +45,7 @@ export function crossCatalogPresentation(dto: CrossCatalogDTO) {
     return pinned;
   };
   const allItems = dto.entries.map(project);
-  const visible = releasedCatalog(dto);
+  const visible = releasedCatalog(dto, isContentListed);
   const items = visible === dto ? allItems : visible.entries.map(project);
   return { dto, items, allItems, entries, byId };
 }

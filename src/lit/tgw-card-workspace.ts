@@ -1,6 +1,7 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 /**
  * T.G.W CARD — the game's membership benefits ladder.
  *
@@ -125,7 +126,7 @@ export class TgwCardWorkspace extends LitElement {
     };
   }
   private applyTiers(entities: Tier[], pointName: unknown, hash: string) {
-    this.tiers = entities.filter((tier) => isContentVisible("tgw-card", tier, String(tier.id)));
+    this.tiers = this.entityId ? entities : entities.filter((tier) => isContentListed("tgw-card", tier, String(tier.id)));
     this.pointName = pointName;
     this.selectedSource = "";
     const hashed = Number(/^#tgw-rank-(\d+)$/u.exec(hash)?.[1] || 0);
@@ -204,7 +205,8 @@ export class TgwCardWorkspace extends LitElement {
   }
   private syncEntityHeading() {
     if (!this.entityId || !this.tiers[0]) return;
-    const title = this.name(this.tiers[0].title) || this.entityId;
+    const title = isContentVisible("tgw-card",this.tiers[0],this.entityId)
+      ? this.name(this.tiers[0].title) || this.entityId : uiText(this.locale,"common.states.unpublished");
     updateEntityHeading(this, title, this.locale);
     syncEntityNavigation();
   }
@@ -603,7 +605,7 @@ export class TgwCardWorkspace extends LitElement {
               : this.tiers.length
                 ? html`
                     ${this.entityId || this.tiers.length < 2 ? nothing : this.picker()}
-                    ${selected ? this.tier(selected) : nothing}
+                    ${selected ? isContentVisible("tgw-card",selected,String(selected.id)) ? this.tier(selected) : unpublishedState(this.locale) : nothing}
                   `
                 : emptyState({ title: this.text("empty", "No rank data in this release"), icon: "credit_card" })
         }

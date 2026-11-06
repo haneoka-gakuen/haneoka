@@ -163,7 +163,7 @@ export async function applySiteSettings(
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilerValue = new URL(request.url).searchParams.get("spoiler");
-  const override = Number.isFinite(Number(spoilerValue)) && Number(spoilerValue) !== 0;
+  const override = Number.isFinite(Number(spoilerValue)) && Number(spoilerValue) !== 0 && (rule?.allowOverride ?? true);
   const spoilers = override || preference;
   let published = true;
   const hideIdentity = () =>
@@ -251,6 +251,11 @@ export async function applySiteSettings(
     .on("h1", {
       element(element) {
         if (hideIdentity()) element.setInnerContent("");
+      },
+    })
+    .on("[data-app-bar-static]", {
+      element(element) {
+        if (hideIdentity()) element.remove();
       },
     })
     .on("title", {

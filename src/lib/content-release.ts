@@ -31,7 +31,7 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   const kind = visibilityType(resource);
   const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
   if (released(value, Date.now())) return true;
-  if (showUnreleasedContent()) return true;
+  if (rule.allowOverride && showUnreleasedContent()) return true;
   if (!rule.groups.includes(currentContentGroup())) return false;
   const identity = id ?? (kind ? visibilityId(kind, row) : "");
   if (rule.hide.includes(identity)) return false;
@@ -39,6 +39,22 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   if (rule.mode === "hidden") return false;
   if (rule.mode === "visible") return true;
   return rule.mode === "spoiler" && spoilerContentEnabled();
+}
+
+export function isContentListed(resource: string, value: unknown, id?: string): boolean {
+  if (isContentVisible(resource, value, id)) return true;
+  const kind = visibilityType(resource);
+  return Boolean(
+    kind && currentVisibilityPolicy().types[kind]?.restrictedDisplay === "unpublished" && spoilerContentEnabled(),
+  );
+}
+
+export function isListedContent(value: unknown): boolean {
+  const kind =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? inferredVisibilityType(value as Record<string, unknown>)
+      : undefined;
+  return kind ? isContentListed(kind, value) : isReleasedContent(value);
 }
 
 export function releasedContent<T>(value: T): T {

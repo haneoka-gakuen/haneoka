@@ -1,6 +1,7 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import { clientText } from "../i18n/client";
 import { renderAnonTokyoDetails } from "./shared/anon-tokyo-detail";
 import { LitElement, html, nothing } from "lit";
@@ -622,7 +623,7 @@ export class AnonTokyoWorkspace extends LitElement {
     return this.mode === "outfits" ? this.renderOutfits() : this.renderCollection();
   }
   private renderCollection() {
-    const source = this.collection().filter((item) => isContentVisible("anon-tokyo", item, String(item.id)));
+    const source = this.collection().filter((item) => isContentListed("anon-tokyo", item, String(item.id)));
     const keys = [
       "entityGroup",
       "categoryId",
@@ -791,6 +792,9 @@ export class AnonTokyoWorkspace extends LitElement {
     return value;
   }
   private renderDetail(item: Value) {
+    if (!isContentVisible("anon-tokyo",item,String(item.id)))
+      return renderPane({title:uiText(this.locale,"common.states.unpublished"),kind:"anon",open:true,
+        backLabel:uiText(this.locale,"common.actions.close"),onClose:()=>this.closeItem(),body:unpublishedState(this.locale)});
     const image = this.media(item);
     const audio = String(item.playableUrl || "");
     return renderPane({

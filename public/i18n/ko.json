@@ -72,6 +72,8 @@
       "progress": "진행 상황"
     },
     "states": {
+      "unpublishedDescription": "게임 운영사의 요청에 따라 haneoka는 현재 이 콘텐츠를 표시하지 않습니다. 게임에 추가된 후 확인해 주세요.",
+      "unpublished": "아직 공개되지 않음",
       "yes": "예",
       "no": "아니요",
       "notAvailable": "사용할 수 없음",
@@ -6117,6 +6119,10 @@
       "contentVisibility": "콘텐츠 표시",
       "visibilityBulkGroups": "모든 분류의 기본 그룹",
       "visibilityApplyAll": "모든 분류에 그룹 적용",
+      "visibilityAllowOverride": "spoiler 매개변수의 표시 제한 무시 허용",
+      "visibilityRestrictedDisplay": "표시 제한 그룹의 표시 방식",
+      "visibilityRestrictedHidden": "완전히 숨기기",
+      "visibilityRestrictedUnpublished": "도감 항목 표시, 상세 정보는 미공개",
       "visibilityGroups": "미공개 콘텐츠 기본 표시 그룹",
       "visibilityMode": "미공개 콘텐츠 기본 표시",
       "visibilityModeSpoiler": "스포일러 설정 따르기",

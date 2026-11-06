@@ -72,6 +72,8 @@
       "progress": "進捗"
     },
     "states": {
+      "unpublishedDescription": "ゲーム運営元の要請により、haneoka では現在このコンテンツを表示していません。ゲーム内への実装後にご確認ください。",
+      "unpublished": "未公開",
       "yes": "はい",
       "no": "いいえ",
       "notAvailable": "利用できません",
@@ -6117,6 +6119,10 @@
       "contentVisibility": "コンテンツの表示",
       "visibilityBulkGroups": "全カテゴリの標準グループ",
       "visibilityApplyAll": "グループを全カテゴリに適用",
+      "visibilityAllowOverride": "spoiler パラメータによる表示制限の上書きを許可",
+      "visibilityRestrictedDisplay": "閲覧対象外のグループへの表示",
+      "visibilityRestrictedHidden": "完全に非表示",
+      "visibilityRestrictedUnpublished": "図鑑項目を表示・詳細は未公開",
       "visibilityGroups": "未公開コンテンツを標準で表示するグループ",
       "visibilityMode": "未公開コンテンツの標準表示",
       "visibilityModeSpoiler": "ネタバレ設定に従う",

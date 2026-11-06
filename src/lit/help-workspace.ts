@@ -1,6 +1,7 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -250,12 +251,14 @@ export class HelpWorkspace extends LitElement {
     history.replaceState(history.state, "", `${location.pathname}${p.size ? `?${p}` : ""}`);
   }
   private filteredEntries() {
-    if (this.mode === "tips") return this.tips;
+    if (this.mode === "tips") return this.entityId ? this.tips : this.tips.filter((item)=>isContentListed("help-tips",item,String(item.tipId)));
     const category = this.categories.find((item) => Number(item.categoryId) === this.selectedCategory);
-    return Array.isArray(category?.subcategories) ? (category.subcategories as JsonRecord[]) : [];
+    const entries = Array.isArray(category?.subcategories) ? (category.subcategories as JsonRecord[]) : [];
+    return this.entityId ? entries : entries.filter((item)=>isContentListed("help",item,String(item.helpSubcategoryId)));
   }
   render() {
-    if (this.entityId && !isContentVisible(this.mode === "tips" ? "help-tips" : "help", {}, this.entityId)) return nothing;
+    if (this.entityId && !isContentVisible(this.mode === "tips" ? "help-tips" : "help", this.topicForId(this.filteredEntries(), this.entityId) || {}, this.entityId))
+      return unpublishedState(this.locale);
     const entries = this.filteredEntries();
     if (this.entityId) {
       clearAppBarActions("help");

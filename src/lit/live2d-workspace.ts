@@ -1,5 +1,6 @@
+import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import type { CubismModelMetadata } from "../lib/cubism-model-metadata";
@@ -1309,6 +1310,7 @@ export class Live2DWorkspace extends LitElement {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
     return this.models
+      .filter((model) => isContentListed("live2d", model, this.key(model)))
       .filter((model) =>
         Object.entries(this.metaFilters).every(([key, value]) => !value || this.modelFacetValue(model, key) === value),
       )
@@ -2320,7 +2322,7 @@ export class Live2DWorkspace extends LitElement {
   }
   render() {
     if (this.entityId && !isContentVisible("live2d", this.detail || {}, this.entityId))
-      return nothing;
+      return unpublishedState(this.locale);
     return this.renderCatalogWorkspace();
   }
 }
