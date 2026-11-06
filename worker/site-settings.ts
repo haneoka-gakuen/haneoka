@@ -14,6 +14,7 @@ import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { contentUserGroup, readContentVisibility } from "./content-visibility";
 import { DEFAULT_VISIBILITY_RULE, VISIBILITY_WORKSPACES, visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
+import { parseHtmlJson } from "../src/lib/html-json";
 import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
 import { parseResourceRoute } from "../src/lib/resource-route";
 
@@ -244,7 +245,7 @@ export async function applySiteSettings(
     .on('meta[name="haneoka-content-publication"]', {
       element(element) {
         const value = element.getAttribute("content");
-        if (value) published = contentPublished(JSON.parse(value));
+        if (value) published = contentPublished(parseHtmlJson(value));
       },
     })
     .on("h1", {

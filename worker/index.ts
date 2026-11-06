@@ -21,6 +21,7 @@ import { eventSongReleases } from "../src/lib/event-song-release";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
 import catalogPageRollout from "../config/catalog-page-rollout.json";
+import { parseHtmlJson } from "../src/lib/html-json";
 import { handlePageData, type PageDataBindings } from "./catalog-page-data";
 import { PageDataError, type PageSource } from "../src/lib/catalog-page-contract";
 import { fnv1a32Shard } from "../src/lib/hash-partition.ts";
@@ -3702,7 +3703,7 @@ function previewDetailShell(request: Request, shell: Response, route: ResourceRo
       element.removeAttribute("data-page-data");
       element.setAttribute("entity-id", route.id);
       if (element.tagName === "catalog-screen") {
-        const config = JSON.parse(element.getAttribute("config") || "{}");
+        const config = parseHtmlJson(element.getAttribute("config") || "{}");
         element.setAttribute(
           "config",
           JSON.stringify({
