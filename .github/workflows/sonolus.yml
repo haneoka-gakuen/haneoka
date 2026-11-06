@@ -172,9 +172,21 @@ jobs:
         run: python -m pip install --disable-pip-version-check --require-hashes --requirement scripts/requirements.txt
 
       - name: Install FFmpeg
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg
+          apt_options=(
+            -o Acquire::ForceIPv4=true
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            if ! sudo apt-get "${apt_options[@]}" install --yes --no-install-recommends ffmpeg; then
+              sudo apt-get "${apt_options[@]}" update
+              sudo apt-get "${apt_options[@]}" install --yes --no-install-recommends ffmpeg
+            fi
+          fi
+          ffmpeg -version
 
       - name: Typecheck engine tooling
         # Runs once here (was bundled into the per-machine build before).
