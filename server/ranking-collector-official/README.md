@@ -83,6 +83,11 @@ anonymous Version diagnostics in `lastFailure` as well. Check them before changi
 account credentials or routing: client update requirements and network refusals
 need different recovery. CDN authorization and account responses are excluded.
 
+The JP API uses TLS 1.2 with the existing ECDHE AES-GCM/ChaCha20 cipher profile.
+The gateway can return HTTP 403 / gRPC 7 for the Container runtime's default TLS
+handshake before an account request is sent. Certificate and hostname validation
+remain enabled. Global APIs and CDN downloads retain their default TLS negotiation.
+
 ## Arena and event windows
 
 A job negotiates these capabilities:

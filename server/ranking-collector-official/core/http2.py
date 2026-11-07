@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: Allowlisted regional API origin, unary request, credential header factory and bounded I/O controls.
-# Output: HTTP/2 status, allowlisted headers and trailers, response body and memory-only CDN metadata.
+# Output: HTTP/2 status, allowlisted metadata and response body, using the JP gateway's TLS 1.2 compatibility profile.
 # Pos: [Map](../../L2.md); direct Python transport for the standalone collector.
 # Effects/Dependencies: TCP/TLS with optional loopback CONNECT; h2 framing and no persistence.
 import errno
@@ -147,6 +147,9 @@ def secure_socket(stream, deadline, check_control, host=HOST):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.load_default_certs(ssl.Purpose.SERVER_AUTH)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
+    # JP rejects the Container runtime's TLS 1.3 handshake before RPC authentication.
+    if host == HOST:
+        context.maximum_version = ssl.TLSVersion.TLSv1_2
     context.set_ciphers('ECDHE+AESGCM:ECDHE+CHACHA20')
     context.set_alpn_protocols(['h2'])
     connection = context.wrap_socket(stream, server_hostname=host, do_handshake_on_connect=False)
