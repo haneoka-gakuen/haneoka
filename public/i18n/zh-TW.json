@@ -5639,17 +5639,32 @@
     },
     "sponsor": {
       "title": "贊助",
-      "heroTitle": "贊助 haneoka",
+      "heroTitle": "支持 haneoka 的建設與維護",
+      "intro": "haneoka 是由愛好者維護的《BanG Dream! Our Notes》非官方資料與工具網站。感謝所有為本站提供過贊助與幫助的玩家，以下為支持者名單與寄語。",
+      "letterTitle": "關於贊助",
+      "letter": [
+        "haneoka 的所有資料、資源與瀏覽器工具均免費開放，且不設任何廣告。隨著站點收錄的數據與資源持續增加，伺服器與儲存空間等基礎設施需要穩定的維護投入。",
+        "如果您覺得本站的資料與工具對您有所幫助，歡迎在力所能及的範圍內透過本頁提供的管道贊助我們。相關款項將用於分擔伺服器與儲存等日常運作開銷，協助我們持續整理遊戲更新內容、完善站內工具。",
+        "無論是目前正在贊助，還是過往曾提供過幫助，謹向每一位支持者致以誠摯的感謝。"
+      ],
       "afdian": "愛發電",
       "patreon": "Patreon",
-      "wallTitle": "贊助者",
-      "wallUpdated": "更新於 {date}",
-      "tierEmpty": "暫無",
-      "pastTitle": "曾經的贊助者",
-      "body": [
-        "haneoka 免費、沒有廣告，伺服器、儲存空間和每天的資源更新都由我們自己承擔。如果它幫到了你，歡迎支持我們；每一份贊助都會用來讓 haneoka 更穩定、更新更及時。"
-      ],
-      "kofi": "Ko-fi"
+      "wallUpdated": "名單更新於 {date}",
+      "pastTitle": "歷史支持者",
+      "pastEmpty": "暫無歷史支持者紀錄",
+      "kofi": "Ko-fi",
+      "alipay": "支付寶",
+      "wechat": "微信",
+      "other": "其他管道",
+      "supportTitle": "贊助方式",
+      "currentTitle": "目前支持者",
+      "currentEmpty": "暫無目前支持者紀錄",
+      "loading": "正在載入名單",
+      "loadFailed": "名單載入失敗",
+      "retry": "重試",
+      "qrAlt": "{channel}收款碼",
+      "qrName": "使用收款碼時，可在備註中填寫希望顯示的名稱與留言",
+      "qrManual": "收款碼紀錄由維護人員核對後手動登錄至名單"
     }
   },
   "admin": {
@@ -5694,7 +5709,77 @@
         "operations": "操作紀錄",
         "forums": "板塊",
         "comments": "留言",
-        "story-assets": "故事素材"
+        "story-assets": "故事素材",
+        "sponsors": "贊助"
+      },
+      "sponsors": {
+        "title": "贊助者",
+        "search": "搜尋贊助者",
+        "add": "新增贊助者",
+        "edit": "編輯贊助者",
+        "tiers": "檔位",
+        "editTiers": "編輯檔位",
+        "addTier": "新增檔位",
+        "filters": {
+          "all": "全部",
+          "active": "正在支持",
+          "past": "曾經支持",
+          "hidden": "已隱藏"
+        },
+        "empty": "沒有贊助者",
+        "loading": "正在載入贊助者",
+        "loadFailed": "贊助者載入失敗",
+        "retry": "重試",
+        "synced": "平台同步於 {date}",
+        "notSynced": "平台尚未同步",
+        "name": "顯示名稱",
+        "avatar": "頭像 URL",
+        "message": "贈言",
+        "channel": "管道",
+        "tier": "檔位",
+        "status": "狀態",
+        "statusAuto": "依日期",
+        "statusSource": "跟隨平台",
+        "current": "正在支持",
+        "past": "曾經支持",
+        "firstAt": "首次支持",
+        "lastAt": "最近支持",
+        "amount": "金額",
+        "currency": "幣別",
+        "clearAmount": "不顯示金額",
+        "shown": "在贊助頁顯示",
+        "hidden": "已隱藏",
+        "edited": "已修改",
+        "manual": "手動新增",
+        "follow": "跟隨{channel}",
+        "remove": "刪除贊助者",
+        "confirmRemove": "刪除這位贊助者？",
+        "save": "儲存",
+        "cancel": "取消",
+        "saved": "已儲存",
+        "removed": "已刪除",
+        "conflict": "已在別處修改，名單已重新載入",
+        "invalid": "有無法接受的值",
+        "saveFailed": "儲存失敗",
+        "checkFields": "檢查",
+        "tierId": "ID",
+        "label": "名稱",
+        "cny": "每月 CNY",
+        "usd": "每月 USD",
+        "card": "卡面",
+        "noCard": "無",
+        "anyAmount": "任意金額",
+        "moveUp": "上移",
+        "moveDown": "下移",
+        "removeTier": "刪除檔位",
+        "channels": {
+          "afdian": "愛發電",
+          "patreon": "Patreon",
+          "kofi": "Ko-fi",
+          "alipay": "支付寶",
+          "wechat": "微信",
+          "other": "其他管道"
+        }
       },
       "metrics": {
         "totalUsers": "使用者總數",
@@ -5792,6 +5877,8 @@
         "sexual": "色情內容",
         "spam": "垃圾內容或廣告",
         "succeeded": "成功",
+        "sponsorEntry": "贊助者",
+        "sponsorTiers": "贊助檔位",
         "superseded": "已被新版本取代",
         "suspended": "已停用",
         "uploaded": "已上傳",
@@ -5822,7 +5909,11 @@
           "packageUploadPart": "上傳資源包分片",
           "packageUploadComplete": "完成資源包上傳",
           "packageUploadAbort": "中止資源包上傳",
-          "resourceRunDispatch": "派送資源同步工作"
+          "resourceRunDispatch": "派送資源同步工作",
+          "sponsorEntryCreate": "新增贊助者",
+          "sponsorEntryUpdate": "編輯贊助者",
+          "sponsorEntryDelete": "刪除贊助者",
+          "sponsorTiersUpdate": "編輯贊助檔位"
         },
         "targets": {
           "appeal": "申訴",
@@ -5831,7 +5922,9 @@
           "resourceServer": "資源伺服器",
           "packageUpload": "資源包上傳",
           "packagePart": "資源包分片",
-          "resourceRun": "資源同步工作"
+          "resourceRun": "資源同步工作",
+          "sponsorEntry": "贊助者",
+          "sponsorTiers": "贊助檔位"
         }
       },
       "durations": {

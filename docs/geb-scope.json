@@ -377,6 +377,8 @@
     "src/lib/team-builder/event-settlement.ts",
     "src/config/destination-hubs.ts",
     "src/config/sponsor.ts",
+    "worker/sponsors.ts",
+    "src/lit/sponsor-admin.ts",
     "src/server/destination-hub-data.ts",
     "src/lib/catalog-sort.ts",
     "src/lit/team-builder/catalog-sort.ts",

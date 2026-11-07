@@ -1,13 +1,13 @@
 // L3 — GEB
 // Input: Ko-fi webhook posts (form field `data`, verified by KOFI_VERIFICATION_TOKEN) and public list reads.
-// Output: Stored payments; the public Ko-fi supporter list by T.G.W CARD tier, without amounts.
-// Pos: [Map](L2.md); Ko-fi side of the sponsor page's build-time list.
-// Effects/Dependencies: Writes D1 `kofi_payment`; keeps a SHA-256 of the email to group payments, never the email.
-import { sponsorTier, SPONSOR_TIERS, type SponsorTierId } from "../src/config/sponsor";
+// Output: Stored payments with their public message; the Ko-fi part of the effective sponsor list, without amounts.
+// Pos: [Map](L2.md); Ko-fi source of the sponsor list.
+// Effects/Dependencies: Writes D1 `kofi_payment`, `kofi_payment_message` (public payments only) and the supporter's `sponsor_entry`, then advances the list revision; keeps a SHA-256 of the email to group payments, never the email.
+import { SPONSOR_MESSAGE_LENGTH, SPONSOR_NAME_LENGTH } from "../src/config/sponsor";
+import { kofiSponsorList, kofiSponsorStatements, sponsorPlainText } from "./sponsors";
 
 const WEBHOOK = "/api/v1/sponsors/kofi/webhook";
 const LIST = "/api/v1/sponsors/kofi";
-const ACTIVE_SECONDS = 32 * 86_400;
 
 const respond = (status: number, body: unknown, cache = "no-store") =>
   new Response(JSON.stringify(body), {
@@ -26,12 +26,6 @@ async function sameToken(given: string, expected: string): Promise<boolean> {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
-}
-
-/** A Ko-fi membership tier named after a T.G.W CARD, or the amount reached. */
-function tierOf(tierName: string | null, amount: number): SponsorTierId {
-  const named = SPONSOR_TIERS.find((tier) => tierName?.toLowerCase().includes(tier.id));
-  return named?.id ?? sponsorTier(amount, "USD");
 }
 
 async function receive(request: Request, env: Env): Promise<Response> {
@@ -57,66 +51,42 @@ async function receive(request: Request, env: Env): Promise<Response> {
     .toLowerCase();
   const name = String(data.from_name ?? "")
     .trim()
-    .slice(0, 40);
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO kofi_payment
-       (message_id, supporter, from_name, is_public, type, amount, currency, tier_name, is_subscription, paid_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
+    .slice(0, SPONSOR_NAME_LENGTH);
+  const isPublic = data.is_public !== false;
+  const supporter = await sha256(email || `name:${name}`);
+  // Ko-fi shows a supporter's message on the page only for public payments.
+  const message =
+    isPublic && typeof data.message === "string"
+      ? [...sponsorPlainText(data.message)].slice(0, SPONSOR_MESSAGE_LENGTH).join("") || null
+      : null;
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO kofi_payment
+         (message_id, supporter, from_name, is_public, type, amount, currency, tier_name, is_subscription, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
       messageId,
-      await sha256(email || `name:${name}`),
+      supporter,
       name,
-      data.is_public === false ? 0 : 1,
+      isPublic ? 1 : 0,
       String(data.type ?? ""),
       amount,
       String(data.currency ?? "USD"),
       typeof data.tier_name === "string" ? data.tier_name : null,
       data.is_subscription_payment === true ? 1 : 0,
       paidAt,
-    )
-    .run();
+    ),
+    ...kofiSponsorStatements(env, supporter, messageId, message),
+  ]);
   return respond(200, { ok: true });
-}
-
-interface PaymentRow {
-  supporter: string;
-  from_name: string;
-  is_public: number;
-  amount: number;
-  tier_name: string | null;
-  paid_at: number;
-}
-
-async function list(env: Env): Promise<Response> {
-  if (!env.DB) return respond(503, { error: "kofi_unavailable" });
-  const { results } = await env.DB.prepare(
-    "SELECT supporter, from_name, is_public, amount, tier_name, paid_at FROM kofi_payment ORDER BY paid_at DESC",
-  ).all<PaymentRow>();
-  const now = Math.floor(Date.now() / 1000);
-  const supporters = new Map<string, { latest: PaymentRow; since: number }>();
-  for (const row of results) {
-    const known = supporters.get(row.supporter);
-    if (known) known.since = row.paid_at;
-    else supporters.set(row.supporter, { latest: row, since: row.paid_at });
-  }
-  const active: { name: string; tier: SponsorTierId; since: number }[] = [];
-  const past: { name: string; since: number }[] = [];
-  for (const { latest, since } of supporters.values()) {
-    // The latest payment carries the supporter's current choice to be listed.
-    if (!latest.is_public || !latest.from_name) continue;
-    const day = since - (since % 86_400);
-    if (now - latest.paid_at <= ACTIVE_SECONDS)
-      active.push({ name: latest.from_name, tier: tierOf(latest.tier_name, latest.amount), since: day });
-    else past.push({ name: latest.from_name, since: day });
-  }
-  return respond(200, { active, past }, "public, max-age=300");
 }
 
 export async function handleKofiSponsorRequest(request: Request, env: Env): Promise<Response | null> {
   const { pathname } = new URL(request.url);
   if (pathname === WEBHOOK)
     return request.method === "POST" ? receive(request, env) : respond(405, { error: "method_not_allowed" });
-  if (pathname === LIST) return request.method === "GET" ? list(env) : respond(405, { error: "method_not_allowed" });
-  return null;
+  if (pathname !== LIST) return null;
+  if (request.method !== "GET") return respond(405, { error: "method_not_allowed" });
+  if (!env.DB) return respond(503, { error: "kofi_unavailable" });
+  return respond(200, await kofiSponsorList(env), "public, max-age=300");
 }

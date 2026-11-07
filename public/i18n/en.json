@@ -5639,17 +5639,32 @@
     },
     "sponsor": {
       "title": "Sponsor",
-      "heroTitle": "Sponsor haneoka",
+      "heroTitle": "Supporting haneoka",
+      "intro": "haneoka is an unofficial BanG Dream! Our Notes database and tool site maintained by fans. We sincerely thank everyone who has contributed to keeping the project running. Below is our list of supporters and their messages.",
+      "letterTitle": "About Donations",
+      "letter": [
+        "All data, archives, and browser tools on haneoka are provided free of charge and without advertisements. As our database and media archives grow alongside game updates, maintaining the servers and storage infrastructure requires ongoing funding.",
+        "If you find haneoka useful, you are welcome to support the project through the channels on this page. Contributions go toward covering server and storage expenses, helping us continue compiling game data and improving our tools.",
+        "We extend our sincere gratitude to all current and past supporters for your generosity and encouragement."
+      ],
       "afdian": "Afdian",
       "patreon": "Patreon",
-      "wallTitle": "Sponsors",
-      "wallUpdated": "Updated {date}",
-      "tierEmpty": "None yet",
-      "pastTitle": "Past sponsors",
-      "body": [
-        "haneoka is free and ad-free, and we cover the servers, storage and daily resource updates ourselves. If it has helped you, we'd be grateful for your support; every sponsorship goes into keeping haneoka stable and up to date."
-      ],
-      "kofi": "Ko-fi"
+      "wallUpdated": "List updated {date}",
+      "pastTitle": "Past Supporters",
+      "pastEmpty": "No past supporter records yet",
+      "kofi": "Ko-fi",
+      "alipay": "Alipay",
+      "wechat": "WeChat Pay",
+      "other": "Other",
+      "supportTitle": "Ways to Support",
+      "currentTitle": "Current Supporters",
+      "currentEmpty": "No current supporter records yet",
+      "loading": "Loading supporters",
+      "loadFailed": "Couldn't load the list",
+      "retry": "Retry",
+      "qrAlt": "{channel} payment code",
+      "qrName": "When paying via QR code, you may leave your preferred display name and message in the note",
+      "qrManual": "QR code contributions are verified and added to the list manually by maintainers"
     }
   },
   "admin": {
@@ -5694,7 +5709,77 @@
         "operations": "Operations",
         "forums": "Forums",
         "comments": "Comments",
-        "story-assets": "Story assets"
+        "story-assets": "Story assets",
+        "sponsors": "Sponsors"
+      },
+      "sponsors": {
+        "title": "Supporters",
+        "search": "Search supporters",
+        "add": "Add supporter",
+        "edit": "Edit supporter",
+        "tiers": "Tiers",
+        "editTiers": "Edit tiers",
+        "addTier": "Add tier",
+        "filters": {
+          "all": "All",
+          "active": "Current",
+          "past": "Past",
+          "hidden": "Hidden"
+        },
+        "empty": "No supporters",
+        "loading": "Loading supporters",
+        "loadFailed": "Couldn't load supporters",
+        "retry": "Retry",
+        "synced": "Platforms synced {date}",
+        "notSynced": "Platforms not synced yet",
+        "name": "Display name",
+        "avatar": "Avatar URL",
+        "message": "Message",
+        "channel": "Channel",
+        "tier": "Tier",
+        "status": "Status",
+        "statusAuto": "By dates",
+        "statusSource": "Follow platform",
+        "current": "Current",
+        "past": "Past",
+        "firstAt": "First support",
+        "lastAt": "Latest support",
+        "amount": "Amount",
+        "currency": "Currency",
+        "clearAmount": "No amount",
+        "shown": "Show on sponsor page",
+        "hidden": "Hidden",
+        "edited": "Edited",
+        "manual": "Added by hand",
+        "follow": "Follow {channel}",
+        "remove": "Remove supporter",
+        "confirmRemove": "Remove this supporter?",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saved": "Saved",
+        "removed": "Removed",
+        "conflict": "Changed elsewhere. List reloaded",
+        "invalid": "Some values were not accepted",
+        "saveFailed": "Couldn't save",
+        "checkFields": "Check",
+        "tierId": "ID",
+        "label": "Name",
+        "cny": "CNY per month",
+        "usd": "USD per month",
+        "card": "Card",
+        "noCard": "None",
+        "anyAmount": "Any amount",
+        "moveUp": "Move up",
+        "moveDown": "Move down",
+        "removeTier": "Remove tier",
+        "channels": {
+          "afdian": "Afdian",
+          "patreon": "Patreon",
+          "kofi": "Ko-fi",
+          "alipay": "Alipay",
+          "wechat": "WeChat Pay",
+          "other": "Other"
+        }
       },
       "metrics": {
         "totalUsers": "Total users",
@@ -5792,6 +5877,8 @@
         "sexual": "Sexual content",
         "spam": "Spam or promotion",
         "succeeded": "Succeeded",
+        "sponsorEntry": "Supporter",
+        "sponsorTiers": "Sponsor tiers",
         "superseded": "Superseded by a newer version",
         "suspended": "Suspended",
         "uploaded": "Uploaded",
@@ -5822,7 +5909,11 @@
           "packageUploadPart": "Upload package part",
           "packageUploadComplete": "Complete package upload",
           "packageUploadAbort": "Abort package upload",
-          "resourceRunDispatch": "Dispatch resource sync"
+          "resourceRunDispatch": "Dispatch resource sync",
+          "sponsorEntryCreate": "Add supporter",
+          "sponsorEntryUpdate": "Edit supporter",
+          "sponsorEntryDelete": "Remove supporter",
+          "sponsorTiersUpdate": "Edit sponsor tiers"
         },
         "targets": {
           "appeal": "Appeal",
@@ -5831,7 +5922,9 @@
           "resourceServer": "Resource server",
           "packageUpload": "Package upload",
           "packagePart": "Package part",
-          "resourceRun": "Resource sync"
+          "resourceRun": "Resource sync",
+          "sponsorEntry": "Supporter",
+          "sponsorTiers": "Sponsor tiers"
         }
       },
       "durations": {

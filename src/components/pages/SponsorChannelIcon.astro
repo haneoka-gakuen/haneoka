@@ -1,0 +1,14 @@
+---
+import Icon from "../Icon.astro";
+import type { SponsorChannel } from "../../config/sponsor";
+
+const { channel, size } = Astro.props as { channel: SponsorChannel; size: number };
+---
+
+{channel === "afdian" && <Icon name="electric_bolt" size={size} filled />}
+{channel === "patreon" && (
+  <svg class="material-icon" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true"><circle cx="14.5" cy="9.5" r="7" fill="currentColor" /><rect x="3" y="2.5" width="3.5" height="19" rx="0.6" fill="currentColor" /></svg>
+)}
+{channel === "kofi" && <Icon name="local_cafe" size={size} filled />}
+{(channel === "alipay" || channel === "wechat") && <Icon name="qr_code_2" size={size} />}
+{channel === "other" && <Icon name="favorite" size={size} filled />}

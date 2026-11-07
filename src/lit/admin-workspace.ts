@@ -42,6 +42,7 @@ import { formatDate } from "../lib/date-format";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import "./admin-comments";
 import type { StoryAssetReviews } from "./story-asset-reviews";
+import type { SponsorAdmin } from "./sponsor-admin";
 
 type Value = Record<string, unknown>;
 interface PlatformRole {
@@ -66,7 +67,7 @@ interface ArchiveState {
   selected: string;
   snapshots: Array<{ boardKey: string; observedAtMs: number | null; dueAtMs?: number; state?: "waiting" | "pending" | "archived" }>;
 }
-const sections = ["overview", "comments", "reports", "appeals", "posts", "story-assets", "users", "forums", "operations"] as const;
+const sections = ["overview", "comments", "reports", "appeals", "posts", "story-assets", "users", "forums", "sponsors", "operations"] as const;
 type Section = (typeof sections)[number];
 type PostFilter = "all" | "pending" | "review" | "block" | "allow" | "hidden" | "draft" | "published";
 type ContentKind = "posts" | "charts" | "playlists" | "stories";
@@ -435,6 +436,7 @@ export class AdminWorkspace extends LitElement {
     super.connectedCallback();
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     if (this.section === "story-assets") void import("./story-asset-reviews");
+    if (this.section === "sponsors") void import("./sponsor-admin");
     addEventListener("haneoka:locale-ready", this.onLocale);
     document.addEventListener("visibilitychange", this.onPoolVisibility, { signal: this.lifetime.signal });
     void Promise.all([
@@ -729,7 +731,7 @@ export class AdminWorkspace extends LitElement {
               statisticsGeneratedAt: statistics.generatedAt,
               sessionCounts: statistics.sessions,
             }))
-          : section === "comments" || section === "story-assets"
+          : section === "comments" || section === "story-assets" || section === "sponsors"
             ? await this.request(`/api/v1/admin/overview`, { signal })
           : section === "forums"
             ? await this.request("/api/v1/admin/forums", { signal })
@@ -753,6 +755,7 @@ export class AdminWorkspace extends LitElement {
         });
       this.phase = "ready";
       if (!append && section === "story-assets") this.querySelector<StoryAssetReviews>("story-asset-reviews")?.refresh();
+      if (!append && section === "sponsors") this.querySelector<SponsorAdmin>("sponsor-admin")?.refresh();
       if (!append && section === "overview") {
         void this.loadAnalyticsSeries();
         void this.loadAnalyticsGeo();
@@ -2153,6 +2156,7 @@ export class AdminWorkspace extends LitElement {
       posts: "article",
       "story-assets": "fact_check",
       forums: "forum",
+      sponsors: "favorite",
       reports: "flag",
       appeals: "gavel",
       operations: "deployed_code_update",
@@ -4978,6 +4982,8 @@ export class AdminWorkspace extends LitElement {
                       ? html`<story-asset-reviews @admin-review-count=${(event: CustomEvent<number>) => {
                           this.document = { ...this.document, overview: { ...(this.document.overview as Value), reviewStoryAssets: event.detail } };
                         }} @admin-access-denied=${() => this.refresh()}></story-asset-reviews>`
+                    : this.section === "sponsors"
+                      ? html`<sponsor-admin @admin-access-denied=${() => this.refresh()}></sponsor-admin>`
                     : this.section === "forums"
                       ? this.renderForums()
                       : html`

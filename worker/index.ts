@@ -100,6 +100,7 @@ import { handleAccountApiTokenRequest } from "./account-api-tokens";
 import { handleGachaHistoryRequest } from "./gacha-history";
 import { handleScreenshotRecognitionRequest } from "../packages/community-media/worker";
 import { handleKofiSponsorRequest } from "./kofi-sponsors";
+import { handleSponsorFeedRequest } from "./sponsors";
 import { moveEventHistory, pruneEventHistory } from "./game-event-history";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
@@ -4048,7 +4049,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     if (communityEntity) return communityEntity;
     const communityForums = await handleCommunityForumsRequest(request, env);
     if (communityForums) return communityForums;
-    const admin = await handleAdminRequest(request, env);
+    const admin = await handleAdminRequest(request, env, ctx);
     if (admin) {
       if (admin.ok && request.method === "POST" && url.pathname.startsWith("/api/v1/admin/story-asset-reviews/"))
         ctx.waitUntil(reconcileCommunityStories(env));
@@ -4056,6 +4057,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     }
     const profile = await handleProfileRequest(request, env);
     if (profile) return profile;
+    const sponsorFeed = await handleSponsorFeedRequest(request, env, ctx);
+    if (sponsorFeed) return sponsorFeed;
     const kofiSponsor = await handleKofiSponsorRequest(request, env);
     if (kofiSponsor) return kofiSponsor;
     const accountApiToken = await handleAccountApiTokenRequest(request, env);

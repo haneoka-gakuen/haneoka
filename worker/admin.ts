@@ -25,6 +25,17 @@ import { isPublicResourceServer, readSiteSettings } from "./site-settings";
 import { readSpoilerSettings } from "./spoiler-settings";
 import { readContentVisibility } from "./content-visibility";
 import { parseVisibilityPolicy } from "../src/lib/content-visibility-policy";
+import {
+  createSponsorEntry,
+  deleteSponsorEntry,
+  isSponsorEntryId,
+  parseSponsorFields,
+  parseSponsorTiers,
+  readSponsorAdmin,
+  replaceSponsorTiers,
+  sponsorEntryOrigin,
+  updateSponsorEntry,
+} from "./sponsors";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -4939,7 +4950,105 @@ const putContentVisibility = async (request: Request, env: Env): Promise<Respons
   }
 };
 
-export const handleAdminRequest = async (request: Request, env: Env): Promise<Response | null> => {
+const sponsorDocument = async (request: Request, env: Env, ctx: ExecutionContext): Promise<JsonObject> =>
+  (await readSponsorAdmin(request, env, ctx)) as unknown as JsonObject;
+
+const getSponsors = async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  return json(request, { sponsors: await sponsorDocument(request, env, ctx) });
+};
+
+/** One audited sponsor change; `write` reports a lost version check as a conflict. */
+const sponsorOperation = async (
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  access: StaffAccess,
+  action: string,
+  targetKind: "sponsor_entry" | "sponsor_tiers",
+  targetId: string,
+  detail: JsonObject,
+  write: () => Promise<"ok" | "conflict">,
+): Promise<Response> => {
+  const started = await startOperation(request, env, access, action, targetKind, targetId);
+  if (started.kind === "response") return started.response;
+  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
+  try {
+    if ((await write()) === "conflict") {
+      await failOperation(env, started.operationId, "version_conflict");
+      return error(request, 409, "version_conflict", "Sponsor list changed; refresh and retry");
+    }
+    const operation = await transitionOperation(env, started.operationId, "succeeded", detail, targetId, null);
+    return json(request, { operation: operationValue(operation), sponsors: await sponsorDocument(request, env, ctx) });
+  } catch (failure) {
+    await failOperation(env, started.operationId, "sponsor_update_failed");
+    throw failure;
+  }
+};
+
+const postSponsor = async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const parsed = body ? await parseSponsorFields(env, body.fields, true) : { invalid: ["fields"] };
+  if ("invalid" in parsed || !parsed.fields.name || !parsed.fields.channel || !parsed.fields.firstAt)
+    return error(request, 422, "invalid_sponsor", `Check ${"invalid" in parsed ? parsed.invalid.join(", ") : "name, channel, firstAt"}`);
+  const digest = await officialDigest(JSON.stringify(["sponsor-entry/1", access.userId, request.headers.get("Idempotency-Key")]));
+  const id = digest.slice(0, 32);
+  const fields = parsed.fields;
+  return sponsorOperation(request, env, ctx, access, "sponsor.entry.create", "sponsor_entry", id, { fields: Object.keys(fields) }, async () => {
+    await createSponsorEntry(env, id, fields);
+    return "ok";
+  });
+};
+
+const putSponsor = async (request: Request, env: Env, ctx: ExecutionContext, id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  const origin = await sponsorEntryOrigin(env, id);
+  if (!origin) return error(request, 404, "sponsor_not_found", "Supporter not found");
+  const hidden = body?.hidden;
+  if (!body || !version || (hidden !== undefined && typeof hidden !== "boolean"))
+    return error(request, 422, "invalid_sponsor", "expectedVersion is required");
+  const parsed = body.fields === undefined ? { fields: {} } : await parseSponsorFields(env, body.fields, origin === "manual");
+  if ("invalid" in parsed) return error(request, 422, "invalid_sponsor", `Check ${parsed.invalid.join(", ")}`);
+  const detail: JsonObject = { fields: Object.keys(parsed.fields), ...(hidden === undefined ? {} : { hidden }) };
+  return sponsorOperation(request, env, ctx, access, "sponsor.entry.update", "sponsor_entry", id, detail, () =>
+    updateSponsorEntry(env, id, version, parsed.fields, hidden),
+  );
+};
+
+const deleteSponsor = async (request: Request, env: Env, ctx: ExecutionContext, id: string): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  if (!version) return error(request, 422, "invalid_sponsor", "expectedVersion is required");
+  const origin = await sponsorEntryOrigin(env, id);
+  if (!origin) return error(request, 404, "sponsor_not_found", "Supporter not found");
+  if (origin === "source") return error(request, 422, "sponsor_synchronized", "Hide a synchronized supporter instead");
+  return sponsorOperation(request, env, ctx, access, "sponsor.entry.delete", "sponsor_entry", id, {}, () =>
+    deleteSponsorEntry(env, id, version),
+  );
+};
+
+const putSponsorTiers = async (request: Request, env: Env, ctx: ExecutionContext): Promise<Response> => {
+  const access = await requireStaff(request, env, "admin");
+  if (access instanceof Response) return access;
+  const body = await readJsonBody(request);
+  const version = body && expectedVersion(body);
+  const tiers = body ? parseSponsorTiers(body.tiers) : null;
+  if (!version || !tiers) return error(request, 422, "invalid_sponsor_tiers", "Valid tiers and expectedVersion are required");
+  return sponsorOperation(request, env, ctx, access, "sponsor.tiers.update", "sponsor_tiers", "1", { tiers: tiers.map((tier) => tier.id) }, () =>
+    replaceSponsorTiers(env, version, tiers),
+  );
+};
+
+/** `ctx` is the incoming request's context; internal identity checks call without it and reach no sponsor route. */
+export const handleAdminRequest = async (request: Request, env: Env, ctx?: ExecutionContext): Promise<Response | null> => {
   const url = new URL(request.url);
   if (url.pathname !== ADMIN_PREFIX && !url.pathname.startsWith(`${ADMIN_PREFIX}/`)) return null;
   if (request.method === "OPTIONS") {
@@ -5198,6 +5307,17 @@ export const handleAdminRequest = async (request: Request, env: Env): Promise<Re
   }
   if (method === "POST" && path.length === 1 && path[0] === "resource-runs") {
     return createResourceRun(request, env);
+  }
+  if (path[0] === "sponsors" && ctx) {
+    if (path.length === 1 && method === "GET") return getSponsors(request, env, ctx);
+    if (path.length === 1 && method === "POST") return postSponsor(request, env, ctx);
+    if (path.length === 2 && path[1] === "tiers" && method === "PUT") return putSponsorTiers(request, env, ctx);
+    if (path.length === 2 && path[1] !== "tiers" && (method === "PUT" || method === "DELETE"))
+      return isSponsorEntryId(path[1]!)
+        ? method === "PUT"
+          ? putSponsor(request, env, ctx, path[1]!)
+          : deleteSponsor(request, env, ctx, path[1]!)
+        : error(request, 404, "sponsor_not_found", "Supporter not found");
   }
   return error(request, 404, "route_not_found", "API route not found");
 };
