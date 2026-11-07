@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
-// Output: Regional observations, drained/serialized account jobs, explicit-authentication renewal, merged credential pools redacted managed-account health and durable 150-second ranking-window admission.
+// Output: Regional observations, serialized account jobs, session renewal, redacted pool health, anonymous Version diagnostics and durable 150-second window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
@@ -205,6 +205,9 @@ function validateFailure(value: unknown): asserts value is OfficialCollectorFail
       "ConnectionError", "ConnectionRefusedError", "ConnectionResetError", "ProtocolError", "H2Error", "KeyError", "TypeError", "AttributeError", "InterruptedError", "http_error", "container_fetch_failed"].includes(String(failure.code))
     || failure.httpStatus !== undefined && (typeof failure.httpStatus !== "number" || !Number.isInteger(failure.httpStatus) || failure.httpStatus < 100 || failure.httpStatus > 599)
     || failure.grpcStatus !== undefined && (typeof failure.grpcStatus !== "string" || !/^[0-9]{1,3}$/u.test(failure.grpcStatus))
+    || (failure.clientVersion !== undefined || failure.upstreamMessage !== undefined) && !["catalog_version", "version"].includes(String(failure.stage))
+    || failure.clientVersion !== undefined && (typeof failure.clientVersion !== "string" || !/^\d+\.\d+\.\d+$/u.test(failure.clientVersion))
+    || failure.upstreamMessage !== undefined && (typeof failure.upstreamMessage !== "string" || failure.upstreamMessage.length > 256)
     || failure.location !== undefined && (typeof failure.location !== "string" || !/^[A-Za-z0-9_.-]{1,100}:[1-9][0-9]{0,6}$/u.test(failure.location))) throw new Error("invalid_failure");
 }
 function transientCollectorFailure(failure: OfficialCollectorFailure | null | undefined): boolean {
@@ -2356,7 +2359,9 @@ export class OfficialRankingCollector extends Container<Env> {
           state.lastFailure = update.failure ? { stage: update.failure.stage, code: update.failure.code,
             ...(update.failure.location ? { location: update.failure.location } : {}),
             ...(update.failure.httpStatus !== undefined ? { httpStatus: update.failure.httpStatus } : {}),
-            ...(update.failure.grpcStatus !== undefined ? { grpcStatus: update.failure.grpcStatus } : {}) } : null;
+            ...(update.failure.grpcStatus !== undefined ? { grpcStatus: update.failure.grpcStatus } : {}),
+            ...(update.failure.clientVersion !== undefined ? { clientVersion: update.failure.clientVersion } : {}),
+            ...(update.failure.upstreamMessage !== undefined ? { upstreamMessage: update.failure.upstreamMessage } : {}) } : null;
           state.status = state.blockedGeneration ? state.status : state.status === "rate_limited" ? "rate_limited" : update.status;
           state.failures = update.status === "ok" ? 0 : state.failures + 1;
           if (update.status === "auth_paused") this.pauseRun(state, "auth_paused", update.failure ? permissionRejected(update.failure) : false);

@@ -78,7 +78,8 @@ Three rejections in a row pause an account until its credential changes, and any
 
 An anonymous Version failure stops collection before any account request. Container
 logs record `official_anonymous_version_failed` with the configured client version,
-HTTP/gRPC status and a bounded upstream message. Check this event before changing
+HTTP/gRPC status and a bounded upstream message. The status API retains these
+anonymous Version diagnostics in `lastFailure` as well. Check them before changing
 account credentials or routing: client update requirements and network refusals
 need different recovery. CDN authorization and account responses are excluded.
 

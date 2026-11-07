@@ -409,10 +409,12 @@ def run_job(job, origin):
             failure = failure_info(catalog_stages.get(getattr(error,'stage',None),stage),error,error.receipt)
             if isinstance(error, VersionError) or getattr(error, 'stage', None) == 'version':
                 message = unquote(error.receipt.get('grpc_message', ''))
+                failure['clientVersion'] = job['clientVersion']
+                failure['upstreamMessage'] = ''.join(char for char in message if char.isprintable())[:128]
                 print(json.dumps(dict(event='official_anonymous_version_failed', region=region,
                     clientVersion=job['clientVersion'], httpStatus=error.receipt.get('status'),
                     grpcStatus=error.receipt.get('grpc_status'),
-                    message=''.join(char for char in message if char.isprintable())[:256])), flush=True)
+                    message=failure['upstreamMessage'])), flush=True)
             if final_status == 'rate_limited':
                 retry_after = retry_delay(error.receipt, 300)
         except Exception as error:

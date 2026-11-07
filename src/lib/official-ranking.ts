@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Official catalog identities, game protobuf observations and collector checkpoints.
-// Output: Shared contracts for retained windows, transient Arena probes, complete populations, demand progress, rolling-window admissions and origin-bound account pools.
+// Output: Shared contracts for retained windows, Arena probes/populations, demand progress, rolling admissions, origin-bound pools and anonymous Version diagnostics.
 // Pos: [Map](L2-2.md); official ranking wire types alongside game-records DTOs.
 // Effects/Dependencies: Web Crypto digests; parses private configuration without logging or network access.
 import type { GameRecordsRegion } from "./game-records";
@@ -261,6 +261,8 @@ export interface OfficialCollectorFailure {
   location?: string;
   httpStatus?: number;
   grpcStatus?: string;
+  clientVersion?: string;
+  upstreamMessage?: string;
 }
 
 export type OfficialCollectorUpdate = {

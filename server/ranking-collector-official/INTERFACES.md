@@ -61,7 +61,11 @@ A board's freshness is its own `observedAtMs`, not the last success in `/status`
 | `player-profile`, `song-ranking`, `card-image` | Demand results |
 | `complete` | Final status, with `failure: {stage, code, httpStatus?, grpcStatus?}` when it failed |
 
-Failure fields use fixed stage and code lists. Exception text, headers, configuration and player data are never recorded.
+Failure fields use fixed stage and code lists. Anonymous Version failures also
+include `clientVersion` and `upstreamMessage` (at most 256 UTF-16 code units).
+The latter contains only the decoded gRPC message from that anonymous request.
+Exception text, CDN authorization, account headers, configuration and player data
+are excluded.
 
 Demand-only and collection jobs report explicit authenticated demand rejection
 as `complete.status: "auth_paused"` with `failure.stage: "demand"` and the
