@@ -28,6 +28,7 @@ export const GET: APIRoute = () =>
 # AND RELATED RIGHTS IN THE DIGITAL SINGLE MARKET.
 
 User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
 Allow: /
 Sitemap: https://haneoka.org/sitemap.xml
 `,

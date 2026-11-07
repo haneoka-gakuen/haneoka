@@ -35,6 +35,7 @@ export function applyVisibilitySettings(settings: ContentVisibilitySettings & { 
   const previous = visibilityPolicyKey();
   document.documentElement.dataset.contentVisibilityPolicy = JSON.stringify(settings.policy);
   document.documentElement.dataset.contentVisibilityVersion = String(settings.version);
+  document.documentElement.dataset.contentVisibilityAt = String(Date.now());
   if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
   if (previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
@@ -49,12 +50,19 @@ function refreshVisibility(): void {
     })
     .catch(() => undefined);
 }
+/** A document whose policy the Worker wrote within the last minute needs no second read. */
+const POLICY_FRESHNESS = 60_000;
+function refreshStaleVisibility(): void {
+  const data = document.documentElement.dataset;
+  const age = Math.abs(Date.now() - Number(data.contentVisibilityAt));
+  if (!data.contentVisibilityPolicy || !(age <= POLICY_FRESHNESS)) refreshVisibility();
+}
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
-  if (!document.documentElement.dataset.contentVisibilityPolicy) refreshVisibility();
+  refreshStaleVisibility();
   addEventListener("haneoka:session-changed", refreshVisibility);
-  document.addEventListener("astro:page-load", refreshVisibility);
+  document.addEventListener("astro:page-load", refreshStaleVisibility);
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();
     const next = (event as Event & { newDocument: Document }).newDocument;
@@ -64,6 +72,7 @@ export function installContentVisibility(): void {
     ) {
       next.documentElement.dataset.contentVisibilityPolicy = current.contentVisibilityPolicy;
       next.documentElement.dataset.contentVisibilityVersion = current.contentVisibilityVersion;
+      next.documentElement.dataset.contentVisibilityAt = current.contentVisibilityAt;
     }
   });
 }

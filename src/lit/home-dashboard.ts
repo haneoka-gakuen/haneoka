@@ -21,6 +21,7 @@ import { showRestrictedContent } from "../lib/content-visibility";
 import { fetchCrossServerCatalogs, crossCatalogSeedSources } from "../lib/cross-server/fetch";
 import { homeEventDisplay } from "../lib/home-event-display";
 import { pinCrossCatalogValue } from "../lib/cross-server/presentation";
+import { homeSeedCatalog, unpackHomeSeedCatalogs } from "../lib/cross-server/home-seed";
 import { crossCatalogRows } from "../lib/cross-server/definitions";
 import { announcementText } from "./shared/announcement";
 import type { Announcement } from "../lib/announcements";
@@ -498,14 +499,9 @@ export class HomeDashboard extends LitElement {
     this.locale = locale;
     this.seed = seed;
     this.server = seed.server;
+    unpackHomeSeedCatalogs(seed.crossServerCatalogs || {});
     this.crossServerCatalogs = Object.fromEntries(
-      Object.entries(seed.crossServerCatalogs || {}).filter(
-        ([resource, dto]) =>
-          dto.schema === "haneoka-cross-server-catalog-v1" &&
-          dto.resource === resource &&
-          dto.selectedServer === seed.server &&
-          dto.identities[dto.selectedServer]?.releaseId === seed.releaseId,
-      ),
+      Object.entries(seed.crossServerCatalogs || {}).filter(([resource, dto]) => homeSeedCatalog(seed, resource, dto)),
     );
     this.applyDocuments(seed.documents);
     this.announcements = seed.announcements;

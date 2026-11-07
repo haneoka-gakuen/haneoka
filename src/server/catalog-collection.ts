@@ -64,7 +64,10 @@ async function loadCollection(resource: string, server: ReleaseServer, locale: L
     fetchStaticCatalog(collection, server, identity),
     fetchStaticCatalog("characters", server, identity),
     fetchStaticCatalog("bands", server, identity),
-    ["cards", "support-cards"].includes(resource) ? fetchStaticCatalog("items", server, identity) : {},
+    // Collections read only the item table (rank-up materials); reward tables stay on entity pages.
+    ["cards", "support-cards"].includes(resource)
+      ? fetchStaticCatalog("items", server, identity).then((value) => ({ items: (value as Row | null)?.items }))
+      : {},
     fetchStaticCatalog("ui-marks", server, identity),
   ]);
   const sourceMarks: CatalogCollectionPayload["sourceMarks"] = {};

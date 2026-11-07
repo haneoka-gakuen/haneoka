@@ -210,6 +210,7 @@ export async function applySiteSettings(
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
         element.setAttribute("data-content-visibility-policy", JSON.stringify(visibility.policy));
         element.setAttribute("data-content-visibility-version", String(visibility.version));
+        element.setAttribute("data-content-visibility-at", String(Date.now()));
         element.setAttribute("data-content-group", group);
       },
     })

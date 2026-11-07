@@ -60,7 +60,7 @@ const languageAlternates = isLocalizedRoute
     }))
   : [];
 const entityImage = searchImage?.trim() ? new URL(searchImage.trim(), origin).href : undefined;
-const socialImage = entityImage ?? `${origin}/images/haneoka-social-card.png`;
+const socialImage = entityImage ?? `${origin}/images/haneoka-social-card.png?v=2`;
 const structuredData = JSON.stringify(
   pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage),
 ).replaceAll("<", "\\u003c");

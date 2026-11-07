@@ -9,6 +9,7 @@ import { initializeI18nClient } from "../i18n/client";
 import type { Locale } from "../i18n/locales";
 import type { ReleaseServer } from "../lib/release-server";
 import { homePageData } from "./home-page-data";
+import { packHomeSeed } from "../lib/cross-server/home-seed";
 
 const snapshots = new Map<string, Promise<HomeSeed>>();
 
@@ -51,6 +52,6 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
   promote(fragment);
   return {
     html: serialize(fragment),
-    seed: seed ? JSON.stringify(seed).replace(/</gu, "\\u003c") : "",
+    seed: seed ? JSON.stringify(packHomeSeed(seed)).replace(/</gu, "\\u003c") : "",
   };
 }

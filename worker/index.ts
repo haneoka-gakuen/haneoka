@@ -4295,6 +4295,24 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   }
 }
 
+/** Public resources are readable from any origin; credentialed CORS keeps its own origin. */
+function openToEveryOrigin(response: Response): Response {
+  if (response.status === 101 || response.webSocket || response.headers.has("Access-Control-Allow-Origin")) return response;
+  try {
+    response.headers.set("Access-Control-Allow-Origin", "*");
+    return response;
+  } catch {
+    const headers = new Headers(response.headers);
+    headers.set("Access-Control-Allow-Origin", "*");
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+    });
+  }
+}
+
 /** Guest documents differ only by address, build, publication and spoiler preference. */
 const GUEST_DOCUMENT_TTL = 600;
 const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-|__Host-)?haneoka\.session_/u;
@@ -4399,11 +4417,11 @@ const worker: ExportedHandler<Env> = {
             new URL(request.url).pathname.startsWith("/api/")
           )
             ctx.waitUntil(markCommunityMutation(request.url));
-          return response;
+          return openToEveryOrigin(response);
         }),
       );
     } catch (error) {
-      return internalErrorResponse(request, error);
+      return openToEveryOrigin(internalErrorResponse(request, error));
     }
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
