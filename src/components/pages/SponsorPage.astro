@@ -1,85 +1,285 @@
 ---
-import Icon from "../Icon.astro";
+import SponsorChannelIcon from "./SponsorChannelIcon.astro";
 import { group } from "../../i18n/messages";
 import type { Locale } from "../../i18n/locales";
-import { SPONSOR_PLATFORMS, SPONSOR_TIERS, sponsorCardImage } from "../../config/sponsor";
-import { sponsorList } from "../../server/sponsors";
+import { SPONSOR_CHANNELS, SPONSOR_PLATFORMS, SPONSOR_QR_CODES, type SponsorChannel } from "../../config/sponsor";
 
-interface SponsorCopy {
+interface SponsorCopy extends Record<SponsorChannel, string> {
   heroTitle: string;
-  body: string[];
-  afdian: string;
-  patreon: string;
-  kofi: string;
-  wallTitle: string;
+  intro: string;
+  letterTitle: string;
+  letter: string[];
+  supportTitle: string;
+  currentTitle: string;
+  currentEmpty: string;
   wallUpdated: string;
-  tierEmpty: string;
   pastTitle: string;
+  pastEmpty: string;
+  loading: string;
+  loadFailed: string;
+  retry: string;
+  qrAlt: string;
+  qrName: string;
+  qrManual: string;
 }
 
 const { locale } = Astro.props as { locale: Locale };
 const copy = group<SponsorCopy>(locale, "legal.sponsor");
-const list = await sponsorList();
-const updated = new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(list.updatedAt));
-const tiers = SPONSOR_TIERS.map((tier) => ({ ...tier, sponsors: list.active.filter((row) => row.tier === tier.id) }));
-const initial = (name: string) => [...name][0]?.toUpperCase() ?? "";
+const { close } = group<{ close: string }>(locale, "common.actions");
+const clientCopy = {
+  locale,
+  currentEmpty: copy.currentEmpty,
+  pastEmpty: copy.pastEmpty,
+  wallUpdated: copy.wallUpdated,
+  loadFailed: copy.loadFailed,
+  retry: copy.retry,
+  channels: Object.fromEntries(SPONSOR_CHANNELS.map((channel) => [channel, copy[channel]])),
+};
 ---
 
-<article class="about backing" aria-labelledby="backing-heading">
-  <header class="backing-hero">
-    <div class="backing-hero__copy">
-      <h2 id="backing-heading" class="about-display about-display--small">{copy.heroTitle}</h2>
-      {copy.body.map((paragraph, index) => <p class={index === 0 ? "about-lede" : "about-body"}>{paragraph}</p>)}
-    </div>
-    <div class="backing-links">
-      {SPONSOR_PLATFORMS.map((platform) => (
-        <a class={`backing-link backing-link--${platform.id}`} href={platform.url} target="_blank" rel="noopener">
-          {platform.id === "afdian" && <Icon name="electric_bolt" size={24} filled />}
-          {platform.id === "patreon" && (
-            <svg class="material-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="14.5" cy="9.5" r="7" fill="currentColor" /><rect x="3" y="2.5" width="3.5" height="19" rx="0.6" fill="currentColor" /></svg>
-          )}
-          {platform.id === "kofi" && <Icon name="local_cafe" size={24} filled />}
-          <span>{copy[platform.id]}</span>
-          <Icon name="open_in_new" size={20} />
-        </a>
-      ))}
-    </div>
+<article class="about backing" aria-labelledby="backing-heading" data-backing>
+  <header class="backing-intro">
+    <h2 id="backing-heading" class="backing-intro__title">{copy.heroTitle}</h2>
+    <p class="backing-intro__body">{copy.intro}</p>
   </header>
 
-  <section class="backing-section" aria-labelledby="backing-wall">
-    <div class="backing-wall__head">
-      <h3 id="backing-wall" class="about-headline">{copy.wallTitle}</h3>
-      <span class="backing-wall__updated">{copy.wallUpdated.replace("{date}", updated)}</span>
-    </div>
-    {tiers.map((tier) => (
-      <section class={`backing-tier backing-tier--${tier.id}`} aria-labelledby={`backing-tier-${tier.id}`}>
-        <h4 id={`backing-tier-${tier.id}`} class="backing-tier__title">
-          <img src={sponsorCardImage(tier.card)} alt="" width="300" height="140" loading="lazy" decoding="async" />
-          <span class="backing-tier__label"><span>{tier.title}</span><span class="backing-tier__count">{tier.sponsors.length}</span></span>
-        </h4>
-          {tier.sponsors.length ? (
-            <ul class="backing-names">
-              {tier.sponsors.map((sponsor) => (
-                <li class="backing-name">
-                  {sponsor.avatar ? (
-                    <img src={sponsor.avatar} alt="" width="40" height="40" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
-                  ) : (
-                    <span class="backing-name__initial" aria-hidden="true">{initial(sponsor.name)}</span>
-                  )}
-                  <span class="backing-name__text">{sponsor.name}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p class="backing-tier__empty">{copy.tierEmpty}</p>
-          )}
-      </section>
+  <div class="cluster backing-actions" role="group" aria-label={copy.supportTitle}>
+    {SPONSOR_PLATFORMS.map((platform) => (
+      <a class="button button--tonal" href={platform.url} target="_blank" rel="noopener">
+        <SponsorChannelIcon channel={platform.id} size={20} />
+        <span>{copy[platform.id]}</span>
+      </a>
     ))}
-    {list.past.length > 0 && (
-      <section class="backing-past" aria-labelledby="backing-past">
-        <h4 id="backing-past" class="backing-tier__title"><span class="backing-tier__label"><span>{copy.pastTitle}</span><span class="backing-tier__count">{list.past.length}</span></span></h4>
-        <ul>{list.past.map((sponsor) => <li>{sponsor.name}</li>)}</ul>
-      </section>
-    )}
+    {SPONSOR_QR_CODES.map((code) => (
+      <button class="button button--tonal" type="button" data-backing-qr={code.id}>
+        <SponsorChannelIcon channel={code.id} size={20} />
+        <span>{copy[code.id]}</span>
+      </button>
+    ))}
+  </div>
+
+  <section id="backing-current" class="backing-wall" aria-labelledby="backing-current-title" aria-busy="true">
+    <div class="row row--wrap backing-wall__head">
+      <h3 id="backing-current-title" class="backing-wall__title">{copy.currentTitle}</h3>
+      <span class="chip chip--static chip--tonal" data-backing-count="active">–</span>
+      <span class="row__spacer"></span>
+      <span class="backing-updated" data-backing-updated></span>
+    </div>
+    <div class="backing-wall__body" data-backing-list="active">
+      <p class="about-body backing-status">{copy.loading}</p>
+    </div>
   </section>
+
+  <section id="backing-past" class="backing-wall" aria-labelledby="backing-past-title" aria-busy="true">
+    <div class="row row--wrap backing-wall__head">
+      <h3 id="backing-past-title" class="backing-wall__title">{copy.pastTitle}</h3>
+      <span class="chip chip--static chip--tonal" data-backing-count="past">–</span>
+    </div>
+    <div class="backing-wall__body" data-backing-list="past"></div>
+  </section>
+
+  <section class="backing-letter" aria-labelledby="backing-letter-title">
+    <h3 id="backing-letter-title" class="backing-wall__title">{copy.letterTitle}</h3>
+    {copy.letter.map((paragraph) => <p class="about-body">{paragraph}</p>)}
+  </section>
+
+  {SPONSOR_QR_CODES.map((code) => (
+    <dialog class="dialog backing-qr" id={`backing-qr-${code.id}`} aria-labelledby={`backing-qr-${code.id}-title`}>
+      <header class="dialog__header"><h2 id={`backing-qr-${code.id}-title`}>{copy[code.id]}</h2></header>
+      <div class="dialog__body">
+        <div class="frame backing-qr__code" style={`--frame-ratio: ${code.width} / ${code.height}`}>
+          <img src={code.image} alt={copy.qrAlt.replace("{channel}", copy[code.id])} width={code.width} height={code.height} loading="lazy" decoding="async" />
+        </div>
+        <p>{copy.qrName}</p>
+        <p>{copy.qrManual}</p>
+      </div>
+      <form class="dialog__actions" method="dialog">
+        <button class="button button--text">{close}</button>
+      </form>
+    </dialog>
+  ))}
+
+  <template data-backing-icons>
+    {SPONSOR_CHANNELS.map((channel) => (
+      <span data-channel={channel}><SponsorChannelIcon channel={channel} size={16} /></span>
+    ))}
+  </template>
+  <script type="application/json" data-backing-copy set:html={JSON.stringify(clientCopy).replaceAll("<", "\\u003c")} />
 </article>
+
+<script>
+  import { backdropPress, isBackdropClick } from "../../lit/ui/modal";
+  import {
+    formatSponsorAmount,
+    isFlexibleSponsorTier,
+    sponsorCardImage,
+    type SponsorFeed,
+    type SponsorPerson,
+    type SponsorTier,
+  } from "../../config/sponsor";
+
+  interface Copy {
+    locale: keyof SponsorTier["labels"];
+    currentEmpty: string;
+    pastEmpty: string;
+    wallUpdated: string;
+    loadFailed: string;
+    retry: string;
+    channels: Record<string, string>;
+  }
+
+  const dismiss = (event: MouseEvent) => {
+    if (isBackdropClick(event)) (event.currentTarget as HTMLDialogElement).close();
+  };
+
+  const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  function render(root: HTMLElement, copy: Copy, list: SponsorFeed) {
+    const icons = root.querySelector<HTMLTemplateElement>("[data-backing-icons]")!.content;
+    const icon = (channel: string): Node =>
+      icons.querySelector(`[data-channel="${channel}"]`)?.firstElementChild?.cloneNode(true) ?? document.createTextNode("");
+    const channelName = (channel: string) => copy.channels[channel] ?? channel;
+    const avatar = (person: SponsorPerson, className: string, size: number) => {
+      const box = element("span", className);
+      const initial = () => {
+        const letter = element("span", "", [...person.name][0]?.toUpperCase() ?? "");
+        letter.setAttribute("aria-hidden", "true");
+        box.replaceChildren(letter);
+      };
+      if (!person.avatar) initial();
+      else {
+        const image = Object.assign(element("img"), {
+          src: person.avatar,
+          alt: "",
+          width: size,
+          height: size,
+          loading: "lazy",
+          decoding: "async",
+          referrerPolicy: "no-referrer",
+        });
+        image.addEventListener("error", initial, { once: true });
+        box.append(image);
+      }
+      return box;
+    };
+    const channelMark = (person: SponsorPerson, className: string) => {
+      const mark = element("span", className);
+      mark.title = channelName(person.platform);
+      mark.setAttribute("role", "img");
+      mark.setAttribute("aria-label", mark.title);
+      mark.append(icon(person.platform));
+      return mark;
+    };
+    const message = (person: SponsorPerson, className: string) =>
+      person.message ? [element("p", className, person.message)] : [];
+    const status = (text: string) => element("p", "about-body backing-status", text);
+    const amount = (person: SponsorPerson, className: string) =>
+      person.amount ? [element("span", className, formatSponsorAmount(copy.locale, person.amount))] : [];
+
+    const tierTone = (tier: SponsorTier, index: number) =>
+      isFlexibleSponsorTier(tier) ? "backing-tier--any" : `backing-tier--tone-${Math.min(index, 3)}`;
+    const groups = list.tiers
+      .map((tier, index) => ({ tier, index, people: list.active.filter((person) => person.tier === tier.id) }))
+      .filter((group) => group.people.length);
+    const active = root.querySelector<HTMLElement>('[data-backing-list="active"]')!;
+    active.replaceChildren(
+      ...(list.active.length
+        ? groups.map(({ tier, index, people }) => {
+            const section = element("section", `backing-tier ${tierTone(tier, index)}`);
+            const heading = element("h4", "backing-tier__head");
+            heading.id = `backing-tier-${tier.id}`;
+            section.setAttribute("aria-labelledby", heading.id);
+            if (tier.card)
+              heading.append(Object.assign(element("img"), { src: sponsorCardImage(tier.card), alt: "", width: 36, height: 17, decoding: "async" }));
+            heading.append(element("span", "", tier.labels[copy.locale]), element("span", "backing-tier__count", String(people.length)));
+            const grid = element("ul", "grid backing-people");
+            grid.append(
+              ...people.map((person) => {
+                const item = element("li", "backing-person");
+                const media = element("span", "backing-person__media");
+                media.append(avatar(person, "list-item__avatar backing-person__avatar", 64), channelMark(person, "backing-person__channel"));
+                item.append(
+                  media,
+                  element("span", "backing-person__name", person.name),
+                  ...amount(person, "backing-person__amount"),
+                  ...message(person, "backing-person__message"),
+                );
+                return item;
+              }),
+            );
+            section.append(heading, grid);
+            return section;
+          })
+        : [status(copy.currentEmpty)]),
+    );
+
+    const past = root.querySelector<HTMLElement>('[data-backing-list="past"]')!;
+    if (!list.past.length) past.replaceChildren(status(copy.pastEmpty));
+    else {
+      const grid = element("ul", "grid backing-people backing-people--past");
+      grid.append(
+        ...list.past.map((person) => {
+          const item = element("li", person.message ? "split split--top backing-former" : "split backing-former");
+          const text = element("span", "backing-former__text");
+          const line = element("span", "row row--between");
+          line.append(element("span", "backing-former__name", person.name), channelMark(person, "backing-former__channel"));
+          text.append(line, ...amount(person, "backing-former__amount"), ...message(person, "backing-former__message"));
+          item.append(avatar(person, "list-item__avatar", 40), text);
+          return item;
+        }),
+      );
+      past.replaceChildren(grid);
+    }
+
+    root.querySelector('[data-backing-count="active"]')!.textContent = String(list.active.length);
+    root.querySelector('[data-backing-count="past"]')!.textContent = String(list.past.length);
+    root.querySelector("[data-backing-updated]")!.textContent = copy.wallUpdated.replace(
+      "{date}",
+      new Intl.DateTimeFormat(copy.locale, { dateStyle: "medium" }).format(new Date(list.updatedAt)),
+    );
+  }
+
+  async function load(root: HTMLElement) {
+    const copy = JSON.parse(root.querySelector("[data-backing-copy]")!.textContent!) as Copy;
+    const walls = root.querySelectorAll<HTMLElement>(".backing-wall");
+    walls.forEach((wall) => wall.setAttribute("aria-busy", "true"));
+    try {
+      const response = await fetch("/api/v1/sponsors", { headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error(String(response.status));
+      render(root, copy, (await response.json()) as SponsorFeed);
+    } catch {
+      const retry = element("button", "button button--tonal", copy.retry);
+      retry.type = "button";
+      retry.addEventListener("click", () => void load(root), { once: true });
+      const failed = element("div", "backing-failed");
+      failed.append(element("p", "about-body", copy.loadFailed), retry);
+      root.querySelector('[data-backing-list="active"]')!.replaceChildren(failed);
+      root.querySelector('[data-backing-list="past"]')!.replaceChildren();
+    } finally {
+      walls.forEach((wall) => wall.setAttribute("aria-busy", "false"));
+    }
+  }
+
+  const start = () => {
+    const root = document.querySelector<HTMLElement>("[data-backing]");
+    if (!root || root.dataset.backingStarted) return;
+    root.dataset.backingStarted = "true";
+    void load(root);
+  };
+  start();
+  document.addEventListener("astro:page-load", start);
+
+  document.addEventListener("click", (event) => {
+    const qr = (event.target as Element).closest<HTMLElement>("[data-backing-qr]");
+    if (!qr) return;
+    const dialog = document.getElementById(`backing-qr-${qr.dataset.backingQr}`) as HTMLDialogElement;
+    dialog.addEventListener("pointerdown", backdropPress);
+    dialog.addEventListener("click", dismiss);
+    dialog.showModal();
+  });
+</script>

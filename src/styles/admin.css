@@ -152,6 +152,98 @@
     gap: 16px;
     overflow: auto;
   }
+  .admin-page sponsor-admin {
+    display: grid;
+    gap: 16px;
+    min-inline-size: 0;
+    --button-height: var(--md-comp-control-height-touch);
+  }
+  .admin-page .admin-sponsor-toolbar {
+    gap: 8px 12px;
+  }
+  .admin-page .admin-sponsor-sync {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .admin-page .admin-sponsors .list-item__supporting {
+    overflow-wrap: anywhere;
+  }
+  .admin-page .admin-sponsor-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+  }
+  .admin-page .admin-sponsor-message {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .admin-page .admin-sponsor-marks {
+    gap: 4px;
+  }
+  .admin-page .admin-sponsor-labels {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .admin-page .admin-sponsor-labels > legend {
+    padding: 0;
+    margin-block-end: 8px;
+  }
+  .admin-page .admin-sponsor-problem {
+    gap: 4px 8px;
+    align-items: center;
+  }
+  .admin-page .admin-sponsor-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .admin-page .admin-sponsor-card img {
+    width: 48px;
+    height: 22px;
+    object-fit: contain;
+  }
+  .admin-page .admin-sponsor-dialog {
+    inline-size: min(36rem, calc(100vw - 32px));
+    max-block-size: calc(100dvh - 48px);
+  }
+  .admin-page .admin-sponsor-identity {
+    gap: 16px;
+    align-items: center;
+    overflow-wrap: anywhere;
+  }
+  /* A field and its follow-the-platform button share one row. */
+  .admin-page .admin-sponsor-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+  }
+  .admin-page .admin-sponsor-field > :first-child {
+    grid-column: 1;
+  }
+  .admin-page .admin-sponsor-amount {
+    display: flex;
+  }
+  .admin-page .admin-sponsor-amount > md-outlined-text-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .admin-page .admin-sponsor-amount > #admin-sponsor-currency {
+    flex: 0 0 6.5rem;
+  }
+  .admin-page .admin-sponsor-amounts {
+    --grid-min: 140px;
+    --grid-gap: 12px;
+  }
+  .admin-page .admin-sponsor-remove {
+    margin-inline-end: auto;
+    color: var(--md-sys-color-error);
+  }
   .admin-page :is(.admin-archive-dialog, .admin-archive-launch, .admin-platform-dialog, .admin-platform-launch, .admin-guest-dialog, .admin-guest-launch, .admin-sdk-dialog, .admin-account-removal) {
     --button-height: var(--md-comp-control-height-touch);
   }

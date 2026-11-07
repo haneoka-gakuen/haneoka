@@ -5639,17 +5639,32 @@
     },
     "sponsor": {
       "title": "후원",
-      "heroTitle": "haneoka 후원하기",
+      "heroTitle": "haneoka 운영 후원 안내",
+      "intro": "haneoka는 동호인들이 운영하는 BanG Dream! Our Notes 비공식 데이터베이스 및 도구 사이트입니다. 사이트 운영에 도움을 주신 모든 분께 깊이 감사드리며, 아래에 후원자 명단과 메시지를 소개합니다.",
+      "letterTitle": "후원 안내",
+      "letter": [
+        "haneoka의 모든 자료와 리소스, 브라우저 도구는 광고 없이 무료로 제공됩니다. 사이트에 수록되는 데이터와 리소스가 늘어남에 따라 서버 및 스토리지 등 인프라를 유지하기 위한 지속적인 비용이 발생하고 있습니다.",
+        "사이트의 자료와 도구가 도움이 되었다면 페이지에 안내된 경로를 통해 부담 없는 선에서 후원해 주실 수 있습니다. 보내주신 후원금은 서버와 스토리지 등 사이트 운영 비용에 사용되며, 게임 데이터 정리와 도구 개선을 이어가는 데 쓰입니다.",
+        "현재 후원해 주시는 분들과 과거에 도움을 주셨던 모든 분께 진심으로 감사드립니다."
+      ],
       "afdian": "아이파뎬",
       "patreon": "Patreon",
-      "wallTitle": "후원자",
-      "wallUpdated": "{date} 업데이트",
-      "tierEmpty": "아직 없음",
+      "wallUpdated": "명단 업데이트 {date}",
       "pastTitle": "이전 후원자",
-      "body": [
-        "haneoka는 무료이고 광고가 없으며, 서버와 저장 공간, 매일의 리소스 업데이트 비용은 모두 저희가 부담하고 있습니다. 도움이 되셨다면 후원으로 응원해 주세요. 보내 주신 후원은 haneoka를 더 안정적으로, 더 빠르게 업데이트하는 데 쓰입니다."
-      ],
-      "kofi": "Ko-fi"
+      "pastEmpty": "이전 후원자 기록이 없습니다",
+      "kofi": "Ko-fi",
+      "alipay": "알리페이",
+      "wechat": "위챗페이",
+      "other": "기타",
+      "supportTitle": "후원 방법",
+      "currentTitle": "현재 후원자",
+      "currentEmpty": "현재 후원자 기록이 없습니다",
+      "loading": "명단을 불러오는 중",
+      "loadFailed": "명단을 불러오지 못했습니다",
+      "retry": "다시 시도",
+      "qrAlt": "{channel} 결제 코드",
+      "qrName": "QR 송금 시 메모란에 표시할 이름과 메시지를 남겨주실 수 있습니다",
+      "qrManual": "QR 송금 내역은 관리자가 확인한 뒤 명단에 수동으로 반영합니다"
     }
   },
   "admin": {
@@ -5694,7 +5709,77 @@
         "operations": "작업 기록",
         "forums": "포럼",
         "comments": "댓글",
-        "story-assets": "스토리 소재"
+        "story-assets": "스토리 소재",
+        "sponsors": "후원"
+      },
+      "sponsors": {
+        "title": "후원자",
+        "search": "후원자 검색",
+        "add": "후원자 추가",
+        "edit": "후원자 편집",
+        "tiers": "등급",
+        "editTiers": "등급 편집",
+        "addTier": "등급 추가",
+        "filters": {
+          "all": "전체",
+          "active": "후원 중",
+          "past": "이전",
+          "hidden": "숨김"
+        },
+        "empty": "후원자가 없습니다",
+        "loading": "후원자를 불러오는 중",
+        "loadFailed": "후원자를 불러오지 못했습니다",
+        "retry": "다시 시도",
+        "synced": "플랫폼 동기화 {date}",
+        "notSynced": "플랫폼 동기화 전",
+        "name": "표시 이름",
+        "avatar": "아바타 URL",
+        "message": "메시지",
+        "channel": "경로",
+        "tier": "등급",
+        "status": "상태",
+        "statusAuto": "날짜 기준",
+        "statusSource": "플랫폼 따르기",
+        "current": "후원 중",
+        "past": "이전",
+        "firstAt": "첫 후원",
+        "lastAt": "최근 후원",
+        "amount": "금액",
+        "currency": "통화",
+        "clearAmount": "금액 표시 안 함",
+        "shown": "후원 페이지에 표시",
+        "hidden": "숨김",
+        "edited": "편집됨",
+        "manual": "직접 추가",
+        "follow": "{channel} 따르기",
+        "remove": "후원자 삭제",
+        "confirmRemove": "이 후원자를 삭제할까요?",
+        "save": "저장",
+        "cancel": "취소",
+        "saved": "저장했습니다",
+        "removed": "삭제했습니다",
+        "conflict": "다른 곳에서 변경되어 목록을 다시 불러왔습니다",
+        "invalid": "받아들일 수 없는 값이 있습니다",
+        "saveFailed": "저장하지 못했습니다",
+        "checkFields": "확인",
+        "tierId": "ID",
+        "label": "이름",
+        "cny": "월 CNY",
+        "usd": "월 USD",
+        "card": "카드",
+        "noCard": "없음",
+        "anyAmount": "금액 자유",
+        "moveUp": "위로 이동",
+        "moveDown": "아래로 이동",
+        "removeTier": "등급 삭제",
+        "channels": {
+          "afdian": "아이파뎬",
+          "patreon": "Patreon",
+          "kofi": "Ko-fi",
+          "alipay": "알리페이",
+          "wechat": "위챗페이",
+          "other": "기타"
+        }
       },
       "metrics": {
         "totalUsers": "전체 사용자",
@@ -5792,6 +5877,8 @@
         "sexual": "성적인 콘텐츠",
         "spam": "스팸 또는 홍보",
         "succeeded": "성공",
+        "sponsorEntry": "후원자",
+        "sponsorTiers": "후원 등급",
         "superseded": "새 버전으로 대체됨",
         "suspended": "정지됨",
         "uploaded": "업로드됨",
@@ -5822,7 +5909,11 @@
           "packageUploadPart": "패키지 조각 업로드",
           "packageUploadComplete": "패키지 업로드 완료",
           "packageUploadAbort": "패키지 업로드 중단",
-          "resourceRunDispatch": "리소스 동기화 실행"
+          "resourceRunDispatch": "리소스 동기화 실행",
+          "sponsorEntryCreate": "후원자 추가",
+          "sponsorEntryUpdate": "후원자 편집",
+          "sponsorEntryDelete": "후원자 삭제",
+          "sponsorTiersUpdate": "후원 등급 편집"
         },
         "targets": {
           "appeal": "이의 제기",
@@ -5831,7 +5922,9 @@
           "resourceServer": "리소스 서버",
           "packageUpload": "패키지 업로드",
           "packagePart": "패키지 조각",
-          "resourceRun": "리소스 동기화"
+          "resourceRun": "리소스 동기화",
+          "sponsorEntry": "후원자",
+          "sponsorTiers": "후원 등급"
         }
       },
       "durations": {

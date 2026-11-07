@@ -3,7 +3,7 @@ import { staticBuildPaths } from "../../../server/static-build";
 import { writeStaticJsonDocument } from "../../../server/static-documents";
 import { sponsorList } from "../../../server/sponsors";
 
-/** The sponsor list the sponsor page renders, for the app. */
+/** The automatic source snapshot; the Worker merges it with administrator changes at `/api/v1/sponsors`. */
 export const getStaticPaths: GetStaticPaths = () =>
   staticBuildPaths("src/pages/data/sponsors/[version].json.ts", [{ params: { version: "v1" } }]);
 

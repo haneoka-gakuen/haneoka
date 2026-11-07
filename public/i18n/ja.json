@@ -5639,17 +5639,32 @@
     },
     "sponsor": {
       "title": "支援",
-      "heroTitle": "haneoka を支援する",
+      "heroTitle": "haneoka の運営支援について",
+      "intro": "haneoka は有志によって運営されている『BanG Dream! Our Notes』の非公式データベースおよびツールサイトです。当サイトの運営にご協力くださった皆さまに心より感謝申し上げます。以下にてサポーターのお名前とメッセージを掲載しています。",
+      "letterTitle": "ご支援について",
+      "letter": [
+        "haneoka のすべてのデータ、アーカイブ、およびブラウザツールは広告なしで無料公開しています。収録データやリソースの増加に伴い、サーバーおよびストレージなどのインフラ維持には継続的な費用が発生しています。",
+        "当サイトの情報が日々のプレイのお役に立ちましたら、無理のない範囲でページ内の方法よりご支援いただけますと幸いです。いただいたご支援はサーバーやストレージなどの運営費用に充て、データ更新やツールの改善を継続するために活用いたします。",
+        "現在ご支援くださっている皆さま、ならびにこれまでにご支援いただいた皆さまに深く御礼申し上げます。"
+      ],
       "afdian": "愛発電",
       "patreon": "Patreon",
-      "wallTitle": "支援者",
       "wallUpdated": "{date} 更新",
-      "tierEmpty": "まだいません",
-      "pastTitle": "これまでの支援者",
-      "body": [
-        "haneoka は無料で広告もなく、サーバーやストレージ、毎日のリソース更新はすべて自分たちで負担しています。お役に立てているなら、ご支援いただけるとうれしいです。いただいたご支援は、haneoka をより安定させ、更新を早くするために使います。"
-      ],
-      "kofi": "Ko-fi"
+      "pastTitle": "これまでのサポーター",
+      "pastEmpty": "これまでのサポーター記録はまだありません",
+      "kofi": "Ko-fi",
+      "alipay": "Alipay",
+      "wechat": "WeChat Pay",
+      "other": "その他",
+      "supportTitle": "支援方法",
+      "currentTitle": "現在のサポーター",
+      "currentEmpty": "現在のサポーター記録はまだありません",
+      "loading": "名簿を読み込み中",
+      "loadFailed": "名簿を読み込めませんでした",
+      "retry": "再試行",
+      "qrAlt": "{channel} の支払いコード",
+      "qrName": "QRコード送金時はメモ欄に掲載希望のお名前とメッセージを記入できます",
+      "qrManual": "QRコード経由の記録は管理者が確認した後に一覧へ反映いたします"
     }
   },
   "admin": {
@@ -5694,7 +5709,77 @@
         "operations": "操作履歴",
         "forums": "フォーラム",
         "comments": "コメント",
-        "story-assets": "ストーリー素材"
+        "story-assets": "ストーリー素材",
+        "sponsors": "支援"
+      },
+      "sponsors": {
+        "title": "支援者",
+        "search": "支援者を検索",
+        "add": "支援者を追加",
+        "edit": "支援者を編集",
+        "tiers": "プラン",
+        "editTiers": "プランを編集",
+        "addTier": "プランを追加",
+        "filters": {
+          "all": "すべて",
+          "active": "支援中",
+          "past": "過去",
+          "hidden": "非表示"
+        },
+        "empty": "支援者はいません",
+        "loading": "支援者を読み込み中",
+        "loadFailed": "支援者を読み込めませんでした",
+        "retry": "再試行",
+        "synced": "プラットフォーム同期 {date}",
+        "notSynced": "プラットフォーム未同期",
+        "name": "表示名",
+        "avatar": "アバター URL",
+        "message": "メッセージ",
+        "channel": "経路",
+        "tier": "プラン",
+        "status": "状態",
+        "statusAuto": "日付に従う",
+        "statusSource": "プラットフォームに従う",
+        "current": "支援中",
+        "past": "過去",
+        "firstAt": "初回の支援",
+        "lastAt": "最新の支援",
+        "amount": "金額",
+        "currency": "通貨",
+        "clearAmount": "金額を表示しない",
+        "shown": "支援ページに表示",
+        "hidden": "非表示",
+        "edited": "編集済み",
+        "manual": "手動で追加",
+        "follow": "{channel} に従う",
+        "remove": "支援者を削除",
+        "confirmRemove": "この支援者を削除しますか？",
+        "save": "保存",
+        "cancel": "キャンセル",
+        "saved": "保存しました",
+        "removed": "削除しました",
+        "conflict": "ほかの場所で変更されたため、一覧を再読み込みしました",
+        "invalid": "受け付けられない値があります",
+        "saveFailed": "保存できませんでした",
+        "checkFields": "確認",
+        "tierId": "ID",
+        "label": "名前",
+        "cny": "月額 CNY",
+        "usd": "月額 USD",
+        "card": "カード",
+        "noCard": "なし",
+        "anyAmount": "金額自由",
+        "moveUp": "上へ移動",
+        "moveDown": "下へ移動",
+        "removeTier": "プランを削除",
+        "channels": {
+          "afdian": "愛発電",
+          "patreon": "Patreon",
+          "kofi": "Ko-fi",
+          "alipay": "Alipay",
+          "wechat": "WeChat Pay",
+          "other": "その他"
+        }
       },
       "metrics": {
         "totalUsers": "総ユーザー",
@@ -5792,6 +5877,8 @@
         "sexual": "性的な内容",
         "spam": "スパム・宣伝",
         "succeeded": "成功",
+        "sponsorEntry": "支援者",
+        "sponsorTiers": "支援プラン",
         "superseded": "新しい版により無効",
         "suspended": "一時停止中",
         "uploaded": "アップロード済み",
@@ -5822,7 +5909,11 @@
           "packageUploadPart": "パッケージ分割データを送信",
           "packageUploadComplete": "パッケージ送信を完了",
           "packageUploadAbort": "パッケージ送信を中止",
-          "resourceRunDispatch": "リソース同期を開始"
+          "resourceRunDispatch": "リソース同期を開始",
+          "sponsorEntryCreate": "支援者を追加",
+          "sponsorEntryUpdate": "支援者を編集",
+          "sponsorEntryDelete": "支援者を削除",
+          "sponsorTiersUpdate": "支援プランを編集"
         },
         "targets": {
           "appeal": "異議申し立て",
@@ -5831,7 +5922,9 @@
           "resourceServer": "リソースサーバー",
           "packageUpload": "パッケージ送信",
           "packagePart": "パッケージ分割データ",
-          "resourceRun": "リソース同期"
+          "resourceRun": "リソース同期",
+          "sponsorEntry": "支援者",
+          "sponsorTiers": "支援プラン"
         }
       },
       "durations": {
