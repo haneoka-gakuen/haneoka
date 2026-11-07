@@ -7,6 +7,70 @@
     --chip-height: var(--md-comp-control-height-touch);
     --button-height: var(--md-comp-control-height-touch);
   }
+  .admin-visibility .table-scroll {
+    max-block-size: min(36rem, calc(var(--shell-stage-block) - 192px));
+  }
+  .admin-visibility .admin-visibility__matrix :where(th, td) {
+    padding: 0 12px;
+  }
+  .admin-visibility .admin-visibility__matrix tbody :where(th, td) {
+    height: 48px;
+  }
+  .admin-visibility .admin-visibility__matrix thead tr + tr th {
+    top: 48px;
+  }
+  .admin-visibility .admin-visibility__matrix .is-sticky {
+    position: sticky;
+    min-width: 176px;
+  }
+  .admin-visibility .admin-visibility__matrix tbody th {
+    font-weight: var(--md-sys-typescale-title-small-weight);
+  }
+  .admin-visibility .admin-visibility__span {
+    text-align: center;
+  }
+  .admin-visibility .admin-visibility__matrix .admin-visibility__control {
+    width: 1%;
+    padding-inline: 4px;
+    text-align: center;
+  }
+  .admin-visibility .admin-visibility__matrix thead .admin-visibility__control {
+    padding-inline: 8px;
+  }
+  .admin-visibility .admin-visibility__group {
+    min-width: 56px;
+    max-width: 96px;
+    white-space: normal;
+  }
+  .admin-visibility .admin-visibility__bulk :where(th, td) {
+    background: var(--md-sys-color-surface-container-low);
+    border-bottom-color: var(--md-sys-color-outline-variant);
+  }
+  .admin-visibility .admin-visibility__bulk .button {
+    width: 100%;
+  }
+  .admin-visibility .admin-visibility__exceptions {
+    gap: 4px;
+    padding-inline: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .admin-visibility .admin-visibility__exceptions > span + .material-icon {
+    margin-inline-start: 8px;
+  }
+  .admin-visibility .admin-visibility__exceptions.is-invalid {
+    color: var(--md-sys-color-error);
+    outline: 2px solid var(--md-sys-color-error);
+    outline-offset: -2px;
+  }
+  .admin-visibility .admin-visibility__dialog md-outlined-text-field {
+    width: 100%;
+  }
+  @media (max-width: 599px) {
+    .admin-visibility .admin-visibility__matrix .is-sticky {
+      min-width: 128px;
+      max-width: 152px;
+    }
+  }
   admin-workspace .admin-story-preview {
     position: relative;
     contain: layout paint;

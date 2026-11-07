@@ -6219,6 +6219,12 @@
       "saveVisibility": "儲存顯示設定",
       "visibilitySaved": "顯示設定已儲存",
       "visibilityInvalid": "內容顯示設定有誤",
+      "visibilityConflict": "顯示設定已更新，請重新整理後再試",
+      "visibilityCategory": "分類",
+      "visibilityShowEntry": "顯示圖鑑項目",
+      "visibilityOverride": "參數覆寫",
+      "visibilityExceptions": "ID 例外",
+      "visibilityApplyShort": "全部套用",
       "visibilityTypes": {
         "cards": "團員",
         "support-cards": "快照",

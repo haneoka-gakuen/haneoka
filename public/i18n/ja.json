@@ -6219,6 +6219,12 @@
       "saveVisibility": "表示設定を保存",
       "visibilitySaved": "表示設定を保存しました",
       "visibilityInvalid": "表示設定に誤りがあります",
+      "visibilityConflict": "表示設定が更新されました。再読み込みしてください",
+      "visibilityCategory": "カテゴリ",
+      "visibilityShowEntry": "図鑑項目を表示",
+      "visibilityOverride": "パラメータ上書き",
+      "visibilityExceptions": "ID 例外",
+      "visibilityApplyShort": "一括適用",
       "visibilityTypes": {
         "cards": "メンバー",
         "support-cards": "スナップ",

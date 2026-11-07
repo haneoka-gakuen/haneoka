@@ -6219,6 +6219,12 @@
       "saveVisibility": "표시 설정 저장",
       "visibilitySaved": "표시 설정을 저장했습니다",
       "visibilityInvalid": "표시 설정이 올바르지 않습니다",
+      "visibilityConflict": "표시 설정이 변경되었습니다. 새로고침 후 다시 시도하세요.",
+      "visibilityCategory": "분류",
+      "visibilityShowEntry": "도감 항목 표시",
+      "visibilityOverride": "매개변수 우선 적용",
+      "visibilityExceptions": "ID 예외",
+      "visibilityApplyShort": "일괄 적용",
       "visibilityTypes": {
         "cards": "멤버",
         "support-cards": "스냅",

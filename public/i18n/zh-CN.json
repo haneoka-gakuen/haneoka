@@ -6219,6 +6219,12 @@
       "saveVisibility": "保存显示设置",
       "visibilitySaved": "显示设置已保存",
       "visibilityInvalid": "内容显示设置有误",
+      "visibilityConflict": "显示设置已更新，请刷新后重试",
+      "visibilityCategory": "分类",
+      "visibilityShowEntry": "显示图鉴条目",
+      "visibilityOverride": "参数覆盖",
+      "visibilityExceptions": "ID 例外",
+      "visibilityApplyShort": "全部应用",
       "visibilityTypes": {
         "cards": "成员",
         "support-cards": "留影",

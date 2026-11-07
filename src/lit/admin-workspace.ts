@@ -6,7 +6,7 @@
 import { communityStoryPath } from "../lib/community-story-route";
 import { refreshContentAccess } from "../lib/content-access";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
-import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, VISIBILITY_MODES, RESTRICTED_CONTENT_DISPLAYS, parseVisibilityPolicy,
+import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, parseVisibilityPolicy,
   type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
 import { USER_GROUPS, USER_ROLES, isUserRole, type UserGroup } from "../lib/user-roles";
 import { modal } from "./ui/modal";
@@ -93,7 +93,7 @@ const icon = (name: string, size = 20) => html`
 export class AdminWorkspace extends LitElement {
   static properties = {
     visibilityDraft: { state: true },
-    visibilityExpanded: { state: true },
+    visibilityEditing: { state: true },
     visibilityIdDrafts: { state: true },
     visibilityInvalid: { state: true },
     visibilityBulkGroups: { state: true },
@@ -172,7 +172,7 @@ export class AdminWorkspace extends LitElement {
   declare phase: "loading" | "ready" | "error";
   declare document: Value;
   declare private visibilityDraft: ContentVisibilityPolicy | null;
-  declare private visibilityExpanded: string;
+  declare private visibilityEditing: VisibilityType | "";
   declare private visibilityIdDrafts: Record<string, string>;
   declare private visibilityInvalid: boolean;
   declare private visibilityBulkGroups: UserGroup[];
@@ -291,7 +291,7 @@ export class AdminWorkspace extends LitElement {
     this.phase = "loading";
     this.document = {};
     this.visibilityDraft = null;
-    this.visibilityExpanded = "";
+    this.visibilityEditing = "";
     this.visibilityIdDrafts = {};
     this.visibilityInvalid = false;
     this.visibilityBulkGroups = [...USER_GROUPS];
@@ -571,6 +571,7 @@ export class AdminWorkspace extends LitElement {
     this.expandedPanels.clear();
     this.staff = {};
     this.document = {};
+    this.visibilityEditing = "";
     this.cursor = "";
     this.forumRequests.cancel();
     this.forums = [];
@@ -598,6 +599,7 @@ export class AdminWorkspace extends LitElement {
     this.phase = error ? "error" : "loading";
   }
   private refresh() {
+    this.visibilityEditing = "";
     this.visibilityDraft = null;
     this.visibilityDraftVersion = undefined;
     this.visibilityIdDrafts = {};
@@ -832,6 +834,10 @@ export class AdminWorkspace extends LitElement {
     void this.mutate("content-visibility", async (assertCurrent) => {
       const result = await this.request("/api/v1/admin/content-visibility", {
         method: "PUT", body: JSON.stringify({ policy, expectedVersion: this.visibilityDraftVersion ?? settings.version }),
+      }).catch((error: unknown) => {
+        if (error instanceof JsonResponseError && (error.body as { error?: { code?: string } } | null)?.error?.code === "version_conflict")
+          throw new JsonResponseError(error.status, error.body, this.label("visibilityConflict", "Settings changed; refresh and retry"));
+        throw error;
       });
       assertCurrent();
       const saved = result.visibilitySettings as unknown as ContentVisibilitySettings;
@@ -851,83 +857,120 @@ export class AdminWorkspace extends LitElement {
       kind, { ...DEFAULT_VISIBILITY_RULE, ...policy.types[kind], groups: [...this.visibilityBulkGroups] },
     ])) };
   }
+  private visibilityRule(kind: VisibilityType): VisibilityRule {
+    const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
+    return { ...DEFAULT_VISIBILITY_RULE, ...(this.visibilityDraft ?? settings.policy).types[kind] };
+  }
   private renderVisibilitySettings() {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings | undefined;
     if (!settings) return nothing;
-    const policy = this.visibilityDraft ?? settings.policy;
-    const modes = { spoiler: "visibilityModeSpoiler", visible: "visibilityModeVisible" };
-    const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
+    const busy = Boolean(this.busy);
+    const toggled = (groups: readonly UserGroup[], group: UserGroup, checked: boolean) =>
+      USER_GROUPS.filter((value) => value === group ? checked : groups.includes(value));
+    const role = (group: UserGroup) => this.label(`roles.${group}`, group);
+    const bulkLabel = this.label("visibilityBulkGroups", "Default groups for all categories");
+    const modeLabel = this.label("visibilityModeVisible", "Always show");
+    const entryLabel = this.label("visibilityShowEntry", "Show entry");
+    const overrideLabel = this.label("visibilityAllowOverride", "Allow spoiler parameter override");
+    const exceptionsLabel = this.label("visibilityExceptions", "ID exceptions");
+    const showLabel = this.label("visibilityShowIds", "Show unreleased IDs by default");
+    const hideLabel = this.label("visibilityHideIds", "Hide unreleased IDs by default");
+    const checkbox = (label: string, checked: boolean, onChange: (checked: boolean) => void) => html`<td class="admin-visibility__control">
+      <md-checkbox .checked=${checked} ?disabled=${busy} aria-label=${label}
+        @change=${(event: Event) => onChange((event.currentTarget as HTMLElement & { checked: boolean }).checked)}></md-checkbox></td>`;
+    const toggle = (label: string, selected: boolean, onChange: (selected: boolean) => void) => html`<td class="admin-visibility__control">
+      <md-switch .selected=${selected} ?disabled=${busy} aria-label=${label}
+        @change=${(event: Event) => onChange((event.currentTarget as HTMLElement & { selected: boolean }).selected)}></md-switch></td>`;
     return html`
       <section class="admin-summary surface stack admin-visibility">
         <h3 class="detail-section-title">${this.label("contentVisibility", "Content visibility")}</h3>
-        <div class="stack stack--tight">
-          <span class="md-label-large">${this.label("visibilityBulkGroups", "Default groups for all categories")}</span>
-          <div class="chip-set" role="group" aria-label=${this.label("visibilityBulkGroups", "Default groups for all categories")}>
-            ${USER_GROUPS.map((group) => html`<label class="chip">
-              <md-checkbox .checked=${this.visibilityBulkGroups.includes(group)} ?disabled=${Boolean(this.busy)}
-                aria-label=${`${this.label("visibilityBulkGroups", "Default groups for all categories")} / ${this.label(`roles.${group}`, group)}`}
-                @change=${(event: Event) => { this.visibilityBulkGroups = USER_GROUPS.filter((value) => value === group ? (event.currentTarget as HTMLElement & {checked: boolean}).checked : this.visibilityBulkGroups.includes(value)); }}></md-checkbox>
-              ${this.label(`roles.${group}`, group)}
-            </label>`)}
-          </div>
-          <button class="button button--outlined" ?disabled=${Boolean(this.busy)}
-            @click=${() => this.applyVisibilityGroups()}>${this.label("visibilityApplyAll", "Apply groups to all categories")}</button>
+        <div class="table-scroll" role="region" tabindex="0" aria-label=${this.label("contentVisibility", "Content visibility")} data-scroll-region>
+          <table class="data-table admin-visibility__matrix">
+            <thead>
+              <tr>
+                <th class="is-sticky" rowspan="2" scope="col">${this.label("visibilityCategory", "Category")}</th>
+                <th class="admin-visibility__span" colspan=${USER_GROUPS.length} scope="colgroup">${this.label("visibilityGroups", "Default visible groups for unreleased content")}</th>
+                <th class="admin-visibility__control" rowspan="2" scope="col" title=${this.label("visibilityMode", "Display for selected groups")}>${modeLabel}</th>
+                <th class="admin-visibility__control" rowspan="2" scope="col"
+                  title=${`${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}: ${this.label("visibilityRestrictedUnpublished", "Show catalog entry; detail not yet public")}`}>${entryLabel}</th>
+                <th class="admin-visibility__control" rowspan="2" scope="col" title=${overrideLabel}>${this.label("visibilityOverride", "Parameter override")}</th>
+                <th rowspan="2" scope="col">${exceptionsLabel}</th>
+              </tr>
+              <tr>${USER_GROUPS.map((group) => html`<th class="admin-visibility__control admin-visibility__group" scope="col">${role(group)}</th>`)}</tr>
+            </thead>
+            <tbody>
+              <tr class="admin-visibility__bulk">
+                <th class="is-sticky" scope="row">
+                  <button class="button button--tonal" type="button" ?disabled=${busy}
+                    title=${this.label("visibilityApplyAll", "Apply groups to all categories")}
+                    aria-label=${this.label("visibilityApplyAll", "Apply groups to all categories")}
+                    @click=${() => this.applyVisibilityGroups()}>${this.label("visibilityApplyShort", "Apply to all")}</button>
+                </th>
+                ${USER_GROUPS.map((group) => checkbox(`${bulkLabel} / ${role(group)}`, this.visibilityBulkGroups.includes(group),
+                  (checked) => { this.visibilityBulkGroups = toggled(this.visibilityBulkGroups, group, checked); }))}
+                <td colspan="4"></td>
+              </tr>
+              ${VISIBILITY_TYPES.map((kind) => {
+                const rule = this.visibilityRule(kind);
+                const title = this.label(`visibilityTypes.${kind}`, kind);
+                const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, types: { [kind]: rule } });
+                return html`<tr class=${this.visibilityEditing === kind ? "is-selected" : ""}>
+                  <th class="is-sticky" scope="row">${title}</th>
+                  ${USER_GROUPS.map((group) => checkbox(`${title} / ${role(group)}`, rule.groups.includes(group),
+                    (checked) => this.changeVisibilityRule(kind, { groups: toggled(this.visibilityRule(kind).groups, group, checked) })))}
+                  ${toggle(`${title} / ${modeLabel}`, rule.mode === "visible",
+                    (selected) => this.changeVisibilityRule(kind, { mode: selected ? "visible" : "spoiler" }))}
+                  ${toggle(`${title} / ${entryLabel}`, rule.restrictedDisplay === "unpublished",
+                    (selected) => this.changeVisibilityRule(kind, { restrictedDisplay: selected ? "unpublished" : "hidden" }))}
+                  ${toggle(`${title} / ${overrideLabel}`, rule.allowOverride,
+                    (selected) => this.changeVisibilityRule(kind, { allowOverride: selected }))}
+                  <td>
+                    <button class=${`button button--text admin-visibility__exceptions${invalid ? " is-invalid" : ""}`} type="button" aria-haspopup="dialog"
+                      aria-label=${`${title} / ${exceptionsLabel}: ${showLabel} ${rule.show.length}, ${hideLabel} ${rule.hide.length}`}
+                      @click=${() => { this.visibilityEditing = kind; }}>
+                      ${icon("visibility", 18)}<span>${rule.show.length}</span>${icon("visibility_off", 18)}<span>${rule.hide.length}</span>
+                    </button>
+                  </td>
+                </tr>`;
+              })}
+            </tbody>
+          </table>
         </div>
-        <div class="stack">
-          ${VISIBILITY_TYPES.map((kind) => {
-            const rule = { ...DEFAULT_VISIBILITY_RULE, ...policy.types[kind] };
-            const title = this.label(`visibilityTypes.${kind}`, kind);
-            return accordion({ id: `visibility-${kind}`, label: title,
-              metadata: html`<span class="md-label-medium">${this.label(modes[rule.mode], rule.mode)}</span>`,
-              expanded: this.visibilityExpanded === kind,
-              onExpandedChange: (expanded) => { this.visibilityExpanded = expanded ? kind : ""; },
-              content: html`<div class="stack">
-                <label class="control-row">
-                  <span class="control-row__label">${this.label("visibilityAllowOverride", "Allow spoiler parameter override")}</span>
-                  <md-switch .selected=${rule.allowOverride} ?disabled=${Boolean(this.busy)}
-                    aria-label=${`${title} / ${this.label("visibilityAllowOverride", "Allow spoiler parameter override")}`}
-                    @change=${(event: Event) => this.changeVisibilityRule(kind, {allowOverride:(event.currentTarget as HTMLElement & {selected:boolean}).selected})}></md-switch>
-                </label>
-                <md-outlined-select label=${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}
-                  aria-label=${`${title} / ${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}`}
-                  .value=${rule.restrictedDisplay} ?disabled=${Boolean(this.busy)}
-                  @change=${(event: Event) => this.changeVisibilityRule(kind, {restrictedDisplay:(event.currentTarget as HTMLElement & {value:VisibilityRule["restrictedDisplay"]}).value})}>
-                  ${RESTRICTED_CONTENT_DISPLAYS.map((value) => html`<md-select-option value=${value}><div slot="headline">${this.label(value === "hidden" ? "visibilityRestrictedHidden" : "visibilityRestrictedUnpublished", value)}</div></md-select-option>`)}
-                </md-outlined-select>
-                <md-outlined-select label=${this.label("visibilityMode", "Display rule")}
-                  aria-label=${`${title} / ${this.label("visibilityMode", "Display rule")}`}
-                  .value=${rule.mode} ?disabled=${Boolean(this.busy)}
-                  @change=${(event: Event) => this.changeVisibilityRule(kind, {mode:(event.currentTarget as HTMLElement & {value:VisibilityRule["mode"]}).value})}>
-                  ${VISIBILITY_MODES.map((mode) => html`<md-select-option value=${mode}><div slot="headline">${this.label(modes[mode], mode)}</div></md-select-option>`)}
-                </md-outlined-select>
-                <div class="stack stack--tight">
-                  <span class="md-label-large">${this.label("visibilityGroups", "Visible user groups")}</span>
-                  <div class="chip-set" role="group" aria-label=${`${title} / ${this.label("visibilityGroups", "Visible user groups")}`}>
-                    ${USER_GROUPS.map((group) => html`<label class="chip">
-                      <md-checkbox .checked=${rule.groups.includes(group)} ?disabled=${Boolean(this.busy)}
-                        aria-label=${`${title} / ${this.label(`roles.${group}`, group)}`}
-                        @change=${(event:Event)=>this.changeVisibilityRule(kind,{groups:USER_GROUPS.filter((value)=>value === group ? (event.currentTarget as HTMLElement&{checked:boolean}).checked : rule.groups.includes(value))})}></md-checkbox>
-                      ${this.label(`roles.${group}`, group)}
-                    </label>`)}
-                  </div>
-                </div>
-                  <md-outlined-text-field type="textarea" rows="2" label=${this.label("visibilityShowIds", "Always visible IDs")}
-                    .value=${this.visibilityIdDrafts[`${kind}:show`] ?? rule.show.join("\n")} ?disabled=${Boolean(this.busy)}
-                    ?error=${this.visibilityInvalid && !parseVisibilityPolicy({eventChallengeSongs:true,types:{[kind]:rule}})}
-                    aria-label=${`${title} / ${this.label("visibilityShowIds", "Always visible IDs")}`}
-                    @input=${(event: Event) => { const value=(event.currentTarget as HTMLElement & {value:string}).value; this.visibilityIdDrafts={...this.visibilityIdDrafts,[`${kind}:show`]:value}; this.changeVisibilityRule(kind, {show:ids(value)}); }}></md-outlined-text-field>
-                  <md-outlined-text-field type="textarea" rows="2" label=${this.label("visibilityHideIds", "Always hidden IDs")}
-                    .value=${this.visibilityIdDrafts[`${kind}:hide`] ?? rule.hide.join("\n")} ?disabled=${Boolean(this.busy)}
-                    ?error=${this.visibilityInvalid && !parseVisibilityPolicy({eventChallengeSongs:true,types:{[kind]:rule}})}
-                    aria-label=${`${title} / ${this.label("visibilityHideIds", "Always hidden IDs")}`}
-                    @input=${(event: Event) => { const value=(event.currentTarget as HTMLElement & {value:string}).value; this.visibilityIdDrafts={...this.visibilityIdDrafts,[`${kind}:hide`]:value}; this.changeVisibilityRule(kind, {hide:ids(value)}); }}></md-outlined-text-field>
-              </div>` });
-          })}
-        </div>
-        <button class="button button--filled button--full" ?disabled=${!this.visibilityDraft || Boolean(this.busy)}
+        <button class="button button--filled button--full" ?disabled=${!this.visibilityDraft || busy}
           @click=${() => this.saveVisibility()}>${this.label("saveVisibility", "Save content visibility")}</button>
+        ${this.renderVisibilityExceptions()}
       </section>
     `;
+  }
+  private closeVisibilityExceptions = () => {
+    this.visibilityEditing = "";
+  };
+  private renderVisibilityExceptions() {
+    const kind = this.visibilityEditing;
+    if (!kind) return nothing;
+    const rule = this.visibilityRule(kind);
+    const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, types: { [kind]: rule } });
+    const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
+    const field = (list: "show" | "hide", label: string) => html`<md-outlined-text-field type="textarea" rows="5" label=${label}
+      .value=${this.visibilityIdDrafts[`${kind}:${list}`] ?? rule[list].join("\n")} ?disabled=${Boolean(this.busy)} ?error=${invalid}
+      @input=${(event: Event) => {
+        const value = (event.currentTarget as HTMLElement & { value: string }).value;
+        this.visibilityIdDrafts = { ...this.visibilityIdDrafts, [`${kind}:${list}`]: value };
+        this.changeVisibilityRule(kind, list === "show" ? { show: ids(value) } : { hide: ids(value) });
+      }}></md-outlined-text-field>`;
+    return html`<dialog class="dialog admin-visibility__dialog" aria-labelledby="admin-visibility-exceptions-title" ${modal(this.closeVisibilityExceptions)}>
+      <header class="dialog__header">
+        <span class="md-label-large">${this.label("visibilityExceptions", "ID exceptions")}</span>
+        <h2 id="admin-visibility-exceptions-title">${this.label(`visibilityTypes.${kind}`, kind)}</h2>
+      </header>
+      <div class="dialog__body stack">
+        ${field("show", this.label("visibilityShowIds", "Show unreleased IDs by default"))}
+        ${field("hide", this.label("visibilityHideIds", "Hide unreleased IDs by default"))}
+      </div>
+      <footer class="dialog__actions">
+        <button class="button button--text" type="button" @click=${this.closeVisibilityExceptions}>${this.label("history.close", "Close")}</button>
+      </footer>
+    </dialog>`;
   }
   private addRestriction(user: Value, kind: "sign_in" | "upload" | "write", event: Event) {
     const container = (event.currentTarget as HTMLElement).closest(".admin-action-panel");
@@ -2707,8 +2750,8 @@ export class AdminWorkspace extends LitElement {
             ["resourceRuns", "/admin/operations"],
           ])}
         </div>
-        ${this.renderAnalytics()}${this.renderStatistics()}
         ${this.renderVisibilitySettings()}
+        ${this.renderAnalytics()}${this.renderStatistics()}
         ${
           access
             ? html`
