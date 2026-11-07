@@ -1,5 +1,6 @@
+import { gekisoHelpButton } from "./gekiso-help";
 import { rangeRankControl } from "./gekiso-rank";
-import { farmingMode } from "./workspace-state";
+import { farmingMode, justBaseWindow } from "./workspace-state";
 import { enableManualEvent, renderManualEvent } from "./manual-event";
 import { toolLayout } from "./tool-layout";
 import { songMissions } from "../../lib/catalog-filters";
@@ -38,100 +39,181 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
   const mode = context === "rewards" ? draft.ptSamplingMode : draft.gekisoSamplingMode;
   const samples = context === "rewards" ? draft.ptLuckSamples : draft.gekisoSeeds;
+  const expected = context === "score" && mode === "auto";
   return html`
     <div class="stack">
-      <span class="tb-field__label">${host.t("pt.luckSampling", "LUCK calculation")}</span>
+      <div class="row row--between">
+        <span class="tb-field__label">${host.t("pt.luckSampling", "LUCK calculation")}</span>
+        ${gekisoHelpButton(host, "luck")}
+      </div>
       ${segmented({
-        label: host.t("pt.luckSampling", "LUCK calculation"),
-        value: mode,
-        options: [
-          { value: "auto", label: host.t("rewardPlan.auto", "Automatic") },
-          { value: "manual", label: host.t("arena.custom", "Custom") },
-        ],
-        onSelect: (value) => host.updateSettings(context === "rewards"
-          ? { ptSamplingMode: value as LuckSamplingMode }
-          : { gekisoSamplingMode: value as LuckSamplingMode }),
-      })}
-      ${mode === "manual" ? html`
-        <md-outlined-text-field
-          id="tb-luck-samples"
-          data-tb-field
-          type="number"
-          min=${context === "rewards" ? "1" : "0"}
-          max=${String(MAX_GEKISO_COUNT)}
-          step="1"
-          inputmode="numeric"
-          label=${host.t("pt.luckSamples", "Luck samples")}
-          .value=${live(String(samples))}
-          ?error=${host.submitted && !validGekisoCount(samples, context === "rewards" ? 1 : 0)}
-          @change=${(e: Event) => host.updateSettings(context === "rewards"
-            ? { ptLuckSamples: Number((e.target as HTMLInputElement).value) }
-            : { gekisoSeeds: Number((e.target as HTMLInputElement).value) })}
-        ></md-outlined-text-field>
-      ` : nothing}
+      label: host.t("pt.luckSampling", "LUCK calculation"),
+      value: context === "score" ? (expected ? "auto" : "manual") : mode,
+      options: [
+        {
+          value: "auto",
+          label:
+            context === "score"
+              ? host.t("luckExpectation", "Probability expectation")
+              : host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }),
+        },
+        { value: "manual", label: host.t("luckSimulation", "Random simulations") },
+      ],
+      onSelect: (value) =>
+        host.updateSettings(
+          context === "rewards"
+            ? { ptSamplingMode: value as LuckSamplingMode }
+            : {
+                gekisoSamplingMode: value as LuckSamplingMode,
+                ...(value === "manual" && samples <= 0 ? { gekisoSeeds: 32 } : {}),
+              },
+        ),
+    })}
+      ${
+      mode === "manual" && !expected
+        ? html`
+            <md-outlined-text-field
+              id="tb-luck-samples"
+              data-tb-field
+              type="number"
+              min="1"
+              max=${String(MAX_GEKISO_COUNT)}
+              step="1"
+              inputmode="numeric"
+              label=${host.t("luckSimulationCount", "Simulation runs")}
+              .value=${live(String(samples))}
+              ?error=${host.submitted && !validGekisoCount(samples, 1)}
+              @change=${(event: Event) =>
+          host.updateSettings(
+            context === "rewards"
+              ? { ptLuckSamples: Number((event.target as HTMLInputElement).value) }
+              : { gekisoSeeds: Number((event.target as HTMLInputElement).value) },
+          )}
+            ></md-outlined-text-field>
+          `
+        : nothing
+    }
     </div>
   `;
 }
 
+export function missionMembersControl(host: TeamBuilder): TemplateResult {
+  const s = host.searchSettings;
+  const total = s.minMissionMembers.reduce((sum, count) => sum + count, 0);
+  const set = (index: number, value: number) => {
+    const counts = [...s.minMissionMembers] as BuildSettings["minMissionMembers"];
+    counts[index] = value;
+    host.updateSettings({ minMissionMembers: counts });
+  };
+  return html`<div class="stack" id="tb-mission-members" data-tb-field tabindex="-1">
+    <div class="row row--between">
+      <span class="tb-field__label">${host.t("missionMembers", "GEKISO skill members")}</span>
+      <span class="tb-results__meta tabular" role="status" aria-label=${host.t("missionMemberTotal", "Minimums set: {count} / 5", { count: total })}>${total} / 5</span>
+      ${gekisoHelpButton(host, "members")}
+    </div>
+    ${([[0, "COMBO"], [2, "JUST"], [1, "LUCK"]] as const).map(([index, role]) => {
+      const label = host.t("missionMemberMinimum", "{role} members (minimum)", { role });
+      return html`<div class="stack stack--tight">
+        <div class="row row--between">
+          <span class="tb-field__label">${label}</span>
+          <button class="button button--text" type="button" data-tb-role-reset ?disabled=${s.minMissionMembers[index] === 0}
+            aria-label=${`${label} / ${host.t("unlimitedCombo", "No minimum")}`} @click=${() => set(index, 0)}>${host.t("unlimitedCombo", "No minimum")}</button>
+        </div>
+        ${segmented({
+          label,
+          value: s.minMissionMembers[index] ? String(s.minMissionMembers[index]) : "",
+          options: [1, 2, 3, 4, 5].map(value => ({ value: String(value), label: String(value),
+            disabled: value > 5 - total + s.minMissionMembers[index] })),
+          onSelect: value => set(index, Number(value)),
+        })}
+      </div>`;
+    })}
+  </div>`;
+}
+
 export function gekisoSamplingAdvanced(host: TeamBuilder): TemplateResult | typeof nothing {
   const s = host.searchSettings;
-  if (s.gekisoSamplingMode !== "manual" && !host.hasMission("Luck", s.songs)) return nothing;
-  const key = `sampling-${host.tab}-${host.buildMode}`;
-  return accordion({
-    id: `tb-${key}`,
-    label: host.t("farm.advanced", "Advanced conditions"),
-    expanded: host.expanded.has(key),
-    onExpandedChange: (expanded) => {
-      if (expanded) host.expanded.add(key);
-      else host.expanded.delete(key);
-      host.requestUpdate();
-    },
-    content: gekisoSamplesControl(host),
-  });
+  return s.gekisoSamplingMode === "manual" || host.hasMission("Luck", s.songs) ? gekisoSamplesControl(host) : nothing;
 }
 
 export function comboBonusControl(host: TeamBuilder): TemplateResult | typeof nothing {
   if (!host.hasComboSongs()) return nothing;
   const s = host.searchSettings;
   return html`
-    <md-outlined-text-field
-      id="tb-combo"
-      data-tb-field
-      type="number"
-      min="1"
-      max=${String(MAX_GEKISO_COUNT)}
-      step="1"
-      inputmode="numeric"
-      label=${host.t("minComboBonus", "Minimum base COMBO BONUS")}
-      prefix-text="×"
-      .value=${live(s.minComboBonus === 1 ? "" : String(s.minComboBonus))}
-      placeholder=${host.t("unlimitedCombo", "No minimum")}
-      ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-combo")}
-      @change=${(event: Event) => host.updateSettings({ minComboBonus: (event.target as HTMLInputElement).value === "" ? 1 : Number((event.target as HTMLInputElement).value) })}
-    ></md-outlined-text-field>
+    <div class="row">
+      <md-outlined-text-field
+        class="row__spacer"
+        id="tb-combo"
+        data-tb-field
+        type="number"
+        min="1"
+        max=${String(MAX_GEKISO_COUNT)}
+        step="1"
+        inputmode="numeric"
+        label=${host.t("openingComboMinimum", "Opening COMBO BONUS minimum")}
+        prefix-text="×"
+        .value=${live(s.minComboBonus === 1 ? "" : String(s.minComboBonus))}
+        placeholder=${host.t("unlimitedCombo", "No minimum")}
+        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-combo")}
+        @change=${(event: Event) => host.updateSettings({ minComboBonus: (event.target as HTMLInputElement).value === "" ? 1 : Number((event.target as HTMLInputElement).value) })}
+      ></md-outlined-text-field>
+      ${gekisoHelpButton(host, "combo")}
+    </div>
   `;
 }
 
 export function justWindowControl(host: TeamBuilder): TemplateResult | typeof nothing {
   const s = host.searchSettings;
   if (!host.hasMission("JustCount", s.songs)) return nothing;
+  const percent = s.justWindowUnit === "percent";
+  const value = percent ? s.justWindowPercent : s.justWindowMs;
   return html`
-    <md-outlined-text-field
-      id="tb-just-window"
-      data-tb-field
-      type="number"
-      min="0"
-      max=${String(MAX_GEKISO_COUNT)}
-      step="1"
-      inputmode="numeric"
-      label=${host.t("justWindow", "Ideal JUST tap window")}
-      prefix-text="±"
-      suffix-text="ms"
-      .value=${live(s.justWindowMs === 0 ? "" : String(s.justWindowMs))}
-      placeholder=${host.t("unlimitedCombo", "No minimum")}
-      ?error=${host.submitted && !validGekisoCount(s.justWindowMs, 0)}
-      @change=${(event: Event) => host.updateSettings({ justWindowMs: Number((event.target as HTMLInputElement).value) })}
-    ></md-outlined-text-field>
+    <div class="stack">
+      <div class="row row--between">
+        <span class="tb-field__label">${host.t("justWindowTarget", "JUST window minimum")}</span>
+        ${gekisoHelpButton(host, "just")}
+      </div>
+      ${segmented({
+      label: host.t("justWindowUnit", "JUST window unit"),
+      value: s.justWindowUnit,
+      options: [
+        { value: "percent", label: "+%" },
+        { value: "ms", label: "±ms" },
+      ],
+      onSelect: (unit) => {
+        const base = justBaseWindow(host.data ?? null);
+        host.updateSettings({
+          justWindowUnit: unit as BuildSettings["justWindowUnit"],
+          ...(unit === "ms"
+            ? { justWindowMs: s.justWindowMs }
+            : base && s.justWindowMs > 0
+              ? { justWindowPercent: Math.max(0, (s.justWindowMs / base - 1) * 100) }
+              : { justWindowPercent: 0 }),
+        });
+      },
+    })}
+      <md-outlined-text-field
+        id="tb-just-window"
+        data-tb-field
+        type="number"
+        min="0"
+        max=${String(MAX_GEKISO_COUNT)}
+        step=${percent ? "100" : "0.1"}
+        inputmode="numeric"
+        label=${percent ? host.t("justWindowPercent", "JUST window increase (minimum)") : host.t("justWindow", "Ideal JUST tap window")}
+        prefix-text=${percent ? "+" : "±"}
+        suffix-text=${percent ? "%" : "ms"}
+        .value=${live(value === 0 ? "" : String(value))}
+        placeholder=${host.t("unlimitedCombo", "No minimum")}
+        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-just-window")}
+        @change=${(event: Event) =>
+        host.updateSettings(
+          percent
+            ? { justWindowPercent: Number((event.target as HTMLInputElement).value) }
+            : { justWindowMs: Number((event.target as HTMLInputElement).value) },
+        )}
+      ></md-outlined-text-field>
+    </div>
   `;
 }
 
@@ -144,6 +226,7 @@ export function placementControl(host: TeamBuilder): TemplateResult {
   };
   return html`
     <div id="tb-placement" class="stack" tabindex="-1">
+      <div class="row row--between"><span class="tb-field__label">${host.t("gekisoPlacements", "Scoring placements")}</span>${gekisoHelpButton(host, "placements")}</div>
       ${segmented({
     label: host.t("placementMode", "Placement basis"),
     value: s.gekisoPlacementMode,
@@ -899,7 +982,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 ${
                   s.goal === "gekiso"
                     ? html`
-                        ${comboBonusControl(host)} ${justWindowControl(host)} ${placementControl(host)}
+                        ${missionMembersControl(host)} ${comboBonusControl(host)} ${justWindowControl(host)} ${placementControl(host)}
                       `
                     : nothing
                 }

@@ -1,3 +1,4 @@
+import { validJustWindowInput } from "./workspace-state";
 import { rangeRankControl } from "./gekiso-rank";
 /** Saved teams, a manual formation and its evaluation across songs, with swap suggestions. */
 import { html, nothing, type TemplateResult } from "lit";
@@ -46,9 +47,9 @@ function teamSpec(host: TeamBuilder, team = host.manual) {
 function manualSamplingReady(host: TeamBuilder): boolean {
   const goal = host.manualGoal();
   if (goal.kind !== "gekiso") return true;
-  const invalidSamples = !validGekisoCount(goal.seeds, 0);
+  const invalidSamples = !validGekisoCount(goal.seeds, host.searchSettings.gekisoSamplingMode === "manual" ? 1 : 0);
   const window = host.hasMission("JustCount", goal.songs) ? host.searchSettings.justWindowMs : 0;
-  if (!invalidSamples && validGekisoCount(window, 0)) return true;
+  if (!invalidSamples && validJustWindowInput(host.searchSettings) && Number.isFinite(window)) return true;
   host.submitted = true;
   host.error = host.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min: 0, max: MAX_GEKISO_COUNT });
   host.requestUpdate();

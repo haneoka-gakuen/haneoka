@@ -79,7 +79,7 @@ export function rovingKeydown<T>(values: ReadonlyArray<T>, current: T, onSelect:
   return (event: KeyboardEvent) => {
     const step: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
     const index = Math.max(0, values.indexOf(current));
-    const next =
+    let next =
       event.key in step
         ? (index + step[event.key] + values.length) % values.length
         : event.key === "Home"
@@ -87,9 +87,17 @@ export function rovingKeydown<T>(values: ReadonlyArray<T>, current: T, onSelect:
           : event.key === "End"
             ? values.length - 1
             : -1;
-    if (next < 0 || next === index) return;
+    if (next < 0 || !values.length) return;
     event.preventDefault();
     const container = event.currentTarget as HTMLElement;
+    const controls = container.querySelectorAll<HTMLElement>('[role="tab"], [role="radio"], [role="checkbox"]');
+    const direction = step[event.key] ?? (event.key === "End" ? -1 : 1);
+    let skipped = 0;
+    while (controls[next]?.matches(":disabled, [aria-disabled=true]") && skipped < values.length) {
+      next = (next + direction + values.length) % values.length;
+      skipped++;
+    }
+    if (skipped === values.length || next === index && values[index] === current) return;
     onSelect(values[next]);
     // The container re-renders on selection; move focus once it has.
     requestAnimationFrame(() =>

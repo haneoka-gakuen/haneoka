@@ -19,6 +19,7 @@ import { toolLayout } from "./tool-layout";
 import { sectionHeading } from "./catalog";
 import {
   comboBonusControl,
+  missionMembersControl,
   justWindowControl,
   gekisoSamplingAdvanced,
   playConditions,
@@ -320,7 +321,7 @@ export function renderArenaTab(host: TeamBuilder) {
                 </div>
               `
         }
-        ${comboBonusControl(host)}${justWindowControl(host)}${gekisoSamplingAdvanced(host)}
+        ${missionMembersControl(host)}${comboBonusControl(host)}${justWindowControl(host)}${gekisoSamplingAdvanced(host)}
       </section>
       ${renderCandidates(host)}
       <section class="surface stack">

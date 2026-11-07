@@ -64,6 +64,8 @@ export interface ConstraintInput {
   noSnaps: boolean;
   /** Event bonus floor in percent. */
   minBonusPercent: number | null;
+  /** Minimum COMBO, LUCK and JUST members; the three counts sum to at most five. */
+  minMissionMembers?: [number, number, number];
 }
 export type RewardMetric = "points" | "challenge-points" | "items";
 export interface RewardTerm { metric: RewardMetric; weight: number }
@@ -463,6 +465,7 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   if (request.goal.kind === "event" && request.goal.rewardPlan) throw new Error("reward-plan-native-required");
   if (request.goal.kind === "event" && request.goal.route === "skip" && request.goal.measure === "challenge-points") throw new Error("skip-cp-native-required");
   if (request.goal.kind === "event" && request.goal.rewardRoom && (request.goal.rewardRoom.mode === "solo" || request.goal.rewardRoom.players !== 5 || request.goal.rewardRoom.otherAverageScore !== undefined)) throw new Error("reward-room-native-required");
+  if (request.constraints.minMissionMembers?.some(Boolean)) throw new Error("gekiso-members-native-required");
   if ((request.goal.kind === "gekiso" && request.goal.minJustWindowMs) ||
     (request.goal.kind === "event" && request.goal.gekiso?.minJustWindowMs)) throw new Error("just-window-native-required");
   const started = performance.now();

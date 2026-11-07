@@ -23,8 +23,15 @@ export function conditionSummary(host: TeamBuilder) {
           ? 0
           : songs.length;
   const gekiso = host.tab === "song-comparison" || s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso");
+  const requirements = host.tab !== "song-comparison" && !manual ? [
+    ...(s.goal === "gekiso" ? ([[0, "COMBO"], [2, "JUST"], [1, "LUCK"]] as const)
+      .filter(([index]) => s.minMissionMembers[index] > 0)
+      .map(([index, role]) => `${host.t("missionMemberMinimum", "{role} members (minimum)", { role })} ${s.minMissionMembers[index]}`) : []),
+    ...(gekiso && host.hasComboSongs() && s.minComboBonus > 1 ? [`COMBO BONUS ≥ ×${s.minComboBonus}`] : []),
+    ...(gekiso && s.justWindowMs > 0 ? [`${host.t("justWindowTarget", "JUST window minimum")} ${s.justWindowUnit === "percent" ? `+${s.justWindowPercent}%` : `±${s.justWindowMs} ms`}`] : []),
+  ] : [];
   if (host.tab === "arena")
-    return `${host.catalog!.bandName(host.arena.bandId)} ${host.t("chartCount", "{count} charts", { count })}`;
+    return [`${host.catalog!.bandName(host.arena.bandId)} ${host.t("chartCount", "{count} charts", { count })}`, ...requirements].join(" / ");
   return [
     host.tab === "song-comparison" || manual
       ? host.t("manualTeam", "Build a team by hand")
@@ -43,14 +50,15 @@ export function conditionSummary(host: TeamBuilder) {
                 ? host.t("placementOpponents", "Opponent scores")
                 : `${host.t("placementRank", "Specified placement")} ${s.gekisoRanks.join(" / ")}`
               : `${host.t("placementRank", "Specified placement")} 1`,
-          ...(host.tab !== "song-comparison" && !manual && host.hasComboSongs() ? [`CB ≥ ×${s.minComboBonus}`] : []),
+          ...requirements,
         ]
       : []),
   ].join(" / ");
 }
 /** What is left before a first calculation: cards, then each missing condition, each with the control that fixes it. */
 export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
-  const cards = host.view ? host.view.members.size : 0;
+  const pool = host.view ? host.engineCards() : { members: [], snaps: [] };
+  const cards = pool.members.length + pool.snaps.length;
   const cardIssue = issues.find((issue) => issue.field === "tb-cards");
   const emptyBox = !!cardIssue && host.searchSettings.scope === "box" && !cards;
   const rest = issues.filter((issue) => issue.field !== "tb-cards");
@@ -76,7 +84,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
         ${row(
           !cardIssue,
           1,
-          host.t("tabBox", "My cards"),
+          host.searchSettings.scope === "box" ? host.t("tabBox", "My cards") : host.t("scopeAll", "All cards, full growth"),
           cardIssue ? (emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : cardIssue.message) : host.t("stepCardsDone", "{count} cards", { count: cards }),
           emptyBox
             ? { label: host.t("importMyCards", "Import my cards"), run: () => host.imports.openBox(), primary: true }

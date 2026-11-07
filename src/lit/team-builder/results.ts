@@ -3,6 +3,7 @@
 // Output: 排名卡片、结果／已存队伍共用编队、评分详情、所选技能顺序与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
+import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
 import { resultMetric } from "./result-metric";
@@ -103,7 +104,8 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
     ...(input?.goal.kind === "gekiso"
       ? [
           `GREAT ${format(host, input.goal.accuracy.great * 100, 2)}% / JUST ${format(host, input.goal.accuracy.just * 100, 2)}% / ${host.t("missEvery", "Miss every N notes")}: ${input.goal.accuracy.missEvery ?? 0}`,
-          `${host.t("pt.luckSamples", "Luck samples")}: ${input.goal.seeds}`,
+          input.goal.seeds === 0 ? `${host.t("pt.luckSampling", "LUCK calculation")}: ${host.t("luckExpectation", "Probability expectation")}`
+            : `${host.t("luckSimulationCount", "Simulation runs")}: ${input.goal.seeds}`,
           `${host.t("gekisoPlacements", "Scoring placements")}: ${input.goal.opponents ? (host.results?.results.find((result) => result.hits.includes(hit))?.placements?.join(" / ") ?? "—") : input.goal.ranks?.join(" / ") ?? input.goal.rank}`,
         ]
       : input?.goal.kind === "event" && input.goal.gekiso && s.route !== "challenge"
@@ -304,6 +306,13 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
         ),
       );
     }
+  }
+  const request = resultRequest(host, hit);
+  if (s.goal === "gekiso" && request && host.master) {
+    const ids = new Map(request.members.map(member => [member.key, member.cardId]));
+    const counts = missionMemberCounts(host.master, hit.members.map(key => ids.get(key)!).filter(id => id !== undefined));
+    for (const [index, role] of [[0, "COMBO"], [2, "JUST"], [1, "LUCK"]] as const)
+      out.push(chip(host.t("missionMemberCount", "{role} members", { role }), String(counts[index])));
   }
   if (hit.comboBonus != null)
     out.push(chip(host.t("comboBonus", "Base COMBO BONUS"), `×${format(host, hit.comboBonus)}`));

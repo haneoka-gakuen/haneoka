@@ -80,6 +80,10 @@ export interface BuildSettings {
   gekisoRanks: [number, number, number];
   gekisoPlacementMode: "rank" | "opponents";
   minComboBonus: number;
+  /** Minimum COMBO, LUCK and JUST member counts; ALL counts in each. */
+  minMissionMembers: [number, number, number];
+  justWindowUnit: "percent" | "ms";
+  justWindowPercent: number;
   justWindowMs: number;
   gekisoSamplingMode: LuckSamplingMode;
   /** Manual draft: zero retains nominal expectations; positive counts average seeds 0 through n-1. */
@@ -162,6 +166,9 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   gekisoRanks: [1, 1, 1],
   gekisoPlacementMode: "rank",
   minComboBonus: 1,
+  minMissionMembers: [0, 0, 0],
+  justWindowUnit: "percent",
+  justWindowPercent: 0,
   justWindowMs: 0,
   gekisoSamplingMode: "auto",
   gekisoSeeds: 0,

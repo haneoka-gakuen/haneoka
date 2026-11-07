@@ -5,7 +5,7 @@
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
 import { compileRewardPlan, effectiveRewardPlan, legacyRewardPlan } from "../lib/team-builder/reward-plan";
 import { resolveManualEvent } from "../lib/team-builder/manual-event";
-import { MAX_GEKISO_COUNT, minimumComboBonusUnreachable, minimumEventBonusUnreachable, validGekisoCount } from "../lib/team-builder/constraint-feasibility";
+import { MAX_GEKISO_COUNT, minimumComboBonusUnreachable, minimumEventBonusUnreachable, minimumMissionMembersUnreachable, validGekisoCount } from "../lib/team-builder/constraint-feasibility";
 import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
@@ -55,7 +55,8 @@ import {
   type FarmingSettings,
   type Tab,
 } from "./team-builder/types";
-import { farmingConditions, farmingSettings, parseOpponents, resolveLuckSamples, restoreBuildSettings } from "./team-builder/workspace-state";
+import { farmingConditions, farmingSettings, parseOpponents, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
+import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
 import { snackbar } from "../lib/snackbar";
 import { renderBoxTab, renderCardEditor, renderUndoAction } from "./team-builder/box-tab";
@@ -1062,7 +1063,7 @@ export class TeamBuilder extends LitElement {
       minComboBonus: this.hasComboSongs(songs) ? settings.minComboBonus : 1,
       just: this.hasMission("JustCount", songs) ? settings.just : 100,
       ptJust: this.hasMission("JustCount", songs) ? settings.ptJust : 100,
-      justWindowMs: this.hasMission("JustCount", songs) ? settings.justWindowMs : 0,
+      justWindowMs: this.hasMission("JustCount", songs) ? resolveJustWindow(settings, this.data ?? null) : 0,
       songs,
       planChallengeSongs: settings.planChallengeSongs.filter((song) => exists(song) && challengeIds.has(song.songId)),
     };
@@ -1072,6 +1073,8 @@ export class TeamBuilder extends LitElement {
     if (reason.startsWith("native input word search budget exceeded") || reason === "native timing search budget exceeded") return this.t("timingIncomplete", "Timing calculation did not finish");
     if (reason.startsWith("unreachable native judgement") || reason === "unreachable native input sequence") return this.t("timingUnreachable", "The judgement pattern cannot be reached");
     if (reason.startsWith("missing native")) return this.t("timingDataMissing", "Timing data is missing");
+    if (reason === "gekiso-members-total") return this.t("missionMemberTotalTooHigh", "Member minimums must add up to 5 or less");
+    if (reason === "gekiso-members-input") return this.t("invalidMissionMembers", "Enter a member count from 0 to 5");
     if (reason === "just-window-input") return this.t("invalidCombo", "Enter a positive integer");
     if (reason === "combo-input" || reason === "luck-samples-input") return this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min: reason === "combo-input" ? 1 : 0, max: MAX_GEKISO_COUNT });
     if (reason === "just-window-timing") return this.t("justWindowTiming", "JUST tap timing data is missing");
@@ -1153,13 +1156,17 @@ export class TeamBuilder extends LitElement {
     if (s.goal === "event" && s.rewardPlan && !compileRewardPlan(effectiveRewardPlan(s.rewardPlan, s.route === "challenge"), { songs: s.planChallengeSongs, consumption: s.challengePoints }))
       add("tb-reward-plan", "rewardPlan.invalidRate", "Enter conversion rates and challenge charts");
     const gekiso = s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live");
-    if (gekiso && this.hasMission("JustCount", s.songs) && !validGekisoCount(s.justWindowMs, 0))
-      countIssue("tb-just-window", 0);
+    if (gekiso && this.hasMission("JustCount", s.songs) && (!validJustWindowInput(s) || !Number.isFinite(s.justWindowMs)))
+      add("tb-just-window", "justWindowInvalid", "Enter zero or a positive window value");
+    if (s.goal === "gekiso" && !s.minMissionMembers.every(value => Number.isInteger(value) && value >= 0 && value <= 5))
+      add("tb-mission-members", "invalidMissionMembers", "Enter a member count from 0 to 5");
+    else if (s.goal === "gekiso" && s.minMissionMembers.reduce((sum, count) => sum + count, 0) > 5)
+      add("tb-mission-members", "missionMemberTotalTooHigh", "Member minimums must add up to 5 or less");
     if (gekiso && !validGekisoCount(s.minComboBonus, 1))
       countIssue("tb-combo", 1);
     if (s.goal === "gekiso" && s.gekisoSamplingMode === "manual" &&
-      !validGekisoCount(resolveLuckSamples(s), 0))
-      countIssue("tb-luck-samples", 0);
+      !validGekisoCount(resolveLuckSamples(s), 1))
+      countIssue("tb-luck-samples", 1);
     if (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live" && s.ptSamplingMode === "manual" &&
       !validGekisoCount(resolveLuckSamples(s, "rewards"), 1))
       countIssue("tb-luck-samples", 1);
@@ -1200,9 +1207,11 @@ export class TeamBuilder extends LitElement {
     )
       add("tb-cards", "fixedBindingConflict", "Fixed Snapshots or bindings conflict");
     if (s.noSnaps && fixedSnaps.size) add("tb-cards", "fixedSnapConflict", "Remove fixed Snapshots or allow Snapshots");
-    if (this.master && (s.minBonus !== null && s.goal === "event" || gekiso && s.minComboBonus > 1)) {
+    if (this.master && (s.minBonus !== null && s.goal === "event" || gekiso && s.minComboBonus > 1 || s.goal === "gekiso" && s.minMissionMembers.some(Boolean))) {
       const request = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.request() : this.request();
       if (request) {
+        if (minimumMissionMembersUnreachable(this.master, request))
+          add("tb-mission-members", "missionMembersUnreachable", "The selected cards cannot meet these member counts");
         if (minimumEventBonusUnreachable(this.master, request))
           add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached");
         if (gekiso && validGekisoCount(s.minComboBonus, 1) && minimumComboBonusUnreachable(this.master, request))
@@ -1235,6 +1244,10 @@ export class TeamBuilder extends LitElement {
     for (let parent = target?.parentElement; parent && parent !== this; parent = parent.parentElement)
       if (parent instanceof HTMLDetailsElement) parent.open = true;
     target?.scrollIntoView({ block: "center" });
+    if (field === "tb-mission-members") {
+      target?.querySelector<HTMLElement>("[data-tb-role-reset]:not([disabled]), [role=radio]:not([disabled])")?.focus({ preventScroll: true });
+      return;
+    }
     const control = target?.matches("md-outlined-text-field, md-outlined-select, input, button")
       ? target
       : target?.querySelector<HTMLElement>(".tb-songs__add, input, md-outlined-text-field, md-outlined-select, button");
@@ -1412,6 +1425,8 @@ export class TeamBuilder extends LitElement {
         bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
         noSnaps: s.noSnaps,
         minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
+        ...(goal.kind === "gekiso" && (this.tab === "arena" || this.buildMode !== "manual") && s.minMissionMembers.some(Boolean)
+          ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] } : {}),
       },
       k: s.k,
       timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
@@ -1767,7 +1782,7 @@ export class TeamBuilder extends LitElement {
           ${panel}
         </section>
         ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
-        ${this.imports.render()} ${this.renderSnackbar()}
+        ${this.imports.render()} ${renderGekisoHelp(this)} ${this.renderSnackbar()}
       </div>
     `;
   }

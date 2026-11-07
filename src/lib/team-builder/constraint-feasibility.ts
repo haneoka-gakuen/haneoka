@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Engine Master and the actual event or Gekiso search request.
-// Output: Conservative event/COMBO feasibility bounds and native integer input checks.
+// Output: Conservative event/COMBO bounds, role-count feasibility and native integer input checks.
 // Pos: [Map](L2-2.md); pre-submit validation for search constraints.
 // Effects/Dependencies: Pure; uses the same resolved cards and event effects as the engine adapter.
 import type { ConstraintInput, EngineRequest, RewardMetric } from "./engine/api";
@@ -91,4 +91,69 @@ export function minimumEventBonusUnreachable(master: EngineMaster, request: Engi
         .sort((a, b) => b - a).slice(0, 5 - emptySlots - requiredSnaps.size).reduce((sum, bonus) => sum + bonus, 0);
   }
   return memberUpper + snapUpper < Math.floor(minimum * 100 + 0.5);
+}
+
+export function missionMemberCounts(master: EngineMaster, cardIds: readonly number[]): [number, number, number] {
+  const counts: [number, number, number] = [0, 0, 0];
+  for (const id of cardIds) {
+    const card = master.members.get(id);
+    const type = card && master.gekisoSkills.get(card.gekisoSkillId)?.missionType;
+    for (let role = 0; role < 3; role++) if (type === role + 1 || type === 4) counts[role]!++;
+  }
+  return counts;
+}
+
+export function minimumMissionMembersUnreachable(master: EngineMaster, request: EngineRequest): boolean {
+  const minimum = request.constraints.minMissionMembers;
+  if (!minimum?.some(Boolean) || !minimum.every((value) => Number.isInteger(value) && value >= 0 && value <= 5)
+    || minimum.reduce((sum, count) => sum + count, 0) > 5)
+    return false;
+  const { members, unknown } = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
+  if (unknown.length) return false;
+  const available = members.filter((member) => !request.constraints.excludedMembers.includes(member.key));
+  if (new Set(available.map(member => member.card.characterId)).size < 5) return false;
+  const byKey = new Map(available.map((member) => [member.key, member]));
+  const fixed = [
+    ...new Set([
+      ...request.constraints.requiredMembers,
+      ...request.constraints.bindings.map(([member]) => member),
+      ...(request.constraints.leader === null ? [] : [request.constraints.leader]),
+    ]),
+  ].map((key) => byKey.get(key));
+  if (fixed.length > 5 || fixed.some((member) => !member)) return false;
+  const characters = new Set(fixed.map((member) => member!.card.characterId));
+  if (characters.size !== fixed.length) return false;
+  const counts = missionMemberCounts(
+    master,
+    fixed.map((member) => member!.card.id),
+  );
+  const groups = new Map<number, Set<number>>();
+  for (const member of available) {
+    if (characters.has(member.card.characterId)) continue;
+    const type = master.gekisoSkills.get(member.card.gekisoSkillId)?.missionType ?? 0;
+    const mask = type === 4 ? 7 : type >= 1 && type <= 3 ? 1 << (type - 1) : 0;
+    const choices = groups.get(member.card.characterId) ?? new Set<number>();
+    choices.add(mask);
+    groups.set(member.card.characterId, choices);
+  }
+  const pack = (slots: number, values: readonly number[]) =>
+    values.reduce((key, value, role) => key * 6 + Math.min(minimum[role]!, value), slots);
+  let states = new Set([pack(fixed.length, counts)]);
+  for (const choices of groups.values()) {
+    const next = new Set(states);
+    for (const key of states) {
+      const values = [Math.floor(key / 36) % 6, Math.floor(key / 6) % 6, key % 6];
+      const slots = Math.floor(key / 216);
+      if (slots >= 5) continue;
+      for (const mask of choices)
+        next.add(
+          pack(
+            slots + 1,
+            values.map((value, role) => value + Number((mask & (1 << role)) !== 0)),
+          ),
+        );
+    }
+    states = next;
+  }
+  return !states.has(pack(5, minimum));
 }

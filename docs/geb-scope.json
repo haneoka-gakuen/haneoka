@@ -307,6 +307,7 @@
     "src/lib/team-builder/constraint-feasibility.ts",
     "src/lit/team-builder/reward-plan-view.ts",
     "src/lit/team-builder/workspace-state.ts",
+    "src/lit/team-builder/gekiso-help.ts",
     "src/lib/home-event-display.ts",
     "src/lib/team-builder/manual-event.ts",
     "src/lit/team-builder/manual-event.ts",
