@@ -998,7 +998,8 @@ export class CommunityWorkspace extends LitElement {
    * section name, exactly as the catalog's entity pages keep "图鉴". */
   private setDocumentTitle(value: string) {
     if (!value) return;
-    document.title = `${value} / haneoka`;
+    const siteTitle = uiText(this.locale, "common.seo.siteTitle");
+    document.title = `${value} / haneoka - ${siteTitle}`;
     if (this.routeKind !== "collection") {
       const heading = document.querySelector<HTMLElement>(
         "[data-top-app-bar] h1",

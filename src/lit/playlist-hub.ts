@@ -372,7 +372,8 @@ export class PlaylistHub extends LitElement {
       text = this.draft?.id ? this.t("editTitle", "Edit playlist") : this.t("create", "New playlist");
     else if (this.view === "detail" && this.current && this.heroHidden) text = this.titleOf(this.current);
     if (heading.textContent !== text) heading.textContent = text;
-    document.title = `${this.view === "detail" && this.current ? this.titleOf(this.current) : text} / haneoka`;
+    const siteTitle = clientText(this.locale, "common.seo.siteTitle");
+    document.title = `${this.view === "detail" && this.current ? this.titleOf(this.current) : text} / haneoka - ${siteTitle}`;
   }
 
   private renderBarActions() {

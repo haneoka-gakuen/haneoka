@@ -196,7 +196,8 @@ export class CommunityCharts extends LitElement {
           },
         );
         this.selected = chart;
-        document.title = `${chart.title} / haneoka`;
+        const siteTitle = clientText(this.locale, "common.seo.siteTitle");
+        document.title = `${chart.title} / haneoka - ${siteTitle}`;
         if (this.chartPage) {
           const [{ releaseId }] = await Promise.all([
             chartRequest<{ releaseId: string }>(`/api/v1/servers/${this.server}/release?projection=identity`, {

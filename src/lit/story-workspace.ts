@@ -992,7 +992,8 @@ export class StoryWorkspace extends LitElement {
         : undefined;
     if (!value?.text) return;
     updateEntityHeading(this, value.text, value.locale);
-    document.title = `${value.text} / haneoka`;
+    const siteTitle = uiText(this.locale, "common.seo.siteTitle");
+    document.title = `${value.text} / haneoka - ${siteTitle}`;
     if (episode && this.detailCard) {
       const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
       if (back) {
