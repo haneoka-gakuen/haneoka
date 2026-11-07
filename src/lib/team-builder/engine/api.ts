@@ -988,6 +988,8 @@ export interface TimingWindow {
 export interface OrderTiming {
   score: number;
   best: number;
+  /** Whether the fixed early-input plan has a native input witness. */
+  guideAvailable?: boolean;
   /** Full base-judgement windows, with automatic inputs fixed. */
   worst: number;
   optimal: number;

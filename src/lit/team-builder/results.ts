@@ -713,14 +713,14 @@ function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, re
   if (!timing && !reserve) return nothing;
   const plain = timing === null ? fallback : undefined;
   const text = (value: number | undefined) => value === undefined ? "—" : format(host, value);
-  const gain = timing ? timing.best - timing.score : timing === null ? 0 : undefined;
+  const gain = timing && timing.guideAvailable !== false ? timing.best - timing.score : timing === null ? 0 : undefined;
   return html`
     <div><dt>${host.t("worstTimingScore", "Worst-timing score")}</dt><dd>${text(timing?.worst ?? plain)}</dd></div>
     <div><dt>${host.t("nominalTimingScore", "Nominal-timing score")}</dt><dd>${text(timing?.score ?? plain)}</dd></div>
     <div><dt>${host.t("bestTimingScore", "Best-timing score")}</dt><dd>${text(timing?.optimal ?? plain)}</dd></div>
     <div>
       <dt>${host.t("timingFramePlanScore", "{ms} ms plan", { ms: timing?.advanceMs ?? advanceMs })}</dt>
-      <dd>${text(timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>
+      <dd>${text(timing?.guideAvailable === false ? undefined : timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>
     </div>
   `;
 }
@@ -791,13 +791,13 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
 }
 /** Which notes to hit early: each step's notes, one frame early, per counting window. */
 function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, reserve = false) {
-  if ((!timing || timing.best <= timing.score) && !reserve) return nothing;
+  if ((!timing || timing.guideAvailable === false || timing.best <= timing.score) && !reserve) return nothing;
   const windows = timing?.windows.filter((window) => window.steps.length) ?? [];
   const key = `timing-guide:${timelineKey(host, hit)}:${order}`;
   return accordion({
     id: `tb-${key.replace(/[^a-z0-9]/giu, "-")}`,
     label: host.t("timingGuide", "Timing guide"),
-    disabled: !timing || timing.best <= timing.score,
+    disabled: !timing || timing.guideAvailable === false || timing.best <= timing.score,
     expanded: host.expanded.has(key),
     onExpandedChange: (open) => {
       if (open) host.expanded.add(key);
