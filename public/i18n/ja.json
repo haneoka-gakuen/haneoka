@@ -1002,7 +1002,7 @@
       },
       "analysis": {
         "title": "編成分析",
-        "loading": "優先構成を計算中…",
+        "loading": "一致する組み合わせを検索中…",
         "vipBonus": "T.G.Wボーナス",
         "instrument": "楽器合計",
         "instrumentTotal": "楽器レベル合計",
@@ -1015,6 +1015,9 @@
         "noMatch": "一致する構成なし",
         "searching": "計算中",
         "complete": "候補確定",
+        "matched": "{n} ランキング完全一致",
+        "equivalents": "同等の組み合わせ {n} 件",
+        "combination": "組み合わせ {n}",
         "taskCap": "ミッション上限",
         "conflictingRecords": "ランキング記録が同時に一致しません",
         "refresh": "記録を更新",

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: An activity leaderboard player, related saved song boards and release-pinned growth rules.
-// Output: A shared dialog of up to ten configurations, sorted by T.G.W and per-band instrument levels.
+// Output: Up to ten exact-match groups with correlated equivalents, sorted by cross-board changes, T.G.W and instruments.
 // Pos: [Map](L2-2.md); lazy activity-only action from the shared ranking rows.
 // Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; lazily owns one cancellable shared Rust/WASM engine Worker.
 import { LitElement, html, nothing } from "lit";
@@ -9,7 +9,7 @@ import { fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import type { EngineClient } from "../lib/team-builder/engine/client";
 import { fetchEventTeamGrowthSources, type EventTeamGrowthSources } from "../lib/event-team-growth-limits";
-import type { EventTeamConfiguration, EventTeamSearchPage } from "../lib/event-team-analysis";
+import type { EventTeamConfiguration, EventTeamEquivalent, EventTeamSearchPage } from "../lib/event-team-analysis";
 import type { EventRankingDto, GameRecordsRegion, SongRankingRowDto, TrackedEventDto } from "../lib/game-records";
 import { clientText } from "../i18n/client";
 import { fetchJson, localizedText } from "./shared/catalog";
@@ -189,8 +189,10 @@ class EventTeamAnalysisElement extends LitElement {
       <tr>
         <th scope="row" class="is-sticky ranking-team-analysis__key">
           <button class="button button--text ranking-team-analysis__toggle" type="button" aria-label=${label}
+            title=${this.text("equivalents").replace("{n}", configuration.equivalents.length.toLocaleString(this.locale))}
             aria-expanded=${String(open)} aria-controls=${id} @click=${() => this.toggle(key)}>
-            <span>${(index + 1).toLocaleString(this.locale)}</span>${icon("expand_more")}</button></th>
+            <span>${(index + 1).toLocaleString(this.locale)}</span>
+            ${configuration.equivalents.length > 1 ? html`<span class="md-label-small">×${configuration.equivalents.length}</span>` : nothing}${icon("expand_more")}</button></th>
         <td class="is-numeric ranking-team-analysis__minor">${this.percent.format(configuration.vipBonus / 10000)}</td>
         ${this.cells(groups,
           (band) => { const value = instruments.get(band)?.entry; return value ? this.span(value.minTotal, value.total) : nothing; },
@@ -203,26 +205,42 @@ class EventTeamAnalysisElement extends LitElement {
         ${this.cells(groups, () => nothing, (character) => characters.get(character)?.entry.cap ?? nothing)}
         <td></td>
       </tr>
-      ${configuration.changed ? configuration.witnesses.map((witness) => {
-        const { title, jacket } = this.song(witness.challengeId);
-        return html`<tr class="ranking-team-analysis__detail" ?hidden=${!open}>
-          <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title}>
-            ${jacket ? html`<img class="ranking-team-analysis__jacket" width="32" height="32" src=${jacket} alt=${title} loading="lazy" decoding="async" />`
-              : html`<span class="truncate">${title}</span>`}</th>
-          <td></td>
-          ${this.cells(groups,
-            (band) => { const value = instruments.get(band); return value ? witness.instruments[value.position] : nothing; },
-            (character) => { const value = characters.get(character); return value ? witness.levels[value.position] : nothing; })}
-          <td class="is-numeric">${this.span(witness.totalRank.min, witness.totalRank.max)}</td>
-        </tr>`;
-      }) : nothing}
+      ${configuration.equivalents.map((equivalent, variant) => html`
+        ${configuration.equivalents.length > 1 ? this.renderEquivalent(equivalent, variant, groups, open) : nothing}
+        ${configuration.changed ? equivalent.witnesses.map((witness) => {
+          const { title, jacket } = this.song(witness.challengeId);
+          return html`<tr class="ranking-team-analysis__detail" ?hidden=${!open}>
+            <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title}>
+              ${jacket ? html`<img class="ranking-team-analysis__jacket" width="32" height="32" src=${jacket} alt=${title} loading="lazy" decoding="async" />`
+                : html`<span class="truncate">${title}</span>`}</th>
+            <td></td>
+            ${this.cells(groups,
+              (band) => { const value = instruments.get(band); return value ? witness.instruments[value.position] : nothing; },
+              (character) => { const value = characters.get(character); return value ? witness.levels[value.position] : nothing; })}
+            <td class="is-numeric">${this.span(witness.totalRank.min, witness.totalRank.max)}</td>
+          </tr>`;
+        }) : nothing}`)}
     </tbody>`;
+  }
+  private renderEquivalent(equivalent: EventTeamEquivalent, index: number, groups: Group[], open: boolean) {
+    const characters = new Map(equivalent.characters.map((entry) => [entry.id, entry]));
+    const instruments = new Map(equivalent.instruments.map((entry) => [entry.id, entry]));
+    return html`<tr class="ranking-team-analysis__detail" ?hidden=${!open}>
+      <th scope="row" class="is-sticky ranking-team-analysis__key">${this.text("combination").replace("{n}", (index + 1).toLocaleString(this.locale))}</th>
+      <td></td>
+      ${this.cells(groups,
+        (band) => { const value = instruments.get(band); return value ? this.span(value.minTotal, value.total) : nothing; },
+        (character) => { const value = characters.get(character); return value ? this.span(value.minLevel, value.level) : nothing; })}
+      <td class="is-numeric">${this.span(equivalent.totalRank.min, equivalent.totalRank.max)}</td>
+    </tr>`;
   }
   private renderResult() {
     const result = this.result;
     if (!result) return nothing;
     if (result.complete && result.status !== "ready") return this.failure(result.status);
     const rows = [...result.rows].sort((a, b) => {
+      const evidence = a.changeCost - b.changeCost || a.changedDimensions - b.changedDimensions;
+      if (evidence) return evidence;
       const bonus = b.vipBonus - a.vipBonus;
       if (bonus) return bonus;
       for (let index = 0; index < a.instruments.length; index++) {
@@ -238,6 +256,7 @@ class EventTeamAnalysisElement extends LitElement {
     return html`
       <div class="row row--between ranking-team-analysis__toolbar">
         <span class="chip chip--static chip--tonal"><span class="chip__label">${rows.length.toLocaleString(this.locale)} / 10</span></span>
+        <span class="md-label-medium">${this.text("matched").replace("{n}", rows[0]!.matchedChallenges.length.toLocaleString(this.locale))}</span>
         <span class="md-label-large ranking-team-analysis__status" role="status">${this.text(result.complete
           ? relaxed ? "completeRelaxed" : "complete"
           : relaxed ? "searchingRelaxed" : "searching")}</span>

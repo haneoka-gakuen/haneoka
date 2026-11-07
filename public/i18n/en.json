@@ -1002,7 +1002,7 @@
       },
       "analysis": {
         "title": "Team analysis",
-        "loading": "Finding preferred configurations…",
+        "loading": "Finding matching configurations…",
         "vipBonus": "T.G.W bonus",
         "instrument": "Instrument total",
         "instrumentTotal": "Total instrument levels",
@@ -1015,6 +1015,9 @@
         "noMatch": "No matching configuration",
         "searching": "Calculating",
         "complete": "Ready",
+        "matched": "{n} exact board matches",
+        "equivalents": "{n} equivalent combinations",
+        "combination": "Combination {n}",
         "taskCap": "Mission cap",
         "conflictingRecords": "The ranking records cannot match simultaneously",
         "refresh": "Refresh records",

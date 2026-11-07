@@ -1002,7 +1002,7 @@
       },
       "analysis": {
         "title": "隊伍分析",
-        "loading": "推算優先方案…",
+        "loading": "匹配方案…",
         "vipBonus": "T.G.W 加成",
         "instrument": "樂器合計",
         "instrumentTotal": "樂器總等級",
@@ -1015,6 +1015,9 @@
         "noMatch": "沒有匹配方案",
         "searching": "推算中",
         "complete": "方案就緒",
+        "matched": "{n} 榜精確匹配",
+        "equivalents": "{n} 組等價組合",
+        "combination": "組合 {n}",
         "taskCap": "任務上限",
         "conflictingRecords": "榜單紀錄無法同時匹配",
         "refresh": "重新整理紀錄",

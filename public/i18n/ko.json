@@ -1002,7 +1002,7 @@
       },
       "analysis": {
         "title": "편성 분석",
-        "loading": "우선 구성 계산 중…",
+        "loading": "일치하는 조합 검색 중…",
         "vipBonus": "T.G.W 보너스",
         "instrument": "악기 합계",
         "instrumentTotal": "악기 레벨 합계",
@@ -1015,6 +1015,9 @@
         "noMatch": "일치하는 구성 없음",
         "searching": "계산 중",
         "complete": "구성 준비됨",
+        "matched": "랭킹 {n}개 정확히 일치",
+        "equivalents": "동등한 조합 {n}개",
+        "combination": "조합 {n}",
         "taskCap": "미션 상한",
         "conflictingRecords": "순위 기록이 동시에 일치하지 않음",
         "refresh": "기록 새로고침",
