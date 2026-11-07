@@ -550,6 +550,8 @@ export class EventTracker extends LitElement {
                 .rankingTitle=${this.label("totalRanking", "Total song ranking")}
                 .rankingEndpoint=${`/api/v1/game/records/${this.region}/events/${event.id}/total/latest`}
                 .cardCatalogData=${this.cards}
+                .analysisEvent=${event}
+                .analysisChallengeId=${""}
               ></song-ranking>
             ` : emptyState({ title: this.label("pending", "Ranking data is being collected."), icon: "hourglass_top" })}
           </section>
@@ -565,6 +567,7 @@ export class EventTracker extends LitElement {
                     .locale=${this.locale}
                     .region=${this.region}
                     .eventId=${Number(event.id)}
+                    .analysisEvent=${event}
                     .catalogs=${this.cards}
                   ></arena-ranking>
                 `

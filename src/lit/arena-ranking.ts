@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Region, Arena season, league band or event point board and card catalogues.
-// Output: Point-board adapter using the shared SongRanking search, controls and rows.
+// Output: Point-board adapter using shared SongRanking search, controls, rows and activity analysis.
 // Pos: [Map](L2-2.md); Arena tiers and event point endpoints for the common leaderboard.
 // Effects/Dependencies: Reads saved ranking windows and reports loaded rows to the owning page.
 import { clientText } from "../i18n/client";
@@ -96,6 +96,10 @@ export class ArenaRanking extends SongRanking {
         ? playerProfileHref(this.locale, this.region, row.profileId, this.rankingUrl(), navigationDocumentUrl())
         : "",
       score: row.point.toLocaleString(this.locale),
+      ...(this.eventId && this.analysisEvent && row.profileId ? { scoreAction: {
+        label: clientText(this.locale, "catalog.rankings.analysis.title", "Team analysis"),
+        onClick: () => void this.analyzeTeam(row),
+      } } : {}),
       scoreLabel: this.eventId
         ? this.label("points", "Points")
         : clientText(this.locale, "catalog.arena.ranking.points", "Points"),

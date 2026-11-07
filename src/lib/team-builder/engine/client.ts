@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／活动养成／评价／解释结果及当前 Worker 阶段。
+// Output: EngineClient、搜索／成长／活动养成分页／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 共享编译后的 WASM 模块和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
@@ -76,7 +76,7 @@ class EngineWorker {
       if (reply.type === "phase") this.setPhase(reply.phase === "network" ? "networkMs" : "computationMs");
       else if (reply.type === "progress") pending.progress?.(reply.done, reply.total);
       else if (reply.type === "snapshot") pending.snapshot?.(reply.snapshot);
-      else if (reply.type === "eventGrowth") pending.eventGrowth?.({ ...reply.result, id: reply.id, page: 0 });
+      else if (reply.type === "eventGrowth") pending.eventGrowth?.({ ...reply.result, id: reply.id });
       else {
         const eventGrowth = reply.id === this.eventGrowthId;
         this.setPhase(null);
@@ -90,7 +90,7 @@ class EngineWorker {
           if (reply.type === "result" && reply.cachedCharts) this.cachedCharts = reply.cachedCharts;
           if (reply.type === "result" && reply.scoredSeeds) this.scoredSeeds = reply.scoredSeeds;
           if (reply.type === "result" && eventGrowth) {
-            const result: EventTeamSearchPage = { ...(reply.result as EventTeamSearchResult), id: reply.id, page: 0 };
+            const result: EventTeamSearchPage = { ...(reply.result as EventTeamSearchResult), id: reply.id };
             pending.eventGrowth?.(result);
             pending.resolve(result);
           } else pending.resolve(reply.type === "result" ? reply.result : undefined);
@@ -123,11 +123,11 @@ class EngineWorker {
     const id = this.nextId++;
     const cooperativeFloor = this.cooperativeFloor && this.acceptsFloor(message);
     if (message.type === "run") this.runId = cooperativeFloor ? id : null;
-    if (message.type === "eventGrowth") this.eventGrowthId = id;
+    if (message.type === "eventGrowth" || message.type === "eventGrowthPage") this.eventGrowthId = id;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, progress, snapshot, eventGrowth });
       this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor } : {}),
-        ...(message.type === "eventGrowth" ? { paused: this.eventGrowthPaused } : {}) });
+        ...(message.type === "eventGrowth" || message.type === "eventGrowthPage" ? { paused: this.eventGrowthPaused } : {}) });
     });
   }
   pauseEventGrowth(paused: boolean) {
@@ -185,7 +185,7 @@ class EngineWorker {
       const [, loadedCharts] = await Promise.all([initialized, loaded]);
       if (worker !== this.worker) throw new DOMException("Cancelled", "AbortError");
       if (this.preparing === preparation) this.preparing = null;
-      if (message.type === "run" || message.type === "evaluate" || message.type === "eventGrowth") this.setPhase("computationMs");
+      if (message.type === "run" || message.type === "evaluate" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
       return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth)) as T;
@@ -1043,6 +1043,10 @@ export class EngineClient {
   }
   analyzeEventGrowth(request: EventTeamGrowthRequest, onUpdate?: (value: EventTeamSearchPage) => void): Promise<EventTeamSearchPage> {
     return this.enqueue(() => this.pool[0]!.send<EventTeamSearchPage>({ type: "eventGrowth", id: 0, request },
+      undefined, undefined, undefined, onUpdate));
+  }
+  eventGrowthPage(page: number, onUpdate?: (value: EventTeamSearchPage) => void): Promise<EventTeamSearchPage> {
+    return this.enqueue(() => this.pool[0]!.send<EventTeamSearchPage>({ type: "eventGrowthPage", id: 0, page },
       undefined, undefined, undefined, onUpdate));
   }
   pauseEventGrowth(paused: boolean) {

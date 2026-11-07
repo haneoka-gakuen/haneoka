@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 // L3 — GEB
 // Input: EngineCall、已序列化 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
-// Output: EngineReply、进度、快照、活动养成更新、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
+// Output: EngineReply、进度、快照、活动养成分页更新、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
-// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，任务队列让出并支持可见性暂停，不读取谱面。
+// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
  * serves searches and evaluations. */
 import { chartKey, downloadChart } from "./charts";
@@ -211,12 +211,14 @@ async function execute(call: EngineCall) {
       } finally {
         onProgress = null;
       }
-    } else if (call.type === "eventGrowth") {
+    } else if (call.type === "eventGrowth" || call.type === "eventGrowthPage") {
       try {
         await waitEventGrowth(call.id);
-        let result = await invoke({ op: "eventGrowthStart", handle, request: call.request }) as unknown as EventTeamSearchResult;
+        let result = await invoke(call.type === "eventGrowth"
+          ? { op: "eventGrowthStart", handle, request: call.request }
+          : { op: "eventGrowthPage", handle, page: call.page }) as unknown as EventTeamSearchResult;
         let lastPublished = -Infinity, hadRows = false;
-        while (!result.complete) {
+        while (!result.complete && !result.awaitingPage) {
           const now = performance.now();
           if (!hadRows && result.rows.length > 0 || now - lastPublished >= 100) {
             post({ type: "eventGrowth", id: call.id, result });
@@ -280,7 +282,7 @@ self.onmessage = (event: MessageEvent<EngineCall>) => {
       if (cooperativeRun && call.reward) engine?.haneoka_search_reward?.(...call.reward);
     }
   } else {
-    if (call.type === "eventGrowth") eventGrowthPaused.set(call.id, call.paused ?? false);
+    if (call.type === "eventGrowth" || call.type === "eventGrowthPage") eventGrowthPaused.set(call.id, call.paused ?? false);
     operations = operations.then(() => execute(call));
   }
 };

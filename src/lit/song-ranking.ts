@@ -367,14 +367,14 @@ export class SongRanking extends GameRecordsCardsElement {
       ...(this.points || this.summary || this.limit ? { cards: undefined } : {}),
     });
   }
-  private async analyzeTeam(row: RankingEntry) {
+  protected async analyzeTeam(row: RankingEntry) {
     const event = this.analysisEvent;
     if (!event) return;
     const { showEventTeamAnalysis } = await import("./event-team-analysis");
     if (!this.isConnected || !this.active || this.analysisEvent !== event) return;
     this.closeAnalysis?.();
     this.closeAnalysis = showEventTeamAnalysis({ locale: this.locale, region: this.region, event,
-      challengeId: this.analysisChallengeId, row,
+      challengeId: this.analysisChallengeId, kind: this.points ? "points" : this.analysisChallengeId ? "challenge" : "total", row,
       observedAtMs: this.cache.get(this.rankingUrl(this.region))?.reportedAt ?? 0 });
   }
   protected get skeletonDecks() {
