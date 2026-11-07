@@ -76,6 +76,12 @@ keeps its existing unknown-outcome handling for interrupted account requests.
 
 Three rejections in a row pause an account until its credential changes, and any success clears the count. A failed request is never replayed on another account. A run interrupted between request and observation only rests the account.
 
+An anonymous Version failure stops collection before any account request. Container
+logs record `official_anonymous_version_failed` with the configured client version,
+HTTP/gRPC status and a bounded upstream message. Check this event before changing
+account credentials or routing: client update requirements and network refusals
+need different recovery. CDN authorization and account responses are excluded.
+
 ## Arena and event windows
 
 A job negotiates these capabilities:

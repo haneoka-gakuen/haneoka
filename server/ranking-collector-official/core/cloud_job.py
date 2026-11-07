@@ -15,7 +15,7 @@ import traceback
 from types import SimpleNamespace
 from urllib.request import build_opener, ProxyHandler, Request
 from urllib.error import HTTPError
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 import uuid
 
 from lifecycle import authentication_failed, board_call, board_players, read_credentials, targets, retry_delay
@@ -407,6 +407,12 @@ def run_job(job, origin):
                 'MasterArenaSeason.bin':'catalog_arena_season','MasterArenaLeague.bin':'catalog_arena_league',
                 'MasterArenaRank.bin':'catalog_arena_rank'}
             failure = failure_info(catalog_stages.get(getattr(error,'stage',None),stage),error,error.receipt)
+            if isinstance(error, VersionError) or getattr(error, 'stage', None) == 'version':
+                message = unquote(error.receipt.get('grpc_message', ''))
+                print(json.dumps(dict(event='official_anonymous_version_failed', region=region,
+                    clientVersion=job['clientVersion'], httpStatus=error.receipt.get('status'),
+                    grpcStatus=error.receipt.get('grpc_status'),
+                    message=''.join(char for char in message if char.isprintable())[:256])), flush=True)
             if final_status == 'rate_limited':
                 retry_after = retry_delay(error.receipt, 300)
         except Exception as error:
