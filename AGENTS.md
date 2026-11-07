@@ -20,6 +20,8 @@ outside stable maps. Do not move or split source just to fit a map.
 
 ## Working in this repository
 
+- Agents must not modify README files anywhere in the repository, including
+  `README.md` and localized variants.
 - Several sessions edit the same checkout at once. Stage only your own
   files; never `git add -A` in the main checkout, never commit someone
   else's uncommitted work, and never reset or stash it away.
