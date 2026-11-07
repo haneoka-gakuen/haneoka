@@ -11,6 +11,7 @@ import {
 } from "./resource-route";
 
 import { isTemporarilyHiddenRoute } from "./temporary-public-routing";
+import SOCIAL_CARDS from "../config/social-cards.json";
 
 const PRIVATE_ROUTES = new Set([
   "/account",
@@ -198,4 +199,18 @@ export function pageDescription(locale: Locale, route: string, title: string): s
                                 ? "privacy"
                                 : "general";
   return serverText(locale, `common.seo.descriptions.${key}`, { title }, title).trim();
+}
+
+/** The designed card of the page's closest navigation destination; server pages sit under /catalog. */
+export function socialCardPath(route: string): string {
+  const cards = SOCIAL_CARDS as Record<string, string>;
+  const path = canonicalPath(route).replace(/\/$/u, "") || "/";
+  const server = /^\/(?:jp|intl)(?=\/)/u.test(path);
+  const logical = path.replace(/^\/(?:jp|intl)(?=\/)/u, "").replace(/^\/(?:ja|en|ko|zh-CN|zh-TW)(?=\/|$)/u, "") || "/";
+  const candidates = server && logical !== "/" ? [`/catalog${logical}`, logical] : [logical];
+  let best = "/";
+  for (const candidate of candidates)
+    for (const key of Object.keys(cards))
+      if (key.length > best.length && (candidate === key || candidate.startsWith(`${key}/`))) best = key;
+  return `/images/${cards[best]}`;
 }

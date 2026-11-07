@@ -664,6 +664,7 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
     let document: RecordValue | undefined;
     let songMeta: RecordValue | undefined;
     let characterRows: Rows | undefined;
+    let deferred: EntityPayload["deferred"];
 
     if (resource === "cards" || resource === "support-cards") {
       aux = cardAux(graph, item, resource === "support-cards");
@@ -751,7 +752,17 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
         ),
         sourceAvailability,
       };
-      aux["character-missions"] = graph.missions;
+      // Every character page shares one mission document; the Missions tab
+      // reads it from the pinned release when opened.
+      const missions = graph.missions.missions;
+      if (Array.isArray(missions)) {
+        deferred = {
+          "character-missions": {
+            url: `/api/v1/servers/${encodeURIComponent(server)}/character-missions?release=${encodeURIComponent(graph.release.releaseId)}`,
+            count: missions.filter((mission) => !!mission && typeof mission === "object").length,
+          },
+        };
+      } else aux["character-missions"] = graph.missions;
     }
 
     // Every cost/reward item is a compact same-release record, including currencies.
@@ -767,6 +778,7 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
     };
     collectItemIds(aux);
     collectItemIds(document);
+    if (deferred) collectItemIds(graph.missions);
     const resolve = referenceResolver(graph);
     if (resource === "stickers") {
       // Older catalog releases already carry the rank-reward evidence in progression.
@@ -810,6 +822,7 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
       ...(document ? { document } : {}),
       ...(resource === "songs" ? { collection: Object.fromEntries(graph.collections.get("songs") || []) } : {}),
       ...(songMeta ? { songMeta } : {}),
+      ...(deferred ? { deferred } : {}),
       aux,
     });
   }

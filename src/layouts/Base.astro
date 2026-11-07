@@ -9,7 +9,7 @@ import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
 import { themeCharacters } from "../server/theme-characters";
 import { publicationFields } from "../lib/content-publication";
-import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex } from "../lib/seo";
+import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
 interface Props {
   locale: Locale;
   title: string;
@@ -60,7 +60,7 @@ const languageAlternates = isLocalizedRoute
     }))
   : [];
 const entityImage = searchImage?.trim() ? new URL(searchImage.trim(), origin).href : undefined;
-const socialImage = entityImage ?? `${origin}/images/haneoka-social-card.png?v=2`;
+const socialImage = entityImage ?? `${origin}${socialCardPath(publicRoute)}`;
 const structuredData = JSON.stringify(
   pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage),
 ).replaceAll("<", "\\u003c");
@@ -210,6 +210,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     />
     <meta property="og:url" content={canonicalHref} />
     <meta property="og:image" content={socialImage} />
+    <meta property="og:image:alt" content={searchTitle || localizedTitle} />
     <!-- Pagefind's automatic image is the first image after an h1 (often a UI icon or scene background). -->
     <meta data-pagefind-meta="image:" />
     {searchImage?.trim() && <meta data-pagefind-meta="image[content]" content={searchImage.trim()} />}
