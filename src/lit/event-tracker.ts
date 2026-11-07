@@ -519,6 +519,8 @@ export class EventTracker extends LitElement {
                               .rankingTitle=${this.label("challengeRanking", "Challenge song ranking")}
                               .rankingEndpoint=${`/api/v1/game/records/${this.region}/events/${event.id}/challenges/${challenge!.id}/ranking`}
                               .cardCatalogData=${this.cards}
+                              .analysisEvent=${event}
+                              .analysisChallengeId=${challenge!.id}
                             ></song-ranking>
                           `
                         : emptyState({

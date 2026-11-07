@@ -999,6 +999,28 @@
         "noSupportCard": "スナップなし",
         "points": "ポイント",
         "favoriteCard": "お気に入りメンバー"
+      },
+      "analysis": {
+        "title": "編成分析",
+        "loading": "優先構成を計算中…",
+        "vipBonus": "T.G.Wボーナス",
+        "instrument": "楽器合計",
+        "instrumentTotal": "楽器レベル合計",
+        "rankSum": "全キャラランク合計",
+        "plan": "候補 {n}",
+        "missingGrowth": "編成の育成データが不足",
+        "missingRules": "育成ルールが不足",
+        "noSongRecord": "このプレイヤーの楽曲記録なし",
+        "loadError": "編成データを取得できません",
+        "noMatch": "一致する構成なし",
+        "searching": "計算中",
+        "complete": "候補確定",
+        "taskCap": "ミッション上限",
+        "conflictingRecords": "ランキング記録が同時に一致しません",
+        "refresh": "記録を更新",
+        "reading": "ランキングを取得中…",
+        "searchingRelaxed": "条件緩和で計算中",
+        "completeRelaxed": "条件緩和の候補"
       }
     },
     "events": {

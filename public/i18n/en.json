@@ -999,6 +999,28 @@
         "noSupportCard": "No support card",
         "points": "Points",
         "favoriteCard": "Favorite member card"
+      },
+      "analysis": {
+        "title": "Team analysis",
+        "loading": "Finding preferred configurations…",
+        "vipBonus": "T.G.W bonus",
+        "instrument": "Instrument total",
+        "instrumentTotal": "Total instrument levels",
+        "rankSum": "All-character total",
+        "plan": "Configuration {n}",
+        "missingGrowth": "Incomplete deck growth data",
+        "missingRules": "Incomplete growth rules",
+        "noSongRecord": "No song record for this player",
+        "loadError": "Team data unavailable",
+        "noMatch": "No matching configuration",
+        "searching": "Calculating",
+        "complete": "Ready",
+        "taskCap": "Mission cap",
+        "conflictingRecords": "The ranking records cannot match simultaneously",
+        "refresh": "Refresh records",
+        "reading": "Reading rankings…",
+        "searchingRelaxed": "Calculating with relaxed limits",
+        "completeRelaxed": "Ready with relaxed limits"
       }
     },
     "events": {

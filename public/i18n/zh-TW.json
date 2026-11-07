@@ -999,6 +999,28 @@
         "noSupportCard": "未設定快照卡",
         "points": "積分",
         "favoriteCard": "最愛團員卡"
+      },
+      "analysis": {
+        "title": "隊伍分析",
+        "loading": "推算優先方案…",
+        "vipBonus": "T.G.W 加成",
+        "instrument": "樂器合計",
+        "instrumentTotal": "樂器總等級",
+        "rankSum": "全角色合計",
+        "plan": "方案 {n}",
+        "missingGrowth": "隊伍養成資料不完整",
+        "missingRules": "目前養成規則不完整",
+        "noSongRecord": "沒有該玩家的單曲紀錄",
+        "loadError": "隊伍資料讀取失敗",
+        "noMatch": "沒有匹配方案",
+        "searching": "推算中",
+        "complete": "方案就緒",
+        "taskCap": "任務上限",
+        "conflictingRecords": "榜單紀錄無法同時匹配",
+        "refresh": "重新整理紀錄",
+        "reading": "讀取榜單…",
+        "searchingRelaxed": "放寬推算",
+        "completeRelaxed": "放寬方案就緒"
       }
     },
     "events": {

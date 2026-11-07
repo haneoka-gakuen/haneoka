@@ -34,6 +34,7 @@ export interface RankingRowView {
   /** Rank, player and score only, for a short summary list. */
   bare?: boolean;
   target?: boolean;
+  scoreAction?: { label: string; onClick: () => void };
 }
 /** Card artwork and native progression shared by rankings and the independent public player view. */
 export abstract class GameRecordsCardsElement extends LitElement {
@@ -223,7 +224,8 @@ export abstract class GameRecordsCardsElement extends LitElement {
               : html`<span class="song-ranking__player-copy">${identity}</span>`
           }
           <span class="song-ranking__score" aria-label=${`${row.scoreLabel} ${row.score}`}>
-            <strong>${row.score}</strong>
+            ${row.scoreAction ? html`<button class="button button--text ranking-team-trigger" type="button" @click=${row.scoreAction.onClick}>
+              <strong>${row.score}</strong><small>${row.scoreAction.label}</small></button>` : html`<strong>${row.score}</strong>`}
             ${row.tied ? html`<small>${this.label("tied", "Tied rank")}</small>` : nothing}
             ${row.detail ?? nothing}
           </span>

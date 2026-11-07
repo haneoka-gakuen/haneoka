@@ -38,6 +38,7 @@ import type {
   ArenaRankingDto,
   RankingPlayerMatchDto,
   ArenaPlayerSearchDto,
+  TrackedEventDto,
 } from "../lib/game-records";
 import { formatDate } from "../lib/date-format";
 type Region = GameRecordsRegion;
@@ -71,6 +72,8 @@ export class SongRanking extends GameRecordsCardsElement {
     cardCatalogData: { attribute: false },
     summaryHeading: { attribute: false },
     summaryActions: { attribute: false },
+    analysisEvent: { attribute: false },
+    analysisChallengeId: { type: String, attribute: false },
     region: { state: true },
     phase: { state: true },
     rows: { state: true },
@@ -96,6 +99,9 @@ export class SongRanking extends GameRecordsCardsElement {
   declare summaryHeading: unknown;
   declare summaryActions: unknown;
   declare cardCatalogData: Partial<Record<"jp" | "intl", RankingCardCatalog>> | undefined;
+  declare analysisEvent: TrackedEventDto | undefined;
+  declare analysisChallengeId: string;
+  private closeAnalysis?: () => void;
   declare region: Region;
   declare phase: Phase;
   declare rows: RankingEntry[];
@@ -130,6 +136,7 @@ export class SongRanking extends GameRecordsCardsElement {
     this.points = false;
     this.summary = false;
     this.rankingTitle = "";
+    this.analysisChallengeId = "";
     this.summaryHeading = nothing;
     this.summaryActions = nothing;
     this.region = "tw";
@@ -199,6 +206,7 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   disconnectedCallback() {
+    this.closeAnalysis?.();
     this.rankingRequests.cancel();
     this.searchRequests.cancel();
     this.lifetime?.abort();
@@ -352,8 +360,22 @@ export class SongRanking extends GameRecordsCardsElement {
         : "",
       score,
       scoreLabel: this.points ? this.label("points", "Points") : this.label("score", "Score"),
+      ...(this.analysisEvent && entry.totalPower ? { scoreAction: {
+        label: clientText(this.locale, "catalog.rankings.analysis.title", "Team analysis"),
+        onClick: () => void this.analyzeTeam(entry),
+      } } : {}),
       ...(this.points || this.summary || this.limit ? { cards: undefined } : {}),
     });
+  }
+  private async analyzeTeam(row: RankingEntry) {
+    const event = this.analysisEvent;
+    if (!event) return;
+    const { showEventTeamAnalysis } = await import("./event-team-analysis");
+    if (!this.isConnected || !this.active || this.analysisEvent !== event) return;
+    this.closeAnalysis?.();
+    this.closeAnalysis = showEventTeamAnalysis({ locale: this.locale, region: this.region, event,
+      challengeId: this.analysisChallengeId, row,
+      observedAtMs: this.cache.get(this.rankingUrl(this.region))?.reportedAt ?? 0 });
   }
   protected get skeletonDecks() {
     return !this.points && !this.summary && !this.limit;
@@ -487,6 +509,10 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   protected willUpdate(changed: PropertyValues) {
+    if (this.identityProperties.some((key) => changed.has(key)) || (changed.has("active") && !this.active)) {
+      this.closeAnalysis?.();
+      this.closeAnalysis = undefined;
+    }
     if (this.identityProperties.some((key) => changed.has(key))) {
       this.start = 1;
       this.target = 0;

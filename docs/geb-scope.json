@@ -414,7 +414,11 @@
     "src/lib/song-puzzle/exact.ts",
     "src/lib/song-puzzle/storage.ts",
     "src/lib/render-quality.ts",
-    "src/lit/ui/render-quality-settings.ts"
+    "src/lit/ui/render-quality-settings.ts",
+    "src/lib/event-team-analysis.ts",
+    "src/lit/event-team-analysis.ts",
+    "src/workers/event-team-analysis.worker.ts",
+    "src/lib/event-team-growth-limits.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

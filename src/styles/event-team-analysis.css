@@ -1,0 +1,176 @@
+@layer pages {
+  .ranking-team-analysis {
+    width: min(1120px, calc(100vw - 24px));
+    height: min(92dvh, 900px);
+    max-height: 92dvh;
+  }
+  .ranking-team-analysis[open] {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .ranking-team-analysis .dialog__surface {
+    height: 100%;
+  }
+  .ranking-team-analysis .dialog__body {
+    gap: 8px;
+    overflow: hidden;
+  }
+  .ranking-team-analysis__kind {
+    flex: none;
+    white-space: nowrap;
+  }
+  .ranking-team-analysis__result {
+    display: grid;
+    flex: 1;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    min-height: 0;
+  }
+  .ranking-team-analysis__toolbar {
+    min-height: 32px;
+    gap: 8px 16px;
+  }
+  .ranking-team-analysis__status {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .ranking-team-analysis__scroll {
+    align-self: start;
+    max-height: 100%;
+  }
+
+  .ranking-team-analysis__table thead tr:first-child th {
+    height: 40px;
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-title-small-weight) var(--md-sys-typescale-title-small-size) /
+      var(--md-sys-typescale-title-small-line-height) var(--app-font);
+  }
+  .ranking-team-analysis__table thead tr + tr th {
+    top: 40px;
+    height: auto;
+    padding-block: 8px;
+  }
+  .ranking-team-analysis__table thead th[rowspan] {
+    vertical-align: bottom;
+  }
+  .ranking-team-analysis__member {
+    text-align: center;
+  }
+  .ranking-team-analysis__member > img {
+    display: block;
+    width: 32px;
+    height: 32px;
+    margin-inline: auto;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-highest);
+    object-fit: cover;
+  }
+  .ranking-team-analysis__member > span {
+    display: block;
+    max-width: 10em;
+    margin-block-start: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ranking-team-analysis__table :where(th, td).ranking-team-analysis__start {
+    border-inline-start: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .ranking-team-analysis__table th.ranking-team-analysis__instrument {
+    text-align: center;
+    vertical-align: bottom;
+  }
+
+  .ranking-team-analysis__table .ranking-team-analysis__key {
+    width: 1%;
+    padding-inline: 4px;
+    text-align: center;
+  }
+  .ranking-team-analysis__table tbody tr:first-child :where(th, td) {
+    height: 48px;
+    padding-block: 0;
+  }
+  .ranking-team-analysis__table tbody tr:first-child .ranking-team-analysis__level {
+    text-align: center;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-team-analysis__table td.ranking-team-analysis__instrument {
+    text-align: center;
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .ranking-team-analysis__table tbody tr:first-child td.ranking-team-analysis__instrument {
+    color: var(--md-sys-color-primary);
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-team-analysis__minor {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .ranking-team-analysis__table .ranking-team-analysis__plan:not(:last-child) tr:last-child :where(th, td) {
+    border-bottom: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 55%, transparent);
+  }
+  .ranking-team-analysis__plan:has(.ranking-team-analysis__detail:not([hidden])) tr:first-child :where(th, td) {
+    border-bottom-color: transparent;
+  }
+
+  .ranking-team-analysis__toggle {
+    min-width: 48px;
+    min-height: 48px;
+    gap: 2px;
+    padding-inline: 8px 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-team-analysis__toggle > .material-icon {
+    --icon-size: 18px;
+    transition: transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+  }
+  .ranking-team-analysis__toggle[aria-expanded="true"] > .material-icon {
+    transform: rotate(180deg);
+  }
+
+  .ranking-team-analysis__table .ranking-team-analysis__detail :where(th, td) {
+    height: 40px;
+    padding-block: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container-low);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-team-analysis__table .ranking-team-analysis__detail td.ranking-team-analysis__level,
+  .ranking-team-analysis__table .ranking-team-analysis__detail td.ranking-team-analysis__instrument {
+    text-align: center;
+  }
+  .ranking-team-analysis__table .ranking-team-analysis__detail th.ranking-team-analysis__key {
+    max-width: 6em;
+    white-space: nowrap;
+  }
+  .ranking-team-analysis__jacket {
+    display: block;
+    width: 32px;
+    height: 32px;
+    margin-inline: auto;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    object-fit: cover;
+  }
+
+  .ranking-team-analysis__failure {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+  .ranking-team-analysis__failure > p {
+    margin: 0;
+  }
+
+  @media (max-width: 599px) {
+    .ranking-team-analysis__table :where(th, td) {
+      padding-inline: 8px;
+    }
+    .ranking-team-analysis__table :where(th, td).is-sticky {
+      position: sticky;
+      min-width: 0;
+    }
+  }
+}

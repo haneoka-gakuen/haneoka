@@ -999,6 +999,28 @@
         "noSupportCard": "스냅 없음",
         "points": "포인트",
         "favoriteCard": "즐겨찾는 멤버 카드"
+      },
+      "analysis": {
+        "title": "편성 분석",
+        "loading": "우선 구성 계산 중…",
+        "vipBonus": "T.G.W 보너스",
+        "instrument": "악기 합계",
+        "instrumentTotal": "악기 레벨 합계",
+        "rankSum": "전체 캐릭터 랭크 합계",
+        "plan": "구성 {n}",
+        "missingGrowth": "편성 육성 데이터 부족",
+        "missingRules": "육성 규칙 부족",
+        "noSongRecord": "이 플레이어의 악곡 기록 없음",
+        "loadError": "편성 데이터를 불러올 수 없음",
+        "noMatch": "일치하는 구성 없음",
+        "searching": "계산 중",
+        "complete": "구성 준비됨",
+        "taskCap": "미션 상한",
+        "conflictingRecords": "순위 기록이 동시에 일치하지 않음",
+        "refresh": "기록 새로고침",
+        "reading": "순위표 불러오는 중…",
+        "searchingRelaxed": "조건 완화 계산 중",
+        "completeRelaxed": "조건 완화 구성"
       }
     },
     "events": {
