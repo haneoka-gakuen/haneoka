@@ -1,11 +1,13 @@
 // L3 — GEB
 // Input: An activity leaderboard player, related saved song boards and release-pinned growth rules.
-// Output: A shared dialog streaming up to ten preferred merged character and instrument configurations.
+// Output: A shared dialog of up to ten configurations, sorted by T.G.W and per-band instrument levels.
 // Pos: [Map](L2-2.md); lazy activity-only action from the shared ranking rows.
-// Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; owns one cancellable local worker.
+// Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; lazily owns one cancellable shared Rust/WASM engine Worker.
 import { LitElement, html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import type { TeamBuilderData } from "../lib/team-builder/data";
+import type { EngineClient } from "../lib/team-builder/engine/client";
 import { fetchEventTeamGrowthSources, type EventTeamGrowthSources } from "../lib/event-team-growth-limits";
 import type { EventTeamConfiguration, EventTeamSearchPage } from "../lib/event-team-analysis";
 import type { EventRankingDto, GameRecordsRegion, SongRankingRowDto, TrackedEventDto } from "../lib/game-records";
@@ -41,14 +43,14 @@ class EventTeamAnalysisElement extends LitElement {
   private growthSources?: EventTeamGrowthSources;
   private asOf = 0;
   private percent = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
-  private worker?: Worker;
+  private engine?: EngineClient;
   private requestId = 0;
   private lifetime = new AbortController();
   declare private result: EventTeamSearchPage | undefined;
   declare private error: string;
   declare private ready: boolean;
   declare private busy: boolean;
-  declare private expanded: ReadonlySet<number>;
+  declare private expanded: ReadonlySet<string>;
 
   constructor() {
     super();
@@ -64,7 +66,7 @@ class EventTeamAnalysisElement extends LitElement {
     this.locale = options.locale;
     this.region = options.region;
     this.percent = new Intl.NumberFormat(this.locale, { style: "percent", maximumFractionDigits: 1 });
-    document.addEventListener("visibilitychange", () => this.worker?.postMessage({ paused: document.hidden }), { signal: this.lifetime.signal });
+    document.addEventListener("visibilitychange", () => this.engine?.pauseEventGrowth(document.hidden), { signal: this.lifetime.signal });
     void this.load();
   }
   private text(key: string) { return clientText(this.locale, `catalog.rankings.analysis.${key}`, ""); }
@@ -72,7 +74,7 @@ class EventTeamAnalysisElement extends LitElement {
   private close = () => this.remove();
   disconnectedCallback() {
     this.lifetime.abort();
-    this.worker?.terminate();
+    this.engine?.dispose();
     super.disconnectedCallback();
   }
   private async load() {
@@ -105,34 +107,37 @@ class EventTeamAnalysisElement extends LitElement {
         observationCache.set(cacheKey, { at: cached && Date.now() - cached.at < 45_000 ? cached.at : Date.now(), records: songs });
         if (observationCache.size > 32) observationCache.delete(observationCache.keys().next().value!);
       }
-      this.worker = new Worker(new URL("../workers/event-team-analysis.worker.ts", import.meta.url), { type: "module" });
-      this.worker.onmessage = (event: MessageEvent<EventTeamSearchPage>) => {
-        if (event.data.id !== this.requestId) return;
-        this.busy = event.data.count === 0 && !event.data.complete;
-        this.result = event.data;
-      };
-      this.worker.onerror = () => { this.busy = false; this.error = "missingRules"; };
-      this.worker.postMessage({ paused: document.hidden });
+      const { EngineClient } = await import("../lib/team-builder/engine/client");
+      signal.throwIfAborted();
+      this.engine = new EngineClient(data, undefined, { maxWorkers: 1 });
+      this.engine.pauseEventGrowth(document.hidden);
       this.ready = true;
-      this.calculate(true);
+      this.calculate();
     } catch {
       if (!this.lifetime.signal.aborted) this.error = "loadError";
     }
   }
-  private calculate(initialize = false) {
-    const song = this.records[0];
-    if (!song) return;
+  private calculate() {
+    const engine = this.engine;
+    if (!engine || !this.growthSources || !this.records.length) return;
     this.busy = true;
     this.error = "";
     this.result = undefined;
     this.expanded = new Set();
-    this.worker?.postMessage({ id: ++this.requestId, ...(initialize ? { data: this.data, growthSources: this.growthSources } : {}), row: song.row, asOf: this.asOf,
-      eventId: Number(this.options.event.id), challengeId: Number(song.challengeId),
-      related: this.records.map((reading) => ({ row: reading.row, challengeId: Number(reading.challengeId) })) });
+    const requestId = ++this.requestId;
+    void engine.analyzeEventGrowth({ eventId: Number(this.options.event.id), asOf: this.asOf, sources: this.growthSources,
+      observations: this.records.map((reading) => ({ row: reading.row, challengeId: Number(reading.challengeId) })) }, (result) => {
+      if (requestId !== this.requestId || this.engine !== engine || this.lifetime.signal.aborted) return;
+      this.busy = result.count === 0 && !result.complete;
+      this.result = result;
+    }).catch(() => {
+      if (requestId !== this.requestId || this.engine !== engine || this.lifetime.signal.aborted) return;
+      this.busy = false; this.error = "missingRules";
+    });
   }
   private retry = () => {
     observationCache.delete(`${this.region}/${this.options.event.id}/${this.options.row.profileId}`);
-    this.worker?.terminate(); this.worker = undefined;
+    this.engine?.dispose(); this.engine = undefined;
     ++this.requestId; this.ready = false; this.error = ""; this.result = undefined; this.expanded = new Set();
     void this.load();
   };
@@ -169,33 +174,34 @@ class EventTeamAnalysisElement extends LitElement {
       ${group.characters.map((id, index) => html`<td class=${`is-numeric ranking-team-analysis__level${group.band === undefined && index === 0
         ? " ranking-team-analysis__start" : ""}`}>${character(id)}</td>`)}`);
   }
-  private toggle(index: number) {
+  private toggle(key: string) {
     const expanded = new Set(this.expanded);
-    if (!expanded.delete(index)) expanded.add(index);
+    if (!expanded.delete(key)) expanded.add(key);
     this.expanded = expanded;
   }
-  private renderPlan(configuration: EventTeamConfiguration, index: number, groups: Group[], bonusColumn: boolean) {
+  private renderPlan(configuration: EventTeamConfiguration, index: number, groups: Group[]) {
     const characters = new Map(configuration.characters.map((entry, position) => [entry.id, { entry, position }]));
     const instruments = new Map(configuration.instruments.map((entry, position) => [entry.id, { entry, position }]));
-    const open = this.expanded.has(index);
+    const key = configuration.id, open = this.expanded.has(key);
     const label = this.text("plan").replace("{n}", (index + 1).toLocaleString(this.locale));
-    const id = `ranking-team-analysis-plan-${index}`;
+    const id = `ranking-team-analysis-plan-${encodeURIComponent(key)}`;
     return html`<tbody class="ranking-team-analysis__plan">
       <tr>
         <th scope="row" class="is-sticky ranking-team-analysis__key">
           <button class="button button--text ranking-team-analysis__toggle" type="button" aria-label=${label}
-            aria-expanded=${String(open)} aria-controls=${id} @click=${() => this.toggle(index)}>
+            aria-expanded=${String(open)} aria-controls=${id} @click=${() => this.toggle(key)}>
             <span>${(index + 1).toLocaleString(this.locale)}</span>${icon("expand_more")}</button></th>
+        <td class="is-numeric ranking-team-analysis__minor">${this.percent.format(configuration.vipBonus / 10000)}</td>
         ${this.cells(groups,
           (band) => { const value = instruments.get(band)?.entry; return value ? this.span(value.minTotal, value.total) : nothing; },
           (character) => { const value = characters.get(character)?.entry; return value ? this.span(value.minLevel, value.level) : nothing; })}
-        ${bonusColumn ? html`<td class="is-numeric ranking-team-analysis__minor">${this.percent.format(configuration.vipBonus / 10000)}</td>` : nothing}
         <td class="is-numeric ranking-team-analysis__minor">${this.span(configuration.totalRank.min, configuration.totalRank.max)}</td>
       </tr>
       <tr class="ranking-team-analysis__detail" id=${id} ?hidden=${!open}>
         <th scope="row" class="is-sticky ranking-team-analysis__key">${this.text("taskCap")}</th>
+        <td></td>
         ${this.cells(groups, () => nothing, (character) => characters.get(character)?.entry.cap ?? nothing)}
-        ${bonusColumn ? html`<td></td>` : nothing}<td></td>
+        <td></td>
       </tr>
       ${configuration.changed ? configuration.witnesses.map((witness) => {
         const { title, jacket } = this.song(witness.challengeId);
@@ -203,10 +209,10 @@ class EventTeamAnalysisElement extends LitElement {
           <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title}>
             ${jacket ? html`<img class="ranking-team-analysis__jacket" width="32" height="32" src=${jacket} alt=${title} loading="lazy" decoding="async" />`
               : html`<span class="truncate">${title}</span>`}</th>
+          <td></td>
           ${this.cells(groups,
             (band) => { const value = instruments.get(band); return value ? witness.instruments[value.position] : nothing; },
             (character) => { const value = characters.get(character); return value ? witness.levels[value.position] : nothing; })}
-          ${bonusColumn ? html`<td></td>` : nothing}
           <td class="is-numeric">${this.span(witness.totalRank.min, witness.totalRank.max)}</td>
         </tr>`;
       }) : nothing}
@@ -216,15 +222,22 @@ class EventTeamAnalysisElement extends LitElement {
     const result = this.result;
     if (!result) return nothing;
     if (result.complete && result.status !== "ready") return this.failure(result.status);
-    const rows = result.rows;
+    const rows = [...result.rows].sort((a, b) => {
+      const bonus = b.vipBonus - a.vipBonus;
+      if (bonus) return bonus;
+      for (let index = 0; index < a.instruments.length; index++) {
+        const left = a.instruments[index]!, right = b.instruments[index]!;
+        const difference = (right.minTotal ?? right.total) - (left.minTotal ?? left.total) || right.total - left.total;
+        if (difference) return difference;
+      }
+      return a.id.localeCompare(b.id);
+    });
     if (!rows.length) return loadingState(this.text("loading"));
     const groups = this.groups(rows[0]!);
-    const bonusColumn = new Set(rows.map((row) => row.vipBonus)).size > 1;
-    const relaxed = rows.some((row) => row.relaxed);
+    const relaxed = rows.some((configuration) => configuration.relaxed);
     return html`
       <div class="row row--between ranking-team-analysis__toolbar">
-        ${bonusColumn ? html`<span></span>` : html`<span class="chip chip--static chip--tonal">
-          <span class="chip__label">${this.text("vipBonus")} ${this.percent.format(rows[0]!.vipBonus / 10000)}</span></span>`}
+        <span class="chip chip--static chip--tonal"><span class="chip__label">${rows.length.toLocaleString(this.locale)} / 10</span></span>
         <span class="md-label-large ranking-team-analysis__status" role="status">${this.text(result.complete
           ? relaxed ? "completeRelaxed" : "complete"
           : relaxed ? "searchingRelaxed" : "searching")}</span>
@@ -234,10 +247,10 @@ class EventTeamAnalysisElement extends LitElement {
           <thead>
             <tr>
               <th scope="col" rowspan="2" class="is-sticky ranking-team-analysis__key">#</th>
+              <th scope="col" rowspan="2" class="is-numeric">${this.text("vipBonus")}</th>
               ${groups.map((group) => html`<th scope="colgroup" class="ranking-team-analysis__band ranking-team-analysis__start"
                 colspan=${group.characters.length + (group.band === undefined ? 0 : 1)}>
                 <span class="truncate">${group.band === undefined ? "" : this.band(group.band)}</span></th>`)}
-              ${bonusColumn ? html`<th scope="col" rowspan="2" class="is-numeric">${this.text("vipBonus")}</th>` : nothing}
               <th scope="col" rowspan="2" class="is-numeric">${this.text("rankSum")}</th>
             </tr>
             <tr>
@@ -249,11 +262,11 @@ class EventTeamAnalysisElement extends LitElement {
                   return html`<th scope="col" aria-label=${name} title=${name} class=${`ranking-team-analysis__member${group.band === undefined && index === 0
                     ? " ranking-team-analysis__start" : ""}`}>
                     <img width="32" height="32" src=${face} alt="" loading="lazy" decoding="async" />
-                    <span>${name}</span></th>`;
+                    <span title=${name}>${name}</span></th>`;
                 })}`)}
             </tr>
           </thead>
-          ${rows.map((configuration, index) => this.renderPlan(configuration, index, groups, bonusColumn))}
+          ${repeat(rows, (configuration) => configuration.id, (configuration, index) => this.renderPlan(configuration, index, groups))}
         </table>
       </div>`;
   }
@@ -262,7 +275,7 @@ class EventTeamAnalysisElement extends LitElement {
     return html`
       <dialog class="dialog ranking-team-analysis" ${modal(this.close)} aria-label=${this.text("title")}>
         <div class="dialog__surface">
-          <header class="dialog__header"><h2 class="row row--between"><span class="truncate">${this.options.row.name}</span>
+          <header class="dialog__header"><h2 class="row row--between"><span class="truncate" title=${this.options.row.name}>${this.options.row.name}</span>
             <span class="md-label-large ranking-team-analysis__kind">${this.text("title")}</span></h2></header>
           <div class="dialog__body stack stack--flex">
             ${!this.ready && !this.error ? loadingState(this.text("reading")) : nothing}

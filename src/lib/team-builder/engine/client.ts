@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／评价／解释结果及当前 Worker 阶段。
+// Output: EngineClient、搜索／成长／活动养成／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 共享编译后的 WASM 模块和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
@@ -8,6 +8,7 @@ import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
+import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
 import { aspirationHeld, compareHits, mergeShardResponses } from "./merge";
 import { chartKey, EngineCharts } from "./charts";
@@ -17,7 +18,8 @@ let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const engineModule = () => compiledEngine ??= WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal: AbortSignal.timeout(60_000) }))
   .catch(error => { compiledEngine = null; throw error; });
 
-type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (done: number, total: number) => void; snapshot?: (value: EngineSnapshot) => void };
+type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (done: number, total: number) => void;
+  snapshot?: (value: EngineSnapshot) => void; eventGrowth?: (value: EventTeamSearchPage) => void };
 type Preparation = { message: Extract<EngineCall, { type: "run" }>; floor: number; reward?: RewardFloor };
 const rewardFloor = (hit: EngineHit): RewardFloor => [hit.key, hit.event?.otherMean ?? 0, hit.score?.mean ?? 0];
 
@@ -31,6 +33,8 @@ class EngineWorker {
   private cooperativeFloor = false;
   private cooperativeReward = false;
   private runId: number | null = null;
+  private eventGrowthId: number | null = null;
+  private eventGrowthPaused = false;
   private cachedCharts: string[] = [];
   private preparing: Preparation | null = null;
   private worker: Worker | null = null;
@@ -72,17 +76,24 @@ class EngineWorker {
       if (reply.type === "phase") this.setPhase(reply.phase === "network" ? "networkMs" : "computationMs");
       else if (reply.type === "progress") pending.progress?.(reply.done, reply.total);
       else if (reply.type === "snapshot") pending.snapshot?.(reply.snapshot);
+      else if (reply.type === "eventGrowth") pending.eventGrowth?.({ ...reply.result, id: reply.id, page: 0 });
       else {
+        const eventGrowth = reply.id === this.eventGrowthId;
         this.setPhase(null);
         this.pending.delete(reply.id);
         if (reply.type === "ready") this.cooperativeFloor = reply.cooperativeFloor === true;
         if (reply.type === "ready") this.cooperativeReward = reply.cooperativeReward === true;
         if (reply.id === this.runId) this.runId = null;
+        if (reply.id === this.eventGrowthId) this.eventGrowthId = null;
         if (reply.type === "error") pending.reject(new Error(reply.message));
         else {
           if (reply.type === "result" && reply.cachedCharts) this.cachedCharts = reply.cachedCharts;
           if (reply.type === "result" && reply.scoredSeeds) this.scoredSeeds = reply.scoredSeeds;
-          pending.resolve(reply.type === "result" ? reply.result : undefined);
+          if (reply.type === "result" && eventGrowth) {
+            const result: EventTeamSearchPage = { ...(reply.result as EventTeamSearchResult), id: reply.id, page: 0 };
+            pending.eventGrowth?.(result);
+            pending.resolve(result);
+          } else pending.resolve(reply.type === "result" ? reply.result : undefined);
         }
       }
     };
@@ -108,14 +119,21 @@ class EngineWorker {
         ? (!!message.request.rewardPhase || message.request.rewardLexicographic === true) && !!message.request.goal.gekiso
         : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (message.request.goal.criterion === "max" && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
   }
-  private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"]): Promise<unknown> {
+  private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"]): Promise<unknown> {
     const id = this.nextId++;
     const cooperativeFloor = this.cooperativeFloor && this.acceptsFloor(message);
     if (message.type === "run") this.runId = cooperativeFloor ? id : null;
+    if (message.type === "eventGrowth") this.eventGrowthId = id;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress, snapshot });
-      this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor } : {}) });
+      this.pending.set(id, { resolve, reject, progress, snapshot, eventGrowth });
+      this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor } : {}),
+        ...(message.type === "eventGrowth" ? { paused: this.eventGrowthPaused } : {}) });
     });
+  }
+  pauseEventGrowth(paused: boolean) {
+    this.eventGrowthPaused = paused;
+    if (this.eventGrowthId !== null)
+      this.worker!.postMessage({ type: "pauseEventGrowth", id: this.eventGrowthId, paused } satisfies EngineCall);
   }
   raiseFloor(value: number) {
     if (!Number.isFinite(value)) return false;
@@ -139,7 +157,8 @@ class EngineWorker {
     this.worker!.postMessage({ type: "floor", id: this.runId, value: hit.key, reward } satisfies EngineCall);
     return true;
   }
-  async send<T>(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], searchBudgetMs?: number): Promise<T> {
+  async send<T>(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], searchBudgetMs?: number,
+    eventGrowth?: Pending["eventGrowth"]): Promise<T> {
     const preparation: Preparation | null = message.type === "run" ? { message, floor: -Infinity } : null;
     this.preparing = preparation;
     const ready = this.spawn();
@@ -166,10 +185,10 @@ class EngineWorker {
       const [, loadedCharts] = await Promise.all([initialized, loaded]);
       if (worker !== this.worker) throw new DOMException("Cancelled", "AbortError");
       if (this.preparing === preparation) this.preparing = null;
-      if (message.type === "run" || message.type === "evaluate") this.setPhase("computationMs");
+      if (message.type === "run" || message.type === "evaluate" || message.type === "eventGrowth") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
-      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot)) as T;
+      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth)) as T;
     } finally {
       if (this.preparing === preparation) this.preparing = null;
       if (worker === this.worker && this.pending.size === 0) this.setPhase(null);
@@ -205,6 +224,7 @@ class EngineWorker {
     this.cachedCharts = [];
     this.preparing = null;
     this.runId = null;
+    this.eventGrowthId = null;
     this.cooperativeFloor = false;
     this.cooperativeReward = false;
     this.setPhase(null);
@@ -1020,6 +1040,13 @@ export class EngineClient {
   }
   growth(request: EngineRequest, progress?: Pending["progress"]) {
     return this.enqueue(() => this.pool[0]!.send<GrowthResult>({ type: "growth", id: 0, request }, progress));
+  }
+  analyzeEventGrowth(request: EventTeamGrowthRequest, onUpdate?: (value: EventTeamSearchPage) => void): Promise<EventTeamSearchPage> {
+    return this.enqueue(() => this.pool[0]!.send<EventTeamSearchPage>({ type: "eventGrowth", id: 0, request },
+      undefined, undefined, undefined, onUpdate));
+  }
+  pauseEventGrowth(paused: boolean) {
+    this.pool[0]!.pauseEventGrowth(paused);
   }
   explain(request: ExplainRequest) {
     return this.enqueue(() => this.pool[0]!.send<Timeline>({ type: "explain", id: 0, request }));

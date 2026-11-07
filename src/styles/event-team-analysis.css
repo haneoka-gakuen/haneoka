@@ -1,6 +1,6 @@
 @layer pages {
   .ranking-team-analysis {
-    width: min(1120px, calc(100vw - 24px));
+    width: min(1200px, calc(100vw - 24px));
     height: min(92dvh, 900px);
     max-height: 92dvh;
   }

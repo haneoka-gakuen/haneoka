@@ -1,15 +1,16 @@
 /// <reference lib="webworker" />
 // L3 — GEB
 // Input: EngineCall、已序列化 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
-// Output: EngineReply、进度、快照、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
+// Output: EngineReply、进度、快照、活动养成更新、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
-// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的标量／奖励排序下界，JSPI 暂停期间实时接收下界，逐请求清空排序状态，持有句柄和完整评分缓存并发送消息。
+// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，任务队列让出并支持可见性暂停，不读取谱面。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
  * serves searches and evaluations. */
 import { chartKey, downloadChart } from "./charts";
 import type { EngineHit, EngineRequest, EngineResponse, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
 import { emptyResponse, requestChartSongs } from "./execution";
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, ExplainRequest } from "./protocol";
+import type { EventTeamSearchResult } from "../../event-team-analysis";
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -44,6 +45,8 @@ let cooperativeRun = false;
 let pendingFloor: number | null = null;
 let pendingReward: RewardFloor | null = null;
 let nextYield = 0;
+const eventGrowthPaused = new Map<number, boolean>();
+const eventGrowthResumes = new Map<number, () => void>();
 const milliseconds = () => performance.timeOrigin + performance.now();
 const continuation = new MessageChannel();
 let resume: ((time: number) => void) | null = null;
@@ -52,12 +55,16 @@ continuation.port1.onmessage = () => {
   resume = null;
   resolve?.(milliseconds());
 };
+const yieldTask = () => new Promise<number>(resolve => { resume = resolve; continuation.port2.postMessage(null); });
 const cooperativeClock = () => {
   const now = milliseconds();
   if (!cooperativeRun || now < nextYield) return now;
   nextYield = now + 16;
-  return new Promise<number>(resolve => { resume = resolve; continuation.port2.postMessage(null); });
+  return yieldTask();
 };
+async function waitEventGrowth(id: number) {
+  while (eventGrowthPaused.get(id)) await new Promise<void>(resolve => eventGrowthResumes.set(id, resolve));
+}
 
 const readString = (pointer: number) => {
   const bytes = new Uint8Array(engine!.memory.buffer);
@@ -204,6 +211,27 @@ async function execute(call: EngineCall) {
       } finally {
         onProgress = null;
       }
+    } else if (call.type === "eventGrowth") {
+      try {
+        await waitEventGrowth(call.id);
+        let result = await invoke({ op: "eventGrowthStart", handle, request: call.request }) as unknown as EventTeamSearchResult;
+        let lastPublished = -Infinity, hadRows = false;
+        while (!result.complete) {
+          const now = performance.now();
+          if (!hadRows && result.rows.length > 0 || now - lastPublished >= 100) {
+            post({ type: "eventGrowth", id: call.id, result });
+            lastPublished = now;
+          }
+          hadRows ||= result.rows.length > 0;
+          await yieldTask();
+          await waitEventGrowth(call.id);
+          result = await invoke({ op: "eventGrowthStep", handle, budgetMs: 8 }) as unknown as EventTeamSearchResult;
+        }
+        post({ type: "result", id: call.id, result });
+      } finally {
+        eventGrowthPaused.delete(call.id);
+        eventGrowthResumes.delete(call.id);
+      }
     } else if (call.type === "evaluate") {
       const rows = await charts(call.request.songs, call.loadedCharts);
       const result = await invoke({ op: "evaluateAll", handle, request: call.request, charts: rows });
@@ -231,18 +259,28 @@ async function execute(call: EngineCall) {
     }
   } catch (error) {
     pendingFloor = null;
+    eventGrowthPaused.delete(call.id);
+    eventGrowthResumes.delete(call.id);
     post({ type: "error", id: call.id, message: error instanceof Error ? error.message : String(error) });
   }
 }
 let operations = Promise.resolve();
 self.onmessage = (event: MessageEvent<EngineCall>) => {
   const call = event.data;
-  if (call.type === "floor") {
+  if (call.type === "pauseEventGrowth") {
+    if (eventGrowthPaused.has(call.id)) {
+      eventGrowthPaused.set(call.id, call.paused);
+      if (!call.paused) { eventGrowthResumes.get(call.id)?.(); eventGrowthResumes.delete(call.id); }
+    }
+  } else if (call.type === "floor") {
     if (call.id === activeId && pendingFloor !== null && Number.isFinite(call.value)) {
       pendingFloor = Math.max(pendingFloor, call.value);
       if (call.reward) pendingReward = call.reward;
       if (cooperativeRun) engine?.haneoka_search_floor?.(call.value);
       if (cooperativeRun && call.reward) engine?.haneoka_search_reward?.(...call.reward);
     }
-  } else operations = operations.then(() => execute(call));
+  } else {
+    if (call.type === "eventGrowth") eventGrowthPaused.set(call.id, call.paused ?? false);
+    operations = operations.then(() => execute(call));
+  }
 };

@@ -419,7 +419,6 @@
     "src/lit/ui/render-quality-settings.ts",
     "src/lib/event-team-analysis.ts",
     "src/lit/event-team-analysis.ts",
-    "src/workers/event-team-analysis.worker.ts",
     "src/lib/event-team-growth-limits.ts"
   ],
   "entry_documents": [

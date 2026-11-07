@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 引擎请求／结果与配队数据类型。
-// Output: EngineCall（含编译模块、固定谱面载荷、私有评分缓存及标量／奖励排序下界）、EngineReply（含协作能力和 Worker 四张缓存身份）、停止原因及 EngineSnapshot。
+// Output: EngineCall（含编译模块、固定谱面载荷、私有评分缓存、排序下界与活动养成控制）、EngineReply（含养成更新、协作能力和 Worker 四张缓存身份）、停止原因及 EngineSnapshot。
 // Pos: [Map](L2-2.md)；主线程与当前引擎 Worker 的消息边界。
 // Effects/Dependencies: 类型声明；资源获取与计算由 client／worker 实现。
 import type { TeamBuilderData } from "../data";
@@ -8,6 +8,7 @@ import type { EngineRequest, EngineResponse, Goal, SongRef, TeamSpec, RewardFloo
 import type { MemberInput, SnapInput, UnknownPolicy } from "./box";
 import type { PlayModel } from "./live";
 import type { PlayerInput } from "./api";
+import type { EventTeamGrowthRequest, EventTeamSearchResult } from "../../event-team-analysis";
 
 export type EvaluateRequest = {
   songRules?: import("../arena").SongRules;
@@ -42,12 +43,15 @@ export type EngineCall = (
   | { type: "run"; id: number; request: EngineRequest; deferScores?: boolean; scoredSeeds?: unknown[]; cooperativeFloor?: boolean; initialFloor?: number; initialReward?: RewardFloor }
   | { type: "floor"; id: number; value: number; reward?: RewardFloor }
   | { type: "growth"; id: number; request: EngineRequest }
+  | { type: "eventGrowth"; id: number; request: EventTeamGrowthRequest; paused?: boolean }
+  | { type: "pauseEventGrowth"; id: number; paused: boolean }
   | { type: "evaluate"; id: number; request: EvaluateRequest }
   | { type: "explain"; id: number; request: ExplainRequest }
   | { type: "charts"; id: number; songs: SongRef[] }) & { loadedCharts?: EngineChart[] };
 export type EngineReply =
   | { type: "phase"; id: number; phase: "network" | "computation" }
   | { type: "snapshot"; id: number; snapshot: EngineSnapshot }
+  | { type: "eventGrowth"; id: number; result: EventTeamSearchResult }
   | { type: "ready"; id: number; cooperativeFloor?: boolean; cooperativeReward?: boolean }
   | { type: "progress"; id: number; done: number; total: number }
   | { type: "result"; id: number; result: unknown; scoredSeeds?: unknown[]; cachedCharts?: string[] }
