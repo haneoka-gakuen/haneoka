@@ -174,7 +174,10 @@
     align-content: center;
     gap: 2px;
     min-height: 48px;
+    height: auto;
     padding: 4px 0;
+    border-radius: 0;
+    overflow: visible;
     color: inherit;
     text-align: inherit;
   }
