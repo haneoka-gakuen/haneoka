@@ -6,7 +6,7 @@
 import { ARENA_PROJECTION } from "../src/lib/arena";
 import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
 import { serveSiteDiscovery } from "./site-discovery";
-import { isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
+import { CANONICAL_ORIGIN, isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
 import { communityChartDocumentEtag, communityChartPath, communityChartPlayerPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument } from "../src/lib/community-chart-route";
@@ -3732,7 +3732,7 @@ function previewDetailShell(request: Request, shell: Response, route: ResourceRo
     })
     .on('link[rel="canonical"]', {
       element(element) {
-        element.setAttribute("href", new URL(request.url).origin + new URL(request.url).pathname);
+        element.setAttribute("href", CANONICAL_ORIGIN + new URL(request.url).pathname);
       },
     })
     .transform(new Response(shell.body, { status: 200, headers }));
@@ -3879,7 +3879,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     const origin = siteOrigin(url);
     const metadata: HTMLRewriterElementContentHandlers = { element(element) {
       const attribute = element.tagName === "link" ? "href" : "content";
-      element.setAttribute(attribute, siteAssetUrl(element.getAttribute(attribute)!, origin));
+      element.setAttribute(attribute, siteAssetUrl(element.getAttribute(attribute)!, CANONICAL_ORIGIN));
     } };
     const media: HTMLRewriterElementContentHandlers = { element(element) {
       element.setAttribute("src", siteLink(element.getAttribute("src")!, origin));
@@ -3891,7 +3891,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       .on('meta[property="og:url"]', metadata)
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;
-        text.replace(text.lastInTextNode ? structuredData.replaceAll(`https://${CANONICAL_HOST}/`, `${origin}/`) : "", { html: true });
+        text.replace(text.lastInTextNode ? structuredData.replaceAll(`${origin}/`, `${CANONICAL_ORIGIN}/`) : "", { html: true });
         if (text.lastInTextNode) structuredData = "";
       } })
       .on("a[href]", { element(element) {
