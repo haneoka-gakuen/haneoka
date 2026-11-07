@@ -55,11 +55,11 @@ async function buildDocuments(): Promise<SitemapDocument[]> {
       add(locale, announcementPath(server, locale));
       for (const route of routes) add(locale, route === "/" ? homePath(server, locale) : route === "/announcements" ? announcementPath(server, locale)
         : resourceCollectionHref(route, server, locale) ?? localePath(route, locale));
-      for (const route of [...catalog.map((page) => `${page.route}/${encodeURIComponent(page.id)}/`), ...stories, ...models, ...help]) {
+      for (const route of [...catalog.filter((page) => page.published).map((page) => `${page.route}/${encodeURIComponent(page.id)}/`), ...stories, ...models, ...help]) {
         const target = legacyEntityRedirectTarget(`/${locale}${route}`, `?server=${server}`);
         if (target) add(locale, target);
       }
-      for (const page of catalog.filter((page) => page.collection === "songs" && page.kind === "song"))
+      for (const page of catalog.filter((page) => page.published && page.collection === "songs" && page.kind === "song"))
         add(locale, rankingPath({ server, locale, id: page.id }));
       for (const entry of skills.entries) add(locale, resourcePath({ server, locale, kind: "skills", id: skillPageId(entry) }));
       for (const entry of (await announcementPageData(server, locale)).entries) add(locale, announcementPath(server, locale, entry.id));

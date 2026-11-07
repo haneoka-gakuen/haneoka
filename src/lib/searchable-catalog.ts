@@ -18,6 +18,7 @@ import {
 import type { ReleaseServer } from "./release-server";
 import { formatDate as siteDate } from "./date-format";
 import { cardRarityName } from "./card-rarity";
+import { contentPublished } from "./content-publication";
 
 export interface SearchableCatalogFact {
   key: string;
@@ -40,6 +41,8 @@ export interface SearchableCatalogPage {
   facts: Record<Locale, SearchableCatalogFact[]>;
   image: string;
   accent: string;
+  /** Released when the page was built; unreleased entity pages are noindex. */
+  published: boolean;
 }
 
 interface CollectionDefinition {
@@ -668,6 +671,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
           facts,
           image: catalogImage(definition.kind, value),
           accent: definition.kind === "character" ? String(value.colorCode || "") : "",
+          published: contentPublished(value),
         },
       ];
     }),

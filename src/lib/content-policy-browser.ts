@@ -1,6 +1,5 @@
 import {
   DEFAULT_VISIBILITY_POLICY,
-  VISIBILITY_WORKSPACES,
   parseVisibilityPolicy,
   type ContentVisibilityPolicy,
   type ContentVisibilitySettings,
@@ -65,18 +64,6 @@ export function installContentVisibility(): void {
     ) {
       next.documentElement.dataset.contentVisibilityPolicy = current.contentVisibilityPolicy;
       next.documentElement.dataset.contentVisibilityVersion = current.contentVisibilityVersion;
-      for (const workspace of next.querySelectorAll(
-        VISIBILITY_WORKSPACES.map((tag) => `${tag}[data-prerendered]`).join(","),
-      )) {
-        const data = [...workspace.querySelectorAll('script[type="application/json"]')];
-        workspace.replaceChildren(...data);
-        workspace.removeAttribute("data-prerendered");
-      }
-      const home = next.querySelector("home-dashboard[data-prerendered]");
-      if (home) {
-        for (const child of [...home.children]) if (child.tagName !== "SCRIPT") child.remove();
-        home.removeAttribute("data-prerendered");
-      }
     }
   });
 }

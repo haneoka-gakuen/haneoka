@@ -6,6 +6,7 @@
 import { ARENA_PROJECTION } from "../src/lib/arena";
 import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
 import { serveSiteDiscovery } from "./site-discovery";
+import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
 import { CANONICAL_ORIGIN, isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
@@ -338,6 +339,7 @@ const API_CACHE_TTL = 86_400;
 const CATALOG_API_CACHE_CONTROL = "public, max-age=0, must-revalidate";
 // Release-pinned media (`?release=r-…`) is content-addressed by its release.
 const PINNED_MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";
+const UNPINNED_MEDIA_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 // Release-pinned catalogue JSON is immutable in content, but its worker
 // representation can change with a deployment; match the edge cache's day.
 const PINNED_CATALOG_API_CACHE_CONTROL = "public, max-age=86400";
@@ -2912,12 +2914,13 @@ async function handleReleaseMedia(
   }
   // A `?release=` URL names one immutable release: its bytes can never
   // change, so browsers keep it for a year instead of revalidating every
-  // jacket on every visit. Unpinned URLs follow the moving current pointer.
+  // jacket on every visit. Unpinned URLs follow the moving current pointer
+  // for at most an hour.
   const cacheControl = stampDiagnostics
     ? "private, no-store"
     : requested
       ? PINNED_MEDIA_CACHE_CONTROL
-      : CATALOG_API_CACHE_CONTROL;
+      : UNPINNED_MEDIA_CACHE_CONTROL;
   const moc = tree === "runtime" && relative.endsWith(".moc3");
   const clientEncoding = request.cf?.clientAcceptEncoding;
   const gzip =
@@ -4203,68 +4206,9 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   headers.delete("If-Modified-Since");
   const assetRequest = new Request(request, { headers });
   const { publicationId, webBuildId } = await staticPublicationContext(request, env);
-  const [response, settings] = await Promise.all([
-    (async () => {
-      const redirect = await staticDocumentRedirect(assetRequest, env, publicationId);
-      if (redirect) return redirect;
-      let pageReady = false;
-      const pageRoute = parseResourceRoute(url.pathname);
-      if (
-        catalogPageRollout.enabledKinds.length &&
-        pageRoute?.id &&
-        ["jp", "intl"].includes(pageRoute.server) &&
-        ["cards", "support-cards", "events", "songs"].includes(pageRoute.kind)
-      ) {
-        const query = new URL(`/api/v1/servers/${pageRoute.server}/release`, url);
-        query.search = new URLSearchParams({
-          projection: "page-data",
-          contract: "catalog-page-v1",
-          locale: pageRoute.locale,
-          resource: pageRoute.kind,
-          id: pageRoute.id,
-        }).toString();
-        const lookup = await handlePageData(new Request(query), catalogPageBindings(env, request));
-        if (lookup?.status === 404)
-          return (
-            (await notFoundDocument(assetRequest, env, pageRoute.locale)) ??
-            new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
-          );
-        if (lookup?.ok) pageReady = (await lookup.json() as { state?: string }).state === "ready";
-      }
-      const provider = providerEntityFromUrl(url);
-      const view = staticViewFromUrl(url);
-      const corePath = staticDocumentLookupPath(view || url.pathname);
-      const document =
-        assetStaticDocumentFromUrl(url) ||
-        playlistStaticDocumentFromUrl(url) ||
-        (provider ? providerEntityHtmlPath(provider) : corePath);
-      const documents = document ? [document] : [];
-      if (provider && corePath && corePath !== document) documents.push(corePath);
-      for (const candidate of documents) {
-        const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
-        if (hit) return hit;
-      }
-      if (provider && provider.resource !== "songs")
-        return (await notFoundDocument(assetRequest, env, provider.locale)) ??
-          new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
-      if (view) {
-        const hit = await env.ASSETS.fetch(new Request(new URL(view, url), assetRequest));
-        if (hit.status !== 404) return hit;
-      }
-      return (
-        (await serveCanonicalResourceDocument(assetRequest, env, ctx, publicationId, pageReady)) ||
-        serveStaticAsset(assetRequest, env)
-      );
-    })(),
-    Promise.resolve(previewSettings),
-  ]);
-  const chartEtag = response.headers.get("ETag");
-  const chartPath = parseCommunityChartDocument(url.pathname) || parseCommunityStoryDocument(url.pathname);
-  const page = chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
-    ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
-    : response;
-  if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
-  const result = await applySiteSettings(request, page, settings, webBuildId, env);
+  const guestKey = previewRequest ? null : guestDocumentKey(request, webBuildId, publicationId);
+  const cached = guestKey ? await caches.default.match(guestKey) : undefined;
+  const result = cached ? guestDocument(request, cached) : await renderDocument();
   if (
     (result.body || request.method === "HEAD" || result.status === 304) &&
     result.headers.get("Content-Type")?.includes("text/html") &&
@@ -4276,6 +4220,104 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     return new Response(result.body, { status: result.status, statusText: result.statusText, headers: compressed });
   }
   return result;
+
+  async function renderDocument(): Promise<Response> {
+    const [response, settings] = await Promise.all([
+      (async () => {
+        const redirect = await staticDocumentRedirect(assetRequest, env, publicationId);
+        if (redirect) return redirect;
+        let pageReady = false;
+        const pageRoute = parseResourceRoute(url.pathname);
+        if (
+          catalogPageRollout.enabledKinds.length &&
+          pageRoute?.id &&
+          ["jp", "intl"].includes(pageRoute.server) &&
+          ["cards", "support-cards", "events", "songs"].includes(pageRoute.kind)
+        ) {
+          const query = new URL(`/api/v1/servers/${pageRoute.server}/release`, url);
+          query.search = new URLSearchParams({
+            projection: "page-data",
+            contract: "catalog-page-v1",
+            locale: pageRoute.locale,
+            resource: pageRoute.kind,
+            id: pageRoute.id,
+          }).toString();
+          const lookup = await handlePageData(new Request(query), catalogPageBindings(env, request));
+          if (lookup?.status === 404)
+            return (
+              (await notFoundDocument(assetRequest, env, pageRoute.locale)) ??
+              new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
+            );
+          if (lookup?.ok) pageReady = (await lookup.json() as { state?: string }).state === "ready";
+        }
+        const provider = providerEntityFromUrl(url);
+        const view = staticViewFromUrl(url);
+        const corePath = staticDocumentLookupPath(view || url.pathname);
+        const document =
+          assetStaticDocumentFromUrl(url) ||
+          playlistStaticDocumentFromUrl(url) ||
+          (provider ? providerEntityHtmlPath(provider) : corePath);
+        const documents = document ? [document] : [];
+        if (provider && corePath && corePath !== document) documents.push(corePath);
+        for (const candidate of documents) {
+          const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
+          if (hit) return hit;
+        }
+        if (provider && provider.resource !== "songs")
+          return (await notFoundDocument(assetRequest, env, provider.locale)) ??
+            new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+        if (view) {
+          const hit = await env.ASSETS.fetch(new Request(new URL(view, url), assetRequest));
+          if (hit.status !== 404) return hit;
+        }
+        return (
+          (await serveCanonicalResourceDocument(assetRequest, env, ctx, publicationId, pageReady)) ||
+          serveStaticAsset(assetRequest, env)
+        );
+      })(),
+      Promise.resolve(previewSettings),
+    ]);
+    const chartEtag = response.headers.get("ETag");
+    const chartPath = parseCommunityChartDocument(url.pathname) || parseCommunityStoryDocument(url.pathname);
+    const page = chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
+      ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
+      : response;
+    if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
+    const rendered = await applySiteSettings(request, page, settings, webBuildId, env);
+    if (!guestKey || request.method !== "GET" || rendered.status !== 200 || !rendered.body || !rendered.headers.get("Content-Type")?.includes("text/html"))
+      return rendered;
+    const [body, copy] = rendered.body.tee();
+    const stored = new Headers(rendered.headers);
+    stored.delete("Vary");
+    stored.set("Cache-Control", `public, max-age=${GUEST_DOCUMENT_TTL}`);
+    ctx.waitUntil(caches.default.put(guestKey, new Response(copy, { status: 200, headers: stored })).catch(() => undefined));
+    return new Response(body, { status: rendered.status, statusText: rendered.statusText, headers: rendered.headers });
+  }
+}
+
+/** Guest documents differ only by address, build, publication and spoiler preference. */
+const GUEST_DOCUMENT_TTL = 600;
+const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-|__Host-)?haneoka\.session_/u;
+function guestDocumentKey(request: Request, webBuildId: string, publicationId: string | null): Request | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const cookie = request.headers.get("Cookie") || "";
+  if (request.headers.has("Authorization") || SESSION_COOKIE.test(cookie)) return null;
+  const key = new URL(request.url);
+  key.searchParams.set("__guest-document", `${webBuildId}:${publicationId ?? ""}:${spoilerCookieEnabled(cookie) ? 1 : 0}`);
+  return new Request(key, { method: "GET" });
+}
+function guestDocument(request: Request, cached: Response): Response {
+  const headers = new Headers(cached.headers);
+  headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+  headers.set("Vary", "Accept-Encoding, Cookie, Authorization");
+  headers.delete("Age");
+  headers.delete("CF-Cache-Status");
+  const etag = headers.get("ETag");
+  if ((etag && request.headers.get("If-None-Match") === etag) || request.method === "HEAD") {
+    void cached.body?.cancel();
+    return new Response(null, { status: etag && request.headers.get("If-None-Match") === etag ? 304 : 200, headers });
+  }
+  return new Response(cached.body, { status: 200, headers });
 }
 
 function errorDetails(error: unknown): { message: string; name: string } {

@@ -59,8 +59,10 @@ const languageAlternates = isLocalizedRoute
       href: `${origin}${canonicalPath(canonicalRoute ? localePath(publicRoute, target) : localePath(route, target))}`,
     }))
   : [];
+const entityImage = searchImage?.trim() ? new URL(searchImage.trim(), origin).href : undefined;
+const socialImage = entityImage ?? `${origin}/images/haneoka-social-card.png`;
 const structuredData = JSON.stringify(
-  pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute),
+  pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage),
 ).replaceAll("<", "\\u003c");
 const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed());
 // Birthday themes read [character, colour, month, day, avatar].
@@ -207,7 +209,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
 
     />
     <meta property="og:url" content={canonicalHref} />
-    <meta property="og:image" content={`${origin}/images/haneoka-social-card.png`} />
+    <meta property="og:image" content={socialImage} />
     <!-- Pagefind's automatic image is the first image after an h1 (often a UI icon or scene background). -->
     <meta data-pagefind-meta="image:" />
     {searchImage?.trim() && <meta data-pagefind-meta="image[content]" content={searchImage.trim()} />}
@@ -219,10 +221,10 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       content={summary}
 
     />
-    <meta name="twitter:image" content={`${origin}/images/haneoka-social-card.png`} />
+    <meta name="twitter:image" content={socialImage} />
     <meta name="theme-color" content="#f0edf1" />
     <meta name="color-scheme" content="light dark" />
-    {noindex && <meta name="robots" content="noindex,follow" />}
+    <meta name="robots" content={noindex ? "noindex,follow" : "max-image-preview:large"} />
     <link rel="canonical" href={canonicalHref} />
     {!noindex &&
       languageAlternates.map((alternate) => (

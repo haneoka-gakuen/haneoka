@@ -63,21 +63,6 @@ export const DEFAULT_VISIBILITY_RULE: VisibilityRule = {
   allowOverride: true,
 };
 export const DEFAULT_VISIBILITY_POLICY: ContentVisibilityPolicy = { eventChallengeSongs: true, types: {} };
-export const VISIBILITY_WORKSPACES = [
-  "catalog-screen",
-  "story-workspace",
-  "team-builder",
-  "live2d-workspace",
-  "spine-workspace",
-  "mission-workspace",
-  "calendar-page",
-  "stamp-maker",
-  "song-slide-puzzle",
-  "skills-workspace",
-  "tgw-card-workspace",
-  "anon-tokyo-workspace",
-  "help-workspace",
-] as const;
 
 export function visibilityType(value: string): VisibilityType | undefined {
   const kind =

@@ -12,7 +12,7 @@ import {
 } from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { contentUserGroup, readContentVisibility } from "./content-visibility";
-import { DEFAULT_VISIBILITY_RULE, VISIBILITY_WORKSPACES, visibilityType } from "../src/lib/content-visibility-policy";
+import { DEFAULT_VISIBILITY_RULE, visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
@@ -139,7 +139,6 @@ export async function applySiteSettings(
   const [visibility, group] = await Promise.all([readContentVisibility(env), contentUserGroup(request, env)]);
   const rules = visibility.policy;
   const preference = spoilerCookieEnabled(request.headers.get("Cookie"));
-  const customVisibility = !preference || Object.keys(rules.types).length > 0;
   const resource = parseResourceRoute(new URL(request.url).pathname);
   const kind = resource && visibilityType(resource.kind);
   const rule = kind ? (rules.types[kind] ?? DEFAULT_VISIBILITY_RULE) : undefined;
@@ -220,26 +219,6 @@ export async function applySiteSettings(
           `<style data-community-visibility>${communityVisibilityCss(new URL(request.url).origin)}</style>`,
           { html: true },
         );
-      },
-    })
-    .on(VISIBILITY_WORKSPACES.map((tag) => `${tag}[data-prerendered]`).join(", "), {
-      element(element) {
-        if (customVisibility) element.removeAttribute("data-prerendered");
-      },
-    })
-    .on(VISIBILITY_WORKSPACES.map((tag) => `${tag} > *`).join(", "), {
-      element(element) {
-        if (customVisibility && element.tagName !== "script") element.remove();
-      },
-    })
-    .on("home-dashboard[data-prerendered]", {
-      element(element) {
-        if (customVisibility) element.removeAttribute("data-prerendered");
-      },
-    })
-    .on("home-dashboard > *", {
-      element(element) {
-        if (customVisibility && element.tagName !== "script") element.remove();
       },
     })
     .on('meta[name="haneoka-content-publication"]', {

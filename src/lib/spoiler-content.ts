@@ -4,6 +4,8 @@ export const SPOILER_STORAGE_KEY = "haneoka:spoiler-content:v1";
 export const SPOILER_CONTENT_EVENT = "haneoka:spoiler-content";
 
 export function spoilerContentEnabled(): boolean {
+  // Static pages carry the public view; the Worker serves them unchanged to every reader.
+  if (typeof document === "undefined" || !document.documentElement) return false;
   try {
     const stored = localStorage.getItem(SPOILER_STORAGE_KEY);
     if (stored !== null) return stored === "1";

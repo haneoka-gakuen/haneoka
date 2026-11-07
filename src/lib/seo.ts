@@ -1,4 +1,4 @@
-import { localePath, localeTag, type Locale } from "../i18n/locales";
+import { LOCALES, localePath, localeTag, type Locale } from "../i18n/locales";
 import { CATALOG_HUB, PRIMARY_DESTINATIONS, isDestinationActive } from "../config/navigation";
 import { t } from "../i18n/messages";
 import { serverText } from "../i18n/server";
@@ -50,7 +50,7 @@ const withoutSiteSuffix = (title: string): string =>
   title.replace(/\s*[·/]\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
 
 export function pageTitle(locale: Locale, route: string, title: string): string {
-  if (route === "/") return `haneoka - ${serverText(locale, "common.seo.homeTitle", undefined, title)}`;
+  if (route === "/") return `${serverText(locale, "common.seo.homeTitle", undefined, title)} | haneoka`;
   const name = withoutSiteSuffix(title);
   const site = serverText(locale, "common.seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
   return `${name && name !== "haneoka" ? `${name} / ` : ""}haneoka - ${site}`;
@@ -89,6 +89,7 @@ export function pageStructuredData(
   description: string,
   localized = false,
   canonicalRoute = route,
+  image?: string,
 ) {
   const serverPrefix = canonicalRoute.split("/")[1];
   const server = isReleaseServer(serverPrefix) ? serverPrefix : undefined;
@@ -107,6 +108,7 @@ export function pageStructuredData(
     url: `${origin}/`,
     name: "haneoka",
     alternateName: "Haneoka",
+    inLanguage: LOCALES.map(localeTag),
   };
   const page = {
     "@type": "WebPage",
@@ -116,6 +118,7 @@ export function pageStructuredData(
     description,
     inLanguage: localeTag(locale),
     isPartOf: { "@id": website["@id"] },
+    ...(image ? { primaryImageOfPage: { "@type": "ImageObject", url: image } } : {}),
   };
   if (route === "/") return { "@context": "https://schema.org", "@graph": [website, page] };
   const parent = PRIMARY_DESTINATIONS.find((destination) => isDestinationActive(destination, route));
