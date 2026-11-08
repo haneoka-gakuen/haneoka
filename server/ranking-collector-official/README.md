@@ -35,20 +35,21 @@ Pools use `haneoka:official-ranking-account-pool/1`, the output of `account-pool
 
 ### Self-hosted collector
 
-The regional collectors run on a Docker host instead of Cloudflare. `deploy/compose.yaml` runs four services:
+The regional collectors and the media service run on a Docker host; nothing of theirs runs as a Durable Object or Container. `deploy/compose.yaml` runs five services:
 
 | Service | Role |
 | --- | --- |
 | `egress` | mihomo on loopback port 7899, Japanese nodes only; JP API and CDN requests leave through it |
 | `collector` | `cloud.py` in the egress network namespace |
 | `host` | the regional collectors from `worker/official-ranking-collector.ts`, run by [`server/collector-host`](../collector-host/src/main.ts) on Node with a local copy of the official D1 tables |
-| `tunnel` | `cloudflared` publishing the host as `collector.haneoka.org` |
+| `media` | the community media service from `packages/community-media`, for uploads and screenshot recognition |
+| `tunnel` | `cloudflared` publishing the host as `collector.haneoka.org` and the media service as `media-service.haneoka.org` |
 
-The host schedules collection, receives the collector's callbacks on loopback, owns every official table except `official_ranking_search_backfills`, and sends each changed row to D1 through `/api/internal/official-host/sync`; official R2 objects go through `/api/internal/official-host/r2/*`. The site reads D1 as before. With `OFFICIAL_HOST_ORIGIN` set, the Worker forwards status, on-demand lookups and the admin pool to the host.
+The host schedules collection, receives the collector's callbacks on loopback, owns every official table except `official_ranking_search_backfills`, and sends each changed row to D1 through `/api/internal/official-host/sync`; official R2 objects go through `/api/internal/official-host/r2/*`. The site reads D1 as before. The Worker forwards status, on-demand lookups and the admin pool to the host (`OFFICIAL_HOST_ORIGIN`), and media jobs to the media service (`COMMUNITY_MEDIA_ORIGIN`, `COMMUNITY_MEDIA_TOKEN`).
 
 On the host, outside the deployed directory:
 
-- `app/deploy/.env`: `MIHOMO_VERSION`, `CLOUDFLARED_VERSION`, `OFFICIAL_COLLECTOR_TOKEN` and `TUNNEL_TOKEN`.
+- `app/deploy/.env`: `MIHOMO_VERSION`, `CLOUDFLARED_VERSION`, `OFFICIAL_COLLECTOR_TOKEN`, `COMMUNITY_MEDIA_TOKEN` and `TUNNEL_TOKEN`.
 - `host.env`: the collector secrets (`OFFICIAL_RANKING_*_CONFIG`, `OFFICIAL_GLOBAL_LOGIN_CONFIG`, `OFFICIAL_JP_GUEST_CONFIG`, `OFFICIAL_ACCOUNT_ENCRYPTION_KEY`, `OFFICIAL_RANKING_ENABLED_REGIONS`, `OFFICIAL_RANKING_READ_REGIONS`).
 - `data/`: `official.sqlite` and one `objects/<region>.sqlite` per region.
 - `egress/config.yaml`: `egress.template.yaml` with the subscription URL filled in.

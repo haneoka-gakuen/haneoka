@@ -3,7 +3,7 @@
 // Output: 媒体呈现、任务入队／重试／处理及修复。
 // Pos: [Map](L2.md)；媒体持久任务与容器处理的协调。
 // Effects/Dependencies: 读写 D1、发送队列、调用容器并触发审核；上传与处理完成分开。
-import { getContainer } from "@cloudflare/containers";
+import { mediaProcessor } from "./media-processor";
 import { scheduleEntityModeration } from "./moderation";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -52,8 +52,11 @@ export interface MediaVariantRow {
   sha256: string | null;
 }
 
-const processor = (env: Env, id: string) =>
-  getContainer(env.MEDIA_PROCESSOR, `media-${parseInt(id.slice(-2), 16) % 2}`);
+const processor = (env: Env, _id: string) => {
+  const service = mediaProcessor(env);
+  if (!service) throw new Error("media_processor_unconfigured");
+  return service;
+};
 const sourceRow = (env: Env, id: string) =>
   env.DB.prepare(
     `SELECT id,object_key AS objectKey,media_type AS mediaType,byte_size AS byteSize,status,deleted_at AS deletedAt FROM community_attachment WHERE id=? AND purpose='post'`,

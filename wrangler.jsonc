@@ -97,28 +97,12 @@
     },
   ],
 
-  "containers": [{
-    "class_name": "CommunityMediaContainer",
-    "image": "./packages/community-media/Dockerfile",
-    "image_build_context": ".",
-    "instance_type": {"vcpu": 1, "memory_mib": 3072, "disk_mb": 4096},
-    "max_instances": 2
-  }, {
-    "class_name": "OfficialRankingCollector",
-    "image": "./server/ranking-collector-official/Dockerfile",
-    "image_build_context": "./server/ranking-collector-official",
-    "instance_type": "basic",
-    "max_instances": 4
-  }],
-  "durable_objects": {"bindings": [
-    {"name": "MEDIA_PROCESSOR", "class_name": "CommunityMediaContainer"},
-    {"name": "OFFICIAL_RANKING_COLLECTOR", "class_name": "OfficialRankingCollector"}
-  ]},
   "migrations": [
     {"tag": "community-media-v1", "new_sqlite_classes": ["CommunityMediaContainer"]},
     {"tag": "official-ranking-v1", "new_sqlite_classes": ["OfficialRankingCollector"]},
     {"tag": "search-container-v1", "new_sqlite_classes": ["SearchContainer"]},
-    {"tag": "search-container-v2", "deleted_classes": ["SearchContainer"]}
+    {"tag": "search-container-v2", "deleted_classes": ["SearchContainer"]},
+    {"tag": "self-hosted-v1", "deleted_classes": ["CommunityMediaContainer", "OfficialRankingCollector"]}
   ],
 
   "browser": { "binding": "BROWSER" },

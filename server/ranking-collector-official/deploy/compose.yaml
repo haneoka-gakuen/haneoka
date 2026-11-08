@@ -45,6 +45,17 @@ services:
     mem_limit: 768m
     stop_grace_period: 60s
 
+  media:
+    build:
+      context: ../media
+      dockerfile: packages/community-media/Dockerfile
+    restart: unless-stopped
+    environment:
+      COMMUNITY_MEDIA_TOKEN: ${COMMUNITY_MEDIA_TOKEN}
+      MEDIA_PROCESS_CONCURRENCY: "1"
+    mem_limit: 2g
+    stop_grace_period: 60s
+
   tunnel:
     image: docker.io/cloudflare/cloudflared:${CLOUDFLARED_VERSION}
     restart: unless-stopped

@@ -28,7 +28,6 @@ import {
 import { collectorFor } from "./official-host";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
-  OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
   OFFICIAL_HOST_ORIGIN?: string;
   OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
 }

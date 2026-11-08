@@ -17,11 +17,10 @@ export class HostCallError extends Error {
   }
 }
 
-/** The bindings that reach a collector: the host when it is configured, else the Durable Object. */
+/** The bindings that reach the collector host. */
 export interface CollectorBindings {
   OFFICIAL_HOST_ORIGIN?: string;
   OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
-  OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
 }
 
 const hostToken = (env: CollectorBindings) => env.OFFICIAL_COLLECTOR_REMOTE_TOKEN && env.OFFICIAL_COLLECTOR_REMOTE_TOKEN.length >= 32 ? env.OFFICIAL_COLLECTOR_REMOTE_TOKEN : null;
@@ -49,8 +48,7 @@ export function officialCollector(env: CollectorBindings, region: GameRecordsReg
 }
 
 export function collectorFor(env: CollectorBindings, region: GameRecordsRegion): CollectorCalls | null {
-  if (env.OFFICIAL_HOST_ORIGIN) return officialCollector(env, region);
-  return (env.OFFICIAL_RANKING_COLLECTOR?.getByName(region) as unknown as CollectorCalls | undefined) ?? null;
+  return env.OFFICIAL_HOST_ORIGIN ? officialCollector(env, region) : null;
 }
 
 /** Account-store calls the host owns, run there with its own bindings. */
