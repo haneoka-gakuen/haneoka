@@ -44,7 +44,9 @@ export function withEventStoryVisibility<T extends Row>(item: T, catalog: unknow
   if (!Object.keys(story).length) return item;
   const document = record(catalog),
     index = record(document.episodes),
-    chapters = record(document.chapters);
+    chapters = record(document.chapters),
+    starts = eventStoryStarts(document),
+    eventStart = Number(Array.isArray(item.startAt) ? item.startAt[0] : item.startAt);
   const source = story.episodes;
   const episodes = (Array.isArray(source) ? source : Object.values(record(source))).map((value) => {
     const episode = record(value),
@@ -52,10 +54,39 @@ export function withEventStoryVisibility<T extends Row>(item: T, catalog: unknow
     const full = record(index[id]),
       chapter = record(chapters[String(episode.chapterId ?? story.chapterId)]);
     const publishedAt = full.publishedAt ?? episode.publishedAt ?? chapter.publishedAt ?? chapter.startAt;
+    const eventPublishedAt =
+      full.eventPublishedAt ??
+      starts.get(String(episode.chapterId ?? story.chapterId)) ??
+      (eventStart > 0 ? eventStart : undefined);
     return withContentSource(
-      { ...episode, ...(publishedAt === undefined ? { __publicationPending: true } : { publishedAt }) },
+      {
+        ...episode,
+        ...(publishedAt === undefined ? { __publicationPending: true } : { publishedAt }),
+        ...(eventPublishedAt === undefined ? {} : { eventPublishedAt }),
+      },
       server,
     );
   });
   return { ...item, story: { ...story, episodes } };
+}
+
+/**
+ * An event's story opens with the event; its chapter's own start is when it
+ * joins the story archive afterwards. Episodes and chapters of an event take
+ * the event's start as `eventPublishedAt`.
+ */
+export function eventStoryStarts(document: unknown): Map<string, number> {
+  const starts = new Map<string, number>();
+  const events = record(document).storyEvents;
+  for (const value of Array.isArray(events) ? events : Object.values(record(events))) {
+    const event = record(value),
+      start = Array.isArray(event.startAt) ? Number(event.startAt[0]) : Number(event.startAt);
+    if (start > 0 && event.chapterId !== undefined) starts.set(String(event.chapterId), start);
+  }
+  return starts;
+}
+
+export function withEventStart<T extends Row>(row: T, starts: Map<string, number>): T {
+  const start = starts.get(String(row.chapterId));
+  return start && row.eventPublishedAt === undefined ? { ...row, eventPublishedAt: start } : row;
 }

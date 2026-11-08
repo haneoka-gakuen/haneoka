@@ -21,7 +21,6 @@ import { renderCatalogPage } from "../../server/render-catalog";
 import { catalogPageData } from "../../server/catalog-page-projector";
 import { serializePageData } from "../../lib/page-data";
 import { defaultSongTitle } from "../../lib/song-display";
-import { isReleasedContent } from "../../lib/content-release";
 import { eventSongPayload } from "../../server/event-song-release";
 import { eventStoryPayload } from "../../server/story-visibility";
 
@@ -56,7 +55,6 @@ const seoTitleValues = Object.fromEntries(
   }),
 ) as Record<Locale, string>;
 const payload = await eventStoryPayload(await eventSongPayload(await catalogPageData(server, page.resource, page.id, locale, "full")));
-const released = isReleasedContent(payload.item);
 const pageDataId=`catalog-page-${page.resource}-${page.id}`;
 const nativeMetaReference = process.env.NATIVE_META_REFERENCE_RECEIPTS_JSON && page.resource === "songs"
   ? nativeMetaPublicationFor(await staticCatalogRelease(server))
@@ -74,13 +72,13 @@ const screenConfig = catalogConfig({
 const rendered = await renderCatalogPage(screenConfig,payload,locale,section);
 const body = rendered.body;
 // The title bar shows a song as the reader's default does; search and SEO keep the local title.
-const displayTitle = released ? (page.resource === "songs" ? defaultSongTitle(page.titles, locale) : page.titles[locale]) : sectionTitle;
+const displayTitle = page.resource === "songs" ? defaultSongTitle(page.titles, locale) : page.titles[locale];
 const entity = canonical
   ? {
       title: displayTitle,
       backHref,
-      previous: released ? previous : undefined,
-      next: released ? next : undefined,
+      previous,
+      next,
     }
   : undefined;
 ---
@@ -90,14 +88,14 @@ const entity = canonical
   locale={locale}
   route={route}
   canonicalRoute={canonical ? canonicalHref : undefined}
-  noindex={!released || chartPage || !!section}
+  noindex={chartPage || !!section}
   title={sectionTitle}
   titleKey={collectionRoute.titleKey}
-  description={released ? page.descriptions[locale] : undefined}
-  seoTitleValues={released ? seoTitleValues : undefined}
-  seoDescriptionValues={released ? page.descriptions : undefined}
-  searchImage={released ? page.image : undefined}
-  searchTitle={released ? page.titles[locale] : sectionTitle}
+  description={page.descriptions[locale]}
+  seoTitleValues={seoTitleValues}
+  seoDescriptionValues={page.descriptions}
+  searchImage={page.image}
+  searchTitle={page.titles[locale]}
 >
   <AppShell
     locale={locale}

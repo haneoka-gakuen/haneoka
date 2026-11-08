@@ -6329,6 +6329,16 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
         chapter["eventId"] = event["eventId"]
         story_events.append(event)
     story_events.sort(key=lambda item: int((item["startAt"] or [0])[0] or 0))
+    # An event's story opens with the event; the chapter's own start is when it
+    # joins the story archive afterwards.
+    event_starts = {item["chapterId"]: int((item["startAt"] or [0])[0] or 0) for item in story_events}
+    for chapter_id, start in event_starts.items():
+        if start:
+            chapters[str(chapter_id)]["eventPublishedAt"] = start
+    for episode in episodes.values():
+        start = event_starts.get(int(episode.get("chapterId") or 0))
+        if start:
+            episode["eventPublishedAt"] = start
     enrich_story_unlocks(data, chapters, episodes)
     birthday_stories = enrich_story_birthdays(data, chapters, episodes, _timestamp)
     return {
