@@ -30,6 +30,7 @@ import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ran
 import { handleCommunityBootstrap } from "./community-bootstrap";
 import { withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
+export { CommunityMediaContainer } from "./community-media-container";
 import { sonolusShareRedirectTarget } from "./sonolus-share";
 import { handleOfficialPlayerApi } from "./official-player-api";
 import { cleanupUnverifiedAccounts } from "./account-lifecycle";

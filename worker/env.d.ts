@@ -6,8 +6,6 @@ interface Env {
   OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
   OFFICIAL_CALLBACK_ORIGIN?: string;
   OFFICIAL_HOST_ORIGIN?: string;
-  COMMUNITY_MEDIA_ORIGIN?: string;
-  COMMUNITY_MEDIA_TOKEN?: string;
   /** The other regional collectors, provided by the collector host. */
   OFFICIAL_RANKING_COLLECTOR?: { getByName(name: string): import("./official-ranking-collector").OfficialRankingCollector };
   TOOLS_SERVICE_URL?: string;
@@ -40,8 +38,6 @@ declare namespace Cloudflare {
     OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
   OFFICIAL_CALLBACK_ORIGIN?: string;
   OFFICIAL_HOST_ORIGIN?: string;
-  COMMUNITY_MEDIA_ORIGIN?: string;
-  COMMUNITY_MEDIA_TOKEN?: string;
   /** The other regional collectors, provided by the collector host. */
   OFFICIAL_RANKING_COLLECTOR?: { getByName(name: string): import("./official-ranking-collector").OfficialRankingCollector };
     TOOLS_SERVICE_URL?: string;

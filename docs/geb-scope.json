@@ -99,7 +99,6 @@
     "worker/official-player-api.ts",
     "worker/official-ranking-collector.ts",
     "worker/official-host.ts",
-    "worker/media-processor.ts",
     "server/collector-host/src/containers.ts",
     "server/collector-host/src/d1.ts",
     "server/collector-host/src/main.ts",

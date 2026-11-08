@@ -43,11 +43,12 @@ interface __BaseEnv_Env {
 	OFFICIAL_RANKING_EN_CONFIG: string;
 	OFFICIAL_RANKING_KR_CONFIG: string;
 	MOENOTES_PROFILE_API_TOKEN: string;
+	MEDIA_PROCESSOR: DurableObjectNamespace<import("./index").CommunityMediaContainer>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./index");
-		durableNamespaces: never;
+		durableNamespaces: "CommunityMediaContainer";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

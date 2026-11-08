@@ -3,7 +3,7 @@
 // Output: 私有识别响应或认证／权限／配置错误。
 // Pos: [Map](L2-2.md)；截图识别的 Worker 到容器适配。
 // Effects/Dependencies: 直接依赖站点 auth／access、D1、限流与媒体容器；处理私人截图并返回私有响应。
-import { mediaProcessor } from "../../worker/media-processor";
+import { getContainer } from "@cloudflare/containers";
 import { getAuthSession } from "../../worker/auth";
 import { communityAccessState } from "../../worker/access";
 
@@ -70,7 +70,7 @@ export async function handleScreenshotRecognitionRequest(
   const url = new URL(request.url);
   if (url.pathname !== PREFIX && !url.pathname.startsWith(`${PREFIX}/`)) return null;
   if (!sameOrigin(request)) return error(request, 403, "cross_origin_request", "Use the same origin");
-  if (!env.DB || !mediaProcessor(env))
+  if (!env.DB || !env.MEDIA_PROCESSOR)
     return error(request, 503, "recognition_unavailable", "Recognition is unavailable");
   const id =
     url.pathname === PREFIX ? request.headers.get("Idempotency-Key") || "" : url.pathname.slice(PREFIX.length + 1);
@@ -97,7 +97,7 @@ export async function handleScreenshotRecognitionRequest(
     return error(request, 403, "email_verification_required", "Verify the account email first");
   const owner = await digest(`screenshot-recognition-v1:${session.user.id}`);
   const headers = contextHeaders(context, owner);
-  const stub = mediaProcessor(env)!;
+  const stub = getContainer(env.MEDIA_PROCESSOR, `media-${parseInt(id.slice(-2), 16) % 2}`);
   try {
     if (!create) {
       const response = await stub.fetch(
