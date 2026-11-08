@@ -74,6 +74,8 @@ function sourceIdentity() {
   };
 }
 function filesAt(directory) {
+  // A publication without containers has no sealed container directory.
+  if (!fs.existsSync(directory)) return [];
   return fs
     .readdirSync(directory, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
