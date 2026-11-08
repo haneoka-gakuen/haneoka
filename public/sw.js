@@ -12,9 +12,9 @@
 // - Icon sprite: stale-while-revalidate with an HTTP cache validation.
 // - Release-pinned media (?release=): images cache-first, everything else is
 //   left to the HTTP cache (immutable for a year).
-// - Current-release media: images stale-while-revalidate with an entry cap (a
-//   release update shows the new artwork on the next view); other media is
-//   validated over the network.
+// - Current-release media: images from the cache for six hours, then
+//   stale-while-revalidate, with an entry cap; other media follows the HTTP
+//   cache (six hours fresh).
 // - Other images: cache-first with an entry cap, evicting the oldest first.
 // - Build-time entity payloads (/entity-data/v1/*): content-addressed, cache-first
 //   with an entry cap.
@@ -28,7 +28,11 @@ const DATA_CACHE = `haneoka.data.${VERSION}`;
 const ACTIVE_CACHES = [PAGES_CACHE, ASSETS_CACHE, IMAGES_CACHE, DATA_CACHE];
 
 const MAX_PAGES = 30;
-const MAX_IMAGES = 300;
+const MAX_IMAGES = 2000;
+// Current-release artwork younger than this is used without asking the server.
+const IMAGE_FRESH_MS = 6 * 60 * 60 * 1000;
+const TRIM_EVERY = 64;
+const writes = new Map();
 const MAX_DATA = 200;
 const NEVER_CACHE_PREFIXES = ["/api/", "/auth/", "/account/", "/admin/", "/sonolus/", "/game-client/"];
 
@@ -53,6 +57,10 @@ self.addEventListener("activate", (event) => {
 const isNeverCached = (url) => NEVER_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
 
 const trimCache = async (cacheName, limit) => {
+  // Listing a large cache is costly: trim after every TRIM_EVERY writes.
+  const count = (writes.get(cacheName) ?? 0) + 1;
+  writes.set(cacheName, count);
+  if (count % TRIM_EVERY !== 1) return;
   const cache = await caches.open(cacheName);
   const keys = await cache.keys();
   for (const key of keys.slice(0, Math.max(0, keys.length - limit))) {
@@ -72,9 +80,15 @@ const cacheFirst = async (request, cacheName, limit) => {
   return response;
 };
 
-const staleWhileRevalidate = async (event, request, cacheName, limit) => {
+const fresh = (response, ms) => {
+  const date = Date.parse(response?.headers.get("date") ?? "");
+  return Number.isFinite(date) && Date.now() - date < ms;
+};
+
+const staleWhileRevalidate = async (event, request, cacheName, limit, freshMs = 0) => {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
+  if (cached && freshMs && fresh(cached, freshMs)) return cached;
   const refresh = fetch(request, { cache: "no-cache" })
     .then(async (response) => {
       if (response.ok) {
@@ -145,13 +159,10 @@ self.addEventListener("fetch", (event) => {
       if (request.destination === "image") event.respondWith(cacheFirst(request, IMAGES_CACHE, MAX_IMAGES));
       return;
     }
-    // Current-release artwork paints from the cache at once and refreshes
-    // behind it, so a repeat visit never waits on a revalidation per image.
-    event.respondWith(
-      request.destination === "image"
-        ? staleWhileRevalidate(event, request, IMAGES_CACHE, MAX_IMAGES)
-        : fetch(request, { cache: "no-cache" }),
-    );
+    // Current-release artwork paints from the cache at once; only artwork
+    // older than IMAGE_FRESH_MS asks the server again, behind the page.
+    if (request.destination === "image")
+      event.respondWith(staleWhileRevalidate(event, request, IMAGES_CACHE, MAX_IMAGES, IMAGE_FRESH_MS));
     return;
   }
   if (request.destination === "image") {

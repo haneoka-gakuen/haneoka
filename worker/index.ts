@@ -339,7 +339,8 @@ const API_CACHE_TTL = 86_400;
 const CATALOG_API_CACHE_CONTROL = "public, max-age=0, must-revalidate";
 // Release-pinned media (`?release=r-…`) is content-addressed by its release.
 const PINNED_MEDIA_CACHE_CONTROL = "public, max-age=31536000, immutable";
-const UNPINNED_MEDIA_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
+// Game artwork at a path changes only with a game update; a reader keeps it six hours, then revalidates behind it.
+const UNPINNED_MEDIA_CACHE_CONTROL = "public, max-age=21600, stale-while-revalidate=604800";
 // Release-pinned catalogue JSON is immutable in content, but its worker
 // representation can change with a deployment; match the edge cache's day.
 const PINNED_CATALOG_API_CACHE_CONTROL = "public, max-age=86400";

@@ -425,7 +425,8 @@
     "src/lib/save-workspace/import-worker.ts",
     "src/lib/save-workspace/catalog.ts",
     "src/lit/save-workspace.ts",
-    "src/lit/ui/app-account-chooser.ts"
+    "src/lit/ui/app-account-chooser.ts",
+    "src/lib/navigation-prefetch.ts"
   ],
   "entry_documents": [
     "AGENTS.md",
