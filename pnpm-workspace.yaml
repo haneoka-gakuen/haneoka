@@ -108,7 +108,7 @@ catalog:
 catalogMode: prefer
 cleanupUnusedCatalogs: true
 allowBuilds:
-  wasm-pack: true
+  wasm-pack: false
   "@parcel/watcher": true
   esbuild: true
   sharp: true
