@@ -35,33 +35,25 @@ Pools use `haneoka:official-ranking-account-pool/1`, the output of `account-pool
 
 ### Self-hosted collector
 
-The Durable Objects keep scheduling and state; the collector itself can run on any Docker host instead of Cloudflare Containers. `deploy/compose.yaml` runs three services:
+The regional collectors run on a Docker host instead of Cloudflare. `deploy/compose.yaml` runs four services:
 
 | Service | Role |
 | --- | --- |
 | `egress` | mihomo on loopback port 7899, Japanese nodes only; JP API and CDN requests leave through it |
 | `collector` | `cloud.py` in the egress network namespace |
-| `tunnel` | `cloudflared` publishing the collector as `collector.haneoka.org` |
+| `host` | the regional collectors from `worker/official-ranking-collector.ts`, run by [`server/collector-host`](../collector-host/src/main.ts) on Node with a local copy of the official D1 tables |
+| `tunnel` | `cloudflared` publishing the host as `collector.haneoka.org` |
 
-On the host, next to `compose.yaml`:
+The host schedules collection, receives the collector's callbacks on loopback, owns every official table except `official_ranking_search_backfills`, and sends each changed row to D1 through `/api/internal/official-host/sync`; official R2 objects go through `/api/internal/official-host/r2/*`. The site reads D1 as before. With `OFFICIAL_HOST_ORIGIN` set, the Worker forwards status, on-demand lookups and the admin pool to the host.
 
-- `.env`: `MIHOMO_VERSION`, `CLOUDFLARED_VERSION`, `OFFICIAL_COLLECTOR_TOKEN` and `TUNNEL_TOKEN`.
+On the host, outside the deployed directory:
+
+- `app/deploy/.env`: `MIHOMO_VERSION`, `CLOUDFLARED_VERSION`, `OFFICIAL_COLLECTOR_TOKEN` and `TUNNEL_TOKEN`.
+- `host.env`: the collector secrets (`OFFICIAL_RANKING_*_CONFIG`, `OFFICIAL_GLOBAL_LOGIN_CONFIG`, `OFFICIAL_JP_GUEST_CONFIG`, `OFFICIAL_ACCOUNT_ENCRYPTION_KEY`, `OFFICIAL_RANKING_ENABLED_REGIONS`, `OFFICIAL_RANKING_READ_REGIONS`).
+- `data/`: `official.sqlite` and one `objects/<region>.sqlite` per region.
 - `egress/config.yaml`: `egress.template.yaml` with the subscription URL filled in.
 
-```sh
-docker compose up -d --build
-```
-
-`collector-deploy.yml` redeploys on every push to `main` that touches this directory: it streams the source to the host over SSH, where the deploy key's forced command (`deploy/host-deploy.sh`, installed as `/opt/haneoka-collector/deploy.sh`) rebuilds and restarts the collector, keeping `.env` and the egress config.
-
-Switch the Worker over with two secrets, and back by deleting them:
-
-```sh
-wrangler secret put OFFICIAL_COLLECTOR_REMOTE_ORIGIN   # https://collector.haneoka.org
-wrangler secret put OFFICIAL_COLLECTOR_REMOTE_TOKEN    # same value as OFFICIAL_COLLECTOR_TOKEN
-```
-
-Collection jobs are accepted with `202` and report through callbacks, so a Durable Object never waits for a run; a job that fails outside the run reports a `service-failure` callback.
+`collector-deploy.yml` redeploys on every push to `main` that touches the collector, the host or the shared Worker modules: it builds the host bundle, streams both to the host over SSH, and the deploy key's forced command (`deploy/host-deploy.sh`, installed as `/opt/haneoka-collector/deploy.sh`) rebuilds and restarts them, keeping the files above.
 
 ### Managed-account rollout
 

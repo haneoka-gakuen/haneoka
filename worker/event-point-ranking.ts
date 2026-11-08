@@ -25,6 +25,7 @@ import {
 } from "./official-ranking-store";
 import { searchRankingWindows, findRankingProfileWindow, normalizeRankingQuery } from "./ranking-search";
 import type { OfficialEventWindow } from "../src/lib/official-ranking";
+import { collectorFor } from "./official-host";
 
 const REGIONS: readonly GameRecordsRegion[] = ["jp", "tw", "en", "kr"];
 const WINDOW = 100;
@@ -54,7 +55,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
   const rows = source.players.map((player, index) => arenaRankingRow(player, start + index, region));
   await attachProfileCards(env, ctx, region, rows);
   const stale = now - source.observedAtMs > STALE_MS;
-  if (stale) ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region, eventId, [start])).catch(() => undefined));
+  if (stale) ctx.waitUntil(Promise.resolve(collectorFor(env, region)?.requestEventWindows(region, eventId, [start])).catch(() => undefined));
   return { ...base, snapshotId: source.snapshotId, observedAtMs: source.observedAtMs, fetchedAtMs: source.observedAtMs, stale, rows: markTies(rows) };
 }
 
@@ -129,7 +130,7 @@ async function search(
   if (!lookup.partial && !matches.complete) throw new PendingWindows([]);
   let retryAfter: number | null = matches.complete ? null : 3;
   if (lookup.partial && (missing.length || maximum === null) && matches.complete) {
-    const queued = Promise.resolve().then(() => env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestEventWindows(region,eventId,missing.length ? missing : [searchedTo]));
+    const queued = Promise.resolve().then(() => collectorFor(env, region)?.requestEventWindows(region,eventId,missing.length ? missing : [searchedTo]));
     if (matches.matches.length) {
       ctx.waitUntil(queued.catch(() => undefined));
       retryAfter = 30;
@@ -189,7 +190,7 @@ export async function handleEventPointRankingApi(
       return json(request, { error: { kind: "unavailable", retryAfter: null } }, 503);
     if (!error.starts.length) return json(request, { error: { kind: "pending", retryAfter: 3 } }, 503, 3);
     try {
-      const collector = env.OFFICIAL_RANKING_COLLECTOR?.getByName(region);
+      const collector = collectorFor(env, region);
       if (!collector) throw new Error("collector_unavailable");
       const demand = await collector.requestEventWindows(region, eventId, error.starts.slice(0, 20));
       return json(request, { error: { kind: demand.kind, retryAfter: demand.retryAfter } }, 503, demand.retryAfter);
