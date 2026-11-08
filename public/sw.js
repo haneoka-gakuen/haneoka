@@ -105,10 +105,13 @@ const staleWhileRevalidate = async (event, request, cacheName, limit, freshMs = 
   return refresh;
 };
 
-const networkFirst = async (request, cacheName, limit = MAX_PAGES) => {
+// A cached page answers when the network has not within this time; the
+// network keeps going and refreshes the copy for next time.
+const NETWORK_GRACE_MS = 4000;
+
+const networkFirst = async (event, request, cacheName, limit = MAX_PAGES) => {
   const cache = await caches.open(cacheName);
-  try {
-    const response = await fetch(request, { cache: "no-cache" });
+  const network = fetch(request, { cache: "no-cache" }).then(async (response) => {
     if (response.ok) {
       await cache
         .put(request, response.clone())
@@ -116,9 +119,13 @@ const networkFirst = async (request, cacheName, limit = MAX_PAGES) => {
         .catch(() => {});
     }
     return response;
-  } catch {
-    return (await cache.match(request)) ?? Response.error();
-  }
+  });
+  const cached = await cache.match(request);
+  if (!cached) return network.catch(() => Response.error());
+  event.waitUntil(network.catch(() => {}));
+  const late = new Promise((resolve) => setTimeout(() => resolve(null), NETWORK_GRACE_MS));
+  const first = await Promise.race([network.catch(() => null), late]);
+  return first ?? cached;
 };
 
 self.addEventListener("fetch", (event) => {
@@ -137,7 +144,7 @@ self.addEventListener("fetch", (event) => {
   if (isNeverCached(url)) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request, PAGES_CACHE));
+    event.respondWith(networkFirst(event, request, PAGES_CACHE));
     return;
   }
   if (url.pathname === "/icons.svg") {
