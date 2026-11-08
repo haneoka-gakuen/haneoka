@@ -1,0 +1,25 @@
+@layer pages {
+  .save-workspace {
+    max-width: 1200px;
+    margin-inline: auto;
+  }
+  .save-workspace .surface {
+    padding: 24px;
+    min-width: 0;
+  }
+  .save-workspace .spec-list dd {
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  .save-workspace .list-item__headline,
+  .save-workspace .list-item__supporting {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-line-clamp: unset;
+  }
+  @media (max-width: 600px) {
+    .save-workspace .surface {
+      padding: 16px;
+    }
+  }
+}

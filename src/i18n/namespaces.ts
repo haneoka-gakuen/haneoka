@@ -71,6 +71,7 @@ const namespaceRootKeys: Readonly<Record<MainI18nNamespace, readonly string[]>> 
   media: ["media"],
   account: [
     "account",
+    "saveWorkspace",
     "community.page.appeal",
     "community.page.appealStatement",
     "community.page.submitAppeal",
@@ -156,7 +157,7 @@ export const featureNamespaceForRoute = (route = "/"): MainI18nNamespace => {
   if (pathname === "/about" || pathname === "/join" || pathname === "/sponsor" || pathname === "/terms" || pathname === "/privacy" || pathname === "/license") {
     return LEGAL_I18N_NAMESPACE;
   }
-  if (pathname === "/account" || pathname.startsWith("/account/")) return ACCOUNT_I18N_NAMESPACE;
+  if (pathname === "/saves" || pathname.startsWith("/saves/") || pathname === "/account" || pathname.startsWith("/account/")) return ACCOUNT_I18N_NAMESPACE;
   if (pathname === "/settings" || pathname.startsWith("/settings/")) return COMMON_I18N_NAMESPACE;
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return ADMIN_I18N_NAMESPACE;
   if (pathname === "/community" || pathname.startsWith("/community/")) return COMMUNITY_I18N_NAMESPACE;

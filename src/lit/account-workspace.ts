@@ -14,7 +14,7 @@ import { RequestScope, throwIfAborted } from "../lib/request-scope";
 import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 import { snackbar } from "../lib/snackbar";
-import { appCall, inApp, type DeviceSave } from "../lib/app-bridge";
+import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
 
@@ -1259,7 +1259,7 @@ export class AccountWorkspace extends LitElement {
 
   /** In the app: the saves read on this device, which need no sign-in. */
   private renderDeviceSaves() {
-    if (!inApp()) return nothing;
+    if (!inApp() || appSupports("saveSnapshotV1")) return html`<a class="button button--tonal" href=${`/${preferredLocale()}/saves/`}>${this.label("deviceSaves", "Saves on this device")}</a>`;
     const locale = preferredLocale();
     const number = (value: number) => new Intl.NumberFormat(locale).format(value);
     return html`
