@@ -1,8 +1,8 @@
 # L3 — GEB
 # Input: Authenticated bounded jobs from the regional Durable Object.
 # Output: Durable collection callbacks or private SDK/game/guest-phase results for the owning DO.
-# Pos: [Map](../L2.md); Cloudflare Container HTTP entry point.
-# Effects/Dependencies: Binds port 8080; exclusive account jobs and deadline-protected replay state; SIGTERM closes the entry listener.
+# Pos: [Map](../L2.md); collector HTTP entry point in a Cloudflare Container or on a self-hosted Docker host.
+# Effects/Dependencies: Binds port 8080; per-region exclusive jobs, asynchronous collection with service-failure callbacks, deadline-protected replay state; SIGTERM closes the entry listener.
 import hmac
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,7 +16,7 @@ import threading
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent/'core'))
-from cloud_job import CallbackError, callback_url, failure_info, report_failure, run_job, validate_job
+from cloud_job import CallbackError, Updates, callback_url, failure_info, report_failure, run_job, validate_job
 from account_job import run_account_job, validate_account_job
 from guest_job import run_guest_job, validate_guest_job
 
@@ -26,8 +26,15 @@ def serve():
     origin = os.environ.get('OFFICIAL_CALLBACK_ORIGIN', 'https://haneoka.org')
     if len(token) < 32:
         raise ValueError('collector service token missing')
-    lock = threading.Lock()
-    lookup_lock = threading.Lock()
+    # One host can serve every region, as one Container per region did: each
+    # region keeps its own run and lookup slots.
+    locks = {}
+    locks_guard = threading.Lock()
+
+    def slots(region):
+        with locks_guard:
+            return locks.setdefault(region, (threading.Lock(), threading.Lock()))
+
     completed = {}
 
     def remember(key, generation, result, deadline_ms):
@@ -38,6 +45,21 @@ def serve():
                 break
             if prior[2] <= now:
                 completed.pop(prior_key, None)
+
+    def run_detached(job, gate):
+        try:
+            result = run_job(job, origin)
+            remember(job['runId'], job['credentialGeneration'], result, job['deadlineMs'])
+        except Exception as error:
+            failure = (error.failure if isinstance(error, CallbackError) else None) or failure_info('container', error)
+            report_failure(job['region'], failure)
+            try:
+                Updates(job, origin).send('service-failure', failure=failure)
+            except Exception:
+                # Past the deadline the Worker closes the run itself.
+                pass
+        finally:
+            gate.release()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = 'HTTP/1.1'
@@ -107,6 +129,7 @@ def serve():
             except Exception:
                 self.reply(400, {'error': 'invalid_job'})
                 return
+            lock, lookup_lock = slots(job['region'])
             gate = lookup_lock if not private_job and job.get('mode') == 'lookup' else lock
             if not gate.acquire(blocking=False):
                 self.reply(409, {'error': 'busy'})
@@ -114,6 +137,17 @@ def serve():
             if private_job and not lookup_lock.acquire(blocking=False):
                 gate.release()
                 self.reply(409, {'error': 'busy'})
+                return
+            # A remote host accepts a scheduled run at once: its end reaches the
+            # Worker through the run's callbacks, so the caller does not wait.
+            if not private_job and job.get('mode') != 'lookup' and self.headers.get('X-Haneoka-Collector-Async') == '1':
+                if job['runId'] in completed:
+                    gate.release()
+                    self.reply(409, {'error': 'run_conflict'})
+                    return
+                remember(job['runId'], job['credentialGeneration'], None, job['deadlineMs'])
+                threading.Thread(target=run_detached, args=(job, gate), daemon=True).start()
+                self.reply(202, {'accepted': job['runId']})
                 return
             try:
                 run_id = job['runId']
