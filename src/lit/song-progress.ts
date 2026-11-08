@@ -6,7 +6,8 @@ import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
 import { setAppBarSearch, clearAppBarSearch, setAppBarActions, clearAppBarActions } from "../lib/app-bar";
-import { appCall, inApp } from "../lib/app-bridge";
+import { appAccountCall, appCall, inApp } from "../lib/app-bridge";
+import { chooseAppAccount } from "./ui/app-account-chooser";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
 import { resourcePath } from "../lib/resource-route";
@@ -116,7 +117,13 @@ export class SongProgress extends LitElement {
   }
   /** In the app: clear, full combo and all perfect from a game save. */
   private async importSave(given?: Record<string, number>) {
-    const marks = given ?? (await appCall("songProgress", { server: this.server }).catch(() => null))?.marks;
+    const marks =
+      given ??
+      (
+        await appAccountCall("songProgress", { server: this.server }, (accounts) =>
+          chooseAppAccount(this.locale, accounts),
+        ).catch(() => null)
+      )?.marks;
     if (!marks || !this.store) return;
     const changes = this.charts
       .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))

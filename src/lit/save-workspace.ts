@@ -2,7 +2,7 @@
 // Input: Local save files, native save snapshots and release-pinned catalogue data.
 // Output: Persistent save collection, readable progress and confirmed Box handoff.
 // Pos: [Map](L2-2.md); shared browser and native-shell save workspace.
-// Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads and tab-local handoff.
+// Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads, tab-local handoff and the app's save sources (saveSourcesV1).
 import { viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -21,7 +21,17 @@ import {
 } from "../lib/save-workspace/catalog";
 import { LitElement, html, nothing, render } from "lit";
 import { parseSnapshot, saveRecords, type SaveSnapshot, type StoredSave } from "../lib/save-workspace/snapshot";
-import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
+import {
+  appCall,
+  appSupports,
+  inApp,
+  type AdbDevice,
+  type DeviceSave,
+  type IosBackup,
+  type SaveRead,
+  type SaveSource,
+} from "../lib/app-bridge";
+import { modal } from "./ui/modal";
 import { downloadBlob } from "../lib/canvas-capture";
 import { formatDate } from "../lib/date-format";
 import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
@@ -35,6 +45,12 @@ export class SaveWorkspace extends LitElement {
     busy: { state: true },
     expanded: { state: true },
     native: { state: true },
+    sources: { state: true },
+    sheet: { state: true },
+    devices: { state: true },
+    backups: { state: true },
+    locked: { state: true },
+    removing: { state: true },
     catalog: { state: true },
     server: { state: true },
     view: { state: true },
@@ -46,6 +62,15 @@ export class SaveWorkspace extends LitElement {
   declare busy: boolean;
   declare expanded: ReadonlySet<string>;
   declare native: DeviceSave[];
+  /** Where the app can read game saves (`saveSourcesV1`). */
+  declare sources: SaveSource[];
+  declare releases: string[];
+  declare sheet: "adb" | "iosBackup" | "gameFolder" | null;
+  declare devices: AdbDevice[] | null;
+  declare backups: IosBackup[] | null;
+  /** An encrypted backup waiting for its password. */
+  declare locked: IosBackup | null;
+  declare removing: string | null;
   constructor() {
     super();
     this.view = "grid";
@@ -57,6 +82,13 @@ export class SaveWorkspace extends LitElement {
     this.busy = false;
     this.expanded = new Set();
     this.native = [];
+    this.sources = [];
+    this.releases = [];
+    this.sheet = null;
+    this.devices = null;
+    this.backups = null;
+    this.locked = null;
+    this.removing = null;
   }
   declare view: CollectionView;
   declare catalog: SaveCatalog | undefined;
@@ -121,6 +153,11 @@ export class SaveWorkspace extends LitElement {
   private async reload() {
     this.records = (await saveRecords("list")).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
     if (appSupports("saveSnapshotV1")) this.native = await appCall("gameAccounts", {});
+    if (appSupports("saveSourcesV1") && !this.sources.length) {
+      const available = await appCall("saveSources", {});
+      this.sources = available.sources;
+      this.releases = available.releases;
+    }
     this.route();
   }
   private async run(action: () => Promise<void>, progress = false) {
@@ -130,7 +167,7 @@ export class SaveWorkspace extends LitElement {
     try {
       await action();
     } catch (error) {
-      const code = error instanceof Error ? error.message : "";
+      const code = error instanceof Error ? error.message : typeof error === "string" ? error : "";
       const name = error instanceof Error ? error.name : "Error";
       const key =
         code === "box_no_player" || code === "save_empty"
@@ -147,7 +184,13 @@ export class SaveWorkspace extends LitElement {
                     ? "fileUnreadable"
                     : code === "save_invalid" || code.startsWith("box_invalid") || name === "SyntaxError"
                       ? "invalidFile"
-                      : "failed";
+                      : code === "adb_missing"
+                        ? "adbMissing"
+                        : code === "adb_access_denied"
+                          ? "accessDenied"
+                          : code === "backup_password"
+                            ? "wrongPassword"
+                            : "failed";
       snackbar(this.t(key), { error: true });
       return;
     } finally {
@@ -201,16 +244,12 @@ export class SaveWorkspace extends LitElement {
     });
   }
   private removeSave(record: StoredSave) {
-    const dialog = this.querySelector<HTMLDialogElement>("dialog");
-    if (dialog) {
-      dialog.dataset.id = record.id;
-      dialog.showModal();
-    }
+    this.removing = record.id;
   }
   private confirmRemove() {
-    const dialog = this.querySelector<HTMLDialogElement>("dialog")!;
-    const id = dialog.dataset.id!;
-    dialog.close();
+    const id = this.removing;
+    this.removing = null;
+    if (!id) return;
     void this.run(async () => {
       await saveRecords("delete", id);
       location.hash = "";
@@ -218,6 +257,264 @@ export class SaveWorkspace extends LitElement {
     });
   }
 
+  /** Saves the app read; the list follows `haneoka-app-accounts`. */
+  private read(request: () => Promise<SaveRead | null>) {
+    void this.run(async () => {
+      const result = await request();
+      if (!result) return;
+      this.sheet = null;
+      this.locked = null;
+      snackbar(
+        result.keys.length ? this.t("readCount").replace("{count}", String(result.keys.length)) : this.t("noSave"),
+      );
+      this.native = await appCall("gameAccounts", {});
+    }, true);
+  }
+  private source(source: SaveSource) {
+    if (source === "files") this.read(() => appCall("readFiles", {}));
+    else if (source === "folder") this.read(() => appCall("readFiles", { folder: true }));
+    else if (source === "shizuku")
+      this.read(async () => {
+        let { status, installed } = await appCall("deviceStatus", {});
+        if (status === "needsPermission") status = (await appCall("shizukuRequest", {})).granted ? "ready" : status;
+        if (status === "ready") return appCall("shizukuRead", {});
+        if (status === "notRunning" && installed) await appCall("openShizuku", {});
+        else snackbar(this.t("shizukuMissing"), { error: true });
+        return null;
+      });
+    else if (source === "gameFolder")
+      this.read(async () => {
+        const granted = await appCall("gameFolder", {});
+        if (granted?.keys.length) return granted;
+        this.sheet = "gameFolder";
+        return null;
+      });
+    else if (source === "adb") {
+      this.sheet = "adb";
+      this.devices = null;
+      void this.run(async () => {
+        this.devices = await appCall("adbDevices", {});
+      });
+    } else if (source === "iosBackup") this.loadBackups(false);
+  }
+  private loadBackups(pick: boolean) {
+    this.sheet = "iosBackup";
+    if (!pick) this.backups = null;
+    void this.run(async () => {
+      const found = await appCall("iosBackups", { pick });
+      if (found)
+        this.backups = pick
+          ? [...found, ...(this.backups ?? []).filter((b) => !found.some((f) => f.path === b.path))]
+          : found;
+    });
+  }
+  private releaseName(release: string) {
+    return this.t(`release_${release.replaceAll(".", "_")}`);
+  }
+  private sourceIcon(source: SaveSource) {
+    return {
+      files: icon("description", 24),
+      folder: icon("folder_open", 24),
+      adb: icon("usb", 24),
+      iosBackup: icon("phone_iphone", 24),
+      shizuku: icon("smartphone", 24),
+      gameFolder: icon("folder_open", 24),
+    }[source];
+  }
+  private renderSheet() {
+    const close = () => {
+      this.sheet = null;
+      this.locked = null;
+    };
+    const form = (event: Event) => {
+      event.preventDefault();
+      return new FormData(event.target as HTMLFormElement);
+    };
+    let title = "";
+    let body: unknown = nothing;
+    if (this.sheet === "gameFolder") {
+      title = this.t("source_gameFolder");
+      body = html`
+        <ul class="detail-object-list" role="list">
+          ${this.releases.map(
+            (release) => html`
+              <li>
+                <button
+                  class="detail-object"
+                  type="button"
+                  ?disabled=${this.busy}
+                  @click=${() => this.read(() => appCall("gameFolder", { release }))}
+                >
+                  <span>${this.releaseName(release)}</span>
+                </button>
+              </li>
+            `,
+          )}
+        </ul>
+      `;
+    } else if (this.sheet === "adb") {
+      title = this.t("source_adb");
+      body = html`
+        <div class="stack">
+          ${
+            this.devices === null
+              ? html`
+                  <p>${this.t("loading")}</p>
+                `
+              : this.devices.length
+                ? html`
+                    <ul class="detail-object-list" role="list">
+                      ${this.devices.map(
+                        (device) => html`
+                          <li>
+                            <button
+                              class="detail-object"
+                              type="button"
+                              ?disabled=${this.busy || device.state !== "device"}
+                              @click=${() => this.read(() => appCall("adbRead", { serial: device.serial }))}
+                            >
+                              <span>
+                                ${device.model?.replaceAll("_", " ") || device.serial}
+                                <small class="md-body-small">
+                                  ${
+                                    device.state === "device"
+                                      ? device.releases.map((r) => this.releaseName(r)).join(" / ") || this.t("noSave")
+                                      : this.t("unauthorized")
+                                  }
+                                </small>
+                              </span>
+                            </button>
+                          </li>
+                        `,
+                      )}
+                    </ul>
+                  `
+                : html`
+                    <p>${this.t("noDevices")}</p>
+                  `
+          }
+          <form
+            class="stack"
+            @submit=${(event: Event) => {
+              const data = form(event);
+              const address = String(data.get("address") ?? "").trim();
+              const code = String(data.get("code") ?? "").trim();
+              void this.run(async () => {
+                if (code) await appCall("adbPair", { address, code });
+                else await appCall("adbConnect", { address });
+                this.devices = await appCall("adbDevices", {});
+              });
+            }}
+          >
+            <label>
+              <span>${this.t("address")}</span>
+              <span class="field">
+                <input name="address" required inputmode="url" autocomplete="off" placeholder="192.168.1.2:37000" />
+              </span>
+            </label>
+            <label>
+              <span>${this.t("pairingCode")}</span>
+              <span class="field"><input name="code" inputmode="numeric" autocomplete="one-time-code" /></span>
+            </label>
+            <button class="button button--tonal" type="submit" ?disabled=${this.busy}>${this.t("connect")}</button>
+          </form>
+        </div>
+      `;
+    } else if (this.sheet === "iosBackup") {
+      title = this.t("source_iosBackup");
+      const locked = this.locked;
+      body = locked
+        ? html`
+            <form
+              class="stack"
+              id="backup-password"
+              @submit=${(event: Event) => {
+                const password = String(form(event).get("password") ?? "");
+                this.read(() => appCall("iosBackupRead", { path: locked.path, password }));
+              }}
+            >
+              <p>${locked.deviceName ?? locked.path}</p>
+              <label>
+                <span>${this.t("password")}</span>
+                <span class="field"><input name="password" type="password" required autocomplete="off" /></span>
+              </label>
+            </form>
+          `
+        : html`
+            <div class="stack">
+              ${
+                this.backups === null
+                  ? html`
+                      <p>${this.t("loading")}</p>
+                    `
+                  : this.backups.length
+                    ? html`
+                        <ul class="detail-object-list" role="list">
+                          ${this.backups.map(
+                            (backup) => html`
+                              <li>
+                                <button
+                                  class="detail-object"
+                                  type="button"
+                                  ?disabled=${this.busy}
+                                  @click=${() =>
+                                    backup.encrypted
+                                      ? (this.locked = backup)
+                                      : this.read(() => appCall("iosBackupRead", { path: backup.path }))}
+                                >
+                                  <span>
+                                    ${backup.deviceName ?? backup.productType ?? backup.path}
+                                    <small class="md-body-small">
+                                      ${[
+                                        backup.productType ?? "",
+                                        backup.date === null ? "" : formatDate(this.locale, backup.date),
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" / ")}
+                                    </small>
+                                  </span>
+                                </button>
+                              </li>
+                            `,
+                          )}
+                        </ul>
+                      `
+                    : html`
+                        <p>${this.t("noBackups")}</p>
+                      `
+              }
+              <button
+                class="button button--tonal"
+                type="button"
+                ?disabled=${this.busy}
+                @click=${() => this.loadBackups(true)}
+              >
+                ${this.t("chooseFolder")}
+              </button>
+            </div>
+          `;
+    }
+    return html`
+      <dialog class="dialog" ${modal(close)}>
+        <div class="dialog__surface">
+          <header class="dialog__header"><h2>${title}</h2></header>
+          <div class="dialog__body">${body}</div>
+          <footer class="dialog__actions">
+            <button class="button button--text" type="button" @click=${close}>${this.t("close")}</button>
+            ${
+              this.locked
+                ? html`
+                    <button class="button button--filled" type="submit" form="backup-password" ?disabled=${this.busy}>
+                      ${this.t("readBackup")}
+                    </button>
+                  `
+                : nothing
+            }
+          </footer>
+        </div>
+      </dialog>
+    `;
+  }
   private serverName(server: string) {
     return this.t(`servers.${server}`);
   }
@@ -605,24 +902,60 @@ export class SaveWorkspace extends LitElement {
                     : nothing
                 }
                 ${
-                  inApp()
+                  this.sources.length
                     ? html`
-                        <button class="button button--tonal" @click=${() => void appCall("addGameAccount", {})}>
-                          ${this.t("read")}
-                        </button>
+                        <section class="surface stack">
+                          <h2 class="detail-section-title">${this.t("sources")}</h2>
+                          <ul class="detail-object-list" role="list">
+                            ${this.sources.map(
+                              (source) => html`
+                                <li>
+                                  <button
+                                    class="detail-object"
+                                    type="button"
+                                    ?disabled=${this.busy}
+                                    @click=${() => this.source(source)}
+                                  >
+                                    ${this.sourceIcon(source)}
+                                    <span>${this.t(`source_${source}`)}</span>
+                                  </button>
+                                </li>
+                              `,
+                            )}
+                          </ul>
+                        </section>
                       `
-                    : nothing
+                    : inApp()
+                      ? html`
+                          <button class="button button--tonal" @click=${() => void appCall("addGameAccount", {})}>
+                            ${this.t("read")}
+                          </button>
+                        `
+                      : nothing
                 }
               `
         }
       </div>
-      <dialog class="dialog">
-        <h2 class="detail-section-title">${this.t("delete")}</h2>
-        <div class="cluster">
-          <button class="button" @click=${() => this.querySelector("dialog")?.close()}>${this.t("cancel")}</button>
-          <button class="button button--filled" @click=${() => this.confirmRemove()}>${this.t("confirm")}</button>
-        </div>
-      </dialog>
+      ${this.sheet ? this.renderSheet() : nothing}
+      ${
+        this.removing
+          ? html`
+              <dialog class="dialog" ${modal(() => (this.removing = null))}>
+                <div class="dialog__surface">
+                  <header class="dialog__header"><h2>${this.t("delete")}</h2></header>
+                  <footer class="dialog__actions">
+                    <button class="button button--text" type="button" @click=${() => (this.removing = null)}>
+                      ${this.t("cancel")}
+                    </button>
+                    <button class="button button--danger" type="button" @click=${() => this.confirmRemove()}>
+                      ${this.t("confirm")}
+                    </button>
+                  </footer>
+                </div>
+              </dialog>
+            `
+          : nothing
+      }
     `;
   }
 }
