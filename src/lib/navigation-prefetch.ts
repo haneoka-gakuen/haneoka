@@ -13,7 +13,7 @@ interface Prefetched {
 
 const TTL = 30_000;
 const LIMIT = 4;
-const HOVER_INTENT = 80;
+const HOVER_INTENT = 150;
 const pages = new Map<string, { at: number; page: Promise<Prefetched | null> }>();
 
 const cacheKey = (url: URL) => {
