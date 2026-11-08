@@ -36,6 +36,9 @@ export class Container<Env = unknown> {
     return { taskId: id, time };
   }
 
+  /** The host checks schedules every second; there is no alarm to set. */
+  async scheduleNextAlarm(): Promise<void> {}
+
   deleteSchedules(name: string): void {
     this.ctx.storage.sql.exec("DELETE FROM container_schedules WHERE callback=?", name);
   }

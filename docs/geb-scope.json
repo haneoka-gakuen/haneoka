@@ -105,6 +105,7 @@
     "server/collector-host/src/main.ts",
     "server/collector-host/src/r2.ts",
     "server/collector-host/src/storage.ts",
+    "server/collector-host/scripts/prepare-data.mjs",
     "worker/search-index.ts",
     "worker/official-ranking-store.ts",
     "worker/official-ranking-maintenance.ts",
