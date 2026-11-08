@@ -1,5 +1,6 @@
-# Ranking collector on a host outside Cloudflare: the Worker reaches it
-# through the tunnel, and the game's Japanese service through the egress.
+# Ranking collector and its host outside Cloudflare: the Worker reaches the
+# host through the tunnel, the host reaches the collector on loopback, and
+# the game's Japanese service is reached through the egress.
 name: haneoka-collector
 
 services:
@@ -18,12 +19,31 @@ services:
       egress: { condition: service_started, restart: true }
     environment:
       OFFICIAL_COLLECTOR_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
-      OFFICIAL_CALLBACK_ORIGIN: https://haneoka.org
+      OFFICIAL_CALLBACK_ORIGIN: http://127.0.0.1:8090
       OFFICIAL_JP_EGRESS_PROXY: http://127.0.0.1:7899
     read_only: true
     tmpfs: [/tmp]
     mem_limit: 1g
     stop_grace_period: 30s
+
+  host:
+    build: ../host
+    restart: unless-stopped
+    network_mode: service:egress
+    depends_on:
+      egress: { condition: service_started, restart: true }
+    env_file: host.env
+    environment:
+      DATA_DIR: /data
+      HOST_PORT: "8090"
+      SITE_ORIGIN: https://haneoka.org
+      HOST_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
+      COLLECTOR_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
+      COLLECTOR_ORIGIN: http://127.0.0.1:8080
+    volumes:
+      - ${DATA_DIR:-/opt/haneoka-collector/data}:/data
+    mem_limit: 768m
+    stop_grace_period: 60s
 
   tunnel:
     image: docker.io/cloudflare/cloudflared:${CLOUDFLARED_VERSION}

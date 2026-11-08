@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - server/ranking-collector-official/**
+      - server/collector-host/**
+      - worker/official-*.ts
+      - worker/ranking-search.ts
+      - src/lib/official-ranking.ts
+      - src/lib/game-records.ts
       - .github/workflows/collector-deploy.yml
   workflow_dispatch:
 
@@ -21,6 +26,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build the collector host
+        run: |
+          mkdir -p "$RUNNER_TEMP/collector/host"
+          cp -R server/ranking-collector-official/. "$RUNNER_TEMP/collector/"
+          cp server/collector-host/Dockerfile "$RUNNER_TEMP/collector/host/"
+          npx --yes esbuild@0.21.5 server/collector-host/src/main.ts --bundle --platform=node --format=esm --target=node24 \
+            --alias:@cloudflare/containers=./server/collector-host/src/containers.ts --outfile="$RUNNER_TEMP/collector/host/main.mjs"
       - name: Deploy to the collector host
         env:
           KEY: ${{ secrets.COLLECTOR_DEPLOY_KEY }}
@@ -31,7 +46,7 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/collector && chmod 600 ~/.ssh/collector
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           # The key's forced command rebuilds the collector from the tarball.
-          tar --exclude=__pycache__ -czf - -C server/ranking-collector-official . \
+          tar --exclude=__pycache__ -czf - -C "$RUNNER_TEMP/collector" . \
             | ssh -i ~/.ssh/collector -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "root@$HOST" deploy
       - name: Health
         run: curl -fsS --retry 5 --retry-delay 5 --retry-all-errors https://collector.haneoka.org/health

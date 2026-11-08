@@ -36,6 +36,7 @@ import {
   sponsorEntryOrigin,
   updateSponsorEntry,
 } from "./sponsors";
+import { collectorFor, hostOr } from "./official-host";
 
 const ADMIN_PREFIX = "/api/v1/admin";
 const JSON_BODY_LIMIT = 64 * 1024;
@@ -3494,7 +3495,7 @@ const adoptCollectorGuests = async (request: Request, env: Env): Promise<Respons
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
   try {
-    const imported = await env.OFFICIAL_RANKING_COLLECTOR.getByName("jp").adoptConfiguredGuests();
+    const imported = await collectorFor(env, "jp")!.adoptConfiguredGuests();
     const operation = await transitionOperation(env, started.operationId, "succeeded", { imported }, "configured", null);
     return json(request, { operation: operationValue(operation), imported });
   } catch (failure) {
@@ -3512,7 +3513,7 @@ const deleteCollectorAccount = async (request: Request, env: Env, kind: "guest" 
   const started = await startOperation(request, env, access, `collector.${kind}.remove`, `${kind}_account`, id);
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  const removed = kind === "guest" ? await removeGuestAccount(env, id, version) : await removePlatformAccount(env, id, version);
+  const removed = kind === "guest" ? await hostOr(env, "guests", "removeGuestAccount", removeGuestAccount, id, version) : await hostOr(env, "platform", "removePlatformAccount", removePlatformAccount, id, version);
   if (!removed) {
     await failOperation(env, started.operationId, "account_changed");
     return error(request, 409, "account_changed", "Refresh the account and retry");
@@ -3524,7 +3525,7 @@ const deleteCollectorAccount = async (request: Request, env: Env, kind: "guest" 
 const getGuestAccounts = async (request: Request, env: Env): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
-  const [guests, view] = await Promise.all([listGuestAccounts(env), env.OFFICIAL_RANKING_COLLECTOR.getByName("jp").guestAccountView()]);
+  const [guests, view] = await Promise.all([hostOr(env, "guests", "listGuestAccounts", listGuestAccounts), collectorFor(env, "jp")!.guestAccountView()]);
   const pending = view.job;
   return json(request, { job: pending ? { guestId: pending.guestId, version: pending.version, action: pending.action,
     status: pending.status, deadlineMs: pending.deadlineMs } : null, guests: guests.map((guest) => {
@@ -3553,7 +3554,7 @@ const postGuestAccount = async (request: Request, env: Env, verificationId?: str
   const started = await startOperation(request, env, access, `collector.guest.${action}.queue`, "guest_account", id);
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName("jp");
+  const collector = collectorFor(env, "jp")!;
   const result = verificationId ? await collector.requestGuestVerification(id, version!) : await collector.requestGuestRegistration(id, label);
   if (result.kind !== "queued" && result.kind !== "exists") {
     await failOperation(env, started.operationId, result.kind, { guestId: id });
@@ -3567,9 +3568,9 @@ const postGuestAccount = async (request: Request, env: Env, verificationId?: str
 const getPlatformAccounts = async (request: Request, env: Env): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
-  const [roles, conflicts] = await Promise.all([listPlatformAccounts(env), listPlatformSdkConflicts(env)]);
+  const [roles, conflicts] = await Promise.all([hostOr(env, "platform", "listPlatformAccounts", listPlatformAccounts), hostOr(env, "platform", "listPlatformSdkConflicts", listPlatformSdkConflicts)]);
   const views = await Promise.all((["tw", "en", "kr"] as const).map((region) =>
-    env.OFFICIAL_RANKING_COLLECTOR.getByName(region).platformAccountView(region)));
+    collectorFor(env, region)!.platformAccountView(region)));
   return json(request, { conflicts, roles: roles.map((role) => {
     const view = views[["tw", "en", "kr"].indexOf(role.region)]!;
     if (view.job?.accountId === role.id && view.job.accountVersion === role.version) return { ...role, status: view.job.status };
@@ -3593,7 +3594,7 @@ const postPlatformSdkResolution = async (request: Request, env: Env, id: string)
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
   let result: Awaited<ReturnType<typeof resolvePlatformSdkConflict>>;
-  try { result = await resolvePlatformSdkConflict(env, id, body.accountId, body.expectedRevision); }
+  try { result = await hostOr(env, "platform", "resolvePlatformSdkConflict", resolvePlatformSdkConflict, id, body.accountId, body.expectedRevision); }
   catch (failure) { await failOperation(env, started.operationId, "account_store_failed"); throw failure; }
   if (result !== "resolved") {
     await failOperation(env, started.operationId, result);
@@ -3612,7 +3613,7 @@ const postPlatformLogin = async (request: Request, env: Env, id: string, region:
   const started = await startOperation(request, env, access, "collector.platform.login.queue", "platform_role", `${id}:${region}`);
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName(region);
+  const collector = collectorFor(env, region)!;
   let result: Awaited<ReturnType<typeof collector.requestPlatformLogin>>;
   try { result = await collector.requestPlatformLogin(region, id, version); }
   catch (failure) {
@@ -3639,10 +3640,10 @@ const postPlatformAccount = async (request: Request, env: Env): Promise<Response
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
   let created: boolean;
-  const bootstrap = (await readPlatformBootstraps(env)).find((entry) => entry.email.toLowerCase() === input.email.toLowerCase());
+  const bootstrap = (await hostOr(env, "platform", "readPlatformBootstraps", readPlatformBootstraps)).find((entry) => entry.email.toLowerCase() === input.email.toLowerCase());
   const accountId = bootstrap?.id ?? started.operationId;
   try {
-    created = await createPlatformAccount(env, accountId, input);
+    created = await hostOr(env, "platform", "createPlatformAccount", createPlatformAccount, accountId, input);
   } catch (failure) {
     const code = failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "account_store_failed";
     await failOperation(env, started.operationId, code);
@@ -3657,15 +3658,15 @@ const postPlatformAccount = async (request: Request, env: Env): Promise<Response
   let loginQueued = false;
   if (bootstrap) {
     try {
-      await savePlatformDeviceId(env, accountId, bootstrap.deviceId);
+      await hostOr(env, "platform", "savePlatformDeviceId", savePlatformDeviceId, accountId, bootstrap.deviceId);
       const config = globalLoginConfiguration(env.OFFICIAL_GLOBAL_LOGIN_CONFIG, bootstrap.deviceId, "tw");
-      await adoptPlatformSessions(env, accountId, 1, bootstrap.sdkSession, bootstrap.configurations, await platformSdkScopes(config.sdkProfile));
+      await hostOr(env, "platform", "adoptPlatformSessions", adoptPlatformSessions, accountId, 1, bootstrap.sdkSession, bootstrap.configurations, await platformSdkScopes(config.sdkProfile));
       sessionsImported = true;
     } catch (failure) {
       console.warn(JSON.stringify({ event: "official_account_adoption_failed", accountId, error: failure instanceof Error ? failure.name : "Error" }));
     }
   } else {
-    const queued = await env.OFFICIAL_RANKING_COLLECTOR.getByName("tw").requestPlatformLogin("tw", accountId, 1);
+    const queued = await collectorFor(env, "tw")!.requestPlatformLogin("tw", accountId, 1);
     loginQueued = queued.kind === "queued";
   }
   const operation = await transitionOperation(env, started.operationId, "succeeded", { accountId, sessionsImported, loginQueued }, accountId, null);
@@ -3683,7 +3684,7 @@ const putPlatformAccount = async (request: Request, env: Env, id: string): Promi
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
   let result: Awaited<ReturnType<typeof updatePlatformAccount>>;
   try {
-    result = await updatePlatformAccount(env, id, input);
+    result = await hostOr(env, "platform", "updatePlatformAccount", updatePlatformAccount, id, input);
   } catch (failure) {
     const code = failure instanceof AccountVaultUnavailable ? "account_vault_unavailable" : "account_store_failed";
     await failOperation(env, started.operationId, code);
@@ -3726,7 +3727,7 @@ const getCollectorFinalArchives = async (request: Request, env: Env, url: URL, r
 const getCollectorPool = async (request: Request, env: Env): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");
   if (access instanceof Response) return access;
-  const regions = await Promise.all(POOL_REGIONS.map((region) => env.OFFICIAL_RANKING_COLLECTOR.getByName(region).poolView(region)));
+  const regions = await Promise.all(POOL_REGIONS.map((region) => collectorFor(env, region)!.poolView(region)));
   return json(request, { regions: regions as unknown as JsonValue });
 };
 
@@ -3742,7 +3743,7 @@ const postCollectorPool = async (request: Request, env: Env, region: PoolRegion,
   const started = await startOperation(request, env, access, `collector.pool.${String(action)}`, "collector_account", target);
   if (started.kind === "response") return started.response;
   if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  const collector = env.OFFICIAL_RANKING_COLLECTOR.getByName(region);
+  const collector = collectorFor(env, region)!;
   const result = identity
     ? (await collector.poolAction(region, identity, action as "hold" | "release" | "clear" | "remove")) ? "ok" : "account_not_found"
     : await collector.poolAdd(region, body.account);

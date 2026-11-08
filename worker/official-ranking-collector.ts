@@ -46,7 +46,6 @@ const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
 type EventInterest = NonNullable<OfficialCollectorJob["eventWindows"]>[number] & { requestedAtMs: number };
 type ArenaInterest = NonNullable<OfficialCollectorJob["arenaWindows"]>[number] & { requestedAtMs: number };
 const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
-const CALLBACK_ORIGIN = "https://haneoka.org";
 
 type JsonObject = Record<string, unknown>;
 interface PlatformRenewal {
@@ -472,6 +471,8 @@ export class OfficialRankingCollector extends Container<Env> {
     });
   }
   override pingEndpoint = "container/health";
+  /** Where the collector reports runs: the site, or the collector host itself when it runs there. */
+  private get callbackOrigin(): string { return this.env.OFFICIAL_CALLBACK_ORIGIN ?? "https://haneoka.org"; }
   private mutations: Promise<void> = Promise.resolve();
 
   constructor(ctx: ConstructorParameters<typeof Container<Env>>[0], env: Env) {
@@ -487,8 +488,19 @@ export class OfficialRankingCollector extends Container<Env> {
         token = crypto.randomUUID() + crypto.randomUUID();
         await ctx.storage.put("containerToken", token);
       }
-      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: this.callbackOrigin };
     });
+  }
+
+  /** Hands this object's state to the collector host and stops it scheduling anything more. */
+  async exportForHost(): Promise<{ storage: Record<string, unknown>; tables: Record<string, unknown[]> }> {
+    const tables: Record<string, unknown[]> = {};
+    for (const table of ["container_schedules", "collector_window_cache", "collector_window_replies"]) {
+      try { tables[table] = this.ctx.storage.sql.exec(`SELECT * FROM ${table}`).toArray(); } catch { tables[table] = []; }
+    }
+    try { this.ctx.storage.sql.exec("DELETE FROM container_schedules"); } catch { /* no schedules yet */ }
+    const storage = Object.fromEntries(await this.ctx.storage.list());
+    return { storage, tables };
   }
 
   collectorRuntimeInfo() {
@@ -850,7 +862,7 @@ export class OfficialRankingCollector extends Container<Env> {
         await this.schedule(new Date(lease.deadlineMs + 15_001), "runPlatformLogin", region);
         let token = await this.ctx.storage.get<string>("containerToken");
         if (!token) { token = crypto.randomUUID() + crypto.randomUUID(); await this.ctx.storage.put("containerToken", token); }
-        this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+        this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: this.callbackOrigin };
         return { lease, config, token, sdkScope, sdkIdentityScope, expectedSdkUid, job: { contract: "haneoka:official-account-job/1", action: "sdk", region, runId: lease.runId,
           deadlineMs: lease.deadlineMs, email: input.email, password: input.password, expectedPlayerId: input.playerId, expectedSdkUid, sdkSession, ...config } };
       });
@@ -1093,7 +1105,7 @@ export class OfficialRankingCollector extends Container<Env> {
   private async guestToken() {
     let token = await this.ctx.storage.get<string>("containerToken");
     if (!token) { token = crypto.randomUUID() + crypto.randomUUID(); await this.ctx.storage.put("containerToken", token); }
-    this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+    this.envVars = { OFFICIAL_COLLECTOR_TOKEN: token, OFFICIAL_CALLBACK_ORIGIN: this.callbackOrigin };
     return token;
   }
 
@@ -1572,13 +1584,13 @@ export class OfficialRankingCollector extends Container<Env> {
       if (health) { health.lastUsedAtMs = now; health.leaseUntilMs = now + duration + 15_000; }
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
-      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: this.callbackOrigin };
       await this.ctx.storage.put("collectorState", state);
       await this.queueLookup(region, now + duration + 15_001);
       return { contract: "haneoka:official-ranking-job/1", mode: "lookup", region, runId, credentialGeneration: config.generation,
         capabilities: ["player-demand-v1", "demand-progress-v1"], playerLookups, songRankings, cardImages, arenaProgress: [], arenaWindows: [],
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
-        callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + duration };
+        callbackUrl: `${this.callbackOrigin}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + duration };
     });
     if (!job) return;
     let failed = false;
@@ -2030,7 +2042,7 @@ export class OfficialRankingCollector extends Container<Env> {
       const arenaWindows = final ? arenaFinal?.windows ?? [] : [...demanded, ...swept];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
       if (!serviceToken) { serviceToken = token; await this.ctx.storage.put("containerToken", serviceToken); }
-      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: CALLBACK_ORIGIN };
+      this.envVars = { OFFICIAL_COLLECTOR_TOKEN: serviceToken, OFFICIAL_CALLBACK_ORIGIN: this.callbackOrigin };
       await this.persist(state);
       return { contract: "haneoka:official-ranking-job/1", region, runId, credentialGeneration: config.generation,
         capabilities: eventFinal ? ["event-finals-v1", "ranking-window-cache-v1", ...(eventFinal.windows.length ? ["event-windows-v1"] : [])]
@@ -2044,7 +2056,7 @@ export class OfficialRankingCollector extends Container<Env> {
         arenaWindows,
         eventWindows,
         clientVersion: config.clientVersion, credentials: config.credentials, masterConfig: config.masterConfig,
-        callbackUrl: `${CALLBACK_ORIGIN}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + JOB_MS };
+        callbackUrl: `${this.callbackOrigin}/api/internal/official-rankings/${region}/${runId}`, callbackToken: token, deadlineMs: now + JOB_MS };
     });
     if (!job) return;
     let failure: OfficialCollectorFailure | null = null;

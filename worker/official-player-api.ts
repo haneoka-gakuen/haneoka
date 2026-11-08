@@ -7,9 +7,12 @@ import type { GameProfileCardDto, GameRecordsRegion, PlayerProfileDto, SongRanki
 import { moenotesPlayer, moenotesSongRanking, type MoenotesBindings } from "./moenotes-fallback";
 import { officialEventRanking } from "./official-ranking-api";
 import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import { collectorFor } from "./official-host";
 
 export interface OfficialPlayerBindings extends OfficialRankingStoreBindings, MoenotesBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
+  OFFICIAL_HOST_ORIGIN?: string;
+  OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
 }
 
 const PREFIX = "/api/v1/game/records";
@@ -83,7 +86,7 @@ function updatedAtMs(value: unknown): number | null {
 
 const queue = (ctx: ExecutionContext, env: OfficialPlayerBindings, region: GameRecordsRegion, kind: "player" | "song" | "card", id: string) =>
   ctx.waitUntil(
-    Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestDemand(region, kind, [id])).catch(() => undefined),
+    Promise.resolve(collectorFor(env, region)?.requestDemand(region, kind, [id])).catch(() => undefined),
   );
 
 const pending = (request: Request) => json(request, { error: { kind: "pending", retryAfter: 3 } }, 503);

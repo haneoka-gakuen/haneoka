@@ -25,9 +25,12 @@ import {
   readOfficialPlayers,
   type OfficialRankingStoreBindings,
 } from "./official-ranking-store";
+import { collectorFor } from "./official-host";
 
 export interface ArenaRankingBindings extends OfficialRankingStoreBindings {
   OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
+  OFFICIAL_HOST_ORIGIN?: string;
+  OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
 }
 
 const PREFIX = "/api/v1/game/records";
@@ -135,7 +138,7 @@ export async function attachProfileCards(env: ArenaRankingBindings, ctx: Executi
   }
   const missing = ids.filter((id) => !players.has(id)).slice(0, CARD_DEMAND);
   if (missing.length)
-    ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestDemand(region, "player", missing)).catch(() => undefined));
+    ctx.waitUntil(Promise.resolve(collectorFor(env, region)?.requestDemand(region, "player", missing)).catch(() => undefined));
 }
 
 async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region: GameRecordsRegion, seasonId: string,
@@ -165,7 +168,7 @@ async function ranking(env: ArenaRankingBindings, ctx: ExecutionContext, region:
   const now = Date.now();
   // A stale window is still shown while a run brought forward refreshes it.
   if (staleAt(observedAtMs, now, 1_200_000))
-    ctx.waitUntil(Promise.resolve(env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region, seasonId, bandId,
+    ctx.waitUntil(Promise.resolve(collectorFor(env, region)?.requestArenaWindows(region, seasonId, bandId,
       [...new Set([start, Math.min(stop, end)].map((rank) => Math.floor((rank - 1) / WINDOW) * WINDOW + 1))])).catch(() => undefined));
   return { region, seasonId, bandId, start, end, provider: "official", snapshotId: [...snapshots].join("."),
     observedAtMs, fetchedAtMs: observedAtMs, serverTimeMs: now, stale: staleAt(observedAtMs, now, 1_200_000),
@@ -294,7 +297,7 @@ async function search(
   if (!lookup.partial && !matches.complete) return pending();
   let retryAfter: number | null = matches.complete ? null : 3;
   if (lookup.partial && missing.length && matches.complete) {
-    const queued = Promise.resolve().then(() => env.OFFICIAL_RANKING_COLLECTOR?.getByName(region).requestArenaWindows(region,seasonId,bandId,missing));
+    const queued = Promise.resolve().then(() => collectorFor(env, region)?.requestArenaWindows(region,seasonId,bandId,missing));
     if (matches.matches.length) {
       ctx.waitUntil(queued.catch(() => undefined));
       retryAfter = 30;
@@ -367,7 +370,7 @@ export async function handleArenaRankingApi(
     if (failure.kind === "pending") {
       if (!failure.windows.length) return json(request, { error: { kind: "pending", retryAfter: 3 } }, 503, 3);
       try {
-        const collector = env.OFFICIAL_RANKING_COLLECTOR?.getByName(region);
+        const collector = collectorFor(env, region);
         if (!collector) throw new Error("collector_unavailable");
         const thresholds =
           operation === "population" ? (url.searchParams.get("thresholds") ?? "").split(",").map(Number) : [];
