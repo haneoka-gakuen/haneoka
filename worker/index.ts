@@ -733,9 +733,10 @@ async function currentRelease(env: Env, server: ResourceServerRoute, fresh = fal
     pointerCache.set(key, cached);
     return cached.value;
   }
-  const object = await env.ASSET_BUCKET.get(key);
-  if (!object?.body) return null;
-  const value = parseJson(await new Response(object.body).text());
+  // A fresh read may be ten seconds old; the pointer moves once per release.
+  const text = await cachedR2Text(env, key, fresh ? 10 : 30);
+  if (text === null) return null;
+  const value = parseJson(text);
   if (!isJsonObject(value)) throw new Error(`invalid release pointer: ${key}`);
   const releaseId = typeof value.releaseId === "string" ? value.releaseId : "";
   const sourceId = typeof value.sourceId === "string" ? value.sourceId : "";
@@ -780,7 +781,7 @@ async function requestedRelease(env: Env, server: ResourceServerRoute, releaseId
   const pending = (async () => {
     const manifestKey = `${server.resourcePrefix}/releases/${releaseId}/release.json`;
     const identityKey = `${server.resourcePrefix}/releases/${releaseId}/${RELEASE_IDENTITY_FILENAME}`;
-    const value = await readR2Json(env, identityKey);
+    const value = await readR2Json(env, identityKey, IMMUTABLE_R2_TTL);
     if (value === null) {
       const current = await currentRelease(env, server);
       if (current?.releaseId === releaseId) return current;
@@ -1079,9 +1080,32 @@ async function edgeCached(
   return response;
 }
 
-async function readR2Json(env: Env, key: string): Promise<JsonValue | null> {
+const R2_TEXT_CACHE = "https://r2-text.haneoka.internal/";
+
+/**
+ * A small asset-bucket document, shared by every isolate in the colo for
+ * `ttl` seconds: release pointers are read on most requests, and immutable
+ * release documents never change.
+ */
+async function cachedR2Text(env: Env, key: string, ttl: number): Promise<string | null> {
+  const cache = ttl > 0 && typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = new Request(R2_TEXT_CACHE + encodeURIComponent(key));
+  const hit = await cache?.match(cacheKey).catch(() => undefined);
+  if (hit) return hit.status === 404 ? null : hit.text();
   const object = await env.ASSET_BUCKET.get(key);
-  return object?.body ? parseJson(await new Response(object.body).text()) : null;
+  const text = object?.body ? await new Response(object.body).text() : null;
+  await cache?.put(cacheKey, new Response(text ?? "", {
+    status: text === null ? 404 : 200,
+    headers: { "Cache-Control": `public, max-age=${text === null ? Math.min(ttl, 30) : ttl}` },
+  })).catch(() => undefined);
+  return text;
+}
+
+const IMMUTABLE_R2_TTL = 86_400;
+
+async function readR2Json(env: Env, key: string, ttl = 0): Promise<JsonValue | null> {
+  const text = await cachedR2Text(env, key, ttl);
+  return text === null ? null : parseJson(text);
 }
 
 const releaseIndexCache = new Map<string, Promise<ReleaseIndexEntries>>();
@@ -1099,7 +1123,7 @@ async function releaseIndex(env: Env, release: Release, shard: string): Promise<
   const key = `${release.indexPrefix}${shard}.json`;
   let pending = releaseIndexCache.get(key);
   if (!pending) {
-    pending = readR2Json(env, key).then((value) => {
+    pending = readR2Json(env, key, IMMUTABLE_R2_TTL).then((value) => {
       if (
         !isJsonObject(value) ||
         value.schema !== "haneoka-resource-index-v1" ||
@@ -1151,7 +1175,7 @@ async function releaseEntry(env: Env, release: Release, path: string): Promise<R
 
 async function readReleaseJson(env: Env, release: Release, path: string): Promise<JsonValue | null> {
   const entry = await releaseEntry(env, release, path);
-  return entry ? readR2Json(env, entry.key) : null;
+  return entry ? readR2Json(env, entry.key, IMMUTABLE_R2_TTL) : null;
 }
 
 async function readReleaseBytes(env: Env, release: Release, path: string): Promise<Uint8Array | null> {
@@ -1235,7 +1259,7 @@ async function currentGarupaMaster(env: Env): Promise<GarupaMasterPointer | null
   if (garupaMasterPointerCache && garupaMasterPointerCache.expiresAt > now) {
     return garupaMasterPointerCache.value;
   }
-  const value = await readR2Json(env, GARUPA_MASTER_POINTER_KEY);
+  const value = await readR2Json(env, GARUPA_MASTER_POINTER_KEY, 30);
   if (value === null) return null;
   if (!isJsonObject(value)) throw new Error(`invalid Garupa Master pointer: ${GARUPA_MASTER_POINTER_KEY}`);
   const snapshotId = typeof value.snapshotId === "string" ? value.snapshotId : "";
@@ -1371,7 +1395,7 @@ async function parseGarupaMasterSnapshot(
 async function garupaMasterSnapshot(env: Env, pointer: GarupaMasterPointer): Promise<GarupaMasterSnapshot> {
   let pending = garupaMasterSnapshotCache.get(pointer.manifestKey);
   if (!pending) {
-    pending = readR2Json(env, pointer.manifestKey).then((value) => {
+    pending = readR2Json(env, pointer.manifestKey, IMMUTABLE_R2_TTL).then((value) => {
       if (value === null) throw new Error(`Garupa Master snapshot is missing: ${pointer.manifestKey}`);
       return parseGarupaMasterSnapshot(value, pointer);
     });
@@ -2726,7 +2750,7 @@ async function handleTeamBuilderDataApi(env: Env, ctx: ExecutionContext, request
       ) {
         throw new Error("Native rule evidence pin does not match the selected release");
       }
-      return readR2Json(env, `${pinnedServer.resourcePrefix}/sources/${pinned.sourceId}/native-rule-evidence.json`);
+      return readR2Json(env, `${pinnedServer.resourcePrefix}/sources/${pinned.sourceId}/native-rule-evidence.json`, IMMUTABLE_R2_TTL);
     },
     (promise) => ctx.waitUntil(promise),
   );
@@ -2993,7 +3017,7 @@ async function handleArtifact(
   }
   const server = await accessibleResourceServer(env, request, serverSlug);
   if (!server) return new Response("not found", { status: 404, headers: CORS });
-  const source = await readR2Json(env, `${server.resourcePrefix}/sources/${sourceId}/source.json`);
+  const source = await readR2Json(env, `${server.resourcePrefix}/sources/${sourceId}/source.json`, IMMUTABLE_R2_TTL);
   if (!isJsonObject(source)) return new Response("not found", { status: 404, headers: CORS });
   const storage = source.storage;
   if (!isJsonObject(storage) || storage.schema !== "haneoka-r2-cas-v1" || storage.prefix !== CAS_PREFIX) {
@@ -3328,7 +3352,7 @@ async function handleSonolus(
   if (!canonicalRelease) {
     return new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS });
   }
-  const payloadState = await readR2Json(env, "operation/sonolus/revision.json");
+  const payloadState = await readR2Json(env, "operation/sonolus/revision.json", 30);
   const payloadRevision =
     payloadState &&
     typeof payloadState === "object" &&
