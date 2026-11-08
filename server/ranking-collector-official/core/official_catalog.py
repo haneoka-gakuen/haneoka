@@ -117,8 +117,9 @@ def project(tables, version, now_ms, region='jp',resource_version=None,api_origi
 
 class OfficialCatalog:
     def __init__(self, config_file, output, proxy, client_version, stop_file=None, deadline=None, region='jp',api_origin=None,include_arena=False):
-        from lifecycle import normalize_proxy
-        self.config_file=Path(config_file);self.output=Path(output)/'master';self.proxy=normalize_proxy(proxy)
+        from lifecycle import egress_proxy, normalize_proxy
+        self.config_file=Path(config_file);self.output=Path(output)/'master'
+        self.proxy=normalize_proxy(proxy) or (egress_proxy() if region=='jp' else '')
         self.client_version=client_version
         self.region=region
         self.region_config=region_config(region)

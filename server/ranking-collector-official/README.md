@@ -33,6 +33,36 @@ A region's secret holds one account or a pool:
 
 Pools use `haneoka:official-ranking-account-pool/1`, the output of `account-pool.mjs export-pool`. Save a verified configuration as a GitHub Actions secret of the same name and run `official-ranking-config.yml`. Secrets never go in `vars`, the image or the repository. The `tw` region uses `hk` in `credentials.region`.
 
+### Self-hosted collector
+
+The Durable Objects keep scheduling and state; the collector itself can run on any Docker host instead of Cloudflare Containers. `deploy/compose.yaml` runs three services:
+
+| Service | Role |
+| --- | --- |
+| `egress` | mihomo on loopback port 7899, Japanese nodes only; JP API and CDN requests leave through it |
+| `collector` | `cloud.py` in the egress network namespace |
+| `tunnel` | `cloudflared` publishing the collector as `collector.haneoka.org` |
+
+On the host, next to `compose.yaml`:
+
+- `.env`: `MIHOMO_VERSION`, `CLOUDFLARED_VERSION`, `OFFICIAL_COLLECTOR_TOKEN` and `TUNNEL_TOKEN`.
+- `egress/config.yaml`: `egress.template.yaml` with the subscription URL filled in.
+
+```sh
+docker compose up -d --build
+```
+
+`collector-deploy.yml` redeploys on every push to `main` that touches this directory: it streams the source to the host over SSH, where the deploy key's forced command (`deploy/host-deploy.sh`, installed as `/opt/haneoka-collector/deploy.sh`) rebuilds and restarts the collector, keeping `.env` and the egress config.
+
+Switch the Worker over with two secrets, and back by deleting them:
+
+```sh
+wrangler secret put OFFICIAL_COLLECTOR_REMOTE_ORIGIN   # https://collector.haneoka.org
+wrangler secret put OFFICIAL_COLLECTOR_REMOTE_TOKEN    # same value as OFFICIAL_COLLECTOR_TOKEN
+```
+
+Collection jobs are accepted with `202` and report through callbacks, so a Durable Object never waits for a run; a job that fails outside the run reports a `service-failure` callback.
+
 ### Managed-account rollout
 
 Prepare these Worker secrets through Wrangler's secret interface before using

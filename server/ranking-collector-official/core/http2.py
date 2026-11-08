@@ -2,7 +2,7 @@
 # Input: Allowlisted regional API origin, unary request, credential header factory and bounded I/O controls.
 # Output: HTTP/2 status, allowlisted metadata and response body, using the JP gateway's TLS 1.2 compatibility profile.
 # Pos: [Map](../../L2.md); direct Python transport for the standalone collector.
-# Effects/Dependencies: TCP/TLS with optional loopback CONNECT; h2 framing and no persistence.
+# Effects/Dependencies: TCP/TLS with optional loopback CONNECT, defaulting to OFFICIAL_JP_EGRESS_PROXY for JP hosts; h2 framing and no persistence.
 import errno
 import ipaddress
 import select
@@ -18,7 +18,7 @@ from h2.events import ResponseReceived, TrailersReceived, DataReceived, StreamEn
 from h2.exceptions import H2Error, ProtocolError
 from h2.settings import SettingCodes
 
-from lifecycle import normalize_proxy
+from lifecycle import egress_proxy, normalize_proxy
 from regions import select_api_origin
 
 HOST = 'api.bang-dream-on.jp'
@@ -193,6 +193,8 @@ def post(path, body, header_factory, *, proxy='', connect_ip=None, timeout=20, c
     if len(body) > 4096:
         raise ValueError('Request too large')
     proxy = normalize_proxy(proxy)
+    if not proxy and not connect_ip and host and (host == 'bang-dream-on.jp' or host.endswith('.bang-dream-on.jp')):
+        proxy = egress_proxy()
     if proxy and connect_ip:
         raise ValueError('Choose either proxy or direct IP transport')
     response = {'status': None, 'headers': {}, 'trailers': {}, 'body': b'', 'cdn': {}}

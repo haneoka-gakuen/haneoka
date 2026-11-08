@@ -2,7 +2,7 @@
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
 // Output: Regional observations, serialized account jobs, session renewal, redacted pool health, anonymous Version diagnostics and durable 150-second window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
-// Effects/Dependencies: Starts isolated containers, persists DO state and writes D1/R2; credentials stay server-side.
+// Effects/Dependencies: Starts isolated containers or calls the self-hosted collector, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
 import { adoptConfiguredPlatformAccounts, bindPlatformSdkIdentity, claimPlatformBatch, claimPlatformSdkOwner, claimPlatformLogin, finishPlatformLogin, limitPlatformLoginLease, listPlatformAccounts, platformBatchCurrent, platformDeviceId, platformSdkScopes, readPlatformLoginInput, readPlatformPassword, readPlatformPlayerIds, readPlatformBootstraps, readRemovedPlayerIds, readPlatformSdkIdentity, readPlatformSdkSession, readReadyPlatformAccounts, releasePlatformBatch, releasePlatformLogin, savePlatformSdkSession,
   type PlatformLoginLease, type PlatformLoginResult, type PlatformRegion } from "./official-platform-accounts";
@@ -446,6 +446,31 @@ export class OfficialRankingCollector extends Container<Env> {
   override defaultPort = 8080;
   override sleepAfter = "15s";
   override enableInternet = true;
+
+  /**
+   * With OFFICIAL_COLLECTOR_REMOTE_ORIGIN set, the collector runs on a host
+   * outside Cloudflare and no Container starts. Requests keep their path and
+   * body and carry the shared remote token instead of this object's own.
+   */
+  override async containerFetch(requestOrUrl: Request | string | URL, portOrInit?: number | RequestInit, portParam?: number): Promise<Response> {
+    const origin = this.env.OFFICIAL_COLLECTOR_REMOTE_ORIGIN;
+    if (!origin) return super.containerFetch(requestOrUrl, portOrInit, portParam);
+    const token = this.env.OFFICIAL_COLLECTOR_REMOTE_TOKEN;
+    if (!token || token.length < 32) throw new Error("remote_collector_token_missing");
+    const request = requestOrUrl instanceof Request
+      ? requestOrUrl
+      : new Request(String(requestOrUrl), typeof portOrInit === "object" ? portOrInit : undefined);
+    const target = new URL(request.url);
+    const headers = new Headers(request.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return fetch(new URL(target.pathname + target.search, origin), {
+      method: request.method,
+      headers,
+      body: request.method === "GET" || request.method === "HEAD" ? null : await request.arrayBuffer(),
+      signal: request.signal,
+      redirect: "manual",
+    });
+  }
   override pingEndpoint = "container/health";
   private mutations: Promise<void> = Promise.resolve();
 
@@ -2025,9 +2050,14 @@ export class OfficialRankingCollector extends Container<Env> {
     let failure: OfficialCollectorFailure | null = null;
     try {
       const serviceToken = await this.ctx.storage.get<string>("containerToken");
+      // A remote collector accepts the run at once and reports its end through the callbacks.
       const response = await this.containerFetch("http://container/collect", { method: "POST",
-        headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${serviceToken}`, "Content-Type": "application/json", "X-Haneoka-Collector-Async": "1" },
         body: JSON.stringify(job), signal: AbortSignal.timeout(JOB_MS + 15_000) });
+      if (response.status === 202) {
+        await response.arrayBuffer();
+        return;
+      }
       if (!response.ok) {
         const detail = await responseFailure(response);
         failure = detail ? { ...detail, httpStatus: detail.httpStatus ?? response.status }
@@ -2037,10 +2067,15 @@ export class OfficialRankingCollector extends Container<Env> {
     } catch (error) {
       failure = { stage: "container", code: error instanceof Error && error.name === "TimeoutError" ? "TimeoutError" : "container_fetch_failed" };
     }
+    await this.failRun(region, job.runId, failure);
+  }
+
+  /** A run that ended without its completion callback: the collector service failed it. */
+  private async failRun(region: GameRecordsRegion, runId: string, failure: OfficialCollectorFailure | null): Promise<void> {
     if (failure) console.warn(JSON.stringify({ event: "official_ranking_container_failed", region, ...failure }));
     await this.serialized(async () => {
       const state = await this.stateFor(region);
-      if (!state.run || state.run.id !== job.runId || state.run.complete) return;
+      if (!state.run || state.run.id !== runId || state.run.complete) return;
       state.run.complete = true;
       state.lastFailure = failure ?? { stage: "container", code: "container_fetch_failed" };
       state.failures += 1;
@@ -2071,6 +2106,13 @@ export class OfficialRankingCollector extends Container<Env> {
     try { update = await boundedUpdate(request); }
     catch { return json({ error: "invalid_update" }, 400); }
     if (active === state.lookup) return this.lookupCallback(region, runId, update);
+    if (update.type === "service-failure") {
+      if (update.contract !== "haneoka:official-ranking-update/1" || update.region !== region || update.runId !== runId
+        || update.credentialGeneration !== active.generation) return json({ error: "run_mismatch" }, 409);
+      try { validateFailure(update.failure); } catch { return json({ error: "invalid_update" }, 400); }
+      await this.failRun(region, runId, update.failure);
+      return json({ ok: true });
+    }
     return this.serialized(async () => {
       const state = await this.stateFor(region);
       const run = state.run;

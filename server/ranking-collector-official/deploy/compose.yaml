@@ -1,0 +1,35 @@
+# Ranking collector on a host outside Cloudflare: the Worker reaches it
+# through the tunnel, and the game's Japanese service through the egress.
+name: haneoka-collector
+
+services:
+  egress:
+    image: docker.io/metacubex/mihomo:${MIHOMO_VERSION}
+    restart: unless-stopped
+    volumes:
+      - ./egress:/root/.config/mihomo
+    mem_limit: 256m
+
+  collector:
+    build: ..
+    restart: unless-stopped
+    network_mode: service:egress
+    depends_on:
+      egress: { condition: service_started, restart: true }
+    environment:
+      OFFICIAL_COLLECTOR_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
+      OFFICIAL_CALLBACK_ORIGIN: https://haneoka.org
+      OFFICIAL_JP_EGRESS_PROXY: http://127.0.0.1:7899
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    stop_grace_period: 30s
+
+  tunnel:
+    image: docker.io/cloudflare/cloudflared:${CLOUDFLARED_VERSION}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on: [egress]
+    mem_limit: 128m

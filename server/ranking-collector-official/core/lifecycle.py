@@ -1,5 +1,6 @@
 """L3: server/L2.md -> ranking-collector-official; catalog discovery, credential generations and authentication rejection."""
 import hashlib
+import os
 import json
 from pathlib import Path
 import re
@@ -13,6 +14,11 @@ def authentication_failed(receipt):
     grpc=str(metadata.get('grpc-status',receipt.get('grpc_status')))
     return (receipt.get('status')==401 or grpc=='16'
             or grpc=='2' and unquote(metadata.get('grpc-message',''))=='authentication failed')
+
+def egress_proxy():
+    """The loopback proxy a host outside Japan uses for the JP API and CDN; empty in Containers."""
+    return normalize_proxy(os.environ.get('OFFICIAL_JP_EGRESS_PROXY', ''))
+
 
 def normalize_proxy(value):
     if value=='':return ''
