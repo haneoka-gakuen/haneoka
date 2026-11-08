@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: SSR 模板、DOM 容器与 Lit RenderOptions。
-// Output: 在指定容器中完成的 Lit 水合。
+// Output: 在指定容器中完成的 Lit 水合；状态与预渲染不符时清空容器交给客户端渲染。
 // Pos: [Map](../L2-2.md)；嵌套 light DOM 工作区的 SSR 标记边界。
 // Effects/Dependencies: 暂存并改写嵌套标记，调用 hydrate 后在 finally 恢复；依赖 DOM。
 import { hydrate } from "@lit-labs/ssr-client";
@@ -21,6 +21,11 @@ export function hydrateWorkspace(value: unknown, container: Element, options: Re
   }
   try {
     hydrate(value, container, options);
+  } catch {
+    // The reader's state (drafts, release visibility, choices) differs from the
+    // build-time page: drop the prerendered markup and let the render start fresh.
+    markers.clear();
+    container.replaceChildren();
   } finally {
     for (const [marker, data] of markers) marker.data = data;
   }
