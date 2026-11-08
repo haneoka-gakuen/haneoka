@@ -26,7 +26,8 @@ import { readCompanionHistory } from "../lib/gacha-history-device";
 import { downloadBlob } from "../lib/canvas-capture";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { formatDate } from "../lib/date-format";
-import { appCall, inApp } from "../lib/app-bridge";
+import { appAccountCall, appCall, inApp } from "../lib/app-bridge";
+import { chooseAppAccount } from "./ui/app-account-chooser";
 
 class GachaHistoryWorkspace extends HTMLElement {
   private records: StoredHistory[] = [];
@@ -249,7 +250,9 @@ class GachaHistoryWorkspace extends HTMLElement {
   private async game(key?: string) {
     if (this.busy) return;
     try {
-      const result = await appCall("gachaHistory", key ? { key } : {});
+      const result = await appAccountCall("gachaHistory", key ? { key } : {}, (accounts) =>
+        chooseAppAccount(this.view.locale, accounts),
+      );
       if (result?.files.length)
         await this.importFiles(
           result.files.map((file) => new File([file.text], file.name, { type: "application/json" })),

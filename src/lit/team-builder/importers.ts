@@ -23,7 +23,8 @@ import { selectionPane } from "../ui/selection-pane";
 import type { TeamBuilder } from "../team-builder";
 import { ANDROID_CHANNELS, readAndroidFiles } from "@haneoka/game-data-exporter";
 import { prepareScreenshot, FULL_SCREENSHOT, type ScreenshotCrop } from "../../lib/team-builder/screenshot-image";
-import { appCall, inApp } from "../../lib/app-bridge";
+import { appAccountCall, appCall, inApp } from "../../lib/app-bridge";
+import { chooseAppAccount } from "../ui/app-account-chooser";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -710,7 +711,9 @@ export class ImportController {
     if (!this.box?.server) return;
     const generation = this.generation;
     try {
-      const result = await appCall("boxAccount", { server: this.box.server });
+      const result = await appAccountCall("boxAccount", { server: this.box.server }, (accounts) =>
+        chooseAppAccount(this.host.locale, accounts),
+      );
       if (result && generation === this.generation && this.box) await this.parse({ text: result.text });
     } catch {
       if (generation !== this.generation || !this.box) return;
