@@ -62,10 +62,10 @@ export default defineConfig({
   outDir: path.join(root, ".output/public"),
   publicDir: path.join(root, ".generated-public"),
   compressHTML: true,
-  // View-transition navigations prefetch the next document while the pointer
-  // is still on the link — on a high-latency link that head start is most of
-  // the perceived page load.
-  prefetch: true,
+  // Documents are fetched ahead by src/lib/navigation-prefetch.ts, which hands
+  // them to the client router; Astro's own prefetch relies on an HTTP cache
+  // that private, revalidated pages never fill.
+  prefetch: false,
   build: { inlineStylesheets: "auto" },
   integrations: [
     {

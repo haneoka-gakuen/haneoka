@@ -262,8 +262,10 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { installUpdateCheck } from "../lib/update-check";
       import { installFullscreen } from "../lib/fullscreen";
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
+      import { installNavigationPrefetch } from "../lib/navigation-prefetch";
       import { installContentVisibility } from "../lib/content-policy-browser";
       installSpoilerNavigation();
+      installNavigationPrefetch();
       installContentVisibility();
       installUiFonts();
       installI18nDom();
