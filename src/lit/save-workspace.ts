@@ -6,6 +6,7 @@
 import { viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
+import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
 import { accordion } from "./ui/accordion";
 import { snackbar, dismissSnackbar } from "../lib/snackbar";
 import { importSaves } from "../lib/save-workspace/import";
@@ -63,6 +64,7 @@ export class SaveWorkspace extends LitElement {
   private shellBack?: HTMLAnchorElement;
   private movedMenu?: { menu: HTMLElement; leading: HTMLElement; group: HTMLElement };
   private controller = new AbortController();
+  private lazyImages = new LazyImages();
   private catalogController?: AbortController;
   private catalogServer = "";
   createRenderRoot() {
@@ -86,6 +88,7 @@ export class SaveWorkspace extends LitElement {
     window.removeEventListener("hashchange", this.route);
     window.removeEventListener("haneoka-app-accounts", this.nativeChanged);
     clearAppBarActions("save-workspace");
+    this.lazyImages.disconnect();
     this.restoreShell();
   }
   private route = () => {
@@ -313,6 +316,7 @@ export class SaveWorkspace extends LitElement {
                             aspectRatio: 1,
                             fit: "contain",
                             href: href(row),
+                            onImageError: nextImageCandidate,
                             placeholder: icon(member ? "person" : "image", 32),
                             marks: [level == null ? null : { at: "bottom-end", text: `${this.t("level")} ${level}` }],
                           });
@@ -470,6 +474,7 @@ export class SaveWorkspace extends LitElement {
     }
   }
   protected updated() {
+    this.lazyImages.observe(this);
     this.syncShell();
     setAppBarActions(
       "save-workspace",
@@ -535,8 +540,8 @@ export class SaveWorkspace extends LitElement {
                       <select
                         .value=${this.server}
                         @change=${(event: Event) => {
-                        this.server = (event.target as HTMLSelectElement).value as "jp" | "intl";
-                      }}
+                          this.server = (event.target as HTMLSelectElement).value as "jp" | "intl";
+                        }}
                       >
                         <option value="jp">${this.serverName("jp")}</option>
                         <option value="intl">${this.serverName("intl")}</option>
