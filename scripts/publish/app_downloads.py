@@ -20,7 +20,7 @@ from download_store import DownloadStore, json_bytes
 
 REPOSITORY = "haneoka-gakuen/haneoka-app"
 ORIGIN = "https://haneoka.org/downloads/app/"
-FEEDS = {"altstore-source.json", "scoop-haneoka.json", "Haneoka.Haneoka.installer.yaml", "haneoka.rb",
+FEEDS = {"updater.json", "altstore-source.json", "scoop-haneoka.json", "Haneoka.Haneoka.installer.yaml", "haneoka.rb",
          "haneoka-windows-x64.appinstaller", "haneoka-windows-arm64.appinstaller"}
 
 

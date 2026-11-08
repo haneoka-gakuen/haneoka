@@ -134,9 +134,10 @@ async function serve(request: Request, env: DownloadEnv): Promise<Response> {
     if (app[2]) {
       const latest = await document(env.APP_RELEASES, "app/latest.json");
       const asset = (latest?.assets as Array<Record<string, unknown>> | undefined)?.find((row) => row.name === app[2]);
-      return asset && typeof asset.browser_download_url === "string"
-        ? new Response(null, { status: 302, headers: { ...cors, "Cache-Control": CURRENT, Location: asset.browser_download_url } })
-        : missing();
+      if (!asset || typeof asset.browser_download_url !== "string") return missing();
+      // Stay on the site the reader reached: haneoka.com must not send them to haneoka.org.
+      const location = new URL(new URL(asset.browser_download_url).pathname, url.origin);
+      return new Response(null, { status: 302, headers: { ...cors, "Cache-Control": CURRENT, Location: location.href } });
     }
     return objectResponse(request, env.APP_RELEASES, `app/${app[3]}/${app[4]}`, true, app[4]);
   }
