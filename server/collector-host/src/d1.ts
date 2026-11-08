@@ -106,14 +106,14 @@ export function installOutbox(db: DatabaseSync, owned: (table: string) => boolea
     if (!key.length) throw new Error(`replicated table without primary key: ${name}`);
     const columns = info.map((column) => column.name);
     const pick = (row: "NEW" | "OLD") => `json_array(${key.map((column) => `${row}."${column}"`).join(",")})`;
+    // A trigger's own conflict clause yields to the outer statement's, so the
+    // key moves to the end of the queue by removing it first.
+    const queue = (row: "NEW" | "OLD") => `DELETE FROM _replica_outbox WHERE tbl='${name}' AND pk=${pick(row)};
+        INSERT INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick(row)});`;
     db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
-      CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN
-        INSERT OR REPLACE INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick("NEW")}); END;
-      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}" BEGIN
-        INSERT OR REPLACE INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick("OLD")});
-        INSERT OR REPLACE INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick("NEW")}); END;
-      CREATE TRIGGER "_replica_${name}_delete" AFTER DELETE ON "${name}" BEGIN
-        INSERT OR REPLACE INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick("OLD")}); END;`);
+      CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}" BEGIN ${queue("OLD")} ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_delete" AFTER DELETE ON "${name}" BEGIN ${queue("OLD")} END;`);
     replicated.push({ name, key, columns });
   }
   return replicated;
