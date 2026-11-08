@@ -111,7 +111,7 @@ export class TeamBuilder extends LitElement {
   engine: EngineClient | null = null;
   farmResultMode: "recommendation" | "event" | null = null;
   imports: ImportController = new ImportController(this);
-  /** In the app, a save sent from its save page is imported once the Box is ready. */
+  /** Open a native or browser save review once the target Box is ready. */
   private pendingImportChecked = false;
   pt = new PtController(this);
   songComparison = new SongComparison(this);
@@ -509,7 +509,7 @@ export class TeamBuilder extends LitElement {
   }
   private releaseSearch?: () => void;
   protected updated() {
-    if (inApp() && !this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot) {
+    if (!this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot && (inApp() || new URL(location.href).searchParams.has("saveImport"))) {
       this.pendingImportChecked = true;
       void this.imports.takePending();
     }

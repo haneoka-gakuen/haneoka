@@ -1,0 +1,51 @@
+---
+import { staticBuildPaths } from "../../server/static-build";
+import Base from "../../layouts/Base.astro";
+import AppShell from "../../components/AppShell.astro";
+import { LOCALES, type Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import "../../styles/save-workspace.css";
+
+export function getStaticPaths() {
+  return staticBuildPaths(
+    "src/pages/[locale]/saves.astro",
+    LOCALES.map((locale) => ({ params: { locale }, props: { locale } })),
+  );
+}
+
+const { locale } = Astro.props as { locale: Locale };
+const title = t(locale, "saveWorkspace.title");
+const keys = [
+  "title", "import", "loading", "failed", "back", "server", "saved", "unknown", "team", "export", "delete",
+  "local", "empty", "native", "read", "cancel", "confirm", "catalogRetry", "catalogFailed", "yes", "no", "id", "level",
+  "experience", "rank", "training", "liveSkill", "performanceSkill", "song", "notCleared", "name", "entry",
+  "noSave", "tooLarge", "timeout", "field", "clear", "fullCombo", "allPerfect",
+  "workerFailed", "storageFailed", "fileUnreadable", "invalidFile",
+  "_memberCards", "_supportCards", "_characters", "_characterFriendships", "_bandItems", "_items",
+  "_liveMusicResults", "_topHighScoreRatings", "_challengeMusicResults", "_events", "_challengeLives",
+  "_gachaRecords", "_storyEpisodeRecords", "_decks", "_normalMissions", "_limitedMissions", "_characterMissions",
+  "_playerSeasonPass", "_monthlyPass", "_receivedLoginBonuses", "_unlockedCostumes", "_currentCostumes",
+  "_backgrounds", "_stamps", "_degrees", "_playerProfileCards", "_liveLaneSkins", "_liveNoteSkins",
+  "_liveNoteEffectSkins", "_liveNoteSeGroups", "_spots", "_memory", "_liveBoost", "_liveSkip", "_vip",
+  "_offlineBonus", "_arenaLeagues", "_liveMusics", "_challengeMusics", "_characterFriendshipRankRewards",
+  "_stampFavorites", "_exchange", "_shop", "_exp", "_playerRankUpData",
+  "_amount", "_level", "_count", "_value", "_name", "_isLocked", "_highScore", "_playCount", "_clearCount",
+  "_status", "_isReceived", "_isRead", "_point", "_score", "_startAt", "_endAt", "_masterId", "_id",
+  "_masterItemId", "_masterCharacterId", "_mLiveMusicId", "_rank", "_awakeCount", "_liveSkillLevel",
+  "_performanceSkillLevel", "_experience",
+];
+const messages = {
+  ...Object.fromEntries(keys.map((key) => [key, t(locale, `saveWorkspace.${key}`)])),
+  "servers.jp": t(locale, "tools.teamBuilder.boxImport.servers.jp"),
+  "servers.intl": t(locale, "tools.teamBuilder.boxImport.servers.intl"),
+};
+---
+
+<Base locale={locale} route="/saves" title={title} titleKey="saveWorkspace.title">
+  <AppShell locale={locale} route="/saves" title={title} titleKey="saveWorkspace.title">
+    <save-workspace locale={locale} data-messages={JSON.stringify(messages)}></save-workspace>
+  </AppShell>
+</Base>
+<script>
+  import "../../lit/save-workspace";
+</script>

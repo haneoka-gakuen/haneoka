@@ -419,7 +419,12 @@
     "src/lit/ui/render-quality-settings.ts",
     "src/lib/event-team-analysis.ts",
     "src/lit/event-team-analysis.ts",
-    "src/lib/event-team-growth-limits.ts"
+    "src/lib/event-team-growth-limits.ts",
+    "src/lib/save-workspace/snapshot.ts",
+    "src/lib/save-workspace/import.ts",
+    "src/lib/save-workspace/import-worker.ts",
+    "src/lib/save-workspace/catalog.ts",
+    "src/lit/save-workspace.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

@@ -468,6 +468,12 @@ export class ImportController {
       const current = viewInventory(this.host, this.host.view);
       const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
       this.commit(next, this.boxBase, state.confirmation.ownership === "replace");
+      const url = new URL(location.href);
+      if (url.searchParams.has("saveImport")) {
+        sessionStorage.removeItem("haneoka:pending-save-box");
+        url.searchParams.delete("saveImport");
+        history.replaceState(history.state, "", url);
+      }
       this.closeBox();
     } catch (error) {
       this.box = {
@@ -674,8 +680,26 @@ export class ImportController {
     );
   }
 
-  /** A save the app's save page sent here: the import opens on it. */
+  /** A local or native save opens the existing review; only confirmation consumes the local handoff. */
   async takePending() {
+    const saveId = new URL(location.href).searchParams.get("saveImport");
+    if (saveId) {
+      this.openBox();
+      try {
+        const raw = sessionStorage.getItem("haneoka:pending-save-box");
+        if (!raw) throw new BoxImportError("box_no_player");
+        const pending = JSON.parse(raw);
+        if (pending.id !== saveId || typeof pending.text !== "string") throw new BoxImportError("box_no_player");
+        if (pending.server !== this.box?.server) throw new BoxImportError("box_incompatible_server");
+        await this.parse({ text: pending.text });
+      } catch (error) {
+        if (this.box)
+          this.box = { ...this.box, error: error instanceof BoxImportError ? error.code : "box_invalid_json" };
+        this.host.requestUpdate();
+      }
+      return;
+    }
+
     const pending = await appCall("pendingBoxImport", {}).catch(() => null);
     if (!pending) return;
     this.openBox();
