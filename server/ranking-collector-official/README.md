@@ -52,7 +52,7 @@ On the host, next to `compose.yaml`:
 docker compose up -d --build
 ```
 
-`collector-deploy.yml` redeploys on every push to `main` that touches this directory: it streams the source to the host over SSH, where the deploy key's forced command (`/opt/haneoka-collector/deploy.sh`) rebuilds and restarts the collector, keeping `.env` and the egress config.
+`collector-deploy.yml` redeploys on every push to `main` that touches this directory: it streams the source to the host over SSH, where the deploy key's forced command (`deploy/host-deploy.sh`, installed as `/opt/haneoka-collector/deploy.sh`) rebuilds and restarts the collector, keeping `.env` and the egress config.
 
 Switch the Worker over with two secrets, and back by deleting them:
 
