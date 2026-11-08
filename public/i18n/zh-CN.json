@@ -991,6 +991,7 @@
         "level": "玩家等级",
         "favorites": "收到的赞",
         "pending": "排行榜正在收集中，{seconds} 秒后可以重试。",
+        "noRecords": "这期活动没有排行记录。",
         "timeout": "排行榜请求超时。",
         "notFound": "这首乐曲暂无排行榜。",
         "tied": "并列",

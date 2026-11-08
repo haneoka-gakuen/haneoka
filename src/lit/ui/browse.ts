@@ -187,6 +187,12 @@ function renderRail(rail: BrowseRail): TemplateResult {
   `;
 }
 
+/** The rail alone, for a screen that draws its own pane beside it; the pane is `browseResultsId`. */
+export function browseRail(rail: BrowseRail): TemplateResult {
+  return rail.pending && !rail.items.length ? renderRailSkeleton(rail) : renderRail(rail);
+}
+export const browseResultsId = RESULTS_ID;
+
 /**
  * The collection's own controls, for the top app bar's trailing section.
  *

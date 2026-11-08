@@ -991,6 +991,7 @@
         "level": "Level",
         "favorites": "Likes received",
         "pending": "Ranking is being collected. Try again in {seconds}s.",
+        "noRecords": "No ranking was recorded for this event.",
         "timeout": "The ranking request timed out.",
         "notFound": "No ranking is available for this song.",
         "tied": "Tied rank",

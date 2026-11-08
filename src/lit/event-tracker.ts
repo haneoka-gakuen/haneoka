@@ -4,7 +4,7 @@ import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { RequestScope } from "../lib/request-scope";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
-import type { TrackerPageData } from "../lib/event-tracker-page-data";
+import type { TrackerPageData, TrackerRailEvent } from "../lib/event-tracker-page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { resourcePath } from "../lib/resource-route";
 import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
@@ -13,7 +13,8 @@ import { loadPlaylistCatalogSource } from "../lib/playlist-tracks";
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import type { Locale } from "../i18n/locales";
 import { isPublicReleaseServer, type ReleaseServer } from "../lib/release-server";
-import type { EventTrackerDto, EventChallengeDto, GameRecordsRegion, RankingCardCatalog } from "../lib/game-records";
+import type { EventTrackerDto, EventChallengeDto, GameRecordsRegion, RankingCardCatalog, TrackedEventDto } from "../lib/game-records";
+import { formatDateRange } from "../lib/date-format";
 import {
   catalogUrl,
   fetchJson,
@@ -30,6 +31,7 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, rovingKeydown } from "./ui/controls";
 import { tile } from "./ui/tile";
+import { browseRail, browseResultsId, type BrowseRailItem } from "./ui/browse";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { emptyState, errorState, loadingState } from "./ui/state";
@@ -54,6 +56,8 @@ export class EventTracker extends LitElement {
     info: { state: true },
     songs: { state: true },
     challengeId: { state: true },
+    eventId: { state: true },
+    archive: { state: true },
     rankingView: { state: true },
     now: { state: true },
     refreshing: { state: true },
@@ -66,10 +70,16 @@ export class EventTracker extends LitElement {
   declare info: JsonRecord | null;
   declare songs: Record<string, JsonRecord>;
   declare challengeId: string;
+  /** The event the rail has selected; empty for the current one. */
+  declare eventId: string;
+  declare archive: TrackedEventDto[];
   declare rankingView: RankingView | "";
   declare now: number;
   declare refreshing: boolean;
   private requests = new RequestScope();
+  private catalogRequests = new RequestScope();
+  private infoFor = "";
+  private railEvents: Partial<Record<"jp" | "intl", TrackerRailEvent[]>> = {};
   private lazyImages = new LazyImages({ candidates: (source) => localeTaggedCandidates(source, this.locale) });
   private lifetime?: AbortController;
   private clock = 0;
@@ -91,6 +101,8 @@ export class EventTracker extends LitElement {
     this.info = null;
     this.songs = {};
     this.challengeId = "";
+    this.eventId = "";
+    this.archive = [];
     this.rankingView = "";
     this.now = Date.now();
     this.refreshing = false;
@@ -106,26 +118,44 @@ export class EventTracker extends LitElement {
     this.applyPageCatalogs(page);
     const snapshot = page.snapshots?.[region];
     if (!snapshot) return;
-    if (snapshot.data) this.applyEventData(snapshot.data);
+    if (snapshot.data) this.data = snapshot.data;
     this.phase = snapshot.phase;
+    this.archive = snapshot.archive ?? [];
     this.info = snapshot.info;
     this.songs = snapshot.songs;
     this.infoServer = snapshot.infoServer;
+    this.infoFor = snapshot.info ? snapshot.data?.event?.id ?? "" : "";
+    this.syncChallenge();
   }
   private applyPageCatalogs(pageData: TrackerPageData) {
     this.cards = { intl: pageData.intl, jp: pageData.jp };
+    this.railEvents = pageData.events ?? {};
     this.musicTypeMarks = Object.fromEntries(Object.entries(pageData.musicTypeMarks || {}).map(([source, marks]) => [source, new Map(Object.entries(marks))]));
     for (const [server, source] of Object.entries(pageData.songPerformers ?? {}))
       this.songPerformers.set(server, createPerformerRegistry({ game: "our-notes", server, ...source }));
   }
-  private applyEventData(data: EventTrackerDto) {
-    const changed = this.data?.event?.id !== data.event?.id;
-    this.data = data;
-    this.phase = "ready";
-    if (changed) { this.info = null; this.songs = {}; }
-    const challenges = data.event?.challenges || [];
+  private shownId() {
+    return this.eventId || this.data?.event?.id || "";
+  }
+  private shownEvent(): TrackedEventDto | null {
+    const current = this.data?.event ?? null;
+    if (!this.eventId || this.eventId === current?.id) return current;
+    return this.archive.find((event) => event.id === this.eventId) ?? null;
+  }
+  private syncChallenge() {
+    const challenges = this.shownEvent()?.challenges || [];
     if (!challenges.some((challenge) => challenge.id === this.challengeId)) this.challengeId = challenges.find((challenge) => challenge.enabled)?.id || challenges[0]?.id || "";
-    return changed;
+  }
+  /** Names and songs of the shown event, once per event. */
+  private async loadShownCatalog() {
+    const id = this.shownId();
+    if (!id || this.infoFor === id) return;
+    this.infoFor = id;
+    this.info = null;
+    this.songs = {};
+    const signal = this.catalogRequests.begin();
+    await this.loadCatalog(id, this.shownEvent()?.challenges ?? [], signal);
+    if (this.catalogRequests.current(signal) && !this.info) this.infoFor = "";
   }
   renderStaticChrome() { this.syncAppBar(); }
   connectedCallback() {
@@ -140,6 +170,7 @@ export class EventTracker extends LitElement {
       ? (requested as Region)
       : defaultGameRecordsRegion(this.server, this.locale);
     this.challengeId = params.get("challenge") || "";
+    this.eventId = params.get("event") || "";
     const board = params.get("board");
     this.rankingView = board === "total" || board === "challenge" || board === "points"
       ? board : this.challengeId ? "challenge" : "";
@@ -168,6 +199,7 @@ export class EventTracker extends LitElement {
   }
   disconnectedCallback() {
     this.requests.cancel();
+    this.catalogRequests.cancel();
     this.lazyImages.disconnect();
     this.lifetime?.abort();
     window.clearInterval(this.clock);
@@ -200,14 +232,16 @@ export class EventTracker extends LitElement {
     this.refreshing = true;
     if (!this.data) this.phase = "loading";
     try {
-      const data = await fetchJson<EventTrackerDto>(`/api/v1/game/records/${region}/events/current`, {
-        signal,
-        cache: "no-store",
-      });
+      const [data, archive] = await Promise.all([
+        fetchJson<EventTrackerDto>(`/api/v1/game/records/${region}/events/current`, { signal, cache: "no-store" }),
+        fetchJson<{ events: TrackedEventDto[] }>(`/api/v1/game/records/${region}/events/archive`, { signal }).catch(() => null),
+      ]);
       if (!this.isConnected || this.region !== region || !this.requests.current(signal)) return;
-      const changed = this.applyEventData(data);
-      const challenges = data.event?.challenges || [];
-      if (data.event && (changed || !this.info)) await this.loadCatalog(data.event.id, challenges, signal);
+      this.data = data;
+      this.phase = "ready";
+      if (archive) this.archive = archive.events;
+      this.syncChallenge();
+      void this.loadShownCatalog();
     } catch {
       if (!this.isConnected || this.region !== region || !this.requests.current(signal)) return;
       this.phase = "error";
@@ -224,7 +258,7 @@ export class EventTracker extends LitElement {
     let info: JsonRecord | null = null;
     const songs: Record<string, JsonRecord> = {};
     for (const server of candidates) {
-      if (!this.requests.current(signal)) return;
+      if (!this.catalogRequests.current(signal)) return;
       const songUrl = new URL(catalogUrl("songs", "", server), location.origin);
       for (const challenge of challenges)
         if (!songs[challenge.musicId]) songUrl.searchParams.append("id", challenge.musicId);
@@ -237,7 +271,7 @@ export class EventTracker extends LitElement {
           ? fetchJson<{ items: Record<string, JsonRecord> }>(songUrl.pathname + songUrl.search, { signal })
           : Promise.resolve(null),
       ]);
-      if (!this.requests.current(signal)) return;
+      if (!this.catalogRequests.current(signal)) return;
       if (!info && eventResult.status === "fulfilled" && eventResult.value) {
         info = eventResult.value;
         this.infoServer = server;
@@ -247,13 +281,13 @@ export class EventTracker extends LitElement {
       if (!this.songPerformers.has(server) && songResult.status === "fulfilled" && songResult.value) {
         try {
           const source = await loadPlaylistCatalogSource("our-notes", server);
-          if (!this.requests.current(signal)) return;
+          if (!this.catalogRequests.current(signal)) return;
           this.songPerformers.set(server, source.registry);
         } catch { /* Keep the available ranking and authored song credits. */ }
       }
       if (info && challenges.every((challenge) => songs[challenge.musicId])) break;
     }
-    if (this.requests.current(signal)) {
+    if (this.catalogRequests.current(signal)) {
       this.info = info;
       this.songs = songs;
     }
@@ -261,10 +295,13 @@ export class EventTracker extends LitElement {
   private selectRegion(region: Region) {
     if (region === this.region) return;
     this.requests.cancel();
+    this.catalogRequests.cancel();
     this.region = region;
     this.data = null;
+    this.archive = [];
     this.info = null;
     this.songs = {};
+    this.infoFor = "";
     this.challengeId = "";
     this.syncUrl();
     void this.load();
@@ -279,6 +316,37 @@ export class EventTracker extends LitElement {
       }),
     );
   }
+  private selectEvent(id: string) {
+    this.eventId = id === this.data?.event?.id ? "" : id;
+    this.syncChallenge();
+    this.syncUrl();
+    void this.loadShownCatalog();
+  }
+  private railItems(): BrowseRailItem[] {
+    const listed = this.railEvents[this.sourceServer()] ?? [];
+    const tracked = new Map([...this.archive, ...(this.data?.event ? [this.data.event] : [])].map((event) => [event.id, event]));
+    const ids = new Set([...listed.filter((entry) => entry.startAtMs && entry.startAtMs <= this.now).map((entry) => entry.id), ...tracked.keys()]);
+    return [...ids]
+      .map((id) => {
+        const entry = listed.find((item) => item.id === id);
+        const event = tracked.get(id);
+        const start = event?.startAtMs || entry?.startAtMs || 0;
+        const end = event?.endAtMs || entry?.endAtMs || 0;
+        const title = resolveLocalizedText(entry?.title, this.locale);
+        return {
+          start,
+          item: {
+            value: id,
+            label: title.text || this.label("eventName", "Event #{id}").replace("{id}", id),
+            language: title.locale,
+            image: entry?.image || "",
+            meta: start && end ? formatDateRange(this.locale, start, end) : "",
+          },
+        };
+      })
+      .sort((a, b) => b.start - a.start || Number(b.item.value) - Number(a.item.value))
+      .map(({ item }) => item);
+  }
   private selectRanking(view: RankingView) {
     this.rankingView = view;
     this.syncUrl();
@@ -288,6 +356,8 @@ export class EventTracker extends LitElement {
     url.searchParams.set("region", this.region);
     if (this.rankingView) url.searchParams.set("board", this.rankingView);
     else url.searchParams.delete("board");
+    if (this.eventId) url.searchParams.set("event", this.eventId);
+    else url.searchParams.delete("event");
     if (this.challengeId) url.searchParams.set("challenge", this.challengeId);
     else url.searchParams.delete("challenge");
     history.replaceState(history.state, "", url);
@@ -304,7 +374,7 @@ export class EventTracker extends LitElement {
   private eventTitle() {
     return (
       resolveLocalizedText(this.info?.title, this.locale).text ||
-      this.label("eventName", "Event #{id}").replace("{id}", this.data?.event?.id || "")
+      this.label("eventName", "Event #{id}").replace("{id}", this.shownId())
     );
   }
   private challengeTitle(challenge: EventChallengeDto) {
@@ -314,7 +384,7 @@ export class EventTracker extends LitElement {
       : this.label("songName", "Song #{id}").replace("{id}", challenge.musicId);
   }
   private countdown() {
-    const event = this.data?.event;
+    const event = this.shownEvent();
     if (!event) return "";
     const starting = Boolean(event.startAtMs && event.startAtMs > this.now);
     const deadline = starting ? event.startAtMs : event.endAtMs;
@@ -342,7 +412,18 @@ export class EventTracker extends LitElement {
     }
     this.lazyImages.observe(this);
     this.syncAppBar();
+    if (this.eventId && !this.railShown) {
+      const tab = this.querySelector<HTMLElement>('.browse__rail [role="tab"][aria-selected="true"]');
+      if (tab) {
+        this.railShown = true;
+        const reveal = () => tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (document.readyState === "complete") requestAnimationFrame(reveal);
+        else addEventListener("load", reveal, { once: true });
+      }
+    }
   }
+  /** A linked event's rail tile is scrolled into view once. */
+  private railShown = false;
   private syncAppBar() {
     setAppBarActions(
       this.owner,
@@ -354,6 +435,25 @@ export class EventTracker extends LitElement {
     );
   }
   render() {
+    const items = this.railItems();
+    return html`
+      <section class="browse browse--railed">
+        ${browseRail({
+          label: clientText(this.locale, "navigation.events", "Events"),
+          value: this.shownId(),
+          items,
+          pending: !this.data && !items.length,
+          single: true,
+          onSelect: (id) => this.selectEvent(id),
+        })}
+        <div class="browse__main" id=${browseResultsId} role="tabpanel">${this.renderEvent()}</div>
+      </section>
+    `;
+  }
+  private renderEvent() {
+    const event = this.shownEvent();
+    if (!event && this.eventId)
+      return emptyState({ title: this.label("noRecords", "No ranking was recorded for this event."), icon: "leaderboard" });
     if (!this.data)
       return this.phase === "error"
         ? errorState(
@@ -362,7 +462,6 @@ export class EventTracker extends LitElement {
             () => void this.load(),
           )
         : loadingState(this.label("loading", "Loading event"));
-    const event = this.data.event;
     if (!event)
       return emptyState({ title: this.label("empty", "No event is currently being tracked."), icon: "event" });
     const challenge = event.challenges.find((row) => row.id === this.challengeId);
@@ -523,7 +622,9 @@ export class EventTracker extends LitElement {
                               .analysisChallengeId=${challenge!.id}
                             ></song-ranking>
                           `
-                        : emptyState({
+                        : challenge?.status === "missed"
+                          ? emptyState({ title: this.label("noRecords", "No ranking was recorded for this event."), icon: "leaderboard" })
+                          : emptyState({
                             title: this.label("pending", "Ranking data is being collected."),
                             icon: "hourglass_top",
                           })
@@ -553,7 +654,12 @@ export class EventTracker extends LitElement {
                 .analysisEvent=${event}
                 .analysisChallengeId=${""}
               ></song-ranking>
-            ` : emptyState({ title: this.label("pending", "Ranking data is being collected."), icon: "hourglass_top" })}
+            ` : emptyState({
+              title: event.totalRankingStatus === "missed"
+                ? this.label("noRecords", "No ranking was recorded for this event.")
+                : this.label("pending", "Ranking data is being collected."),
+              icon: event.totalRankingStatus === "missed" ? "leaderboard" : "hourglass_top",
+            })}
           </section>
         ` : nothing}
         ${event.pointRankingEnabled ? html`<section class="detail-section" role="tabpanel" id="event-ranking-points"

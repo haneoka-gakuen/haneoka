@@ -1,9 +1,9 @@
 // L3 — GEB
 // Input: Saved regional official catalogs/observations, collector availability and public requests.
-// Output: Normalized rankings, preferred saved v1 totals and explicit pending availability.
+// Output: Normalized rankings, every archived event's boards, preferred saved v1 totals and explicit pending availability.
 // Pos: [Map](L2.md); official read adapter alongside legacy PT and SHA history.
-// Effects/Dependencies: Reads D1/private R2; never requests the game or writes observations.
-import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto } from "../src/lib/game-records";
+// Effects/Dependencies: Reads D1/private R2; keeps boards read from Moenotes in the event archive; never requests the game or writes observations.
+import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto, TrackedEventDto } from "../src/lib/game-records";
 import { moenotesEventRanking } from "./moenotes-fallback";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
@@ -62,6 +62,31 @@ function boardStatus(enabled: boolean, start: number, end: number, aggregation: 
     : now < end + aggregation * 1000 ? "finalizing" : "archived";
 }
 
+type OfficialEvent = NonNullable<OfficialCatalog["event"]>;
+
+/** An event's boards as readers see them; a board that closed with nothing saved is `missed`. */
+function trackedEvent(event: OfficialEvent, now: number, recorded?: ReadonlySet<string>): TrackedEventDto {
+  const status = (enabled: boolean, start: number, end: number, board: string) => {
+    const value = boardStatus(enabled, start, end, event.aggregationSeconds, now);
+    return value === "archived" && recorded && !recorded.has(`${event.id}/${board}`) ? "missed" : value;
+  };
+  return {
+    id: event.id,
+    startAtMs: event.startAtMs,
+    endAtMs: event.endAtMs,
+    status: now < event.endAtMs ? "nowOn" : "result",
+    pointRankingEnabled: event.pointRankingEnabled,
+    pointRankingStatus: boardStatus(event.pointRankingEnabled, event.startAtMs, event.endAtMs, event.aggregationSeconds, now),
+    totalRankingEnabled: event.totalRankingEnabled,
+    totalRankingStatus: status(event.totalRankingEnabled, event.startAtMs, event.endAtMs, ""),
+    challenges: event.challenges.map((challenge) => ({
+      ...challenge,
+      status: status(challenge.enabled, challenge.startAtMs, challenge.endAtMs, challenge.id),
+      rewardRanks: [],
+    })),
+  };
+}
+
 export function officialEventTracker(catalog: OfficialCatalog, now = Date.now()): EventTrackerDto {
   const event = catalog.event;
   return {
@@ -70,22 +95,43 @@ export function officialEventTracker(catalog: OfficialCatalog, now = Date.now())
     fetchedAtMs: catalog.catalogObservedAtMs,
     serverTimeMs: now,
     stale: staleAt(catalog.catalogObservedAtMs, now) || !!event && now >= event.endAtMs + event.aggregationSeconds * 1000,
-    event: event ? {
-      id: event.id,
-      startAtMs: event.startAtMs,
-      endAtMs: event.endAtMs,
-      status: now < event.endAtMs ? "nowOn" : "result",
-      pointRankingEnabled: event.pointRankingEnabled,
-      pointRankingStatus: boardStatus(event.pointRankingEnabled, event.startAtMs, event.endAtMs, event.aggregationSeconds, now),
-      totalRankingEnabled: event.totalRankingEnabled,
-      totalRankingStatus: boardStatus(event.totalRankingEnabled, event.startAtMs, event.endAtMs, event.aggregationSeconds, now),
-      challenges: event.challenges.map((challenge) => ({
-        ...challenge,
-        status: boardStatus(challenge.enabled, challenge.startAtMs, challenge.endAtMs, event.aggregationSeconds, now),
-        rewardRanks: [],
-      })),
-    } : null,
+    event: event ? trackedEvent(event, now) : null,
   };
+}
+
+/** Every event with known boards, newest first: the current one, those the collector finished, and the archive. */
+async function eventArchive(env: OfficialRankingReadBindings, region: GameRecordsRegion, now: number): Promise<TrackedEventDto[]> {
+  const db = env.DB!;
+  const [catalog, finals, archived, observed, boards] = await Promise.all([
+    readOfficialCatalog(env, region).catch(() => null),
+    db.prepare("SELECT event_id, MAX(event_json) AS event_json FROM official_ranking_finals WHERE region = ? GROUP BY event_id")
+      .bind(region).all<{ event_id: string; event_json: string }>(),
+    db.prepare("SELECT event_id, event_json FROM event_ranking_archive WHERE region = ?").bind(region).all<{ event_id: string; event_json: string }>(),
+    db.prepare(`SELECT event_id, challenge_id FROM official_ranking_observations WHERE region = ? AND error IS NULL
+      GROUP BY event_id, board_kind, challenge_id`).bind(region).all<{ event_id: string; challenge_id: string }>(),
+    db.prepare("SELECT event_id, challenge_id FROM event_ranking_archive_boards WHERE region = ?").bind(region).all<{ event_id: string; challenge_id: string }>(),
+  ]);
+  const events = new Map<string, OfficialEvent>();
+  for (const row of [...archived.results, ...finals.results]) events.set(row.event_id, JSON.parse(row.event_json) as OfficialEvent);
+  if (catalog?.event) events.set(catalog.event.id, catalog.event);
+  const recorded = new Set([...observed.results, ...boards.results].map((row) => `${row.event_id}/${row.challenge_id}`));
+  return [...events.values()].sort((a, b) => b.startAtMs - a.startAtMs).map((event) => trackedEvent(event, now, recorded));
+}
+
+async function archivedBoard(env: OfficialRankingReadBindings, region: GameRecordsRegion, eventId: string, challengeId: string) {
+  const row = await env.DB!.prepare("SELECT body_json FROM event_ranking_archive_boards WHERE region = ? AND event_id = ? AND challenge_id = ?")
+    .bind(region, eventId, challengeId).first<{ body_json: string }>();
+  return row ? JSON.parse(row.body_json) as EventRankingDto : null;
+}
+
+/** Keeps a board read from elsewhere, refreshed at most every ten minutes. */
+async function keepBoard(env: OfficialRankingReadBindings, region: GameRecordsRegion, eventId: string, challengeId: string, board: EventRankingDto) {
+  const { provider: _provider, ...body } = board;
+  const observed = body.fetchedAtMs ?? Date.now();
+  await env.DB!.prepare(`INSERT INTO event_ranking_archive_boards (region, event_id, challenge_id, body_json, observed_at_ms) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (region, event_id, challenge_id) DO UPDATE SET body_json = excluded.body_json, observed_at_ms = excluded.observed_at_ms
+    WHERE excluded.observed_at_ms > event_ranking_archive_boards.observed_at_ms + 600000`)
+    .bind(region, eventId, challengeId, JSON.stringify(body), observed).run();
 }
 
 function officialCard(value: unknown): SongRankingCardDto {
@@ -164,10 +210,10 @@ export function officialEventRanking(observation: OfficialObservation, now = Dat
   };
 }
 
-function response(request: Request, body: unknown, status = 200): Response {
+function response(request: Request, body: unknown, status = 200, cache = "no-store"): Response {
   return new Response(request.method === "HEAD" ? null : JSON.stringify(body), { status, headers: {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
+    "Cache-Control": cache,
     "X-Content-Type-Options": "nosniff",
     "Access-Control-Allow-Origin": "*",
   } });
@@ -197,6 +243,15 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
   if (!route || !regionValue(route[2])) return null;
   const version = route[1], region = route[2], path = route[3]!;
   const current = path === "current";
+  if (path === "archive") {
+    if (!officialRankingReadEnabled(env, region) || !env.DB || url.searchParams.size > 0) return null;
+    const now = Date.now();
+    try {
+      return response(request, { region, serverTimeMs: now, events: await eventArchive(env, region, now) }, 200, "public, max-age=60");
+    } catch {
+      return failure(request, "upstream", 503);
+    }
+  }
   const points = /^([1-9][0-9]{0,18})\/latest$/u.exec(path);
   if (points) {
     if (!officialRankingReadEnabled(env, region) || !env.DB || !env.OFFICIAL_RANKING_DATA) return null;
@@ -233,7 +288,13 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
     const observation = await readOfficialLatest(env, region, eventId, kind, challengeId);
     if (observation) return response(request, officialEventRanking(observation));
     const fallback = await moenotesEventRanking(region, eventId, challengeId);
-    return fallback ? response(request, fallback) : optionalTotal ? null : pending(request, env, region);
+    if (fallback) {
+      await keepBoard(env, region, eventId, challengeId, fallback).catch(() => undefined);
+      return response(request, fallback);
+    }
+    const archived = await archivedBoard(env, region, eventId, challengeId);
+    if (archived) return response(request, archived);
+    return optionalTotal ? null : pending(request, env, region);
   } catch (error) {
     console.warn(JSON.stringify({ event: "official_ranking_read_failed", region, error: error instanceof Error ? error.name : "Error" }));
     return optionalTotal ? null : failure(request, "upstream", 503);
