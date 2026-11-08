@@ -5,6 +5,7 @@
 // Effects/Dependencies: 调用原生存档读取与存档页、游戏服务器读取、系统浏览器登录及全屏方向控制。
 
 export interface AppMethods {
+  saveSnapshot: { args: { key: string }; result: { text: string } };
   /** The chosen game account's card, character and band item progress as `ONPKG1:` text. */
   boxAccount: { args: { server: string }; result: { text: string } | null };
   /** Gacha history read from the game server, as companion files (`{key}.json`). */
@@ -38,6 +39,7 @@ export interface DeviceSave {
 }
 
 interface HaneokaApp {
+  capabilities?: readonly string[];
   version: string;
   platform: string;
   call<M extends keyof AppMethods>(method: M, args: AppMethods[M]["args"]): Promise<AppMethods[M]["result"]>;
@@ -50,8 +52,18 @@ export function appPlatform(): string | undefined {
   return (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.platform;
 }
 
-export function appCall<M extends keyof AppMethods>(method: M, args: AppMethods[M]["args"]): Promise<AppMethods[M]["result"]> {
+export function appCall<M extends keyof AppMethods>(
+  method: M,
+  args: AppMethods[M]["args"],
+): Promise<AppMethods[M]["result"]> {
   const app = (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp;
   if (!app) return Promise.reject(new Error("app_unavailable"));
   return app.call(method, args);
+}
+
+export function appSupports(capability: string): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!(window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.capabilities?.includes(capability)
+  );
 }
