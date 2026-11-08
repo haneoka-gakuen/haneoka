@@ -1,4 +1,5 @@
 /** Browse-only associations. Inventory, progression and scoring keep their own server identity. */
+import { eventStoryStarts, withEventStart } from "../content-publication";
 import { sharedEventStoryContent } from "./events";
 import { exclusiveCatalogServer } from "./availability";
 import { crossCatalogDefinition, crossCatalogRowId, type CrossCatalogDocument } from "./definitions";
@@ -205,8 +206,9 @@ export function mergeCrossServerCatalog(
     if (!collection) continue;
     availability[server] = "loaded";
     if (source.documents?.[resource]) documents[server] = source.documents[resource];
+    const starts = resource === "stories" ? eventStoryStarts(source.documents?.[resource]) : undefined;
     for (const [id, original] of Object.entries(collection)) {
-      const row = structuredClone(original), ownId = crossCatalogRowId(resource, row);
+      const row = starts ? withEventStart(structuredClone(original), starts) : structuredClone(original), ownId = crossCatalogRowId(resource, row);
       if (ownId !== undefined && String(ownId) !== id) throw new Error(`Cross-server row identity mismatch:${server}/${resource}/${id}`);
       if (!isFormalCatalogSource(server) && snapshots.some(source => {
         const formal = isFormalCatalogSource(source.identity.server) && source.collections[resource]?.[id];

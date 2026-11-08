@@ -107,7 +107,7 @@ import { readPageData } from "../lib/page-data";
 import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isListedContent, isReleasedContent } from "../lib/content-release";
-import { withContentSource } from "../lib/content-publication";
+import { eventStoryStarts, withContentSource, withEventStart } from "../lib/content-publication";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -429,7 +429,8 @@ export class StoryWorkspace extends LitElement {
     this.chapters = recordValues(payload.chapters);
     this.unionStories = undefined;
     this.unionChapters.clear();
-    this.episodes = Object.fromEntries(Object.entries(payload.episodes).map(([id, episode]) => [id, withContentSource(episode, payload.server)]));
+    const payloadStarts = eventStoryStarts(payload);
+    this.episodes = Object.fromEntries(Object.entries(payload.episodes).map(([id, episode]) => [id, withEventStart(withContentSource(episode, payload.server), payloadStarts)]));
     this.storyEvents = payload.storyEvents;
     this.spots = payload.homeSpots;
     this.characters = payload.characters;
@@ -1064,7 +1065,8 @@ export class StoryWorkspace extends LitElement {
     ]);
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
     this.chapters = recordValues(stories.chapters);
-    this.episodes = Object.fromEntries(Object.entries((stories.episodes as Record<string, JsonRecord>) || {}).map(([id, episode]) => [id, withContentSource(episode, server)]));
+    const starts = eventStoryStarts(stories);
+    this.episodes = Object.fromEntries(Object.entries((stories.episodes as Record<string, JsonRecord>) || {}).map(([id, episode]) => [id, withEventStart(withContentSource(episode, server), starts)]));
     this.storyEvents = Array.isArray(stories.storyEvents) ? stories.storyEvents : [];
     this.spots = recordValues(stories.homeSpots);
     this.characters = recordValues(characters);
