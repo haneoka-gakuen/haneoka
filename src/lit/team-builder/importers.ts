@@ -83,6 +83,7 @@ export class ImportController {
   box: BoxImportDialogState | null = null;
   private boxContext: BoxReviewContext | null = null;
   private boxBase: InventoryV2 | null = null;
+  private boxText: string | null = null;
   private boxStore: TeamBuilder["store"] = null;
   private boxOwner: string | null | undefined;
   private boxOwnership = "";
@@ -139,10 +140,10 @@ export class ImportController {
     this.host.write(changes);
     this.host.notice = this.host.t("imported", "Imported {count} changes", { count: changes.length });
   }
-  openBox() {
-    this.dispose();
+  /** The Box a review compares against: the current store, owner and inventory. */
+  private captureBase(): boolean {
     const context = this.context();
-    if (!context || !this.host.view) return;
+    if (!context || !this.host.view) return false;
     this.boxContext = context;
     this.boxStore = this.host.store;
     this.boxOwner = this.host.snapshot?.owner;
@@ -151,6 +152,22 @@ export class ImportController {
       ...[...this.host.view.snaps.keys()].map((id) => `s${id}`),
     ]);
     this.boxBase = viewInventory(this.host, this.host.view);
+    return true;
+  }
+  /** The Box changed under an open review, as when sign-in sync finishes after a save handoff: review the same text against it. */
+  rebase() {
+    const text = this.boxText;
+    if (!this.box || text === null || !this.host.view) return;
+    if (this.host.store === this.boxStore && this.host.snapshot?.owner === this.boxOwner
+      && JSON.stringify(viewInventory(this.host, this.host.view)) === JSON.stringify(this.boxBase)) return;
+    if (!this.captureBase()) return;
+    void this.parse({ text });
+  }
+  openBox() {
+    this.dispose();
+    this.boxText = null;
+    const context = this.context();
+    if (!context || !this.captureBase()) return;
     this.box = {
       phase: "select",
       ownedKeys: Object.entries(this.host.snapshot?.entries ?? {})
@@ -227,6 +244,7 @@ export class ImportController {
     }
     this.sourceStatus = "";
     if (!this.box || !this.boxBase || !this.boxContext) return;
+    this.boxText = "text" in input ? input.text : null;
     const generation = ++this.generation;
     this.parserController?.abort();
     const controller = (this.parserController = new AbortController());

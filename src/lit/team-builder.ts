@@ -720,6 +720,7 @@ export class TeamBuilder extends LitElement {
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
       this.engine?.prefetch(this.searchSettings.songs);
+      this.imports.rebase();
     }
     this.requestUpdate();
     void this.pt.restore();
