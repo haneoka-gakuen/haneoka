@@ -31,12 +31,8 @@ import { handleCommunityBootstrap } from "./community-bootstrap";
 import { withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
 import { sonolusShareRedirectTarget } from "./sonolus-share";
-export { CommunityMediaContainer } from "./community-media-container";
-export { OfficialRankingCollector } from "./official-ranking-collector";
 import { handleOfficialPlayerApi } from "./official-player-api";
 import { cleanupUnverifiedAccounts } from "./account-lifecycle";
-import { OFFICIAL_RANKING_REGIONS, officialRegionEnabled } from "./official-ranking-collector";
-import { maintainOfficialStorage } from "./official-ranking-maintenance";
 import { handleOfficialRankingApi, officialRankingStatus } from "./official-ranking-api";
 import { handleArenaRankingApi } from "./arena-ranking";
 import { CAMERA_MANAGER_SOURCE, LIVE_ATLAS_SOURCE, atlasReferenceSource, atlasReferenceSprite, cameraManagerDescriptor, renamedAtlasPage, retiredObject } from "./retired-game-files";
@@ -59,7 +55,6 @@ import { assetStaticDocumentFromUrl } from "../src/lib/asset-static-routing";
 import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
 import { isCommunityForumDetailPath, restoreCommunityForumDetailShell } from "../src/lib/community-forum-document";
 import { collectorFor, handleOfficialHost } from "./official-host";
-import { handleOfficialHostMigration } from "./official-host-migration";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
 import { handleAppAccountRequest } from "./app-account";
 import { handleAvatarRequest } from "./avatar";
@@ -3945,13 +3940,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const officialHost = /^\/api\/internal\/official-host\/(.+)$/u.exec(url.pathname);
   if (officialHost) {
     const path = officialHost[1]!;
-    return path.startsWith("migration/") ? handleOfficialHostMigration(request, env, path) : handleOfficialHost(request, env, path);
-  }
-  const officialCallback = /^\/api\/internal\/official-rankings\/(jp|tw|en|kr)\/([a-f0-9]{32})$/u.exec(url.pathname);
-  if (officialCallback) {
-    if (request.method !== "POST" || url.search) return new Response(null, { status: 405, headers: { "Cache-Control": "no-store", Allow: "POST" } });
-    const region = officialCallback[1] as "jp" | "tw" | "en" | "kr";
-    return env.OFFICIAL_RANKING_COLLECTOR.getByName(region).callback(request, region, officialCallback[2]!);
+    return handleOfficialHost(request, env, path);
   }
   const officialStatus = /^\/api\/v2\/game\/records\/(jp|tw|en|kr)\/status$/u.exec(url.pathname);
   if (officialStatus && (request.method === "GET" || request.method === "HEAD")) {
@@ -4465,26 +4454,6 @@ const worker: ExportedHandler<Env> = {
       })().catch((error: unknown) => {
         console.warn(JSON.stringify({ event: "event_history_move_failed", error: error instanceof Error ? error.message : "Error" }));
       }));
-      // The collector host runs its own pruning, storage maintenance and watchdog.
-      if (!env.OFFICIAL_HOST_ORIGIN) {
-        ctx.waitUntil(Promise.all(OFFICIAL_RANKING_REGIONS.map((region) =>
-          env.OFFICIAL_RANKING_COLLECTOR.getByName(region).pruneObservations(region))).catch((error: unknown) => {
-          console.warn(JSON.stringify({ event: "official_ranking_prune_failed", error: error instanceof Error ? error.name : "Error" }));
-        }));
-        ctx.waitUntil((async () => {
-          for (const region of OFFICIAL_RANKING_REGIONS) {
-            try { await maintainOfficialStorage(env, region); }
-            catch (error) { console.warn(JSON.stringify({ event: "official_storage_maintenance_failed", region, code: error instanceof Error ? error.name : "Error" })); }
-          }
-        })());
-        ctx.waitUntil(Promise.all(OFFICIAL_RANKING_REGIONS.map(async (region) => {
-          if (officialRegionEnabled(env.OFFICIAL_RANKING_ENABLED_REGIONS, region)) {
-            await env.OFFICIAL_RANKING_COLLECTOR.getByName(region).ensureScheduled(region);
-          }
-        })).then(() => undefined).catch((error: unknown) => {
-          console.warn(JSON.stringify({ event: "official_ranking_watchdog_failed", error: error instanceof Error ? error.name : "Error" }));
-        }));
-      }
     }
     const scheduledTask: readonly [string, () => Promise<void>] | null =
       controller.cron === COMMUNITY_RANKING_CRON

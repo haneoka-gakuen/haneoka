@@ -492,17 +492,6 @@ export class OfficialRankingCollector extends Container<Env> {
     });
   }
 
-  /** Hands this object's state to the collector host and stops it scheduling anything more. */
-  async exportForHost(): Promise<{ storage: Record<string, unknown>; tables: Record<string, unknown[]> }> {
-    const tables: Record<string, unknown[]> = {};
-    for (const table of ["container_schedules", "collector_window_cache", "collector_window_replies"]) {
-      try { tables[table] = this.ctx.storage.sql.exec(`SELECT * FROM ${table}`).toArray(); } catch { tables[table] = []; }
-    }
-    try { this.ctx.storage.sql.exec("DELETE FROM container_schedules"); } catch { /* no schedules yet */ }
-    const storage = Object.fromEntries(await this.ctx.storage.list());
-    return { storage, tables };
-  }
-
   collectorRuntimeInfo() {
     return { interfaceVersion: 3, serviceAuthReady: Boolean(this.envVars?.OFFICIAL_COLLECTOR_TOKEN) };
   }
@@ -680,7 +669,7 @@ export class OfficialRankingCollector extends Container<Env> {
       await this.ctx.storage.delete("platformCascade"); return;
     }
     const [region, ...regions] = batch.regions;
-    const result = await this.env.OFFICIAL_RANKING_COLLECTOR.getByName(region!).requestPlatformContinuation(region!, { ...batch, regions });
+    const result = await this.env.OFFICIAL_RANKING_COLLECTOR!.getByName(region!).requestPlatformContinuation(region!, { ...batch, regions });
     if (result.kind === "queued") await this.ctx.storage.delete("platformCascade");
     else if (result.kind === "busy") await this.schedule(new Date(Date.now() + 5_000), "continuePlatformLogin");
     else if (result.kind === "held") {
@@ -833,7 +822,7 @@ export class OfficialRankingCollector extends Container<Env> {
         claimed = pending;
         if (!pending.reuseSdk) {
           const drained = await Promise.all((["tw", "en", "kr"] as const).filter((value) => value !== region)
-            .map((value) => this.env.OFFICIAL_RANKING_COLLECTOR.getByName(value).platformAccountDrained(value, pending.accountId)));
+            .map((value) => this.env.OFFICIAL_RANKING_COLLECTOR!.getByName(value).platformAccountDrained(value, pending.accountId)));
           if (drained.some((value) => !value)) {
             await this.schedule(new Date(Math.min(pending.deadlineMs, now + 5_000)), "runPlatformLogin", region);
             return null;

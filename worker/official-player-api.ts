@@ -10,7 +10,6 @@ import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficia
 import { collectorFor } from "./official-host";
 
 export interface OfficialPlayerBindings extends OfficialRankingStoreBindings, MoenotesBindings {
-  OFFICIAL_RANKING_COLLECTOR?: Env["OFFICIAL_RANKING_COLLECTOR"];
   OFFICIAL_HOST_ORIGIN?: string;
   OFFICIAL_COLLECTOR_REMOTE_TOKEN?: string;
 }
