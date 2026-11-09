@@ -1,15 +1,17 @@
 // L3 — GEB
 // Input: An activity leaderboard player, related saved song boards and release-pinned growth rules.
-// Output: Paged exact-match groups over song records and optional total-ranking decks with correlated equivalents.
+// Output: Board coverage and paged exact-match groups with an optional rank interval on the selected board.
 // Pos: [Map](L2-2.md); lazy activity-only action from the shared ranking rows.
 // Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; lazily owns one cancellable shared Rust/WASM engine Worker.
 import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import { live } from "lit/directives/live.js";
+import "@material/web/textfield/outlined-text-field.js";
 import { fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import type { EngineClient } from "../lib/team-builder/engine/client";
 import { fetchEventTeamGrowthSources, type EventTeamGrowthSources } from "../lib/event-team-growth-limits";
-import type { EventTeamConfiguration, EventTeamEquivalent, EventTeamSearchPage } from "../lib/event-team-analysis";
+import type { EventTeamConfiguration, EventTeamEquivalent, EventTeamRankRange, EventTeamSearchPage } from "../lib/event-team-analysis";
 import type { EventRankingDto, GameRecordsRegion, SongRankingRowDto, TrackedEventDto } from "../lib/game-records";
 import { clientText } from "../i18n/client";
 import { fetchJson, localizedText } from "./shared/catalog";
@@ -27,13 +29,18 @@ interface Options {
   row: SongRankingRowDto;
   observedAtMs: number;
 }
-interface SongRecord { challengeId: string; musicId: string; row: SongRankingRowDto; observedAtMs: number }
+interface Board { challengeId: number; musicId?: string }
+type BoardReading = Board & (
+  | { status: "included"; row: SongRankingRowDto }
+  | { status: "notFound" | "missingGrowth" | "readFailed" | "identityMissing" }
+);
+let coverageId = 0;
+const MAX_RANK = 0x7fffffff;
 interface Group { band?: number; characters: number[] }
 const usableDeck = (row: SongRankingRowDto | null | undefined): row is SongRankingRowDto => !!row?.totalPower
   && row.cards.length === 5 && row.cards.every((card) => card.memberCardId !== null && card.memberExp !== null
     && card.memberAwakeCount !== null && card.memberRank !== null && (!card.supportCardId
       || card.supportExp !== null && card.supportRank !== null));
-const observationCache = new Map<string, { at: number; records: SongRecord[]; total: SongRankingRowDto | null }>();
 
 const boardCache = new Map<string, { at: number; value: EventRankingDto }>();
 async function readBoard(url: string, signal: AbortSignal) {
@@ -48,13 +55,17 @@ async function readBoard(url: string, signal: AbortSignal) {
 class EventTeamAnalysisElement extends LitElement {
   static properties = {
     result: { state: true }, error: { state: true }, ready: { state: true }, busy: { state: true },
-    expanded: { state: true }, paging: { state: true },
+    expanded: { state: true }, paging: { state: true }, rangeError: { state: true },
   };
   locale = "en";
   region: GameRecordsRegion = "jp";
   private options!: Options;
-  private records: SongRecord[] = [];
-  private total?: SongRankingRowDto;
+  private boards: BoardReading[] = [];
+  private primaryChallengeId?: number;
+  private rankRange?: EventTeamRankRange;
+  private draftMin = "";
+  private draftMax = "";
+  private readonly coverageId = `ranking-team-analysis-coverage-${++coverageId}`;
   private data?: TeamBuilderData;
   private growthSources?: EventTeamGrowthSources;
   private asOf = 0;
@@ -68,6 +79,7 @@ class EventTeamAnalysisElement extends LitElement {
   declare private busy: boolean;
   declare private paging: boolean;
   declare private expanded: ReadonlySet<string>;
+  declare private rangeError: boolean;
 
   constructor() {
     super();
@@ -77,6 +89,7 @@ class EventTeamAnalysisElement extends LitElement {
     this.busy = false;
     this.paging = false;
     this.expanded = new Set();
+    this.rangeError = false;
   }
 
   setup(options: Options) {
@@ -95,58 +108,54 @@ class EventTeamAnalysisElement extends LitElement {
     this.engine?.dispose();
     super.disconnectedCallback();
   }
+  private async readObservation(board: Board, signal: AbortSignal): Promise<BoardReading> {
+    const { row, event } = this.options;
+    if (board.challengeId === this.primaryChallengeId) {
+      return usableDeck(row) ? { ...board, status: "included", row } : { ...board, status: "missingGrowth" };
+    }
+    if (!row.profileId) return { ...board, status: "identityMissing" };
+    const path = board.challengeId === 0 ? "total" : `challenges/${board.challengeId}`;
+    try {
+      const ranking = await readBoard(`/api/v2/game/records/${this.region}/events/${event.id}/${path}/latest`,
+        AbortSignal.any([signal, AbortSignal.timeout(5000)]));
+      const match = ranking.rows.find((entry) => entry.profileId === row.profileId);
+      return usableDeck(match) ? { ...board, status: "included", row: match }
+        : { ...board, status: match ? "missingGrowth" : "notFound" };
+    } catch {
+      signal.throwIfAborted();
+      return { ...board, status: "readFailed" };
+    }
+  }
   private async load() {
     try {
       const signal = this.lifetime.signal;
-      const { event, row, challengeId, observedAtMs } = this.options;
+      const { event, challengeId, kind } = this.options;
       const source = this.region === "jp" ? "jp" : "intl";
-      const cacheKey = `${this.region}/${event.id}/${row.profileId}`;
-      const cached = observationCache.get(cacheKey);
-      const records = Promise.all(event.challenges.filter((song) => song.enabled).map(async (song): Promise<SongRecord | null> => {
-          if (song.id === challengeId) return usableDeck(row) ? { challengeId, musicId: song.musicId, row, observedAtMs } : null;
-          if (!row.profileId) return null;
-          if (cached && Date.now() - cached.at < 45_000) return cached.records.find((record) => record.challengeId === song.id) ?? null;
-          try {
-            const ranking = await readBoard(`/api/v2/game/records/${this.region}/events/${event.id}/challenges/${song.id}/latest`, signal);
-            const match = ranking.rows.find((entry) => entry.profileId && entry.profileId === row.profileId);
-            return usableDeck(match) ? { challengeId: song.id, musicId: song.musicId, row: match,
-              observedAtMs: ranking.observedAtMs ?? ranking.fetchedAtMs ?? 0 } : null;
-          } catch { signal.throwIfAborted(); return null; }
-        })).then((rows) => rows.filter((row) => row !== null));
-      const totalRecord = async (): Promise<SongRankingRowDto | null> => {
-        if (this.options.kind === "total") return usableDeck(row) ? row : null;
-        if (!row.profileId || !event.totalRankingEnabled) return null;
-        if (cached && Date.now() - cached.at < 45_000) return cached.total;
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        signal.addEventListener("abort", abort, { once: true });
-        const timeout = window.setTimeout(abort, 1500);
-        try {
-          const ranking = await readBoard(`/api/v2/game/records/${this.region}/events/${event.id}/total/latest`, controller.signal);
-          const match = ranking.rows.find((entry) => entry.profileId === row.profileId);
-          return usableDeck(match) ? match : null;
-        } catch { return null; }
-        finally { clearTimeout(timeout); signal.removeEventListener("abort", abort); }
-      };
+      this.primaryChallengeId = kind === "challenge" ? Number(challengeId) : kind === "total" ? 0 : undefined;
+      const targets: Board[] = event.challenges
+        .filter((song) => (song.enabled && song.status !== "upcoming") || song.id === challengeId)
+        .map((song) => ({ challengeId: Number(song.id), musicId: song.musicId }));
+      if (event.totalRankingEnabled && event.totalRankingStatus !== "upcoming" || kind === "total") targets.unshift({ challengeId: 0 });
       const teamData = fetchTeamBuilderData(source, signal);
-      const [data, songs, growthSources, total] = await Promise.all([teamData, records,
-        teamData.then((data) => fetchEventTeamGrowthSources(data, signal)), totalRecord()]);
+      const [data, boards, growthSources] = await Promise.all([
+        teamData, Promise.all(targets.map((board) => this.readObservation(board, signal))),
+        teamData.then((data) => fetchEventTeamGrowthSources(data, signal)),
+      ]);
       signal.throwIfAborted();
       this.data = data;
-      this.records = songs;
-      this.total = total ?? undefined;
+      this.boards = boards;
       this.growthSources = growthSources;
       this.asOf = Date.now();
-      if (!songs.length && !total) { this.error = "noSongRecord"; return; }
-      if (row.profileId) {
-        observationCache.delete(cacheKey);
-        observationCache.set(cacheKey, { at: cached && Date.now() - cached.at < 45_000 ? cached.at : Date.now(), records: songs, total });
-        if (observationCache.size > 32) observationCache.delete(observationCache.keys().next().value!);
+      this.primaryChallengeId ??= boards.find((board) => board.status === "included")?.challengeId;
+      const primary = boards.find((board) => board.challengeId === this.primaryChallengeId);
+      if (primary?.status !== "included") {
+        this.error = primary?.status === "missingGrowth" || boards.some((board) => board.status === "missingGrowth")
+          ? "missingGrowth" : boards.some((board) => board.status === "readFailed") ? "loadError" : "noSongRecord";
+        return;
       }
       const { EngineClient } = await import("../lib/team-builder/engine/client");
       signal.throwIfAborted();
       this.engine = new EngineClient(data, undefined, { maxWorkers: 1 });
-      this.engine.pauseEventGrowth(document.hidden);
       this.ready = true;
       this.calculate();
     } catch {
@@ -154,24 +163,59 @@ class EventTeamAnalysisElement extends LitElement {
     }
   }
   private calculate() {
-    const engine = this.engine;
-    if (!engine || !this.growthSources || !this.records.length && !this.total) return;
+    const { engine, growthSources, primaryChallengeId } = this;
+    if (!engine || !growthSources || primaryChallengeId === undefined) return;
+    const requestId = ++this.requestId;
+    engine.cancel();
+    engine.pauseEventGrowth(document.hidden);
     this.busy = true;
     this.paging = true;
     this.error = "";
     this.result = undefined;
     this.expanded = new Set();
-    const requestId = ++this.requestId;
-    void engine.analyzeEventGrowth({ eventId: Number(this.options.event.id), asOf: this.asOf, sources: this.growthSources, total: this.total,
-      observations: this.records.map((reading) => ({ row: reading.row, challengeId: Number(reading.challengeId) })) }, (result) => {
+    const included = this.boards.filter((board) => board.status === "included");
+    void engine.analyzeEventGrowth({
+      eventId: Number(this.options.event.id), asOf: this.asOf, sources: growthSources,
+      primaryChallengeId, rankRange: this.rankRange,
+      total: included.find((board) => board.challengeId === 0)?.row,
+      observations: included.filter((board) => board.challengeId !== 0).map(({ challengeId, row }) => ({ row, challengeId })),
+    }, (result) => {
       this.acceptPage(requestId, result);
     }).catch(() => {
       if (requestId !== this.requestId || this.engine !== engine || this.lifetime.signal.aborted) return;
       this.busy = false; this.paging = false; this.error = "missingRules";
     });
   }
+  private applyRange = (event: SubmitEvent) => {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget as HTMLFormElement);
+    const read = (name: string) => {
+      const value = String(fields.get(name) ?? "").trim().normalize("NFKC");
+      return value === "" ? undefined : /^[0-9]+$/u.test(value) ? Number(value) : NaN;
+    };
+    const min = read("min"), max = read("max");
+    this.rangeError = [min, max].some((value) => value !== undefined && (!Number.isInteger(value) || value > MAX_RANK))
+      || (min ?? 0) > (max ?? MAX_RANK);
+    if (this.rangeError) return;
+    const range = min === undefined && max === undefined ? undefined : { min, max };
+    if (range?.min === this.rankRange?.min && range?.max === this.rankRange?.max) return;
+    this.rankRange = range;
+    this.calculate();
+  };
+  private clearRange = (event: Event) => {
+    this.draftMin = this.draftMax = "";
+    (event.currentTarget as HTMLButtonElement).form?.reset();
+    this.rangeError = false;
+    if (!this.rankRange) return;
+    this.rankRange = undefined;
+    this.calculate();
+  };
   private acceptPage(requestId: number, result: EventTeamSearchPage) {
     if (requestId !== this.requestId || !this.engine || this.lifetime.signal.aborted) return;
+    if (result.rejectedChallenges.length) {
+      this.boards = this.boards.map((board) => result.rejectedChallenges.includes(board.challengeId)
+        ? { challengeId: board.challengeId, musicId: board.musicId, status: "missingGrowth" } : board);
+    }
     this.busy = result.rows.length === 0 && !result.complete;
     this.paging = !result.complete && !result.awaitingPage;
     this.result = result;
@@ -186,9 +230,9 @@ class EventTeamAnalysisElement extends LitElement {
   private retry = () => {
     const prefix = `/api/v2/game/records/${this.region}/events/${this.options.event.id}/`;
     for (const key of boardCache.keys()) if (key.startsWith(prefix)) boardCache.delete(key);
-    observationCache.delete(`${this.region}/${this.options.event.id}/${this.options.row.profileId}`);
     this.engine?.dispose(); this.engine = undefined;
     ++this.requestId; this.ready = false; this.error = ""; this.result = undefined; this.expanded = new Set();
+    this.boards = [];
     void this.load();
   };
   private span(low: number | undefined, high: number) {
@@ -201,10 +245,50 @@ class EventTeamAnalysisElement extends LitElement {
   private band(id: number) { return localizedText(this.data!.bands[String(id)]?.bandName, this.locale); }
   private song(challengeId: number) {
     if (challengeId === 0) return { title: this.text("totalRanking"), jacket: "" };
-    const record = this.records.find((entry) => Number(entry.challengeId) === challengeId);
-    const source = record ? this.data!.songs[record.musicId] : undefined;
+    const board = this.boards.find((entry) => entry.challengeId === challengeId);
+    const source = board?.musicId ? this.data?.songs[board.musicId] : undefined;
     return { title: localizedText(source?.musicTitle, this.locale) || `#${challengeId}`,
       jacket: String(source?.jacketThumbUrl ?? source?.jacketUrl ?? "") };
+  }
+  private renderCoverage() {
+    if (!this.boards.length) return nothing;
+    const included = this.boards.filter((board) => board.status === "included").length;
+    const coverage = this.text("coverage").replace("{n}", String(included)).replace("{total}", String(this.boards.length));
+    return html`
+      <button class="button button--tonal" type="button" popovertarget=${this.coverageId}>${coverage}</button>
+      <div class="menu ranking-team-analysis__coverage" id=${this.coverageId} popover="auto" role="region" aria-label=${coverage}>
+        <ul class="stack">
+          ${this.boards.map((board) => html`<li class="row row--between">
+            <span>${this.song(board.challengeId).title}</span>
+            <span class="md-label-medium">${this.text(board.status)}</span>
+          </li>`)}
+        </ul>
+      </div>`;
+  }
+  private renderControls() {
+    const board = this.primaryChallengeId === undefined ? "" : this.song(this.primaryChallengeId).title;
+    const scope = this.text("rangeScope").replace("{board}", board);
+    const { min, max } = this.rankRange ?? {};
+    const range = min === undefined ? max === undefined ? "" : `≤ ${max}`
+      : max === undefined ? `≥ ${min}` : this.span(min, max);
+    const primaryAvailable = this.boards.some((entry) => entry.challengeId === this.primaryChallengeId && entry.status === "included");
+    return html`<div class="row ranking-team-analysis__controls">
+      ${this.ready && primaryAvailable ? html`<form class="ranking-team-analysis__filter" @submit=${this.applyRange}>
+        <span class="md-label-large ranking-team-analysis__scope" role="status">
+          ${this.rangeError ? this.text("rangeInvalid") : html`
+            <span class="truncate" title=${scope}>${scope}</span>
+            ${range ? html`<span>${range}</span>` : nothing}
+          `}
+        </span>
+        <md-outlined-text-field name="min" inputmode="numeric" label=${this.text("rankMin")} ?error=${this.rangeError}
+          .value=${live(this.draftMin)} @input=${(event: Event) => { this.draftMin = (event.currentTarget as HTMLInputElement).value; }}></md-outlined-text-field>
+        <md-outlined-text-field name="max" inputmode="numeric" label=${this.text("rankMax")} ?error=${this.rangeError}
+          .value=${live(this.draftMax)} @input=${(event: Event) => { this.draftMax = (event.currentTarget as HTMLInputElement).value; }}></md-outlined-text-field>
+        <button class="button button--tonal" type="submit">${this.text("applyRange")}</button>
+        <button class="button button--text" type="button" @click=${this.clearRange}>${this.text("clearRange")}</button>
+      </form>` : nothing}
+      ${this.renderCoverage()}
+    </div>`;
   }
   private failure(key: string) {
     return html`<div class="row row--between ranking-team-analysis__failure">
@@ -230,7 +314,7 @@ class EventTeamAnalysisElement extends LitElement {
     if (!expanded.delete(key)) expanded.add(key);
     this.expanded = expanded;
   }
-  private renderPlan(configuration: EventTeamConfiguration, index: number, groups: Group[]) {
+  private renderPlan(configuration: EventTeamConfiguration, index: number, groups: Group[], provisional: boolean) {
     const characters = new Map(configuration.characters.map((entry, position) => [entry.id, { entry, position }]));
     const instruments = new Map(configuration.instruments.map((entry, position) => [entry.id, { entry, position }]));
     const key = configuration.id, open = this.expanded.has(key);
@@ -243,6 +327,7 @@ class EventTeamAnalysisElement extends LitElement {
             title=${this.text("equivalents").replace("{n}", configuration.equivalents.length.toLocaleString(this.locale))}
             aria-expanded=${String(open)} aria-controls=${id} @click=${() => this.toggle(key)}>
             <span>${(index + 1).toLocaleString(this.locale)}</span>
+            ${provisional ? html`<span class="md-label-small">${this.text("provisional")}</span>` : nothing}
             ${configuration.equivalents.length > 1 ? html`<span class="md-label-small">${this.text("equivalentCount").replace("{n}", configuration.equivalents.length.toLocaleString(this.locale))}</span>` : nothing}${icon("expand_more")}</button></th>
         <td class="is-numeric ranking-team-analysis__minor">${this.percent.format(configuration.vipBonus / 10000)}</td>
         ${this.cells(groups,
@@ -258,7 +343,7 @@ class EventTeamAnalysisElement extends LitElement {
       </tr>
       ${configuration.equivalents.map((equivalent, variant) => html`
         ${configuration.equivalents.length > 1 ? this.renderEquivalent(equivalent, variant, groups, open) : nothing}
-        ${configuration.changed ? equivalent.witnesses.map((witness) => {
+        ${open ? equivalent.witnesses.map((witness) => {
           const { title, jacket } = this.song(witness.challengeId);
           return html`<tr class="ranking-team-analysis__detail" ?hidden=${!open}>
             <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title}>
@@ -268,7 +353,11 @@ class EventTeamAnalysisElement extends LitElement {
             ${this.cells(groups,
               (band) => { const value = instruments.get(band); return value ? witness.instruments[value.position] : nothing; },
               (character) => { const value = characters.get(character); return value ? witness.levels[value.position] : nothing; })}
-            <td class="is-numeric">${this.span(witness.totalRank.min, witness.totalRank.max)}</td>
+            <td class="is-numeric">
+              ${this.span(witness.totalRank.min, witness.totalRank.max)}
+              <span class="ranking-team-analysis__outside">${this.text("outsideRank")
+                .replace("{range}", this.span(witness.outsideRank.min, witness.outsideRank.max))}</span>
+            </td>
           </tr>`;
         }) : nothing}`)}
     </tbody>`;
@@ -288,19 +377,19 @@ class EventTeamAnalysisElement extends LitElement {
   private renderResult() {
     const result = this.result;
     if (!result) return nothing;
-    if (result.complete && result.status !== "ready") return this.failure(result.status);
+    if (result.complete && result.status !== "ready") {
+      return result.status === "noMatch" || result.status === "conflictingRecords"
+        ? html`<p class="md-body-medium" role="status">${this.text(result.status)}</p>` : this.failure(result.status);
+    }
     const rows = result.rows;
     if (!rows.length) return loadingState(this.text("loading"));
     const groups = this.groups(rows[0]!);
-    const relaxed = rows.some((configuration) => configuration.relaxed);
     return html`
       <div class="row row--between ranking-team-analysis__toolbar">
-        <span class="chip chip--static chip--tonal"><span class="chip__label">${this.text("found").replace("{n}", result.count.toLocaleString(this.locale))}</span></span>
+        <span class="chip chip--static chip--tonal"><span class="chip__label">${this.text("found").replace("{n}", result.certified.toLocaleString(this.locale))}</span></span>
         <span class="md-label-medium truncate">${this.text(rows[0]!.matchedTotal ? rows[0]!.matchedChallenges.length ? "matchedWithTotal" : "matchedTotal" : "matched")
           .replace("{n}", rows[0]!.matchedChallenges.length.toLocaleString(this.locale))}</span>
-        <span class="md-label-large ranking-team-analysis__status truncate" role="status">${this.text(result.complete
-          ? relaxed ? "completeRelaxed" : "complete"
-          : result.awaitingPage ? "pageReady" : relaxed ? "searchingRelaxed" : "searching")}</span>
+        <span class="md-label-large ranking-team-analysis__status truncate" role="status">${this.text(result.complete ? "complete" : result.awaitingPage ? "pageReady" : "searching")}</span>
       </div>
       <div class="table-scroll ranking-team-analysis__scroll">
         <table class="data-table data-table--numeric ranking-team-analysis__table">
@@ -326,7 +415,10 @@ class EventTeamAnalysisElement extends LitElement {
                 })}`)}
             </tr>
           </thead>
-          ${repeat(rows, (configuration) => configuration.id, (configuration, index) => this.renderPlan(configuration, result.page * result.pageSize + index, groups))}
+          ${repeat(rows, (configuration) => configuration.id, (configuration, index) => {
+            const position = result.page * result.pageSize + index;
+            return this.renderPlan(configuration, position, groups, position >= result.certified);
+          })}
         </table>
       </div>`;
   }
@@ -338,6 +430,7 @@ class EventTeamAnalysisElement extends LitElement {
           <header class="dialog__header"><h2 class="row row--between"><span class="truncate" title=${this.options.row.name}>${this.options.row.name}</span>
             <span class="md-label-large ranking-team-analysis__kind">${this.text("title")}</span></h2></header>
           <div class="dialog__body stack stack--flex">
+            ${this.ready || this.boards.length ? this.renderControls() : nothing}
             ${!this.ready && !this.error ? loadingState(this.text("reading")) : nothing}
             ${this.ready && !this.error ? html`
               <div class="ranking-team-analysis__result" aria-busy=${this.paging ? "true" : "false"}>
@@ -347,7 +440,7 @@ class EventTeamAnalysisElement extends LitElement {
             ${this.error ? this.failure(this.error) : nothing}
           </div>
           <footer class="dialog__actions">
-            ${this.result ? html`
+            ${this.result?.rows.length ? html`
               <button class="button button--text button--icon" type="button" aria-label=${this.text("previousPage")}
                 ?disabled=${this.paging || this.result.page === 0} @click=${() => void this.page(this.result!.page - 1)}>${icon("chevron_left")}</button>
               <span class="md-label-large">${this.text("page").replace("{n}", (this.result.page + 1).toLocaleString(this.locale))}</span>

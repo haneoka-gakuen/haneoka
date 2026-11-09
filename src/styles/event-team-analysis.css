@@ -18,6 +18,50 @@
     flex: none;
     white-space: nowrap;
   }
+  .ranking-team-analysis__controls {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .ranking-team-analysis__filter {
+    display: grid;
+    flex: 1 1 530px;
+    grid-template-columns: minmax(0, 1fr) minmax(5rem, 7rem) minmax(5rem, 7rem) auto auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .ranking-team-analysis__filter md-outlined-text-field,
+  .ranking-team-analysis__scope {
+    min-width: 0;
+  }
+  .ranking-team-analysis__scope {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ranking-team-analysis__scope > :last-child {
+    white-space: nowrap;
+  }
+  .ranking-team-analysis__coverage {
+    inset: 0;
+    width: min(320px, calc(100vw - 32px));
+    height: fit-content;
+    margin: auto;
+    color: var(--md-sys-color-on-surface);
+  }
+  .ranking-team-analysis__coverage ul {
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+  }
+  .ranking-team-analysis__coverage li {
+    gap: 12px;
+  }
+  .ranking-team-analysis__outside {
+    display: block;
+    white-space: nowrap;
+  }
   .ranking-team-analysis__result {
     display: grid;
     flex: 1;
@@ -165,6 +209,12 @@
   }
 
   @media (max-width: 599px) {
+    .ranking-team-analysis__filter {
+      grid-template-columns: repeat(2, minmax(0, 1fr)) auto auto;
+    }
+    .ranking-team-analysis__scope {
+      grid-column: 1 / -1;
+    }
     .ranking-team-analysis__table :where(th, td) {
       padding-inline: 8px;
     }
