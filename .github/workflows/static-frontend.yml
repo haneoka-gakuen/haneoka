@@ -143,6 +143,13 @@ jobs:
       - name: Verify or build shared packages
         run: |
           if ! node scripts/build/package-build-cache.mjs verify; then
+            for attempt in 1 2 3; do
+              if pnpm --filter @haneoka/cassiopeia exec wasm-pack --version; then
+                break
+              fi
+              if [[ "$attempt" == 3 ]]; then exit 1; fi
+              sleep "$((attempt * 10))"
+            done
             pnpm build:packages
             node scripts/build/package-build-cache.mjs record
           fi
