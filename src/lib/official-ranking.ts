@@ -231,7 +231,7 @@ export interface OfficialCollectorJob {
   contract: "haneoka:official-ranking-job/1";
   /** `lookup` skips catalog and boards and only serves demand. */
   mode?: "lookup";
-  /** A retained event whose aggregation ended; independent of the current event. */
+  /** Pending final boards of the latest-started event, whose aggregation ended. */
   finalEvent?: NonNullable<OfficialCatalog["event"]>;
   finalBoards?: Array<{ kind: OfficialObservation["kind"]; challengeId: string }>;
   finalArena?: NonNullable<OfficialCatalog["arena"]>;

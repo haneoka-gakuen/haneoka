@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
-// Output: Regional observations, serialized account jobs, session renewal, redacted pool health, anonymous Version diagnostics and durable 300-second window admission.
+// Output: Latest-event observations through inter-event gaps, serialized account jobs, redacted pool health and durable 300-second window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers or calls the self-hosted collector, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
@@ -1278,7 +1278,7 @@ export class OfficialRankingCollector extends Container<Env> {
 
   private async runningEvent(region: GameRecordsRegion, now: number) {
     const event = (await readOfficialCatalog(this.env, region).catch(() => null))?.event;
-    return event?.pointRankingEnabled && now >= event.startAtMs && now < event.endAtMs + event.aggregationSeconds * 1000 ? event : null;
+    return event?.pointRankingEnabled && now >= event.startAtMs ? event : null;
   }
 
   /** The running event's top window plus the next ones in turn, walking the board from 101 to its last rank. */
@@ -2151,11 +2151,20 @@ export class OfficialRankingCollector extends Container<Env> {
           validateCatalog(update.catalog, region);
           if (run.apiOrigin && update.catalog.apiOrigin !== run.apiOrigin) return json({ error: "catalog_origin_mismatch" }, 409);
           if (run.pendingAttempt) return json({ error: "attempt_pending" }, 409);
+          if (run.finalEvent && update.catalog.event && update.catalog.event.startAtMs > run.finalEvent.startAtMs
+            && update.catalog.event.startAtMs <= Date.now()) {
+            delete run.finalEvent;
+            delete run.finalBoards;
+            delete run.finalWindows;
+          }
           if (run.finalEvent) {
             if (canonical(update.catalog.event) !== canonical(run.finalEvent) || update.catalog.arena != null) return json({ error: "final_target_mismatch" }, 409);
           } else if (run.finalArena) {
             if (canonical(update.catalog.arena) !== canonical(run.finalArena) || update.catalog.event !== null) return json({ error: "final_target_mismatch" }, 409);
-          } else await saveOfficialCatalog(this.env, update.catalog);
+          } else {
+            await saveOfficialCatalog(this.env, update.catalog);
+            state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.eventId === update.catalog.event?.id);
+          }
           run.catalog = update.catalog;
           if (!run.finalArena && update.catalog.arena !== undefined) {
             const arena = update.catalog.arena, previous = state.arenaCatalog;
@@ -2220,7 +2229,10 @@ export class OfficialRankingCollector extends Container<Env> {
             return json({ error: "board_mismatch" }, 409);
           }
           run.resolvedAttempt = true;
-          if (authRejected(update.observation) && !(run.finalEvent && permissionRejected(update.observation))) {
+          const end = update.observation.kind === "challenge"
+            ? event.challenges.find((challenge) => challenge.id === update.observation.challengeId)!.endAtMs : event.endAtMs;
+          if (authRejected(update.observation) && !((run.finalEvent || update.observation.observedAtMs >= end + event.aggregationSeconds * 1000)
+            && permissionRejected(update.observation))) {
             this.pauseRun(state, "auth_paused", permissionRejected(update.observation));
           }
           if (sessionRejected(update.observation)) await this.rememberPlatformRenewal(state, run);
@@ -2253,13 +2265,15 @@ export class OfficialRankingCollector extends Container<Env> {
         } else if (update.type === "event-window") {
           validateEventWindow(update.observation, region);
           const observation = update.observation;
+          const event = run.catalog?.event;
           if (run.pendingWindowKey && run.pendingWindowKey !== observationWindowKey(observation)) return json({ error: "board_mismatch" }, 409);
           if (run.pendingAttempt !== observation.snapshotId) return json({ error: "attempt_mismatch" }, 409);
-          if (observation.eventId !== run.catalog?.event?.id || observation.observedAtMs < run.startedAtMs) return json({ error: "board_mismatch" }, 409);
+          if (!event || observation.eventId !== event.id || observation.observedAtMs < run.startedAtMs) return json({ error: "board_mismatch" }, 409);
           if (run.finalEvent && !run.finalWindows?.some((window) => window.eventId === observation.eventId
             && window.startRank === observation.startRank && window.endRank === observation.endRank)) return json({ error: "board_mismatch" }, 409);
           run.resolvedAttempt = true;
-          if (authRejected(observation) && !(run.finalEvent && permissionRejected(observation))) {
+          if (authRejected(observation) && !((run.finalEvent || observation.observedAtMs >= event.endAtMs + event.aggregationSeconds * 1000)
+            && permissionRejected(observation))) {
             this.pauseRun(state, "auth_paused", permissionRejected(observation));
           }
           if (sessionRejected(observation)) await this.rememberPlatformRenewal(state, run);
@@ -2423,8 +2437,9 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           if (update.status === "ok" && !run.finalEvent && !run.finalArena) {
             const now = Date.now(), event = run.catalog?.event, arena = run.catalog?.arena;
-            const keys = event && now >= event.startAtMs && now < event.endAtMs + event.aggregationSeconds * 1000 ? [
-              ...event.challenges.filter((row) => row.enabled && now >= row.startAtMs && now < row.endAtMs + event.aggregationSeconds * 1000)
+            const keys = event && now >= event.startAtMs ? [
+              ...event.challenges.filter((row) => row.enabled && now >= row.startAtMs
+                && (now < row.endAtMs + event.aggregationSeconds * 1000 || now >= event.endAtMs + event.aggregationSeconds * 1000))
                 .map((row) => `event/${event.id}/challenge/${row.id}`),
               ...(event.totalRankingEnabled ? [`event/${event.id}/total`] : []),
               ...(event.pointRankingEnabled ? [`event/${event.id}/point/1/100`] : []),

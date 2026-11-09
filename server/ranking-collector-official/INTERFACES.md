@@ -45,6 +45,8 @@ A board's freshness is its own `observedAtMs`, not the last success in `/status`
 | `arenaProgress` | Saved population progress, returned to the job |
 | `playerLookups`, `songRankings`, `cardImages` | Bounded demand queues |
 
+The catalog selects the latest event whose start time has arrived and keeps it through the gap before the next event. `finalEvent` / `finalBoards` only supplement that event's pending finals. If a final job discovers a newer started event in fresh Master data, its `catalog` update replaces the queued event and clears its old board/window limits before the first ranking request. Older events remain readable from saved history.
+
 ## Callback updates
 
 `haneoka:official-ranking-update/1` posts these updates to `/api/internal/official-rankings/{region}/{runId}`. A failed callback is retried with the same payload up to three times, then the run stops.

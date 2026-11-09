@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immediate durable observations, gzip-compatible R2 payloads, D1 indexes, daily/final archives and reference-safe payload cleanup.
+// Output: Immediate durable observations, D1 indexes, latest-event final targets, preserved daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import { saveRankingSearchWindow } from "./ranking-search";
@@ -296,9 +296,10 @@ export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings,
   const next = await db.prepare(`SELECT kind,id,definition FROM (
     SELECT 'event' AS kind,event_id AS id,event_json AS definition,last_dispatch_at_ms,due_at_ms FROM official_ranking_finals
     WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
+      AND event_id=(SELECT highest_event_id FROM official_ranking_catalogs WHERE region=?)
     UNION ALL SELECT 'arena',season_id,arena_json,last_dispatch_at_ms,due_at_ms FROM official_arena_finals
     WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
-    ) ORDER BY last_dispatch_at_ms,due_at_ms,id,kind LIMIT 1`).bind(region, now, region, now)
+    ) ORDER BY last_dispatch_at_ms,due_at_ms,id,kind LIMIT 1`).bind(region, now, region, region, now)
     .first<{ kind: string; id: string; definition: string }>();
   if (!next) return null;
   if (next.kind === "arena") {

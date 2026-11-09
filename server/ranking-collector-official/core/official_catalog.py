@@ -1,4 +1,4 @@
-"""L3: server/L2.md; verified official Master acquisition and regional event/Arena projections."""
+"""L3: server/L2.md; verified official Master acquisition, latest-started event selection and regional Arena projections."""
 from datetime import datetime, timezone, timedelta
 import gzip
 import base64
@@ -81,18 +81,15 @@ def project(tables, version, now_ms, region='jp',resource_version=None,api_origi
         seen.add(eid)
         start,end=date(e['_startAt']),date(e['_endAt'])
         if end<=start: raise ValueError('invalid event window')
-        if start<=now_ms<end+aggregation*1000: candidates.append((start,end,e))
-    # Prefer a currently held event to a previous event still aggregating.
-    held=[e for e in candidates if now_ms<e[1]]
-    selected=held or candidates
-    if len(selected)>1: raise ValueError('ambiguous current event')
+        if start<=now_ms: candidates.append((start,end,e))
     result=dict(region=region,catalogSource='official-master',masterVersion=version,resourceVersion=resource_version,
                 apiOrigin=select_api_origin(region,api_origin),
                 catalogObservedAtMs=now_ms,fetchedAtMs=None,stale=False,event=None)
     if include_arena:
         result['arena'] = project_arena(tables, now_ms)
-    if not selected:return result
-    start,end,e=selected[0];eid=identifier(e['_id']);challenges=[];seen=set()
+    if not candidates:return result
+    start,end,e=max(candidates,key=lambda row:(row[0],int(row[2]['_id'])))
+    eid=identifier(e['_id']);challenges=[];seen=set()
     for key in ('_isMusicRankingDisabled','_isTotalMusicRankingDisabled'):
         if type(e.get(key)) is not bool:raise ValueError('ranking flag missing')
     for row in songs:
@@ -111,7 +108,8 @@ def project(tables, version, now_ms, region='jp',resource_version=None,api_origi
     if not challenges and (not e['_isMusicRankingDisabled'] or not e['_isTotalMusicRankingDisabled']):
         raise ValueError('enabled event has no challenges')
     result['event']=dict(id=eid,startAtMs=start,endAtMs=end,aggregationSeconds=aggregation,
-        status='nowOn' if now_ms<end else 'aggregation',totalRankingEnabled=not e['_isTotalMusicRankingDisabled'],
+        status='nowOn' if now_ms<end else 'aggregation' if now_ms<end+aggregation*1000 else 'finished',
+        totalRankingEnabled=not e['_isTotalMusicRankingDisabled'],
         pointRankingEnabled=e.get('_isRankingDisabled') is False,challenges=challenges)
     return result
 

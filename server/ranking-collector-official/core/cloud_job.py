@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: A bounded region job, private credentials and authenticated durable callbacks.
-# Output: Priority live/final observations, transient Arena probes and acknowledged demand progress with body-free failures.
+# Output: Latest-event observations through inter-event gaps, eligible final observations, transient Arena probes and acknowledged demand progress with body-free failures.
 # Pos: [Map](../../L2.md); cloud adapter for the shared official protocol.
 # Effects/Dependencies: Official HTTPS/HTTP2 reads, temporary private files and Worker callbacks; no local history authority.
 from datetime import datetime
@@ -274,6 +274,10 @@ def run_job(job, origin):
                                       region=region, api_origin=auth['origin'], include_arena=include_arena)
             catalog = provider()
             final_event = job.get('finalEvent')
+            current_event = catalog.get('event')
+            if final_event is not None and current_event is not None and current_event['startAtMs'] > final_event['startAtMs']:
+                final_event = None
+                job = {key: value for key, value in job.items() if key not in ('finalEvent', 'finalBoards', 'eventWindows')}
             if final_event is not None:
                 catalog['event'] = final_event
                 catalog.pop('arena', None)
@@ -323,8 +327,7 @@ def run_job(job, origin):
                     try:
                         window_end = event['endAtMs'] if kind != 'challenge' else next(
                             row['endAtMs'] for row in event['challenges'] if row['id'] == challenge)
-                        sampler.args.deadline = (deadline if final_event is not None else
-                                                 min(deadline, window_end/1000 + event['aggregationSeconds']))
+                        sampler.args.deadline = deadline
                         method, fields = board_call(kind, event, challenge)
                         request = sampler.message('app.event.' + method + 'Request', fields)
                         receipt, response, _ = sampler.rpc('/app.event.EventService/' + method, request,
@@ -350,7 +353,8 @@ def run_job(job, origin):
                         observation['httpStatus'] = receipt.get('status') if receipt else None
                         observation['grpcStatus'] = receipt.get('grpc_status') if receipt else None
                         status = failure_status(receipt)
-                        if final_event is not None and receipt and (receipt.get('status') == 403 or str(receipt.get('grpc_status')) == '7'):
+                        historical = final_event is not None or time.time()*1000 >= window_end + event['aggregationSeconds']*1000
+                        if historical and receipt and (receipt.get('status') == 403 or str(receipt.get('grpc_status')) == '7'):
                             status = 'failed'
                         observation['error'] = 'authentication_failed' if status == 'auth_paused' else type(error).__name__
                         if status == 'rate_limited':
@@ -372,7 +376,8 @@ def run_job(job, origin):
                             catalogTableHashes=catalog.get('tableHashes'))
                     refused = EventWindows(job, catalog, sampler, updates, deadline, window_provenance).run()
                     # A refused window ends windows for this run; only a rate limit or a rejected login concerns the account.
-                    if refused and final_event is not None and (refused.get('status') == 403 or str(refused.get('grpc_status')) == '7'):
+                    if (refused and (final_event is not None or time.time()*1000 >= catalog['event']['endAtMs'] + catalog['event']['aggregationSeconds']*1000)
+                            and (refused.get('status') == 403 or str(refused.get('grpc_status')) == '7')):
                         final_status, failure = 'failed', failure_info('board', RuntimeError('event window rejected'), refused)
                     elif refused and failure_status(refused) in ('auth_paused', 'rate_limited'):
                         final_status, failure = failure_status(refused), failure_info(stage, RuntimeError('event window rejected'), refused)

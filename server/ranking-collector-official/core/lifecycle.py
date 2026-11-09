@@ -1,4 +1,4 @@
-"""L3: server/L2.md -> ranking-collector-official; catalog discovery, credential generations and authentication rejection."""
+"""L3: server/L2.md -> ranking-collector-official; latest-event sampling targets, credential generations and authentication rejection."""
 import hashlib
 import os
 import json
@@ -40,14 +40,16 @@ def identifier(value):
     if not re.fullmatch('[1-9][0-9]{0,18}',value):raise ValueError('invalid catalog identity')
     return value
 
-def targets(definition, now_ms):
+def targets(definition, now_ms, *, include_finished=True):
     event=definition['event']
     if event is None:return []
-    if not event['startAtMs']<=now_ms<event['endAtMs']+event.get('aggregationSeconds',0)*1000:
+    if now_ms<event['startAtMs']:
         return []
-    if event['status'] not in ('nowOn','aggregation'):return []
+    aggregation=event.get('aggregationSeconds',0)*1000
+    if not include_finished and now_ms>=event['endAtMs']+aggregation:return []
     result=[('challenge',c['id']) for c in event['challenges'] if c['enabled']
-        and c['startAtMs']<=now_ms<c['endAtMs']+event.get('aggregationSeconds',0)*1000]
+        and c['startAtMs']<=now_ms
+        and (now_ms<c['endAtMs']+aggregation or include_finished and now_ms>=event['endAtMs']+aggregation)]
     if event.get('totalRankingEnabled',True):result.append(('total',''))
     if event.get('pointRankingEnabled'):result.append(('point',''))
     return result

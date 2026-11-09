@@ -49,7 +49,8 @@ export async function officialRankingStatus(env: OfficialRankingReadBindings, re
     boards: targets.map((target) => ({
       kind: target.kind,
       challengeId: target.challengeId,
-      active: now >= target.startAtMs && now < target.endAtMs + event.aggregationSeconds * 1000,
+      active: now >= target.startAtMs && (target.kind !== "challenge"
+        || now < target.endAtMs + event.aggregationSeconds * 1000 || now >= event.endAtMs + event.aggregationSeconds * 1000),
       ...(saved.find((board) => board.kind === target.kind && board.challengeId === target.challengeId) ?? {
         lastAttemptAtMs: null, lastSuccessfulObservationAtMs: null, consecutiveFailures: 0, ageMs: null, stale: true, openGapMs: null,
       }),
@@ -94,7 +95,7 @@ export function officialEventTracker(catalog: OfficialCatalog, now = Date.now())
     provider: "official",
     fetchedAtMs: catalog.catalogObservedAtMs,
     serverTimeMs: now,
-    stale: staleAt(catalog.catalogObservedAtMs, now) || !!event && now >= event.endAtMs + event.aggregationSeconds * 1000,
+    stale: staleAt(catalog.catalogObservedAtMs, now),
     event: event ? trackedEvent(event, now) : null,
   };
 }

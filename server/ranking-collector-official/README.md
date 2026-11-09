@@ -55,6 +55,12 @@ On the host, outside the deployed directory:
 
 `collector-deploy.yml` redeploys on every push to `main` that touches the collector, the host or the shared Worker modules: it builds the host bundle, streams both to the host over SSH, and the deploy key's forced command (`deploy/host-deploy.sh`, installed as `/opt/haneoka-collector/deploy.sh`) rebuilds and restarts them, keeping the files above.
 
+### Event rollover
+
+The collector selects the most recently started event from the fresh official Master. It continues sampling that event through the gap after its end and aggregation period. A future event takes over when its start time arrives; then all regular sampling and pending final-board work for older events stop. Saved observations and incomplete archive records remain available. A queued final job that discovers a newer started event switches to the new event before requesting rankings. Arena seasons keep their separate schedule.
+
+Account-login verification uses currently open or aggregating boards and Arena leagues. An unavailable ranking from a finished event is recorded as a collection failure without treating its permission rejection as an expired account session.
+
 ### Managed-account rollout
 
 Prepare these Worker secrets through Wrangler's secret interface before using

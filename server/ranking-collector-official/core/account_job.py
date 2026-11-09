@@ -80,7 +80,7 @@ def validate_account_job(job):
 
 def verification_boards(catalog, now):
     boards = []
-    for kind, challenge in targets(catalog, now):
+    for kind, challenge in targets(catalog, now, include_finished=False):
         method, fields = board_call(kind, catalog['event'], challenge)
         boards.append(('app.event.EventService', method, fields))
     arena = catalog.get('arena')

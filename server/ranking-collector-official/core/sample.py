@@ -56,9 +56,7 @@ def run(args):
                 if (kind,challenge) not in targets(definition,int(time.time()*1000)):continue
                 oid=uuid.uuid4().hex;identity=(region,str(event['id']),kind,challenge)
                 receipt=None
-                window_end=(event['endAtMs'] if kind!='challenge' else next(
-                    row['endAtMs'] for row in event['challenges'] if row['id']==challenge))
-                sampler.args.deadline=min(args.deadline,window_end/1000+event.get('aggregationSeconds',0))
+                sampler.args.deadline=args.deadline
                 try:
                     if credential_generation(args.credentials,region)!=credential:raise RuntimeError('credential changed during round')
                     method,fields=board_call(kind,event,challenge)
