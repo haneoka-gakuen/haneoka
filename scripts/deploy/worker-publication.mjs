@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // L3 — GEB
 // Input: 源码身份、Worker artifact、静态 publication、封存容器上下文和 CLI 命令。
-// Output: 可校验部署产物、配置和 publication 操作结果。
+// Output: 可校验部署产物、配置和有界等待静态身份收敛后的 publication 操作结果。
 // Pos: [Map](../L2.md)；部署工作流的 artifact 与发布控制桥。
 // Effects/Dependencies: 固定来源、文件／容器输入摘要和子进程；保留已验证 assets，可显式重建封存容器，发布路线调用 Wrangler 写远端。
 import assert from "node:assert/strict";
@@ -319,6 +319,19 @@ async function liveAssets(ownMessage, options) {
       console.warn(`Production asset inspection attempt ${attempt}/3 failed; retrying`);
       await new Promise((resolve) => setTimeout(resolve, attempt * 2_000));
     }
+  }
+}
+async function publishedAssets(message, publicationSha256, frontendSha, inspection) {
+  for (let attempt = 1; ; attempt++) {
+    const current = await liveAssets(undefined, inspection);
+    assert.equal(current.workerMessage, message, "Another Worker became active after publication");
+    if (current.publicationSha256 === publicationSha256 && current.frontendSha === frontendSha) return current;
+    if (attempt === 6) {
+      assert.equal(current.publicationSha256, publicationSha256, "Active static publication differs from the verified artifact");
+      assert.equal(current.frontendSha, frontendSha, "Served frontend source differs from the verified artifact");
+    }
+    console.warn(`Published static identity has not converged (${attempt}/6): ${current.publicationSha256}; retrying inspection`);
+    await new Promise((resolve) => setTimeout(resolve, Math.min(30_000, 1_000 * 2 ** attempt)));
   }
 }
 async function readLiveAssets(ownMessage, { allowContainerChanges = false } = {}) {
@@ -703,15 +716,8 @@ if (mode === "prepare") {
         await new Promise((resolve) => setTimeout(resolve, attempt * 5_000));
       }
     }
-    const after = await liveAssets(undefined, inspection);
-    assert.equal(after.workerMessage, message, "Another Worker became active after publication");
-    assert.equal(
-      after.publicationSha256,
-      publicationSha256,
-      "Active static publication differs from the verified artifact",
-    );
-    if (manifest.frontendSource) assert.equal(after.frontendSha, manifest.frontendSource.sourceSha,
-      "Served frontend source differs from selected artifact");
+    const frontendSha = manifest.frontendSource?.sourceSha ?? (manifest.workerOnly ? prior.frontendSha : sourceSha);
+    const after = await publishedAssets(message, publicationSha256, frontendSha, inspection);
     if (manifest.workerOnly) {
       assert.equal(
         after.publicationSha256,
