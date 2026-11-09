@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
-// Output: Regional observations, serialized account jobs, session renewal, redacted pool health, anonymous Version diagnostics and durable 150-second window admission.
+// Output: Regional observations, serialized account jobs, session renewal, redacted pool health, anonymous Version diagnostics and durable 300-second window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers or calls the self-hosted collector, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
@@ -24,8 +24,7 @@ export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
 const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const LOOKUP_MS = 60_000;
-const WINDOW_REUSE_MS = 150_000;
-const ARENA_DEMAND_INTERVAL_MS = 60_000;
+const WINDOW_REUSE_MS = INTERVAL_MS;
 /** The collector reuses counts read in the last five minutes; one more covers clock skew. */
 const ARENA_WITNESS_REUSE_MS = 360_000;
 const ARENA_POPULATION_TARGET_MS = 1_200_000;
@@ -1244,7 +1243,7 @@ export class OfficialRankingCollector extends Container<Env> {
 
   private expediteArena(state: CollectorState) {
     if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration || state.status !== "ok" && state.status !== "not_started") return;
-    const next = Math.max(Date.now() + 1_000, (state.lastRunAtMs ?? 0) + ARENA_DEMAND_INTERVAL_MS);
+    const next = Math.max(Date.now() + 1_000, (state.lastRunAtMs ?? 0) + INTERVAL_MS);
     state.nextAtMs = state.nextAtMs ? Math.min(state.nextAtMs, next) : next;
   }
 
@@ -1744,6 +1743,7 @@ export class OfficialRankingCollector extends Container<Env> {
   }
 
   private async persist(state: CollectorState, schedule = true): Promise<void> {
+    if (schedule && state.lastRunAtMs !== null) state.nextAtMs = Math.max(state.nextAtMs, state.lastRunAtMs + INTERVAL_MS);
     await this.ctx.storage.put("collectorState", state);
     this.deleteSchedules("collectDue");
     if (schedule) await this.schedule(new Date(Math.max(Date.now() + 1_000, state.nextAtMs)), "collectDue", state.region);
@@ -1986,8 +1986,9 @@ export class OfficialRankingCollector extends Container<Env> {
       if (this.expireRun(state)) { state.nextAtMs = Math.max(state.nextAtMs, (state.run?.deadlineMs ?? 0) + 15_000); await this.persist(state); return null; }
       const config = this.accountFor(state, pool);
       if (!config) { await this.unavailablePool(state, pool); return null; }
-      if (state.nextAtMs > Date.now() + 1000) { await this.persist(state); return null; }
       const now = Date.now();
+      state.nextAtMs = Math.max(state.nextAtMs, (state.lastRunAtMs ?? 0) + INTERVAL_MS);
+      if (state.nextAtMs > now) { await this.persist(state); return null; }
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const runId = crypto.randomUUID().replaceAll("-", "");
       const final = now >= (state.nextFinalAtMs ?? 0) ? await takeOfficialFinalTarget(this.env, region, now) : null;
@@ -2005,11 +2006,7 @@ export class OfficialRankingCollector extends Container<Env> {
       state.lastFailure = null;
       state.blockedGeneration = null;
       state.lastRunAtMs = now;
-      // Accounts take turns, so each keeps the base rate however many there are.
-      const usable = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
-        && !state.accounts?.[account.identity]?.held && !state.accounts?.[account.identity]?.blocked[account.authGeneration]
-        && (state.accounts?.[account.identity]?.cooldownUntilMs ?? 0) <= now).length;
-      state.nextAtMs = now + Math.max(WINDOW_REUSE_MS, Math.ceil(INTERVAL_MS / Math.max(1, usable)));
+      state.nextAtMs = now + INTERVAL_MS;
       const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
       const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)

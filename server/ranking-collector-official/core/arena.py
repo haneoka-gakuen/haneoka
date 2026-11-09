@@ -1,4 +1,4 @@
-"""L3: server/L2.md; live/final rank windows with rolling 150-second reuse, transient population probes and resumable counts."""
+"""L3: server/L2.md; live/final rank windows with rolling 300-second reuse, transient population probes and resumable counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -12,7 +12,7 @@ from google.protobuf import json_format
 
 # A count witnessed this recently stands in a published snapshot without another read.
 REUSE_MS = 300_000
-WINDOW_REUSE_MS = 150_000
+WINDOW_REUSE_MS = 300_000
 
 
 class ArenaDeferred(Exception):

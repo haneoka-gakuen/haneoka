@@ -84,7 +84,7 @@ After rollout, verify a JP guest and each Global regional role separately;
 queue acceptance, a saved password and successful SDK login are intermediate
 states. The ready state requires successful ranking-permission verification.
 
-A run lasts up to two minutes. Accounts take turns, least recently used first, and a run starts every five minutes divided by the usable accounts, at most once a minute. Each board request is checkpointed before it is sent, and the next one waits until the Worker has stored the last.
+A run lasts up to two minutes. Accounts take turns, least recently used first, and each region starts a run at least five minutes after its previous start, regardless of pool size. Population catch-up, requested ranking windows, finals and schedules restored after deployment share this limit. Player and song lookups keep their separate short jobs. Each board request is checkpointed before it is sent, and the next one waits until the host has stored the last.
 
 The Container entry handles SIGTERM and closes its HTTP listener, including when
 Python is PID 1. A stopped process loses its in-memory result cache; the Worker
@@ -690,9 +690,9 @@ Deploy the batch reader and additive migration before enabling the writer. Keep 
 
 ### Rolling ranking window
 
-A region, board and aligned rank interval may be read at most once within 150 seconds. The Worker persists admission and the original response in the regional Durable Object, shared by regular collection, explicit windows and population probes. Callback retries replay the same receipt. Reused observations retain their original identity and time; a transient probe can be promoted to a stored window without a new game request. An incomplete or failed admission defers that window until expiry while other boards continue. Finals reuse only observations captured after their cutoff. Event point windows also supply the legacy top-point projection from the same request.
+A region, board and aligned rank interval may be read at most once within 300 seconds. The collector host persists admission and the original response in the regional object, shared by regular collection, explicit windows and population probes. Callback retries replay the same receipt. Reused observations retain their original identity and time; a transient probe can be promoted to a stored window without a new game request. An incomplete or failed admission defers that window until expiry while other boards continue. Finals reuse only observations captured after their cutoff. Event point windows also supply the legacy top-point projection from the same request.
 
-Initial window admission respects the last stored observation time during cutover. Regular collection follows the earliest active head-window expiry, so an early cache hit does not defer that board for another full cycle.
+Initial window admission respects the last stored observation time during cutover. Regular collection follows the earliest active head-window expiry within the five-minute regional schedule, so an early cache hit does not add another full cycle to that board.
 
 Unchanged player profiles harvested across boards share a 150-second persistence window. Changed profiles and explicit player lookups persist immediately.
 
