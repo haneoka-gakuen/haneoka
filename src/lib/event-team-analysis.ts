@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Saved activity song decks, optional total-ranking decks, pinned growth sources and native engine updates.
-// Output: Native requests, selected-board rank constraints, resumable pages and correlated witnesses for activity growth inference.
+// Output: Native requests, growth neighborhoods and selected-board rank constraints, resumable pages and correlated witnesses for activity growth inference.
 // Pos: [Map](L2-2.md); type boundary shared by the dialog and existing Rust/WASM engine adapter.
 // Effects/Dependencies: Type declarations only; the native engine owns search, rank caps, exact verification and correlated equivalent decompositions.
 import type { SongRankingRowDto } from "./game-records";
@@ -36,11 +36,20 @@ export interface EventTeamConfiguration extends Omit<EventTeamEquivalent, "witne
 export interface EventTeamAnalysis {
   status: "ready" | "missingGrowth" | "missingRules" | "noMatch" | "conflictingRecords";
 }
+export interface EventTeamPreferences {
+  vipBonus?: number;
+  characterLevels: Record<string, number>;
+  instrumentLevels: Record<string, number>;
+  characterRadius: number;
+  instrumentRadius: number;
+  allowGrowth?: boolean;
+}
 export interface EventTeamGrowthRequest {
   eventId: number;
   asOf: number;
   primaryChallengeId: number;
   rankRange?: EventTeamRankRange;
+  preferences?: EventTeamPreferences;
   observations: EventTeamReading[];
   total?: SongRankingRowDto;
   sources: EventTeamGrowthSources;

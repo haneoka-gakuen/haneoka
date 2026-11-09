@@ -1048,7 +1048,17 @@
         "readFailed": "讀取失敗",
         "identityMissing": "缺少玩家 ID",
         "outsideRank": "未出場角色合計 {range}",
-        "provisional": "暫列"
+        "provisional": "暫列",
+        "allowGrowth": "跨榜養成變化",
+        "expectedGrowth": "預期養成",
+        "characterLevel": "角色等級",
+        "allBonuses": "全部加成",
+        "searchRange": "搜尋範圍",
+        "characterRadius": "角色等級 ±",
+        "instrumentRadius": "樂器總等級 ±",
+        "search": "搜尋",
+        "resetGrowth": "重設",
+        "waiting": "設定養成後搜尋"
       }
     },
     "events": {

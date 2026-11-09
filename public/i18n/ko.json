@@ -1048,7 +1048,17 @@
         "readFailed": "불러오기 실패",
         "identityMissing": "플레이어 ID 없음",
         "outsideRank": "편성 외 랭크 합계 {range}",
-        "provisional": "임시"
+        "provisional": "임시",
+        "allowGrowth": "기록 간 육성 변화",
+        "expectedGrowth": "예상 육성",
+        "characterLevel": "캐릭터 랭크",
+        "allBonuses": "모든 보너스",
+        "searchRange": "검색 범위",
+        "characterRadius": "캐릭터 랭크 ±",
+        "instrumentRadius": "악기 합계 레벨 ±",
+        "search": "검색",
+        "resetGrowth": "초기화",
+        "waiting": "육성 값을 설정하여 검색"
       }
     },
     "events": {

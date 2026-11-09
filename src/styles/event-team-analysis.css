@@ -19,29 +19,56 @@
     white-space: nowrap;
   }
   .ranking-team-analysis__controls {
+    min-height: 48px;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
-  .ranking-team-analysis__filter {
+  .ranking-team-analysis__workspace {
     display: grid;
-    flex: 1 1 530px;
-    grid-template-columns: minmax(0, 1fr) minmax(5rem, 7rem) minmax(5rem, 7rem) auto auto;
-    align-items: center;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 16px;
+  }
+  .ranking-team-analysis__filter {
+    min-width: 0;
+    padding: 16px;
+    overflow-y: auto;
+    align-content: start;
+    grid-auto-rows: max-content;
+    gap: 16px;
+  }
+  .ranking-team-analysis__filter :where(md-outlined-text-field, md-outlined-select) {
+    width: 100%;
+    min-width: 0;
+  }
+  .ranking-team-analysis__fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    min-width: 0;
   }
-  .ranking-team-analysis__filter md-outlined-text-field,
-  .ranking-team-analysis__scope {
-    min-width: 0;
+  .ranking-team-analysis__related {
+    gap: 24px;
   }
-  .ranking-team-analysis__scope {
+  .ranking-team-analysis__related:empty {
+    display: none;
+  }
+  .ranking-team-analysis__output {
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+  }
+  .ranking-team-analysis__validation {
+    min-height: 24px;
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    color: var(--md-sys-color-error);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
   }
-  .ranking-team-analysis__scope > :last-child {
-    white-space: nowrap;
+  .ranking-team-analysis__validation a {
+    color: inherit;
   }
   .ranking-team-analysis__coverage {
     inset: 0;
@@ -209,11 +236,21 @@
   }
 
   @media (max-width: 599px) {
-    .ranking-team-analysis__filter {
-      grid-template-columns: repeat(2, minmax(0, 1fr)) auto auto;
+    .ranking-team-analysis .dialog__body {
+      overflow-y: auto;
     }
-    .ranking-team-analysis__scope {
-      grid-column: 1 / -1;
+    .ranking-team-analysis__workspace {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ranking-team-analysis__filter {
+      overflow: visible;
+      padding: 12px;
+    }
+    .ranking-team-analysis__output {
+      min-height: 260px;
+    }
+    .ranking-team-analysis__scroll {
+      max-height: 65dvh;
     }
     .ranking-team-analysis__table :where(th, td) {
       padding-inline: 8px;

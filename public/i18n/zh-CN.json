@@ -1048,7 +1048,17 @@
         "readFailed": "读取失败",
         "identityMissing": "缺少玩家 ID",
         "outsideRank": "未出场角色合计 {range}",
-        "provisional": "暂列"
+        "provisional": "暂列",
+        "allowGrowth": "跨榜养成变化",
+        "expectedGrowth": "预期养成",
+        "characterLevel": "角色等级",
+        "allBonuses": "全部加成",
+        "searchRange": "搜索范围",
+        "characterRadius": "角色等级 ±",
+        "instrumentRadius": "乐器总等级 ±",
+        "search": "搜索",
+        "resetGrowth": "重置",
+        "waiting": "设置养成后搜索"
       }
     },
     "events": {

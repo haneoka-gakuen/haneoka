@@ -1048,7 +1048,17 @@
         "readFailed": "Could not load",
         "identityMissing": "Player ID unavailable",
         "outsideRank": "Off-team ranks {range}",
-        "provisional": "Preview"
+        "provisional": "Preview",
+        "allowGrowth": "Growth between records",
+        "expectedGrowth": "Expected growth",
+        "characterLevel": "Character level",
+        "allBonuses": "All bonuses",
+        "searchRange": "Search range",
+        "characterRadius": "Character ± levels",
+        "instrumentRadius": "Instrument ± levels",
+        "search": "Search",
+        "resetGrowth": "Reset",
+        "waiting": "Set growth to search"
       }
     },
     "events": {

@@ -1,22 +1,26 @@
 // L3 — GEB
 // Input: An activity leaderboard player, related saved song boards and release-pinned growth rules.
-// Output: Board coverage and paged exact-match groups with an optional rank interval on the selected board.
+// Output: Immediate growth inputs, board coverage and paged exact matches inside the requested neighborhoods.
 // Pos: [Map](L2-2.md); lazy activity-only action from the shared ranking rows.
 // Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; lazily owns one cancellable shared Rust/WASM engine Worker.
 import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { live } from "lit/directives/live.js";
 import "@material/web/textfield/outlined-text-field.js";
+import "@material/web/select/outlined-select.js";
+import "@material/web/select/select-option.js";
+import "@material/web/switch/switch.js";
 import { fetchTeamBuilderData } from "../lib/team-builder/data/fetch";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import type { EngineClient } from "../lib/team-builder/engine/client";
 import { fetchEventTeamGrowthSources, type EventTeamGrowthSources } from "../lib/event-team-growth-limits";
-import type { EventTeamConfiguration, EventTeamEquivalent, EventTeamRankRange, EventTeamSearchPage } from "../lib/event-team-analysis";
+import type { EventTeamConfiguration, EventTeamEquivalent, EventTeamRankRange, EventTeamPreferences, EventTeamSearchPage } from "../lib/event-team-analysis";
 import type { EventRankingDto, GameRecordsRegion, SongRankingRowDto, TrackedEventDto } from "../lib/game-records";
 import { clientText } from "../i18n/client";
 import { fetchJson, localizedText } from "./shared/catalog";
 import { icon } from "./ui/icon";
 import { modal } from "./ui/modal";
+import { accordion } from "./ui/accordion";
 import { loadingState } from "./ui/state";
 import "../styles/event-team-analysis.css";
 
@@ -65,6 +69,19 @@ class EventTeamAnalysisElement extends LitElement {
   private rankRange?: EventTeamRankRange;
   private draftMin = "";
   private draftMax = "";
+  private draftVip = "";
+  private defaultCharacter = "18";
+  private defaultInstrument = "75";
+  private characterRadius = "3";
+  private instrumentRadius = "10";
+  private allowGrowth = false;
+  private rangeExpanded = false;
+  private characterLevels = new Map<number, string>();
+  private instrumentLevels = new Map<number, string>();
+  private related: Group[] = [];
+  private preferences?: EventTeamPreferences;
+  private invalidFields = new Set<string>();
+  private dirty = false;
   private readonly coverageId = `ranking-team-analysis-coverage-${++coverageId}`;
   private data?: TeamBuilderData;
   private growthSources?: EventTeamGrowthSources;
@@ -136,7 +153,13 @@ class EventTeamAnalysisElement extends LitElement {
         .filter((song) => (song.enabled && song.status !== "upcoming") || song.id === challengeId)
         .map((song) => ({ challengeId: Number(song.id), musicId: song.musicId }));
       if (event.totalRankingEnabled && event.totalRankingStatus !== "upcoming" || kind === "total") targets.unshift({ challengeId: 0 });
-      const teamData = fetchTeamBuilderData(source, signal);
+      const teamData = fetchTeamBuilderData(source, signal).then((data) => {
+        signal.throwIfAborted();
+        this.data = data;
+        this.setRelated([this.options.row]);
+        this.requestUpdate();
+        return data;
+      });
       const [data, boards, growthSources] = await Promise.all([
         teamData, Promise.all(targets.map((board) => this.readObservation(board, signal))),
         teamData.then((data) => fetchEventTeamGrowthSources(data, signal)),
@@ -144,6 +167,7 @@ class EventTeamAnalysisElement extends LitElement {
       signal.throwIfAborted();
       this.data = data;
       this.boards = boards;
+      this.setRelated(boards.filter((board) => board.status === "included").map((board) => board.row));
       this.growthSources = growthSources;
       this.asOf = Date.now();
       this.primaryChallengeId ??= boards.find((board) => board.status === "included")?.challengeId;
@@ -157,7 +181,6 @@ class EventTeamAnalysisElement extends LitElement {
       signal.throwIfAborted();
       this.engine = new EngineClient(data, undefined, { maxWorkers: 1 });
       this.ready = true;
-      this.calculate();
     } catch {
       if (!this.lifetime.signal.aborted) this.error = "loadError";
     }
@@ -166,7 +189,7 @@ class EventTeamAnalysisElement extends LitElement {
     const { engine, growthSources, primaryChallengeId } = this;
     if (!engine || !growthSources || primaryChallengeId === undefined) return;
     const requestId = ++this.requestId;
-    engine.cancel();
+    if (this.paging) engine.cancel();
     engine.pauseEventGrowth(document.hidden);
     this.busy = true;
     this.paging = true;
@@ -176,7 +199,7 @@ class EventTeamAnalysisElement extends LitElement {
     const included = this.boards.filter((board) => board.status === "included");
     void engine.analyzeEventGrowth({
       eventId: Number(this.options.event.id), asOf: this.asOf, sources: growthSources,
-      primaryChallengeId, rankRange: this.rankRange,
+      primaryChallengeId, rankRange: this.rankRange, preferences: this.preferences,
       total: included.find((board) => board.challengeId === 0)?.row,
       observations: included.filter((board) => board.challengeId !== 0).map(({ challengeId, row }) => ({ row, challengeId })),
     }, (result) => {
@@ -186,29 +209,75 @@ class EventTeamAnalysisElement extends LitElement {
       this.busy = false; this.paging = false; this.error = "missingRules";
     });
   }
+  private setRelated(rows: SongRankingRowDto[]) {
+    const ids = new Set(rows.flatMap((row) => row.cards.map((card) => card.memberCardId)
+      .map((id) => id === null ? undefined : this.data?.members[String(id)]?.characterId)
+      .filter((id): id is number => id !== undefined)));
+    const bands = new Map<number, number[]>();
+    for (const id of [...ids].sort((a, b) => a - b)) {
+      const band = this.character(id).band;
+      if (!bands.has(band)) bands.set(band, []);
+      bands.get(band)!.push(id);
+    }
+    this.related = [...bands].sort(([a], [b]) => a - b).map(([band, characters]) => ({ band, characters }));
+  }
+  private edit(key: string, value: string) {
+    if (key === "min") this.draftMin = value;
+    else if (key === "max") this.draftMax = value;
+    else if (key === "vip") this.draftVip = value;
+    else if (key === "defaultCharacter") this.defaultCharacter = value;
+    else if (key === "defaultInstrument") this.defaultInstrument = value;
+    else if (key === "characterRadius") this.characterRadius = value;
+    else if (key === "instrumentRadius") this.instrumentRadius = value;
+    else if (key === "allowGrowth") this.allowGrowth = value === "true";
+    else if (key.startsWith("character-")) this.characterLevels.set(Number(key.slice(10)), value);
+    else if (key.startsWith("instrument-")) this.instrumentLevels.set(Number(key.slice(11)), value);
+    if (!this.dirty) {
+      this.dirty = true;
+      ++this.requestId;
+      if (this.paging) this.engine?.cancel();
+      this.busy = this.paging = false;
+      this.result = undefined;
+      this.expanded = new Set();
+    }
+    this.requestUpdate();
+  }
   private applyRange = (event: SubmitEvent) => {
     event.preventDefault();
-    const fields = new FormData(event.currentTarget as HTMLFormElement);
-    const read = (name: string) => {
-      const value = String(fields.get(name) ?? "").trim().normalize("NFKC");
-      return value === "" ? undefined : /^[0-9]+$/u.test(value) ? Number(value) : NaN;
+    this.invalidFields = new Set();
+    const read = (key: string, raw: string, min: number, max: number, optional = false) => {
+      const text = raw.trim().normalize("NFKC");
+      if (optional && !text) return undefined;
+      const value = /^[0-9]+$/u.test(text) ? Number(text) : NaN;
+      if (!Number.isInteger(value) || value < min || value > max) this.invalidFields.add(key);
+      return value;
     };
-    const min = read("min"), max = read("max");
-    this.rangeError = [min, max].some((value) => value !== undefined && (!Number.isInteger(value) || value > MAX_RANK))
-      || (min ?? 0) > (max ?? MAX_RANK);
+    const min = read("min", this.draftMin, 0, MAX_RANK, true), max = read("max", this.draftMax, 0, MAX_RANK, true);
+    if ((min ?? 0) > (max ?? MAX_RANK)) { this.invalidFields.add("min"); this.invalidFields.add("max"); }
+    const characterRadius = read("characterRadius", this.characterRadius, 0, 50)!;
+    const instrumentRadius = read("instrumentRadius", this.instrumentRadius, 0, 1000)!;
+    read("defaultCharacter", this.defaultCharacter, 10, 1000);
+    read("defaultInstrument", this.defaultInstrument, 40, 1000);
+    const characterLevels = Object.fromEntries(this.related.flatMap((group) => group.characters.map((id) =>
+      [id, read(`character-${id}`, this.characterLevels.get(id) ?? this.defaultCharacter, 10, 1000)!])));
+    const instrumentLevels = Object.fromEntries(this.related.map((group) =>
+      [group.band!, read(`instrument-${group.band}`, this.instrumentLevels.get(group.band!) ?? this.defaultInstrument, 40, 1000)!]));
+    this.rangeError = this.invalidFields.size > 0;
     if (this.rangeError) return;
-    const range = min === undefined && max === undefined ? undefined : { min, max };
-    if (range?.min === this.rankRange?.min && range?.max === this.rankRange?.max) return;
-    this.rankRange = range;
+    this.rankRange = min === undefined && max === undefined ? undefined : { min, max };
+    this.preferences = { vipBonus: this.draftVip === "" ? undefined : Number(this.draftVip), characterLevels, instrumentLevels, characterRadius, instrumentRadius, allowGrowth: this.allowGrowth };
+    this.dirty = false;
     this.calculate();
+    if (matchMedia("(max-width: 599px)").matches)
+      void this.updateComplete.then(() => this.querySelector(".ranking-team-analysis__output")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
-  private clearRange = (event: Event) => {
-    this.draftMin = this.draftMax = "";
-    (event.currentTarget as HTMLButtonElement).form?.reset();
-    this.rangeError = false;
-    if (!this.rankRange) return;
-    this.rankRange = undefined;
-    this.calculate();
+  private clearRange = () => {
+    this.draftMin = this.draftMax = this.draftVip = "";
+    this.defaultCharacter = "18"; this.defaultInstrument = "75";
+    this.characterRadius = "3"; this.instrumentRadius = "10"; this.allowGrowth = false;
+    this.characterLevels.clear(); this.instrumentLevels.clear();
+    this.rangeError = false; this.invalidFields.clear();
+    this.edit("min", "");
   };
   private acceptPage(requestId: number, result: EventTeamSearchPage) {
     if (requestId !== this.requestId || !this.engine || this.lifetime.signal.aborted) return;
@@ -265,30 +334,70 @@ class EventTeamAnalysisElement extends LitElement {
         </ul>
       </div>`;
   }
+  private field(key: string, label: string, value: string, min: number, max: number) {
+    return html`<md-outlined-text-field id=${`${this.coverageId}-${key}`} name=${key} inputmode="numeric"
+      type="number" min=${String(min)} max=${String(max)} step="1" label=${label} title=${label} ?error=${this.invalidFields.has(key)}
+      .value=${live(value)} @input=${(event: Event) => this.edit(key, (event.currentTarget as HTMLInputElement).value)}></md-outlined-text-field>`;
+  }
   private renderControls() {
-    const board = this.primaryChallengeId === undefined ? "" : this.song(this.primaryChallengeId).title;
-    const scope = this.text("rangeScope").replace("{board}", board);
-    const { min, max } = this.rankRange ?? {};
-    const range = min === undefined ? max === undefined ? "" : `≤ ${max}`
-      : max === undefined ? `≥ ${min}` : this.span(min, max);
-    const primaryAvailable = this.boards.some((entry) => entry.challengeId === this.primaryChallengeId && entry.status === "included");
-    return html`<div class="row ranking-team-analysis__controls">
-      ${this.ready && primaryAvailable ? html`<form class="ranking-team-analysis__filter" @submit=${this.applyRange}>
-        <span class="md-label-large ranking-team-analysis__scope" role="status">
-          ${this.rangeError ? this.text("rangeInvalid") : html`
-            <span class="truncate" title=${scope}>${scope}</span>
-            ${range ? html`<span>${range}</span>` : nothing}
-          `}
-        </span>
-        <md-outlined-text-field name="min" inputmode="numeric" label=${this.text("rankMin")} ?error=${this.rangeError}
-          .value=${live(this.draftMin)} @input=${(event: Event) => { this.draftMin = (event.currentTarget as HTMLInputElement).value; }}></md-outlined-text-field>
-        <md-outlined-text-field name="max" inputmode="numeric" label=${this.text("rankMax")} ?error=${this.rangeError}
-          .value=${live(this.draftMax)} @input=${(event: Event) => { this.draftMax = (event.currentTarget as HTMLInputElement).value; }}></md-outlined-text-field>
-        <button class="button button--tonal" type="submit">${this.text("applyRange")}</button>
-        <button class="button button--text" type="button" @click=${this.clearRange}>${this.text("clearRange")}</button>
-      </form>` : nothing}
-      ${this.renderCoverage()}
-    </div>`;
+    const bonuses = [...new Set([0, ...(this.data?.runtimeRules?.tables.vipRankBonuses.rows ?? [])
+      .filter((row) => row.vipBonusType === 7).map((row) => Number(row.value))])].sort((a, b) => a - b);
+    return html`<form class="surface stack ranking-team-analysis__filter" novalidate @submit=${this.applyRange}>
+      <h3 class="detail-section-title">${this.text("expectedGrowth")}</h3>
+      <md-outlined-select label=${this.text("vipBonus")} .value=${this.draftVip}
+        @change=${(event: Event) => this.edit("vip", (event.currentTarget as HTMLInputElement).value)}>
+        <md-select-option value="" ?selected=${this.draftVip === ""}><div slot="headline">${this.text("allBonuses")}</div></md-select-option>
+        ${bonuses.map((bonus) => html`<md-select-option value=${String(bonus)} ?selected=${this.draftVip === String(bonus)}>
+          <div slot="headline">${this.percent.format(bonus / 10000)}</div></md-select-option>`)}
+      </md-outlined-select>
+      <div class="ranking-team-analysis__fields">
+        ${this.field("defaultCharacter", this.text("characterLevel"), this.defaultCharacter, 10, 1000)}
+        ${this.field("defaultInstrument", this.text("instrumentTotal"), this.defaultInstrument, 40, 1000)}
+      </div>
+      <div class="ranking-team-analysis__related stack">
+        ${this.related.map((group) => html`<section class="stack">
+          <h4 class="detail-section-title">${this.band(group.band!)}</h4>
+          ${this.field(`instrument-${group.band}`, this.text("instrumentTotal"), this.instrumentLevels.get(group.band!) ?? this.defaultInstrument, 40, 1000)}
+          <div class="ranking-team-analysis__fields">
+            ${group.characters.map((id) => this.field(`character-${id}`, this.character(id).name,
+              this.characterLevels.get(id) ?? this.defaultCharacter, 10, 1000))}
+          </div>
+        </section>`)}
+      </div>
+      ${accordion({
+        id: `${this.coverageId}-range`, label: this.text("searchRange"), expanded: this.rangeExpanded,
+        onExpandedChange: (expanded) => { this.rangeExpanded = expanded; this.requestUpdate(); },
+        content: html`<div class="stack">
+          <div class="ranking-team-analysis__fields">
+            ${this.field("characterRadius", this.text("characterRadius"), this.characterRadius, 0, 50)}
+            ${this.field("instrumentRadius", this.text("instrumentRadius"), this.instrumentRadius, 0, 1000)}
+          </div>
+          <label class="row row--between">
+            <span>${this.text("allowGrowth")}</span>
+            <md-switch aria-label=${this.text("allowGrowth")} .selected=${this.allowGrowth}
+              @change=${(event: Event) => this.edit("allowGrowth", String((event.currentTarget as HTMLElement & { selected: boolean }).selected))}></md-switch>
+          </label>
+          <span class="md-label-large">${this.text("rankSum")}</span>
+          <div class="ranking-team-analysis__fields">
+            ${this.field("min", this.text("rankMin"), this.draftMin, 0, MAX_RANK)}
+            ${this.field("max", this.text("rankMax"), this.draftMax, 0, MAX_RANK)}
+          </div>
+        </div>`,
+      })}
+      <div class="ranking-team-analysis__validation" role="status">
+        ${this.rangeError ? html`<span>${this.text("rangeInvalid")}</span>
+          ${[...this.invalidFields].map((key) => html`<a href=${`#${this.coverageId}-${key}`} @click=${(event: Event) => {
+            event.preventDefault(); const field = this.querySelector<HTMLElement>(`#${this.coverageId}-${key}`);
+            if (key === "min" || key === "max" || key.endsWith("Radius")) this.rangeExpanded = true;
+            this.requestUpdate(); void this.updateComplete.then(() => field?.focus());
+          }}>${key.startsWith("character-") ? this.character(Number(key.slice(10))).name
+            : key.startsWith("instrument-") ? this.band(Number(key.slice(11)))
+            : this.text(({ min: "rankMin", max: "rankMax", defaultCharacter: "characterLevel", defaultInstrument: "instrumentTotal" } as Record<string, string>)[key] ?? key)}</a>`)}
+        ` : nothing}
+      </div>
+      <button class="button button--full" type="submit" ?disabled=${!this.ready}>${this.text("search")}</button>
+      <button class="button button--text" type="button" @click=${this.clearRange}>${this.text("resetGrowth")}</button>
+    </form>`;
   }
   private failure(key: string) {
     return html`<div class="row row--between ranking-team-analysis__failure">
@@ -429,15 +538,18 @@ class EventTeamAnalysisElement extends LitElement {
         <div class="dialog__surface">
           <header class="dialog__header"><h2 class="row row--between"><span class="truncate" title=${this.options.row.name}>${this.options.row.name}</span>
             <span class="md-label-large ranking-team-analysis__kind">${this.text("title")}</span></h2></header>
-          <div class="dialog__body stack stack--flex">
-            ${this.ready || this.boards.length ? this.renderControls() : nothing}
-            ${!this.ready && !this.error ? loadingState(this.text("reading")) : nothing}
-            ${this.ready && !this.error ? html`
+          <div class="dialog__body ranking-team-analysis__workspace">
+            ${this.renderControls()}
+            <div class="ranking-team-analysis__output stack">
+              <div class="row ranking-team-analysis__controls">${this.renderCoverage()}</div>
               <div class="ranking-team-analysis__result" aria-busy=${this.paging ? "true" : "false"}>
-                ${this.busy ? loadingState(this.text("loading")) : this.renderResult()}
+                ${this.error ? this.failure(this.error)
+                  : !this.ready ? loadingState(this.text("reading"))
+                  : this.busy ? loadingState(this.text("loading"))
+                  : this.result ? this.renderResult()
+                  : html`<span class="md-label-large ranking-team-analysis__status">${this.text("waiting")}</span>`}
               </div>
-            ` : nothing}
-            ${this.error ? this.failure(this.error) : nothing}
+            </div>
           </div>
           <footer class="dialog__actions">
             ${this.result?.rows.length ? html`

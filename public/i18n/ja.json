@@ -1048,7 +1048,17 @@
         "readFailed": "取得失敗",
         "identityMissing": "プレイヤーIDなし",
         "outsideRank": "編成外ランク合計 {range}",
-        "provisional": "暫定"
+        "provisional": "暫定",
+        "allowGrowth": "記録間の育成変化",
+        "expectedGrowth": "予想育成値",
+        "characterLevel": "キャラクターランク",
+        "allBonuses": "すべてのボーナス",
+        "searchRange": "検索範囲",
+        "characterRadius": "キャラランク ±",
+        "instrumentRadius": "楽器合計レベル ±",
+        "search": "検索",
+        "resetGrowth": "リセット",
+        "waiting": "育成値を設定して検索"
       }
     },
     "events": {
