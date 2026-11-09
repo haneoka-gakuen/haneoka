@@ -1418,6 +1418,16 @@
   .tb-order-slot[data-swap] .tb-order-slot__swap {
     display: block;
   }
+  .tb-order .collection-list {
+    overflow-x: auto;
+  }
+  .tb-order .collection-list > li {
+    min-width: max-content;
+  }
+  .tb-order .list-item__headline:has(.tb-order-faces),
+  .tb-order .list-item__supporting:has(.tb-order-faces) {
+    overflow: visible;
+  }
   .tb-order-line {
     display: flex;
     flex-wrap: wrap;
