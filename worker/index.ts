@@ -3758,7 +3758,7 @@ function previewDetailShell(request: Request, shell: Response, route: ResourceRo
     })
     .on('link[rel="canonical"]', {
       element(element) {
-        element.setAttribute("href", CANONICAL_ORIGIN + new URL(request.url).pathname);
+        element.setAttribute("href", siteOrigin(new URL(request.url)) + new URL(request.url).pathname);
       },
     })
     .transform(new Response(shell.body, { status: 200, headers }));
@@ -3913,7 +3913,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     let hostnameWritten = false;
     let structuredData = "";
     response = new HTMLRewriter()
-      .on('link[rel="canonical"], link[rel="alternate"][hreflang]', metadata)
+      .on('link[rel="canonical"]', { element(element) {
+        element.setAttribute("href", siteAssetUrl(element.getAttribute("href")!, origin));
+      } })
+      .on('link[rel="alternate"][hreflang]', metadata)
       .on('meta[property="og:url"]', metadata)
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;

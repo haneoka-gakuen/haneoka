@@ -177,7 +177,7 @@ export async function applySiteSettings(
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-org:visibility-v4-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v1:visibility-v4-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
