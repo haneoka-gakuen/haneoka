@@ -1,7 +1,7 @@
 // L3 — GEB
 // Input: Engine Master and the actual event or Gekiso search request.
 // Output: Conservative event, COMBO, JUST and role-count limits; native integer input checks.
-// Pos: [Map](L2-2.md); pre-submit validation for search constraints.
+// Pos: [Map](L2-2.md); live card limits and pre-submit validation for search constraints.
 // Effects/Dependencies: Pure; uses the same resolved cards and event effects as the engine adapter.
 import type { ConstraintInput, EngineRequest, RewardMetric } from "./engine/api";
 import { resolveBox } from "./engine/box";
@@ -10,13 +10,17 @@ import { memberEventPercent, snapEventPercent, type MemberState } from "./engine
 import { dataRows, type TeamBuilderData } from "./data";
 import type { SnapState } from "./engine/power";
 import type { SkillEffectRow } from "./engine/master";
+import { performer } from "./engine/full/deck";
+import { performerMatches } from "./engine/full/conditions";
 
 export const MAX_GEKISO_COUNT = 2_147_483_647;
 export const validGekisoCount = (value: number, minimum: number) =>
   Number.isSafeInteger(value) && value >= minimum && value <= MAX_GEKISO_COUNT;
 
+type MemberRequirement = { minimum: number; value: (member: MemberState) => number };
+
 function memberUpperBound(members: readonly MemberState[], constraints: ConstraintInput, value: (member: MemberState) => number,
-  requirement?: { minimum: number; value: (member: MemberState) => number }): number | null {
+  requirements: readonly MemberRequirement[] = []): number | null {
   const available = members.filter((member) => !constraints.excludedMembers.includes(member.key));
   const byKey = new Map(available.map((member) => [member.key, member]));
   const bound = constraints.bindings.map(([member]) => member);
@@ -27,10 +31,20 @@ function memberUpperBound(members: readonly MemberState[], constraints: Constrai
   if (fixed.length > 5 || fixed.some((member) => !member)) return null;
   const characters = new Set(fixed.map((member) => member!.card.characterId));
   if (characters.size !== fixed.length) return null;
-  if (requirement) {
-    const width = requirement.minimum + 1;
-    const first = Math.min(requirement.minimum, fixed.reduce((sum, member) => sum + requirement.value(member!), 0));
-    let states = new Map([[fixed.length * width + first, fixed.reduce((sum, member) => sum + value(member!), 0)]]);
+  if (requirements.length) {
+    if (requirements.some(requirement => { const upper = memberUpperBound(members, constraints, requirement.value); return upper !== null && upper < requirement.minimum; })) return null;
+    let width = 1;
+    const dimensions = requirements.map(requirement => {
+      const stride = width;
+      width *= requirement.minimum + 1;
+      return { ...requirement, stride };
+    });
+    const advance = (key: number, member: MemberState) => dimensions.reduce((target, dimension) => {
+      const before = Math.floor(key / dimension.stride) % (dimension.minimum + 1);
+      return target + (Math.min(dimension.minimum, before + dimension.value(member)) - before) * dimension.stride;
+    }, key + width);
+    const initial = fixed.reduce((key, member) => advance(key, member!), 0);
+    let states = new Map([[initial, fixed.reduce((sum, member) => sum + value(member!), 0)]]);
     const groups = new Map<number, MemberState[]>();
     for (const member of available) {
       if (characters.has(member.card.characterId)) continue;
@@ -40,16 +54,15 @@ function memberUpperBound(members: readonly MemberState[], constraints: Constrai
     for (const group of groups.values()) {
       const next = new Map(states);
       for (const [key, amount] of states) {
-        const count = Math.floor(key / width), bonus = key % width;
-        if (count === 5) continue;
+        if (Math.floor(key / width) === 5) continue;
         for (const member of group) {
-          const target = (count + 1) * width + Math.min(requirement.minimum, bonus + requirement.value(member));
+          const target = advance(key, member);
           next.set(target, Math.max(next.get(target) ?? -Infinity, amount + value(member)));
         }
       }
       states = next;
     }
-    return states.get(5 * width + requirement.minimum) ?? null;
+    return states.get(6 * width - 1) ?? null;
   }
   const best = new Map<number, number>();
   for (const member of available) {
@@ -76,32 +89,68 @@ function snapUpperBound(snaps: readonly SnapState[], constraints: ConstraintInpu
       .slice(0, 5 - empty - required.size).reduce((sum, amount) => sum + amount, 0);
 }
 
-export interface GekisoConstraintLimits {
+export interface TeamConstraintLimits {
   combo: number | null;
   justMs: number | null;
   members: [number | null, number | null, number | null];
+  eventBonus: number | null;
+  memberConditionsUnreachable: boolean;
 }
 
-/** Upper limits under fixed cards and the COMBO floor; gates and Snapshot matching are relaxed. */
-export function gekisoConstraintLimits(master: EngineMaster, data: TeamBuilderData, request: EngineRequest): GekisoConstraintLimits {
+/** Card limits respect fixed cards and joint member floors; dynamic skill gates remain relaxed. */
+export function teamConstraintLimits(master: EngineMaster, data: TeamBuilderData, request: EngineRequest): TeamConstraintLimits {
   const { members, snaps, unknown } = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
-  const unavailable: GekisoConstraintLimits = { combo: null, justMs: null, members: [null, null, null] };
+  const unavailable: TeamConstraintLimits = { combo: null, justMs: null, members: [null, null, null], eventBonus: null, memberConditionsUnreachable: false };
   if (unknown.length) return unavailable;
-  const opening = (rows: readonly SkillEffectRow[], level: number) => rows.filter(row => row.level === level && row.type === 12000
-    && row.triggerType === 2 && row.seconds === 0 && !row.cumulativeId && !row.resetGroup && !row.releaseGroup)
-    .reduce((sum, row) => sum + (row.value < 0 ? MAX_GEKISO_COUNT : row.value), 0);
-  const comboValue = (member: MemberState) => {
-    const skill = master.gekisoSkills.get(member.card.gekisoSkillId);
-    return skill && [1, 4].includes(skill.missionType) ? opening(skill.effects, member.growth.gekisoSkillLevel) : 0;
-  };
-  const memberCombo = memberUpperBound(members, request.constraints, comboValue);
   const goal = request.goal;
+  const arena = goal.kind === "gekiso" ? goal.arena : undefined;
+  const sets = new Map<string, number[]>();
+  if ("songs" in goal) for (const song of goal.songs) {
+    const missions = master.songs.get(song.songId)?.gekisoMissions.map((mission, index) =>
+      arena?.missions[index] || request.songRules?.missions[index] || mission) ?? [];
+    if (missions.some(mission => mission === 1 || mission === 4)) sets.set([...missions].sort().join(), missions);
+  }
+  const comboTables = new Map<string, Map<string, number>>();
+  for (const missions of sets.values()) {
+    const values = new Map(members.map(member => {
+      const actor = performer(master, member, null);
+      const group = (id: number) => id === 0 || (master.conditionSets.get(id) ?? []).some(set => set.every(id => {
+        const condition = master.conditions.get(id)!;
+        const value = condition.values[0];
+        if (condition.type === 0) return true;
+        if (condition.type === 5000) return condition.targetIds.some(id => performerMatches(actor, master.targets.get(id)!)) === condition.positive;
+        if (condition.type === 2000) return value !== undefined && (master.live.lifeBase > value) === condition.positive;
+        if (condition.type === 2001) return value !== undefined && (master.live.lifeBase >= value) === condition.positive;
+        if (condition.type === 7005) return condition.positive && value !== undefined && value <= 1;
+        if (condition.type === 7020) {
+          const targets = condition.targetIds.map(id => master.targets.get(id)!).filter(target => target.skillTargetType === 5 && target.gekisouMissionType !== 0);
+          return condition.positive && (!targets.length || targets.some(target => [1, 4].includes(target.gekisouMissionType) && missions.includes(target.gekisouMissionType)));
+        }
+        return false;
+      }));
+      const skill = master.gekisoSkills.get(member.card.gekisoSkillId);
+      const value = skill && [1, 4].includes(skill.missionType) ? Math.max(0, skill.effects.filter(row =>
+        row.level === member.growth.gekisoSkillLevel && row.type === 12000 && row.triggerType === 2 && row.seconds === 0 &&
+        !row.cumulativeId && !row.resetGroup && !row.releaseGroup && group(row.triggerGroup) && group(row.conditionGroup))
+        .reduce((sum, row) => sum + row.value, 0)) : 0;
+      return [member.key, value] as const;
+    }));
+    comboTables.set(JSON.stringify([...values.values()]), values);
+  }
+  const comboValues = [...comboTables.values()].map(values => (member: MemberState) => values.get(member.key)!);
+  const roleValue = (role: number) => (member: MemberState) => {
+    const mission = master.gekisoSkills.get(member.card.gekisoSkillId)?.missionType;
+    return Number(mission === role + 1 || mission === 4);
+  };
+  const minimums = request.constraints.minMissionMembers ?? [0, 0, 0];
+  const roles = minimums.flatMap((minimum, role) => Number.isInteger(minimum) && minimum > 0 && minimum <= 5
+    ? [{ minimum, value: roleValue(role), role }] : []);
+  const maxima = comboValues.map(value => memberUpperBound(members, request.constraints, value, roles) ?? memberUpperBound(members, request.constraints, value));
+  const memberCombo = maxima.some(value => value === null) ? null : Math.min(...maxima as number[]);
   const minimum = goal.kind === "gekiso" ? goal.minComboBonus : goal.kind === "event" ? goal.gekiso?.minComboBonus : undefined;
-  const snapCombo = snapUpperBound(snaps, request.constraints, snap => snap.card.gekisoSupportSkillIds.reduce((sum, id, index) =>
-    sum + opening(master.gekisoSupportSkills.get(id)?.effects ?? [], snap.gekisoSkillLevels[index]!), 0));
-  const memberMinimum = minimum === undefined || snapCombo === null ? 0 : Math.max(0, minimum - 1 - snapCombo);
-  const requirement = minimum !== undefined && validGekisoCount(minimum, 1) && memberMinimum > 0
-    && memberCombo !== null && memberCombo >= memberMinimum ? { minimum: memberMinimum, value: comboValue } : undefined;
+  const comboRequirements = minimum !== undefined && validGekisoCount(minimum, 1) && minimum > 1
+    ? comboValues.map(value => ({ minimum: minimum - 1, value })) : [];
+  const requirements = [...roles, ...comboRequirements];
   const timings = dataRows(data.liveTools.judgementTiming).filter(row => Number(row.assistLevel) === 0 && Number(row.noteJudgementType) === 1);
   const window = timings.find(row => Number(row.noteSimulateJudgement) === 6);
   const miss = timings.find(row => Number(row.noteSimulateJudgement) === 1);
@@ -109,64 +158,66 @@ export function gekisoConstraintLimits(master: EngineMaster, data: TeamBuilderDa
   if (window && miss) {
     const base = Math.min(Number(window.beforeMs), Number(window.afterMs));
     const cap = Math.min(Number(miss.beforeMs), Number(miss.afterMs));
-    const extra = (rows: readonly SkillEffectRow[], level: number) => rows.filter(row => row.level === level && row.type === 4004)
+    const possible = (group: number, actor: ReturnType<typeof performer>) => group === 0 ||
+      (master.conditionSets.get(group) ?? []).some(set => set.every(id => {
+        const condition = master.conditions.get(id)!;
+        return condition.type !== 5000 || condition.targetIds.some(id => performerMatches(actor, master.targets.get(id)!)) === condition.positive;
+      }));
+    const extra = (rows: readonly SkillEffectRow[], level: number, actor: ReturnType<typeof performer>) => rows.filter(row =>
+      row.level === level && row.type === 4004 && possible(row.conditionGroup, actor) && possible(row.triggerGroup, actor))
       .reduce((sum, row) => {
         if (row.cumulativeId || row.executeLimit || row.limitCount || row.maxValue || row.resetGroup || row.releaseGroup) return cap;
         return sum + Math.max(0, Math.ceil(Math.fround(Math.fround(row.value / 10000) * base)));
       }, 0);
-    const memberJust = memberUpperBound(members, request.constraints, member =>
-      extra(master.gekisoSkills.get(member.card.gekisoSkillId)?.effects ?? [], member.growth.gekisoSkillLevel) +
-      extra(master.liveSkills.get(member.card.liveSkillId) ?? [], member.growth.liveSkillLevel), requirement);
-    const snapJust = snapUpperBound(snaps, request.constraints, snap =>
-      snap.card.gekisoSupportSkillIds.reduce((sum, id, index) => sum + extra(master.gekisoSupportSkills.get(id)?.effects ?? [], snap.gekisoSkillLevels[index]!), 0) +
-      snap.card.supportSkillIds.reduce((sum, id, index) => sum + extra(master.supportSkills.get(id) ?? [], snap.skillLevels[index]!), 0));
+    const justValue = (member: MemberState) => {
+      const actor = performer(master, member, null);
+      return extra(master.gekisoSkills.get(member.card.gekisoSkillId)?.effects ?? [], member.growth.gekisoSkillLevel, actor) +
+        extra(master.liveSkills.get(member.card.liveSkillId) ?? [], member.growth.liveSkillLevel, actor);
+    };
+    const memberJust = memberUpperBound(members, request.constraints, justValue, requirements) ?? memberUpperBound(members, request.constraints, justValue);
+    const fixedSnaps = new Map(request.constraints.bindings.flatMap(([member, snap]) => snap === null ? [] : [[snap, member] as const]));
+    const fixedMembers = new Set(request.constraints.bindings.map(([member]) => member));
+    const requiredMembers = new Set([...request.constraints.requiredMembers, ...fixedMembers,
+      ...(request.constraints.leader === null ? [] : [request.constraints.leader])]);
+    const fixedCharacters = new Set(members.filter(member => requiredMembers.has(member.key)).map(member => member.card.characterId));
+    const owners = members.filter(member => !request.constraints.excludedMembers.includes(member.key) &&
+      (requiredMembers.has(member.key) || requiredMembers.size < 5 && !fixedCharacters.has(member.card.characterId)));
+    const snapJust = snapUpperBound(snaps, request.constraints, snap => {
+      const bound = fixedSnaps.get(snap.key);
+      return owners.filter(member => bound ? member.key === bound : !fixedMembers.has(member.key)).reduce((maximum, member) => {
+        const actor = performer(master, member, snap);
+        const value = snap.card.gekisoSupportSkillIds.reduce((sum, id, index) => sum +
+          extra(master.gekisoSupportSkills.get(id)?.effects ?? [], snap.gekisoSkillLevels[index]!, actor), 0) +
+          snap.card.supportSkillIds.reduce((sum, id, index) => sum + extra(master.supportSkills.get(id) ?? [], snap.skillLevels[index]!, actor), 0);
+        return Math.max(maximum, value);
+      }, 0);
+    });
     if (memberJust !== null && snapJust !== null) justMs = Math.min(cap, base + memberJust + snapJust);
   }
   return {
-    combo: memberCombo === null || snapCombo === null || memberCombo + snapCombo >= MAX_GEKISO_COUNT ? null : 1 + memberCombo + snapCombo,
+    combo: memberCombo === null || !Number.isFinite(memberCombo) ? null : 1 + memberCombo,
     justMs,
-    members: [1, 2, 3].map(role => memberUpperBound(members, request.constraints, member => {
-      const mission = master.gekisoSkills.get(member.card.gekisoSkillId)?.missionType;
-      return Number(mission === role || mission === 4);
-    }, requirement)) as GekisoConstraintLimits["members"],
+    members: [0, 1, 2].map(role => memberUpperBound(members, request.constraints, roleValue(role),
+      [...roles.filter(requirement => requirement.role !== role), ...comboRequirements]) ??
+      memberUpperBound(members, request.constraints, roleValue(role), roles.filter(requirement => requirement.role !== role)) ??
+      memberUpperBound(members, request.constraints, roleValue(role))) as TeamConstraintLimits["members"],
+    eventBonus: eventBonusUpperBound(master, request, members, snaps),
+    memberConditionsUnreachable: requirements.length > 0 && memberUpperBound(members, request.constraints, () => 0, requirements) === null,
   };
 }
 
-/** False means either the floor may be reachable or this request cannot be checked here. */
-export function minimumEventBonusUnreachable(master: EngineMaster, request: EngineRequest): boolean {
+function eventBonusUpperBound(master: EngineMaster, request: EngineRequest, members: readonly MemberState[], snaps: readonly SnapState[]): number | null {
   const { goal, constraints } = request;
-  const minimum = constraints.minBonusPercent;
-  if (goal.kind !== "event" || minimum === null || !Number.isFinite(minimum) || minimum <= 0) return false;
-  if (!goal.rewardPlan && goal.measure === "challenge-points") return false;
+  if (goal.kind !== "event" || !goal.rewardPlan && goal.measure === "challenge-points") return null;
   const metric: RewardMetric = goal.rewardPlan
     ? goal.rewardPlan.levels.flat().find((term) => term.metric !== "challenge-points")?.metric ?? "points"
     : goal.measure;
   const effects = goal.eventEffects ?? master.events.get(goal.eventId)?.effects;
-  if (!effects) return false;
-  const { members, snaps, unknown } = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
-  if (unknown.length) return false;
-  const excludedSnaps = new Set(constraints.excludedSnaps);
-  const availableSnaps = snaps.filter((snap) => !excludedSnaps.has(snap.key));
-  const snapByKey = new Map(availableSnaps.map((snap) => [snap.key, snap]));
-  if (snapByKey.size !== availableSnaps.length) return false;
+  if (!effects) return null;
   const bonusType = metric === "items" ? 1 : 0;
-  const memberUpper = memberUpperBound(members, constraints, (member) => Math.max(0, memberEventPercent(effects, member, bonusType)));
-  if (memberUpper === null) return false;
-
-  const boundSnaps = constraints.bindings.flatMap(([, snap]) => snap === null ? [] : [snap]);
-  if (new Set(boundSnaps).size !== boundSnaps.length) return false;
-  const requiredSnaps = new Set([...constraints.requiredSnaps, ...boundSnaps]);
-  const emptySlots = constraints.bindings.length - boundSnaps.length;
-  if ((constraints.noSnaps && requiredSnaps.size) || requiredSnaps.size > 5 - emptySlots ||
-      [...requiredSnaps].some((key) => !snapByKey.has(key))) return false;
-  let snapUpper = 0;
-  if (!constraints.noSnaps) {
-    const snapBonus = (snap: (typeof snaps)[number]) => Math.max(0, snapEventPercent(effects, snap, bonusType));
-    snapUpper = [...requiredSnaps].reduce((sum, key) => sum + snapBonus(snapByKey.get(key)!), 0) +
-      availableSnaps.filter((snap) => !requiredSnaps.has(snap.key)).map(snapBonus)
-        .sort((a, b) => b - a).slice(0, 5 - emptySlots - requiredSnaps.size).reduce((sum, bonus) => sum + bonus, 0);
-  }
-  return memberUpper + snapUpper < Math.floor(minimum * 100 + 0.5);
+  const memberUpper = memberUpperBound(members, constraints, member => Math.max(0, memberEventPercent(effects, member, bonusType)));
+  const snapUpper = snapUpperBound(snaps, constraints, snap => Math.max(0, snapEventPercent(effects, snap, bonusType)));
+  return memberUpper === null || snapUpper === null ? null : (memberUpper + snapUpper) / 100;
 }
 
 export function missionMemberCounts(master: EngineMaster, cardIds: readonly number[]): [number, number, number] {
@@ -177,59 +228,4 @@ export function missionMemberCounts(master: EngineMaster, cardIds: readonly numb
     for (let role = 0; role < 3; role++) if (type === role + 1 || type === 4) counts[role]!++;
   }
   return counts;
-}
-
-export function minimumMissionMembersUnreachable(master: EngineMaster, request: EngineRequest): boolean {
-  const minimum = request.constraints.minMissionMembers;
-  if (!minimum?.some(Boolean) || !minimum.every((value) => Number.isInteger(value) && value >= 0 && value <= 5)
-    || minimum.reduce((sum, count) => sum + count, 0) > 5)
-    return false;
-  const { members, unknown } = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
-  if (unknown.length) return false;
-  const available = members.filter((member) => !request.constraints.excludedMembers.includes(member.key));
-  if (new Set(available.map(member => member.card.characterId)).size < 5) return false;
-  const byKey = new Map(available.map((member) => [member.key, member]));
-  const fixed = [
-    ...new Set([
-      ...request.constraints.requiredMembers,
-      ...request.constraints.bindings.map(([member]) => member),
-      ...(request.constraints.leader === null ? [] : [request.constraints.leader]),
-    ]),
-  ].map((key) => byKey.get(key));
-  if (fixed.length > 5 || fixed.some((member) => !member)) return false;
-  const characters = new Set(fixed.map((member) => member!.card.characterId));
-  if (characters.size !== fixed.length) return false;
-  const counts = missionMemberCounts(
-    master,
-    fixed.map((member) => member!.card.id),
-  );
-  const groups = new Map<number, Set<number>>();
-  for (const member of available) {
-    if (characters.has(member.card.characterId)) continue;
-    const type = master.gekisoSkills.get(member.card.gekisoSkillId)?.missionType ?? 0;
-    const mask = type === 4 ? 7 : type >= 1 && type <= 3 ? 1 << (type - 1) : 0;
-    const choices = groups.get(member.card.characterId) ?? new Set<number>();
-    choices.add(mask);
-    groups.set(member.card.characterId, choices);
-  }
-  const pack = (slots: number, values: readonly number[]) =>
-    values.reduce((key, value, role) => key * 6 + Math.min(minimum[role]!, value), slots);
-  let states = new Set([pack(fixed.length, counts)]);
-  for (const choices of groups.values()) {
-    const next = new Set(states);
-    for (const key of states) {
-      const values = [Math.floor(key / 36) % 6, Math.floor(key / 6) % 6, key % 6];
-      const slots = Math.floor(key / 216);
-      if (slots >= 5) continue;
-      for (const mask of choices)
-        next.add(
-          pack(
-            slots + 1,
-            values.map((value, role) => value + Number((mask & (1 << role)) !== 0)),
-          ),
-        );
-    }
-    states = next;
-  }
-  return !states.has(pack(5, minimum));
 }

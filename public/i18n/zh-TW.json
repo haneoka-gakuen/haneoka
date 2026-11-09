@@ -2771,6 +2771,8 @@
       "minBonus": "最低活動加成（%）",
       "minBonusUnreachable": "最低活動加成無法達到",
       "minComboUnreachable": "開段 COMBO BONUS 無法達到此下限",
+      "invalidBonus": "請輸入 0 或正數的活動加成",
+      "fixConditions": "調整 {count} 項條件",
       "constraintUpperBound": "上限：{value}",
       "minJustWindowUnreachable": "無法達到最低 JUST 判定範圍",
       "conditionsUnreachable": "這些條件無法同時滿足",

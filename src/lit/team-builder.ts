@@ -5,7 +5,8 @@
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
 import { compileRewardPlan, effectiveRewardPlan, legacyRewardPlan } from "../lib/team-builder/reward-plan";
 import { resolveManualEvent } from "../lib/team-builder/manual-event";
-import { MAX_GEKISO_COUNT, gekisoConstraintLimits, minimumEventBonusUnreachable, minimumMissionMembersUnreachable, validGekisoCount, type GekisoConstraintLimits } from "../lib/team-builder/constraint-feasibility";
+import { MAX_GEKISO_COUNT, teamConstraintLimits, validGekisoCount, type TeamConstraintLimits } from "../lib/team-builder/constraint-feasibility";
+import { ptFieldInvalid } from "./team-builder/pt-fields";
 import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
@@ -552,9 +553,11 @@ export class TeamBuilder extends LitElement {
         }, 6000);
     }
     const invalidFields = new Set(this.submitted ? this.inputIssues().flatMap((issue) => issue.fields ?? [issue.field]) : []);
+    if (this.tab === "pt" && ptFieldInvalid(this, "minBonus")) invalidFields.add("tb-min-bonus");
     for (const field of this.querySelectorAll<HTMLElement>("[data-tb-field]")) {
       field.toggleAttribute("data-invalid", invalidFields.has(field.id));
-      field.ariaInvalid = invalidFields.has(field.id) ? "true" : null;
+      const invalid = invalidFields.has(field.id) ? "true" : null;
+      if (field.ariaInvalid !== invalid) field.ariaInvalid = invalid;
     }
     this.pt.markFields();
     this.songComparison.markFields();
@@ -1082,19 +1085,38 @@ export class TeamBuilder extends LitElement {
     if (reason === "just-window-random") return this.t("justWindowRandom", "Window targets are unavailable for this random skill");
     return reason;
   }
-  private limitsCache: { master: EngineMaster; key: string; value: GekisoConstraintLimits } | null = null;
-  constraintLimits(): GekisoConstraintLimits | null {
+  override requestUpdate(...args: Parameters<LitElement["requestUpdate"]>) {
+    this.issuesUpdate = null;
+    this.limitsUpdate = null;
+    super.requestUpdate(...args);
+  }
+  private issuesUpdate: Promise<boolean> | null = null;
+  private readonly issuesCache = new Map<boolean, { field: string; fields?: string[]; validation?: boolean; message: string }[]>();
+  private limitsUpdate: Promise<boolean> | null = null;
+  private limitsValue: TeamConstraintLimits | null = null;
+  private limitsCache: { master: EngineMaster; key: string; value: TeamConstraintLimits } | null = null;
+  constraintLimits(): TeamConstraintLimits | null {
+    const update = this.updateComplete;
+    if (this.limitsUpdate === update) return this.limitsValue;
+    this.limitsUpdate = update;
+    this.limitsValue = null;
     if (!this.master || !this.data) return null;
-    const request = this.tab === "pt" && this.searchSettings.rewardMode === "recommendation" ? this.pt.request() : this.request();
+    const settings = this.searchSettings;
+    const request = this.tab === "pt" && settings.rewardMode === "recommendation" ? this.pt.request()
+      : this.request() ?? (settings.goal === "gekiso" ? this.request({ ...this.gekisoGoal(settings), ...(settings.arena ? { arena: settings.arena } : {}) }) : null);
     if (!request) return null;
-    const { minMissionMembers: _roles, minBonusPercent: _bonus, ...constraints } = request.constraints;
+    const { minBonusPercent: _bonus, ...constraints } = request.constraints;
     const minimumCombo = request.goal.kind === "gekiso" ? request.goal.minComboBonus : request.goal.kind === "event" ? request.goal.gekiso?.minComboBonus : undefined;
-    const key = JSON.stringify([request.members, request.snaps, request.unknownPolicy, constraints, minimumCombo]);
+    const key = JSON.stringify([request.members, request.snaps, request.unknownPolicy, constraints, minimumCombo, "songs" in request.goal ? request.goal.songs : null, request.songRules, request.goal.kind === "gekiso" ? request.goal.arena?.missions : null, request.goal.kind === "event" ? [request.goal.eventId, request.goal.eventEffects, request.goal.measure, request.goal.rewardPlan] : null]);
     if (this.limitsCache?.master !== this.master || this.limitsCache.key !== key)
-      this.limitsCache = { master: this.master, key, value: gekisoConstraintLimits(this.master, this.data, request) };
-    return this.limitsCache.value;
+      this.limitsCache = { master: this.master, key, value: teamConstraintLimits(this.master, this.data, request) };
+    return this.limitsValue = this.limitsCache.value;
   }
   inputIssues(recommendation = false): { field: string; fields?: string[]; validation?: boolean; message: string }[] {
+    const update = this.updateComplete;
+    if (this.issuesUpdate !== update) { this.issuesUpdate = update; this.issuesCache.clear(); }
+    const cached = this.issuesCache.get(recommendation);
+    if (cached) return cached;
     const s = this.searchSettings,
       issues: { field: string; fields?: string[]; validation?: boolean; message: string }[] = [];
     const add = (field: string, key: string, fallback: string, validation = false) =>
@@ -1170,11 +1192,13 @@ export class TeamBuilder extends LitElement {
       add("tb-reward-plan", "rewardPlan.invalidRate", "Enter conversion rates and challenge charts");
     const gekiso = s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live");
     if (gekiso && this.hasMission("JustCount", s.songs) && (!validJustWindowInput(s) || !Number.isFinite(s.justWindowMs)))
-      add("tb-just-window", "justWindowInvalid", "Enter zero or a positive window value");
+      add("tb-just-window", "justWindowInvalid", "Enter zero or a positive window value", true);
     if (s.goal === "gekiso" && !s.minMissionMembers.every(value => Number.isInteger(value) && value >= 0 && value <= 5))
-      add("tb-mission-members", "invalidMissionMembers", "Enter a member count from 0 to 5");
+      add("tb-mission-members", "invalidMissionMembers", "Enter a member count from 0 to 5", true);
     else if (s.goal === "gekiso" && s.minMissionMembers.reduce((sum, count) => sum + count, 0) > 5)
-      add("tb-mission-members", "missionMemberTotalTooHigh", "Member minimums must add up to 5 or less");
+      add("tb-mission-members", "missionMemberTotalTooHigh", "Member minimums must add up to 5 or less", true);
+    if (s.goal === "event" && s.minBonus !== null && (!Number.isFinite(s.minBonus) || s.minBonus < 0))
+      add("tb-min-bonus", "invalidBonus", "Enter zero or a positive event bonus", true);
     if (gekiso && !validGekisoCount(s.minComboBonus, 1))
       countIssue("tb-combo", 1);
     if (s.goal === "gekiso" && s.gekisoSamplingMode === "manual" &&
@@ -1225,30 +1249,33 @@ export class TeamBuilder extends LitElement {
     if (this.master && (s.minBonus !== null && s.goal === "event" || gekiso && (s.minComboBonus > 1 || s.justWindowMs > 0) || s.goal === "gekiso" && s.minMissionMembers.some(Boolean))) {
       const request = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.request() : this.request();
       if (request) {
-        const limits = gekiso ? this.constraintLimits() : null;
-        if (minimumMissionMembersUnreachable(this.master, request))
-          add("tb-mission-members", "missionMembersUnreachable", "The selected cards cannot meet these member counts", true);
-        else if (s.minMissionMembers.some((count, role) => limits?.members[role] != null && count > limits.members[role]!))
-          issues.push({ field: "tb-mission-members", fields: ["tb-mission-members", "tb-combo"], validation: true,
+        const limits = this.constraintLimits();
+        const jointMembers = s.goal === "gekiso" && limits?.memberConditionsUnreachable && s.minMissionMembers.some(Boolean);
+        if (jointMembers && !issues.some(issue => issue.field === "tb-mission-members"))
+          issues.push({ field: "tb-mission-members", fields: ["tb-mission-members", ...(s.minComboBonus > 1 ? ["tb-combo"] : [])], validation: true,
             message: this.t("conditionsUnreachable", "These conditions cannot be met together") });
-        if (minimumEventBonusUnreachable(this.master, request))
+        if (s.minBonus !== null && limits?.eventBonus != null && Math.floor(s.minBonus * 100 + 0.5) > Math.round(limits.eventBonus * 100))
           add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached", true);
-        if (gekiso && validGekisoCount(s.minComboBonus, 1) && limits?.combo !== null && limits?.combo !== undefined && s.minComboBonus > limits.combo)
+        if (gekiso && !jointMembers && validGekisoCount(s.minComboBonus, 1) && limits?.combo !== null && limits?.combo !== undefined && s.minComboBonus > limits.combo)
           add("tb-combo", "minComboUnreachable", "Minimum base COMBO BONUS cannot be reached", true);
         if (gekiso && limits?.justMs !== null && limits?.justMs !== undefined && s.justWindowMs > limits.justMs)
           add("tb-just-window", "minJustWindowUnreachable", "Minimum JUST window cannot be reached", true);
       }
     }
-    if (!issues.length && gekiso && this.results?.stopReason === "complete" &&
-      this.results.results.length > 0 && this.results.results.every(result => result.proven && !result.hits.length) && !this.results.overall.length && !this.stale) {
+    const emptyProof = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.noFeasibleTeams
+      : this.results?.stopReason === "complete" && this.results.results.length > 0 &&
+        this.results.results.every(result => result.proven && !result.hits.length) && !this.results.overall.length && !this.stale;
+    if (!issues.length && emptyProof) {
       const fields = [
-        ...(s.minComboBonus > 1 ? ["tb-combo"] : []),
-        ...(s.justWindowMs > 0 ? ["tb-just-window"] : []),
-        ...(s.minMissionMembers.some(Boolean) ? ["tb-mission-members"] : []),
+        ...(gekiso && s.minComboBonus > 1 ? ["tb-combo"] : []),
+        ...(gekiso && s.justWindowMs > 0 ? ["tb-just-window"] : []),
+        ...(s.goal === "gekiso" && s.minMissionMembers.some(Boolean) ? ["tb-mission-members"] : []),
+        ...(s.goal === "event" && s.minBonus !== null ? ["tb-min-bonus"] : []),
         "tb-cards",
       ];
-      issues.push({ field: fields[0]!, fields, message: this.t("conditionsUnreachable", "These conditions cannot be met together") });
+      issues.push({ field: fields[0]!, fields, validation: true, message: this.t("conditionsUnreachable", "These conditions cannot be met together") });
     }
+    this.issuesCache.set(recommendation, issues);
     return issues;
   }
   async focusInput(field: string) {

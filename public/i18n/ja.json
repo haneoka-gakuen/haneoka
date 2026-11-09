@@ -2771,6 +2771,8 @@
       "minBonus": "最低イベントボーナス（%）",
       "minBonusUnreachable": "最低イベントボーナスに届きません",
       "minComboUnreachable": "開始時COMBO BONUSが指定の下限に届きません",
+      "invalidBonus": "イベントボーナスは0以上の数値で入力",
+      "fixConditions": "条件を{count}件修正",
       "constraintUpperBound": "上限：{value}",
       "minJustWindowUnreachable": "指定したJUST判定幅に届きません",
       "conditionsUnreachable": "この条件の組み合わせを満たせません",

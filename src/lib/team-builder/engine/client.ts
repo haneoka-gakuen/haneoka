@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／活动养成分页／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 共享编译后的 WASM 模块和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -26,6 +26,16 @@ const rewardFloor = (hit: EngineHit): RewardFloor => [hit.key, hit.event?.otherM
 /** A detached normal result from a single Worker, before candidate merging and search-proof labels. */
 export interface FinalEngineResult { requestId: string; contextKey: string; response: EngineResponse }
 type FinalResultHandler = (result: FinalEngineResult) => void;
+
+function workerData(data: TeamBuilderData): Uint8Array {
+  const cards = (rows: TeamBuilderData["members"] | TeamBuilderData["snapshots"]) => Object.fromEntries(Object.entries(rows).map(([id, row]) => {
+    const metadata = objectRow(row.catalogMetadata);
+    if (!("resolvedSkills" in metadata)) return [id, row];
+    const { resolvedSkills: _display, ...catalogMetadata } = metadata;
+    return [id, { ...row, catalogMetadata }];
+  }));
+  return new TextEncoder().encode(JSON.stringify({ ...data, members: cards(data.members), snapshots: cards(data.snapshots) }));
+}
 
 /** One engine Worker: compiles the release once, then serves calls. */
 class EngineWorker {
@@ -58,7 +68,7 @@ class EngineWorker {
   }
   private readonly pending = new Map<number, Pending>();
   constructor(
-    private readonly data: string,
+    private readonly data: Uint8Array,
     private readonly charts: EngineChartSources,
     private readonly downloads: EngineCharts,
     private readonly name: string,
@@ -335,7 +345,7 @@ export class EngineClient {
   private readonly downloads: EngineCharts;
   constructor(private readonly data: TeamBuilderData, changed: () => void = () => {}, options: { maxWorkers?: number; apiBase?: string } = {}) {
     this.dataIdentity = JSON.stringify([data.identity, data.crossServer?.identities]);
-    const serialized = JSON.stringify(data);
+    const serialized = workerData(data);
     const charts: EngineChartSources = {};
     for (const song of Object.values(data.songs)) {
       const id = Number(song.musicId);

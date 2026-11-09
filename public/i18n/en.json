@@ -2771,6 +2771,8 @@
       "minBonus": "Minimum event bonus (%)",
       "minBonusUnreachable": "Minimum event bonus cannot be reached",
       "minComboUnreachable": "Opening COMBO BONUS cannot reach this minimum",
+      "invalidBonus": "Enter zero or a positive event bonus",
+      "fixConditions": "Adjust {count} conditions",
       "constraintUpperBound": "Upper limit: {value}",
       "minJustWindowUnreachable": "Minimum JUST window cannot be reached",
       "conditionsUnreachable": "These conditions cannot be met together",

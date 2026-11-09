@@ -2771,6 +2771,8 @@
       "minBonus": "최소 이벤트 보너스 (%)",
       "minBonusUnreachable": "최소 이벤트 보너스에 도달할 수 없습니다",
       "minComboUnreachable": "시작 시 COMBO BONUS가 지정한 하한에 도달하지 못합니다",
+      "invalidBonus": "이벤트 보너스는 0 이상의 수로 입력하세요",
+      "fixConditions": "조건 {count}개 수정",
       "constraintUpperBound": "상한: {value}",
       "minJustWindowUnreachable": "최소 JUST 판정 범위를 충족할 수 없습니다",
       "conditionsUnreachable": "이 조건을 동시에 충족할 수 없습니다",

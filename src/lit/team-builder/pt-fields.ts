@@ -17,14 +17,18 @@ export function issueField(issue: PtIssue): string | null {
   return null;
 }
 
-export function ptField(host: TeamBuilder, key: string, content: TemplateResult): TemplateResult {
-  const invalid = (host.pt.showIssues && host.pt.issues.some((issue) => issueField(issue) === key)) ||
+export function ptFieldInvalid(host: TeamBuilder, key: string): boolean {
+  return (host.pt.showIssues && host.pt.issues.some((issue) => issueField(issue) === key)) ||
     (key === "minBonus" && host.submitted && host.inputIssues().some((issue) => issue.field === "tb-min-bonus"));
+}
+
+export function ptField(host: TeamBuilder, key: string, content: TemplateResult): TemplateResult {
+  const invalid = ptFieldInvalid(host, key);
   return html`
     <div
       id=${key === "minBonus" ? "tb-min-bonus" : nothing}
       ?data-tb-field=${key === "minBonus"}
-      class=${`pt-field${invalid ? " pt-field--invalid" : ""}`}
+      class=${`pt-field${invalid && key !== "minBonus" ? " pt-field--invalid" : ""}`}
       data-pt-field=${key}
       tabindex="-1"
       role="group"

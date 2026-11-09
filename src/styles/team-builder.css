@@ -777,7 +777,7 @@
     outline: 2px solid var(--md-sys-color-primary);
     border-radius: var(--md-sys-shape-corner-extra-small);
   }
-  .team-builder [data-tb-field][data-invalid],
+  .team-builder [data-tb-field][data-invalid]:not(md-outlined-text-field):not([data-pt-field="minBonus"]),
   .team-builder [data-sc-field][data-invalid] {
     outline: 2px solid var(--md-sys-color-error);
     outline-offset: 2px;

@@ -25,7 +25,7 @@ import { renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
 import { farmingConditions, missionSummary, parseOpponents } from "./workspace-state";
-import { ptField } from "./pt-fields";
+import { ptField, ptFieldInvalid } from "./pt-fields";
 import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/constraint-feasibility";
 
 const GOALS = [
@@ -117,7 +117,7 @@ export function missionMembersControl(host: TeamBuilder): TemplateResult {
       return html`<div class="stack stack--tight">
         <div class="row row--between">
           <span class="tb-field__label">${label}</span>
-          <span class="cluster"><span class="tb-results__meta tabular">${host.t("constraintUpperBound", "Upper limit: {value}", { value: limits?.members[index] ?? "—" })}</span><button class="button button--text" type="button" data-tb-role-reset ?disabled=${s.minMissionMembers[index] === 0}
+          <span class="cluster"><span class="tb-results__meta tabular">${host.t("constraintUpperBound", "Upper limit: {value}", { value: limits?.members[index] == null ? "—" : Math.min(limits.members[index]!, 5 - total + s.minMissionMembers[index]) })}</span><button class="button button--text" type="button" data-tb-role-reset ?disabled=${s.minMissionMembers[index] === 0}
             aria-label=${`${label} / ${host.t("unlimitedCombo", "No minimum")}`} @click=${() => set(index, 0)}>${host.t("unlimitedCombo", "No minimum")}</button>
           </span>
         </div>
@@ -692,13 +692,14 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
                   <md-outlined-text-field
                     type="number"
                     min="0"
+                    supporting-text=${host.t("constraintUpperBound", "Upper limit: {value}", { value: host.constraintLimits()?.eventBonus == null ? "—" : `${host.constraintLimits()!.eventBonus}%` })}
                     step="5"
-                    .error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-min-bonus")}
+                    .error=${ptFieldInvalid(host, "minBonus")}
                     label=${host.t("minBonus", "Minimum event bonus (%)")}
                     .value=${live(s.minBonus === null ? "" : String(s.minBonus))}
                     @change=${(e: Event) => {
                       const raw = (e.target as HTMLInputElement).value;
-                      set({ minBonus: raw === "" ? null : Math.max(0, Number(raw)) });
+                      set({ minBonus: raw === "" ? null : Number(raw) });
                     }}
                   ></md-outlined-text-field>
                 `,
@@ -1122,21 +1123,6 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
           : nothing
       }
       ${
-        host.submitted && host.inputIssues().length
-          ? html`
-              <div class="surface stack" role="alert">
-                ${host.inputIssues().map(
-                  (issue) => html`
-                    <button class="button button--text" @click=${() => host.focusInput(issue.field)}>
-                      ${issue.message}
-                    </button>
-                  `,
-                )}
-              </div>
-            `
-          : nothing
-      }
-      ${
         host.hasTaskResults
           ? html`
               <button
@@ -1175,6 +1161,8 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
                 ${
                   host.running
                     ? host.t("sc.busy", "Another calculation is running")
+                    : host.submitted && host.inputIssues().length
+                      ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues().length })
                     : resumable
                       ? host.t("continueOptimal", "Continue verifying optimality")
                       : host.stale

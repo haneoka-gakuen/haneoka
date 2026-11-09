@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 // L3 — GEB
-// Input: EngineCall、已序列化 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
+// Input: EngineCall、UTF-8 或字符串序列化的 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
 // Output: EngineReply、进度、快照、活动养成分页更新、计算结果或错误；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开进度只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
 // Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
@@ -33,7 +33,7 @@ const post = (reply: EngineReply) => (self as unknown as DedicatedWorkerGlobalSc
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 let activeId = 0;
-let data: string | null = null;
+let data: string | Uint8Array | null = null;
 let chartSources: EngineChartSources = {};
 let engine: Exports | null = null;
 let compiled: WebAssembly.Module | null = null;
@@ -83,9 +83,9 @@ async function instantiate() {
   engine = instance.exports as unknown as Exports;
 }
 /** One engine call; a trapped instance is discarded, so the next call starts a fresh one. */
-async function invoke(input: Doc | string, stream = false): Promise<Doc> {
+async function invoke(input: Doc | string | Uint8Array, stream = false): Promise<Doc> {
   const e = engine!;
-  const bytes = encoder.encode(typeof input === "string" ? input : JSON.stringify(input));
+  const bytes = input instanceof Uint8Array ? input : encoder.encode(typeof input === "string" ? input : JSON.stringify(input));
   const pointer = e.haneoka_buffer_alloc(bytes.length + 1);
   const target = new Uint8Array(e.memory.buffer, pointer, bytes.length + 1);
   target.set(bytes);
@@ -115,7 +115,12 @@ async function invoke(input: Doc | string, stream = false): Promise<Doc> {
 async function ready() {
   if (!engine) await instantiate();
   if (!handle) {
-    handle = Number((await invoke(`{"op":"create","data":${data},"trustedScores":true}`)).handle);
+    const source = typeof data === "string" ? encoder.encode(data) : data!;
+    const prefix = encoder.encode('{"op":"create","data":');
+    const suffix = encoder.encode(',"trustedScores":true}');
+    const input = new Uint8Array(prefix.length + source.length + suffix.length);
+    input.set(prefix); input.set(source, prefix.length); input.set(suffix, prefix.length + source.length);
+    handle = Number((await invoke(input)).handle);
     cached = [];
   }
 }

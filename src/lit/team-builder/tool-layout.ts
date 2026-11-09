@@ -68,7 +68,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
       <span class="list-item__leading tb-check-row__mark" aria-hidden="true">${done ? icon("check", 20) : index}</span>
       <span class="list-item__body">
         <strong class="list-item__headline">${title}</strong>
-        <span class="list-item__supporting">${supporting}</span>
+        ${supporting ? html`<span class="list-item__supporting">${supporting}</span>` : nothing}
       </span>
       ${action
         ? html`<span class="list-item__trailing"><button class=${`button ${action.primary ? "button--tonal" : "button--text"}`} type="button" @click=${action.run}>${action.label}</button></span>`
@@ -76,7 +76,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
     </li>
   `;
   return html`
-    <section class="surface tb-results tb-checklist">
+    <section class="surface tb-results tb-checklist" role=${host.submitted && issues.length ? "alert" : nothing}>
       <h2 class="detail-section-title detail-section-title--h2">
         <span class="detail-section-title__icon" aria-hidden="true">${icon("checklist", 18)}</span>
         <span class="detail-section-title__label">${host.t("stepsLabel", "Steps")}</span>
@@ -95,7 +95,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
         )}
         ${rest.length
           ? rest.map((issue, index) =>
-              row(false, index + 2, issue.message, host.t("stepRequired", "Required"), {
+              row(false, index + 2, issue.message, issue.validation ? "" : host.t("stepRequired", "Required"), {
                 label: host.t("pt.fixInput", "Edit"),
                 run: async () => {
                   await host.focusInput(issue.field);
@@ -115,6 +115,8 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
 export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown) {
   const settings = () => typeof body === "function" ? body() : body;
   const summary = conditionSummary(host);
+  const issues = host.submitted && (host.tab === "arena" || host.tab === "pt" || host.tab === "build" && host.buildMode !== "manual")
+    ? host.inputIssues(host.tab === "pt" && host.searchSettings.rewardMode === "recommendation") : [];
   const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
   const footer = html`
     <div class="tb-operation">${actions}${host.renderCompareTray()}</div>
@@ -162,7 +164,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
               </aside>
             `
       }
-      <div class="tb-results-column" id="tb-progress" tabindex="-1">${results}</div>
+      <div class="tb-results-column" id="tb-progress" tabindex="-1">${issues.length ? renderChecklist(host, issues) : results}</div>
       ${
         host.compactConditions && !host.conditionsOpen
           ? html`

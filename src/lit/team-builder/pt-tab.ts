@@ -42,7 +42,7 @@ import { boostControl } from "./boost-control";
 import { rovingKeydown, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { accordion } from "../ui/accordion";
-import { issueField, ptField } from "./pt-fields";
+import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
 import { farmingConditions, farmingMode, farmingSettings, resolveLuckSamples } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
 import { usesPtResults } from "./score-goal";
@@ -105,11 +105,13 @@ export class PtController {
   }
   markFields() {
     for (const field of this.host.querySelectorAll<HTMLElement>("[data-pt-field]")) {
-      const invalid = field.classList.contains("pt-field--invalid");
+      const invalid = ptFieldInvalid(this.host, field.dataset.ptField!);
       for (const control of field.querySelectorAll<HTMLElement>(
         "input, md-outlined-text-field, md-outlined-select, md-checkbox",
-      ))
-        control.ariaInvalid = invalid ? "true" : null;
+      )) {
+        const value = invalid || control.closest("[data-tb-field][data-invalid]") ? "true" : null;
+        if (control.ariaInvalid !== value) control.ariaInvalid = value;
+      }
     }
   }
   private signature = "";
@@ -227,6 +229,11 @@ export class PtController {
         this.issues = [...new Map(this.issues.map((issue) => [`${issue.code}:${issue.target}`, issue])).values()];
       }
     }
+  }
+  get noFeasibleTeams(): boolean {
+    if (!this.job || this.stale) return false;
+    const tasks = this.job.tasks.filter(task => task.route === "live");
+    return tasks.length > 0 && tasks.every(task => task.status === "empty" && task.result?.proven && !task.result.hits.length);
   }
   get stale() {
     return (
@@ -759,21 +766,6 @@ function renderRun(host: TeamBuilder): TemplateResult {
           : nothing
       }
       ${
-        host.submitted && host.inputIssues(true).length
-          ? html`
-              <div role="alert">
-                ${host.inputIssues(true).map(
-                  (issue) => html`
-                    <button class="button button--text" @click=${() => host.focusInput(issue.field)}>
-                      ${issue.message}
-                    </button>
-                  `,
-                )}
-              </div>
-            `
-          : nothing
-      }
-      ${
         host.hasTaskResults
           ? html`
               <button
@@ -799,7 +791,7 @@ function renderRun(host: TeamBuilder): TemplateResult {
                 ?disabled=${blocked}
                 @click=${() => void pt.start(resume)}
               >
-                ${icon("search", 20)}${resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
+                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
               </button>
             `
       }
