@@ -816,7 +816,8 @@
     color: var(--md-sys-color-on-primary);
     background: var(--md-sys-color-primary);
   }
-  .tb-check-row .list-item__supporting {
+  .tb-check-row :is(.list-item__headline, .list-item__supporting) {
+    white-space: normal;
     overflow-wrap: anywhere;
   }
 
