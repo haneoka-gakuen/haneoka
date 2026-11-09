@@ -2448,8 +2448,8 @@ export class OfficialRankingCollector extends Container<Env> {
               keys.push(...arena.bandIds.map((id) => `arena/${arena.seasonId}/${id}/1/100`));
             if (keys.length) {
               const due = this.ctx.storage.sql.exec<{ due: number | null }>(
-                `SELECT MIN(attempted_at_ms+?) AS due FROM collector_window_cache WHERE window_key IN (${keys.map(() => "?").join(",")})`, WINDOW_REUSE_MS, ...keys).one().due;
-              if (due !== null) state.nextAtMs = Math.min(state.nextAtMs, Math.max(now + 1000, due));
+                `SELECT MAX(attempted_at_ms+?) AS due FROM collector_window_cache WHERE window_key IN (${keys.map(() => "?").join(",")})`, WINDOW_REUSE_MS, ...keys).one().due;
+              if (due !== null) state.nextAtMs = Math.max(state.nextAtMs, due);
             }
           }
           this.ctx.waitUntil(this.runLookup(region));

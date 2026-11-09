@@ -698,7 +698,7 @@ Deploy the batch reader and additive migration before enabling the writer. Keep 
 
 A region, board and aligned rank interval may be read at most once within 300 seconds. The collector host persists admission and the original response in the regional object, shared by regular collection, explicit windows and population probes. Callback retries replay the same receipt. Reused observations retain their original identity and time; a transient probe can be promoted to a stored window without a new game request. An incomplete or failed admission defers that window until expiry while other boards continue. Finals reuse only observations captured after their cutoff. Event point windows also supply the legacy top-point projection from the same request.
 
-Initial window admission respects the last stored observation time during cutover. Regular collection follows the earliest active head-window expiry within the five-minute regional schedule, so an early cache hit does not add another full cycle to that board.
+Initial window admission respects the last stored observation time during cutover. The next regional run waits for all active head windows to reach their 300-second expiry, so a slightly early request cannot turn a five-minute update into a cache-only cycle followed by another five-minute wait.
 
 Unchanged player profiles harvested across boards share a 150-second persistence window. Changed profiles and explicit player lookups persist immediately.
 
