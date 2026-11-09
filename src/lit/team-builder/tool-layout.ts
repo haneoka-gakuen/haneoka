@@ -57,6 +57,7 @@ export function conditionSummary(host: TeamBuilder) {
 }
 /** What is left before a first calculation: cards, then each missing condition, each with the control that fixes it. */
 export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
+  if (!host.submitted) issues = issues.filter(issue => !issue.validation);
   const pool = host.view ? host.engineCards() : { members: [], snaps: [] };
   const cards = pool.members.length + pool.snaps.length;
   const cardIssue = issues.find((issue) => issue.field === "tb-cards");

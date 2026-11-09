@@ -99,6 +99,7 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
 
 export function missionMembersControl(host: TeamBuilder): TemplateResult {
   const s = host.searchSettings;
+  const limits = host.constraintLimits();
   const total = s.minMissionMembers.reduce((sum, count) => sum + count, 0);
   const set = (index: number, value: number) => {
     const counts = [...s.minMissionMembers] as BuildSettings["minMissionMembers"];
@@ -116,14 +117,15 @@ export function missionMembersControl(host: TeamBuilder): TemplateResult {
       return html`<div class="stack stack--tight">
         <div class="row row--between">
           <span class="tb-field__label">${label}</span>
-          <button class="button button--text" type="button" data-tb-role-reset ?disabled=${s.minMissionMembers[index] === 0}
+          <span class="cluster"><span class="tb-results__meta tabular">${host.t("constraintUpperBound", "Upper limit: {value}", { value: limits?.members[index] ?? "—" })}</span><button class="button button--text" type="button" data-tb-role-reset ?disabled=${s.minMissionMembers[index] === 0}
             aria-label=${`${label} / ${host.t("unlimitedCombo", "No minimum")}`} @click=${() => set(index, 0)}>${host.t("unlimitedCombo", "No minimum")}</button>
+          </span>
         </div>
         ${segmented({
           label,
           value: s.minMissionMembers[index] ? String(s.minMissionMembers[index]) : "",
           options: [1, 2, 3, 4, 5].map(value => ({ value: String(value), label: String(value),
-            disabled: value > 5 - total + s.minMissionMembers[index] })),
+            disabled: value > Math.min(limits?.members[index] ?? 5, 5 - total + s.minMissionMembers[index]) })),
           onSelect: value => set(index, Number(value)),
         })}
       </div>`;
@@ -139,6 +141,7 @@ export function gekisoSamplingAdvanced(host: TeamBuilder): TemplateResult | type
 export function comboBonusControl(host: TeamBuilder): TemplateResult | typeof nothing {
   if (!host.hasComboSongs()) return nothing;
   const s = host.searchSettings;
+  const limit = host.constraintLimits()?.combo;
   return html`
     <div class="row">
       <md-outlined-text-field
@@ -154,7 +157,8 @@ export function comboBonusControl(host: TeamBuilder): TemplateResult | typeof no
         prefix-text="×"
         .value=${live(s.minComboBonus === 1 ? "" : String(s.minComboBonus))}
         placeholder=${host.t("unlimitedCombo", "No minimum")}
-        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-combo")}
+        supporting-text=${host.t("constraintUpperBound", "Upper limit: {value}", { value: limit == null ? "—" : `×${limit}` })}
+        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-combo" || issue.fields?.includes("tb-combo"))}
         @change=${(event: Event) => host.updateSettings({ minComboBonus: (event.target as HTMLInputElement).value === "" ? 1 : Number((event.target as HTMLInputElement).value) })}
       ></md-outlined-text-field>
       ${gekisoHelpButton(host, "combo")}
@@ -167,6 +171,9 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
   if (!host.hasMission("JustCount", s.songs)) return nothing;
   const percent = s.justWindowUnit === "percent";
   const value = percent ? s.justWindowPercent : s.justWindowMs;
+  const limit = host.constraintLimits()?.justMs;
+  const base = justBaseWindow(host.data);
+  const upper = limit == null ? "—" : percent && base ? `+${Math.floor((limit / base - 1) * 100)}%` : `±${limit} ms`;
   return html`
     <div class="stack">
       <div class="row row--between">
@@ -205,7 +212,8 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
         suffix-text=${percent ? "%" : "ms"}
         .value=${live(value === 0 ? "" : String(value))}
         placeholder=${host.t("unlimitedCombo", "No minimum")}
-        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-just-window")}
+        supporting-text=${host.t("constraintUpperBound", "Upper limit: {value}", { value: upper })}
+        ?error=${host.submitted && host.inputIssues().some((issue) => issue.field === "tb-just-window" || issue.fields?.includes("tb-just-window"))}
         @change=${(event: Event) =>
         host.updateSettings(
           percent
