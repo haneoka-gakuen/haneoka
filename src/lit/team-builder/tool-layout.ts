@@ -106,7 +106,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
               }),
             )
           : row(true, 2, host.t("conditionsTitle", "Conditions"), conditionSummary(host))}
-        ${row(false, rest.length + 2, host.t("readyToCalculate", "Ready to calculate"), issues.length ? host.t("stepWaiting", "Complete the steps above") : host.t("stepRun", "Start from the settings"))}
+        ${row(false, rest.length + 2, issues.length ? host.t("fixConditions", "Adjust {count} conditions", { count: issues.length }) : host.t("readyToCalculate", "Ready to calculate"), issues.length ? "" : host.t("stepRun", "Start from the settings"))}
       </ol>
     </section>
   `;
