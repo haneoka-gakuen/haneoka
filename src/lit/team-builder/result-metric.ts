@@ -6,7 +6,7 @@
 import type { EngineHit } from "../../lib/team-builder/engine/api";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { SCORE_GOALS, scoreGoal, scoreText } from "./score-goal";
+import { SCORE_GOALS, resultRequest, resultSettings, scoreGoal, scoreText } from "./score-goal";
 
 export interface ResultMetric {
   id: string;
@@ -16,6 +16,20 @@ export interface ResultMetric {
   unit: string;
   relative: boolean;
 }
+export function sampledLuck(host: TeamBuilder, hit: EngineHit): boolean {
+  if (hit.gekiso) return hit.gekiso.sampled;
+  if (hit.aggregate) return hit.aggregate.songs.some(part => sampledLuck(host, part));
+  const request = resultRequest(host, hit);
+  if (!hit.song || !request) return false;
+  const goal = request.goal;
+  const seeds = goal.kind === "gekiso" ? goal.seeds
+    : goal.kind === "event" && hit.event && resultSettings(host, hit).route === "live" ? goal.gekiso?.luckSamples ?? 0 : 0;
+  if (seeds <= 0) return false;
+  const arena = goal.kind === "gekiso" ? goal.arena : undefined;
+  const missions = host.master?.songs.get(hit.song.songId)?.gekisoMissions ?? [];
+  return [0, 1, 2].some(index => (arena?.missions[index] || request.songRules?.missions[index] || missions[index]) === 2);
+}
+
 export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings): ResultMetric {
   const metric = (id: string, label: string, value: number, digits = 0, unit = "", relative = true): ResultMetric => ({
     id,
@@ -30,11 +44,15 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     return metric("potential", host.t("potential", "Potential"), hit.potential.value);
   if ((s.goal === "event" || s.goal === "plan") && hit.event) {
     const event = hit.event;
+    const sampled = !hit.aggregate && sampledLuck(host, hit);
+    const pointsLabel = sampled ? host.t("averagePointsPerPlay", "Average event points per play") : host.t("pointsPerPlay", "Event points per play");
+    const itemsLabel = sampled ? host.t("averageItemsPerPlay", "Average items per play") : host.t("itemsPerPlay", "Items per play");
+    const cpLabel = sampled ? host.t("averageCpPerPlay", "Average challenge points per play") : host.t("cpPerPlay", "Challenge points per play");
     if (event.rewardPlan) {
       const plan = event.rewardPlan, primary = plan.levels[0]![0]!.metric;
       const label = plan.criterion === "max" ? host.t("rewardPlan.max", "Highest reward") : plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
-        : primary === "points" ? host.t("pointsPerPlay", "Event points per play")
-        : primary === "items" ? host.t("rewardPlan.itemsPerPlay", "Badges per play") : host.t("cpPerPlay", "Challenge points per play");
+        : primary === "points" ? pointsLabel
+        : primary === "items" ? (sampled ? itemsLabel : host.t("rewardPlan.itemsPerPlay", "Badges per play")) : cpLabel;
       return metric(`reward-plan:${JSON.stringify(plan)}`, label, event.mean, 4,
         primary === "points" ? "PT" : primary === "challenge-points" ? "CP" : "");
     }
@@ -51,12 +69,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
       );
     }
     const measure = s.goal === "plan" ? "points" : s.measure;
-    const label =
-      measure === "items"
-        ? host.t("itemsPerPlay", "Items per play")
-        : measure === "challenge-points"
-          ? host.t("cpPerPlay", "Challenge points per play")
-          : host.t("pointsPerPlay", "Event points per play");
+    const label = measure === "items" ? itemsLabel : measure === "challenge-points" ? cpLabel : pointsLabel;
     const converted = s.ptCycle && s.route !== "challenge";
     return metric(
       `${measure}:${converted ? "converted" : "direct"}`,

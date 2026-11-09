@@ -971,7 +971,16 @@ export interface Timeline {
   /** Note counts per 500 ms bucket. */
   density: number[];
   fever: (readonly [number, number])[];
-  windows: { member: string; event: number; startMs: number; endMs: number; percent: number; perfectPercent: number; extensionMs: number }[];
+  windows: {
+    member: string;
+    event: number;
+    startMs: number;
+    endMs: number;
+    percent: number;
+    perfectPercent: number;
+    extensionMs: number;
+    lifeBranches?: { minLife: number | null; maxLifeExclusive: number | null; percent: number; perfectPercent: number }[];
+  }[];
   score: number;
   timing?: OrderTiming | null;
 }

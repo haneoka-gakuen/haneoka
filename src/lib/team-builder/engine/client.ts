@@ -282,6 +282,19 @@ const poolSize = () => {
 };
 /** Below this many members a single Worker finishes before the others would compile the release. */
 const PARALLEL_MIN_MEMBERS = 15;
+const SINGLE_WORKER_COMBO_COMBINATIONS = 66;
+
+function smallComboDomain(request: EngineRequest): boolean {
+  if (!request.constraints.noSnaps) return false;
+  const required = new Set(request.constraints.requiredMembers);
+  if (required.size > 5 || [...required].some(key => !request.members.some(member => member.key === key))) return false;
+  const open = 5 - required.size;
+  const available = request.members.length - required.size;
+  if (available < open) return true;
+  let combinations = 1;
+  for (let i = 1; i <= open; i++) combinations = combinations * (available - i + 1) / i;
+  return combinations <= SINGLE_WORKER_COMBO_COMBINATIONS;
+}
 /** How long one Worker tries before a search fans out over the pool. */
 const QUICK_MS = 700;
 /** Leader shards per Worker: enough for the free Workers to even out uneven subtrees. */
@@ -607,8 +620,12 @@ export class EngineClient {
         && request.goal.kind === "event" && (request.goal.gekiso?.luckSamples ?? 0) >= 16 && request.constraints.leader === null;
       const wholeChallenge = request.goal.kind === "event" && !request.goal.gekiso
         && request.goal.route === "challenge" && request.goal.songs.length === 1 && request.k > 1;
+      const comboMean = request.goal.kind === "gekiso" && request.goal.songs.length === 1
+        && request.goal.criterion === "mean" && request.goal.seeds === 0
+        && requestMissions(this.data, request, request.goal.songs[0]!).every(mission => mission === 1);
+      const singleWorkerCombo = comboMean && pool.filter(worker => worker.started).length <= 1 && smallComboDomain(request);
       const parallel = pool.length > 1 && (request.members.length >= PARALLEL_MIN_MEMBERS || parallelSampledReward) && request.goal.kind !== "plan" && !request.seedOnly
-        && !wholeChallenge
+        && !wholeChallenge && !singleWorkerCombo
         && (!wholeReward || parallelSampledReward)
         && !(request.goal.kind === "gekiso" && request.goal.songs.length === 1 && (request.constraints.leader !== null || request.goal.opponents));
       if (!parallel) {
@@ -620,8 +637,6 @@ export class EngineClient {
       if (request.goal.kind === "gekiso" && !request.goal.opponents) {
         const goal = request.goal;
         const deferScores = goal.criterion === "max" && goal.seeds === 0 && request.k > 1;
-        const comboMean = goal.songs.length === 1 && goal.criterion === "mean" && goal.seeds === 0
-          && requestMissions(this.data, request, goal.songs[0]!).every(mission => mission === 1);
         const count = request.constraints.leader ? 1 : pool.length;
         const sampledMax = goal.criterion === "max" && goal.seeds >= 16 && request.k === 1;
         if (sampledMax) this.warm();
