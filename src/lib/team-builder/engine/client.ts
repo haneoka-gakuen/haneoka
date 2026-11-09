@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／活动养成分页／评价／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -127,7 +127,7 @@ class EngineWorker {
     return message.type === "run" && !message.request.noFloor && !message.request.seedOnly
       && message.request.k === 1 && (message.request.shard?.count ?? 1) > 1 && (message.request.goal.kind === "event"
         ? (!!message.request.rewardPhase || message.request.rewardLexicographic === true) && !!message.request.goal.gekiso
-        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (message.request.goal.criterion === "max" && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
+        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
   }
   private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"]): Promise<unknown> {
     const id = this.nextId++;
@@ -476,9 +476,18 @@ export class EngineClient {
     }
     let stopped = false;
     let lastShown = -Infinity;
+    let publishTimer: ReturnType<typeof setTimeout> | undefined;
     const joint = request.aggregation === "mean" || request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared";
     const snapshotInterval = joint ? Math.min(1000, Math.max(100, requestChartSongs(request).length * 20)) : 100;
     let cpChallenge: EngineHit | undefined;
+    const showLatest = () => {
+      clearTimeout(publishTimer);
+      publishTimer = undefined;
+      if (stopped) return;
+      lastShown = clock();
+      snapshot?.({ requestId: request.requestId!, contextKey: request.contextKey!, response: latest, stopReason: latest.stopReason,
+        coverage: { completed: latest.results.filter(result => result.proven || result.exclusion).length, total: latest.results.length } });
+    };
     const publish = (response: EngineResponse, force = false) => {
       if (stopped) return;
       if (response.cpChallenge) cpChallenge = response.cpChallenge;
@@ -503,13 +512,14 @@ export class EngineClient {
         return total;
       }, { initializationMs: 0, networkMs: 0, computationMs: 0, wallMs: clock() - started });
       latest.elapsedMs = clock() - started;
-      if (!force && (hadCandidate || !latest.overall.length) && clock() - lastShown < snapshotInterval) return;
-      lastShown = clock();
+      if (!force && (hadCandidate || !latest.overall.length) && clock() - lastShown < snapshotInterval) {
+        if (snapshot && publishTimer === undefined) publishTimer = setTimeout(showLatest, snapshotInterval - (clock() - lastShown));
+        return;
+      }
       if (force && responseKey !== null && latest.results.length <= 4 && latest.stopReason === "complete" && !latest.error && completeResponse(latest)) {
         this.completed = { key: responseKey, response: structuredClone(latest) };
       }
-      snapshot?.({ requestId: request.requestId!, contextKey: request.contextKey!, response: latest, stopReason: latest.stopReason,
-        coverage: { completed: latest.results.filter(result => result.proven || result.exclusion).length, total: latest.results.length } });
+      showLatest();
     };
     let wakeWork: (() => void) | undefined;
     let stop!: (reason: StopReason) => void;
@@ -648,8 +658,8 @@ export class EngineClient {
         const goal = request.goal;
         const deferScores = goal.criterion === "max" && goal.seeds === 0 && request.k > 1;
         const count = request.constraints.leader ? 1 : pool.length;
-        const sampledMax = goal.criterion === "max" && goal.seeds >= 16 && request.k === 1;
-        if (sampledMax) this.warm();
+        const sampledLive = ["mean", "max"].includes(goal.criterion) && goal.seeds >= 16 && request.k === 1;
+        if (sampledLive && goal.criterion === "max") this.warm();
         const seedCount = goal.songs.length === 1 && goal.seeds > 1 && goal.criterion !== "mean" ? 2 : 1;
         const parts = [...latest.results];
         const completeScores = new Map<string, EngineHit>();
@@ -742,17 +752,17 @@ export class EngineClient {
                   for (const shard of state.responses) shard.results[0]!.hits = response.results[0]?.hits ?? [];
                   wake();
                 }
-                if (sampledMax && !request.noFloor && engine.supportsFloor && !state.seeded && response.overall.length >= request.k) {
+                if (sampledLive && !request.noFloor && engine.supportsFloor && !state.seeded && response.overall.length >= request.k) {
                   state.seeded = true;
                   wake();
                 }
-                if (state.seeded && state.next > 0 && !sampledMax) return;
+                if (state.seeded && state.next > 0 && !sampledLive) return;
                 parts[job.index] = mergeShardResponses(state.warm.map(scoredResponse), request.k, clock() - started).results[0]!;
               } else {
                 state.responses[job.shard] = response;
                 parts[job.index] = mergeShardResponses(state.responses.map(scoredResponse), request.k, clock() - started).results[0]!;
               }
-              if (sampledMax && state.seeded && state.next > 0) {
+              if (sampledLive && state.seeded && state.next > 0) {
                 const warm = state.warm.flatMap(response => response.results[0]!.hits).sort(compareHits)[0];
                 if (warm) for (const response of state.responses) {
                   const row = response.results[0]!;
@@ -761,7 +771,7 @@ export class EngineClient {
                 parts[job.index] = mergeShardResponses(state.responses.map(scoredResponse), request.k, clock() - started).results[0]!;
               }
               const best = parts[job.index]!.hits[0];
-              if (sampledMax && best) for (const [worker, running] of activeScores)
+              if (sampledLive && best) for (const [worker, running] of activeScores)
                 if (running.index === job.index && best.key > running.floor && worker.raiseFloor(best.key)) running.floor = best.key;
               publish(merged());
             };
@@ -1048,6 +1058,7 @@ export class EngineClient {
       throw error;
     } finally {
       clearTimeout(timer);
+      clearTimeout(publishTimer);
       this.activeStops.delete(stop);
     }
   }
