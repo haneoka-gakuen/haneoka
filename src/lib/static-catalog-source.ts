@@ -2,7 +2,7 @@
 // Input: 资源请求、server、可选固定 release 和构建环境。
 // Output: 目录／实体 JSON、批量记录及来源一致性错误。
 // Pos: [Map](L2-2.md)；构建期目录读取与固定身份边界。
-// Effects/Dependencies: Node 文件读取、HTTP、内存请求缓存及静态输入捕获；回退受身份策略约束。
+// Effects/Dependencies: Node 文件读取、HTTP 请求与正文超时重试、内存请求缓存及静态输入捕获；回退受身份策略约束。
 import { withUiMarksProjection } from "./ui-marks";
 import { isPublicReleaseServer } from "./temporary-public-routing";
 import { fnv1a32Shard } from "./hash-partition.ts";
@@ -246,22 +246,24 @@ function httpDiagnostics(
   };
 }
 
-async function fetchResponse(
+async function fetchResponse<T>(
   path: string,
   server: string,
+  read: (response: Response) => T | Promise<T>,
   releaseId?: string,
   method = "GET",
   sourceId?: string,
   absoluteUrl?: string,
-): Promise<Response> {
+): Promise<T> {
   for (let attempt = 0; attempt < REQUEST_ATTEMPTS; attempt += 1) {
     const retry = attempt + 1 < REQUEST_ATTEMPTS;
+    const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS * (attempt === 0 ? 1 : 2));
     let response: Response;
     try {
       response = await fetch(absoluteUrl || staticCatalogUrl(path, server, releaseId), {
         headers: headers(),
         method,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * (attempt === 0 ? 1 : 2)),
+        signal,
       });
     } catch (error) {
       if (!retry) {
@@ -270,7 +272,20 @@ async function fetchResponse(
       await wait(1500 * (attempt + 1));
       continue;
     }
-    if (response.ok) return response;
+    if (response.ok) {
+      try {
+        return await read(response);
+      } catch (error) {
+        if (!signal.aborted || !(error instanceof Error) || !["AbortError", "TimeoutError"].includes(error.name))
+          throw error;
+        if (!retry)
+          throw new Error(`Static catalog response timed out for ${server}/${path.split("?")[0]}`, { cause: error });
+      } finally {
+        await releaseResponseBody(response);
+      }
+      await wait(1500 * (attempt + 1));
+      continue;
+    }
     let diagnostics: StaticCatalogHttpDiagnostics = {};
     try {
       if (response.status === 404 && response.headers.get("content-type")?.includes("application/json")) {
@@ -348,37 +363,30 @@ async function fetchJson(
         console.warn(`Static catalog: rebuilding invalid cache for ${server}/${path.split("?")[0]}`);
       }
       const reused = release && !absoluteUrl ? await reusableBatch(path, release) : undefined;
-      let response: Response | undefined;
-      if (!reused) {
-        jsonMetrics.httpRequests++;
-        response = await fetchResponse(path, server, release?.releaseId, "GET", release?.sourceId, absoluteUrl);
-      }
-      try {
-        if (response) observedRelease(response, release);
-        const value: unknown = reused ? reused.value : await response!.json();
-        if (cacheFile && release) {
-          const temporary = `${cacheFile}.${process.pid}.tmp`;
+      if (!reused) jsonMetrics.httpRequests++;
+      const value: unknown = reused ? reused.value : await fetchResponse(path, server, (response) => {
+        observedRelease(response, release);
+        return response.json();
+      }, release?.releaseId, "GET", release?.sourceId, absoluteUrl);
+      if (cacheFile && release) {
+        const temporary = `${cacheFile}.${process.pid}.tmp`;
+        try {
+          fs.mkdirSync(nodePath.dirname(cacheFile), { recursive: true });
+          fs.writeFileSync(
+            temporary,
+            JSON.stringify({ path, releaseId: release.releaseId, sourceId: release.sourceId, value }),
+          );
+          fs.renameSync(temporary, cacheFile);
+        } catch (error) {
+          console.warn(`Static catalog: could not save cache for ${server}/${path.split("?")[0]}`, error);
           try {
-            fs.mkdirSync(nodePath.dirname(cacheFile), { recursive: true });
-            fs.writeFileSync(
-              temporary,
-              JSON.stringify({ path, releaseId: release.releaseId, sourceId: release.sourceId, value }),
-            );
-            fs.renameSync(temporary, cacheFile);
-          } catch (error) {
-            console.warn(`Static catalog: could not save cache for ${server}/${path.split("?")[0]}`, error);
-            try {
-              fs.rmSync(temporary, { force: true });
-            } catch {
-              /* Cache persistence is optional. */
-            }
+            fs.rmSync(temporary, { force: true });
+          } catch {
+            /* Cache persistence is optional. */
           }
         }
-        return value;
-      } catch (error) {
-        if (response) await releaseResponseBody(response);
-        throw error;
       }
+      return value;
     });
     requestPromises.set(key, pending);
   }
@@ -521,17 +529,14 @@ export async function staticCatalogRelease(server = "intl"): Promise<StaticCatal
   const promise = staticBuildJson(`native-pin:${server}`, "native-pin", async () => {
     const local = localCatalog(server);
     if (local) return Object.freeze({ ...local.identity });
-    const response = await fetchResponse("release?projection=identity", server, undefined, "HEAD");
-    try {
+    return fetchResponse("release?projection=identity", server, (response) => {
       const releaseId = response.headers.get("x-haneoka-release-id") || "";
       const sourceId = response.headers.get("x-haneoka-source-id") || "";
       if (!RELEASE_ID_PATTERN.test(releaseId) || !SOURCE_ID_PATTERN.test(sourceId)) {
         throw new Error(`Static catalog returned an invalid release identity for ${server}`);
       }
       return Object.freeze({ server, releaseId, sourceId });
-    } finally {
-      await releaseResponseBody(response);
-    }
+    }, undefined, "HEAD");
   }).then((pin) => Object.freeze(pin));
   releasePromises.set(server, promise);
   try {
@@ -635,26 +640,23 @@ async function releaseBytes(relative: string, server: string, pinned: StaticCata
   const [tree, ...parts] = relative.split("/");
   const url = new URL(`/${tree}/${encodeURIComponent(server)}/${parts.map(encodeURIComponent).join("/")}`, ORIGIN);
   url.searchParams.set("release", pinned.releaseId);
-  const response = await fetchResponse(relative, server, pinned.releaseId, "GET", pinned.sourceId, url.toString());
-  blobMetrics.fetches++;
-  try {
+  const body = await fetchResponse(relative, server, async (response) => {
     observedRelease(response, pinned);
-    const body = Buffer.from(await response.arrayBuffer());
-    if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
-      throw new StaticCatalogConsistencyError(`Release file hash mismatch: ${relative}`);
-    blobMetrics.fetchedBytes += body.length;
-    const temporary = `${cacheFile}.${process.pid}.tmp`;
-    try {
-      fs.mkdirSync(nodePath.dirname(cacheFile), { recursive: true });
-      fs.writeFileSync(temporary, body);
-      fs.renameSync(temporary, cacheFile);
-    } catch (error) {
-      console.warn(`Static catalog: could not cache release file ${entry.sha256}`, error);
-    }
-    return body;
-  } finally {
-    await releaseResponseBody(response);
+    return Buffer.from(await response.arrayBuffer());
+  }, pinned.releaseId, "GET", pinned.sourceId, url.toString());
+  blobMetrics.fetches++;
+  if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
+    throw new StaticCatalogConsistencyError(`Release file hash mismatch: ${relative}`);
+  blobMetrics.fetchedBytes += body.length;
+  const temporary = `${cacheFile}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(nodePath.dirname(cacheFile), { recursive: true });
+    fs.writeFileSync(temporary, body);
+    fs.renameSync(temporary, cacheFile);
+  } catch (error) {
+    console.warn(`Static catalog: could not cache release file ${entry.sha256}`, error);
   }
+  return body;
 }
 
 /** Public file bytes (`assets/…`) verified against the same immutable release manifest. */

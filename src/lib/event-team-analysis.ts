@@ -1,11 +1,12 @@
 // L3 — GEB
 // Input: Saved activity song decks, optional total-ranking decks, pinned growth sources and native engine updates.
-// Output: Native requests, resumable result pages and correlated-equivalent contracts for activity growth inference.
+// Output: Native requests, selected-board rank constraints, resumable pages and correlated witnesses for activity growth inference.
 // Pos: [Map](L2-2.md); type boundary shared by the dialog and existing Rust/WASM engine adapter.
 // Effects/Dependencies: Type declarations only; the native engine owns search, rank caps, exact verification and correlated equivalent decompositions.
 import type { SongRankingRowDto } from "./game-records";
 import type { EventTeamGrowthSources } from "./event-team-growth-limits";
 
+export interface EventTeamRankRange { min?: number; max?: number }
 export interface EventTeamReading { row: SongRankingRowDto; challengeId: number }
 export interface EventTeamWitness {
   challengeId: number;
@@ -14,6 +15,7 @@ export interface EventTeamWitness {
   instruments: number[];
   totalRank: { min: number; max: number };
   totalValue?: number;
+  outsideRank: { min: number; max: number };
 }
 export interface EventTeamEquivalent {
   characters: Array<{ id: number; level: number; minLevel?: number; cap: number }>;
@@ -21,13 +23,12 @@ export interface EventTeamEquivalent {
   totalRank: { min: number; max: number };
   witnesses: EventTeamWitness[];
 }
-export interface EventTeamConfiguration extends EventTeamEquivalent {
+export interface EventTeamConfiguration extends Omit<EventTeamEquivalent, "witnesses"> {
   id: string;
   equivalents: EventTeamEquivalent[];
   vipBonus: number;
   matchedChallenges: number[];
   matchedTotal: boolean;
-  relaxed: boolean;
   changed: boolean;
   changeCost: number;
   changedDimensions: number;
@@ -38,6 +39,8 @@ export interface EventTeamAnalysis {
 export interface EventTeamGrowthRequest {
   eventId: number;
   asOf: number;
+  primaryChallengeId: number;
+  rankRange?: EventTeamRankRange;
   observations: EventTeamReading[];
   total?: SongRankingRowDto;
   sources: EventTeamGrowthSources;
@@ -46,6 +49,7 @@ export interface EventTeamSearchResult {
   rows: EventTeamConfiguration[];
   count: number;
   certified: number;
+  rejectedChallenges: number[];
   costBound: number;
   minimumCost: number | null;
   costLimit: number | null;
