@@ -6,7 +6,7 @@
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
-import { resultMetric } from "./result-metric";
+import { resultMetric, sampledLuck } from "./result-metric";
 import { repeat } from "lit/directives/repeat.js";
 import { actionMenu } from "../ui/action-menu";
 import { improvementPercent } from "../../lib/team-builder/engine/execution";
@@ -34,7 +34,7 @@ import { memberEventPercent, snapEventPercent } from "../../lib/team-builder/eng
 import { entityHref, resourceCollectionHref } from "../../lib/resource-route";
 import type { ReleaseServer } from "../../lib/release-server";
 import type { Locale } from "../../i18n/locales";
-import { roomRequiredScore, teamPowerNeeded } from "../../lib/chart-rates";
+import { teamPowerNeeded } from "../../lib/chart-rates";
 import { specList } from "../ui/spec";
 import { dataRows } from "../../lib/team-builder/data";
 import "../runtime/timing-chart-preview";
@@ -255,6 +255,14 @@ function primary(host: TeamBuilder, hit: EngineHit): { label: string; value: str
   };
 }
 
+function luckRangeLabel(host: TeamBuilder, hit: EngineHit): string | undefined {
+  if (!sampledLuck(host, hit)) return undefined;
+  if (hit.event) return host.t("sampledScoreRange", "Sampled score range");
+  const goal = resultInputs(host, hit)?.goal;
+  if (goal?.kind === "gekiso" && goal.criterion === "mean")
+    return host.t("orderMeanScoreRange", "Range of skill-order averages");
+}
+
 function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResult[] {
   const s = resultSettings(host, hit);
   const bonusLabel = s.weighted
@@ -278,22 +286,23 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
     labels.set(result, label);
     return result;
   };
-  if (hit.aggregate)
-    return [chip(host.t("arena.meanPower", "Average power"), format(host, hit.power), icon("bolt", 16))];
+  const range = (min: number, max: number, digits?: number) => html`
+    <span class="tb-number">${format(host, min, digits)}</span> – <span class="tb-number">${format(host, max, digits)}</span>
+  `;
+  if (hit.aggregate) {
+    out.push(chip(host.t("arena.meanPower", "Average power"), format(host, hit.power), icon("bolt", 16)));
+    if (sampledLuck(host, hit)) {
+      if (hit.score) out.push(chip(host.t("averageSongScoreRanges", "Average of song score ranges"), range(hit.score.min, hit.score.max)));
+      if (hit.event) out.push(chip(host.t("averageSongRewardRanges", "Average of song direct reward ranges"),
+        range(hit.event.perPlayMin, hit.event.perPlayMax, 2)));
+    }
+    return out;
+  }
   if (s.goal !== "power") out.push(chip(host.t("power", "Power"), format(host, hit.power), icon("bolt", 16)));
   if (hit.score) {
     if ((s.goal !== "score" && s.goal !== "gekiso") || scoreGoal(s) !== "mean")
       out.push(chip(host.t("expectedScore", "Average score"), format(host, hit.score.mean)));
-    out.push(
-      chip(
-        host.t("scoreRange", "Range"),
-        html`
-          <span class="tb-number">${format(host, hit.score.min)}</span>
-          –
-          <span class="tb-number">${format(host, hit.score.max)}</span>
-        `,
-      ),
-    );
+    out.push(chip(luckRangeLabel(host, hit) ?? host.t("scoreRange", "Range"), range(hit.score.min, hit.score.max)));
     const ranks = Object.entries(hit.score.ranks).sort((a, b) => Number(b[0]) - Number(a[0]));
     const top = ranks[0];
     if (top) {
@@ -346,6 +355,8 @@ function chips(host: TeamBuilder, hit: EngineHit, compact = false): TemplateResu
     if (hit.event.challengePoints && s.measure !== "challenge-points")
       out.push(chip(host.t("cpPerPlay", "Challenge points per play"), format(host, hit.event.challengePoints, 1)));
   }
+  if (hit.event && !compact && sampledLuck(host, hit))
+    out.push(chip(host.t("sampledDirectRewardRange", "Sampled direct reward range"), range(hit.event.perPlayMin, hit.event.perPlayMax, 2)));
   const placements =
     s.goal === "gekiso" && s.gekisoPlacementMode === "opponents"
       ? host.results?.results.find(
@@ -463,12 +474,32 @@ export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
   }));
 }
 
+type ResultRoom = { players: number; otherAverageScore?: number };
+
+function resultRoom(host: TeamBuilder, hit: EngineHit): ResultRoom | null {
+  const goal = resultInputs(host, hit)?.goal;
+  const settings = resultSettings(host, hit);
+  if (settings.goal === "gekiso") return { players: 5 };
+  if (goal?.kind !== "event" || !goal.gekiso || settings.route !== "live" || goal.rewardRoom?.mode === "solo") return null;
+  return goal.rewardRoom ?? { players: 5 };
+}
+
+/** Project a room total onto the personal score used in the result. */
+function personalRankTarget(row: { required: number; battleRequired: number }, room: ResultRoom | null): number {
+  if (!room) return row.required;
+  const total = Math.trunc(Math.sqrt(5 / room.players) * row.battleRequired * room.players);
+  return room.otherAverageScore === undefined
+    ? Math.ceil(total / room.players)
+    : Math.max(0, total - room.otherAverageScore * (room.players - 1));
+}
+
 function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): TemplateResult {
   const score = hit.score;
   if (!score) return html``;
-  const thresholds = chart
-    ? (host.master?.scoreRanks.get(host.master.songs.get(chart.songId)?.rankGroup ?? 0) ?? [])
-    : [];
+  const room = resultRoom(host, hit);
+  const thresholds = (chart ? host.master?.scoreRanks.get(host.master.songs.get(chart.songId)?.rankGroup ?? 0) ?? [] : [])
+    .filter(row => !room || row.battleRequired !== 0)
+    .map(row => ({ rank: row.rank, required: personalRankTarget(row, room) }));
   const low = Math.min(
     score.min,
     ...thresholds
@@ -487,7 +518,7 @@ function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null):
     <div
       class="tb-dist"
       role="img"
-      aria-label=${`${host.t("scoreRange", "Range")}: ${format(host, score.min)} – ${format(host, score.max)}, ${host.t("median", "median")} ${format(host, score.median)}`}
+      aria-label=${`${luckRangeLabel(host, hit) ?? host.t("scoreRange", "Range")}: ${format(host, score.min)} – ${format(host, score.max)}, ${host.t("median", "median")} ${format(host, score.median)}`}
     >
       <div class="tb-dist__track">
         <span
@@ -537,20 +568,21 @@ function distribution(host: TeamBuilder, hit: EngineHit, chart: SongRef | null):
   `;
 }
 
-/** The power this team needs for each score rank, from its exact score in every skill order (scores scale with
- * power): solo in Live; in Gekisou per room size, every player scoring alike, at the engine's expected luck. */
+/** The power this team needs for each rank from its skill-order scores and the applicable room target. */
 function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): TemplateResult {
   const score = hit.score;
   const song = chart ? host.master?.songs.get(chart.songId) : undefined;
   if (!score?.orders.length || !song || !hit.power) return html``;
   const notes = song.difficulties.find((row) => row.difficulty === chart!.difficulty)?.noteCount ?? 0;
+  const room = resultRoom(host, hit);
+  const rooms: ResultRoom[] = resultSettings(host, hit).goal === "gekiso"
+    ? [1, 2, 3, 4, 5].map(players => ({ players }))
+    : room ? [room] : [];
   const ranks = (host.master?.scoreRanks.get(song.rankGroup) ?? [])
-    .filter((row) => row.rank >= 3)
+    .filter((row) => row.rank >= 3 && (!rooms.length || row.battleRequired !== 0))
     .sort((a, b) => b.rank - a.rank);
   if (!ranks.length) return html``;
   const need = (target: number) => teamPowerNeeded(target, score.orders, hit.power, notes);
-  const gekisou = resultSettings(host, hit).goal === "gekiso";
-  const players = [1, 2, 3, 4, 5];
   return html`
     <div
       class="table-scroll"
@@ -564,9 +596,9 @@ function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): 
           <tr>
             <th scope="col">${host.t("powerNeeded", "Power needed")}</th>
             ${
-              gekisou
-                ? players.map(
-                    (count) => html`
+              rooms.length
+                ? rooms.map(
+                    ({ players: count }) => html`
                       <th scope="col" class="is-numeric">
                         ${(count === 1 ? host.t("roomPlayer", "1 player") : host.t("roomPlayers", "{count} players")).replace("{count}", String(count))}
                       </th>
@@ -586,16 +618,16 @@ function powerNeeded(host: TeamBuilder, hit: EngineHit, chart: SongRef | null): 
               <tr>
                 <th scope="row">${RANK_NAMES[String(row.rank)]}</th>
                 ${
-                  gekisou
-                    ? players.map(
-                        (count) => html`
+                  rooms.length
+                    ? rooms.map(
+                        (room) => html`
                           <td class="is-numeric tabular">
-                            ${format(host, need(Math.ceil(roomRequiredScore(row.battleRequired, count) / count)).mean)}
+                            ${format(host, need(personalRankTarget(row, room)).mean)}
                           </td>
                         `,
                       )
                     : (() => {
-                        const value = need(row.required);
+                        const value = need(personalRankTarget(row, null));
                         return html`
                           <td class="is-numeric tabular">${format(host, value.mean)}</td>
                           <td class="is-numeric tabular">${format(host, value.every)}</td>
@@ -655,7 +687,9 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number, withTim
         team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! },
         song: hit.song,
         eventOrder: ORDERS[index]!.map((slot) => hit.members[slot]!),
-        play: "play" in request.goal ? request.goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
+        play: "play" in request.goal ? request.goal.play
+          : request.goal.kind === "gekiso" ? { great: request.goal.accuracy.great, good: 0, bad: 0, miss: 0, missEvery: request.goal.accuracy.missEvery }
+          : { great: 0, good: 0, bad: 0, miss: 0 },
         ...(withTiming && (request.goal.kind === "score" || request.goal.kind === "event")
           ? {
               timing: {
@@ -964,13 +998,24 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 feverLabel: (index) => `${host.t("gekiso", "GEKISO")} ${index + 1}`,
                 windows: timeline.windows.map((window) => {
                   const member = memberFace(host, hit, hit.members.indexOf(window.member));
+                  const boost = (percent: number) => `${percent >= 0 ? "+" : ""}${format(host, percent, 0)}%`;
+                  const branches = window.lifeBranches?.map(({ minLife, maxLifeExclusive, percent, perfectPercent }) => {
+                    const condition = minLife === null ? `LIFE < ${format(host, maxLifeExclusive!)}`
+                      : maxLifeExclusive === null ? `LIFE ≥ ${format(host, minLife)}`
+                      : `${format(host, minLife)} ≤ LIFE < ${format(host, maxLifeExclusive)}`;
+                    return `${condition} ${boost(percent + perfectPercent)}`;
+                  });
+                  const extension = window.extensionMs ? `+${(window.extensionMs / 1000).toFixed(1)}s` : "";
+                  const value = branches
+                    ? html`${branches.map((label, index) => html`${index ? html`<br>` : nothing}${label}`)}${extension ? html`<br>${extension}` : nothing}`
+                    : `${boost(window.percent + window.perfectPercent)}${extension ? ` / ${extension}` : ""}`;
                   return {
                     startMs: window.startMs,
                     endMs: window.endMs,
                     color: member.color,
                     image: host.catalog!.characterFace(member.character),
                     label: member.name,
-                    value: `+${format(host, window.percent + window.perfectPercent, 0)}%${window.extensionMs ? ` / +${(window.extensionMs / 1000).toFixed(1)}s` : ""}`,
+                    value,
                   };
                 }),
               })
