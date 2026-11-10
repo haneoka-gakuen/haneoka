@@ -9,7 +9,8 @@ import {
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { requestContentView } from "./content-view";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { decodePageData, serializePageData } from "../src/lib/page-data-codec";
+import { decodePageData } from "../src/lib/page-data-codec";
+import { unrestricted } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
@@ -79,6 +80,7 @@ export async function applySiteSettings(
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilers = view.override || view.spoilers;
+  const completeView = unrestricted(view);
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -175,6 +177,7 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
+        if (completeView) return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();
@@ -183,7 +186,9 @@ export async function applySiteSettings(
         const input = decodePageData(JSON.parse(jsonText));
         const filtered = filterContentData(input, view, resource?.kind, true, context.publications);
         if (filtered.changed) usePublicView = true;
-        chunk.replace(serializePageData(filtered.value), { html: true });
+        chunk.replace(filtered.changed
+          ? JSON.stringify(filtered.value).replace(/</gu, "\\u003c").replace(/\u2028/gu, "\\u2028").replace(/\u2029/gu, "\\u2029")
+          : jsonText, { html: true });
         jsonText = "";
       },
     })
