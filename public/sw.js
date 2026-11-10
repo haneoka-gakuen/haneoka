@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: 同源 GET 请求、导航／资源类别和浏览器缓存状态。
-// Output: 按请求类别选择的网络／缓存响应及离线导航回退。
+// Output: 按请求类别选择的网络／缓存响应及离线导航回退；缓存失败仍交付网络响应。
 // Pos: [Map](L2.md)；站点 Service Worker 缓存与版本生命周期。
-// Effects/Dependencies: 注册 install／activate／fetch 事件、访问网络与 CacheStorage、淘汰旧缓存；API／认证等路径不进入通用缓存。
+// Effects/Dependencies: 注册 install／activate／fetch 事件、访问网络与 CacheStorage、淘汰旧缓存；缓存写入由 waitUntil 后台完成，读写失败不阻断请求；API／认证等路径不进入通用缓存。
 // haneoka service worker: repeat visits should not re-pay the network.
 //
 // Strategy per request class:
@@ -37,18 +37,19 @@ const MAX_DATA = 200;
 const NEVER_CACHE_PREFIXES = ["/api/", "/auth/", "/account/", "/admin/", "/sonolus/", "/game-client/"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(ASSETS_CACHE));
-  self.skipWaiting();
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      for (const name of await caches.keys()) {
-        if (name.startsWith("haneoka.") && !ACTIVE_CACHES.includes(name)) {
-          await caches.delete(name);
+      try {
+        for (const name of await caches.keys()) {
+          if (name.startsWith("haneoka.") && !ACTIVE_CACHES.includes(name)) {
+            await caches.delete(name);
+          }
         }
-      }
+      } catch {}
       await self.clients.claim();
     })(),
   );
@@ -68,15 +69,29 @@ const trimCache = async (cacheName, limit) => {
   }
 };
 
-const cacheFirst = async (request, cacheName, limit) => {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
+const readCache = async (request, cacheName) => {
+  try {
+    const cache = await caches.open(cacheName);
+    return { cache, cached: await cache.match(request) };
+  } catch {
+    return {};
+  }
+};
+
+const cacheResponse = (event, request, response, cache, cacheName, limit) => {
+  if (!cache || !response.ok) return;
+  event.waitUntil(
+    cache.put(request, response.clone())
+      .then(() => { if (limit) return trimCache(cacheName, limit); })
+      .catch(() => {}),
+  );
+};
+
+const cacheFirst = async (event, request, cacheName, limit) => {
+  const { cache, cached } = await readCache(request, cacheName);
   if (cached) return cached;
   const response = await fetch(request);
-  if (response.ok) {
-    await cache.put(request, response.clone());
-    if (limit) await trimCache(cacheName, limit);
-  }
+  cacheResponse(event, request, response, cache, cacheName, limit);
   return response;
 };
 
@@ -86,15 +101,11 @@ const fresh = (response, ms) => {
 };
 
 const staleWhileRevalidate = async (event, request, cacheName, limit, freshMs = 0) => {
-  const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
+  const { cache, cached } = await readCache(request, cacheName);
   if (cached && freshMs && fresh(cached, freshMs)) return cached;
   const refresh = fetch(request, { cache: "no-cache" })
-    .then(async (response) => {
-      if (response.ok) {
-        await cache.put(request, response.clone());
-        if (limit) await trimCache(cacheName, limit);
-      }
+    .then((response) => {
+      cacheResponse(event, request, response, cache, cacheName, limit);
       return response;
     })
     .catch(() => cached ?? Response.error());
@@ -110,17 +121,11 @@ const staleWhileRevalidate = async (event, request, cacheName, limit, freshMs = 
 const NETWORK_GRACE_MS = 4000;
 
 const networkFirst = async (event, request, cacheName, limit = MAX_PAGES) => {
-  const cache = await caches.open(cacheName);
-  const network = fetch(request, { cache: "no-cache" }).then(async (response) => {
-    if (response.ok) {
-      await cache
-        .put(request, response.clone())
-        .then(() => trimCache(cacheName, limit))
-        .catch(() => {});
-    }
+  const { cache, cached } = await readCache(request, cacheName);
+  const network = fetch(request, { cache: "no-cache" }).then((response) => {
+    cacheResponse(event, request, response, cache, cacheName, limit);
     return response;
   });
-  const cached = await cache.match(request);
   if (!cached) return network.catch(() => Response.error());
   event.waitUntil(network.catch(() => {}));
   const late = new Promise((resolve) => setTimeout(() => resolve(null), NETWORK_GRACE_MS));
@@ -152,18 +157,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.pathname.startsWith("/_astro/") || url.pathname.startsWith("/fonts/")) {
-    event.respondWith(cacheFirst(request, ASSETS_CACHE));
+    event.respondWith(cacheFirst(event, request, ASSETS_CACHE));
     return;
   }
   if (url.pathname.startsWith("/entity-data/v1/")) {
-    event.respondWith(cacheFirst(request, DATA_CACHE, MAX_DATA));
+    event.respondWith(cacheFirst(event, request, DATA_CACHE, MAX_DATA));
     return;
   }
   if (/^\/(?:assets|runtime|objects)\//.test(url.pathname)) {
     // A release-pinned URL can never change: the HTTP cache keeps it as
     // immutable, and range/media requests must reach it untouched.
     if (url.searchParams.has("release")) {
-      if (request.destination === "image") event.respondWith(cacheFirst(request, IMAGES_CACHE, MAX_IMAGES));
+      if (request.destination === "image") event.respondWith(cacheFirst(event, request, IMAGES_CACHE, MAX_IMAGES));
       return;
     }
     // Current-release artwork paints from the cache at once; only artwork
@@ -173,6 +178,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (request.destination === "image") {
-    event.respondWith(cacheFirst(request, IMAGES_CACHE, MAX_IMAGES));
+    event.respondWith(cacheFirst(event, request, IMAGES_CACHE, MAX_IMAGES));
   }
 });
