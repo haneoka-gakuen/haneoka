@@ -74,6 +74,7 @@ export interface RewardTerm { metric: RewardMetric; weight: number }
 export interface RewardRankingPlan {
   criterion?: "mean" | "max" | "min";
   minimumRank?: number;
+  tieBreak?: "power" | "score";
   unit: number;
   levels: RewardTerm[][];
   autoCp?: { songs: SongRef[]; consumption: number };
@@ -208,6 +209,7 @@ export interface HitScore {
 export interface RewardFraction { numerator: string; denominator: string; value: number }
 export interface EngineHit {
   aggregate?: { kind: "mean"; songs: EngineHit[] };
+  /** Reward levels followed by the plan's optional score and power tie-breaks. */
   rewardRanking?: RewardFraction[];
   /** Base multiplier, including the first-COMBO sustained bonus. */
   comboBonus?: number | null;

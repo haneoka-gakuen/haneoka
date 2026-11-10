@@ -28,8 +28,12 @@ const rewardIcon = (host: TeamBuilder, metric: RewardMetric) => {
   const source = host.catalog!.rewardIcon(metric, eventId);
   return html`<span class="tb-game-icon">${source ? html`<img src=${source} width="24" height="24" alt="" loading="lazy" />` : nothing}</span>`;
 };
+const tieLabels = (host: TeamBuilder, tie: RewardRankingPlan["tieBreak"]): string[] => [
+  ...(tie === "score" ? [host.t("expectedScore", "Average score")] : []),
+  ...(tie ? [host.t("power", "Power")] : []),
+];
 export const rewardRankingLabel = (host: TeamBuilder, plan: RewardRankingPlan): string =>
-  plan.levels
+  [...plan.levels
     .map((level, index) => {
       const label = level
         .map(
@@ -38,7 +42,7 @@ export const rewardRankingLabel = (host: TeamBuilder, plan: RewardRankingPlan): 
         )
         .join(" + ");
       return index ? `${host.t("rewardPlan.tie", "Tie-break")} ${label}` : label;
-    })
+    }), ...tieLabels(host, plan.tieBreak)]
     .join(" › ");
 
 export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
@@ -58,7 +62,8 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
     plan.tieOrder
       .filter((metric) => plan.options[metric].mode === "tie")
       .map((metric) => ` › ${host.t("rewardPlan.tie", "Tie-break")} ${rewardLabel(host, metric)}`)
-      .join("");
+      .join("") + tieLabels(host, host.searchSettings.rewardPlan || host.searchSettings.weighted
+        ? host.searchSettings.route === "skip" ? "power" : "score" : undefined).map(label => ` › ${label}`).join("");
   return html`
     <section class="surface stack" id="tb-reward-plan" data-tb-field tabindex="-1">
       ${sectionHeading({ icon: "emoji_events", label: host.t("rewardPlan.title", "Reward plan") })}

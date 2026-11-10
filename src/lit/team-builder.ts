@@ -1392,7 +1392,7 @@ export class TeamBuilder extends LitElement {
           return null;
         if (s.rewardPlan || s.weighted) {
           const plan = effectiveRewardPlan(s.rewardPlan ?? legacyRewardPlan(s), s.route === "challenge");
-          const compiled = compileRewardPlan(plan, { songs: s.planChallengeSongs, consumption: s.challengePoints });
+          const compiled = compileRewardPlan(plan, { songs: s.planChallengeSongs, consumption: s.challengePoints }, s.route === "skip");
           if (!compiled) return null;
           if (s.route === "skip") delete compiled.minimumRank;
           return { kind: "event", rewardPlan: compiled, measure: plan.primary,

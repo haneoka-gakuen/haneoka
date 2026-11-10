@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 活动奖励方案、旧收益设置与挑战演出选择。
-// Output: 有序奖励层、折算系数与当前场景的有效方案。
+// Output: 有序奖励层、折算系数、同奖励时先平均分后综合力排序及当前场景的有效方案。
 // Pos: [Map](L2-2.md)；活动收益目标与引擎输入之间的纯转换。
 // Effects/Dependencies: 不执行计算、联网或持久化。
 import type { RewardMetric, RewardRankingPlan, SongRef } from "./engine/api";
@@ -104,6 +104,7 @@ export function effectiveRewardPlan(plan: RewardPlan, challenge: boolean): Rewar
 export function compileRewardPlan(
   plan: RewardPlan,
   challenge: { songs: SongRef[]; consumption: number },
+  skip = false,
 ): RewardRankingPlan | null {
   const first = [{ metric: plan.primary, weight: RATE_SCALE }];
   let auto = false;
@@ -125,6 +126,7 @@ export function compileRewardPlan(
     unit: RATE_SCALE,
     criterion: plan.criterion ?? "mean",
     ...(plan.minimumRank ? { minimumRank: plan.minimumRank } : {}),
+    tieBreak: skip ? "power" : "score",
     levels: [first, ...ties.map((metric) => [{ metric, weight: 1 }])],
     ...(auto ? { autoCp: { songs: challenge.songs, consumption: challenge.consumption } } : {}),
   };

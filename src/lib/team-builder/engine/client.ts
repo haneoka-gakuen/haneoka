@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 import type { SampleRequest, PlaySample } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -330,6 +330,13 @@ function weightedLiveReward(request: EngineRequest): boolean {
     && goal.measure !== "challenge-points" && !!goal.weights
     && request.k === 1 && goal.songs.length === 1;
 }
+function wholeChallengeReward(request: EngineRequest): boolean {
+  const goal = request.goal;
+  if (goal.kind !== "event" || goal.gekiso || goal.route !== "challenge" || goal.songs.length !== 1) return false;
+  const play = goal.play;
+  return request.k > 1 || !!goal.rewardPlan?.tieBreak && !play?.great && !play?.good && !play?.bad
+    && !play?.miss && !play?.missEvery && !play?.mistakes?.indices.length && !play?.cumulativeTiming;
+}
 function phasedReward(data: TeamBuilderData, request: EngineRequest): boolean {
   if (request.goal.kind === "event" && request.goal.rewardPlan) return false;
   if (weightedLiveReward(request)) return true;
@@ -639,8 +646,7 @@ export class EngineClient {
       const wholeReward = wholeSongReward(this.data, request);
       const parallelSampledReward = wholeReward
         && request.goal.kind === "event" && (request.goal.gekiso?.luckSamples ?? 0) >= 16 && request.constraints.leader === null;
-      const wholeChallenge = request.goal.kind === "event" && !request.goal.gekiso
-        && request.goal.route === "challenge" && request.goal.songs.length === 1 && request.k > 1;
+      const wholeChallenge = wholeChallengeReward(request);
       const comboMean = request.goal.kind === "gekiso" && request.goal.songs.length === 1
         && request.goal.criterion === "mean" && request.goal.seeds === 0
         && requestMissions(this.data, request, request.goal.songs[0]!).every(mission => mission === 1);
