@@ -9,7 +9,7 @@ import type { NativeChartRenderInput } from "./chart-native-renderer";
 
 export type ChartBrowserBinding = Parameters<typeof launch>[0];
 
-export async function renderBrowserChart(binding: ChartBrowserBinding, input: NativeChartRenderInput) {
+export async function renderBrowserChart(binding: ChartBrowserBinding, input: NativeChartRenderInput, source?: Request) {
   const { launch } = await import("@cloudflare/playwright");
   const browser = await launch(binding);
   try {
@@ -17,6 +17,15 @@ export async function renderBrowserChart(binding: ChartBrowserBinding, input: Na
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
     const origin = new URL(input.origin || "https://haneoka.org").origin;
+    await context.route("**/*", route => {
+      const request = route.request(), url = new URL(request.url());
+      if (url.origin !== origin) return route.abort();
+      const headers = { ...request.headers() };
+      for (const name of ["Cookie", "Authorization"]) if (source?.headers.has(name)) headers[name.toLowerCase()] = source.headers.get(name)!;
+      const override = source && new URL(source.url).searchParams.get("spoiler");
+      if (override !== undefined && override !== null) url.searchParams.set("spoiler", override);
+      return route.continue({ headers, url: url.toString() });
+    });
     await page.goto(`${origin}/tools/render.html`, { waitUntil: "load", timeout: 20000 });
     const result = await page.evaluate(async ({ input, origin }) => {
       const { renderChartImage } = await import(`${origin}/tools/chart-image.js`);

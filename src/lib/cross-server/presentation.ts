@@ -6,7 +6,6 @@ import {
   type CrossCatalogRow,
 } from "./catalog";
 import { releasedCatalog } from "./releases";
-import { withContentSource } from "../content-publication";
 import { isContentListed } from "../content-release";
 
 /** Pin media to its actual source release, including nested runtime records. */
@@ -31,7 +30,7 @@ export function crossCatalogPresentation(dto: CrossCatalogDTO) {
   const byId = new Map<string, CrossCatalogEntry>();
   const project = (entry: CrossCatalogEntry) => {
     const variant = entry.perServer[entry.displayServer]!;
-    const row = withContentSource(crossServerDisplayRow(entry), variant.identity.server);
+    const row = crossServerDisplayRow(entry);
     for (const supplement of entry.content.supplements)
       if (supplement.classification === "source-asset") {
         const field = supplement.field.split(".")[0]!;

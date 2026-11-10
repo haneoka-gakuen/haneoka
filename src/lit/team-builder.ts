@@ -32,7 +32,7 @@ import { beginLoading } from "../lib/loading-progress";
 import { readReleaseServer, writeReleaseServer } from "../lib/release-server";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
 import { fetchCrossServerTeamBuilderData, mergeTeamBuilderData } from "../lib/team-builder/data/cross-server";
-import { canUseStaticCatalogScope, visibleContentServers } from "../lib/content-visibility";
+import { visibleContentServers } from "../lib/content-sources";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
@@ -634,10 +634,9 @@ export class TeamBuilder extends LitElement {
     this.loadedServer = server;
     this.loadError = "";
     this.requestUpdate();
-    const staticScope = canUseStaticCatalogScope();
-    const loading = this.pageData && staticScope ? undefined : beginLoading(this.t("loadingData", "Loading card data"));
+    const loading = this.pageData ? undefined : beginLoading(this.t("loadingData", "Loading card data"));
     try {
-      if (this.pageData && staticScope) {
+      if (this.pageData) {
         await this.updateComplete;
         if (loadController.signal.aborted) return;
         const visible = visibleContentServers(this.pageData.sources.map((source) => source.identity.server));
@@ -649,7 +648,7 @@ export class TeamBuilder extends LitElement {
         )
           this.preparePage(this.pageData, server, visible);
       }
-      const seeded = staticScope && this.data?.identity.server === server && this.pageData?.sources.every((source) => source.arena !== undefined) &&
+      const seeded = this.data?.identity.server === server && this.pageData?.sources.every((source) => source.arena !== undefined) &&
         this.catalog?.visuals;
       const data = seeded ? this.data! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
       if (loadController.signal.aborted) return;

@@ -1,14 +1,10 @@
 name: Deploy download service
 on:
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows: ["Deploy to Cloudflare Workers"]
+    types: [completed]
     branches: [main]
-    paths:
-      - worker/downloads.ts
-      - worker/downloads-configuration.d.ts
-      - worker/tsconfig.downloads.json
-      - wrangler.downloads.jsonc
-      - .github/workflows/download-service.yml
 permissions:
   contents: read
 concurrency:
@@ -16,14 +12,21 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Check download Worker types
         run: npm exec --yes --package=typescript@6.0.3 -- tsc -p worker/tsconfig.downloads.json
+      - name: Verify content service compatibility
+        run: |
+          curl --silent --show-error --head 'https://haneoka.org/api/v1/servers/jp/stories?projection=offline-authorization' > /tmp/content-service-headers
+          rg -qi '^x-haneoka-content-authorization: v1' /tmp/content-service-headers
       - name: Deploy route on the existing preferred hostname
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

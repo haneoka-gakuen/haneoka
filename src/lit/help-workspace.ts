@@ -1,5 +1,4 @@
 import { unpublishedState } from "./ui/unpublished-state";
-import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -187,7 +186,7 @@ export class HelpWorkspace extends LitElement {
   }
   private async load() {
     const page = readPageData<WorkspaceCollectionPayload>(this);
-    if (page?.schema === "haneoka-workspace-collection-v1" && page.resource === "help" && !this.entityId && canUseStaticCatalogScope()) {
+    if (page?.schema === "haneoka-workspace-collection-v1" && page.resource === "help" && !this.entityId) {
       this.prepareCollection(page, this.locale);
       return;
     }

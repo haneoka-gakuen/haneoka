@@ -1,6 +1,6 @@
 import { searchCategory } from "../../src/lib/search-categories.ts";
-import { isContentSourceFamily as isPublicReleaseServer } from "../../src/lib/content-access-state.ts";
-import { parseFragment } from "parse5";
+import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
+import { parse, parseFragment, serialize } from "parse5";
 
 const plainText = (node) => node.nodeName === "#text" ? node.value : (node.childNodes || []).map(plainText).join("");
 const compact = (text) => text.replace(/\s+/gu, " ").trim();
@@ -61,7 +61,18 @@ export function assertPublicStaticDocumentPath(sourcePath) {
 export function withSearchMetadata(html, sourcePath) {
   assertPublicStaticDocumentPath(sourcePath);
   // Pagefind keeps script ids as anchors even when their text is excluded.
+  if (/<html\b[^>]*\bdata-pagefind-ignore="all"/iu.test(html)) return '<!doctype html><html data-pagefind-ignore="all"><head><title>haneoka</title></head><body></body></html>';
   html = withoutInlineJson(html);
+  if (html.includes('data-content-view="full"')) {
+    const fragment = parse(html);
+    const prune = (node) => {
+      if (!node.childNodes) return;
+      node.childNodes = node.childNodes.filter((child) => !child.attrs?.some(({ name, value }) => name === "data-content-view" && value === "full"));
+      node.childNodes.forEach(prune);
+    };
+    prune(fragment);
+    html = serialize(fragment);
+  }
   const prefix = sourcePath.split(/[\\/]/u)[0];
   const server = isPublicReleaseServer(prefix) ? prefix : "global";
   const category = searchCategory(sourcePath);

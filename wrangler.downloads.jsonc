@@ -9,6 +9,7 @@
     { "pattern": "haneoka.org/downloads/*", "zone_name": "haneoka.org" },
     { "pattern": "haneoka.com/downloads/*", "zone_name": "haneoka.org" }
   ],
+  "services": [{ "binding": "CONTENT_SERVICE", "service": "haneoka" }],
   "r2_buckets": [
     { "binding": "APP_RELEASES", "bucket_name": "haneoka-downloads" },
     { "binding": "ASSET_BUCKET", "bucket_name": "hotdori-assets" }

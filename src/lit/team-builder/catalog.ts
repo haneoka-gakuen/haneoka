@@ -3,7 +3,7 @@
 // Output: Card/song presentation, native game icons and explicit select/button fields.
 // Pos: [Map](../L2-2.md); team workspace presentation helpers.
 // Effects/Dependencies: Caches titles by language and preference; lazily reads the pinned live atlas and aborts on disposal.
-import { CONTENT_SOURCE_IDS } from "../../lib/content-access-state";
+import { CONTENT_SOURCE_IDS } from "../../lib/content-sources";
 import { isReleasedContent } from "../../lib/content-release";
 import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";

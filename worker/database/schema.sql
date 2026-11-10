@@ -3385,3 +3385,33 @@ CREATE TABLE IF NOT EXISTS event_ranking_archive_boards (
   observed_at_ms INTEGER NOT NULL,
   PRIMARY KEY (region, event_id, challenge_id)
 );
+CREATE TABLE IF NOT EXISTS community_comment_impression (
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  comment_id TEXT NOT NULL REFERENCES community_comment(id) ON DELETE CASCADE,
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  seen_count INTEGER NOT NULL DEFAULT 1 CHECK (seen_count >= 1),
+  PRIMARY KEY (user_id, comment_id),
+  CHECK (last_seen_at >= first_seen_at)
+);
+
+CREATE INDEX IF NOT EXISTS community_comment_impression_recent_idx
+  ON community_comment_impression(user_id, last_seen_at DESC, comment_id);
+CREATE TABLE IF NOT EXISTS account_api_token_resource_scope (
+  token_id TEXT PRIMARY KEY REFERENCES account_api_token(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS community_chart_public_id (
+  public_id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (public_id BETWEEN 1 AND 9007199254740991),
+  chart_id TEXT NOT NULL UNIQUE REFERENCES community_chart(id) ON DELETE CASCADE
+);
+
+CREATE TRIGGER IF NOT EXISTS community_chart_public_id_after_insert
+AFTER INSERT ON community_chart
+BEGIN
+  INSERT OR IGNORE INTO community_chart_public_id (chart_id) VALUES (NEW.id);
+END;
+
+INSERT INTO community_chart_public_id (chart_id)
+SELECT chart.id FROM community_chart AS chart
+WHERE NOT EXISTS (SELECT 1 FROM community_chart_public_id AS identity WHERE identity.chart_id = chart.id)
+ORDER BY chart.created_at, chart.id;

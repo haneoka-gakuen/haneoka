@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { staticBuildSourceIdentity as sourceIdentity } from "../../src/server/static-build-identity.ts";
-import { isContentSourceFamily as isPublicReleaseServer } from "../../src/lib/content-access-state.ts";
+import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 
 export const INPUT_SCHEMA = "haneoka-static-build-inputs-v1";
 export const sha256 = (body) => createHash("sha256").update(body).digest("hex");

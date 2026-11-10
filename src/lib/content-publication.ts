@@ -1,19 +1,12 @@
-import { CONTENT_SOURCE_IDS } from "./content-access-state";
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : {};
 
-export function withContentSource<T extends Row>(value: T, server: string): T {
-  return server === "jp" || server === "intl" || !CONTENT_SOURCE_IDS.includes(server)
-    ? value
-    : { ...value, __unreleasedSource: true };
-}
-
 export function contentPublished(value: unknown, now = Date.now()): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
   const row = value as Row;
-  if (row.__unreleasedSource === true || row.__publicationPending === true) return false;
-  const time = row.publicStartAt ?? row.releasedAt ?? row.publishedAt ?? row.releaseAt ?? row.startAt;
+  if (row.__publicationPending === true && !(Number(row.eventPublishedAt) > 0 && Number(row.eventPublishedAt) <= now)) return false;
+  const time = row.publicStartAt ?? row.releasedAt ?? row.publishedAt ?? row.releaseAt ?? row.startAt ?? row._publicStartAt ?? row._publishedAt ?? row._releaseAt ?? row._startAt;
   const first = Array.isArray(time) ? time.find((entry) => Number(entry) > 0) : time;
   const timestamp = typeof first === "string" && !Number.isFinite(Number(first)) ? Date.parse(first) : Number(first);
   const event = Number(row.eventPublishedAt);
@@ -32,14 +25,14 @@ export function publicationFields(value: Row): Row {
       "releaseAt",
       "startAt",
       "eventPublishedAt",
+      "chapterId",
       "catalogMetadata",
-      "__unreleasedSource",
       "__publicationPending",
     ].flatMap((key) => (value[key] === undefined ? [] : [[key, value[key]]])),
   );
 }
 
-export function withEventStoryVisibility<T extends Row>(item: T, catalog: unknown, server: string): T {
+export function withEventStoryVisibility<T extends Row>(item: T, catalog: unknown, _server: string): T {
   const story = record(item.story);
   if (!Object.keys(story).length) return item;
   const document = record(catalog),
@@ -58,14 +51,11 @@ export function withEventStoryVisibility<T extends Row>(item: T, catalog: unknow
       full.eventPublishedAt ??
       starts.get(String(episode.chapterId ?? story.chapterId)) ??
       (eventStart > 0 ? eventStart : undefined);
-    return withContentSource(
-      {
-        ...episode,
-        ...(publishedAt === undefined ? { __publicationPending: true } : { publishedAt }),
-        ...(eventPublishedAt === undefined ? {} : { eventPublishedAt }),
-      },
-      server,
-    );
+    return {
+      ...episode,
+      ...(publishedAt === undefined ? { __publicationPending: true } : { publishedAt }),
+      ...(eventPublishedAt === undefined ? {} : { eventPublishedAt }),
+    };
   });
   return { ...item, story: { ...story, episodes } };
 }

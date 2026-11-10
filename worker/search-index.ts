@@ -233,7 +233,7 @@ interface SearchRow {
   texts: string;
 }
 
-export async function handleSearchRequest(request: Request, db: D1Database | undefined): Promise<Response | null> {
+export async function handleSearchRequest(request: Request, db: D1Database | undefined, visibleKeys?: readonly string[]): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.pathname !== SEARCH_PATH) return null;
   if (request.method !== "GET" && request.method !== "HEAD") return failure(405, "method_not_allowed", "Method not allowed");
@@ -255,8 +255,8 @@ export async function handleSearchRequest(request: Request, db: D1Database | und
   const scope = `FROM catalog_search_fts AS fts
     JOIN catalog_search_documents AS document ON document.rowid = fts.rowid
     JOIN catalog_search_releases AS release ON release.server = document.server AND release.release_id = document.release_id
-    WHERE catalog_search_fts MATCH ? AND document.server = ?${section ? " AND document.section = ?" : ""}`;
-  const base = [server, ...(section ? [section] : [])];
+    WHERE catalog_search_fts MATCH ? AND document.server = ?${section ? " AND document.section = ?" : ""}${visibleKeys ? ` AND (CASE document.kind WHEN 'member-cards' THEN 'cards' ELSE document.kind END || ':' || json_extract('["' || replace(rtrim(document.path,'/'),'/','","') || '"]', '$[#-1]')) IN (SELECT value FROM json_each(?))` : ""}`;
+  const base = [server, ...(section ? [section] : []), ...(visibleKeys ? [JSON.stringify(visibleKeys)] : [])];
   const run = async (expression: string) => {
     const counts = await db.prepare(`SELECT document.kind AS kind, COUNT(*) AS count ${scope} GROUP BY document.kind`)
       .bind(expression, ...base).all<{ kind: string; count: number }>();

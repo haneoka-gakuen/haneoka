@@ -1,19 +1,30 @@
 // L3 — GEB
 // Input: published community candidates, viewer, ranking time and seed.
-// Output: shared post/chart recommendation score SQL, candidate pools and diversified order.
+// Output: shared recommendation scores, candidate pools and diversified content order.
 // Pos: [Map](L2.md); community recommendation ranking owner.
 // Effects/Dependencies: D1 feature refresh; score construction and diversification are pure.
 import { forumAdminSql } from "./community-forums";
 
 export const COMMUNITY_RANKING_CRON = "*/5 * * * *";
 const VERSION = "community-engagement-v3";
-const WEIGHTS = { like: 5, comment: 8, bookmark: 3, hour: 80, day: 50, week: 20, author: 120, tag: 70, seen: 90 } as const;
+const WEIGHTS = {
+  like: 5,
+  comment: 8,
+  bookmark: 3,
+  hour: 80,
+  day: 50,
+  week: 20,
+  author: 120,
+  tag: 70,
+  seen: 90,
+} as const;
 
 export function recommendationScoreSql(options: {
   kind: "post" | "chart";
   userId: string | null;
   asOf: number;
   seed: number;
+  includeEntityComments?: boolean;
 }): { sql: string; values: Array<string | number> } {
   const chart = options.kind === "chart";
   const author = chart ? "candidate.ownerId" : "candidate.authorId";
@@ -22,9 +33,21 @@ export function recommendationScoreSql(options: {
   const post = chart ? "candidate.threadId" : "candidate.id";
   const impression = chart ? "community_chart_impression" : "community_feed_impression";
   const impressionId = chart ? "chart_id" : "post_id";
-  const values: Array<string | number> = [options.asOf - 3_600_000, options.asOf - 86_400_000, options.asOf - 7 * 86_400_000, options.seed];
+  const values: Array<string | number> = [
+    options.asOf - 3_600_000,
+    options.asOf - 86_400_000,
+    options.asOf - 7 * 86_400_000,
+    options.seed,
+  ];
   let personal = "";
   if (options.userId) {
+    const seen = (table: string, id: string) => `EXISTS(SELECT 1 FROM ${table} AS score_impression
+      WHERE score_impression.user_id=? AND score_impression.${id}=candidate.id AND score_impression.first_seen_at<?)`;
+    const seenSql =
+      options.includeEntityComments && !chart
+        ? `CASE WHEN candidate.kind='entity-comment' THEN ${seen("community_comment_impression", "comment_id")}
+          ELSE ${seen(impression, impressionId)} END`
+        : seen(impression, impressionId);
     personal = `
       + CASE WHEN EXISTS(SELECT 1 FROM community_user_follow AS score_follow
           WHERE score_follow.follower_user_id=? AND score_follow.followed_user_id=${author}) THEN ${WEIGHTS.author} ELSE 0 END
@@ -32,10 +55,10 @@ export function recommendationScoreSql(options: {
           JOIN community_tag_preference AS score_tag_preference ON score_tag_preference.tag_id=score_post_tag.tag_id
           AND score_tag_preference.user_id=? AND score_tag_preference.kind='follow'
           WHERE score_post_tag.post_id=${post}) THEN ${WEIGHTS.tag} ELSE 0 END
-      - CASE WHEN EXISTS(SELECT 1 FROM ${impression} AS score_impression
-          WHERE score_impression.user_id=? AND score_impression.${impressionId}=candidate.id
-          AND score_impression.first_seen_at<?) THEN ${WEIGHTS.seen} ELSE 0 END`;
-    values.push(options.userId, options.userId, options.userId, options.asOf);
+      - CASE WHEN ${seenSql} THEN ${WEIGHTS.seen} ELSE 0 END`;
+    values.push(options.userId, options.userId);
+    if (options.includeEntityComments && !chart) values.push(options.userId, options.asOf);
+    values.push(options.userId, options.asOf);
   }
   return {
     sql: `(${likes}*${WEIGHTS.like} + candidate.commentCount*${WEIGHTS.comment}
@@ -58,7 +81,8 @@ const published = (alias: string) => `${alias}.status='published' AND ${alias}.d
 /** Refresh the existing materialized feature table outside the read path. Unchanged scores cause no writes. */
 export async function refreshCommunityRanking(env: Env): Promise<void> {
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO community_post_rank(post_id,base_score,algorithm_version,calculated_at)
+    env.DB.prepare(
+      `INSERT INTO community_post_rank(post_id,base_score,algorithm_version,calculated_at)
       SELECT post.id, COALESCE(likes.total,0)*${WEIGHTS.like} + COALESCE(comments.total,0)*${WEIGHTS.comment} + COALESCE(bookmarks.total,0)*${WEIGHTS.bookmark}, ?, ?
       FROM community_post AS post
       LEFT JOIN (
@@ -82,14 +106,18 @@ export async function refreshCommunityRanking(env: Env): Promise<void> {
       ON CONFLICT(post_id) DO UPDATE SET base_score=excluded.base_score,
         algorithm_version=excluded.algorithm_version,calculated_at=excluded.calculated_at
       WHERE community_post_rank.base_score IS NOT excluded.base_score
-         OR community_post_rank.algorithm_version<>excluded.algorithm_version`).bind(VERSION, Date.now()),
+         OR community_post_rank.algorithm_version<>excluded.algorithm_version`,
+    ).bind(VERSION, Date.now()),
     env.DB.prepare(`DELETE FROM community_post_rank WHERE NOT EXISTS(
       SELECT 1 FROM community_post AS post WHERE post.id=community_post_rank.post_id AND ${published("post")}
     )`),
   ]);
 }
 
-interface Pool { sql: string; values: Array<string | number>; }
+interface Pool {
+  sql: string;
+  values: Array<string | number>;
+}
 
 /** A bounded union of popular, fresh, followed, owned and exploratory candidates; it grants no access. */
 export function recommendationPostPool(userId: string | null, seed: number): Pool {
@@ -133,13 +161,22 @@ export function recommendationPostPool(userId: string | null, seed: number): Poo
 }
 
 /** Keep page membership and the rank cursor unchanged while reducing adjacent repeated authors/targets. */
-export function diversifyRecommendationPage<T>(rows: readonly T[], author: (row: T) => string, target: (row: T) => string): T[] {
-  const pending = [...rows], result: T[] = [];
+export function diversifyRecommendationPage<T>(
+  rows: readonly T[],
+  author: (row: T) => string,
+  target: (row: T) => string,
+  kind?: (row: T) => string,
+): T[] {
+  const pending = [...rows],
+    result: T[] = [];
   while (pending.length) {
     const previous = result.at(-1);
     let next = 0;
     if (previous) {
-      const different = pending.slice(0, 6).findIndex((row) => author(row) !== author(previous) && target(row) !== target(previous));
+      const candidates = pending.slice(0, 6);
+      const distinct = (row: T) => author(row) !== author(previous) && target(row) !== target(previous);
+      let different = kind ? candidates.findIndex((row) => distinct(row) && kind(row) !== kind(previous)) : -1;
+      if (different < 0) different = candidates.findIndex(distinct);
       if (different >= 0) next = different;
     }
     result.push(pending.splice(next, 1)[0]!);

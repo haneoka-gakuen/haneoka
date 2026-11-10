@@ -20,7 +20,7 @@ const href = resourcePath({ server, locale, kind, id: page.id });
 const title = page.titles[locale];
 const dataId = `catalog-system-entity-${page.id}`;
 ---
-<Base locale={locale} route={page.route} canonicalRoute={href} title={title} description={page.descriptions[locale]} seoTitleValues={page.titles} seoDescriptionValues={page.descriptions} searchImage={page.image} searchTitle={title}>
+<Base publication={payload.document as Record<string, unknown>} locale={locale} route={page.route} canonicalRoute={href} title={title} description={page.descriptions[locale]} seoTitleValues={page.titles} seoDescriptionValues={page.descriptions} searchImage={page.image} searchTitle={title}>
   <AppShell locale={locale} route={page.route} title={title} server={server} appBar={rendered.appBar} entity={{ title, backHref: returnTo || resourcePath({ server, locale, kind }), previous, next }}>
     <script is:inline type="application/json" id={dataId} set:html={serializePageData(payload)}></script>
     {kind === "missions" ? <mission-workspace locale={locale} data-prerendered data-page-data={dataId} set:html={rendered.body}></mission-workspace> : <tgw-card-workspace locale={locale} data-prerendered data-page-data={dataId} set:html={rendered.body}></tgw-card-workspace>}

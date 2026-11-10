@@ -1,4 +1,5 @@
 interface Env {
+  CONTENT_BUILD_TOKEN?: string;
   OFFICIAL_ACCOUNT_ENCRYPTION_KEY?: string;
   OFFICIAL_GLOBAL_LOGIN_CONFIG?: string;
   OFFICIAL_JP_GUEST_CONFIG?: string;
@@ -31,7 +32,8 @@ interface Env {
 
 declare namespace Cloudflare {
   interface Env {
-    OFFICIAL_ACCOUNT_ENCRYPTION_KEY?: string;
+    CONTENT_BUILD_TOKEN?: string;
+  OFFICIAL_ACCOUNT_ENCRYPTION_KEY?: string;
     OFFICIAL_GLOBAL_LOGIN_CONFIG?: string;
     OFFICIAL_JP_GUEST_CONFIG?: string;
     OFFICIAL_COLLECTOR_REMOTE_ORIGIN?: string;

@@ -4,7 +4,7 @@ import { sharedEventStoryContent } from "./events";
 import { exclusiveCatalogServer } from "./availability";
 import { crossCatalogDefinition, crossCatalogRowId, type CrossCatalogDocument } from "./definitions";
 import type { CrossCatalogResource } from "./definitions";
-import { CONTENT_SOURCE_IDS, isContentSourceId } from "../content-access-state";
+import { CONTENT_SOURCE_IDS, isContentSourceId } from "../content-sources";
 import { sourceVariantGroups, visibleSourceVariants, isFormalCatalogSource, semanticOwnerKey, semanticOwnersConflict, preferredCatalogVariant } from "./content";
 export type { CrossCatalogResource } from "./definitions";
 export const OFFICIAL_CATALOG_SERVERS = CONTENT_SOURCE_IDS;

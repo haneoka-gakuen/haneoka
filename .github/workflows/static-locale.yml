@@ -38,6 +38,7 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=5120
       STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
       STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
+      STATIC_CATALOG_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CONTENT_BUILD_TOKEN || '' }}
       STATIC_CATALOG_SOURCE: http
       STATIC_BUILD_INPUT_MODE: frozen
       STATIC_BUILD_INPUT_ROOT: data/static-build/inputs
@@ -89,6 +90,7 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=5120
       STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
       STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
+      STATIC_CATALOG_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CONTENT_BUILD_TOKEN || '' }}
       STATIC_CATALOG_SOURCE: http
       STATIC_BUILD_INPUT_MODE: frozen
       STATIC_BUILD_INPUT_ROOT: data/static-build/inputs

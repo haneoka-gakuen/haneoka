@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 编辑器、社区 API 和 Sonolus 的谱面与素材身份。
-// Output: 云端草稿、不可变版本、谱面统计／推荐值、只读播放投影、播放器路径及独立音频／封面引用契约。
+// Output: 稳定公开编号、云端草稿、不可变版本、谱面统计／推荐值、只读播放投影、播放器路径及独立音频／封面引用契约。
 // Pos: [Map](../L2-2.md)；谱面创作与社区共享的数据边界。
 // Effects/Dependencies: 类型、纯路径与默认值；素材 URL 由 Worker 从引用解析并保留内容快照；服务器引用可绑定所选内容 SHA。
 import type { Project } from "../../../packages/chart-editor/src/model";
@@ -45,6 +45,7 @@ export interface CommunityChartRevision extends ChartPublication {
 }
 export interface CommunityChartItem {
   id: string;
+  publicId?: number;
   title: string;
   artist: string;
   charter: string;
@@ -83,5 +84,5 @@ export const emptyChartPublication = (): ChartPublication => ({
   visibility: "public",
   remix: true,
 });
-export const chartLevelName = (id: string) => `haneoka-community-${id}`;
+export const chartLevelName = (id: string | number) => `haneoka-community-${id}`;
 export { communityChartPath, communityChartPlayerPath } from "../community-chart-route";

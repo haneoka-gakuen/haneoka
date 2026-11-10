@@ -1,5 +1,5 @@
 /** Source comparison is separate from entity identity and never discards a source version. */
-import { CONTENT_SOURCE_IDS, contentSourceFamily } from "../content-access-state";
+import { CONTENT_SOURCE_IDS, contentSourceFamily } from "../content-sources";
 type Row = Record<string, unknown>;
 export interface ContentVariant {
   identity: { server: string; releaseId?: string; sourceId?: string };

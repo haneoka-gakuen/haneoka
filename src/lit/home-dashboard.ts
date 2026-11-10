@@ -1,10 +1,9 @@
+import { pageDataViewCurrent } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
-import { CONTENT_SOURCE_IDS } from "../lib/content-access-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentVisible, isReleasedContent } from "../lib/content-release";
 import { needsEventSongRelease } from "../lib/event-song-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
-import { withUiMarksProjection } from "../lib/ui-marks";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
 import { communityStickerPreview } from "../lib/community-markup";
 import { renderLazyEntityCommentActivity } from "./views/entity-comment-activity-lazy";
@@ -17,8 +16,7 @@ import type { Catalog, MessageParams } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
 import { resourceCollectionHref, entityHref } from "../lib/resource-route";
 import { isPublicReleaseServer, readReleaseServer } from "../lib/release-server";
-import { showRestrictedContent } from "../lib/content-visibility";
-import { fetchCrossServerCatalogs, crossCatalogSeedSources } from "../lib/cross-server/fetch";
+import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { homeEventDisplay } from "../lib/home-event-display";
 import { pinCrossCatalogValue } from "../lib/cross-server/presentation";
 import { homeSeedCatalog, unpackHomeSeedCatalogs } from "../lib/cross-server/home-seed";
@@ -343,7 +341,7 @@ export class HomeDashboard extends LitElement {
   connectedCallback() {
     if (this.communityLifetime.signal.aborted) this.communityLifetime = new AbortController();
     const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
-    if (seed) {
+    if (seed && pageDataViewCurrent(this)) {
       try {
         this.prepareHome(JSON.parse(seed.textContent || "null"), this.locale);
       } catch {
@@ -359,7 +357,7 @@ export class HomeDashboard extends LitElement {
     if (!this.seed || this.seed.server !== readReleaseServer()) {
       void this.load();
       void this.loadProfiles();
-    } else if (showRestrictedContent()) void this.loadAdditionalCatalogs();
+    }
     window.addEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
     window.addEventListener("haneoka:session-changed", this.onCommunityContextChange);
     window.addEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
@@ -800,31 +798,6 @@ export class HomeDashboard extends LitElement {
     }
     this.applyDocuments(documents);
     if (results.every((result) => result.status === "rejected")) this.phase = "error";
-  }
-  private async loadAdditionalCatalogs() {
-    if (!showRestrictedContent()) return;
-    const seed = this.seed, server = this.sourceServer() as OfficialCatalogServer;
-    const signal = this.catalogRequests.begin();
-    try {
-      const catalogs = await fetchCrossServerCatalogs(["cards", "support-cards", "songs", "characters", "bands", "events"], server, this.locale, {
-        signal, servers: CONTENT_SOURCE_IDS, initialSources: crossCatalogSeedSources(this.crossServerCatalogs),
-      });
-      if (!this.isConnected || !this.catalogRequests.current(signal) || this.seed !== seed || !showRestrictedContent()) return;
-      this.crossServerCatalogs = catalogs;
-      if (seed) this.applyDocuments(seed.documents);
-      this.requestUpdate();
-      for (const source of CONTENT_SOURCE_IDS.filter(id => id !== "jp" && id !== "intl")) {
-        const identity = catalogs.cards?.identities[source];
-        if (!seed || !identity) continue;
-        const response = await fetch(withUiMarksProjection(`/api/v1/servers/${encodeURIComponent(source)}/ui-marks?release=${encodeURIComponent(identity.releaseId)}`), { signal, cache: "no-store" });
-        if (response.ok && response.headers.get("x-haneoka-release-id") === identity.releaseId && response.headers.get("x-haneoka-source-id") === identity.sourceId) {
-          const marks = await response.json() as Record<string, string>;
-          if (this.catalogRequests.current(signal) && showRestrictedContent())
-            this.seed = { ...this.seed!, serverMarks: { ...this.seed?.serverMarks, [source]: { identity, marks } } };
-        }
-      }
-      this.requestUpdate();
-    } catch { /* Formal home content is already available. */ }
   }
   private async loadLivePanels() {
     const server = this.sourceServer();

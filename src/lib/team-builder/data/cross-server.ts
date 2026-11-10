@@ -1,7 +1,7 @@
 import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { OFFICIAL_CATALOG_SERVERS } from "../../cross-server/catalog";
 import { fetchTeamBuilderData } from "./fetch";
-import { visibleContentServers } from "../../content-visibility";
+import { visibleContentServers } from "../../content-sources";
 
 const COLLECTIONS = ["members", "snapshots", "characters", "bands", "bandItems", "songs", "events"] as const;
 const GROWTH = ["memberCardLevels", "memberCardAwake", "memberCardRanks", "supportCardLevels", "supportCardRanks"] as const;

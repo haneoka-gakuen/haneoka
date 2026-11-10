@@ -3,7 +3,7 @@ import { loadCrossServerCatalog } from "./load";
 import { loadCrossServerCatalogs } from "./bundle";
 import type { CrossCatalogReader } from "./load";
 import { OFFICIAL_CATALOG_SERVERS, type CrossCatalogResource, type OfficialCatalogServer, type CrossCatalogDTO, type CrossCatalogSnapshot } from "./catalog";
-import { visibleContentServers } from "../content-visibility";
+import { visibleContentServers } from "../content-sources";
 import { needsEventSongRelease, withEventSongReleases } from "../event-song-release";
 
 /** Reuse already rendered source rows when adding a new optional source to a home seed. */

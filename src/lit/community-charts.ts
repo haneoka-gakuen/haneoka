@@ -278,7 +278,7 @@ export class CommunityCharts extends LitElement {
       if (!this.isConnected) return;
       await AudioDock.ensure().enqueueTrack(
         {
-          id: chartLevelName(row.id),
+          id: chartLevelName(row.publicId ?? row.id),
           songKey: `community:${row.id}:${row.revision}`,
           title: row.title,
           artist: row.artist,
@@ -414,7 +414,7 @@ export class CommunityCharts extends LitElement {
         onPlay: row.audioUrl ? () => void this.playSong(row) : undefined,
         onChart: () => void this.openChart(row),
         sonolus: row.publishedRevision
-          ? `${sonolusServerLink()}/levels/${chartLevelName(row.id)}`
+          ? `${sonolusServerLink()}/levels/${chartLevelName(row.publicId ?? row.id)}`
           : undefined,
       })}
       ${
@@ -465,6 +465,7 @@ export class CommunityCharts extends LitElement {
                 "details",
                 specList(
                   [
+                    { label: c("common.fields.id"), value: row.publicId ?? row.id },
                     { label: this.t("artist"), value: row.artist },
                     { label: this.t("charter"), value: row.charter || row.ownerName },
                     {

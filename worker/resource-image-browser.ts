@@ -5,7 +5,7 @@
 // Effects/Dependencies: 隔离浏览器会话，只读取本站素材，完成或超时后关闭会话。
 import type { ChartBrowserBinding } from "./chart-browser-renderer";
 import type { ImageRenderRequest } from "../src/lib/public-tools/image-routes";
-export async function renderBrowserResource(binding: ChartBrowserBinding, input: ImageRenderRequest, origin: string) {
+export async function renderBrowserResource(binding: ChartBrowserBinding, input: ImageRenderRequest, origin: string, source?: Request) {
   const { launch } = await import("@cloudflare/playwright");
   const browser = await launch(binding);
   const timer = setTimeout(() => { void browser.close(); }, 50000);
@@ -14,7 +14,12 @@ export async function renderBrowserResource(binding: ChartBrowserBinding, input:
     const context = await browser.newContext({ viewport: { width, height: 800 }, deviceScaleFactor: 1, serviceWorkers: "block" });
     await context.route("**/*", route => {
       const request = route.request(), url = new URL(request.url());
-      return url.origin === origin && ["GET", "HEAD"].includes(request.method()) && !/^\/api\/.*\/image\.png$/u.test(url.pathname) ? route.continue() : route.abort();
+      if (url.origin !== origin || !["GET", "HEAD"].includes(request.method()) || /^\/api\/.*\/image\.png$/u.test(url.pathname)) return route.abort();
+      const headers = { ...request.headers() };
+      for (const name of ["Cookie", "Authorization"]) if (source?.headers.has(name)) headers[name.toLowerCase()] = source.headers.get(name)!;
+      const override = source && new URL(source.url).searchParams.get("spoiler");
+      if (override !== undefined && override !== null) url.searchParams.set("spoiler", override);
+      return route.continue({ headers, url: url.toString() });
     });
     const page = await context.newPage();
     await page.goto(`${origin}/tools/render.html`, { waitUntil: "load", timeout: 20000 });

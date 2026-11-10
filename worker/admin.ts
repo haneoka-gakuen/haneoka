@@ -12,7 +12,6 @@ import { listGuestAccounts, removeGuestAccount } from "./official-guest-accounts
 import { listAdminCreations, readAdminCreation, removeAdminCreation, type CreationKind } from "./admin-creations";
 import { adminVisitFilter, readAdminGeo, readAdminSeries } from "./admin-analytics";
 import {
-  USER_ROLES,
   isUserRole,
   isStaffRole,
   type UserRole,
@@ -21,8 +20,6 @@ import {
   type MemberTier,
 } from "../src/lib/user-roles";
 import { effectiveUserRoleSql } from "./user-roles";
-import { isPublicResourceServer, readSiteSettings } from "./site-settings";
-import { readSpoilerSettings } from "./spoiler-settings";
 import { readContentVisibility } from "./content-visibility";
 import { parseVisibilityPolicy } from "../src/lib/content-visibility-policy";
 import {
@@ -49,8 +46,6 @@ const PACKAGE_UPLOAD_TTL_MS = 24 * 60 * 60 * 1_000;
 const RESOURCE_OWNER = "haneoka-gakuen";
 const RESOURCE_REPOSITORY = "haneoka";
 const RESOURCE_WORKFLOW = "resource-pipeline.yml";
-const resourceWorkflow = (server: string) =>
-  isPublicResourceServer(server) ? RESOURCE_WORKFLOW : "build-validation.yml";
 const RESOURCE_REF = "main";
 const CAS_PREFIX = "cas/v1/sha256";
 const PACKAGE_LEASE_PREFIX = "private/v1/package-leases";
@@ -839,9 +834,7 @@ const getOverview = async (request: Request, env: Env): Promise<Response> => {
   ).first<OverviewRow>();
   if (!counts) throw new Error("Admin overview query returned no row");
   return json(request, {
-    siteSettings: await readSiteSettings(env),
-    spoilerSettings: await readSpoilerSettings(env),
-    visibilitySettings: await readContentVisibility(env),
+    visibilitySettings: await readContentVisibility(env, true),
     overview: {
       activeUsers: counts.activeUsers,
       blockedPosts: counts.blockedPosts,
@@ -3210,7 +3203,7 @@ const findResourceServer = async (env: Env, slug: string): Promise<ResourceServe
     `SELECT slug, display_name AS displayName, region, status, resource_prefix AS resourcePrefix,
             version, created_at AS createdAt, updated_at AS updatedAt
      FROM resource_server
-     WHERE slug = ?
+     WHERE slug = ? AND slug IN ('jp', 'intl')
      LIMIT 1`,
   )
     .bind(slug)
@@ -3221,7 +3214,7 @@ const findActiveResourceServer = async (env: Env, slug: string): Promise<Resourc
     `SELECT slug, display_name AS displayName, region, status, resource_prefix AS resourcePrefix,
             version, created_at AS createdAt, updated_at AS updatedAt
      FROM resource_server
-     WHERE slug = ? AND status = 'active'
+     WHERE slug = ? AND slug IN ('jp', 'intl') AND status = 'active'
      LIMIT 1`,
   )
     .bind(slug)
@@ -3234,6 +3227,7 @@ const getResourceServers = async (request: Request, env: Env): Promise<Response>
     `SELECT slug, display_name AS displayName, region, status, resource_prefix AS resourcePrefix,
             version, created_at AS createdAt, updated_at AS updatedAt
      FROM resource_server
+     WHERE slug IN ('jp', 'intl')
      ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END,
               region, display_name, slug`,
   ).all<ResourceServerRow>();
@@ -3955,7 +3949,7 @@ const createPackageUpload = async (request: Request, env: Env): Promise<Response
           declared_size, expected_sha256, status, expires_at, version, created_at, updated_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, 1, ?, ?
        FROM resource_server
-       WHERE slug = ? AND status = 'active' AND resource_prefix = ?`,
+       WHERE slug = ? AND slug IN ('jp', 'intl') AND status = 'active' AND resource_prefix = ?`,
     )
       .bind(
         uploadId,
@@ -4594,7 +4588,7 @@ const dispatchGitHubWorkflow = async (
   // A GitHub App installation token can replace this without changing the dispatch contract.
   const token = env.GITHUB_ACTIONS_TOKEN?.trim();
   if (!token) throw new Error("GitHubActionsTokenUnavailable");
-  const endpoint = `https://api.github.com/repos/${RESOURCE_OWNER}/${RESOURCE_REPOSITORY}/actions/workflows/${resourceWorkflow(server)}/dispatches`;
+  const endpoint = `https://api.github.com/repos/${RESOURCE_OWNER}/${RESOURCE_REPOSITORY}/actions/workflows/${RESOURCE_WORKFLOW}/dispatches`;
   const inputs: JsonObject = { ktx2, server };
   inputs[sourceKind === "package" ? "package_r2_key" : "source_id"] = workflowSource;
   const response = await fetch(endpoint, {
@@ -4635,7 +4629,7 @@ const createResourceRun = async (request: Request, env: Env): Promise<Response> 
   const fixedFields: ReadonlyArray<readonly [string, string]> = [
     ["owner", RESOURCE_OWNER],
     ["repo", RESOURCE_REPOSITORY],
-    ["workflow", typeof body.server === "string" ? resourceWorkflow(body.server) : RESOURCE_WORKFLOW],
+    ["workflow", typeof body.server === "string" ? RESOURCE_WORKFLOW : RESOURCE_WORKFLOW],
     ["ref", RESOURCE_REF],
   ];
   if (fixedFields.some(([key, value]) => body[key] !== undefined && body[key] !== value)) {
@@ -4725,7 +4719,7 @@ const createResourceRun = async (request: Request, env: Env): Promise<Response> 
          (id, operation_id, server, source_kind, source_ref, status, created_at, updated_at)
        SELECT ?, ?, ?, ?, ?, 'queued', ?, ?
        FROM resource_server
-       WHERE slug = ? AND status = 'active' AND resource_prefix = ?`,
+       WHERE slug = ? AND slug IN ('jp', 'intl') AND status = 'active' AND resource_prefix = ?`,
     )
       .bind(
         runId,
@@ -4814,7 +4808,7 @@ const createResourceRun = async (request: Request, env: Env): Promise<Response> 
     .run();
   const run = await findResourceRun(env, runId);
   if (!run) throw new Error("Queued resource run disappeared");
-  const workflowUrl = `https://github.com/${RESOURCE_OWNER}/${RESOURCE_REPOSITORY}/actions/workflows/${resourceWorkflow(server)}`;
+  const workflowUrl = `https://github.com/${RESOURCE_OWNER}/${RESOURCE_REPOSITORY}/actions/workflows/${RESOURCE_WORKFLOW}`;
   const operation = await transitionOperation(
     env,
     started.operationId,
@@ -4840,7 +4834,7 @@ const createResourceRun = async (request: Request, env: Env): Promise<Response> 
         owner: RESOURCE_OWNER,
         ref: RESOURCE_REF,
         repo: RESOURCE_REPOSITORY,
-        workflow: resourceWorkflow(server),
+        workflow: RESOURCE_WORKFLOW,
       },
     },
     202,
@@ -4852,79 +4846,6 @@ const decodedPathSegment = (value: string): string | null => {
     return decodeURIComponent(value);
   } catch {
     return null;
-  }
-};
-
-const putSiteSettings = async (request: Request, env: Env): Promise<Response> => {
-  const access = await requireStaff(request, env, "admin");
-  if (access instanceof Response) return access;
-  const body = await readJsonBody(request);
-  if (!body) return error(request, 400, "invalid_body", "A JSON body is required");
-  const version = expectedVersion(body);
-  const roles = body.contentAccessRoles;
-  if (!Array.isArray(roles) || roles.some((role) => !isUserRole(role)) || new Set(roles).size !== roles.length)
-    return error(request, 422, "invalid_site_settings", "Valid unique contentAccessRoles are required");
-  const allowedRoles = USER_ROLES.filter((role) => roles.includes(role));
-  if (version === null || typeof body.showRestrictedContent !== "boolean")
-    return error(request, 422, "invalid_site_settings", "showRestrictedContent and expectedVersion are required");
-  const started = await startOperation(request, env, access, "site.content_visibility.update", "site_setting", "1");
-  if (started.kind === "response") return started.response;
-  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  try {
-    const updated = await env.DB.prepare(
-      `UPDATE site_setting SET show_test_server_content = ?, test_content_roles = ?, version = version + 1, updated_at = ?
-       WHERE id = 1 AND version = ?`,
-    )
-      .bind(body.showRestrictedContent ? 1 : 0, JSON.stringify(allowedRoles), Date.now(), version)
-      .run();
-    if (Number(updated.meta.changes || 0) !== 1) {
-      await failOperation(env, started.operationId, "version_conflict");
-      return error(request, 409, "version_conflict", "Site settings changed; refresh and retry");
-    }
-    const operation = await transitionOperation(
-      env,
-      started.operationId,
-      "succeeded",
-      {
-        showRestrictedContent: body.showRestrictedContent,
-        contentAccessRoles: [...allowedRoles],
-        version: version + 1,
-      },
-      null,
-      null,
-    );
-    return json(request, { operation: operationValue(operation), siteSettings: await readSiteSettings(env) });
-  } catch (failure) {
-    await failOperation(env, started.operationId, "site_settings_update_failed");
-    throw failure;
-  }
-};
-
-const putSpoilerSettings = async (request: Request, env: Env): Promise<Response> => {
-  const access = await requireStaff(request, env, "admin");
-  if (access instanceof Response) return access;
-  const body = await readJsonBody(request);
-  const version = body && expectedVersion(body);
-  const roles = body?.roles;
-  if (version === null || !Array.isArray(roles) || roles.some((role) => !isUserRole(role)) || new Set(roles).size !== roles.length)
-    return error(request, 422, "invalid_settings", "Valid roles and expectedVersion are required");
-  const started = await startOperation(request, env, access, "site.spoiler_visibility.update", "spoiler_setting", "1");
-  if (started.kind === "response") return started.response;
-  if (started.kind === "existing") return existingOperationResponse(request, started.operation);
-  try {
-    const updated = await env.DB.prepare(
-      "UPDATE spoiler_setting SET roles = ?, version = version + 1, updated_at = ? WHERE id = 1 AND version = ?",
-    ).bind(JSON.stringify(USER_ROLES.filter((role) => roles.includes(role))), Date.now(), version).run();
-    if (Number(updated.meta.changes || 0) !== 1) {
-      await failOperation(env, started.operationId, "version_conflict");
-      return error(request, 409, "version_conflict", "Settings changed; refresh and retry");
-    }
-    const settings = await readSpoilerSettings(env);
-    const operation = await transitionOperation(env, started.operationId, "succeeded", { roles: settings.roles, version: settings.version }, null, null);
-    return json(request, { operation: operationValue(operation), spoilerSettings: settings });
-  } catch (failure) {
-    await failOperation(env, started.operationId, "settings_update_failed");
-    throw failure;
   }
 };
 
@@ -4945,7 +4866,7 @@ const putContentVisibility = async (request: Request, env: Env): Promise<Respons
       return error(request, 409, "version_conflict", "Settings changed; refresh and retry");
     }
     const operation = await transitionOperation(env, started.operationId, "succeeded", { version: version + 1 }, null, null);
-    return json(request, { operation: operationValue(operation), visibilitySettings: await readContentVisibility(env) });
+    return json(request, { operation: operationValue(operation), visibilitySettings: await readContentVisibility(env, true) });
   } catch (failure) {
     await failOperation(env, started.operationId, "settings_update_failed"); throw failure;
   }
@@ -5135,8 +5056,6 @@ export const handleAdminRequest = async (request: Request, env: Env, ctx?: Execu
 
   if (method === "GET" && path.length === 1 && path[0] === "session") return getSession(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "overview") return getOverview(request, env);
-  if (method === "PUT" && path.length === 1 && path[0] === "site-settings") return putSiteSettings(request, env);
-  if (method === "PUT" && path.length === 1 && path[0] === "spoiler-settings") return putSpoilerSettings(request, env);
   if (method === "PUT" && path.length === 1 && path[0] === "content-visibility") return putContentVisibility(request, env);
   if (method === "GET" && path.length === 1 && path[0] === "users") return getUsers(request, env, url);
   if (method === "GET" && path.length === 1 && path[0] === "posts") return getPosts(request, env, url);

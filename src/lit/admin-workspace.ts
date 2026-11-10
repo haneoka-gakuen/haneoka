@@ -4,7 +4,6 @@
 // Pos: [Map](L2-2.md); browser administration workspace.
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
 import { communityStoryPath } from "../lib/community-story-route";
-import { refreshContentAccess } from "../lib/content-access";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
 import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, parseVisibilityPolicy,
   type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
@@ -798,29 +797,6 @@ export class AdminWorkspace extends LitElement {
       });
       assertCurrent();
       await this.load(false);
-    });
-  }
-  private changeContentAccess(event: Event, role?: string) {
-    const control = event.currentTarget as HTMLElement & { selected: boolean; checked: boolean };
-    const settings = this.document.siteSettings as Value | undefined;
-    if (!settings || this.busy) return;
-    const roles = new Set(Array.isArray(settings.contentAccessRoles) ? settings.contentAccessRoles : ["admin"]);
-    const enabled = role ? settings.showRestrictedContent === true : control.selected;
-    if (role) { if (control.checked) roles.add(role); else roles.delete(role); }
-    if (role) control.checked = (settings.contentAccessRoles as string[]).includes(role);
-    else control.selected = settings.showRestrictedContent === true;
-    void this.mutate("site-settings", async (assertCurrent) => {
-      const result = await this.request("/api/v1/admin/site-settings", {
-        method: "PUT",
-        body: JSON.stringify({ showRestrictedContent: enabled, contentAccessRoles: USER_ROLES.filter(role => roles.has(role)), expectedVersion: settings.version }),
-      });
-      assertCurrent();
-      if (result.siteSettings) {
-        this.document = { ...this.document, siteSettings: result.siteSettings };
-        const saved = result.siteSettings as Value;
-        document.documentElement.dataset.siteSettingsVersion = String(saved.version);
-        await refreshContentAccess();
-      } else await this.load(false);
     });
   }
   private changeVisibilityRule(kind: VisibilityType, patch: Partial<VisibilityRule>) {
@@ -2504,14 +2480,14 @@ export class AdminWorkspace extends LitElement {
           ${
             this.analyticsSeries && this.analyticsMetric !== "moderationCasesLatestCompleted"
               ? html`
-                  
+
                 `
               : nothing
           }
           ${
             this.analyticsSeries?.activity?.historicalSeriesAvailable === false
               ? html`
-                  
+
                 `
               : nothing
           }
@@ -2554,12 +2530,12 @@ export class AdminWorkspace extends LitElement {
             `,
           )}
         </div>
-        
+
         <section class="admin-chart-card" aria-busy=${String(this.geoLoading)}>
           <header>
             <div>
               <h4>${this.label("analytics.map", "IP location distribution")}</h4>
-              
+
             </div>
             <span class="admin-map-actions">
               <button
@@ -2646,7 +2622,7 @@ export class AdminWorkspace extends LitElement {
                       `,
                     )}
                   </div>
-                  
+
                 `
               : nothing
           }
@@ -2723,7 +2699,6 @@ export class AdminWorkspace extends LitElement {
         </dl>
       </section>
     `;
-    const access = this.document.siteSettings as Value | undefined;
     return html`
       <div class="admin-overview">
         <section class="admin-work-queue" aria-labelledby="admin-queue-heading">
@@ -2756,38 +2731,7 @@ export class AdminWorkspace extends LitElement {
         </div>
         ${this.renderVisibilitySettings()}
         ${this.renderAnalytics()}${this.renderStatistics()}
-        ${
-          access
-            ? html`
-                <section class="admin-summary surface stack">
-                  <label class="row row--between">
-                    <strong>${this.label("showRestrictedContent", "Show unpublished content")}</strong>
-                    <md-switch
-                      .selected=${access.showRestrictedContent === true}
-                      ?disabled=${Boolean(this.busy)}
-                      @change=${(event: Event) => this.changeContentAccess(event)}
-                      aria-label=${this.label("showRestrictedContent", "Show unpublished content")}
-                    ></md-switch>
-                  </label>
-                  <div class="chip-set" role="group" aria-label=${this.label("contentAccessGroups", "Allowed account groups")}>
-                    ${USER_ROLES.map(
-                      (role) => html`
-                        <label class="chip">
-                          <md-checkbox
-                            aria-label=${this.label(`roles.${role}`, role)}
-                            .checked=${(access.contentAccessRoles as string[]).includes(role)}
-                            ?disabled=${Boolean(this.busy)}
-                            @change=${(event: Event) => this.changeContentAccess(event, role)}
-                          ></md-checkbox>
-                          ${this.label(`roles.${role}`, role)}
-                        </label>
-                      `,
-                    )}
-                  </div>
-                </section>
-              `
-            : nothing
-        }
+
       </div>
     `;
   }
@@ -2827,7 +2771,7 @@ export class AdminWorkspace extends LitElement {
       supportingText: `${this.label("workspace.updated", "Updated")} ${this.date(this.document.statisticsGeneratedAt)}`,
       leading: icon("bar_chart"),
       content: html`
-        
+
         <div class="admin-summary-grid">
           <section class="admin-summary">
             <h3>${this.label("workspace.accounts", "Account status")}</h3>
@@ -3085,7 +3029,7 @@ export class AdminWorkspace extends LitElement {
             </div>
           `,
         })}
-        
+
       </section>
     `;
   }
@@ -3144,7 +3088,7 @@ export class AdminWorkspace extends LitElement {
         label: this.label("sections.operations", "Operations"),
         supportingText: summary(operations),
         content: html`
-          
+
           <div class="admin-revision-list">
             ${rows(operations).map(
               (record) => html`
@@ -3253,7 +3197,7 @@ export class AdminWorkspace extends LitElement {
                           </span>
                         </div>
                         ${this.renderUserId(user, true, true)}
-                        
+
                         ${this.userFields([
                           [this.label("accountName", "Account name"), user.accountName],
                           [this.label("publicDisplayName", "Public name"), user.publicDisplayName],

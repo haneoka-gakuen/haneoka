@@ -1,7 +1,9 @@
+import { visibilityPolicyKey } from "../content-policy-browser";
+import { showUnreleasedContent } from "../content-release";
 import { fetchCurrentTeamBuilderIdentity } from "../team-builder/data/fetch";
 import type { CrossCatalogIdentity, CrossCatalogResource, OfficialCatalogServer } from "./catalog";
 import { crossCatalogApi } from "./definitions";
-import { visibleContentServers } from "../content-visibility";
+import { visibleContentServers } from "../content-sources";
 import { isPublicReleaseServer } from "../temporary-public-routing";
 import { eventSongReleases, type EventSongReleases } from "../event-song-release";
 
@@ -143,7 +145,7 @@ export class CrossServerPublicCache {
     const path = `/api/v1/servers/${identity.server}/${resource === "live-tools" ? resource : crossCatalogApi(resource)}${id === undefined ? "" : `/${encodeURIComponent(id)}`}`;
     const query = new URLSearchParams({ release: identity.releaseId });
     for (const value of ids || []) query.append("id", value);
-    const key = JSON.stringify([identity.server, identity.releaseId, identity.sourceId, path, ids || []]);
+    const key = JSON.stringify([visibilityPolicyKey(), showUnreleasedContent(), identity.server, identity.releaseId, identity.sourceId, path, ids || []]);
     const publicSource = isPublicReleaseServer(identity.server);
     const cached = publicSource ? this.documents.get(key) : undefined;
     if (cached) {

@@ -1,9 +1,5 @@
 import { isPublicReleaseServer as isPublicResourceServer } from "../src/lib/temporary-public-routing";
 export { isPublicReleaseServer as isPublicResourceServer } from "../src/lib/temporary-public-routing";
-import { withPrimaryD1 } from "./d1-session";
-import { getAuthSession } from "./auth";
-import { communityAccessState } from "./access";
-import { USER_ROLES, isUserRole, type UserRole } from "../src/lib/user-roles";
 import { WEB_BUILD_ATTRIBUTE } from "../src/lib/web-build-id";
 import {
   COMMUNITY_VISIBILITY_ATTRIBUTE,
@@ -11,43 +7,14 @@ import {
   communityPagesEnabled,
 } from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
-import { contentUserGroup, readContentVisibility } from "./content-visibility";
-import { DEFAULT_VISIBILITY_RULE, visibilityType } from "../src/lib/content-visibility-policy";
+import { requestContentView } from "./content-view";
+import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
+import { decodePageData, serializePageData } from "../src/lib/page-data-codec";
+import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
-import { spoilerCookieEnabled } from "../src/lib/spoiler-cookie";
 import { parseResourceRoute } from "../src/lib/resource-route";
 
-export type SiteSettings = {
-  showRestrictedContent: boolean;
-  contentAccessRoles: UserRole[];
-  version: number;
-  updatedAt: number;
-};
-
-/** Read current administrative policy, without a stale per-isolate flag cache. */
-export async function readSiteSettings(env: Env): Promise<SiteSettings> {
-  const row = await env.DB.withSession("first-primary")
-    .prepare(
-      `SELECT show_test_server_content AS enabled, test_content_roles AS roles, version, updated_at AS updatedAt
-     FROM site_setting WHERE id = 1`,
-    )
-    .first<{ enabled: number; roles: string; version: number; updatedAt: number }>();
-  let roles: unknown;
-  try {
-    roles = JSON.parse(row?.roles ?? '["admin"]');
-  } catch {
-    roles = [];
-  }
-  return {
-    showRestrictedContent: row?.enabled === 1,
-    contentAccessRoles: Array.isArray(roles) ? USER_ROLES.filter((role) => roles.includes(role)) : [],
-    version: row?.version ?? 1,
-    updatedAt: row?.updatedAt ?? 0,
-  };
-}
-
-/** Only the two public sources can be read without an account grant. */
 export function requestedResourceServers(request: Request): string[] {
   const url = new URL(request.url);
   const matches = [
@@ -74,76 +41,26 @@ export function requestedResourceServers(request: Request): string[] {
 export const restrictedResourceRequest = (request: Request): boolean =>
   requestedResourceServers(request).some((server) => !isPublicResourceServer(server));
 
-export async function contentSourceScope(
-  env: Env,
-): Promise<{ sources: string[]; sourceFamilies: Record<string, "jp" | "intl"> }> {
-  const result = await env.DB.withSession("first-primary")
-    .prepare(
-      "SELECT slug, region FROM resource_server WHERE status = 'active' AND slug NOT IN ('jp', 'intl') AND slug NOT LIKE '%-cbt' ORDER BY slug",
-    )
-    .all<{ slug: string; region: string }>();
-  return {
-    sources: result.results.map((row) => row.slug),
-    sourceFamilies: Object.fromEntries(result.results.map((row) => [row.slug, row.region === "jp" ? "jp" : "intl"])),
-  };
+export interface DocumentContentContext {
+  epoch?: string;
+  publication?: Record<string, unknown>;
+  publications?: Record<string, Record<string, unknown>>;
+  unavailable?: boolean;
 }
-
-const permissions = new WeakMap<Request, Promise<boolean>>();
-export async function testContentAllowed(request: Request, env: Env, settings?: SiteSettings): Promise<boolean> {
-  let pending = permissions.get(request);
-  if (!pending) {
-    pending = withPrimaryD1(env, async (primaryEnv) => {
-      if (!request.headers.has("Cookie") && !request.headers.has("Authorization")) return false;
-      const policy = settings ?? (await readSiteSettings(primaryEnv));
-      if (!policy.showRestrictedContent || !policy.contentAccessRoles.some(isUserRole)) return false;
-      const session = await getAuthSession(request, primaryEnv, { authoritative: true });
-      if (!session?.user?.id || !session.user.emailVerified) return false;
-      const state = await communityAccessState(primaryEnv, session.user.id, ["sign_in"]);
-      return state?.status === "active" && !state.restriction && policy.contentAccessRoles.includes(state.role);
-    });
-    permissions.set(request, pending);
-  }
-  return pending;
-}
-
-export function privateResourceResponse(response: Response): Response {
-  const setPolicy = (headers: Headers) => {
-    headers.set("Cache-Control", "private, no-store");
-    headers.set("Vary", "Cookie, Authorization, Accept-Encoding");
-    headers.delete("Access-Control-Allow-Origin");
-  };
-  try {
-    setPolicy(response.headers);
-    return response;
-  } catch {
-    // Network responses have immutable headers and an already encoded body.
-    const headers = new Headers(response.headers);
-    setPolicy(headers);
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-    });
-  }
-}
-
 export async function applySiteSettings(
   request: Request,
   response: Response,
-  settings: SiteSettings | undefined,
   buildId: string,
   env: Env,
+  context: DocumentContentContext = {},
 ): Promise<Response> {
+  const visibilityEpoch = context.epoch ?? String(Math.floor(Date.now() / 60_000));
+  const currentPublication = context.publication;
   if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/html")) return response;
-  const [visibility, group] = await Promise.all([readContentVisibility(env), contentUserGroup(request, env)]);
-  const rules = visibility.policy;
-  const preference = spoilerCookieEnabled(request.headers.get("Cookie"));
-  const resource = parseResourceRoute(new URL(request.url).pathname);
-  const kind = resource && visibilityType(resource.kind);
-  const rule = kind ? (rules.types[kind] ?? DEFAULT_VISIBILITY_RULE) : undefined;
-  const allowed = settings ? await testContentAllowed(request, env, settings) : false;
-  const scope = allowed ? await contentSourceScope(env) : undefined;
+  const view = await requestContentView(request, env);
+  const { settings: visibility, group } = view;
+  let resource = parseResourceRoute(new URL(request.url).pathname);
+  let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
   const vary = new Set(
@@ -161,23 +78,21 @@ export async function applySiteSettings(
   const community = communityPagesEnabled(new URL(request.url).hostname, env.COMMUNITY_HIDDEN_HOSTS);
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
-  const spoilerValue = new URL(request.url).searchParams.get("spoiler");
-  const override = Number.isFinite(Number(spoilerValue)) && Number(spoilerValue) !== 0 && (rule?.allowOverride ?? true);
-  const spoilers = override || preference;
-  let published = true;
+  const spoilers = view.override || view.spoilers;
+  let usePublicView = false;
+  let detailPublication: Record<string, unknown> = currentPublication ?? {};
+  let placeholder = "",
+    unavailableTitle = "";
+  let blockedJson = false;
+  let jsonText = "";
+  let jsonId = "";
   const hideIdentity = () =>
     Boolean(
-      !published &&
-      !override &&
-      resource?.id &&
-      rule &&
-      (!rule.groups.includes(group) ||
-        rule.hide.includes(resource.id) ||
-        (!rule.show.includes(resource.id) && rule.mode === "spoiler" && !preference)),
+      context.unavailable || (resource?.id && kind && !contentVisible(view, kind, detailPublication, resource.id)),
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v1:visibility-v4-${visibility.version}-${group}:spoilers-${spoilers ? 1 : 0}:community-${community ? 1 : 0}${settings ? `:site-${settings.version}:access-${allowed ? 1 : 0}` : ""}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v1:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -192,26 +107,133 @@ export async function applySiteSettings(
     return new Response(null, { status: output.status, headers });
   }
   return new HTMLRewriter()
+    .on('meta[name="haneoka-content-route"]', {
+      element(element) {
+        if (!resource?.id) {
+          resource = parseResourceRoute(element.getAttribute("content") || "");
+          kind = resource && visibilityType(resource.kind);
+        }
+        element.remove();
+      },
+    })
+    .on('meta[name="haneoka-content-placeholder"]', {
+      element(element) {
+        placeholder = parseHtmlJson<string>(element.getAttribute("content") || '""');
+        unavailableTitle = parseHtmlJson<string>(element.getAttribute("data-title") || '""');
+        element.remove();
+      },
+    })
+    .on('meta[name="robots"]', {
+      element(element) {
+        if (
+          hideIdentity() ||
+          (element.hasAttribute("data-content-index") && !contentPublished(detailPublication, view.now))
+        )
+          element.setAttribute("content", "noindex, follow");
+        element.removeAttribute("data-content-index");
+      },
+    })
+    .on("main#main-content", {
+      element(element) {
+        if (hideIdentity()) {
+          element.setAttribute("data-content-unavailable", "");
+          if (placeholder) element.setInnerContent(placeholder, { html: true });
+        }
+      },
+    })
+    .on("[data-content-view]", {
+      element(element) {
+        const full = element.getAttribute("data-content-view") === "full";
+        if (full) {
+          const refs = parseHtmlJson<ContentReference[]>(element.getAttribute("data-content-references") || "[]");
+          if (
+            refs.some(
+              (ref) =>
+                !contentVisible(
+                  view,
+                  ref.kind,
+                  context.publications?.[`${ref.kind}:${ref.id}`] ?? ref.publication,
+                  ref.id,
+                ),
+            )
+          )
+            usePublicView = true;
+        }
+        if (full === usePublicView) element.remove();
+        else element.removeAndKeepContent();
+      },
+    })
+    .on('script[type="application/json"]:not(#haneoka-i18n-seed)', {
+      element(element) {
+        jsonText = "";
+        jsonId = element.getAttribute("id") || "";
+        blockedJson = hideIdentity() && jsonId !== "haneoka-birthdays";
+        if (blockedJson) element.remove();
+      },
+      text(chunk) {
+        if (blockedJson) {
+          chunk.remove();
+          return;
+        }
+        jsonText += chunk.text;
+        if (!chunk.lastInTextNode) {
+          chunk.remove();
+          return;
+        }
+        const input = decodePageData(JSON.parse(jsonText));
+        const filtered = filterContentData(input, view, resource?.kind, true, context.publications);
+        if (filtered.changed) usePublicView = true;
+        chunk.replace(serializePageData(filtered.value), { html: true });
+        jsonText = "";
+      },
+    })
+    .on(
+      'script[type="application/ld+json"], meta[name="description"], meta[name="keywords"], meta[property^="og:"], meta[name^="twitter:"], meta[data-pagefind-meta]',
+      {
+        element(element) {
+          if (hideIdentity()) element.remove();
+        },
+      },
+    )
     .on("html", {
       element(element) {
         element.setAttribute(WEB_BUILD_ATTRIBUTE, buildId);
         element.setAttribute(COMMUNITY_VISIBILITY_ATTRIBUTE, community ? "1" : "0");
         element.removeAttribute("data-show-test-server-content");
-        element.setAttribute("data-content-access", allowed ? "1" : "0");
-        if (scope) {
-          element.setAttribute("data-content-sources", JSON.stringify(scope.sources));
-          element.setAttribute("data-content-source-families", JSON.stringify(scope.sourceFamilies));
-        } else {
-          element.removeAttribute("data-content-sources");
-          element.removeAttribute("data-content-source-families");
-        }
-        if (settings) element.setAttribute("data-site-settings-version", String(settings.version));
-        else element.removeAttribute("data-site-settings-version");
+        for (const attribute of [
+          "data-content-access",
+          "data-content-sources",
+          "data-content-source-families",
+          "data-site-settings-version",
+        ])
+          element.removeAttribute(attribute);
         element.setAttribute("data-spoiler-content", spoilers ? "1" : "0");
         element.setAttribute("data-content-visibility-policy", JSON.stringify(visibility.policy));
         element.setAttribute("data-content-visibility-version", String(visibility.version));
         element.setAttribute("data-content-visibility-at", String(Date.now()));
         element.setAttribute("data-content-group", group);
+        element.setAttribute("data-content-response-key", view.key);
+      },
+    })
+    .on("img[src], audio[src], video[src], source[src], video[poster], a[href]", {
+      element(element) {
+        const attribute = element.tagName === "a" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
+        const source = element.getAttribute(attribute);
+        if (!source) return;
+        const target = new URL(source, request.url);
+        if (target.origin !== new URL(request.url).origin) return;
+        const kind = /^\/api\/v1\/([^/]+)/u.exec(target.pathname)?.[1];
+        if (
+          !/^\/(?:assets|runtime|objects|downloads\/stories|api\/v1\/(?:servers|team-builder|meta-reference))(?:\/|$)/u.test(
+            target.pathname,
+          ) &&
+          !(kind && visibilityType(kind))
+        )
+          return;
+        target.searchParams.set("__content", "1");
+        if (view.override && !target.searchParams.has("spoiler"))
+          target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
+        element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },
     })
     .on("head", {
@@ -225,22 +247,30 @@ export async function applySiteSettings(
     .on('meta[name="haneoka-content-publication"]', {
       element(element) {
         const value = element.getAttribute("content");
-        if (value) published = contentPublished(parseHtmlJson(value));
+        if (value && !currentPublication) {
+          detailPublication = parseHtmlJson(value);
+        }
+      },
+    })
+    .on("[data-entity-navigation]", {
+      element(element) {
+        const label = element.getAttribute("aria-label");
+        if (label) element.setAttribute("aria-label", label.split(":")[0]!);
       },
     })
     .on("h1", {
       element(element) {
-        if (hideIdentity()) element.setInnerContent("");
+        if (hideIdentity()) element.setInnerContent(unavailableTitle);
       },
     })
     .on("[data-app-bar-static]", {
       element(element) {
-        if (hideIdentity()) element.remove();
+        if (hideIdentity() || usePublicView) element.remove();
       },
     })
     .on("title", {
       element(element) {
-        if (hideIdentity()) element.setInnerContent("haneoka");
+        if (hideIdentity()) element.setInnerContent(`${unavailableTitle} / haneoka`);
       },
     })
     .on("story-workspace[data-provider-entity-shell]", {

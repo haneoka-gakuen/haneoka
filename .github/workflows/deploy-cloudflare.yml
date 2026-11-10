@@ -97,6 +97,7 @@ jobs:
     env:
       STATIC_PAGE_GROUPS: core
       STATIC_RESOURCE_SERVERS: intl,jp
+      STATIC_CATALOG_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CONTENT_BUILD_TOKEN || '' }}
       STATIC_CATALOG_SOURCE: http
       PROVIDER_STATIC_SNAPSHOT: data/provider-static/snapshots/${{ github.run_id }}
     steps:
@@ -136,6 +137,16 @@ jobs:
       - name: Check resource pipeline
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
+      - name: Prepare resource visibility metadata
+        env:
+          PYTHONPATH: scripts
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: |
+          python -m pip install boto3==1.43.47 py3rijndael==0.3.3
+          python scripts/publish/content_index.py
       - name: Check Worker types
         run: pnpm typecheck:worker
       - name: Check out selected frontend source

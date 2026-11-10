@@ -44,6 +44,7 @@ export async function handleResourceImage(request: Request, env: NativeRendererB
     const appearance = { ...body };
     const options = new Set(model ? ["server", "release", "width", "height", "time", "loop", "locale", "theme", "seed", ...(route.kind === "live2d" ? ["motion", "expression", "blink", "breath"] : ["animation", "skin", "playbackRate"])] : ["locale", "theme", "seed", ...(route.kind === "gacha-history" ? ["page"] : [])]);
     for (const [key, value] of url.searchParams) {
+      if (key === "spoiler" || key === "__content") continue;
       if (!options.has(key) || url.searchParams.getAll(key).length !== 1) throw new TypeError(`Invalid parameter ${key}`);
       if (["locale", "theme", "seed", "page"].includes(key)) appearance[key] = key === "page" ? Number(value) : value;
       else if (["width", "height", "time", "playbackRate"].includes(key)) data[key] = Number(value);
@@ -60,11 +61,11 @@ export async function handleResourceImage(request: Request, env: NativeRendererB
     if (env.TOOLS_SERVICE_URL && env.TOOLS_SERVICE_TOKEN) {
       const target = new URL("v1/resource-image", env.TOOLS_SERVICE_URL.replace(/\/?$/u, "/"));
       if (target.username || target.password || target.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(target.hostname)) throw new Error("Invalid renderer URL");
-      response = await fetch(target, { method: "POST", headers: { Authorization: `Bearer ${env.TOOLS_SERVICE_TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify(input), redirect: "manual", signal: AbortSignal.any([request.signal, AbortSignal.timeout(55000)]) });
+      response = await fetch(target, { method: "POST", headers: { Authorization: `Bearer ${env.TOOLS_SERVICE_TOKEN}`, "Content-Type": "application/json", ...resourceContextHeaders(request) }, body: JSON.stringify(input), redirect: "manual", signal: AbortSignal.any([request.signal, AbortSignal.timeout(55000)]) });
     } else {
       if (!env.BROWSER) return fail(503, "renderer_unavailable", "Image renderer is unavailable");
       const { renderBrowserResource } = await import("./resource-image-browser");
-      response = await renderBrowserResource(env.BROWSER, input, url.origin);
+      response = await renderBrowserResource(env.BROWSER, input, url.origin, request);
     }
     if (!response.ok) { const status = [400, 404, 409, 413, 429].includes(response.status) ? response.status : 502; await response.body?.cancel(); return fail(status, status === 404 ? "not_found" : "image_render_failed", status === 404 ? "Resource not found" : "Image rendering failed"); }
     const type = response.headers.get("Content-Type");
@@ -79,4 +80,9 @@ export async function handleResourceImage(request: Request, env: NativeRendererB
     const invalid = error instanceof TypeError || error instanceof RangeError || error instanceof Error && /page\.evaluate: (TypeError|RangeError):/u.test(error.message);
     return fail(invalid ? 400 : 502, "image_render_failed", "Image rendering failed");
   }
+}
+
+function resourceContextHeaders(request: Request): Record<string, string> {
+  return Object.fromEntries([...["Cookie", "Authorization"].flatMap((name) => request.headers.has(name) ? [[`X-Haneoka-Resource-${name}`, request.headers.get(name)!]] : []),
+    ...(new URL(request.url).searchParams.has("spoiler") ? [["X-Haneoka-Resource-Spoiler", new URL(request.url).searchParams.get("spoiler")!]] : [])]);
 }

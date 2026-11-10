@@ -1,4 +1,4 @@
-import { contentSourceFamily } from "../../lib/content-access-state";
+import { contentSourceFamily } from "../../lib/content-sources";
 import { html, nothing } from "lit";
 import { clientText } from "../../i18n/client";
 import bushimo from "../../assets/icons/bushimo-circle.svg?url";
@@ -6,7 +6,6 @@ import bushimoSource from "../../assets/icons/bushimo-circle.svg?raw";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 import { exclusiveCatalogServer } from "../../lib/cross-server/availability";
 import type { CrossCatalogEntry } from "../../lib/cross-server/catalog";
-import { showRestrictedContent } from "../../lib/content-visibility";
 
 export type FormalCatalogServer = string;
 
@@ -97,33 +96,4 @@ export function serverAvailabilityBadge(availability: readonly FormalCatalogServ
       decoding="async"
     />
   `;
-}
-
-export type CatalogSourceChoiceOptions = { activeSource?: string } & (
-  | { href(source: string): string | null | undefined; onSelect?: never }
-  | { onSelect(source: string): void; href?: never }
-);
-
-export function catalogSourceChoices(
-  entry: { sourceIds: readonly string[] } | undefined,
-  locale: string,
-  options: CatalogSourceChoiceOptions,
-) {
-  if (!entry || !showRestrictedContent()) return nothing;
-  const sources = [...new Set(entry.sourceIds.filter((source) => !formal(source)))];
-  if (sources.length < 2) return nothing;
-  return html`<div class="cluster" aria-label=${clientText(locale, "common.fields.source", "Source")}>
-    ${sources.map((source) => {
-      const label = serverAvailabilityLabel([source], locale);
-      const content = html`<img src=${serverAvailabilityImage(source)} alt="" width="24" height="24" />${label}`;
-      if (options.href) {
-        const href = options.href(source);
-        return href ? html`<a class="button button--tonal" href=${href}
-          aria-current=${options.activeSource === source ? "page" : nothing}>${content}</a>` : nothing;
-      }
-      return html`<button type="button" class="button button--tonal"
-        aria-pressed=${options.activeSource === source}
-        @click=${() => options.onSelect(source)}>${content}</button>`;
-    })}
-  </div>`;
 }

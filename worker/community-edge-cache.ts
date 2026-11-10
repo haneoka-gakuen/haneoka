@@ -34,7 +34,7 @@ const STORED_AT = "X-Edge-Stored-At";
 const CACHEABLE_PATH =
   /^\/api\/v1\/community\/(?:bootstrap|posts(?:\/[0-9a-f-]{36})?|forums(?:\/by-slug\/[^/]{1,128})?|tags|users\/[1-9]\d{0,15}|entity-threads\/[a-z][a-z0-9-]{0,63}\/[^/]{1,256})$/iu;
 /** Cookies that never select an identity or a different response. */
-const NEUTRAL_COOKIES = new Set(["haneoka.locale", "__cf_bm", "cf_clearance", "_cfuvid", "__cflb"]);
+const NEUTRAL_COOKIES = new Set(["haneoka.locale", "haneoka.spoilers", "__cf_bm", "cf_clearance", "_cfuvid", "__cflb"]);
 
 function cookieNames(header: string | null): string[] {
   return (header || "").split(";").map((part) => part.split("=")[0]!.trim()).filter(Boolean);
@@ -133,10 +133,12 @@ export async function cachedCommunityRead(
   request: Request,
   ctx: Pick<ExecutionContext, "waitUntil">,
   compute: () => Promise<Response>,
+  visibilityKey = "",
 ): Promise<Response> {
   const cache = edgeCacheable(request) ? edgeCache() : null;
   if (!cache) return compute();
   const url = new URL(request.url);
+  if (visibilityKey) url.searchParams.set("__visibility", visibilityKey);
   const key = cacheKey(url);
   const [hit, mark] = await Promise.all([cache.match(key).catch(() => undefined), generation(cache, url)]);
   const storedAt = Number(hit?.headers.get(STORED_AT));

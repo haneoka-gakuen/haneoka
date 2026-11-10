@@ -11,7 +11,7 @@ import { isContentListed, isContentVisible, showUnreleasedContent } from "../lib
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
 import { visibilityPolicyKey } from "../lib/content-policy-browser";
-import { withContentSource, withEventStoryVisibility } from "../lib/content-publication";
+import { withEventStoryVisibility } from "../lib/content-publication";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import catalogPageRollout from "../../config/catalog-page-rollout.json";
 import { CatalogPageRefresh } from "../lib/catalog-page-refresh";
@@ -38,7 +38,6 @@ import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import {
   serverAvailabilityBadge,
   catalogServerMark,
-  catalogSourceChoices,
   serverAvailabilityImage,
   serverAvailabilityLabel,
 } from "./shared/server-availability";
@@ -54,7 +53,6 @@ import {
 } from "../lib/cross-server/catalog";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { crossCatalogRows, isCrossCatalogResource } from "../lib/cross-server/definitions";
-import { canUseStaticCatalogScope, isRestrictedContentSource, showRestrictedContent } from "../lib/content-visibility";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { fetchCrossServerDetail } from "../lib/cross-server/detail";
 import { specList } from "./ui/spec";
@@ -1104,7 +1102,7 @@ export class CatalogScreen extends LitElement {
   }
   private unionPrimaryRow(entry: CrossCatalogEntry, itemEntries = this.unionItems): Item {
     const variant = entry.perServer[entry.displayServer]!;
-    const row = withContentSource(crossServerDisplayRow(entry),variant.identity.server);
+    const row = crossServerDisplayRow(entry);
     // Shared text may supplement this presentation; primary artwork remains on its own source.
     for (const supplement of entry.content.supplements)
       if (supplement.classification === "source-asset") {
@@ -1159,7 +1157,7 @@ export class CatalogScreen extends LitElement {
     }
   }
   private unionPresentationScope(): string {
-    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showRestrictedContent(), showUnreleasedContent(), visibilityPolicyKey(), [...OFFICIAL_CATALOG_SERVERS]]);
+    return JSON.stringify([this.settings.resource, this.settings.locale, this.dataServer(), showUnreleasedContent(), visibilityPolicyKey(), [...OFFICIAL_CATALOG_SERVERS]]);
   }
   private unionPresentationSourceKey(dto: CrossCatalogDTO, scopeKey: string): string {
     return JSON.stringify([
@@ -1385,67 +1383,6 @@ export class CatalogScreen extends LitElement {
     } catch (error) {
       if (!cached) throw error;
       // Keep the prior immutable public view when a current-pointer observation fails.
-    }
-  }
-  private sourceVariants() {
-    const detail = this.unionDetail;
-    return catalogSourceChoices(detail, this.settings.locale, {
-      activeSource: detail?.activeServer,
-      onSelect: (source) => void this.selectUnionSource(source),
-    });
-  }
-  /**
-   * Restricted editions have no canonical page of their own, so switching to one
-   * loads its detail in place instead of navigating to a hidden-server URL.
-   */
-  private async selectUnionSource(source: string) {
-    if (!this.unionResource() || !this.isConnected) return;
-    const current = this.unionDetail;
-    const active = current?.perServer[current.activeServer];
-    const target = current?.perServer[source];
-    const base = this.unionDetailBase ?? this.selected;
-    if (!current || !active || !target || !base || isPublicReleaseServer(target.identity.server)) return;
-    const matches = (candidate: CrossCatalogEntry) => {
-      const variant = candidate.perServer[current.activeServer];
-      return Boolean(
-        variant &&
-          variant.id === active.id &&
-          variant.identity.releaseId === active.identity.releaseId &&
-          (!active.identity.sourceId || variant.identity.sourceId === active.identity.sourceId),
-      );
-    };
-    const signal = this.unionRequests.begin();
-    try {
-      const resource = this.unionResource()!;
-      let dto = this.unionCatalog?.resource === resource ? this.unionCatalog : undefined;
-      if (!dto) {
-        const catalogs = await fetchCrossServerCatalogs(
-          [resource],
-          this.dataServer() as OfficialCatalogServer,
-          this.settings.locale,
-          { signal },
-        );
-        if (!this.unionRequests.current(signal)) return;
-        dto = catalogs[resource];
-        if (!dto) return;
-        this.unionCatalog = dto;
-      }
-      const entry = dto.entries.find(matches);
-      if (!entry) return;
-      const detail = await fetchCrossServerDetail(entry, source, { signal });
-      if (!this.unionRequests.current(signal) || this.unionDetail !== current) return;
-      if (!detail.fullSources.includes(source)) return;
-      const row = { ...base, ...this.unionDetailRow(detail) };
-      this.unionItems.set(row, entry);
-      this.unionDetail = { ...detail, exclusive: entry.exclusive };
-      this.unionDetailBase = base;
-      this.selected = row;
-      this.detailAux = {};
-      this.resultCache = undefined;
-      this.restoreDetailQuery();
-      this.requestUpdate();
-    } catch {
-      /* Keep the current variant when the restricted source cannot be read. */
     }
   }
   private viewingServerNotice() {
@@ -1927,7 +1864,7 @@ export class CatalogScreen extends LitElement {
     selector: () => {
       const selector = { server: this.dataServer(), locale: this.settings.locale, resource: this.settings.resource,
         ...(this.settings.entityContext ? { id: this.selectedId } : {}) };
-      return (catalogPageRollout.enabledKinds as readonly string[]).includes(selector.resource) && !this.isProvider() && canUseStaticCatalogScope() && validPageSelector(selector) ? selector : undefined;
+      return (catalogPageRollout.enabledKinds as readonly string[]).includes(selector.resource) && !this.isProvider() && validPageSelector(selector) ? selector : undefined;
     },
     active: () => this.isConnected && document.visibilityState === "visible" && !this.settings.chartPage && !this.detailVideoPlaying && this.phase !== "loading",
     fetch: (url, init) => fetch(url, init),
@@ -2631,7 +2568,6 @@ export class CatalogScreen extends LitElement {
     if (this.settings.chartPage && typeof window !== "undefined" && this.isConnected) await this.ensureChartPlayer();
   }
   async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false): Promise<() => void> {
-    if (payload.server) payload = {...payload,item:withContentSource(payload.item,payload.server)};
     const identity = nativeMetaIdentity(payload), relatedSongs = payload.aux?.songs as Record<string, Item> | undefined;
     if (this.isConnected && identity && payload.resource === "events" && payload.item.story) {
       const stories = await crossServerPublicCache().readCollection("stories",identity).catch(() => ({}));
@@ -2781,12 +2717,12 @@ export class CatalogScreen extends LitElement {
     }
     if (inline?.schema === "haneoka-collection-payload-v1" &&
         "identity" in inline && inline.resource === this.settings.resource && inline.identity.server === this.dataServer() &&
-        canUseStaticCatalogScope() && !this.settings.entityContext) {
+        !this.settings.entityContext) {
       this.prepareCollection(inline, this.config);
       this.restoreLocationState();
       return;
     }
-    if (inline?.schema === "haneoka-entity-payload-v1" && inline.item && inline.id === this.selectedId && canUseStaticCatalogScope()) {
+    if (inline?.schema === "haneoka-entity-payload-v1" && inline.item && inline.id === this.selectedId) {
       try {
         await this.prepareEntity(inline, this.config, signal);
         if (!this.isConnected || !this.catalogRequests.current(signal)) return;
@@ -4977,7 +4913,7 @@ export class CatalogScreen extends LitElement {
       // GBP details load on demand; canonical archive pages retain SSR content.
       // A server-first shell has no SSR content, so it shows the state instead
       // of an empty page while its release documents arrive.
-      if (this.isProvider() || isRestrictedContentSource(this.dataServer()))
+      if (this.isProvider())
         return loadingState(this.label("loading", "Loading"));
       return nothing;
     }
@@ -7291,7 +7227,7 @@ export class CatalogScreen extends LitElement {
                     </section>
                   `
                 : nothing
-            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.sourceVariants()}${this.viewingServerNotice()}
+            }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.viewingServerNotice()}
           `,
           this.detailDiscussion(item),
         ),

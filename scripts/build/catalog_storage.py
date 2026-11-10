@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from urllib.parse import urlsplit, unquote
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -858,6 +859,72 @@ def _write_partitions(root: Path, prefix: str, records: dict[str, Any]) -> dict[
     }
 
 
+PUBLICATION_FIELDS = ("publicStartAt", "releasedAt", "publishedAt", "releaseAt", "startAt", "eventPublishedAt", "__publicationPending", "chapterId", "catalogMetadata")
+CONTENT_ID_FIELDS = {
+    "cardId": "cards", "supportCardId": "support-cards", "musicId": "songs", "storyId": "stories",
+    "storyKey": "stories", "comicId": "comics", "stampId": "stamps", "stickerId": "stickers",
+    "backgroundId": "backgrounds", "live2dKey": "live2d", "helpSubcategoryId": "help", "tipId": "help-tips",
+}
+CONTENT_FIELD_TYPES = {"episodes": "stories", "chapters": "stories", "storyEvents": "stories", "supportCards": "support-cards"}
+
+
+def _content_access_index(resource: str, document: JsonObject, entities: dict[str, Any]) -> JsonObject:
+    records: dict[str, Any] = {}
+    assets: dict[str, list[list[str]]] = {}
+    preview_assets: set[str] = set()
+    publications: dict[str, Any] = {}
+
+    def walk(value: Any, kind: str, identity: str, owners: list[str], field: str = "") -> None:
+        if isinstance(value, str):
+            path = unquote(urlsplit(value).path)
+            if path.startswith(("/assets/", "/runtime/", "/objects/")):
+                parts = path.lstrip("/").split("/", 2)
+                if len(parts) == 3 and parts[1] in {"jp", "intl"}:
+                    path = parts[0] + "/" + parts[2]
+            elif path.startswith(("Assets/", "Packages/")):
+                path = "assets/" + path
+            path = re.sub(r"^(assets|runtime)/(ja|en|ko|zh-CN|zh-TW)/", r"\1/", path)
+            path = re.sub(r"\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)", "", path)
+            if path.startswith(("assets/", "runtime/", "objects/")) and owners:
+                if field in {"image", "thumbnailImage", "faceImage", "jacketUrl", "jacketThumbUrl", "thumbnail"}:
+                    preview_assets.add(path)
+                references = assets.setdefault(path, [])
+                if owners not in references:
+                    references.append(owners)
+            return
+        if isinstance(value, list):
+            for child in value:
+                walk(child, kind, identity, owners, field)
+            return
+        if not isinstance(value, dict):
+            return
+        if owners:
+            for field, category in CONTENT_ID_FIELDS.items():
+                if field in value:
+                    kind, identity = category, str(value[field])
+                    break
+        publication = {key: value[key] for key in PUBLICATION_FIELDS if key in value}
+        if not owners:
+            publications[kind + ":" + identity] = publication
+        if publication or not owners:
+            reference = kind + ":" + identity
+            # An episode referenced by a published event keeps its own date.
+            if reference in records and records[reference]["publication"] != publication:
+                reference += ":" + str(len(records))
+            records[reference] = {"kind": kind, "id": identity, "publication": publication}
+            owners = [*owners, reference]
+        for field, child in value.items():
+            if field != "catalogMetadata":
+                walk(child, CONTENT_FIELD_TYPES.get(field, kind), identity, owners, field)
+
+    if entities:
+        for identity, entity in entities.items():
+            walk(entity, resource, identity, [])
+    else:
+        walk(document, resource, resource, [])
+    return {"schema": "haneoka-content-index-v1", "records": records, "assets": assets, "previewAssets": sorted(preview_assets), "publications": publications}
+
+
 def _compile_resource(
     resource: str,
     document: JsonObject,
@@ -887,7 +954,9 @@ def _compile_resource(
         index = _replace_nested(document, spec.collection, projected)
         kind = "collection"
         count = len(entities)
+    write_json(resource_root / "access.json", _content_access_index(resource, document, entities))
     descriptor: dict[str, Any] = {
+        "access": f"api/v1/catalog/{resource}/access.json",
         "count": count,
         "dependencies": list(spec.dependencies),
         "index": index_path,

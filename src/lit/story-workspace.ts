@@ -62,7 +62,6 @@ import {
   type BrowseRailItem,
 } from "./ui/browse";
 import { filterChip, inputChip, segmented } from "./ui/controls";
-import { modal } from "./ui/modal";
 import { icon } from "./ui/icon";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { PaneFocus } from "./ui/pane";
@@ -90,7 +89,7 @@ import {
   type CrossCatalogPresentation,
 } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
-import { catalogServerMark, catalogSourceChoices, serverAvailabilityImage } from "./shared/server-availability";
+import { catalogServerMark } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { providerEntityRoute } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
@@ -104,10 +103,9 @@ import {
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import type { Locale } from "@haneoka/i18n";
 import { readPageData } from "../lib/page-data";
-import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isListedContent, isReleasedContent } from "../lib/content-release";
-import { eventStoryStarts, withContentSource, withEventStart } from "../lib/content-publication";
+import { eventStoryStarts, withEventStart } from "../lib/content-publication";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -252,7 +250,6 @@ export class StoryWorkspace extends LitElement {
     detailLoading: { state: true },
     detailError: { state: true },
     detailMode: { state: true },
-    sourceChoicesOpen: { state: true },
     transcriptQuery: { state: true },
     transcriptSpeakers: { state: true },
     storyCommentsReady: { state: true },
@@ -284,7 +281,6 @@ export class StoryWorkspace extends LitElement {
   declare detailLoading: boolean;
   declare detailError: string;
   declare detailMode: "text" | "play";
-  declare private sourceChoicesOpen: boolean;
   declare private transcriptQuery: string;
   declare private transcriptSpeakers: string[];
   declare private storyCommentsReady: boolean;
@@ -383,7 +379,6 @@ export class StoryWorkspace extends LitElement {
     this.detailCard = null;
     this.detailLoading = false;
     this.detailMode = "text";
-    this.sourceChoicesOpen = false;
     this.transcriptQuery = "";
     this.transcriptSpeakers = [];
     this.storyCommentsReady = false;
@@ -400,7 +395,7 @@ export class StoryWorkspace extends LitElement {
   protected update(changed: Map<string, unknown>): void {
     if (changed.has("reader") && this.reader) {
       this.stopStoryPlayback();
-      this.detailEpisode = this.origin === "release" ? withContentSource(this.reader.story, this.reader.server) : this.reader.story;
+      this.detailEpisode = this.reader.story;
       this.entityId = this.episodeId(this.reader.story);
       this.pageServer = this.reader.server;
       this.detailMode = "text";
@@ -430,7 +425,7 @@ export class StoryWorkspace extends LitElement {
     this.unionStories = undefined;
     this.unionChapters.clear();
     const payloadStarts = eventStoryStarts(payload);
-    this.episodes = Object.fromEntries(Object.entries(payload.episodes).map(([id, episode]) => [id, withEventStart(withContentSource(episode, payload.server), payloadStarts)]));
+    this.episodes = Object.fromEntries(Object.entries(payload.episodes).map(([id, episode]) => [id, withEventStart(episode, payloadStarts)]));
     this.storyEvents = payload.storyEvents;
     this.spots = payload.homeSpots;
     this.characters = payload.characters;
@@ -638,10 +633,8 @@ export class StoryWorkspace extends LitElement {
     this.catalogRequests.cancel();
     this.unionStories = undefined;
     this.unionChapters.clear();
-    this.sourceChoicesOpen = false;
     this.requestUpdate();
-    if (this.entityId) this.loadDetailSources();
-    else {
+    if (!this.entityId) {
       this.detailRequests.cancel();
       if (this.detailEpisode || this.detailCard) this.closeDetail();
       this.episodes = {};
@@ -897,8 +890,7 @@ export class StoryWorkspace extends LitElement {
     if (
       page?.schema === "haneoka-workspace-collection-v1" &&
       page.resource === "stories" &&
-      !this.entityId &&
-      canUseStaticCatalogScope()
+      !this.entityId
     ) {
       const { sort, order } = this;
       this.prepareCollection(page, this.locale, this.mode);
@@ -912,7 +904,6 @@ export class StoryWorkspace extends LitElement {
     }
     if (page?.schema === "haneoka-story-payload-v1" && page.id === this.entityId) {
       this.prepareEntity(page, this.locale);
-      this.loadDetailSources(signal);
       await this.updateComplete;
       if (!active()) return;
       this.dataset.entityReady = "true";
@@ -924,7 +915,6 @@ export class StoryWorkspace extends LitElement {
     // A canonical story can open independently of its collection indexes.
     if (this.entityId) {
       void this.openStory(this.entityId);
-      if (this.loadDetailSources(signal)) return;
     }
     try {
       if (this.isProvider()) await this.loadBestdori(signal);
@@ -1024,28 +1014,11 @@ export class StoryWorkspace extends LitElement {
     const next = index >= 0 ? neighbor(sequence[index + 1]) : undefined;
     updateEntityNeighbors(this, this.locale, { ...(previous ? { previous } : {}), ...(next ? { next } : {}) });
   }
-  private loadDetailSources(signal?: AbortSignal): boolean {
-    const server = this.dataServer();
-    if (this.isProvider() || !this.entityId || canUseStaticCatalogScope() || !isRestrictedContentSource(server))
-      return false;
-    const current = signal || this.catalogRequests.begin();
-    void this.loadRelease(current)
-      .then(() => {
-        if (!this.isConnected || !this.catalogRequests.current(current)) return;
-        const detail = this.detailEpisode;
-        const entry = this.unionStories?.byId.get(`${server}:${this.entityId}`);
-        if (detail && entry) this.unionStories!.entries.set(detail, entry);
-        this.phase = "ready";
-        this.requestUpdate();
-      })
-      .catch(() => undefined);
-    return true;
-  }
   private async loadRelease(signal: AbortSignal) {
     // Live source choices share the collection's pinned catalogue bundle.
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
     const server = this.dataServer() as OfficialCatalogServer;
-    if ((!this.entityId || isRestrictedContentSource(server)) && OFFICIAL_CATALOG_SERVERS.includes(server)) {
+    if (!this.entityId && OFFICIAL_CATALOG_SERVERS.includes(server)) {
       const catalogs = await fetchCrossServerCatalogs(["stories", "characters", "bands"], server, this.locale, {
         signal,
       });
@@ -1066,7 +1039,7 @@ export class StoryWorkspace extends LitElement {
     if (!this.isConnected || !this.catalogRequests.current(signal)) return;
     this.chapters = recordValues(stories.chapters);
     const starts = eventStoryStarts(stories);
-    this.episodes = Object.fromEntries(Object.entries((stories.episodes as Record<string, JsonRecord>) || {}).map(([id, episode]) => [id, withEventStart(withContentSource(episode, server), starts)]));
+    this.episodes = Object.fromEntries(Object.entries((stories.episodes as Record<string, JsonRecord>) || {}).map(([id, episode]) => [id, withEventStart(episode, starts)]));
     this.storyEvents = Array.isArray(stories.storyEvents) ? stories.storyEvents : [];
     this.spots = recordValues(stories.homeSpots);
     this.characters = recordValues(characters);
@@ -1826,7 +1799,6 @@ export class StoryWorkspace extends LitElement {
     }
     this.detailSource = sourceServer;
     const signal = this.detailRequests.begin();
-    this.sourceChoicesOpen = false;
     if (!this.detailEpisode || this.episodeId(this.detailEpisode) !== id) {
       this.transcriptQuery = "";
       this.transcriptSpeakers = [];
@@ -2658,57 +2630,14 @@ export class StoryWorkspace extends LitElement {
       );
     return nothing;
   }
-  private renderSourceChoices(episode: JsonRecord) {
-    const entry = this.episodeEntry(episode);
-    return catalogSourceChoices(entry, this.locale, {
-      activeSource: this.detailServer(),
-      onSelect: (source) => void this.selectDetailSource(source),
-    });
-  }
-  /** Every choice is a restricted edition, so the pane switches variants in place. */
-  private async selectDetailSource(source: string) {
-    const episode = this.detailEpisode;
-    const entry = episode ? this.episodeEntry(episode) : undefined;
-    const variant = entry?.perServer[source];
-    if (!entry || !variant) return;
-    this.sourceChoicesOpen = false;
-    await this.openScenario(variant.id, variant.row, source);
-  }
   private renderDetailActions() {
-    const choices =
-      this.detailMode === "play" && this.detailEpisode ? this.renderSourceChoices(this.detailEpisode) : nothing;
     return html`
-      ${
-        choices === nothing
-          ? nothing
-          : html`
-              <button
-                class="icon-button"
-                type="button"
-                aria-haspopup="dialog"
-                aria-label=${uiText(this.locale, "common.fields.source")}
-                title=${uiText(this.locale, "common.fields.source")}
-                @click=${() => {
-                  this.sourceChoicesOpen = true;
-                }}
-              >
-                <img src=${serverAvailabilityImage(this.detailServer())} alt="" width="24" height="24" />
-              </button>
-            `
-      }${
-        this.detailEpisode && (!this.reader || this.reader.editorHref)
-          ? html`
-              <a
-                class="icon-button"
-                href=${this.storyEditorHref()}
-                title=${uiText(this.locale, "community.stories.editor")}
-                aria-label=${uiText(this.locale, "community.stories.editor")}
-              >
-                ${icon("edit_note")}
-              </a>
-            `
-          : nothing
-      }${this.renderDetailModes()}
+      ${this.detailEpisode && (!this.reader || this.reader.editorHref)
+        ? html`<a class="icon-button" href=${this.storyEditorHref()}
+            title=${uiText(this.locale, "community.stories.editor")}
+            aria-label=${uiText(this.locale, "community.stories.editor")}>${icon("edit_note")}</a>`
+        : nothing}
+      ${this.renderDetailModes()}
     `;
   }
   private storyEditorHref(): string {
@@ -2728,33 +2657,6 @@ export class StoryWorkspace extends LitElement {
       url.searchParams.set("importSource", identity.sourceId);
     }
     return url.pathname + url.search;
-  }
-  private renderSourceDialog(episode: JsonRecord) {
-    const choices = this.renderSourceChoices(episode);
-    if (!this.sourceChoicesOpen || choices === nothing) return nothing;
-    return html`
-      <dialog
-        class="dialog"
-        aria-label=${uiText(this.locale, "common.fields.source")}
-        ${modal(() => {
-          this.sourceChoicesOpen = false;
-        })}
-      >
-        <header class="dialog__header"><h2>${uiText(this.locale, "common.fields.source")}</h2></header>
-        <div class="dialog__body">${choices}</div>
-        <footer class="dialog__actions">
-          <button
-            class="button button--text"
-            type="button"
-            @click=${() => {
-              this.sourceChoicesOpen = false;
-            }}
-          >
-            ${uiText(this.locale, "common.actions.close")}
-          </button>
-        </footer>
-      </dialog>
-    `;
   }
   private renderDetailModes() {
     return segmented({
@@ -2915,7 +2817,7 @@ export class StoryWorkspace extends LitElement {
               `
             : html`
                 <div class="story-detail__body">
-                  ${this.renderSourceChoices(episode)} ${this.localizedEpisodeArtwork(episode)}
+                   ${this.localizedEpisodeArtwork(episode)}
                   ${
                     this.text(episode.description)
                       ? html`
@@ -3073,7 +2975,7 @@ export class StoryWorkspace extends LitElement {
                 </div>
               `
         }
-        ${this.renderSourceDialog(episode)}
+
       </section>
     `;
   }

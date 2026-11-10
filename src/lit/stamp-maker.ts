@@ -1,11 +1,10 @@
 import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
 import type { CrossCatalogDTO } from "../lib/cross-server/catalog";
-import { catalogServerMark, catalogSourceChoices } from "./shared/server-availability";
+import { catalogServerMark } from "./shared/server-availability";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { releasedContent } from "../lib/content-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
-import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { StampMakerPageData } from "../server/tool-page-data";
@@ -653,7 +652,7 @@ export class StampMaker extends LitElement {
     });
   }
   private async loadBands() {
-    if (this.pageData && canUseStaticCatalogScope()) { this.bands = this.pageData.bands; return; }
+    if (this.pageData) { this.bands = this.pageData.bands; return; }
     this.bandRequest?.abort();
     const request = (this.bandRequest = new AbortController());
     try {
@@ -715,7 +714,7 @@ export class StampMaker extends LitElement {
   }
 
   private async loadCatalog() {
-    if (this.pageData && canUseStaticCatalogScope()) {
+    if (this.pageData) {
       this.crossStampCatalog = undefined;
       this.catalog = releasedContent(Object.fromEntries(stampSourceServers().flatMap(server =>
         Object.entries(this.pageData!.catalogs[server] ?? {})).reverse()));
@@ -756,7 +755,7 @@ export class StampMaker extends LitElement {
     return stampCharacterColors(this.characters, this.locale);
   }
   private async loadCharacters() {
-    if (this.pageData && canUseStaticCatalogScope()) { this.characters = this.pageData.characters; return; }
+    if (this.pageData) { this.characters = this.pageData.characters; return; }
     this.characterRequest?.abort();
     const request = new AbortController();
     this.characterRequest = request;
@@ -805,7 +804,7 @@ export class StampMaker extends LitElement {
   }
 
   private async loadManifest() {
-    if (this.pageData && !this.textlessSrc && canUseStaticCatalogScope()) {
+    if (this.pageData && !this.textlessSrc) {
       this.textless = mergeTextlessStampManifests(stampSourceServers().map(server => this.pageData!.textlessByServer[server]));
       this.manifestReady = this.manifestSettled = true;
       return;
@@ -1460,18 +1459,7 @@ export class StampMaker extends LitElement {
               <span>${this.t("choose")}</span>
             </button>
             <span class="stamp-maker__chosen">${this.choice?.label || ""}</span>
-            ${catalogSourceChoices(this.choice?.sourceEntry, this.locale, {
-              activeSource: this.choice?.sourceEntry?.displayServer,
-              onSelect: source => {
-                const entry = this.choice?.sourceEntry;
-                if (!entry?.perServer[source]) return;
-                this.activeStampSources = { ...this.activeStampSources, [entry.key]: source };
-                this.originalsCache = undefined;
-                const next = this.originals.find(stamp => stamp.sourceEntry?.key === entry.key);
-                if (next) { this.selected = next.id; void this.loadImage(); }
-                this.requestUpdate();
-              },
-            })}
+
             <div class="stamp-maker__layer-menu">
               <button
                 class="icon-button"

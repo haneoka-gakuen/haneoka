@@ -1,15 +1,14 @@
 import { DEFAULT_LOCALE, isLocale } from "@haneoka/i18n";
 import { navigationDocumentUrl } from "./document-url";
 import { homePath, isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
-import { formalServerForHidden, PUBLIC_RELEASE_SERVERS, temporaryPublicRedirectTarget } from "./temporary-public-routing";
-import { isRestrictedContentSource, showRestrictedContent } from "./content-visibility";
+import { PUBLIC_RELEASE_SERVERS } from "./temporary-public-routing";
 export { isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
 export { isPublicReleaseServer } from "./temporary-public-routing";
 export const RELEASE_SERVERS: readonly ReleaseServer[] = PUBLIC_RELEASE_SERVERS;
 const KEY = "haneoka.release-server";
 
 export function normalizeReleaseServer(value: unknown): ReleaseServer {
-  return formalServerForHidden(value) ?? (value === "jp" ? "jp" : "intl");
+  return value === "jp" ? "jp" : "intl";
 }
 
 /** The global selection stays formal while an entity keeps its own source. */
@@ -34,9 +33,7 @@ export function readSelectedReleaseServer(): ReleaseServer {
 
 /** An entity keeps its own data source without becoming a global selection. */
 export function readReleaseServer(): ReleaseServer {
-  const source = typeof location === "undefined" ? undefined : releaseServerFromPath(navigationDocumentUrl().pathname);
-  const selected = readSelectedReleaseServer();
-  return source && isRestrictedContentSource(source) && showRestrictedContent() ? source : selected;
+  return readSelectedReleaseServer();
 }
 
 export function writeReleaseServer(value: unknown): ReleaseServer {
@@ -60,16 +57,8 @@ export function releaseServerPath(route: string, server: ReleaseServer): string 
   const suffix = route.slice(path.length);
   const hash = suffix.includes("#") ? suffix.slice(suffix.indexOf("#")) : "";
   const query = new URLSearchParams(suffix.slice(0, suffix.length - hash.length).replace(/^\?/u, ""));
-  const sourceSearch = query.toString();
   query.delete("server");
   const search = query.size ? `?${query}` : "";
-  const redirected = temporaryPublicRedirectTarget(path, sourceSearch, hash);
-  if (redirected) {
-    const target = new URL(redirected, "https://route.invalid");
-    const safeParts = target.pathname.split("/").filter(Boolean);
-    if (isReleaseServer(safeParts[0])) safeParts[0] = server;
-    return `/${safeParts.join("/")}/${target.search}${target.hash}`;
-  }
   const parts = path.split("/").filter(Boolean);
   if (parts.length > 0 && isReleaseServer(parts[0])) {
     return `/${[server, ...parts.slice(1)].join("/")}/${search}${hash}`;

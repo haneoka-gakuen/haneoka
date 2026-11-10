@@ -48,6 +48,19 @@ const readyBrowser = () => browserPromise ??= chromium.launch({ headless: true,
   ...(process.env.CHROMIUM_EXECUTABLE ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : {}),
 }).catch(error => { browserPromise = undefined; throw error; });
 
+const resourceContext = request => ({
+  cookie: request.headers["x-haneoka-resource-cookie"],
+  authorization: request.headers["x-haneoka-resource-authorization"],
+  spoiler: request.headers["x-haneoka-resource-spoiler"],
+});
+const continueResource = (route, job) => {
+  const request = route.request(), url = new URL(request.url()), headers = { ...request.headers() };
+  if (job.resourceContext?.cookie) headers.cookie = job.resourceContext.cookie;
+  if (job.resourceContext?.authorization) headers.authorization = job.resourceContext.authorization;
+  if (job.resourceContext?.spoiler !== undefined) url.searchParams.set("spoiler", job.resourceContext.spoiler);
+  return route.continue({ headers, url: url.toString() });
+};
+
 async function execute(job, origin) {
   if (job.input.operation === "resource-image") {
     const { validateResourceImage } = await import(path.join(toolsRoot, "image-validation.js"));
@@ -64,6 +77,9 @@ async function execute(job, origin) {
     page.on("requestfailed", request => console.warn(`Tool resource failed: ${request.url()} (${request.failure()?.errorText})`));
     page.on("console", message => { if (message.type() === "error") console.warn(message.text()); });
     await page.exposeFunction("reportProgress", value => { job.progress = value; });
+    if (job.input.operation === "chart-image") await context.route("**/*", route => {
+      return new URL(route.request().url()).origin === new URL(apiBase).origin ? continueResource(route, job) : route.continue();
+    });
     if (job.input.operation === "resource-image") {
       const assetOrigin = new URL(apiBase).origin;
       await context.route("**/*", async route => {
@@ -83,7 +99,7 @@ async function execute(job, origin) {
           try { return await route.fulfill({ body: await readFile(file), contentType: "text/javascript" }); }
           catch { return route.fulfill({ status: 404, body: "Run pnpm runtime:cubism:provision" }); }
         }
-        return route.continue();
+        return continueResource(route, job);
       });
       await page.goto(`${assetOrigin}/tools/render.html`);
       const output = await page.evaluate(async ({ request, apiBase }) => {
@@ -193,7 +209,7 @@ const server = createServer(async (request, response) => {
         const { validateResourceImage } = await import(path.join(toolsRoot, "image-validation.js"));
         validateResourceImage(input, new URL(apiBase).origin);
       } catch (error) { return fail(response, 400, "invalid_request", error.message); }
-      const job = { id: randomUUID(), input: { operation: "resource-image", request: input }, state: "queued", createdAt: Date.now(), expiresAt: null };
+      const job = { id: randomUUID(), input: { operation: "resource-image", request: input }, resourceContext: resourceContext(request), state: "queued", createdAt: Date.now(), expiresAt: null };
       jobs.set(job.id, job);
       const completed = new Promise(resolve => { job.finished = resolve; });
       const cancel = () => { if (["queued", "running"].includes(job.state)) { job.state = "cancelled"; void job.context?.close(); job.finished?.(); } };
@@ -210,7 +226,7 @@ const server = createServer(async (request, response) => {
       const input = { operation: "chart-image", ...Object.fromEntries(url.searchParams) };
       if (input.height !== undefined) input.height = Number(input.height);
       if (!input.songId || !input.difficulty || !["jp", "intl"].includes(input.server ?? "intl")) return fail(response, 400, "invalid_request", "Supply server, songId and difficulty");
-      const job = { id: randomUUID(), input, state: "queued", createdAt: Date.now(), expiresAt: null };
+      const job = { id: randomUUID(), input, resourceContext: resourceContext(request), state: "queued", createdAt: Date.now(), expiresAt: null };
       jobs.set(job.id, job);
       const completed = new Promise(resolve => { job.finished = resolve; });
       const cancel = () => { if (["queued", "running"].includes(job.state)) { job.state = "cancelled"; void job.context?.close(); job.finished?.(); } };

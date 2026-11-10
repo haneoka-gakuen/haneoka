@@ -7,8 +7,9 @@ import { uiFontStyles } from "../lib/ui-fonts";
 import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
+import { renderUnavailableContent } from "../server/render-workspace";
 import { themeCharacters } from "../server/theme-characters";
-import { publicationFields } from "../lib/content-publication";
+import { contentPublished, publicationFields } from "../lib/content-publication";
 import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
 interface Props {
   locale: Locale;
@@ -72,13 +73,16 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
 ---
 
 <!doctype html>
-<html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" transition:animate="none">
+<html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" data-pagefind-ignore={Astro.props.publication && !contentPublished(Astro.props.publication) ? "all" : undefined} transition:animate="none">
   <head>
+    <meta name="haneoka-content-route" content={publicRoute} />
+    <meta name="haneoka-content-placeholder" content={JSON.stringify(renderUnavailableContent(locale))} data-title={JSON.stringify(t(locale, "common.states.unpublished"))} />
     <script is:inline data-astro-rerun>
       try {
         let stored = null;
         try { stored = localStorage.getItem("haneoka:spoiler-content:v1"); } catch {}
-        document.documentElement.dataset.spoilerContent = stored !== "0" ? "1" : "0";
+        const override = Number(new URL(location.href).searchParams.get("spoiler"));
+        document.documentElement.dataset.spoilerContent = stored !== "0" || Number.isFinite(override) && override !== 0 ? "1" : "0";
         document.cookie = `haneoka.spoilers=${stored !== "0" ? "1" : "0"}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
       } catch {}
     </script>
@@ -225,7 +229,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     <meta name="twitter:image" content={socialImage} />
     <meta name="theme-color" content="#f0edf1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="robots" content={noindex ? "noindex,follow" : "max-image-preview:large"} />
+    <meta data-content-index={Astro.props.publication && !noindex ? "" : undefined} name="robots" content={noindex ? "noindex,follow" : "max-image-preview:large"} />
     <link rel="canonical" href={canonicalHref} />
     {!noindex &&
       languageAlternates.map((alternate) => (
@@ -257,24 +261,20 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
       import { installI18nDom } from "../i18n/dom";
       import { installUiFonts } from "../lib/ui-fonts";
-      import { refreshContentAccess } from "../lib/content-access";
-      import { signedInHint } from "../lib/community-viewer";
       import { installUpdateCheck } from "../lib/update-check";
       import { installFullscreen } from "../lib/fullscreen";
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installNavigationPrefetch } from "../lib/navigation-prefetch";
+      import { installContentRequests } from "../lib/content-request";
       import { installContentVisibility } from "../lib/content-policy-browser";
       installSpoilerNavigation();
       installNavigationPrefetch();
+      installContentRequests();
       installContentVisibility();
       installUiFonts();
       installI18nDom();
       installUpdateCheck();
       installFullscreen();
-      const refreshDocumentAccess = () => {
-        if (signedInHint() || document.documentElement.dataset.contentAccess === "1") void refreshContentAccess();
-      };
-      refreshDocumentAccess();
       if ("serviceWorker" in navigator)
         addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });
       const restoreAudioDock = async () => {
@@ -348,15 +348,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
           const scheme = document.getElementById(id);
           if (scheme && !next.getElementById(id)) next.head.append(scheme.cloneNode(true));
         }
-        // A prefetched document must not undo a newer administrative setting observed in this tab.
-        if (Number(document.documentElement.dataset.siteSettingsVersion || 0) > Number(next.documentElement.dataset.siteSettingsVersion || 0)) {
-          next.documentElement.dataset.contentAccess = document.documentElement.dataset.contentAccess || "0";
-          if (document.documentElement.dataset.contentSources) next.documentElement.dataset.contentSources = document.documentElement.dataset.contentSources;
-          else delete next.documentElement.dataset.contentSources;
-          if (document.documentElement.dataset.contentSourceFamilies) next.documentElement.dataset.contentSourceFamilies = document.documentElement.dataset.contentSourceFamilies;
-          else delete next.documentElement.dataset.contentSourceFamilies;
-          next.documentElement.dataset.siteSettingsVersion = document.documentElement.dataset.siteSettingsVersion;
-        }
+
       });
       const syncSeason = () => {
         if (document.documentElement.dataset.season || document.querySelector(".season-layer, .nav__brand img[data-birthday]"))
@@ -369,7 +361,6 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
         delete document.documentElement.dataset.navigationHref;
         syncSeason();
         applyTheme();
-        refreshDocumentAccess();
       });
     </script>
   </body>

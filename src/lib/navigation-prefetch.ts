@@ -85,6 +85,8 @@ let installed = false;
 export function installNavigationPrefetch(): void {
   if (installed) return;
   installed = true;
+  addEventListener("haneoka:session-changed", () => pages.clear());
+  addEventListener("haneoka:spoiler-content", () => pages.clear());
   let hover = 0;
   document.addEventListener(
     "pointerover",

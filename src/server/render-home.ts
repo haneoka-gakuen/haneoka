@@ -9,6 +9,8 @@ import { initializeI18nClient } from "../i18n/client";
 import type { Locale } from "../i18n/locales";
 import type { ReleaseServer } from "../lib/release-server";
 import { homePageData } from "./home-page-data";
+import { withPrerenderView } from "../lib/content-prerender";
+import { withDocumentUrl } from "../lib/document-url";
 import { packHomeSeed } from "../lib/cross-server/home-seed";
 
 const snapshots = new Map<string, Promise<HomeSeed>>();
@@ -28,30 +30,48 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
   }
   const i18nSeed = createServerI18nContext(locale, "/").seed();
   initializeI18nClient({ seed: i18nSeed }).adoptSeed(i18nSeed);
-  const dashboard = new HomeDashboard();
-  dashboard.locale = locale;
-  dashboard.server = server;
-  if (seed) dashboard.prepareHome(seed, locale);
-  const fragment = parseFragment(collectResultSync(render(dashboard.render())));
-  const promote = (node: DefaultTreeAdapterMap["node"]) => {
-    if ("tagName" in node && node.tagName === "img") {
-      const source = node.attrs.find((attribute) => attribute.name === "data-src");
-      if (source && !node.attrs.some((attribute) => attribute.name === "src")) {
-        // The client's lazy loader asks for the locale-tagged variant first;
-        // prerender the same URL so hydration reuses the request.
-        node.attrs.push({ name: "src", value: localizedAssetUrl(source.value, locale) });
-        if (!node.attrs.some((attribute) => attribute.name === "loading"))
-          node.attrs.push({ name: "loading", value: "lazy" });
+  return withDocumentUrl(new URL(`/${server}/${locale}/`, "https://haneoka.org"), () => {
+    const dashboard = new HomeDashboard();
+    dashboard.locale = locale;
+    dashboard.server = server;
+    if (seed) dashboard.prepareHome(seed, locale);
+    const full = withPrerenderView(false, () => {
+      if (seed) dashboard.prepareHome(seed, locale);
+      return collectResultSync(render(dashboard.render()));
+    });
+    const publicBody = withPrerenderView(true, () => {
+      if (seed) dashboard.prepareHome(seed, locale);
+      return collectResultSync(render(dashboard.render()));
+    }).result;
+    const refs = JSON.stringify(full.references)
+      .replace(/&/gu, "&amp;")
+      .replace(/"/gu, "&quot;")
+      .replace(/</gu, "&lt;");
+    const fragment = parseFragment(
+      full.references.length
+        ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${full.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
+        : full.result,
+    );
+    const promote = (node: DefaultTreeAdapterMap["node"]) => {
+      if ("tagName" in node && node.tagName === "img") {
+        const source = node.attrs.find((attribute) => attribute.name === "data-src");
+        if (source && !node.attrs.some((attribute) => attribute.name === "src")) {
+          // The client's lazy loader asks for the locale-tagged variant first;
+          // prerender the same URL so hydration reuses the request.
+          node.attrs.push({ name: "src", value: localizedAssetUrl(source.value, locale) });
+          if (!node.attrs.some((attribute) => attribute.name === "loading"))
+            node.attrs.push({ name: "loading", value: "lazy" });
+        }
+        // SSR has a real source: deferred-media CSS must not wait for client load hooks.
+        if (node.attrs.some((attribute) => attribute.name === "src" && attribute.value))
+          node.attrs = node.attrs.filter((attribute) => !["data-src", "data-loading"].includes(attribute.name));
       }
-      // SSR has a real source: deferred-media CSS must not wait for client load hooks.
-      if (node.attrs.some((attribute) => attribute.name === "src" && attribute.value))
-        node.attrs = node.attrs.filter((attribute) => !["data-src", "data-loading"].includes(attribute.name));
-    }
-    if ("childNodes" in node) for (const child of node.childNodes) promote(child);
-  };
-  promote(fragment);
-  return {
-    html: serialize(fragment),
-    seed: seed ? JSON.stringify(packHomeSeed(seed)).replace(/</gu, "\\u003c") : "",
-  };
+      if ("childNodes" in node) for (const child of node.childNodes) promote(child);
+    };
+    promote(fragment);
+    return {
+      html: serialize(fragment),
+      seed: seed ? JSON.stringify(packHomeSeed(seed)).replace(/</gu, "\\u003c") : "",
+    };
+  });
 }

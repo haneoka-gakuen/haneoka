@@ -13,6 +13,8 @@ import { initializeI18nClient } from "../i18n/client";
 import type { Locale } from "../i18n/locales";
 import { html } from "lit";
 import { captureAppBar } from "../lib/app-bar";
+import { unpublishedState } from "../lit/ui/unpublished-state";
+import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
 
 type Node = DefaultTreeAdapterMap["node"];
@@ -86,10 +88,15 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
   return withDocumentUrl(new URL(route, "https://haneoka.org"), () => {
   const { result: body, bar } = captureAppBar(locale, () => {
     workspace.renderStaticChrome?.();
-    return markup(workspace.render());
+    return withPrerenderView(false, () => markup(workspace.render()));
   });
   const kind = (owner: string) => owner.replace(/-\d+$/u, "");
-  return { body, appBar: {
+  const publicBody = withPrerenderView(true, () => markup(workspace.render())).result;
+  const refs = JSON.stringify(body.references).replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
+  const rendered = body.references.length || body.result !== publicBody
+    ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${body.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
+    : body.result;
+  return { body: rendered, appBar: {
     actions: markup([...bar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)),
     identity: markup([...bar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)),
     search: markup([...bar.search].map(([owner, search]) => html`<div class="top-app-bar__search-group" data-app-bar-search="true" data-app-bar-search-owner=${owner} data-search-expanded=${String(search.expanded)} data-search-input-id=${search.inputId} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${search.content}</div>`)),
@@ -98,4 +105,11 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
 }
 export function renderWorkspace(workspace: { render(): unknown; renderStaticChrome?(): void }, locale: Locale, route: string): string {
   return renderWorkspacePage(workspace, locale, route).body;
+}
+
+const unavailableMarkup = new Map<Locale, string>();
+export function renderUnavailableContent(locale: Locale): string {
+  let body = unavailableMarkup.get(locale);
+  if (!body) { useStaticLocale(locale, "/"); body = markup(unpublishedState(locale)); unavailableMarkup.set(locale, body); }
+  return body;
 }

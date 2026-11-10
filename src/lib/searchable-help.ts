@@ -1,3 +1,4 @@
+import { publicationFields } from "./content-publication";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { resolveLocalizedText } from "./localized-text";
 import { asRecord, fetchStaticCatalog, staticCatalogRelease, type RecordValue } from "./static-catalog-source";
@@ -9,6 +10,7 @@ export interface SearchableHelpTopic {
   titles: Record<Locale, string>;
   categoryTitles: Record<Locale, string>;
   descriptions: Record<Locale, string>;
+  publication: Record<string, unknown>;
 }
 
 const text = (value: unknown, locale: Locale): string => resolveLocalizedText(value, locale).text.trim();
@@ -57,6 +59,7 @@ async function buildSearchableHelpPages(server: ReleaseServer): Promise<Searchab
         titles,
         categoryTitles,
         descriptions,
+        publication: publicationFields(topic),
       };
     });
   });

@@ -1,11 +1,11 @@
-import { SPOILER_COOKIE } from "./spoiler-cookie";
+import { navigationDocumentUrl } from "./document-url";
+import { spoilerOverrideEnabled, SPOILER_COOKIE } from "./spoiler-cookie";
 export { SPOILER_COOKIE, spoilerCookieEnabled } from "./spoiler-cookie";
 export const SPOILER_STORAGE_KEY = "haneoka:spoiler-content:v1";
 export const SPOILER_CONTENT_EVENT = "haneoka:spoiler-content";
 
 export function spoilerContentEnabled(): boolean {
-  // Static pages carry the public view; the Worker serves them unchanged to every reader.
-  if (typeof document === "undefined" || !document.documentElement) return false;
+  if (typeof document === "undefined" || !document.documentElement) return true;
   try {
     const stored = localStorage.getItem(SPOILER_STORAGE_KEY);
     if (stored !== null) return stored === "1";
@@ -18,7 +18,7 @@ export function setSpoilerContentEnabled(enabled: boolean): void {
     localStorage.setItem(SPOILER_STORAGE_KEY, enabled ? "1" : "0");
   } catch {}
   document.cookie = `${SPOILER_COOKIE}=${enabled ? "1" : "0"}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
-  document.documentElement.dataset.spoilerContent = enabled ? "1" : "0";
+  document.documentElement.dataset.spoilerContent = enabled || spoilerOverrideEnabled(navigationDocumentUrl()) ? "1" : "0";
   dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
 

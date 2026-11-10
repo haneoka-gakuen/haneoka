@@ -54,8 +54,8 @@ export async function handleCommunityBootstrap(
   if (request.method !== "GET") return json({ error: { code: "method_not_allowed" } }, 405);
   const path = url.searchParams.get("path") || "";
   if (path.length > 4096 || !path.startsWith("/api/v1/community/") || path.includes("#") ||
-      [...url.searchParams.keys()].some((key) => !["path", "forums", "forumSlug"].includes(key)) ||
-      ["path", "forums", "forumSlug"].some((key) => url.searchParams.getAll(key).length > 1) ||
+      [...url.searchParams.keys()].some((key) => !["path", "forums", "forumSlug", "spoiler", "__content"].includes(key)) ||
+      ["path", "forums", "forumSlug", "spoiler", "__content"].some((key) => url.searchParams.getAll(key).length > 1) ||
       (url.searchParams.has("forums") && url.searchParams.get("forums") !== "1"))
     return json({ error: { code: "invalid_bootstrap_query" } }, 400);
   // A forum page knows its forum only by slug: resolve it here and read that
@@ -70,6 +70,7 @@ export async function handleCommunityBootstrap(
   if (forumSlug !== null && (forumSlug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(forumSlug) || target.pathname !== "/api/v1/community/posts" ||
       target.searchParams.has("forumId") || url.searchParams.get("forums") !== "1"))
     return json({ error: { code: "invalid_bootstrap_target" } }, 400);
+  if (url.searchParams.has("spoiler")) target.searchParams.set("spoiler", url.searchParams.get("spoiler")!);
   return withCommunityReadTiming(async () => {
   const started = performance.now();
   const identity = await viewer(request, env);

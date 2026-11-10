@@ -1,3 +1,5 @@
+import { spoilerOverrideEnabled } from "./spoiler-cookie";
+import { prerenderContentVisible } from "./content-prerender";
 import { navigationDocumentUrl } from "./document-url";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { contentPublished } from "./content-publication";
@@ -11,8 +13,7 @@ import {
 
 export function showUnreleasedContent(): boolean {
   if (typeof document === "undefined" || !document.documentElement || typeof location === "undefined") return false;
-  const value = Number(navigationDocumentUrl().searchParams.get("spoiler"));
-  return Number.isFinite(value) && value !== 0;
+  return spoilerOverrideEnabled(navigationDocumentUrl());
 }
 
 function released(value: unknown, now: number): boolean {
@@ -23,6 +24,7 @@ export function isReleasedContent(value: unknown): boolean {
   const row =
     value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
   const kind = row && inferredVisibilityType(row);
+  if (typeof document === "undefined" || !document.documentElement) return prerenderContentVisible(kind, row ?? {});
   return kind ? isContentVisible(kind, row) : showUnreleasedContent() || released(value, Date.now());
 }
 
@@ -30,6 +32,7 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const kind = visibilityType(resource);
   const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
+  if (typeof document === "undefined" || !document.documentElement) return prerenderContentVisible(kind, row, id);
   if (released(value, Date.now())) return true;
   if (rule.allowOverride && showUnreleasedContent()) return true;
   if (!rule.groups.includes(currentContentGroup())) return false;

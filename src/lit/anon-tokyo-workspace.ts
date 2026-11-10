@@ -1,5 +1,4 @@
 import { unpublishedState } from "./ui/unpublished-state";
-import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 import { clientText } from "../i18n/client";
@@ -412,7 +411,7 @@ export class AnonTokyoWorkspace extends LitElement {
   }
   private async load() {
     const page = readPageData<CatalogSystemPayload>(this);
-    if (page?.schema === "haneoka-catalog-system-v1" && page.kind === "anon-tokyo" && canUseStaticCatalogScope()) {
+    if (page?.schema === "haneoka-catalog-system-v1" && page.kind === "anon-tokyo") {
       this.preparePage(page, this.locale);
       return;
     }

@@ -372,7 +372,7 @@
 }
 
 /* ==========================================================================
-   Join us — feedback channels and the StarMoe partnership
+   Join us — feedback channels
    ========================================================================== */
 @layer pages {
   .join {
@@ -424,9 +424,6 @@
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface);
   }
-  .join-card--accent {
-    background: var(--md-sys-color-surface-container-high);
-  }
   .join-card__icon {
     display: grid;
     width: 56px;
@@ -450,15 +447,6 @@
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) / 1.6 var(--app-font);
     text-wrap: pretty;
-  }
-  .join-card__note {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-    color: var(--md-sys-color-primary);
-    font: var(--md-sys-typescale-emphasized-label-weight) var(--md-sys-typescale-label-large-size) /
-      var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .join-card__actions,
   .join-card__chips {
@@ -485,42 +473,6 @@
   .join-chip:is(:hover, :focus-visible) {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
     border-radius: var(--md-sys-shape-corner-medium);
-  }
-  .join-qq {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 16px;
-    margin-top: auto;
-    padding-top: 8px;
-  }
-  .join-qq__label {
-    color: var(--md-sys-color-on-surface-variant);
-    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) / 1 var(--app-font);
-  }
-  .join-qq__number {
-    font: var(--md-sys-typescale-emphasized-headline-weight) 28px / 1.2 var(--app-font);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
-  }
-  .join-partner {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 24px 28px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    color: var(--md-sys-color-on-surface);
-  }
-  .join-partner > .material-icon {
-    flex: none;
-    margin-top: 2px;
-    color: var(--md-sys-color-primary);
-  }
-  .join-partner__title {
-    margin: 0 0 8px;
-    font: var(--md-sys-typescale-emphasized-title-weight) var(--md-sys-typescale-title-medium-size) /
-      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
   }
   @media (width < 600px) {
     .join-hero {

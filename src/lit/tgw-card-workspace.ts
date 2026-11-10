@@ -1,5 +1,4 @@
 import { unpublishedState } from "./ui/unpublished-state";
-import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 /**
@@ -212,7 +211,7 @@ export class TgwCardWorkspace extends LitElement {
   }
   private async load() {
     const page = readPageData<CatalogSystemPayload>(this);
-    if (page?.schema === "haneoka-catalog-system-v1" && page.kind === "tgw-card" && (this.entityId || canUseStaticCatalogScope()) && (page.entityId || "") === this.entityId) {
+    if (page?.schema === "haneoka-catalog-system-v1" && page.kind === "tgw-card" && (page.entityId || "") === this.entityId) {
       this.preparePage(page, this.locale, location.hash);
       return;
     }

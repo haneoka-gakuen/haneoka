@@ -5,7 +5,6 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import type { CubismModelMetadata } from "../lib/cubism-model-metadata";
 import { readPageData } from "../lib/page-data";
-import { canUseStaticCatalogScope, isRestrictedContentSource } from "../lib/content-visibility";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { canvasToPngBlob, downloadBlob } from "../lib/canvas-capture";
@@ -24,10 +23,10 @@ import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 import { entityHref, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
-import { fetchCrossServerCatalog, fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
+import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
-import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer, type CrossCatalogEntry } from "../lib/cross-server/catalog";
-import { catalogServerMark, catalogServerBadge, catalogSourceChoices } from "./shared/server-availability";
+import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
+import { catalogServerMark, catalogServerBadge } from "./shared/server-availability";
 import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { viewerBufferSize } from "./runtime/viewer-resolution";
@@ -229,8 +228,6 @@ export class Live2DWorkspace extends LitElement {
   declare lookY: number;
   private characters: Value[] = [];
   private unionModels?: CrossCatalogPresentation;
-  private sourceEntry?: CrossCatalogEntry;
-  private sourceChoicesRequest?: AbortController;
   private bands: Value[] = [];
   private viewer?: Viewer;
   private resizeObserver?: ResizeObserver;
@@ -398,8 +395,6 @@ export class Live2DWorkspace extends LitElement {
   private contentAccessChanged = () => {
     this.catalogAbortController?.abort();
     this.catalogAbortController = undefined;
-    this.sourceChoicesRequest?.abort();
-    this.sourceEntry = undefined;
     this.unionModels = undefined;
     if (!this.entityId) {
       this.models = [];
@@ -412,7 +407,6 @@ export class Live2DWorkspace extends LitElement {
       this.modelPhase = "idle";
       void this.loadCatalog();
     } else {
-      void this.loadSourceChoices();
     }
     this.requestUpdate();
   };
@@ -474,7 +468,6 @@ export class Live2DWorkspace extends LitElement {
     this.paneFocus.detach();
     this.generation += 1;
     this.catalogAbortController?.abort();
-    this.sourceChoicesRequest?.abort();
     this.catalogAbortController = undefined;
     this.selectionAbortController?.abort();
     this.selectionAbortController = undefined;
@@ -553,49 +546,16 @@ export class Live2DWorkspace extends LitElement {
   private url(path = "") {
     return catalogUrl("live2d", path);
   }
-  private async loadSourceChoices() {
-    this.sourceChoicesRequest?.abort();
-    this.sourceEntry = undefined;
-    const server = readReleaseServer();
-    if (!this.entityId || canUseStaticCatalogScope() || !isRestrictedContentSource(server)) return;
-    const controller = new AbortController();
-    this.sourceChoicesRequest = controller;
-    try {
-      const catalog = await fetchCrossServerCatalog("live2d", server, this.locale, { signal: controller.signal });
-      if (!this.isConnected || controller.signal.aborted || this.sourceChoicesRequest !== controller) return;
-      this.sourceEntry = catalog.entries.find((entry) => entry.perServer[server]?.id === this.entityId);
-      this.requestUpdate();
-    } catch {
-      if (!controller.signal.aborted && this.sourceChoicesRequest === controller) this.requestUpdate();
-    }
-  }
-  private renderSourceChoices() {
-    const entry = this.sourceEntry;
-    return catalogSourceChoices(entry, this.locale, {
-      activeSource: readReleaseServer(),
-      href: (source) => {
-        const variant = entry?.perServer[source];
-        return variant && entityHref({
-          server: source,
-          locale: preferredLocale(this.locale) as Locale,
-          kind: "live2d",
-          id: variant.id,
-          returnTo: navigationDocumentUrl().searchParams.get("return") || undefined,
-        });
-      },
-    });
-  }
   private selectModel(model: Value) {
     const entry = this.unionModels?.entries.get(model);
     const variant = entry?.perServer[entry.displayServer];
     return this.select(variant?.id || this.key(model), true, undefined, variant?.identity.server);
   }
   private async loadCatalog() {
-    void this.loadSourceChoices();
     const page = readPageData<
       { schema: "haneoka-model-page-v1"; id: string; model: Value } | WorkspaceCollectionPayload
     >(this);
-    if (page?.schema === "haneoka-workspace-collection-v1" && page.resource === "live2d" && !this.entityId && canUseStaticCatalogScope()) {
+    if (page?.schema === "haneoka-workspace-collection-v1" && page.resource === "live2d" && !this.entityId) {
       this.prepareCollection(page, this.locale);
       if (this.selected && this.modelPhase !== "ready") void this.select(this.selected, false);
       return;
@@ -1951,7 +1911,7 @@ export class Live2DWorkspace extends LitElement {
             }
           </div>
           <aside class="viewer-detail__info">
-            ${this.renderSourceChoices()}
+
             <div ?inert=${!modelReady}>
             ${
               this.phase === "error" && modelReady

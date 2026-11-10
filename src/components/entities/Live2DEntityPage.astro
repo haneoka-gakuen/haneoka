@@ -28,7 +28,7 @@ const sectionTitle = titleOf(sectionRouteDefinition, locale);
 const canonicalHref = resourcePath({ server, locale, kind: "live2d", id: page.id });
 const route = canonical ? canonicalHref : `${sectionRoute}/${page.id}`;
 const pageDataId = `model-page-${page.kind}-${page.id}`;
-const payload = { schema: "haneoka-model-page-v1", id: page.id, server, model: page.model };
+const payload = { schema: "haneoka-model-page-v1", resource: page.kind, id: page.id, server, model: page.model };
 const rendered = await renderModelWorkspace("live2d", payload, locale, page.image);
 const seoTitleValues = Object.fromEntries(
   LOCALES.map((target) => {
@@ -44,6 +44,7 @@ const seoTitleValues = Object.fromEntries(
 ---
 
 <Base
+  publication={payload.model}
   locale={locale}
   route={route}
   canonicalRoute={canonical ? canonicalHref : undefined}

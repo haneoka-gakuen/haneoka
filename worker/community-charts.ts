@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区谱面 HTTP、账户、D1、R2 和受信服务器素材解析。
-// Output: 私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含作者简介／发布信息的 Sonolus 关卡投影。
+// Output: 稳定数字编号、私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含作者简介／发布信息的 Sonolus 关卡投影。
 // Pos: [Map](L2.md)；社区谱面持久化、发布及访问控制所有者。
 // Effects/Dependencies: 认证／限流、D1 CAS、R2／编译；推荐读取偏好并记录曝光，列表与详情按模型版本缓存分析。
 import { getAuthSession } from "./auth";
@@ -35,6 +35,7 @@ type RecordValue = Record<string, unknown>;
 type Resolver = ChartMediaResolver;
 interface Row {
   id: string;
+  publicId: number;
   ownerId: string;
   ownerName: string;
   ownerUid: number;
@@ -70,7 +71,7 @@ interface Row {
 const activeOwner = `EXISTS (SELECT 1 FROM community_profile p WHERE p.user_id = c.owner_id AND p.status = 'active')
  AND NOT EXISTS (SELECT 1 FROM community_entity_thread et JOIN community_post discussion ON discussion.id = et.post_id WHERE et.entity_type = 'community-charts' AND et.original_id = c.id AND (discussion.status <> 'published' OR discussion.moderation_status <> 'allow' OR discussion.deleted_at IS NOT NULL OR discussion.archived_at IS NOT NULL))`;
 const availableCover = `(r.cover_attachment_id IS NULL OR EXISTS (SELECT 1 FROM community_attachment a WHERE a.id = r.cover_attachment_id AND a.status = 'ready' AND a.moderation_status = 'allow' AND a.deleted_at IS NULL))`;
-const columns = `c.id, c.owner_id AS ownerId, COALESCE(p.display_name, '') AS ownerName, identity.uid AS ownerUid,
+const columns = `c.id, chart_identity.public_id AS publicId, c.owner_id AS ownerId, COALESCE(p.display_name, '') AS ownerName, identity.uid AS ownerUid,
  c.head, c.version, c.published_revision AS publishedRevision, c.visibility, c.updated_at AS updatedAt,
  r.revision, r.object_key AS objectKey, r.title, r.artist, r.charter, r.difficulty, r.level, r.summary,
  r.audio_json AS audioJson, r.cover_json AS coverJson, r.audio_url AS audioUrl, r.cover_url AS coverUrl,
@@ -78,7 +79,7 @@ const columns = `c.id, c.owner_id AS ownerId, COALESCE(p.display_name, '') AS ow
  r.data_key AS dataKey, r.data_hash AS dataHash,
  (SELECT count(*) FROM community_chart_like l WHERE l.chart_id = c.id) AS likeCount,
  EXISTS (SELECT 1 FROM community_chart_like l WHERE l.chart_id = c.id AND l.user_id = ?1) AS liked`;
-const joined = `FROM community_chart c JOIN community_profile p ON p.user_id = c.owner_id JOIN community_identity identity ON identity.user_id = c.owner_id JOIN community_chart_revision r ON r.chart_id = c.id LEFT JOIN community_chart_analysis analysis ON analysis.chart_id = r.chart_id AND analysis.revision = r.revision AND analysis.model_version = '${COMMUNITY_CHART_ANALYSIS_VERSION}'
+const joined = `FROM community_chart c JOIN community_chart_public_id chart_identity ON chart_identity.chart_id = c.id JOIN community_profile p ON p.user_id = c.owner_id JOIN community_identity identity ON identity.user_id = c.owner_id JOIN community_chart_revision r ON r.chart_id = c.id LEFT JOIN community_chart_analysis analysis ON analysis.chart_id = r.chart_id AND analysis.revision = r.revision AND analysis.model_version = '${COMMUNITY_CHART_ANALYSIS_VERSION}'
  LEFT JOIN community_chart_analysis legacy_v1 ON legacy_v1.chart_id = r.chart_id AND legacy_v1.revision = r.revision AND legacy_v1.model_version = '${LEGACY_ANALYSIS_VERSIONS[0]}' AND '${COMMUNITY_CHART_ANALYSIS_VERSION}' = '${TRANSITION_ANALYSIS_VERSION}' AND r.published_at IS NOT NULL
  LEFT JOIN community_chart_analysis legacy_v2 ON legacy_v2.chart_id = r.chart_id AND legacy_v2.revision = r.revision AND legacy_v2.model_version = '${LEGACY_ANALYSIS_VERSIONS[1]}' AND '${COMMUNITY_CHART_ANALYSIS_VERSION}' = '${TRANSITION_ANALYSIS_VERSION}' AND r.published_at IS NOT NULL
  LEFT JOIN community_chart_analysis legacy_v3 ON legacy_v3.chart_id = r.chart_id AND legacy_v3.revision = r.revision AND legacy_v3.model_version = '${LEGACY_ANALYSIS_VERSIONS[2]}' AND '${COMMUNITY_CHART_ANALYSIS_VERSION}' = '${TRANSITION_ANALYSIS_VERSION}' AND r.published_at IS NOT NULL`;
@@ -182,6 +183,7 @@ function chartAnalysis(row: Row): CommunityChartItem["analysis"] {
 }
 const item = (r: Row, owner = ""): CommunityChartItem => ({
   id: r.id,
+  publicId: r.publicId,
   title: r.title,
   artist: r.artist,
   charter: r.charter,
@@ -868,10 +870,8 @@ export function communitySonolusProviders(
   return {
     catalogProvider: {
       async load() {
-        return {
-          revision: { id: revision },
-          charts: rows.map((r): ChartDescriptor => ({
-            name: chartLevelName(r.id),
+        const charts = rows.map((r): ChartDescriptor => ({
+            name: chartLevelName(r.publicId),
             songId: r.id,
             dataId: `community:${r.id}:${r.revision}`,
             title: r.title,
@@ -892,7 +892,9 @@ export function communitySonolusProviders(
             publishedAt: r.publishedAt ?? 0,
             bgmUrl: r.audioUrl,
             coverUrl: r.coverUrl,
-          })),
+          }));
+        return { revision: { id: revision }, charts,
+          aliases: charts.map((chart, index) => ({ ...chart, name: chartLevelName(rows[index]!.id) })),
         };
       },
     },
@@ -927,7 +929,12 @@ export function communitySonolusProviders(
 }
 export async function communitySonolusRows(env: Env, name?: string) {
   if (name?.startsWith("haneoka-community-")) {
-    const id = name.slice("haneoka-community-".length);
+    const value = name.slice("haneoka-community-".length);
+    const number = /^[1-9]\d{0,15}$/u.test(value) ? Number(value) : 0;
+    const identity = number && Number.isSafeInteger(number)
+      ? await env.DB.prepare("SELECT chart_id AS id FROM community_chart_public_id WHERE public_id = ?").bind(number).first<{ id: string }>()
+      : null;
+    const id = identity?.id ?? value;
     const row = UUID.test(id) ? await find(env, id) : null;
     return row ? [row] : [];
   }

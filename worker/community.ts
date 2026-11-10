@@ -1353,7 +1353,10 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   // refresh=1 asks for a new page of recommendations: the viewer's impressions
   // are dropped so already-seen posts compete again and a fresh seed is drawn.
   if (options.refresh && userId && options.scope === "recommended") {
-    await env.DB.prepare("DELETE FROM community_feed_impression WHERE user_id = ?").bind(userId).run();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM community_feed_impression WHERE user_id = ?").bind(userId),
+      env.DB.prepare("DELETE FROM community_comment_impression WHERE user_id = ?").bind(userId),
+    ]);
   }
 
   const active = activePostReadCondition(userId);
@@ -1449,7 +1452,7 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
     if (recommendationSeed === null || recommendationRankAsOf === null) {
       throw new Error("A recommendation request has no stable ranking context");
     }
-    const ranking = recommendationScoreSql({ kind: "post", userId, asOf: recommendationRankAsOf, seed: recommendationSeed });
+    const ranking = recommendationScoreSql({ kind: "post", userId, asOf: recommendationRankAsOf, seed: recommendationSeed, includeEntityComments: Boolean(hydrateEntity) });
     const scoreBindings: BindValue[] = [...ranking.values];
     let reasonExpression = `CASE
       WHEN candidate.likeCount + candidate.commentCount >= 5 THEN 'popular'
@@ -1585,7 +1588,8 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   const rows = hasMore ? result.results.slice(0, options.limit) : result.results;
   const displayRows = options.scope === "recommended" && !options.q
     ? diversifyRecommendationPage(rows, (row) => row.authorId,
-        (row) => row.kind === "entity-comment" ? `${row.entityType}:${row.originalId}` : row.id)
+        (row) => row.kind === "entity-comment" ? `${row.entityType}:${row.originalId}` : row.id,
+        (row) => row.kind ?? "post")
     : rows;
   const postRows = displayRows.filter((row) => row.kind !== "entity-comment");
   const [taggedRows, viewerFlags] = await Promise.all([
@@ -1639,6 +1643,24 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
                 : String(impressionError),
           }),
         );
+      }
+    });
+  }
+  const commentIds = displayRows.filter((row) => row.kind === "entity-comment").map((row) => row.id);
+  if (userId && options.scope === "recommended" && commentIds.length) {
+    const seenAt = Date.now();
+    await backgroundWork("feed-comment-impression:" + userId + ":" + recommendationSeed, async () => {
+      try {
+        await env.DB.prepare(
+          `WITH impressions(comment_id) AS (VALUES ${commentIds.map(() => "(?)").join(", ")})
+           INSERT INTO community_comment_impression (user_id, comment_id, first_seen_at, last_seen_at, seen_count)
+           SELECT ?, impressions.comment_id, ?, ?, 1 FROM impressions WHERE ${activeSessionProfileWhere}
+           ON CONFLICT(user_id, comment_id) DO UPDATE SET
+             last_seen_at = excluded.last_seen_at, seen_count = community_comment_impression.seen_count + 1`,
+        ).bind(...commentIds, userId, seenAt, seenAt, userId).run();
+      } catch (impressionError) {
+        console.error(JSON.stringify({event:"community.recommendation.comment_impression_write_failed",
+          error:impressionError instanceof Error ? {name:impressionError.name,message:impressionError.message} : String(impressionError)}));
       }
     });
   }

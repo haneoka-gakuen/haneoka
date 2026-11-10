@@ -1,5 +1,4 @@
 import { unpublishedState } from "./ui/unpublished-state";
-import { canUseStaticCatalogScope } from "../lib/content-visibility";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 
@@ -310,7 +309,6 @@ export class MissionWorkspace extends LitElement {
     if (
       page?.schema === "haneoka-catalog-system-v1" &&
       page.kind === "missions" &&
-      (this.entityId || canUseStaticCatalogScope()) &&
       (page.entityId || "") === this.entityId
     ) {
       this.preparePage(page, this.locale);

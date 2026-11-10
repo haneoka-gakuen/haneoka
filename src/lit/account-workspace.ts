@@ -1,4 +1,3 @@
-import { clearContentAccess, refreshContentAccess } from "../lib/content-access";
 import { clientText } from "../i18n/client";
 import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
@@ -36,7 +35,7 @@ function deviceLabel(agent: unknown) {
   const system = find([[/Android/u, "Android"], [/iPhone|iPad/u, "iOS"], [/Windows/u, "Windows"], [/Mac OS/u, "macOS"], [/Linux/u, "Linux"]]);
   return [browser, system].filter(Boolean).join(" / ");
 }
-const API_SCOPES = ["team:read", "team:write", "gacha:read", "games:read", "profile:read"];
+const API_SCOPES = ["team:read", "team:write", "gacha:read", "games:read", "profile:read", "resources:read"];
 type AuthMode = "signIn" | "signUp" | "forgotPassword" | "verifyEmail";
 type Section = "profile" | "games" | "security" | "sessions" | "relationships" | "moderation" | "management";
 
@@ -219,7 +218,6 @@ export class AccountWorkspace extends LitElement {
     this.message = "";
   }
   private clearSession() {
-    clearContentAccess();
     this.loadRequests.cancel();
     this.profileRequests.cancel();
     this.securityRequests.cancel();
@@ -371,7 +369,6 @@ export class AccountWorkspace extends LitElement {
     const seed = (value.profile as Value | undefined)?.avatarSeed;
     if (speculative && typeof seed === "string" && seed !== userId) return this.loadProfile(signal);
     this.profile = (value.profile as Value) || null;
-    void refreshContentAccess();
     this.appeals = Array.isArray(appeals.appeals) ? (appeals.appeals as Value[]) : [];
   }
 
@@ -675,7 +672,7 @@ export class AccountWorkspace extends LitElement {
     const revoking = this.apiTokenRevoking;
     return html`
       <article class="surface account-block">
-        ${this.heading("key", this.label("apiTokens", "API tokens"), this.apiTokens.length)}
+        ${this.heading(icon("key", 18), this.label("apiTokens", "API tokens"), this.apiTokens.length)}
         <div class="provider-list">
           ${this.apiTokens.map(
             (token) => html`
@@ -1141,7 +1138,7 @@ export class AccountWorkspace extends LitElement {
     `;
   }
 
-  private sectionButton(id: Section, iconName: string, label: string, count = 0) {
+  private sectionButton(id: Section, graphic: ReturnType<typeof icon>, label: string, count = 0) {
     return html`
       <button
         role="tab"
@@ -1149,16 +1146,16 @@ export class AccountWorkspace extends LitElement {
         class=${this.section === id ? "selected" : ""}
         @click=${() => (this.section = id)}
       >
-        ${icon(iconName)}
+        ${graphic}
         <span>${label}</span>
         ${count ? html`<small>${count}</small>` : nothing}
       </button>
     `;
   }
-  private heading(iconName: string, label: string, count?: number) {
+  private heading(graphic: ReturnType<typeof icon>, label: string, count?: number) {
     return html`
       <h3 class="detail-section-title">
-        <span class="detail-section-title__icon" aria-hidden="true">${icon(iconName, 18)}</span>
+        <span class="detail-section-title__icon" aria-hidden="true">${graphic}</span>
         <span class="detail-section-title__label">${label}</span>
         ${count ? html`<span class="detail-section-title__count">${count}</span>` : nothing}
       </h3>
@@ -1243,13 +1240,13 @@ export class AccountWorkspace extends LitElement {
         <aside class="account-aside">
           ${this.renderSummary()}
           <nav class="account-navigation" role="tablist">
-            ${this.sectionButton("profile", "person", this.label("profile", "Profile"))}
-            ${this.sectionButton("games", "sports_esports", this.label("gameAccounts", "Game accounts"), this.games.length)}
-            ${this.sectionButton("security", "verified_user", this.label("security", "Sign-in & security"))}
-            ${this.sectionButton("sessions", "devices", this.label("sessions", "Sessions"), this.sessions.length)}
-            ${this.sectionButton("relationships", "block", this.label("relationships", "Blocks & mutes"), this.relationships.length)}
-            ${this.sectionButton("moderation", "policy", this.label("moderation", "Restrictions & appeals"), restrictions + this.appeals.length)}
-            ${this.sectionButton("management", "settings", this.label("accountManagement", "Account management"))}
+            ${this.sectionButton("profile", icon("person"), this.label("profile", "Profile"))}
+            ${this.sectionButton("games", icon("sports_esports"), this.label("gameAccounts", "Game accounts"), this.games.length)}
+            ${this.sectionButton("security", icon("verified_user"), this.label("security", "Sign-in & security"))}
+            ${this.sectionButton("sessions", icon("devices"), this.label("sessions", "Sessions"), this.sessions.length)}
+            ${this.sectionButton("relationships", icon("block"), this.label("relationships", "Blocks & mutes"), this.relationships.length)}
+            ${this.sectionButton("moderation", icon("policy"), this.label("moderation", "Restrictions & appeals"), restrictions + this.appeals.length)}
+            ${this.sectionButton("management", icon("settings"), this.label("accountManagement", "Account management"))}
           </nav>
         </aside>
         <main class="account-content">${sections[this.section]()}</main>
@@ -1264,7 +1261,7 @@ export class AccountWorkspace extends LitElement {
     const number = (value: number) => new Intl.NumberFormat(locale).format(value);
     return html`
       <section class="surface account-block">
-        ${this.heading("save", this.label("deviceSaves", "Saves on this device"), this.deviceSaves.length)}
+        ${this.heading(icon("save", 18), this.label("deviceSaves", "Saves on this device"), this.deviceSaves.length)}
         ${
           this.deviceSaves.length
             ? html`
@@ -1307,7 +1304,7 @@ export class AccountWorkspace extends LitElement {
     return html`
       ${this.renderDeviceSaves()}
       <section class="surface account-block">
-        ${this.heading("sports_esports", this.label("gameAccounts", "Game accounts"), this.games.length)}
+        ${this.heading(icon("sports_esports", 18), this.label("gameAccounts", "Game accounts"), this.games.length)}
         ${
           this.games.length
             ? html`
@@ -1385,11 +1382,11 @@ export class AccountWorkspace extends LitElement {
     );
   }
   private renderRelationships() {
-    const list = (kind: string, glyph: string, title: string, action: string) => {
+    const list = (kind: string, graphic: ReturnType<typeof icon>, title: string, action: string) => {
       const rows = this.relationships.filter((row) => row.kind === kind);
       return html`
         <section class="surface account-block">
-          ${this.heading(glyph, title, rows.length)}
+          ${this.heading(graphic, title, rows.length)}
           ${
             rows.length
               ? html`
@@ -1414,8 +1411,8 @@ export class AccountWorkspace extends LitElement {
       `;
     };
     return html`
-      ${list("block", "block", this.label("blockedUsers", "Blocked users"), this.label("unblockUser", "Unblock"))}
-      ${list("mute", "volume_off", this.label("mutedUsers", "Muted users"), this.label("unmute", "Unmute"))}
+      ${list("block", icon("block", 18), this.label("blockedUsers", "Blocked users"), this.label("unblockUser", "Unblock"))}
+      ${list("mute", icon("volume_off", 18), this.label("mutedUsers", "Muted users"), this.label("unmute", "Unmute"))}
     `;
   }
   private renderModeration() {
@@ -1427,7 +1424,7 @@ export class AccountWorkspace extends LitElement {
     };
     return html`
       <section class="surface account-block">
-        ${this.heading("policy", this.label("restrictions", "Restrictions"), restrictions.length)}
+        ${this.heading(icon("policy", 18), this.label("restrictions", "Restrictions"), restrictions.length)}
         ${
           restrictions.length
             ? specList(
@@ -1440,7 +1437,7 @@ export class AccountWorkspace extends LitElement {
         }
       </section>
       <section class="surface account-block">
-        ${this.heading("gavel", this.label("appealsTitle", "Your appeals"), this.appeals.length)}
+        ${this.heading(icon("gavel", 18), this.label("appealsTitle", "Your appeals"), this.appeals.length)}
         ${
           this.appeals.length
             ? specList(
@@ -1672,7 +1669,7 @@ export class AccountWorkspace extends LitElement {
     const bio = this.draft.bio ?? String(p.bio || "");
     return html`
       <aside class="surface account-preview" aria-label=${this.label("preview", "Preview")}>
-        ${this.heading("visibility", this.label("preview", "Preview"))}
+        ${this.heading(icon("visibility", 18), this.label("preview", "Preview"))}
         <div class="account-summary__identity">
           ${this.avatarOf(avatar, name || "?")}
           <div>
@@ -1692,7 +1689,7 @@ export class AccountWorkspace extends LitElement {
     return html`
       <section class="account-section">
         <article class="surface account-block">
-          ${this.heading("alternate_email", this.label("emailSettings", "Email address"))}
+          ${this.heading(icon("alternate_email", 18), this.label("emailSettings", "Email address"))}
           <div class="account-setting-row">
             <span class="account-setting-row__label">${this.label("currentEmail", "Current email address")}</span>
             <strong>${String(user.email || "")}</strong>
@@ -1709,7 +1706,7 @@ export class AccountWorkspace extends LitElement {
           linked.has("credential")
             ? html`
                 <article class="surface account-block">
-                  ${this.heading("password", this.label("changePassword", "Change password"))}
+                  ${this.heading(icon("password", 18), this.label("changePassword", "Change password"))}
                   <form class="account-password-form" @submit=${this.changePassword}>
                     <input
                       type="email"
@@ -1757,7 +1754,7 @@ export class AccountWorkspace extends LitElement {
             : nothing
         }
         <article class="surface account-block">
-          ${this.heading("link", this.label("connectedAccounts", "Connected accounts"), this.accounts.length)}
+          ${this.heading(icon("link", 18), this.label("connectedAccounts", "Connected accounts"), this.accounts.length)}
           <div class="provider-list">
             ${this.accounts.map(
               (account) => html`
@@ -1818,7 +1815,7 @@ export class AccountWorkspace extends LitElement {
     return html`
       <section class="account-section">
         <article class="surface account-block">
-          ${this.heading("devices", this.label("sessions", "Sessions"), this.sessions.length)}
+          ${this.heading(icon("devices", 18), this.label("sessions", "Sessions"), this.sessions.length)}
           <div class="session-list">
             ${newestFirst.map(
               (session) => html`

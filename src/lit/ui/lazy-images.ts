@@ -1,3 +1,4 @@
+import { contentRequestUrl } from "../../lib/content-request";
 import { createLoadingIndicator } from "./loading-indicator";
 
 /**
@@ -36,6 +37,7 @@ const LOCALE_IMAGE_TAGS: Record<string, readonly string[]> = {
 };
 
 export function localeTaggedCandidates(source: string, locale: string): string[] {
+  source = contentRequestUrl(source);
   if (
     !source ||
     locale === "ja" ||
@@ -265,7 +267,7 @@ export class LazyImages {
     );
     image.dataset.candidates = JSON.stringify(candidates);
     image.dataset.candidateIndex = "0";
-    image.src = candidates[0];
+    image.src = contentRequestUrl(candidates[0]);
     image.removeAttribute("data-src");
     syncMediaFrame(image);
   }
@@ -323,7 +325,7 @@ export function nextImageCandidate(event: Event) {
   if (candidates[next]) {
     image.dataset.candidateIndex = String(next);
     if (request) request.source = candidates[next];
-    image.src = candidates[next];
+    image.src = contentRequestUrl(candidates[next]!);
     return;
   }
   finishImage(image, "error");

@@ -60,6 +60,7 @@ function refreshStaleVisibility(): void {
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
+  addEventListener(SPOILER_CONTENT_EVENT, () => { if (document.querySelector("[data-content-unavailable]")) location.reload(); });
   refreshStaleVisibility();
   addEventListener("haneoka:session-changed", refreshVisibility);
   document.addEventListener("astro:page-load", refreshStaleVisibility);

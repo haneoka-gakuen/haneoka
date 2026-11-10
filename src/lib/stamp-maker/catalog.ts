@@ -1,6 +1,6 @@
 import { localizedText, UI_LOCALES, type JsonRecord } from "../../lit/shared/catalog";
-import { visibleContentServers } from "../content-visibility";
-import { CONTENT_SOURCE_IDS } from "../content-access-state";
+import { visibleContentServers } from "../content-sources";
+import { CONTENT_SOURCE_IDS } from "../content-sources";
 import type { CrossCatalogDTO, CrossCatalogEntry } from "../cross-server/catalog";
 import { pinCrossCatalogValue } from "../cross-server/presentation";
 import { isFormalCatalogSource } from "../cross-server/content";

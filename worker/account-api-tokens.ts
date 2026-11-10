@@ -3,6 +3,7 @@
 // Output: Token list, one-time token value, and the owner's data within the token's scopes.
 // Pos: [Map](L2.md); open platform for tools acting on one account.
 // Effects/Dependencies: Stores SHA-256 hashes in D1; bearer routes never read cookies, so they allow any origin.
+import type { UserRole } from "../src/lib/user-roles";
 import { communityAccessState } from "./access";
 import { listGameAccounts } from "./app-account";
 import { listGachaHistory, readGachaHistory } from "./gacha-history";
@@ -21,7 +22,7 @@ import {
 const MANAGE_PREFIX = "/api/v1/account/api-tokens";
 const DATA_PREFIX = "/api/v1/team-data/";
 const OPEN_PREFIX = "/api/v1/open/";
-const SCOPES = ["profile:read", "games:read", "team:read", "team:write", "gacha:read"];
+const SCOPES = ["profile:read", "games:read", "team:read", "team:write", "gacha:read", "resources:read"];
 const TOKEN = /^hnk_[A-Za-z0-9_-]{43}$/u;
 const MAX_TOKENS = 10;
 const LIFETIME_DAYS = [30, 90, 365];
@@ -49,7 +50,10 @@ const list = async (env: Env, userId: string) =>
   (
     await env.DB.prepare(
       `SELECT id, name, created_at AS createdAt, expires_at AS expiresAt, last_used_at AS lastUsedAt,
-              (SELECT json_group_array(scope) FROM account_api_token_scope WHERE token_id = id) AS scopes
+              (SELECT json_group_array(scope) FROM (
+                SELECT scope FROM account_api_token_scope WHERE token_id = account_api_token.id
+                UNION ALL SELECT 'resources:read' WHERE EXISTS (SELECT 1 FROM account_api_token_resource_scope WHERE token_id = account_api_token.id)
+              )) AS scopes
        FROM account_api_token WHERE user_id = ? ORDER BY created_at DESC`,
     )
       .bind(userId)
@@ -108,7 +112,10 @@ async function manage(request: Request, env: Env, id: string | null): Promise<Re
        SELECT ?, ?, ?, ?, ?, ?
        WHERE (SELECT COUNT(*) FROM account_api_token WHERE user_id = ? AND expires_at > ?) < ?`,
     ).bind(tokenId, userId, name, await sha256(value), now, now + (body.days as number) * DAY_MS, userId, now, MAX_TOKENS),
-    ...scopes.map((scope) =>
+    ...(scopes.includes("resources:read") ? [env.DB.prepare(
+      "INSERT INTO account_api_token_resource_scope (token_id) SELECT ? WHERE EXISTS (SELECT 1 FROM account_api_token WHERE id = ?)",
+    ).bind(tokenId, tokenId)] : []),
+    ...scopes.filter((scope) => scope !== "resources:read").map((scope) =>
       env.DB.prepare(
         "INSERT INTO account_api_token_scope (token_id, scope) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM account_api_token WHERE id = ?)",
       ).bind(tokenId, scope, tokenId),
@@ -142,13 +149,16 @@ interface TokenOwner {
   scopes: string[];
 }
 
-async function authenticate(request: Request, env: Env, scope: string | null): Promise<TokenOwner | Response> {
+export async function authenticate(request: Request, env: Env, scope: string | null): Promise<(TokenOwner & { group: UserRole }) | Response> {
   const value = /^Bearer (\S+)$/u.exec(request.headers.get("Authorization") ?? "")?.[1] ?? "";
   const now = Date.now();
   const row = TOKEN.test(value)
     ? await env.DB.prepare(
         `SELECT id, name, user_id AS userId, expires_at AS expiresAt, last_used_at AS lastUsedAt,
-                (SELECT json_group_array(scope) FROM account_api_token_scope WHERE token_id = id) AS scopes
+                (SELECT json_group_array(scope) FROM (
+                SELECT scope FROM account_api_token_scope WHERE token_id = account_api_token.id
+                UNION ALL SELECT 'resources:read' WHERE EXISTS (SELECT 1 FROM account_api_token_resource_scope WHERE token_id = account_api_token.id)
+              )) AS scopes
          FROM account_api_token WHERE token_hash = ? AND expires_at > ?`,
       )
         .bind(await sha256(value), now)
@@ -164,7 +174,7 @@ async function authenticate(request: Request, env: Env, scope: string | null): P
     return error(request, 429, "rate_limit_exceeded", "Try again later");
   if ((owner.lastUsedAt ?? 0) < now - USED_PRECISION_MS)
     await env.DB.prepare("UPDATE account_api_token SET last_used_at = ? WHERE id = ?").bind(now, owner.id).run();
-  return owner;
+  return { ...owner, group: state.role };
 }
 
 async function teamRead(request: Request, env: Env, server: string): Promise<Response> {

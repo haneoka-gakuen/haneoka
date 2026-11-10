@@ -7,7 +7,7 @@ import { CHART_IMAGE_RENDERER_VERSION } from "../src/lib/public-tools/chart-cont
 import type { ChartBrowserBinding } from "./chart-browser-renderer";
 export interface NativeChartRenderInput { server: string; songId: string; difficulty: string; release: string; locale: string; height: number; origin?: string; timeZone?: string }
 export interface NativeRendererBindings { TOOLS_SERVICE_URL?: string; TOOLS_SERVICE_TOKEN?: string; BROWSER?: ChartBrowserBinding; IMAGE_RENDERER_RATE_LIMITER?: { limit(input: { key: string }): Promise<{ success: boolean }> } }
-export async function renderNativeChart(env: NativeRendererBindings, input: NativeChartRenderInput, waitUntil?: (promise: Promise<unknown>) => void) {
+export async function renderNativeChart(env: NativeRendererBindings, input: NativeChartRenderInput, waitUntil?: (promise: Promise<unknown>) => void, source?: Request) {
   const cache = typeof caches === "undefined" ? undefined : caches.default;
   const key = new Request(`https://native-chart.cache.invalid/${CHART_IMAGE_RENDERER_VERSION}/${Object.values(input).map(value => encodeURIComponent(String(value))).join("/")}`);
   const hit = await cache?.match(key);
@@ -16,7 +16,7 @@ export async function renderNativeChart(env: NativeRendererBindings, input: Nati
   if (!env.TOOLS_SERVICE_URL || !env.TOOLS_SERVICE_TOKEN) {
     if (!env.BROWSER) throw new Error("native_renderer_unavailable");
     const { renderBrowserChart } = await import("./chart-browser-renderer");
-    const result = await renderBrowserChart(env.BROWSER, input);
+    const result = await renderBrowserChart(env.BROWSER, input, source);
     if (cache) {
       const put = cache.put(key, new Response(result.png, { headers: { "Cache-Control": "public, max-age=86400", "X-Haneoka-Image-Width": String(result.width), "X-Haneoka-Image-Height": String(result.height) } }));
       if (waitUntil) waitUntil(put); else await put;
@@ -26,7 +26,7 @@ export async function renderNativeChart(env: NativeRendererBindings, input: Nati
   const target = new URL("v1/chart-image", env.TOOLS_SERVICE_URL.replace(/\/?$/u, "/"));
   if (target.username || target.password || (target.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(target.hostname))) throw new Error("native_renderer_url_invalid");
   for (const [name, value] of Object.entries(input)) target.searchParams.set(name, String(value));
-  const response = await fetch(target, { headers: { Authorization: `Bearer ${env.TOOLS_SERVICE_TOKEN}`, Accept: "image/png" }, redirect: "manual", signal: AbortSignal.timeout(25000) });
+  const response = await fetch(target, { headers: { Authorization: `Bearer ${env.TOOLS_SERVICE_TOKEN}`, Accept: "image/png", ...(source?.headers.has("Cookie") ? { "X-Haneoka-Resource-Cookie": source.headers.get("Cookie")! } : {}), ...(source?.headers.has("Authorization") ? { "X-Haneoka-Resource-Authorization": source.headers.get("Authorization")! } : {}), ...(source && new URL(source.url).searchParams.has("spoiler") ? { "X-Haneoka-Resource-Spoiler": new URL(source.url).searchParams.get("spoiler")! } : {}) }, redirect: "manual", signal: AbortSignal.timeout(25000) });
   if (!response.ok || response.headers.get("Content-Type") !== "image/png" || response.headers.get("X-Haneoka-Release-Id") !== input.release || response.headers.get("X-Haneoka-Chart-Renderer") !== CHART_IMAGE_RENDERER_VERSION) {
     await response.body?.cancel(); throw new Error("native_renderer_failed");
   }

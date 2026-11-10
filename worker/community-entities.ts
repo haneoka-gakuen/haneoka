@@ -538,7 +538,7 @@ export async function handleCommunityEntityRequest(
   const write = request.method === "POST" && path[2] === "comments";
   if (!write && request.method !== "GET" && request.method !== "HEAD")
     return error(request, 405, "method_not_allowed", "Method not allowed");
-  const allowedQuery = ["server", "locale", "commentsSort", "commentsCursor", "commentId", "commentsRoot"];
+  const allowedQuery = ["server", "locale", "commentsSort", "commentsCursor", "commentId", "commentsRoot", "spoiler", "__content"];
   if (
     [...url.searchParams.keys()].some((key) => !allowedQuery.includes(key)) ||
     allowedQuery.some((key) => url.searchParams.getAll(key).length > 1)
