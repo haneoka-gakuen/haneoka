@@ -6,7 +6,8 @@ export { decodePageData, serializePageData } from "./page-data-codec";
 
 const parsedPages = new WeakMap<Element, Map<string, { scope: string; value: unknown }>>();
 export function pageDataViewCurrent(owner: Element): boolean {
-  const data = owner.ownerDocument.documentElement.dataset;
+  const data = owner.ownerDocument?.documentElement?.dataset;
+  if (!data) return false;
   const currentKey = `view-v1-${data.contentVisibilityVersion}-${currentContentGroup()}-${Number(spoilerContentEnabled())}-${Number(showUnreleasedContent())}`;
   return !data.contentResponseKey || data.contentResponseKey === currentKey;
 }
