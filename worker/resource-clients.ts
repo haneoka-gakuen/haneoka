@@ -6,7 +6,7 @@
 export function rejectedResourceClient(request: Request): boolean {
   return (
     /^ournotes-auto\//iu.test(request.headers.get("User-Agent") || "") &&
-    /^\/(?:api\/v1\/(?:servers|team-builder|meta-reference|search|live2d|spine)|assets|runtime|objects|artifacts|game-client|sonolus|downloads\/stories)(?:\/|$)/u.test(
+    /^\/(?:api\/v1\/(?:servers|team-builder|meta-reference|search|live2d|spine)|assets|runtime|objects|artifacts|game-client|sonolus|provider-static|static-views|asset-static|playlist-static|downloads\/stories)(?:\/|$)/u.test(
       new URL(request.url).pathname,
     )
   );

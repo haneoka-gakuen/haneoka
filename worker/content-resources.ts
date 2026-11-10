@@ -151,10 +151,12 @@ export async function contentResourceBoundary(
   const api = /^\/api\/v1\/(?:servers|team-builder|meta-reference)\/(jp|intl)(?:\/(.*))?$/u.exec(url.pathname);
   const media = /^\/(assets|runtime|objects)\/(jp|intl)\/(.+)$/u.exec(url.pathname);
   const bulk = /^\/(?:game-client|artifacts)\/(jp|intl)\//u.exec(url.pathname);
+  const packed = url.pathname.startsWith("/provider-static/content/");
   const staticJson = /^\/(?:static-views|provider-static|asset-static|playlist-static)\/.*\.json$/u.test(url.pathname);
   const search = url.pathname === "/api/v1/search";
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
-  if (!api && !media && !bulk && !staticJson && !chartImage && !search && !imageEntity) return serve(request);
+  if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
+    return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
     response.headers.set("Cache-Control", "private, no-store");
@@ -189,9 +191,10 @@ export async function contentResourceBoundary(
     offlineAuthorization && server ? await readIndex(server, url.searchParams.get("release") ?? undefined) : null;
   const offlinePublications =
     offlineIndex &&
-    Object.entries(offlineIndex.publications ?? {}).filter(([key]) =>
-      /^(stories|characters|bands):/u.test(key) &&
-      `${key.slice(0, key.indexOf(":"))}:${key}` in offlineIndex.records);
+    Object.entries(offlineIndex.publications ?? {}).filter(
+      ([key]) =>
+        /^(stories|characters|bands):/u.test(key) && `${key.slice(0, key.indexOf(":"))}:${key}` in offlineIndex.records,
+    );
   const authorizationResponse = (publicContent: boolean) =>
     new Response(null, {
       status: 204,
@@ -226,9 +229,10 @@ export async function contentResourceBoundary(
       tail === "ui-marks");
   const pageData = api && tail === "release" && url.searchParams.get("projection") === "page-data";
   const raw = Boolean(
-    bulk || (api && (tail.startsWith("sources/") || (tail === "release" && !identityOnly && !pageData))),
+    packed || bulk || (api && (tail.startsWith("sources/") || (tail === "release" && !identityOnly && !pageData))),
   );
   if (raw && !unrestricted(view)) return notPublic();
+  if (packed) return privateContentResponse(await serve(request));
   if (imageEntity) {
     const kind = visibilityType(imageEntity[1]!)!,
       id = decodeURIComponent(imageEntity[2]!);
