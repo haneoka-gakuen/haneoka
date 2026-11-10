@@ -230,7 +230,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       const owner = await this.readCommunityOwner(region, id, signal);
       if (!this.currentProfile(signal, region, id)) return;
       this.profile = value.profile;
-      this.profileObservedAtMs = value.fetchedAtMs;
+      this.profileObservedAtMs = value.provider === "moenotes" ? null : value.fetchedAtMs;
       this.profileClockOffsetMs = clockOffsetMs;
       this.schedulePresenceUpdate();
       this.communityOwner = owner;
