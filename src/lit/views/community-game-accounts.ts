@@ -2,7 +2,7 @@
 // Input: 公开个人主页的 gameAccounts（region、playerUid、displayName、verificationStatus、lastSyncedAt、latestSnapshot.summary 白名单）。
 // Output: 整宽游戏账号卡：主推成员卡图、区服与玩家 ID、等级／高分评级／成员与留影数量、开始日期与天数、以对应 jp／intl 已开放歌曲总数为满格的按难度 CLEAR／FC／AP 表及同步时间。
 // Pos: [Map](../L2-2.md)；community-workspace 个人主页「游戏账号」页签的呈现。
-// Effects/Dependencies: 公开跨服缓存按 jp／intl 各读一次 identity，共享给主推卡批量读取与完整歌曲目录读取；渲染本身无副作用。
+// Effects/Dependencies: 公开跨服缓存按 jp／intl 各读一次 identity，共享给主推卡批量读取、完整歌曲目录与按需活动开放时间；渲染本身无副作用。
 import { html, nothing, type TemplateResult } from "lit";
 import type { MessageParams } from "@haneoka/i18n";
 import { icon } from "../ui/icon";
@@ -64,10 +64,11 @@ export async function loadGameAccountShowcase(
   const cards = new Map<string, FavoriteMemberCard>();
   const songCounts = new Map<CardSource, number>();
   if (!wanted.size) return { cards, songCounts };
-  const [{ crossServerPublicCache }, { crossCatalogRows }, { contentPublished }] = await Promise.all([
+  const [{ crossServerPublicCache }, { crossCatalogRows }, { contentPublished }, { needsEventSongRelease, withEventSongReleases }] = await Promise.all([
     import("../../lib/cross-server/cache"),
     import("../../lib/cross-server/definitions"),
     import("../../lib/content-publication"),
+    import("../../lib/event-song-release"),
   ]);
   const cache = crossServerPublicCache();
   await Promise.all(
@@ -96,8 +97,11 @@ export async function loadGameAccountShowcase(
           : undefined,
         cache
           .readCollection("songs", identity, signal)
-          .then((document) => {
-            songCounts.set(source, Object.values(crossCatalogRows("songs", document)).filter((song) => contentPublished(song)).length);
+          .then(async (document) => {
+            let songs = crossCatalogRows("songs", document);
+            if (Object.values(songs).some(needsEventSongRelease))
+              songs = withEventSongReleases(songs, await cache.readEventSongReleases(identity, signal));
+            songCounts.set(source, Object.values(songs).filter((song) => contentPublished(song)).length);
           })
           .catch(() => undefined),
       ]);
