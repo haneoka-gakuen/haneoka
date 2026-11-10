@@ -1,6 +1,20 @@
+// L3 — GEB
+// Input: Official and provider player, ranking and card observations.
+// Output: Public record DTOs and the game's five-minute online rule, valid only for fresh player observations.
+// Pos: [Map](L2-2.md); game-record contracts shared by the browser and Worker.
+// Effects/Dependencies: Pure region and freshness calculations; no I/O.
 import type { CardGrowthIcons } from "./ui-marks";
 
 export type GameRecordsRegion = "jp" | "tw" | "en" | "kr";
+
+export const PLAYER_PROFILE_FRESH_MS = 60_000;
+export const PLAYER_PROFILE_ONLINE_MS = 5 * 60_000;
+
+/** The game treats a profile updated less than five minutes ago as online. */
+export function playerProfilePresence(lastLoginAtMs: number | null, observedAtMs: number | null, now: number) {
+  if (lastLoginAtMs == null || observedAtMs == null || now - observedAtMs >= PLAYER_PROFILE_FRESH_MS) return null;
+  return now - lastLoginAtMs < PLAYER_PROFILE_ONLINE_MS ? "online" : "offline";
+}
 
 const PROFILE_REGIONS: Readonly<Record<string, GameRecordsRegion>> = { "2": "tw", "3": "en", "4": "kr", "5": "jp" };
 /** The game's player IDs are 11 digits and the first names the region. */

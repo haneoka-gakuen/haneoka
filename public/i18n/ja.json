@@ -3668,7 +3668,12 @@
       "linked": "自分のゲームアカウント",
       "recent": "最近の検索",
       "downloadFailed": "プロフィールカードのダウンロードに失敗",
-      "communityOwner": "haneoka プロフィール"
+      "communityOwner": "haneoka プロフィール",
+      "lastLogin": "最終ログイン",
+      "online": "オンライン",
+      "offline": "オフライン",
+      "presenceUnknown": "不明",
+      "presence": "オンライン状態"
     },
     "songPuzzle": {
       "title": "楽曲ジャケットパズル",

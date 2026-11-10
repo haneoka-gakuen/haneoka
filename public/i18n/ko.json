@@ -3668,7 +3668,12 @@
       "linked": "내 게임 계정",
       "recent": "최근 조회",
       "downloadFailed": "프로필 카드 다운로드 실패",
-      "communityOwner": "haneoka 프로필"
+      "communityOwner": "haneoka 프로필",
+      "lastLogin": "최종 로그인",
+      "online": "온라인",
+      "offline": "오프라인",
+      "presenceUnknown": "알 수 없음",
+      "presence": "온라인 상태"
     },
     "songPuzzle": {
       "title": "곡 커버 퍼즐",

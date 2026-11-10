@@ -3668,7 +3668,12 @@
       "linked": "我的游戏账号",
       "recent": "最近查询",
       "downloadFailed": "名片下载失败",
-      "communityOwner": "haneoka 主页"
+      "communityOwner": "haneoka 主页",
+      "lastLogin": "上次登录",
+      "online": "在线",
+      "offline": "离线",
+      "presenceUnknown": "未知",
+      "presence": "在线状态"
     },
     "songPuzzle": {
       "title": "乐曲封面华容道",

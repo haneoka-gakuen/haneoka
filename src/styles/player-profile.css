@@ -42,6 +42,9 @@
   .player-profile-page .player-profile-hero__chips {
     margin-top: 2px;
   }
+  .player-profile-page .player-profile-presence {
+    min-width: 10ch;
+  }
   .player-profile-page .player-profile-owner {
     display: flex;
     grid-column: 1 / -1;

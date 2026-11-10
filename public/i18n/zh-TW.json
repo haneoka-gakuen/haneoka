@@ -3668,7 +3668,12 @@
       "linked": "我的遊戲帳號",
       "recent": "最近查詢",
       "downloadFailed": "名片下載失敗",
-      "communityOwner": "haneoka 個人頁面"
+      "communityOwner": "haneoka 個人頁面",
+      "lastLogin": "最後登入",
+      "online": "在線",
+      "offline": "離線",
+      "presenceUnknown": "未知",
+      "presence": "在線狀態"
     },
     "songPuzzle": {
       "title": "樂曲封面華容道",

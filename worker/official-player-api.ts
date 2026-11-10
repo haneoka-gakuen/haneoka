@@ -1,9 +1,10 @@
 // L3 — GEB
 // Input: Player profile and song ranking reads, saved pool results and the regional collector.
-// Output: Normalized DTOs from official data, or Moenotes while none is saved; missing or stale entries queue a bounded pool read.
+// Output: Normalized DTOs, bounded pool demand and refresh=1 reads observed within one minute; missing official data may use Moenotes.
 // Pos: [Map](L2.md); read side of the on-demand pool lookups beside official-ranking-api.ts.
 // Effects/Dependencies: Reads D1/R2 and queues Durable Object demand; never contacts the game itself.
 import type { GameProfileCardDto, GameRecordsRegion, PlayerProfileDto, SongRankingDto } from "../src/lib/game-records";
+import { PLAYER_PROFILE_FRESH_MS } from "../src/lib/game-records";
 import { moenotesPlayer, moenotesSongRanking, type MoenotesBindings } from "./moenotes-fallback";
 import { officialEventRanking } from "./official-ranking-api";
 import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
@@ -115,11 +116,14 @@ export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionCo
   if (match[2]) {
     const profileId = match[2];
     const record = await readOfficialPlayer(env, region, profileId);
-    if (!record || now - record.observedAtMs > PLAYER_TTL_MS) queue(ctx, env, region, "player", profileId);
+    const refresh = url.searchParams.get("refresh") === "1";
+    const expired = !record || now - record.observedAtMs >= (refresh ? PLAYER_PROFILE_FRESH_MS : PLAYER_TTL_MS);
+    if (expired) queue(ctx, env, region, "player", profileId);
     if (!record) {
       const fallback = await moenotesPlayer(env, region, profileId);
       return fallback ? json(request, fallback) : pending(request);
     }
+    if (refresh && expired) return pending(request);
     if (!record.found) return now - record.observedAtMs < MISSING_TTL_MS ? json(request, { error: { kind: "not_found" } }, 404) : pending(request);
     return json(request, playerProfile(region, profileId, record, now));
   }

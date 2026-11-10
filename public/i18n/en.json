@@ -3668,7 +3668,12 @@
       "linked": "Your game accounts",
       "recent": "Recent lookups",
       "downloadFailed": "Profile card download failed",
-      "communityOwner": "haneoka profile"
+      "communityOwner": "haneoka profile",
+      "lastLogin": "Last login",
+      "online": "Online",
+      "offline": "Offline",
+      "presenceUnknown": "Unknown",
+      "presence": "Online status"
     },
     "songPuzzle": {
       "title": "Song cover puzzle",

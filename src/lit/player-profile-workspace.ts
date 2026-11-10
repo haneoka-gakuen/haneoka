@@ -36,7 +36,7 @@ import type { GameRecordsErrorDto,
   RankingCardCatalog,
 } from "../lib/game-records";
 import { snackbar } from "../lib/snackbar";
-import { profileRegion } from "../lib/game-records";
+import { PLAYER_PROFILE_FRESH_MS, PLAYER_PROFILE_ONLINE_MS, playerProfilePresence, profileRegion } from "../lib/game-records";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
 import { formatDate } from "../lib/date-format";
@@ -97,6 +97,9 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   private lifetime?: AbortController;
   private selectedProfileId = "";
   private profileQuery = "";
+  private profileObservedAtMs: number | null = null;
+  private profileClockOffsetMs = 0;
+  private presenceTimer?: ReturnType<typeof setTimeout>;
   private rankingEndpoint: string | null = null;
   private points = false;
   private searchInitialized = false;
@@ -178,6 +181,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     }
   }
   disconnectedCallback() {
+    clearTimeout(this.presenceTimer);
     this.profileRequests.cancel();
     this.resetProfileImage();
     this.lifetime?.abort();
@@ -200,6 +204,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     }
     const region = this.region;
     const signal = this.profileRequests.begin();
+    clearTimeout(this.presenceTimer);
     this.resetProfileImage();
     this.queryInvalid = false;
     this.selectedProfileId = id;
@@ -217,13 +222,17 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         .catch(() => undefined);
     try {
       const value = await fetchJson<PlayerProfileDto>(
-        `/api/v1/game/records/${region}/players/${encodeURIComponent(id)}`,
+        `/api/v1/game/records/${region}/players/${encodeURIComponent(id)}?refresh=1`,
         { signal, cache: "no-store", credentials: "same-origin", headers: { accept: "application/json" } },
       );
       if (!this.currentProfile(signal, region, id)) return;
+      const clockOffsetMs = value.serverTimeMs == null ? 0 : value.serverTimeMs - Date.now();
       const owner = await this.readCommunityOwner(region, id, signal);
       if (!this.currentProfile(signal, region, id)) return;
       this.profile = value.profile;
+      this.profileObservedAtMs = value.fetchedAtMs;
+      this.profileClockOffsetMs = clockOffsetMs;
+      this.schedulePresenceUpdate();
       this.communityOwner = owner;
       this.rememberPlayer({ region, id, name: value.profile.name || id });
       const pages = this.profilePages();
@@ -260,6 +269,19 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
       clearTimeout(timeout);
       request.cancel();
     }
+  }
+  private schedulePresenceUpdate() {
+    clearTimeout(this.presenceTimer);
+    if (this.profileObservedAtMs == null || this.profile?.lastUpdatedAtMs == null) return;
+    const now = Date.now() + this.profileClockOffsetMs;
+    const expiresAt = this.profileObservedAtMs + PLAYER_PROFILE_FRESH_MS;
+    if (now >= expiresAt) return;
+    const offlineAt = this.profile.lastUpdatedAtMs + PLAYER_PROFILE_ONLINE_MS;
+    const next = offlineAt > now ? Math.min(offlineAt, expiresAt) : expiresAt;
+    this.presenceTimer = setTimeout(() => {
+      this.requestUpdate();
+      this.schedulePresenceUpdate();
+    }, next - now + 1);
   }
   private rememberPlayer(player: RecentPlayer) {
     this.recent = [player, ...this.recent.filter((entry) => entry.id !== player.id || entry.region !== player.region)].slice(0, 8);
@@ -519,6 +541,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         ? BigInt(profile.totalFavoriteExact).toLocaleString(this.locale)
         : profile.totalFavorite?.toLocaleString(this.locale);
     const entry = this.selectedEntry;
+    const presence = playerProfilePresence(profile.lastUpdatedAtMs, this.profileObservedAtMs, Date.now() + this.profileClockOffsetMs);
     const region = GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!;
     return html`
       <div class="song-ranking__profile">
@@ -543,9 +566,13 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
               <span>${this.selectedProfileId}</span>
             </p>
             ${
-              level != null || favorites != null
+              level != null || favorites != null || profile.lastUpdatedAtMs != null
                 ? html`
                     <div class="cluster player-profile-hero__chips">
+                      <span class="chip chip--tonal chip--static player-profile-presence" title=${clientText(this.locale, "tools.playerProfile.presence", "Online status")}>
+                        ${icon("circle", 12)}
+                        <span class="chip__label">${clientText(this.locale, `tools.playerProfile.${presence ?? "presenceUnknown"}`, "Unknown")}</span>
+                      </span>
                       ${
                         level != null
                           ? html`
@@ -568,6 +595,17 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                   `
                 : nothing
             }
+            ${profile.lastUpdatedAtMs != null && Number.isFinite(profile.lastUpdatedAtMs)
+              ? html`
+                  <p class="player-profile-hero__id">
+                    ${icon("history", 18)}
+                    <span>${clientText(this.locale, "tools.playerProfile.lastLogin", "Last login")}</span>
+                    <time datetime=${new Date(profile.lastUpdatedAtMs).toISOString()}>
+                      ${formatDate(this.locale, profile.lastUpdatedAtMs, { time: true, year: "always" })}
+                    </time>
+                  </p>
+                `
+              : nothing}
           </div>
           ${
             this.communityOwner
@@ -697,18 +735,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                       : nothing
                   }
                 </section>
-              `
-            : nothing
-        }
-        ${
-          profile.lastUpdatedAtMs != null && Number.isFinite(profile.lastUpdatedAtMs)
-            ? html`
-                <p class="song-ranking__profile-updated">
-                  ${this.label("updated", "Updated")} /
-                  <time datetime=${new Date(profile.lastUpdatedAtMs).toISOString()}>
-                    ${formatDate(this.locale, profile.lastUpdatedAtMs, { time: true })}
-                  </time>
-                </p>
               `
             : nothing
         }
