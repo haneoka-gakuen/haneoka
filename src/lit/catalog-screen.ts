@@ -651,8 +651,8 @@ const profiles: Record<string, Profile> = {
     document: "entries",
     detail: ["category", "startAt", "endAt"],
     presentation: "system",
-    defaultSort: "release",
-    defaultOrder: "desc",
+    defaultSort: "availability",
+    defaultOrder: "asc",
   },
   "login-campaigns": {
     id: ["id"],
@@ -661,8 +661,8 @@ const profiles: Record<string, Profile> = {
     document: "entries",
     detail: ["kind", "startAt", "endAt"],
     presentation: "system",
-    defaultSort: "release",
-    defaultOrder: "desc",
+    defaultSort: "availability",
+    defaultOrder: "asc",
   },
   shop: {
     id: ["id"],
@@ -711,8 +711,8 @@ const profiles: Record<string, Profile> = {
     document: "entries",
     detail: ["kind", "startAt", "endAt"],
     presentation: "system",
-    defaultSort: "release",
-    defaultOrder: "desc",
+    defaultSort: "availability",
+    defaultOrder: "asc",
   },
 };
 const fallbackProfile: Profile = {
