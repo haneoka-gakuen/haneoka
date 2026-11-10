@@ -1213,6 +1213,30 @@ def _catalog_storage_errors(
         dependencies = descriptor.get("dependencies")
         index_path = f"api/v1/catalog/{resource}/index.json"
         storage_paths.add(index_path)
+        if descriptor.get("access") is not None:
+            access_path = f"api/v1/catalog/{resource}/access.json"
+            storage_paths.add(access_path)
+            if descriptor["access"] != access_path or access_path not in declared:
+                errors.append(f"catalog resource access index is missing or non-canonical: {resource}")
+            else:
+                try:
+                    access = read_json(root / access_path)
+                except Exception as error:
+                    errors.append(f"invalid catalog access index {resource}: {error}")
+                else:
+                    if (
+                        not isinstance(access, dict)
+                        or access.get("schema") != "haneoka-content-index-v1"
+                        or any(not isinstance(access.get(key), dict) for key in ("records", "assets", "publications"))
+                        or not isinstance(access.get("previewAssets"), list)
+                    ):
+                        errors.append(f"invalid catalog access index contract: {resource}")
+                    elif any(
+                        not isinstance(chains, list)
+                        or any(not isinstance(chain, list) or any(owner not in access["records"] for owner in chain) for chain in chains)
+                        for chains in access["assets"].values()
+                    ):
+                        errors.append(f"catalog access index has an unresolved owner: {resource}")
         expected_kind = (
             "document" if RESOURCE_SPECS[resource].collection is None else "collection"
         )
