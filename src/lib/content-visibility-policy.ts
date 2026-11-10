@@ -66,7 +66,9 @@ export const DEFAULT_VISIBILITY_POLICY: ContentVisibilityPolicy = { eventChallen
 
 export function visibilityType(value: string): VisibilityType | undefined {
   const kind =
-    value === "member-cards"
+    value === "voices"
+      ? "characters"
+      : value === "member-cards"
       ? "cards"
       : value === "song-meta"
         ? "songs"

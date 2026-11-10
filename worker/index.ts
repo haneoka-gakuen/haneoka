@@ -2065,10 +2065,10 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   let pending = resourceContentIndexes.get(identity);
   if (!pending) {
     pending = (async () => {
-      const key = new Request(`https://content-index.haneoka.internal/v1/${identity}`);
+      const key = new Request(`https://content-index.haneoka.internal/v3/${identity}`);
       const hit = await caches.default.match(key);
       if (hit) return await hit.json<ContentResourceIndex>();
-      const prepared = await readR2Json(env, `content-index/v2/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
+      const prepared = await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
         const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
@@ -2099,11 +2099,15 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
         }
         const prefix = `${name}:`;
         for (const [record, reference] of Object.entries(index.records)) {
-          result.records[prefix + record] = reference;
-          if (reference.kind === name && !result.publications![`${reference.kind}:${reference.id}`])
-            result.publications![`${reference.kind}:${reference.id}`] = reference.publication;
+          const kind = visibilityType(reference.kind) ?? reference.kind;
+          result.records[prefix + record] = { ...reference, kind };
+          if (kind === visibilityType(name) && !result.publications![`${kind}:${reference.id}`])
+            result.publications![`${kind}:${reference.id}`] = reference.publication;
         }
-        Object.assign(result.publications!, index.publications ?? {});
+        for (const [key, publication] of Object.entries(index.publications ?? {})) {
+          const at = key.indexOf(":"), kind = visibilityType(key.slice(0, at));
+          result.publications![kind ? `${kind}${key.slice(at)}` : key] = publication;
+        }
         for (const [path, chains] of Object.entries(index.assets)) {
           const owners = result.assets[path] ??= [];
           owners.push(...chains.map((chain) => chain.map((record) => prefix + record)));

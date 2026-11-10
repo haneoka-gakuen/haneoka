@@ -2,7 +2,7 @@
 # Input: Complete immutable resource releases in the configured R2 bucket.
 # Output: Release-bound content ownership records for request authorization.
 # Pos: [Map](L2-2.md); offline production of resource visibility metadata.
-# Effects/Dependencies: Reads verified CAS objects and writes only content-index/v2; preserves releases and current pointers.
+# Effects/Dependencies: Reads verified CAS objects and writes only content-index/v3; preserves releases and current pointers.
 """Publish compact resource ownership metadata without changing a release."""
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ from publish.r2 import R2Store, IMMUTABLE_CACHE, _validate_release_manifest_for_
 KINDS = {
     "cards", "support-cards", "songs", "characters", "bands", "stories", "events", "arena", "gacha", "comics",
     "stamps", "stickers", "backgrounds", "chat-customizations", "band-items", "items", "missions", "shop", "exchange",
-    "login-campaigns", "passes", "challenge", "circle", "real-lives", "live2d", "spine", "help", "help-tips", "tgw-card", "skills", "anon-tokyo",
+    "login-campaigns", "passes", "challenge", "circle", "real-lives", "live2d", "spine", "help", "help-tips", "tgw-card", "skills", "anon-tokyo", "voices",
 }
 
 
 def publish_index(server: str, store) -> dict:
     pointer = store.get_json(f"servers/{server}/current.json")
     release_id = pointer["releaseId"]
-    target = f"content-index/v2/{server}/{release_id}.json"
+    target = f"content-index/v3/{server}/{release_id}.json"
     if store.head(target):
         return {"server": server, "releaseId": release_id, "reused": True}
     manifest_key = f"servers/{server}/releases/{release_id}/release.json"
@@ -49,6 +49,7 @@ def publish_index(server: str, store) -> dict:
         for name, resource in catalog["resources"].items():
             if name not in KINDS:
                 continue
+            category = "characters" if name == "voices" else name
             access_path = resource.get("access")
             if access_path and access_path in entries:
                 access = read(access_path)
@@ -60,12 +61,17 @@ def publish_index(server: str, store) -> dict:
                     paths = [descriptor["prefix"] + shard + ".json" for shard in descriptor["shards"]]
                     for shard in pool.map(read, paths):
                         entities.update(shard)
-                access = _content_access_index(name, index, entities)
+                access = _content_access_index(category, index, entities)
             for key, reference in access["records"].items():
+                if reference["kind"] == "voices":
+                    reference = {**reference, "kind": "characters"}
                 result["records"][name + ":" + key] = reference
-                if reference["kind"] == name:
-                    result["publications"].setdefault(name + ":" + reference["id"], reference["publication"])
-            result["publications"].update(access.get("publications", {}))
+                if reference["kind"] == category:
+                    result["publications"].setdefault(category + ":" + reference["id"], reference["publication"])
+            result["publications"].update({
+                ("characters:" + key[len("voices:"):] if key.startswith("voices:") else key): value
+                for key, value in access.get("publications", {}).items()
+            })
             for path, owners in access["assets"].items():
                 result["assets"].setdefault(path, []).extend([[name + ":" + owner for owner in chain] for chain in owners])
             result["previewAssets"].extend(access["previewAssets"])
@@ -90,7 +96,7 @@ def publish_index(server: str, store) -> dict:
     count = len(result["assets"])
     previews = set(result["previewAssets"])
     shards: dict[str, dict] = {}
-    prefix = f"content-index/v2/{server}/{release_id}/assets/"
+    prefix = f"content-index/v3/{server}/{release_id}/assets/"
     for path, owners in result.pop("assets").items():
         shard = shards.setdefault(fnv1a32_shard(path, 64), {"assets": {}, "previewAssets": []})
         shard["assets"][path] = owners
