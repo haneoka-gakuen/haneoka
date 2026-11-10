@@ -4261,20 +4261,18 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       const search = await handleSearchRequest(request, env.DB, visibleKeys);
       if (search) return search;
     }
-    const resolveCommunityEntity = createCommunityEntityResolver(async (catalogEnv, catalogRequest) => {
-      const catalogUrl = new URL(catalogRequest.url), target = /^\/api\/v1\/servers\/(jp|intl)\/([^/]+)(?:\/([^/]+))?/u.exec(catalogUrl.pathname);
-      const kind = target?.[2] && visibilityType(target[2]);
-      if (!kind) return handleCatalogApi(catalogEnv, ctx, catalogRequest, catalogUrl.pathname);
-      const [view, index] = await Promise.all([requestContentView(request, env), resourceContentIndex(catalogEnv, ctx, target![1]!, catalogUrl.searchParams.get("release") ?? undefined)]);
-      const id = target?.[3] && decodeURIComponent(target[3]), publication = id && index?.publications?.[`${kind}:${id}`];
-      if (publication && !contentVisible(view, kind, publication, id || "")) return new Response(null, { status: 404 });
-      const response = await handleCatalogApi(catalogEnv, ctx, catalogRequest, catalogUrl.pathname);
-      if (!response?.ok) return response;
-      const filtered = filterContentData(await response.json(), view, kind, false, index?.publications);
-      const headers = new Headers(response.headers); for (const name of ["Content-Length", "Content-Encoding", "ETag"]) headers.delete(name);
-      headers.set("Cache-Control", "private, no-store");
-      return filtered.value === null ? new Response(null, { status: 404 }) : Response.json(filtered.value, { headers });
-    });
+    const resolveCommunityEntity = createCommunityEntityResolver(
+      (catalogEnv, catalogRequest) => handleCatalogApi(catalogEnv, ctx, catalogRequest, new URL(catalogRequest.url).pathname),
+      async (catalogEnv, pin, target, match) => {
+        const kind = visibilityType(target.entityType);
+        if (!kind) return true;
+        const [view, index] = await Promise.all([
+          requestContentView(request, env), resourceContentIndex(catalogEnv, ctx, pin.server, pin.releaseId),
+        ]);
+        const id = match.routeId ?? target.originalId;
+        return contentVisible(view, kind, { ...match.row, ...index?.publications?.[`${kind}:${id}`] }, id);
+      },
+    );
     const bootstrap = await handleCommunityBootstrap(
       request,
       env,
