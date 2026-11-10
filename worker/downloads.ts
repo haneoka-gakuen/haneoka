@@ -159,9 +159,11 @@ async function serve(request: Request, env: DownloadEnv): Promise<Response> {
   if (story[4] === "batches/v1") return batchResponse(request, env, prefix);
   if (story[4] === "manifest.json") {
     const pointer = await document(env.ASSET_BUCKET, `${prefix}latest.json`);
+    const query = new URLSearchParams();
+    if (url.searchParams.has("spoiler")) query.set("spoiler", url.searchParams.get("spoiler")!);
     return typeof pointer?.sha256 === "string" && DIGEST.test(pointer.sha256)
       ? new Response(null, { status: 302, headers: { ...cors, "Cache-Control": CURRENT,
-          Location: `/downloads/stories/${server}/${release}/manifests/${pointer.sha256}.json` } })
+          Location: `/downloads/stories/${server}/${release}/manifests/${pointer.sha256}.json${query.size ? `?${query}` : ""}` } })
       : missing();
   }
   if (story[5]) return objectResponse(request, env.ASSET_BUCKET, `${prefix}manifests/${story[5]}.json`, true);
