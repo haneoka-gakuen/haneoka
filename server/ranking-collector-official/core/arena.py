@@ -1,4 +1,4 @@
-"""L3: server/L2.md; live/final rank windows with rolling 300-second reuse, transient population probes and resumable counts."""
+"""L3: server/L2.md; five-day event windows and live/final Arena windows with rolling 300-second reuse, transient population probes and resumable counts."""
 from datetime import datetime
 import hashlib
 import json
@@ -8,6 +8,7 @@ import time
 import uuid
 
 from google.protobuf import json_format
+from lifecycle import event_query_open
 
 
 # A count witnessed this recently stands in a published snapshot without another read.
@@ -60,7 +61,8 @@ class EventWindows:
         event = self.catalog['event']
         for demand in self.job.get('eventWindows', [])[:20]:
             start = demand['startRank']
-            if (time.time() + 3 >= self.deadline or demand['eventId'] != event['id']
+            if (not event_query_open(event, int(time.time() * 1000))
+                    or time.time() + 3 >= self.deadline or demand['eventId'] != event['id']
                     or type(start) is not int or start < 1 or (start - 1) % 100 != 0):
                 continue
             receipt = self.window(event['id'], start)

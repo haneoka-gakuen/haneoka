@@ -1,8 +1,9 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immediate durable observations, D1 indexes, latest-event final targets, preserved daily/final archives and reference-safe payload cleanup.
+// Output: Immediate durable observations, D1 indexes, five-day event final targets, preserved daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
+import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
 import { saveRankingSearchWindow } from "./ranking-search";
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
@@ -276,6 +277,13 @@ async function saveEventFinalTargets(db: D1Database, catalog: OfficialCatalog): 
       .bind(catalog.region, event.id, catalog.region, event.id).all<{ board_key: string }>();
     for (const row of results) boards.push({ key: row.board_key, end: event.endAtMs });
   }
+  await saveEventFinalRows(db, catalog.region, event, catalog.catalogObservedAtMs, boards);
+}
+
+type OfficialEvent = NonNullable<OfficialCatalog["event"]>;
+
+async function saveEventFinalRows(db: D1Database, region: GameRecordsRegion, event: OfficialEvent,
+  catalogObservedAtMs: number, boards: Array<{ key: string; end: number }>) {
   if (!boards.length) return;
   await db.batch(boards.map((board) => db.prepare(`INSERT INTO official_ranking_finals
     (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms) VALUES (?,?,?,?,?,?)
@@ -287,8 +295,26 @@ async function saveEventFinalTargets(db: D1Database, catalog: OfficialCatalog): 
       payload_hash=CASE WHEN official_ranking_finals.observed_at_ms >= excluded.due_at_ms THEN official_ranking_finals.payload_hash END
     WHERE excluded.catalog_observed_at_ms >= official_ranking_finals.catalog_observed_at_ms
       AND (excluded.event_json != official_ranking_finals.event_json OR excluded.due_at_ms != official_ranking_finals.due_at_ms)`)
-    .bind(catalog.region, board.key, event.id,
-      board.end + event.aggregationSeconds * 1000, JSON.stringify(event), catalog.catalogObservedAtMs)));
+    .bind(region, board.key, event.id,
+      board.end + event.aggregationSeconds * 1000, JSON.stringify(event), catalogObservedAtMs)));
+}
+
+export async function readOfficialQueryableEvent(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  eventId: string, now: number) {
+  const { db } = storage(env);
+  const row = await db.prepare(`SELECT event_json AS definition,catalog_observed_at_ms AS observedAtMs
+    FROM official_ranking_finals WHERE region=? AND event_id=? ORDER BY catalog_observed_at_ms DESC LIMIT 1`)
+    .bind(region, eventId).first<{ definition: string; observedAtMs: number }>();
+  if (!row) return null;
+  const event = JSON.parse(row.definition) as OfficialEvent;
+  return officialEventQueryOpen(event, now) ? { event, observedAtMs: row.observedAtMs } : null;
+}
+
+export async function queueOfficialFinalEventWindows(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
+  definition: { event: OfficialEvent; observedAtMs: number }, starts: number[]) {
+  const { db } = storage(env);
+  await saveEventFinalRows(db, region, definition.event, definition.observedAtMs,
+    starts.map(start => ({ key: `event-window/${definition.event.id}/${start}`, end: definition.event.endAtMs })));
 }
 
 export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings, region: GameRecordsRegion, now: number) {
@@ -296,10 +322,10 @@ export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings,
   const next = await db.prepare(`SELECT kind,id,definition FROM (
     SELECT 'event' AS kind,event_id AS id,event_json AS definition,last_dispatch_at_ms,due_at_ms FROM official_ranking_finals
     WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
-      AND event_id=(SELECT highest_event_id FROM official_ranking_catalogs WHERE region=?)
+      AND json_extract(event_json,'$.endAtMs')+?>?
     UNION ALL SELECT 'arena',season_id,arena_json,last_dispatch_at_ms,due_at_ms FROM official_arena_finals
     WHERE region=? AND snapshot_id IS NULL AND due_at_ms<=?
-    ) ORDER BY last_dispatch_at_ms,due_at_ms,id,kind LIMIT 1`).bind(region, now, region, region, now)
+    ) ORDER BY last_dispatch_at_ms,due_at_ms,id,kind LIMIT 1`).bind(region, now, OFFICIAL_EVENT_QUERY_GRACE_MS, now, region, now)
     .first<{ kind: string; id: string; definition: string }>();
   if (!next) return null;
   if (next.kind === "arena") {

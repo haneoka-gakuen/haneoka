@@ -5,6 +5,7 @@
 // Effects/Dependencies: Reads D1/private R2; keeps boards read from Moenotes in the event archive; never requests the game or writes observations.
 import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto, TrackedEventDto } from "../src/lib/game-records";
 import { moenotesEventRanking } from "./moenotes-fallback";
+import { officialEventQueryOpen } from "../src/lib/official-ranking";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
 import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
@@ -49,7 +50,7 @@ export async function officialRankingStatus(env: OfficialRankingReadBindings, re
     boards: targets.map((target) => ({
       kind: target.kind,
       challengeId: target.challengeId,
-      active: now >= target.startAtMs && (target.kind !== "challenge"
+      active: officialEventQueryOpen(event, now) && now >= target.startAtMs && (target.kind !== "challenge"
         || now < target.endAtMs + event.aggregationSeconds * 1000 || now >= event.endAtMs + event.aggregationSeconds * 1000),
       ...(saved.find((board) => board.kind === target.kind && board.challengeId === target.challengeId) ?? {
         lastAttemptAtMs: null, lastSuccessfulObservationAtMs: null, consecutiveFailures: 0, ageMs: null, stale: true, openGapMs: null,
@@ -69,7 +70,9 @@ type OfficialEvent = NonNullable<OfficialCatalog["event"]>;
 function trackedEvent(event: OfficialEvent, now: number, recorded?: ReadonlySet<string>): TrackedEventDto {
   const status = (enabled: boolean, start: number, end: number, board: string) => {
     const value = boardStatus(enabled, start, end, event.aggregationSeconds, now);
-    return value === "archived" && recorded && !recorded.has(`${event.id}/${board}`) ? "missed" : value;
+    return value === "archived" && recorded && !recorded.has(`${event.id}/${board}`)
+      ? officialEventQueryOpen(event, now) ? "finalizing" : "missed"
+      : value;
   };
   return {
     id: event.id,

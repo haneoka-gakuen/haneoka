@@ -1,4 +1,4 @@
-"""L3: server/L2.md -> ranking-collector-official; latest-event sampling targets, credential generations and authentication rejection."""
+"""L3: server/L2.md -> ranking-collector-official; five-day event sampling targets, credential generations and authentication rejection."""
 import hashlib
 import os
 import json
@@ -40,11 +40,14 @@ def identifier(value):
     if not re.fullmatch('[1-9][0-9]{0,18}',value):raise ValueError('invalid catalog identity')
     return value
 
+EVENT_QUERY_GRACE_MS = 5 * 86_400_000
+
+def event_query_open(event, now_ms):
+    return bool(event and event['startAtMs'] <= now_ms < event['endAtMs'] + EVENT_QUERY_GRACE_MS)
+
 def targets(definition, now_ms, *, include_finished=True):
     event=definition['event']
-    if event is None:return []
-    if now_ms<event['startAtMs']:
-        return []
+    if not event_query_open(event, now_ms):return []
     aggregation=event.get('aggregationSeconds',0)*1000
     if not include_finished and now_ms>=event['endAtMs']+aggregation:return []
     result=[('challenge',c['id']) for c in event['challenges'] if c['enabled']

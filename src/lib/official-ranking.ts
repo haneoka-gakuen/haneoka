@@ -1,9 +1,13 @@
 // L3 — GEB
 // Input: Official catalog identities, game protobuf observations and collector checkpoints.
-// Output: Shared contracts for retained windows, Arena probes/populations, demand progress, rolling admissions, origin-bound pools and anonymous Version diagnostics.
+// Output: Shared five-day event query policy and contracts for retained windows, Arena probes/populations, demand progress, rolling admissions, origin-bound pools and anonymous Version diagnostics.
 // Pos: [Map](L2-2.md); official ranking wire types alongside game-records DTOs.
 // Effects/Dependencies: Web Crypto digests; parses private configuration without logging or network access.
 import type { GameRecordsRegion } from "./game-records";
+
+export const OFFICIAL_EVENT_QUERY_GRACE_MS = 5 * 86_400_000;
+export const officialEventQueryOpen = (event: { startAtMs: number; endAtMs: number }, now: number) =>
+  now >= event.startAtMs && now < event.endAtMs + OFFICIAL_EVENT_QUERY_GRACE_MS;
 
 export const OFFICIAL_API_ORIGINS: Record<GameRecordsRegion, readonly string[]> = {
   jp: ["https://api.bang-dream-on.jp"],

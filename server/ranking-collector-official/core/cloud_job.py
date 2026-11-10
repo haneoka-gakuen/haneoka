@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: A bounded region job, private credentials and authenticated durable callbacks.
-# Output: Latest-event observations through inter-event gaps, eligible final observations, transient Arena probes and acknowledged demand progress with body-free failures.
+# Output: Event observations through the five-day query window, eligible final observations, transient Arena probes and acknowledged demand progress with body-free failures.
 # Pos: [Map](../../L2.md); cloud adapter for the shared official protocol.
 # Effects/Dependencies: Official HTTPS/HTTP2 reads, temporary private files and Worker callbacks; no local history authority.
 from datetime import datetime
@@ -18,7 +18,7 @@ from urllib.error import HTTPError
 from urllib.parse import unquote, urlsplit
 import uuid
 
-from lifecycle import authentication_failed, board_call, board_players, read_credentials, targets, retry_delay
+from lifecycle import event_query_open, authentication_failed, board_call, board_players, read_credentials, targets, retry_delay
 from official_catalog import OfficialCatalog, CatalogRequestError, NoRedirect
 from regions import region_config
 from transport import Sampler, VersionError
@@ -274,8 +274,7 @@ def run_job(job, origin):
                                       region=region, api_origin=auth['origin'], include_arena=include_arena)
             catalog = provider()
             final_event = job.get('finalEvent')
-            current_event = catalog.get('event')
-            if final_event is not None and current_event is not None and current_event['startAtMs'] > final_event['startAtMs']:
+            if final_event is not None and not event_query_open(final_event, int(time.time() * 1000)):
                 final_event = None
                 job = {key: value for key, value in job.items() if key not in ('finalEvent', 'finalBoards', 'eventWindows')}
             if final_event is not None:
@@ -307,6 +306,8 @@ def run_job(job, origin):
                         or catalog['apiOrigin'] != sampler.origin):
                     raise RuntimeError('catalog version changed')
                 for kind, challenge in boards:
+                    if not event_query_open(catalog['event'], int(time.time() * 1000)):
+                        break
                     if final_event is None and (kind, challenge) not in targets(catalog, int(time.time() * 1000)):
                         continue
                     if time.time() >= deadline:

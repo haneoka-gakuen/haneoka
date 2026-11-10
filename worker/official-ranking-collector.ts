@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Regional configuration, account-login requests, container results and scheduled collection work.
-// Output: Latest-event observations through inter-event gaps, serialized account jobs, redacted pool health and durable 300-second window admission.
+// Output: Active and five-day historical event observations, serialized account jobs, redacted pool health and durable 300-second window admission.
 // Pos: [Map](L2.md); official collector coordination and recovery.
 // Effects/Dependencies: Starts isolated containers or calls the self-hosted collector, persists DO state and writes D1/R2; credentials stay server-side.
 import { Container } from "@cloudflare/containers";
@@ -12,10 +12,10 @@ import { adoptGuestAccount, claimGuestRegistration, claimGuestVerification, crea
   readReadyGuestAccounts, saveGuestRegistration, saveGuestRequest, type GuestLease } from "./official-guest-accounts";
 import { GuestJobContractError, guestConfiguration, guestPhaseResult, type GuestConfiguration, type GuestPhaseResult } from "./official-guest-jobs";
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import { OFFICIAL_API_ORIGINS as REGION_ORIGINS, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
+import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+import { readOfficialQueryableEvent, queueOfficialFinalEventWindows, readOfficialEventWindows, flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -42,7 +42,7 @@ const AUTH_RETRY_MS = 900_000;
 const DEMAND_TTL_MS = 600_000;
 const DEMAND_LIMITS = { player: 64, song: 8, card: 128 };
 const CARD_FILE = /^[1-9][0-9]{0,18}_[A-Za-z0-9_.-]{1,200}$/u;
-type EventInterest = NonNullable<OfficialCollectorJob["eventWindows"]>[number] & { requestedAtMs: number };
+type EventInterest = NonNullable<OfficialCollectorJob["eventWindows"]>[number] & { requestedAtMs: number; queryUntilMs?: number };
 type ArenaInterest = NonNullable<OfficialCollectorJob["arenaWindows"]>[number] & { requestedAtMs: number };
 const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
 
@@ -1278,10 +1278,10 @@ export class OfficialRankingCollector extends Container<Env> {
 
   private async runningEvent(region: GameRecordsRegion, now: number) {
     const event = (await readOfficialCatalog(this.env, region).catch(() => null))?.event;
-    return event?.pointRankingEnabled && now >= event.startAtMs ? event : null;
+    return event?.pointRankingEnabled && officialEventQueryOpen(event, now) ? event : null;
   }
 
-  /** The running event's top window plus the next ones in turn, walking the board from 101 to its last rank. */
+  /** The latest queryable event's top window and its next windows in turn. */
   private async eventSweep(state: CollectorState, region: GameRecordsRegion, now: number) {
     const event = await this.runningEvent(region, now);
     if (!event) return [];
@@ -1309,12 +1309,24 @@ export class OfficialRankingCollector extends Container<Env> {
       if (unavailable) return { kind: unavailable, retryAfter: null };
       if (state.permissionPause || state.legacyPermissionBlock || state.blockedGeneration) return { kind: "auth_paused", retryAfter: null };
       if (["rate_limited", "failed", "auth_paused", "auth_uncertain", "no_available_account"].includes(state.status)) return { kind: state.status, retryAfter: null };
-      if ((await this.runningEvent(region, now))?.id !== eventId) return { kind: "inactive", retryAfter: null };
-      const queue = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS);
-      const missing = [...new Set(starts)].filter((start) => !queue.some((entry) => entry.eventId === eventId && entry.startRank === start));
+      const definition = await readOfficialQueryableEvent(this.env, region, eventId, now);
+      if (!definition?.event.pointRankingEnabled) return { kind: "inactive", retryAfter: null };
+      const { event } = definition;
+      const queue = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS
+        && (entry.queryUntilMs === undefined || now < entry.queryUntilMs));
+      let missing = [...new Set(starts)].filter((start) => !queue.some((entry) => entry.eventId === eventId && entry.startRank === start));
       if (!missing.length) return { kind: "pending", retryAfter: 30 };
       if (queue.length + missing.length > 24) return { kind: "queue_full", retryAfter: null };
-      for (const startRank of missing) queue.push({ eventId, startRank, endRank: startRank + 99, requestedAtMs: now });
+      if (now >= event.endAtMs + event.aggregationSeconds * 1000) {
+        const windows = await readOfficialEventWindows(this.env, region, eventId, Math.max(...missing));
+        const finished = new Set(windows.filter(row => row.observedAtMs >= event.endAtMs + event.aggregationSeconds * 1000).map(row => row.startRank));
+        missing = missing.filter(start => !finished.has(start));
+        if (!missing.length) return { kind: "pending", retryAfter: 30 };
+        await queueOfficialFinalEventWindows(this.env, region, definition, missing);
+        state.nextFinalAtMs = 0;
+      }
+      for (const startRank of missing) queue.push({ eventId, startRank, endRank: startRank + 99, requestedAtMs: now,
+        queryUntilMs: event.endAtMs + OFFICIAL_EVENT_QUERY_GRACE_MS });
       state.eventInterests = queue;
       const active = state.run && !state.run.complete && now <= state.run.deadlineMs + 15_000;
       if (!active && expedite) this.expediteArena(state);
@@ -2009,9 +2021,10 @@ export class OfficialRankingCollector extends Container<Env> {
       state.nextAtMs = now + INTERVAL_MS;
       const demanded = (state.arenaInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
         .slice(0, 20).map(({ seasonId, bandId, startRank, endRank }) => ({ seasonId, bandId, startRank, endRank }));
-      const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS)
-        .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
       const eventSwept = final ? [] : await this.eventSweep(state, region, now);
+      const eventDemand = (state.eventInterests ?? []).filter((entry) => now - entry.requestedAtMs < ARENA_INTEREST_TTL_MS
+        && entry.eventId === eventSwept[0]?.eventId && (entry.queryUntilMs === undefined || now < entry.queryUntilMs))
+        .slice(0, 10).map(({ eventId, startRank, endRank }) => ({ eventId, startRank, endRank }));
       const arena = state.arenaCatalog;
       const populationOrder = [...(arena?.bandIds ?? [])].filter((id) => arena?.thresholdsByBand?.[id]?.length !== 0)
         .sort((left, right) => (state.arenaPopulationAt?.[`${arena!.seasonId}:${left}`] ?? 0) - (state.arenaPopulationAt?.[`${arena!.seasonId}:${right}`] ?? 0));
@@ -2151,8 +2164,7 @@ export class OfficialRankingCollector extends Container<Env> {
           validateCatalog(update.catalog, region);
           if (run.apiOrigin && update.catalog.apiOrigin !== run.apiOrigin) return json({ error: "catalog_origin_mismatch" }, 409);
           if (run.pendingAttempt) return json({ error: "attempt_pending" }, 409);
-          if (run.finalEvent && update.catalog.event && update.catalog.event.startAtMs > run.finalEvent.startAtMs
-            && update.catalog.event.startAtMs <= Date.now()) {
+          if (run.finalEvent && !officialEventQueryOpen(run.finalEvent, Date.now())) {
             delete run.finalEvent;
             delete run.finalBoards;
             delete run.finalWindows;
@@ -2163,7 +2175,8 @@ export class OfficialRankingCollector extends Container<Env> {
             if (canonical(update.catalog.arena) !== canonical(run.finalArena) || update.catalog.event !== null) return json({ error: "final_target_mismatch" }, 409);
           } else {
             await saveOfficialCatalog(this.env, update.catalog);
-            state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.eventId === update.catalog.event?.id);
+            state.eventInterests = (state.eventInterests ?? []).filter((entry) => entry.queryUntilMs === undefined
+              ? entry.eventId === update.catalog.event?.id : Date.now() < entry.queryUntilMs);
           }
           run.catalog = update.catalog;
           if (!run.finalArena && update.catalog.arena !== undefined) {
