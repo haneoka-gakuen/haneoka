@@ -440,7 +440,8 @@
     "src/lit/team-builder/catalog.ts",
     "src/lit/team-builder/choice-field.ts",
     "src/lib/song-display.ts",
-    "src/lit/views/community-game-accounts.ts"
+    "src/lit/views/community-game-accounts.ts",
+    "src/lib/game-records.ts"
   ],
   "entry_documents": [
     "AGENTS.md",
