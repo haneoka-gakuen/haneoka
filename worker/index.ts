@@ -2987,7 +2987,10 @@ async function handleLatestCatalogApi(
     return errorResponse(request, 400, "invalid_release", "Use the scoped server route to select a release");
   url.searchParams.delete("server");
   url.pathname = `/api/v1/servers/${encodeURIComponent(server)}/${rawResource}${rawTail ? `/${rawTail}` : ""}`;
-  return handleCatalogApi(env, ctx, new Request(url, request), url.pathname);
+  return contentResourceBoundary(new Request(url, request), env, ctx,
+    (source, release, path) => resourceContentIndex(env, ctx, source, release, path),
+    (source) => handleCatalogApi(env, ctx, source, new URL(source.url).pathname).then((response) =>
+      response ?? errorResponse(source, 404, "resource_not_found", "Catalog resource not found")));
 }
 
 async function handleReleaseMedia(
