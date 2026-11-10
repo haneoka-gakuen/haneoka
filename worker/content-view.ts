@@ -14,6 +14,19 @@ export interface RequestContentView extends ContentView {
   key: string;
 }
 const requests = new WeakMap<Request, Promise<RequestContentView>>();
+function requestOverride(request: Request): boolean {
+  const url = new URL(request.url);
+  if (url.searchParams.has("spoiler")) return explicitContentOverride(url);
+  if (!/^\/(?:assets|runtime|objects)\/(?:jp|intl)\//u.test(url.pathname)) return false;
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const referrer = new URL(source);
+    return referrer.origin === url.origin && explicitContentOverride(referrer);
+  } catch {
+    return false;
+  }
+}
 export function requestContentView(request: Request, env: Env): Promise<RequestContentView> {
   let pending = requests.get(request);
   if (!pending) {
@@ -28,7 +41,7 @@ export function requestContentView(request: Request, env: Env): Promise<RequestC
           : contentUserGroup(request, env),
       ]);
       const spoilers = spoilerCookieEnabled(request.headers.get("Cookie"));
-      const override = explicitContentOverride(new URL(request.url));
+      const override = requestOverride(request);
       return {
         settings,
         policy: settings.policy,
@@ -50,7 +63,7 @@ export function inheritContentView(target: Request, source: Request): void {
 export function privateContentResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
-  headers.set("Vary", "Cookie, Authorization, Accept-Encoding");
+  headers.set("Vary", "Cookie, Authorization, Referer, Accept-Encoding");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
