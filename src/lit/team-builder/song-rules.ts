@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Song-rule drafts, multi-song objective and the current calculation mode.
-// Output: Shared attribute, three-range overrides and multi-song objective controls.
+// Output: Read-only current-rule summary, attribute/three-range overrides and multi-song objective controls.
 // Pos: [Map](../L2-2.md); common controls used by Arena, automatic and manual builders.
 // Effects/Dependencies: Saves through the owning controller; uses shared Material selects and accordion.
 import { html, nothing } from "lit";
@@ -8,6 +8,33 @@ import type { TeamBuilder } from "../team-builder";
 import { ORIGINAL_SONG_RULES, type SongRules } from "../../lib/team-builder/arena";
 import { segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
+import { icon } from "../ui/icon";
+
+export function songRuleSummary(host: TeamBuilder, rule: SongRules) {
+  const catalog = host.catalog!,
+    image = catalog.attributeIcon(rule.musicType);
+  const missionIcon = (value: number) =>
+    value === 1 ? icon("touch_app", 20) : value === 2 ? icon("casino", 20) :
+      value === 3 ? icon("center_focus_strong", 20) : icon("music_note", 20);
+  const label = (value: number) =>
+    value ? ["", "COMBO", "LUCK", "JUST"][value] : host.t("arena.original", "Original song");
+  const same = rule.missions.every((value) => value === rule.missions[0]);
+  return html`
+    <div class="cluster" role="group" aria-label=${host.t("arena.current", "Current rules")}>
+      <span class="cluster">
+        ${image ? html`<img src=${image} width="20" height="20" alt="" />` : icon("music_note", 20)}
+        <strong>${rule.musicType ? catalog.attributeName(rule.musicType) : host.t("arena.original", "Original song")}</strong>
+      </span>
+      ${same
+        ? html`<span class="cluster">${missionIcon(rule.missions[0])}<strong>${label(rule.missions[0])} ×3</strong></span>`
+        : rule.missions.map((value, index) => html`
+          <span class="cluster" aria-label=${`${host.t("arena.range", "Range {count}", { count: index + 1 })} · ${label(value)}`}>
+            ${missionIcon(value)}<span>${label(value)}</span>
+          </span>
+        `)}
+    </div>
+  `;
+}
 
 export function songRuleFields(
   host: TeamBuilder,

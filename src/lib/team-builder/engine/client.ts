@@ -1,8 +1,9 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／活动养成分页／评价／解释结果及当前 Worker 阶段。
+// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+import type { SampleRequest, PlaySample } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -1070,6 +1071,26 @@ export class EngineClient {
     });
     this.queue = queued.catch(() => {});
     return queued;
+  }
+  sample(request: SampleRequest) {
+    return this.enqueue(() => this.pool[0]!.send<PlaySample>({ type: "sample", id: 0, request }));
+  }
+  evaluateBatch(requests: EvaluateRequest[]) {
+    const generation = this.generation;
+    return this.enqueue(async () => {
+      const results: TeamEvaluation[][] = [];
+      let next = 0;
+      await Promise.all(this.pool.slice(0, Math.min(3, requests.length)).map(async worker => {
+        while (next < requests.length && generation === this.generation) {
+          const index = next++;
+          results[index] = await worker.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request: requests[index]! });
+        }
+      }));
+      return results;
+    }).catch(error => {
+      if (generation === this.generation) this.cancel();
+      throw error;
+    });
   }
   evaluate(request: EvaluateRequest) {
     return this.enqueue(() => this.pool[0]!.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request }));

@@ -1,3 +1,4 @@
+import { skillRoleControls } from "./skill-role-controls";
 import { farmingRewardPlan, renderRewardPlan } from "./reward-plan-view";
 import { toolLayout } from "./tool-layout";
 import { html, nothing, type TemplateResult } from "lit";
@@ -607,6 +608,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
         : nothing
     }
     ${renderCandidates(host)}
+      ${host.searchSettings.ptMode === "gekiso" ? skillRoleControls(host) : nothing}
     <section class="surface stack">
       ${sectionHeading({ icon: "piano", label: host.t("farm.conditions", "Play and account conditions") })}
       ${
@@ -829,7 +831,8 @@ function renderRanking(host: TeamBuilder): TemplateResult {
           .filter((task) => task.measure === measure && task.route === "live")
           .map((task) => task.result ?? pendingSong(task.song)),
       );
-  const shown = pt.showAll ? ranking : ranking.slice(0, job.scope === "top-one" ? 1 : 5);
+  const filtered = host.analysis.filter(ranking);
+  const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
   const number = (n: number) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: 1 }).format(n);
   const settled = job.tasks.filter(
     (task) => task.status === "complete" || task.status === "empty" || task.status === "pruned",
@@ -837,6 +840,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
   return html`
     <section id="pt-results" class="stack">
       <div class="pt-results-bar">
+        ${host.analysis.filters()}
         <span class="tb-proof">
           ${ptComplete(job) ? ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation")}${
             gap === null

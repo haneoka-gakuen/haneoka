@@ -433,7 +433,10 @@
     "src/lib/save-workspace/catalog.ts",
     "src/lit/save-workspace.ts",
     "src/lit/ui/app-account-chooser.ts",
-    "src/lib/navigation-prefetch.ts"
+    "src/lib/navigation-prefetch.ts",
+    "src/lib/team-builder/skill-roles.ts",
+    "src/lit/team-builder/result-analysis.ts",
+    "src/lit/team-builder/skill-role-controls.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

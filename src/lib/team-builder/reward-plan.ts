@@ -13,7 +13,8 @@ export interface RewardOption {
   auto: boolean;
 }
 export interface RewardPlan {
-  criterion?: "mean" | "max";
+  criterion?: "mean" | "max" | "min";
+  minimumRank?: number;
   primary: RewardMetric;
   options: Record<RewardMetric, RewardOption>;
   tieOrder: RewardMetric[];
@@ -123,6 +124,7 @@ export function compileRewardPlan(
   return {
     unit: RATE_SCALE,
     criterion: plan.criterion ?? "mean",
+    ...(plan.minimumRank ? { minimumRank: plan.minimumRank } : {}),
     levels: [first, ...ties.map((metric) => [{ metric, weight: 1 }])],
     ...(auto ? { autoCp: { songs: challenge.songs, consumption: challenge.consumption } } : {}),
   };

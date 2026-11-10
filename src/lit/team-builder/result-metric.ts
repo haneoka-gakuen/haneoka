@@ -50,7 +50,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     const cpLabel = sampled ? host.t("averageCpPerPlay", "Average challenge points per play") : host.t("cpPerPlay", "Challenge points per play");
     if (event.rewardPlan) {
       const plan = event.rewardPlan, primary = plan.levels[0]![0]!.metric;
-      const label = plan.criterion === "max" ? host.t("rewardPlan.max", "Highest reward") : plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
+      const label = plan.criterion === "min" ? host.t("rewardPlan.min", "Minimum reward") : plan.criterion === "max" ? host.t("rewardPlan.max", "Highest reward") : plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
         : primary === "points" ? pointsLabel
         : primary === "items" ? (sampled ? itemsLabel : host.t("rewardPlan.itemsPerPlay", "Badges per play")) : cpLabel;
       return metric(`reward-plan:${JSON.stringify(plan)}`, label, event.mean, 4,

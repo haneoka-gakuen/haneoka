@@ -12,6 +12,7 @@ export type FrameRate = 30 | 60 | 90 | 120;
 /** Simulate judgements: 6 Just, 5 Perfect, 4 Great, 3 Good, 2 Bad, 1 Miss. */
 export interface PlayModel {
   frameRate?: FrameRate;
+  mistakes?: { indices: number[]; judgement: 1 | 4 };
   /** Native cumulative-delivery optimization; absent keeps nominal timing. */
   cumulativeTiming?: "best" | "worst";
   great: number;

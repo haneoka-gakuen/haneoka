@@ -3,6 +3,7 @@
 // Output: Independent Arena draft and the second team-builder task panel.
 // Pos: [Map](../L2-2.md); Arena rules, schedule lifecycle and shared tool presentation.
 // Effects/Dependencies: Persists Box preferences, schedules rule transitions and cancels obsolete calculations.
+import { skillRoleControls } from "./skill-role-controls";
 import { rangeRankControl } from "./gekiso-rank";
 import { html, nothing } from "lit";
 import type { TeamBuilder } from "../team-builder";
@@ -14,7 +15,7 @@ import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import type { BuildSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { restoreBuildSettings } from "./workspace-state";
-import { songRuleFields } from "./song-rules";
+import { songRuleFields, songRuleSummary } from "./song-rules";
 import { toolLayout } from "./tool-layout";
 import { sectionHeading } from "./catalog";
 import {
@@ -281,7 +282,7 @@ export function renderArenaTab(host: TeamBuilder) {
           ],
           onSelect: (value) => arena.update({ automatic: value === "auto" }),
         })}
-        ${songRuleFields(host, rule, patch => arena.updateRule(patch))}
+        ${draft.automatic ? period.regulation ? songRuleSummary(host, rule) : html`<span class="tabular">—</span>` : songRuleFields(host, rule, patch => arena.updateRule(patch))}
       </section>
       <section class="surface stack">
         ${sectionHeading({ icon: "groups", label: host.t("arena.objective", "Team objective") })}
@@ -321,7 +322,7 @@ export function renderArenaTab(host: TeamBuilder) {
                 </div>
               `
         }
-        ${missionMembersControl(host)}${comboBonusControl(host)}${justWindowControl(host)}${gekisoSamplingAdvanced(host)}
+        ${missionMembersControl(host)}${skillRoleControls(host)}${comboBonusControl(host)}${justWindowControl(host)}${gekisoSamplingAdvanced(host)}
       </section>
       ${renderCandidates(host)}
       <section class="surface stack">

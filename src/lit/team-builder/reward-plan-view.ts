@@ -62,87 +62,106 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
         options: [
           { value: "mean", label: host.t("rewardPlan.mean", "Average reward") },
           { value: "max", label: host.t("rewardPlan.max", "Highest reward") },
+          { value: "min", label: host.t("rewardPlan.min", "Minimum reward") },
         ],
         onSelect: (criterion) => set({ ...plan, criterion }),
       })}
+      ${host.searchSettings.route !== "skip" ? html`
+      <span class="tb-field__label">${host.t("analysis.minimumRank", "Every order reaches")}</span>
+      ${segmented({
+        label: host.t("analysis.minimumRank", "Every order reaches"),
+        value: String(plan.minimumRank ?? 0),
+        options: [0, 3, 4, 5, 6, 7].map((rank, index) => ({
+          value: String(rank),
+          label: [host.t("skillRoles.unlimited", "Any"), "C", "B", "A", "S", "SS"][index]!,
+        })),
+        onSelect: (rank) => set({ ...plan, minimumRank: Number(rank) || undefined }),
+      })}
+      ` : nothing}
       <span class="tb-field__label">${host.t("rewardPlan.primary", "Main reward")}</span>
       ${segmented({
-      label: host.t("rewardPlan.primary", "Main reward"),
-      value: plan.primary,
-      options: primaryOptions.map((value) => ({ value, label: rewardLabel(host, value) })),
-      onSelect: (metric) => set(changePrimaryReward(plan, metric)),
-    })}
+        label: host.t("rewardPlan.primary", "Main reward"),
+        value: plan.primary,
+        options: primaryOptions.map((value) => ({ value, label: rewardLabel(host, value) })),
+        onSelect: (metric) => set(changePrimaryReward(plan, metric)),
+      })}
       ${REWARD_METRICS.filter(
-      (metric) =>
-        metric !== plan.primary && (host.searchSettings.route !== "challenge" || metric !== "challenge-points"),
-    ).map((metric) => {
-      const option = plan.options[metric];
-      return html`
-        <div class="stack">
-          <span class="tb-field__label">${rewardLabel(host, metric)}</span>
-          ${segmented({
-          label: rewardLabel(host, metric),
-          value: option.mode,
-          options: [
-            { value: "ignore", label: host.t("rewardPlan.ignore", "Ignore") },
-            { value: "convert", label: host.t("rewardPlan.convert", "Convert") },
-            { value: "tie", label: host.t("rewardPlan.tie", "Tie-break") },
-          ],
-          onSelect: (mode) => set(changeRewardMode(plan, metric, mode)),
-        })}
-          ${
-          option.mode === "convert"
-            ? html`
-                ${
-            metric === "challenge-points" && !host.searchSettings.manualEventEnabled
-              ? segmented({
-                  label: host.t("rewardPlan.rate", "Conversion rate"),
-                  value: option.auto ? "auto" : "manual",
-                  options: [
-                    { value: "manual", label: host.t("rewardPlan.manual", "Manual") },
-                    { value: "auto", label: host.t("rewardPlan.auto", "Automatic") },
-                  ],
-                  onSelect: (value) =>
-                    set({ ...plan, options: { ...plan.options, [metric]: { ...option, auto: value === "auto" } } }),
-                })
-              : nothing
-          }
-                ${
-            !option.auto
+        (metric) =>
+          metric !== plan.primary && (host.searchSettings.route !== "challenge" || metric !== "challenge-points"),
+      ).map((metric) => {
+        const option = plan.options[metric];
+        return html`
+          <div class="stack">
+            <span class="tb-field__label">${rewardLabel(host, metric)}</span>
+            ${segmented({
+            label: rewardLabel(host, metric),
+            value: option.mode,
+            options: [
+              { value: "ignore", label: host.t("rewardPlan.ignore", "Ignore") },
+              { value: "convert", label: host.t("rewardPlan.convert", "Convert") },
+              { value: "tie", label: host.t("rewardPlan.tie", "Tie-break") },
+            ],
+            onSelect: (mode) => set(changeRewardMode(plan, metric, mode)),
+          })}
+            ${
+            option.mode === "convert"
               ? html`
-                  <md-outlined-text-field
-                    type="number"
-                    min="0"
-                    max=${MAX_REWARD_RATE}
-                    step="0.0001"
-                    label=${`${rewardLabel(host, plan.primary)} / ${rewardLabel(host, metric)}`}
-                    .value=${live(option.rate === null ? "" : String(option.rate))}
-                    @change=${(event: Event) => {
-              const value = (event.target as HTMLInputElement).value;
-              set({
-                ...plan,
-                options: { ...plan.options, [metric]: { ...option, rate: value.trim() ? Number(value) : null } },
-              });
-            }}
-                  ></md-outlined-text-field>
+                  ${
+                  metric === "challenge-points" && !host.searchSettings.manualEventEnabled
+                    ? segmented({
+                        label: host.t("rewardPlan.rate", "Conversion rate"),
+                        value: option.auto ? "auto" : "manual",
+                        options: [
+                          { value: "manual", label: host.t("rewardPlan.manual", "Manual") },
+                          { value: "auto", label: host.t("rewardPlan.auto", "Automatic") },
+                        ],
+                        onSelect: (value) =>
+                          set({
+                            ...plan,
+                            options: { ...plan.options, [metric]: { ...option, auto: value === "auto" } },
+                          }),
+                      })
+                    : nothing
+                }
+                  ${
+                  !option.auto
+                    ? html`
+                        <md-outlined-text-field
+                          type="number"
+                          min="0"
+                          max=${MAX_REWARD_RATE}
+                          step="0.0001"
+                          label=${`${rewardLabel(host, plan.primary)} / ${rewardLabel(host, metric)}`}
+                          .value=${live(option.rate === null ? "" : String(option.rate))}
+                          @change=${(event: Event) => {
+                      const value = (event.target as HTMLInputElement).value;
+                      set({
+                        ...plan,
+                        options: {
+                          ...plan.options,
+                          [metric]: { ...option, rate: value.trim() ? Number(value) : null },
+                        },
+                      });
+                    }}
+                        ></md-outlined-text-field>
+                      `
+                    : nothing
+                }
                 `
               : nothing
           }
-              `
-            : nothing
-        }
-          ${
-          option.mode === "tie" && plan.tieOrder.indexOf(metric) > 0
-            ? html`
-                <button type="button" class="button button--outlined" @click=${() => set(rewardFirst(plan, metric))}>
-                  ${host.t("rewardPlan.first", "Compare this first")}
-                </button>
-              `
-            : nothing
-        }
-        </div>
-      `;
-    })}
+            ${
+            option.mode === "tie" && plan.tieOrder.indexOf(metric) > 0
+              ? html`
+                  <button type="button" class="button button--outlined" @click=${() => set(rewardFirst(plan, metric))}>
+                    ${host.t("rewardPlan.first", "Compare this first")}
+                  </button>
+                `
+              : nothing
+          }
+          </div>
+        `;
+      })}
       <span class="tb-results__meta">${host.t("rewardPlan.order", "Ranking")}: ${preview}</span>
     </section>
   `;

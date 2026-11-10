@@ -1,3 +1,4 @@
+import { skillRoleControls } from "./skill-role-controls";
 import { gekisoHelpButton } from "./gekiso-help";
 import { rangeRankControl } from "./gekiso-rank";
 import { farmingMode, justBaseWindow } from "./workspace-state";
@@ -991,7 +992,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 ${
                   s.goal === "gekiso"
                     ? html`
-                        ${missionMembersControl(host)} ${comboBonusControl(host)} ${justWindowControl(host)} ${placementControl(host)}
+                        ${missionMembersControl(host)} ${skillRoleControls(host)} ${comboBonusControl(host)} ${justWindowControl(host)} ${placementControl(host)}
                       `
                     : nothing
                 }

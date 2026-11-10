@@ -309,7 +309,26 @@ export class ResultComparison {
       >
         <header class="row row--between">
           <strong>${host.t("compareTeams", "Compare teams")}</strong>
-          ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
+          <div class="cluster tb-comparison-tools">
+            ${
+              this.items.length >= 2 && this.items.every((item) => item.input.goal.kind === "gekiso")
+                ? html`
+                    <button
+                      class="button button--tonal"
+                      type="button"
+                      aria-haspopup="dialog"
+                      @click=${() => {
+                        this.open = false;
+                        host.analysis.openPressureEntries(this.items);
+                      }}
+                    >
+                      ${host.t("analysis.pressure", "Opponent scenarios")}
+                    </button>
+                  `
+                : nothing
+            }
+            ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
+          </div>
         </header>
         ${
           this.items.some((item) => item.source !== "manual") && (usesPtResults(host) ? host.pt.stale : host.stale)

@@ -1,3 +1,5 @@
+import type { SkillRoleLimits } from "../../lib/team-builder/skill-roles";
+import { skillRoleDefaults } from "../../lib/team-builder/skill-roles";
 import type { ArenaGoal, SongRef } from "../../lib/team-builder/engine/api";
 import type { Criterion } from "../../lib/team-builder/engine/objectives";
 import type { FrameRate } from "../../lib/team-builder/engine/live";
@@ -82,6 +84,7 @@ export interface BuildSettings {
   minComboBonus: number;
   /** Minimum COMBO, LUCK and JUST member counts; ALL counts in each. */
   minMissionMembers: [number, number, number];
+  skillRoles: SkillRoleLimits;
   justWindowUnit: "percent" | "ms";
   justWindowPercent: number;
   justWindowMs: number;
@@ -167,6 +170,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   gekisoPlacementMode: "rank",
   minComboBonus: 1,
   minMissionMembers: [0, 0, 0],
+  skillRoles: skillRoleDefaults(),
   justWindowUnit: "percent",
   justWindowPercent: 0,
   justWindowMs: 0,

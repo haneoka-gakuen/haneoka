@@ -3,6 +3,7 @@
 // Output: Migrated drafts, resolved LUCK counts and JUST windows, effective reward conditions and selection transactions.
 // Pos: [Map](../L2-2.md); team workspace input projection.
 // Effects/Dependencies: Pure transformations; no persistence or engine calls.
+import { readSkillRoleLimits } from "../../lib/team-builder/skill-roles";
 import { dataRows, type TeamBuilderData } from "../../lib/team-builder/data";
 import { MAX_GEKISO_COUNT } from "../../lib/team-builder/constraint-feasibility";
 import { readSongRules } from "../../lib/team-builder/arena";
@@ -66,6 +67,7 @@ export const validJustWindowInput = (
 
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
+  settings.skillRoles = readSkillRoleLimits(stored.skillRoles);
   settings.minMissionMembers = stored.minMissionMembers?.length === 3 ? [...stored.minMissionMembers] : [0, 0, 0];
   settings.justWindowUnit = stored.justWindowUnit ?? ((stored.justWindowMs ?? 0) > 0 ? "ms" : "percent");
   settings.gekisoRanks = stored.gekisoRanks ? [...stored.gekisoRanks] : [settings.gekisoRank, settings.gekisoRank, settings.gekisoRank];

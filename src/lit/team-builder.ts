@@ -3,6 +3,9 @@
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
+import { renderSkillRoleEditor, type SkillRoleEdit } from "./team-builder/skill-role-controls";
+import { ResultAnalysis } from "./team-builder/result-analysis";
+import { hasSkillRoleLimits } from "../lib/team-builder/skill-roles";
 import { compileRewardPlan, effectiveRewardPlan, legacyRewardPlan } from "../lib/team-builder/reward-plan";
 import { resolveManualEvent } from "../lib/team-builder/manual-event";
 import { MAX_GEKISO_COUNT, teamConstraintLimits, validGekisoCount, type TeamConstraintLimits } from "../lib/team-builder/constraint-feasibility";
@@ -114,6 +117,8 @@ export class TeamBuilder extends LitElement {
   imports: ImportController = new ImportController(this);
   /** Open a native or browser save review once the target Box is ready. */
   private pendingImportChecked = false;
+  skillRoleEditor: SkillRoleEdit | null = null;
+  analysis = new ResultAnalysis(this);
   pt = new PtController(this);
   songComparison = new SongComparison(this);
   teamGrowth = new TeamGrowthComparison(this);
@@ -140,6 +145,8 @@ export class TeamBuilder extends LitElement {
     this.requestUpdate();
   }
   private resetTasks() {
+    this.skillRoleEditor = null;
+    this.analysis.close();
     this.teamGrowth.close();
     this.songComparison.dispose();
     this.arena.dispose();
@@ -1382,6 +1389,7 @@ export class TeamBuilder extends LitElement {
           const plan = effectiveRewardPlan(s.rewardPlan ?? legacyRewardPlan(s), s.route === "challenge");
           const compiled = compileRewardPlan(plan, { songs: s.planChallengeSongs, consumption: s.challengePoints });
           if (!compiled) return null;
+          if (s.route === "skip") delete compiled.minimumRank;
           return { kind: "event", rewardPlan: compiled, measure: plan.primary,
             ...(s.ptMode === "gekiso" && s.route === "live" ? { rewardRoom: s.rewardRoomMode === "solo" ? { mode: "solo" as const } : { mode: "battle" as const, players: s.rewardPlayers, ...(s.rewardOtherScore === null ? {} : { otherAverageScore: s.rewardOtherScore }) } } : {}),
             ranking: s.ptMode === "gekiso" && s.route === "live" ? "pt-only" : "primary",
@@ -1482,6 +1490,7 @@ export class TeamBuilder extends LitElement {
         leader: s.leader !== null ? `m${s.leader}` : null,
         bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
         noSnaps: s.noSnaps,
+        ...((goal.kind === "gekiso" || goal.kind === "event" && !!goal.gekiso) && hasSkillRoleLimits(s.skillRoles) ? { skillRoles: structuredClone(s.skillRoles), skillRoleMissions: ["Combo","Luck","JustCount"].flatMap((type,index)=>this.hasMission(type,s.songs)?[index+1]:[]) } : {}),
         minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
         ...(goal.kind === "gekiso" && (this.tab === "arena" || this.buildMode !== "manual") && s.minMissionMembers.some(Boolean)
           ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] } : {}),
@@ -1808,6 +1817,7 @@ export class TeamBuilder extends LitElement {
     }
     if (this.pt.correcting && this.tab !== "pt") this.pt.sync();
     this.songComparison.sync();
+    this.analysis.sync();
     this.teamGrowth.sync();
     this.arena.sync();
     this.comparison.sync(this);
@@ -1839,7 +1849,7 @@ export class TeamBuilder extends LitElement {
         >
           ${panel}
         </section>
-        ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
+        ${renderSkillRoleEditor(this)} ${this.analysis.render()} ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
         ${this.imports.render()} ${renderGekisoHelp(this)} ${this.renderSnackbar()}
       </div>
     `;

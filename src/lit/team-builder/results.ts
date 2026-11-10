@@ -3,6 +3,7 @@
 // Output: 排名卡片、结果／已存队伍共用编队、评分详情、以正方形卡面展示的技能顺序与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，教程区分所选顺序无收益与提前方案不可用，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
+import { rankRisk } from "./result-analysis";
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
@@ -1099,6 +1100,15 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
       <div class="cluster">${chips(host, hit)}</div>
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
+      ${hit.event && hit.score && hit.song ? (() => {
+        const rank = host.analysis.targetRank, room = resultRoom(host,hit), rows = host.master?.scoreRanks.get(host.master.songs.get(hit.song!.songId)?.rankGroup ?? 0) ?? [];
+        const target = rows.find(row => row.rank === rank), risk = rankRisk(hit,rank);
+        const threshold = target ? personalRankTarget(target,room) : null;
+        const next = rows.filter(row => personalRankTarget(row,room) > hit.score!.min).sort((a,b) => a.rank-b.rank)[0];
+        return specList([{ label: `${RANK_NAMES[String(rank)]} · ${host.t("analysis.margin", "Score margin")}`, value: threshold === null ? "—" : format(host,hit.score!.min-threshold) },
+          { label: host.t("analysis.dropRisk", "Orders below target"), value: risk === null ? "—" : `${format(host,risk*100,1)}%` },
+          { label: host.t("analysis.nextRank", "Next grade gap"), value: next ? format(host,personalRankTarget(next,room)-hit.score!.min) : "—" }]);
+      })() : nothing}
       ${distribution(host, hit, hit.song)} ${powerNeeded(host, hit, hit.song)} ${skillOrderView(host, hit)}
     </div>
   `;
@@ -1300,6 +1310,8 @@ export function renderHit(
           : nothing
       }
       <div class="tb-hit__actions">
+        ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
+        ${resultRequest(host,hit)?.goal.kind === "gekiso" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openPressure(hit)}>${host.t("analysis.pressure", "Opponent scenarios")}</button>` : nothing}
         ${resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
           <button class="button button--tonal" type="button" ?disabled=${host.running}
             @click=${() => host.teamGrowth.openResult(hit)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
@@ -1469,7 +1481,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
   const stale = host.stale;
   const multi = results.results.length > 1 && resultSettings(host).goal !== "plan";
   const tab = multi ? host.resultTab : "all";
-  const shown = results.plan
+  const unfiltered = results.plan
     ? [results.plan.normal, results.plan.challenge].filter((hit): hit is EngineHit => hit !== null)
     : tab === "overall" || !multi
       ? multi
@@ -1477,6 +1489,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
         : (results.results[0]?.hits ?? [])
       : (results.results.find((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab)
           ?.hits ?? []);
+  const shown = resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
   const groups =
     multi && tab !== "overall"
       ? results.results.filter((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab)
@@ -1486,6 +1499,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
   return html`
     <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
+        ${resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filters() : nothing}
         <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
           ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}
         </span>
