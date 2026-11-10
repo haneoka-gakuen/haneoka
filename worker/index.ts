@@ -4050,6 +4050,17 @@ const WORKER_FIRST_PREFIXES = [
 ];
 
 async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const canonicalUrl = new URL(request.url);
+  let decodedPath: string;
+  try { decodedPath = decodeURIComponent(canonicalUrl.pathname); }
+  catch { return errorResponse(request, 400, "invalid_path", "Path encoding is invalid"); }
+  if (/[\u0000-\u001f\u007f]/u.test(decodedPath))
+    return errorResponse(request, 400, "invalid_path", "Path contains a control character");
+  const currentPath = canonicalUrl.pathname;
+  canonicalUrl.pathname = decodedPath.replace(/\\/gu, "/").replace(/\/{2,}/gu, "/")
+    .split("/").map((part) => encodeURIComponent(part)).join("/");
+  if (canonicalUrl.pathname !== currentPath)
+    return new Response(null, { status: 307, headers: { Location: canonicalUrl.pathname + canonicalUrl.search, "Cache-Control": "no-store" } });
   if (rejectedResourceClient(request)) return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store", Vary: "User-Agent" } });
   const communityUrl = new URL(request.url);
   if (!communityPagesEnabled(communityUrl.hostname, env.COMMUNITY_HIDDEN_HOSTS)
