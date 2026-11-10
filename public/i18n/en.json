@@ -3666,7 +3666,9 @@
       "queryIdle": "Enter a player ID",
       "invalidId": "Check the player ID",
       "linked": "Your game accounts",
-      "recent": "Recent lookups"
+      "recent": "Recent lookups",
+      "downloadFailed": "Profile card download failed",
+      "communityOwner": "haneoka profile"
     },
     "songPuzzle": {
       "title": "Song cover puzzle",
@@ -5108,8 +5110,22 @@
         }
       },
       "gameAccountPlayerId": "Player ID {id}",
-      "gameAccountRank": "Player rank {value}",
-      "gameAccountRating": "High score rating {value}",
+      "gameRank": "Player rank",
+      "gameExperience": "Experience",
+      "gameRating": "High score rating",
+      "gameMembers": "Member cards",
+      "gameSnapshots": "Snapshots",
+      "gameStarted": "Started",
+      "gameDays": "{count} days",
+      "gameClears": "Clear records",
+      "gameDifficulty": "Difficulty",
+      "gameClear": "CLEAR",
+      "gameTotal": "Total",
+      "gameSynced": "Synced",
+      "gameVerified": "Verified",
+      "gameNoData": "No public data",
+      "gameSongTotal": "{count} songs",
+      "gameAccountsEmpty": "No public game accounts",
       "editProfile": "Edit profile",
       "followsYou": "Follows you",
       "emptyList": "Nothing here yet"

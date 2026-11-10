@@ -3666,7 +3666,9 @@
       "queryIdle": "输入玩家 ID",
       "invalidId": "请检查玩家 ID",
       "linked": "我的游戏账号",
-      "recent": "最近查询"
+      "recent": "最近查询",
+      "downloadFailed": "名片下载失败",
+      "communityOwner": "haneoka 主页"
     },
     "songPuzzle": {
       "title": "乐曲封面华容道",
@@ -5108,8 +5110,22 @@
         }
       },
       "gameAccountPlayerId": "玩家 ID {id}",
-      "gameAccountRank": "玩家等级 {value}",
-      "gameAccountRating": "高分评级 {value}",
+      "gameRank": "玩家等级",
+      "gameExperience": "经验",
+      "gameRating": "高分评级",
+      "gameMembers": "成员卡",
+      "gameSnapshots": "留影",
+      "gameStarted": "开始日期",
+      "gameDays": "{count} 天",
+      "gameClears": "通关记录",
+      "gameDifficulty": "难度",
+      "gameClear": "CLEAR",
+      "gameTotal": "合计",
+      "gameSynced": "同步时间",
+      "gameVerified": "已验证",
+      "gameNoData": "暂无公开数据",
+      "gameSongTotal": "共 {count} 首",
+      "gameAccountsEmpty": "暂无公开游戏账号",
       "editProfile": "编辑资料",
       "followsYou": "关注了你",
       "emptyList": "暂无内容"

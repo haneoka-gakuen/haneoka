@@ -69,7 +69,12 @@ import {
 import { formatCommunityTime, isEdited } from "../lib/community-time";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
 import { keyed } from "lit/directives/keyed.js";
-import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
+import {
+  emptyGameAccountShowcase,
+  loadGameAccountShowcase,
+  renderCommunityGameAccounts,
+  type GameAccountShowcase,
+} from "./views/community-game-accounts";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { orderFacetOptions } from "../lib/facet-order";
 import { PaneFocus, renderPane } from "./ui/pane";
@@ -82,7 +87,6 @@ import {
   fetchJson,
   JsonResponseError,
 } from "./shared/catalog";
-import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { iconButton, inputChip, segmented } from "./ui/controls";
 import "./ui/scrollable-tabs";
 import { emptyState, errorState, loadingState } from "./ui/state";
@@ -272,6 +276,7 @@ export class CommunityWorkspace extends LitElement {
     loadingMore: { state: true },
     profileTab: { state: true },
     followList: { state: true },
+    gameAccountShowcase: { state: true },
     refreshing: { state: true },
     commentsLoading: { state: true },
     columnCount: { state: true },
@@ -350,9 +355,11 @@ export class CommunityWorkspace extends LitElement {
   declare editorReady: boolean;
   declare session: Value | null;
   declare loadingMore: boolean;
-  declare profileTab: "posts" | "works" | "followers" | "following";
+  declare profileTab: "gameAccounts" | "posts" | "works" | "followers" | "following";
   /** Rows of the open followers or following tab; null while loading. */
   declare followList: Value[] | null;
+  /** Card art and released song totals for the open profile's public game accounts. */
+  declare gameAccountShowcase: GameAccountShowcase;
   declare refreshing: boolean;
   private readViewer?: CommunityViewer;
   declare commentsLoading: boolean;
@@ -524,8 +531,9 @@ export class CommunityWorkspace extends LitElement {
     this.editorReady = false;
     this.session = null;
     this.loadingMore = false;
-    this.profileTab = "posts";
+    this.profileTab = "gameAccounts";
     this.followList = null;
+    this.gameAccountShowcase = emptyGameAccountShowcase();
     this.refreshing = false;
     this.commentsLoading = false;
     this.columnCount = 2;
@@ -1160,7 +1168,7 @@ export class CommunityWorkspace extends LitElement {
         (this.routeKind === "user-detail" && /^[1-9]\d{0,15}$/u.test(this.entityId)) ||
         (this.routeKind === "collection" && this.mode === "tags"));
       if (this.routeKind === "user-detail" && !refresh) {
-        this.profileTab = "posts";
+        this.profileTab = "gameAccounts";
         this.followList = null;
       }
       let bootstrapFailed = false;
@@ -1302,6 +1310,13 @@ export class CommunityWorkspace extends LitElement {
         }
         if (!this.requests.current(signal)) return;
         this.document = detail;
+        this.gameAccountShowcase = emptyGameAccountShowcase();
+        const accounts = Array.isArray(detail.gameAccounts) ? (detail.gameAccounts as Value[]) : [];
+        void loadGameAccountShowcase(accounts, this.locale, signal)
+          .then((showcase) => {
+            if (this.requests.current(signal)) this.gameAccountShowcase = showcase;
+          })
+          .catch(() => undefined);
         const profile = ((this.document.profile as Value | undefined) || this.document) as Value;
         this.setDocumentTitle(String(profile.displayName || profile.accountName || this.label("member", "Member")));
         this.phase = "ready";
@@ -1554,22 +1569,6 @@ export class CommunityWorkspace extends LitElement {
   }
   private detailHref(route: string) {
     return `${this.path(route)}?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
-  }
-  private gameAccountFacts(account: Value): string[] {
-    const summary = ((account.latestSnapshot as Value | null)?.summary ?? {}) as Value;
-    const number = (value: unknown) => new Intl.NumberFormat(this.locale).format(Number(value));
-    return [
-      GAME_REGION_NAMES[gameAccountRegion(String(account.region), this.locale, String(account.playerUid))],
-      account.displayName && account.playerUid
-        ? this.label("community.page.gameAccountPlayerId", "Player ID {id}", { id: String(account.playerUid) })
-        : "",
-      typeof summary.rank === "number"
-        ? this.label("community.page.gameAccountRank", "Player rank {value}", { value: number(summary.rank) })
-        : "",
-      typeof summary.rating === "number"
-        ? this.label("community.page.gameAccountRating", "High score rating {value}", { value: number(summary.rating) })
-        : "",
-    ].filter(Boolean);
   }
   private label(path: string, fallback: string, params?: MessageParams) {
     const value = path
@@ -4649,7 +4648,10 @@ export class CommunityWorkspace extends LitElement {
     const viewer = ((this.document?.viewer as Value | undefined) || {}) as Value;
     const stats = ((profile.stats as Value | undefined) || {}) as Value;
     const count = (key: string) => Number(stats[key] || 0).toLocaleString(this.locale);
-    const tabs = (["posts", "works", "followers", "following"] as const).map((id) => ({ id, label: `${this.label(id, id)} ${count(id)}` }));
+    const tabs = [
+      { id: "gameAccounts", label: `${this.label("gameAccounts", "Game accounts")} ${gameAccounts.length.toLocaleString(this.locale)}` },
+      ...(["posts", "works", "followers", "following"] as const).map((id) => ({ id, label: `${this.label(id, id)} ${count(id)}` })),
+    ];
     return html`
       <section class="page community-user-page">
         ${this.renderMutationProgress()}
@@ -4694,51 +4696,35 @@ export class CommunityWorkspace extends LitElement {
                 : nothing
           }
         </header>
-        <div class=${`community-user-layout${gameAccounts.length ? " has-games" : ""}`}>
-          <div class="community-user-main">
-            <scrollable-tabs
-              .items=${tabs}
-              .value=${this.profileTab}
-              .label=${String(profile.displayName || "")}
-              .previousLabel=${this.label("previous", "Previous")}
-              .nextLabel=${this.label("next", "Next")}
-              .onSelect=${(tab: string) => void this.openProfileTab(tab)}
-            ></scrollable-tabs>
-            ${
-              this.profileTab === "posts"
+        <section class="community-user-section community-user-activity">
+          <scrollable-tabs
+            class="scrollable-tabs"
+            .items=${tabs}
+            .value=${this.profileTab}
+            .label=${String(profile.displayName || "")}
+            .previousLabel=${this.label("common.actions.previous", "Previous")}
+            .nextLabel=${this.label("common.actions.next", "Next")}
+            .onSelect=${(tab: string) => void this.openProfileTab(tab)}
+          ></scrollable-tabs>
+          ${
+            this.profileTab === "gameAccounts"
+              ? gameAccounts.length
+                ? renderCommunityGameAccounts(gameAccounts, {
+                    locale: this.locale,
+                    showcase: this.gameAccountShowcase,
+                    label: (path, fallback, params) => this.label(path, fallback, params),
+                    time: (value) => this.time(value),
+                  })
+                : emptyState({ icon: "sports_esports", title: this.label("gameAccountsEmpty", "No public game accounts") })
+              : this.profileTab === "posts"
                 ? this.renderProfilePosts(profile, posts)
                 : this.profileTab === "works"
                   ? works.length
                     ? this.renderProfileWorks(works)
                     : emptyState({ icon: "bar_chart", title: this.label("emptyList", "Nothing here yet") })
                   : this.renderFollowList()
-            }
-          </div>
-          ${
-            gameAccounts.length
-              ? html`
-                  <aside class="surface community-user-games">
-                    ${renderDetailSectionHeading(this.label("gameAccounts", "Game accounts"), "accounts", { count: gameAccounts.length })}
-                    <ul class="list" role="list">
-                      ${gameAccounts.map(
-                        (account) => html`
-                          <li>
-                            <a class="list-item list-item--three-line list-item--interactive" href=${`/${this.locale}/player-profile/?region=${gameAccountRegion(String(account.region), this.locale, String(account.playerUid))}&profileId=${account.playerUid}`}>
-                              <span class="list-item__avatar">${icon("sports_esports", 20)}</span>
-                              <span class="list-item__body">
-                                <span class="list-item__headline">${String(account.displayName || account.playerUid || "")}</span>
-                                <span class="list-item__supporting">${this.gameAccountFacts(account).join(" / ")}</span>
-                              </span>
-                            </a>
-                          </li>
-                        `,
-                      )}
-                    </ul>
-                  </aside>
-                `
-              : nothing
           }
-        </div>
+        </section>
         ${this.renderCardMenu()}${this.renderDialog()}
       </section>
     `;

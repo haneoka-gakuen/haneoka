@@ -3666,7 +3666,9 @@
       "queryIdle": "플레이어 ID 입력",
       "invalidId": "플레이어 ID를 확인해 주세요",
       "linked": "내 게임 계정",
-      "recent": "최근 조회"
+      "recent": "최근 조회",
+      "downloadFailed": "프로필 카드 다운로드 실패",
+      "communityOwner": "haneoka 프로필"
     },
     "songPuzzle": {
       "title": "곡 커버 퍼즐",
@@ -5108,8 +5110,22 @@
         }
       },
       "gameAccountPlayerId": "플레이어 ID {id}",
-      "gameAccountRank": "플레이어 랭크 {value}",
-      "gameAccountRating": "하이스코어 레이팅 {value}",
+      "gameRank": "플레이어 랭크",
+      "gameExperience": "경험치",
+      "gameRating": "하이스코어 레이팅",
+      "gameMembers": "멤버 카드",
+      "gameSnapshots": "스냅",
+      "gameStarted": "시작일",
+      "gameDays": "{count}일",
+      "gameClears": "클리어 기록",
+      "gameDifficulty": "난이도",
+      "gameClear": "CLEAR",
+      "gameTotal": "합계",
+      "gameSynced": "동기화",
+      "gameVerified": "인증됨",
+      "gameNoData": "공개 데이터 없음",
+      "gameSongTotal": "총 {count}곡",
+      "gameAccountsEmpty": "공개 게임 계정 없음",
       "editProfile": "프로필 편집",
       "followsYou": "나를 팔로우함",
       "emptyList": "아직 없습니다"

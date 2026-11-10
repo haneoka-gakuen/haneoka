@@ -7,6 +7,7 @@ import { rankingCardsPageData } from "../server/tool-page-data";
 import { renderPlayerProfilePage } from "../server/render-tools";
 import { serializePageData } from "../lib/page-data";
 import "../styles/song-ranking.css";
+import "../styles/player-profile.css";
 const { locale } = Astro.props as { locale: Locale };
 const route = "/player-profile";
 const title = t(locale, "tools.playerProfile.title", "Player lookup");

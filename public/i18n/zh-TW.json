@@ -3666,7 +3666,9 @@
       "queryIdle": "輸入玩家 ID",
       "invalidId": "請檢查玩家 ID",
       "linked": "我的遊戲帳號",
-      "recent": "最近查詢"
+      "recent": "最近查詢",
+      "downloadFailed": "名片下載失敗",
+      "communityOwner": "haneoka 個人頁面"
     },
     "songPuzzle": {
       "title": "樂曲封面華容道",
@@ -5108,8 +5110,22 @@
         }
       },
       "gameAccountPlayerId": "玩家 ID {id}",
-      "gameAccountRank": "玩家等級 {value}",
-      "gameAccountRating": "高分評級 {value}",
+      "gameRank": "玩家等級",
+      "gameExperience": "經驗",
+      "gameRating": "高分評級",
+      "gameMembers": "成員卡",
+      "gameSnapshots": "快照",
+      "gameStarted": "開始日期",
+      "gameDays": "{count} 天",
+      "gameClears": "通關紀錄",
+      "gameDifficulty": "難度",
+      "gameClear": "CLEAR",
+      "gameTotal": "合計",
+      "gameSynced": "同步時間",
+      "gameVerified": "已驗證",
+      "gameNoData": "暫無公開資料",
+      "gameSongTotal": "共 {count} 首",
+      "gameAccountsEmpty": "暫無公開遊戲帳號",
       "editProfile": "編輯個人資料",
       "followsYou": "關注了你",
       "emptyList": "暫無內容"

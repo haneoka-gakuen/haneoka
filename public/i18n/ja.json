@@ -3666,7 +3666,9 @@
       "queryIdle": "プレイヤーIDを入力",
       "invalidId": "プレイヤーIDを確認してください",
       "linked": "自分のゲームアカウント",
-      "recent": "最近の検索"
+      "recent": "最近の検索",
+      "downloadFailed": "プロフィールカードのダウンロードに失敗",
+      "communityOwner": "haneoka プロフィール"
     },
     "songPuzzle": {
       "title": "楽曲ジャケットパズル",
@@ -5108,8 +5110,22 @@
         }
       },
       "gameAccountPlayerId": "プレイヤー ID {id}",
-      "gameAccountRank": "プレイヤーランク {value}",
-      "gameAccountRating": "ハイスコアレーティング {value}",
+      "gameRank": "プレイヤーランク",
+      "gameExperience": "経験値",
+      "gameRating": "ハイスコアレーティング",
+      "gameMembers": "メンバーカード",
+      "gameSnapshots": "スナップ",
+      "gameStarted": "開始日",
+      "gameDays": "{count}日",
+      "gameClears": "クリア記録",
+      "gameDifficulty": "難易度",
+      "gameClear": "CLEAR",
+      "gameTotal": "合計",
+      "gameSynced": "同期",
+      "gameVerified": "認証済み",
+      "gameNoData": "公開データなし",
+      "gameSongTotal": "全{count}曲",
+      "gameAccountsEmpty": "公開ゲームアカウントなし",
       "editProfile": "プロフィールを編集",
       "followsYou": "フォローされています",
       "emptyList": "まだありません"

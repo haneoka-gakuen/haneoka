@@ -838,7 +838,7 @@
     align-content: start;
     gap: 16px;
   }
-  .community-user-hero {
+  .community-user-page .community-user-hero {
     display: flex;
     align-items: flex-start;
     gap: 20px;
@@ -847,59 +847,278 @@
     border-radius: var(--md-sys-shape-corner-large);
     background: var(--md-sys-color-surface-container-low);
   }
-  .community-user-hero .community-avatar {
+  .community-user-page .community-user-hero .community-avatar {
     width: 88px;
     height: 88px;
     flex: 0 0 88px;
   }
-  .community-user-hero__copy {
+  .community-user-page .community-user-hero__copy {
     display: grid;
     min-width: 0;
     flex: 1 1 240px;
     gap: 4px;
     overflow-wrap: anywhere;
   }
-  .community-user-hero__copy :is(h2, p) {
+  .community-user-page .community-user-hero__copy :is(h2, p) {
     margin: 0;
   }
-  .community-user-hero__meta {
+  .community-user-page .community-user-hero__meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 4px 12px;
     color: var(--md-sys-color-on-surface-variant);
   }
-  .community-user-actions {
+  .community-user-page .community-user-actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
     margin-inline-start: auto;
   }
-  .community-user-layout {
+  .community-user-page .community-user-section {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    gap: 12px;
+  }
+  .community-user-page .community-user-games__list {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+  }
+  .community-user-page .community-game-account {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    gap: 20px;
+    padding: clamp(16px, 3vw, 24px);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container);
+    container: community-game-account / inline-size;
+  }
+  .community-user-page .community-game-account__head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+  }
+  .community-user-page .community-game-account__card {
+    display: block;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: inherit;
+  }
+  .community-user-page .community-game-account__card:focus-visible {
+    outline: 3px solid var(--md-sys-color-primary);
+    outline-offset: 3px;
+  }
+  .community-user-page .community-game-account__art {
+    display: grid;
+    width: 80px;
+    height: 80px;
+    place-items: center;
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-tertiary-container);
+    background: var(--md-sys-color-tertiary-container);
+  }
+  .community-user-page .community-game-account__art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .community-user-page .community-game-account__identity {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+  }
+  .community-user-page .community-game-account__identity h3 {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-emphasized-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .community-user-page .community-game-account__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .community-user-page .community-game-account__meta img {
+    flex: 0 0 auto;
+  }
+  .community-user-page .community-game-account__lookup {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .community-user-page .community-game-account__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
     align-items: start;
-    gap: 16px;
+    gap: 20px;
   }
-  .community-user-layout.has-games {
-    grid-template-columns: minmax(0, 1fr) 320px;
+  .community-user-page .community-game-account__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(136px, 100%), 1fr));
+    gap: 8px;
+    margin: 0;
   }
-  .community-user-main {
+  .community-user-page .community-game-account__stats > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .community-user-page .community-game-account__stat {
     display: grid;
     min-width: 0;
-    gap: 16px;
+    align-content: start;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-high);
   }
-  .community-user-games {
+  .community-user-page .community-game-account__stat dt {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .community-user-page .community-game-account__stat-icon {
     display: grid;
+    flex: 0 0 auto;
+    color: var(--md-sys-color-primary);
+  }
+  .community-user-page .community-game-account__stat dd {
+    display: grid;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .community-user-page .community-game-account__stat strong {
+    font: var(--md-sys-typescale-emphasized-headline-weight)
+      var(--md-sys-typescale-headline-small-size) / var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .community-user-page .community-game-account__stat small {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .community-user-page .community-game-account__clears {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 0;
     gap: 8px;
   }
-  @media (max-width: 960px) {
-    .community-user-layout.has-games {
-      grid-template-columns: minmax(0, 1fr);
+  .community-user-page .community-game-account__clears-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+  }
+  .community-user-page .community-game-account__song-total {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .community-user-page .community-game-account__subhead {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  }
+  .community-user-page .community-game-account__clears .data-table {
+    width: 100%;
+  }
+  .community-user-page .community-game-account__clears .data-table :where(th, td) {
+    padding: 8px 12px;
+  }
+  .community-user-page .community-game-account__clears .data-table thead th {
+    white-space: normal;
+  }
+  .community-user-page .community-game-account__clears .data-table tbody :where(th, td) {
+    height: 52px;
+  }
+  .community-user-page .community-game-account__clears .data-table tbody th {
+    min-width: 88px;
+  }
+  .community-user-page .community-game-account__clears .data-table tfoot :where(th, td) {
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-low);
+    font-weight: var(--md-sys-typescale-title-small-weight);
+  }
+  .community-user-page .community-game-account__difficulty {
+    display: block;
+    color: var(--difficulty-color);
+    font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+      var(--md-sys-typescale-label-large-line-height) var(--app-font);
+    letter-spacing: 0.04em;
+  }
+  .community-user-page .community-game-account__meter {
+    display: block;
+    width: 100%;
+    min-width: 64px;
+    height: 6px;
+    margin-top: 6px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background:
+      linear-gradient(var(--difficulty-color), var(--difficulty-color)) 0 0 / var(--ap) 100% no-repeat,
+      linear-gradient(
+          color-mix(in srgb, var(--difficulty-color) 60%, transparent),
+          color-mix(in srgb, var(--difficulty-color) 60%, transparent)
+        )
+        0 0 / var(--fc) 100% no-repeat,
+      linear-gradient(
+          color-mix(in srgb, var(--difficulty-color) 28%, transparent),
+          color-mix(in srgb, var(--difficulty-color) 28%, transparent)
+        )
+        0 0 / var(--clear) 100% no-repeat,
+      var(--md-sys-color-surface-container-highest);
+  }
+  .community-user-page .community-game-account__empty,
+  .community-user-page .community-game-account__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  .community-user-page .community-game-account__empty {
+    min-height: 48px;
+    padding-inline: 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-high);
+  }
+  @container community-game-account (min-width: 600px) {
+    .community-user-page .community-game-account__head {
+      grid-template-columns: auto minmax(0, 1fr) auto;
     }
-    .community-user-games {
-      order: -1;
+    .community-user-page .community-game-account__art {
+      width: 96px;
+      height: 96px;
+    }
+    .community-user-page .community-game-account__lookup {
+      grid-column: auto;
+    }
+  }
+  @container community-game-account (min-width: 840px) {
+    .community-user-page .community-game-account__body {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    }
+    .community-user-page .community-game-account__stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   .community-stack {

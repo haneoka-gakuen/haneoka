@@ -1,0 +1,104 @@
+@layer pages {
+  .player-profile-page .player-profile-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 16px 20px;
+    margin-bottom: 24px;
+    padding: clamp(16px, 3vw, 24px);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-low);
+  }
+  .player-profile-page .player-profile-hero .song-ranking__avatar {
+    width: 72px;
+    height: 72px;
+  }
+  .player-profile-page .player-profile-hero__identity {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+  }
+  .player-profile-page .player-profile-hero__identity h2 {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
+      var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  }
+  .player-profile-page .player-profile-hero__id {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .player-profile-page .player-profile-hero__id img {
+    flex: 0 0 auto;
+  }
+  .player-profile-page .player-profile-hero__chips {
+    margin-top: 2px;
+  }
+  .player-profile-page .player-profile-owner {
+    display: flex;
+    grid-column: 1 / -1;
+    min-width: 0;
+    min-height: 64px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px 8px 8px;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    text-decoration: none;
+    transition: border-radius var(--motion-spring-spatial-fast-duration) var(--motion-spring-spatial-fast);
+  }
+  .player-profile-page .player-profile-owner:hover {
+    border-radius: var(--md-sys-shape-corner-extra-large);
+  }
+  .player-profile-page .player-profile-owner:focus-visible {
+    outline: 3px solid var(--md-sys-color-primary);
+    outline-offset: 3px;
+  }
+  .player-profile-page .player-profile-owner__icon {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    place-items: center;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-primary);
+    background: var(--md-sys-color-primary);
+  }
+  .player-profile-page .player-profile-owner__copy {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+  }
+  .player-profile-page .player-profile-owner__copy > span {
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .player-profile-page .player-profile-owner__copy > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+  }
+  @container (min-width: 720px) {
+    .player-profile-page .player-profile-hero {
+      grid-template-columns: auto minmax(0, 1fr) minmax(240px, 320px);
+    }
+    .player-profile-page .player-profile-hero .song-ranking__avatar {
+      width: 88px;
+      height: 88px;
+    }
+    .player-profile-page .player-profile-owner {
+      grid-column: auto;
+    }
+  }
+}

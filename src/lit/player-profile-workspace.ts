@@ -1,8 +1,6 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import "@material/web/progress/linear-progress.js";
-import "@material/web/menu/menu.js";
-import "@material/web/menu/menu-item.js";
 import { html, nothing, type PropertyValues } from "lit";
 import type { GalleryImage } from "./ui/image-gallery";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
@@ -27,6 +25,7 @@ import {
 import { emptyState, errorState } from "./ui/state";
 import { clearAppBarActions, clearAppBarSearch, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
 import { GAME_RECORDS_REGIONS, defaultGameRecordsRegion, gameAccountRegion } from "./shared/game-records";
+import "../styles/player-profile.css";
 import { signedInHint } from "../lib/community-viewer";
 import type { GameRecordsErrorDto,
   GameRecordsRegion,
@@ -36,6 +35,7 @@ import type { GameRecordsErrorDto,
   PlayerProfileDto,
   RankingCardCatalog,
 } from "../lib/game-records";
+import { snackbar } from "../lib/snackbar";
 import { profileRegion } from "../lib/game-records";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
@@ -58,6 +58,16 @@ function readRecentPlayers(): RecentPlayer[] {
   }
 }
 
+/** Leading zeros are dropped so a pasted ID matches the stored form. */
+function normalizedProfileId(value: string): string {
+  const input = value.trim();
+  return /^[0-9]{1,19}$/u.test(input) ? BigInt(input).toString() : input;
+}
+/** 11-digit IDs name their region by the first digit; other positive int64 IDs belong to JP. */
+function detectedProfileRegion(id: string): GameRecordsRegion | null {
+  return profileRegion(id) ?? (validPlayerProfileId("jp", id) ? "jp" : null);
+}
+
 export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   static properties = {
     locale: { type: String },
@@ -66,7 +76,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     profile: { state: true },
     profileImageId: { state: true },
     profileImageDownloading: { state: true },
-    profileImageError: { state: true },
     selectedEntry: { state: true },
     queryInvalid: { state: true },
     recent: { state: true },
@@ -77,7 +86,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   declare profile: PlayerProfileDto["profile"] | null;
   declare profileImageId: string;
   declare profileImageDownloading: boolean;
-  declare profileImageError: boolean;
   declare selectedEntry: SongRankingRowDto | null;
   declare queryInvalid: boolean;
   declare recent: RecentPlayer[];
@@ -101,7 +109,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.profile = null;
     this.profileImageId = "";
     this.profileImageDownloading = false;
-    this.profileImageError = false;
     this.selectedEntry = null;
     this.queryInvalid = false;
     this.recent = [];
@@ -135,12 +142,14 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.locale = preferredLocale(this.locale);
     const url = navigationDocumentUrl();
     const requested = url.searchParams.get("region");
-    this.region = GAME_RECORDS_REGIONS.some((option) => option.value === requested)
-      ? (requested as GameRecordsRegion)
-      : defaultGameRecordsRegion(readReleaseServer(), this.locale);
+    this.profileQuery = normalizedProfileId(url.searchParams.get("profileId") || "");
+    const linkedRegion = GAME_RECORDS_REGIONS.find((option) => option.value === requested)?.value;
+    this.region =
+      detectedProfileRegion(this.profileQuery) ??
+      (!this.profileQuery ? linkedRegion : null) ??
+      defaultGameRecordsRegion(readReleaseServer(), this.locale);
     this.rankingEndpoint = playerProfileRankingEndpoint(url.searchParams.get("ranking"), this.region);
     this.points = Boolean(this.rankingEndpoint && /\/events\/[1-9][0-9]*\/latest$/u.test(this.rankingEndpoint));
-    this.profileQuery = url.searchParams.get("profileId") || "";
     addEventListener(
       "haneoka:locale-ready",
       () => {
@@ -212,17 +221,11 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         { signal, cache: "no-store", credentials: "same-origin", headers: { accept: "application/json" } },
       );
       if (!this.currentProfile(signal, region, id)) return;
+      const owner = await this.readCommunityOwner(region, id, signal);
+      if (!this.currentProfile(signal, region, id)) return;
       this.profile = value.profile;
-      this.communityOwner = null;
+      this.communityOwner = owner;
       this.rememberPlayer({ region, id, name: value.profile.name || id });
-      void fetchJson<{ owner: { uid: number; name: string } | null }>(
-        `/api/v1/community/game-accounts/${region === "jp" ? "jp" : "intl"}/${encodeURIComponent(id)}`,
-        { signal, credentials: "same-origin" },
-      )
-        .then(({ owner }) => {
-          if (this.currentProfile(signal, region, id)) this.communityOwner = owner;
-        })
-        .catch(() => undefined);
       const pages = this.profilePages();
       this.profileImageId = pages.length ? String(pages[0].page) : "";
       if (pages.length) void import("./ui/image-gallery");
@@ -241,6 +244,23 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
             : "error";
     }
   }
+  private async readCommunityOwner(region: GameRecordsRegion, id: string, parent: AbortSignal) {
+    const request = new RequestScope();
+    const signal = request.begin(parent);
+    const timeout = setTimeout(() => request.cancel(), 5_000);
+    try {
+      const { owner } = await fetchJson<{ owner: { uid: number; name: string } | null }>(
+        `/api/v1/community/game-accounts/${region === "jp" ? "jp" : "intl"}/${encodeURIComponent(id)}`,
+        { signal, credentials: "same-origin" },
+      );
+      return owner;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+      request.cancel();
+    }
+  }
   private rememberPlayer(player: RecentPlayer) {
     this.recent = [player, ...this.recent.filter((entry) => entry.id !== player.id || entry.region !== player.region)].slice(0, 8);
     try {
@@ -250,7 +270,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     }
   }
   private openPlayer(player: RecentPlayer) {
-    if (player.region !== this.region) this.selectRegion(player.region as GameRecordsRegion);
     this.submitProfile(player.id);
   }
   private renderLanding() {
@@ -267,7 +286,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                   (player) => html`
                     <li>
                       <button class="list-item list-item--two-line list-item--interactive" type="button" @click=${() => this.openPlayer(player)}>
-                        <span class="list-item__avatar">${icon("person", 20)}</span>
+                        <span class="list-item__avatar">${this.regionFlag(detectedProfileRegion(player.id) ?? player.region, 24)}</span>
                         <span class="list-item__body">
                           <span class="list-item__headline">${player.name}</span>
                           <span class="list-item__supporting">${player.id}</span>
@@ -299,31 +318,27 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     if (url.pathname === location.pathname) history.replaceState(history.state, "", url);
   }
   private submitProfile(value: string) {
-    const input = value.trim();
-    const detected = profileRegion(input);
-    if (detected) this.region = detected;
-    const id = validPlayerProfileId(this.region, input) ? BigInt(input).toString() : input;
-    if (!validPlayerProfileId(this.region, id)) {
+    const id = normalizedProfileId(value);
+    const region = detectedProfileRegion(id);
+    if (!region) {
+      this.profileRequests.cancel();
       this.queryInvalid = true;
       return;
+    }
+    this.openProfile(region, id);
+  }
+  private openProfile(region: GameRecordsRegion, id: string) {
+    if (region !== this.region) {
+      this.region = region;
+      this.rankingEndpoint = null;
+      this.points = false;
     }
     this.syncUrl(id);
     void this.loadProfile(id);
   }
-  private selectRegion(region: GameRecordsRegion) {
-    if (region === this.region) return;
-    this.profileRequests.cancel();
-    this.resetProfileImage();
-    this.region = region;
-    this.profile = null;
-    this.selectedEntry = null;
-    this.selectedProfileId = "";
-    this.profilePhase = "idle";
-    this.queryInvalid = false;
-    this.rankingEndpoint = null;
-    this.points = false;
-    this.searchInitialized = false;
-    this.syncUrl("");
+  private regionFlag(region: string, size: number) {
+    const option = GAME_RECORDS_REGIONS.find((entry) => entry.value === region);
+    return option ? html`<img src=${option.flag} width=${size} height=${size} alt="" />` : icon("person", 20);
   }
   private syncChrome(staticPage = false) {
     const returnTo = staticPage ? null : playerProfileReturn(navigationDocumentUrl().searchParams.get("return"));
@@ -344,33 +359,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
               `
             : nothing
         }
-        <div>
-          <button
-            type="button"
-            class="icon-button"
-            id=${`${this.owner}-server`}
-            aria-haspopup="menu"
-            aria-label=${`${clientText(this.locale, "settings.labels.server", "Server")} / ${this.label(GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.key, this.region)}`}
-            @click=${(event: Event) => (event.currentTarget as HTMLElement).parentElement?.querySelector("md-menu")?.show()}
-          >
-            <img
-              src=${GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!.flag}
-              width="28"
-              height="28"
-              alt=""
-            />
-          </button>
-          <md-menu anchor=${`${this.owner}-server`} positioning="popover">
-            ${GAME_RECORDS_REGIONS.map(
-              (option) => html`
-                <md-menu-item type="button" @click=${() => this.selectRegion(option.value)}>
-                  <img slot="start" src=${option.flag} width="24" height="24" alt="" />
-                  <span slot="headline">${this.label(option.key, option.value)}</span>
-                </md-menu-item>
-              `,
-            )}
-          </md-menu>
-        </div>
         ${iconButton({ label: clientText(this.locale, "common.actions.refresh", "Refresh"), icon: "refresh", disabled: !this.selectedProfileId || this.profilePhase === "loading", onClick: () => void this.loadProfile(this.selectedProfileId) })}
       `,
       this,
@@ -389,8 +377,8 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     const input = document.querySelector<HTMLInputElement>(`[data-app-bar-search-owner="${this.owner}"] input`);
     if (input) {
       input.inputMode = "numeric";
-      input.maxLength = this.region === "jp" ? 19 : 11;
-      input.pattern = playerProfileIdPattern(this.region);
+      input.maxLength = 19;
+      input.pattern = playerProfileIdPattern("jp");
       input.required = true;
     }
     // The shared compact search normally starts as an icon. A new lookup must expose its input.
@@ -409,7 +397,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   render() {
     const loading = this.profilePhase === "loading";
     return html`
-      <section class="song-ranking-page" aria-label=${clientText(this.locale, "tools.playerProfile.title", "Player lookup")}>
+      <section class="song-ranking-page player-profile-page" aria-label=${clientText(this.locale, "tools.playerProfile.title", "Player lookup")}>
         <div class="song-ranking__progress" aria-hidden=${loading ? nothing : "true"}>
           ${
             loading
@@ -431,7 +419,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.profileDownloads.cancel();
     this.profileImageId = "";
     this.profileImageDownloading = false;
-    this.profileImageError = false;
   }
 
   private profilePages(): Array<GameProfileCardPageDto & { imageUrl: string }> {
@@ -448,7 +435,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     if (!page?.downloadUrl || this.profileImageDownloading) return;
     const signal = this.profileDownloads.begin();
     this.profileImageDownloading = true;
-    this.profileImageError = false;
     try {
       const response = await fetch(page.downloadUrl, {
         credentials: "omit",
@@ -467,7 +453,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         )[blob.type] || "image";
       await downloadBlob(blob, `profile-${this.selectedProfileId}-${page.page}.${extension}`);
     } catch {
-      if (this.isConnected && this.profileDownloads.current(signal)) this.profileImageError = true;
+      if (this.isConnected && this.profileDownloads.current(signal)) snackbar(clientText(this.locale, "tools.playerProfile.downloadFailed", "Profile card download failed"), { error: true });
     } finally {
       if (this.profileDownloads.current(signal)) this.profileImageDownloading = false;
     }
@@ -533,9 +519,10 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         ? BigInt(profile.totalFavoriteExact).toLocaleString(this.locale)
         : profile.totalFavorite?.toLocaleString(this.locale);
     const entry = this.selectedEntry;
+    const region = GAME_RECORDS_REGIONS.find((option) => option.value === this.region)!;
     return html`
       <div class="song-ranking__profile">
-        <header class="song-ranking__profile-head">
+        <header class="player-profile-hero">
           ${
             cardHref
               ? html`
@@ -547,41 +534,55 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                   <span class="song-ranking__avatar">${this.profileMedia(name, artwork?.avatar || "")}</span>
                 `
           }
-          <div class="song-ranking__profile-identity">
+          <div class="player-profile-hero__identity">
             <h2>${name}</h2>
-            <p class="song-ranking__profile-id">
-              ${this.label("profileSearch", "Player profile ID")} / ${this.selectedProfileId}
+            <p class="player-profile-hero__id">
+              ${this.regionFlag(this.region, 20)}
+              <span>${this.label(region.key, this.region)}</span>
+              <span aria-hidden="true">/</span>
+              <span>${this.selectedProfileId}</span>
             </p>
-            <div class="cluster song-ranking__profile-badges">
-              ${
-                this.communityOwner
-                  ? html`
-                      <a class="chip chip--assist" href=${`/${this.locale}/community/users/${this.communityOwner.uid}/`}>
-                        ${icon("person", 18)}<span class="chip__label">${this.communityOwner.name}</span>
-                      </a>
-                    `
-                  : nothing
-              }
-              ${
-                level != null
-                  ? html`
-                      <span class="chip chip--tonal chip--static">
-                        <span class="chip__label">${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}</span>
-                      </span>
-                    `
-                  : nothing
-              }
-              ${
-                favorites != null
-                  ? html`
-                      <span class="chip chip--tonal chip--static">
-                        ${icon("favorite", 18)}<span class="sr-only">${this.label("favorites", "Likes received")}</span><span class="chip__label">${favorites}</span>
-                      </span>
-                    `
-                  : nothing
-              }
-            </div>
+            ${
+              level != null || favorites != null
+                ? html`
+                    <div class="cluster player-profile-hero__chips">
+                      ${
+                        level != null
+                          ? html`
+                              <span class="chip chip--tonal chip--static">
+                                <span class="chip__label">${this.label("cardLevel", "Lv. {level}").replace("{level}", String(level))}</span>
+                              </span>
+                            `
+                          : nothing
+                      }
+                      ${
+                        favorites != null
+                          ? html`
+                              <span class="chip chip--tonal chip--static">
+                                ${icon("favorite", 18)}<span class="sr-only">${this.label("favorites", "Likes received")}</span><span class="chip__label">${favorites}</span>
+                              </span>
+                            `
+                          : nothing
+                      }
+                    </div>
+                  `
+                : nothing
+            }
           </div>
+          ${
+            this.communityOwner
+              ? html`
+                  <a class="player-profile-owner" href=${`/${this.locale}/community/users/${this.communityOwner.uid}/`}>
+                    <span class="player-profile-owner__icon" aria-hidden="true">${icon("account_circle", 24)}</span>
+                    <span class="player-profile-owner__copy">
+                      <span>${clientText(this.locale, "tools.playerProfile.communityOwner", "Community profile")}</span>
+                      <strong>${this.communityOwner.name}</strong>
+                    </span>
+                    ${icon("chevron_right", 24)}
+                  </a>
+                `
+              : nothing
+          }
         </header>
         <div class="song-ranking__profile-layout">
           ${
@@ -624,13 +625,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                         : nothing
                     }
                     ${
-                      this.profileImageError
-                        ? html`
-                            <p role="alert">${clientText(this.locale, "common.states.unavailable", "Unavailable")}</p>
-                          `
-                        : nothing
-                    }
-                    ${
                       images.length
                         ? html`
                             <image-gallery
@@ -639,7 +633,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
                               .active=${this.profileImageId}
                               @image-change=${(event: CustomEvent<string>) => {
                                 this.profileImageId = event.detail;
-                                this.profileImageError = false;
                               }}
                               .locale=${this.locale}
                               .title=${this.label("profileCard", "Profile card")}
