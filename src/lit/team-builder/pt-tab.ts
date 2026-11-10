@@ -37,7 +37,7 @@ import {
   playSection,
   songList,
 } from "./build-tab";
-import { sectionHeading } from "./catalog";
+import { choiceField, sectionHeading } from "./catalog";
 import { renderChecklist } from "./tool-layout";
 import { boostControl } from "./boost-control";
 import { rovingKeydown, segmented } from "../ui/controls";
@@ -680,30 +680,17 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                       <span>${host.t("fullRanking", "Full reward ranking")}</span>
                     </label>
                     ` : nothing}
-                    <md-outlined-select
-                      label=${host.t("resultCount", "Results")}
-                      .value=${String(f.k)}
-                      @change=${(e: Event) => set({ k: Number((e.target as HTMLInputElement).value) })}
-                    >
-                      ${[1, 3, 5, 10, 15, 20].map(
-                        (k) => html`
-                          <md-select-option value=${String(k)}><div slot="headline">${k}</div></md-select-option>
-                        `,
-                      )}
-                    </md-outlined-select>
-                    <md-outlined-select
-                      label=${host.t("timeLimit", "Time limit")}
-                      .value=${String(f.timeLimit ?? 0)}
-                      @change=${(e: Event) => set({ timeLimit: Number((e.target as HTMLInputElement).value) || null })}
-                    >
-                      ${[0, 3, 5, 15, 60].map(
-                        (value) => html`
-                          <md-select-option value=${String(value)}>
-                            <div slot="headline">${value ? `${value} s` : host.t("noLimit", "Until proven")}</div>
-                          </md-select-option>
-                        `,
-                      )}
-                    </md-outlined-select>
+                    ${choiceField({
+                      label: host.t("resultCount", "Results"), value: String(f.k),
+                      options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
+                      onSelect: value => set({k: Number(value)}),
+                    })}
+                    ${choiceField({
+                      label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
+                      options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
+                        ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
+                      onSelect: value => set({timeLimit: Number(value) || null}),
+                    })}
                   `
             }
           </div>

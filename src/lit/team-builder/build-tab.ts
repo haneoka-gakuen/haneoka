@@ -20,7 +20,7 @@ import { matchesCardFilters, renderCardFilters } from "./card-filters";
 import { accordion } from "../ui/accordion";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
-import { sectionHeading } from "./catalog";
+import { choiceField, sectionHeading } from "./catalog";
 import { renderResults } from "./results";
 import { renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
@@ -353,7 +353,7 @@ export function songList(
                         ${tileMedia({ ...catalog.songOptions(song.songId, song.difficulty), marks: [] })}
                       </span>
                       <span class="list-item__body">
-                        <strong class="list-item__headline clamp-1">${catalog.songTitle(song.songId)}</strong>
+                        <strong class="list-item__headline clamp-1" lang=${catalog.songTitleLanguage(song.songId)}>${catalog.songTitle(song.songId)}</strong>
                         <span class="list-item__supporting">
                           ${catalog.difficultyLabel(song.songId, song.difficulty)}${(host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso") ? ` / ${missionSummary(songMissions(host.songRules() ? arenaSongView(catalog.song(song.songId), host.songRules()!) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` / ${host.t("unavailable", "Unavailable")}` : ""}
                         </span>
@@ -732,17 +732,11 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
           ? nothing
           : html`
               <div class="row row--wrap">
-                <md-outlined-select
-                  label=${host.t("resultCount", "Results")}
-                  .value=${String(s.k)}
-                  @change=${(e: Event) => set({ k: Number((e.target as HTMLInputElement).value) })}
-                >
-                  ${[1, 3, 5, 10, 15, 20].map(
-                    (k) => html`
-                      <md-select-option value=${String(k)}><div slot="headline">${k}</div></md-select-option>
-                    `,
-                  )}
-                </md-outlined-select>
+                ${choiceField({
+                  label: host.t("resultCount", "Results"), value: String(s.k),
+                  options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
+                  onSelect: value => set({k: Number(value)}),
+                })}
               </div>
             `
       }
@@ -790,29 +784,17 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
       ${
         activity && s.rewardMode !== "plan" && s.scope === "box"
           ? html`
-              <md-outlined-select
-                label=${host.t("unknownPolicy", "Growth not entered")}
-                .value=${farmingConditions(s.farming).requireGrowth ? "required" : s.unknownPolicy}
-                ?disabled=${s.farming.play === "gekiso"}
-                @change=${(e: Event) => {
-                  const value = (e.target as HTMLInputElement).value;
-                  host.updateFarming(
-                    value === "required"
-                      ? { requireGrowth: true }
-                      : { requireGrowth: false, unknownPolicy: value as "min" | "max" },
-                  );
-                }}
-              >
-                <md-select-option value="required">
-                  <div slot="headline">${host.t("farm.requireGrowth", "Complete before calculating")}</div>
-                </md-select-option>
-                <md-select-option value="min">
-                  <div slot="headline">${host.t("unknownMin", "Count as minimum")}</div>
-                </md-select-option>
-                <md-select-option value="max">
-                  <div slot="headline">${host.t("unknownMax", "Count as max")}</div>
-                </md-select-option>
-              </md-outlined-select>
+              ${choiceField({
+                label: host.t("unknownPolicy", "Growth not entered"),
+                value: farmingConditions(s.farming).requireGrowth ? "required" : s.unknownPolicy,
+                options: [
+                  {value: "required", label: host.t("farm.requireGrowth", "Complete before calculating")},
+                  {value: "min", label: host.t("unknownMin", "Count as minimum")},
+                  {value: "max", label: host.t("unknownMax", "Count as max")},
+                ].map(option => ({...option, disabled: s.farming.play === "gekiso"})),
+                onSelect: value => host.updateFarming(value === "required" ? {requireGrowth: true}
+                  : {requireGrowth: false, unknownPolicy: value as "min" | "max"}),
+              })}
             `
           : nothing
       }
@@ -1102,24 +1084,12 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
       ${
         showTimeLimit
           ? html`
-              <md-outlined-select
-                label=${host.t("timeLimit", "Time limit")}
-                .value=${String(s.timeLimit ?? 0)}
-                @change=${(e: Event) => {
-                  const v = Number((e.target as HTMLInputElement).value);
-                  host.updateSettings({ timeLimit: v || null });
-                }}
-              >
-                ${[3, 5, 15, 60, 0].map(
-                  (limit) => html`
-                    <md-select-option value=${String(limit)}>
-                      <div slot="headline">
-                        ${limit ? host.t("secondsShort", "{count} s", { count: limit }) : host.t("noLimit", "Until proven")}
-                      </div>
-                    </md-select-option>
-                  `,
-                )}
-              </md-outlined-select>
+              ${choiceField({
+                label: host.t("timeLimit", "Time limit"), value: String(s.timeLimit ?? 0),
+                options: [3,5,15,60,0].map(limit => ({value: String(limit), label: limit
+                  ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
+                onSelect: value => host.updateSettings({timeLimit: Number(value) || null}),
+              })}
             `
           : nothing
       }

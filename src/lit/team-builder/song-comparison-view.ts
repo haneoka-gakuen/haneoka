@@ -11,7 +11,7 @@ import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { TeamBuilder } from "../team-builder";
 import { accordion } from "../ui/accordion";
-import { sectionHeading } from "./catalog";
+import { choiceField, sectionHeading } from "./catalog";
 import { CUSTOM_ACCURACY } from "./types";
 import { availableOnServer, songMetrics, type ComparisonRow } from "../../lib/team-builder/song-comparison";
 import { memberEventPercent, snapEventPercent } from "../../lib/team-builder/engine/power";
@@ -151,7 +151,7 @@ function conditions(host: TeamBuilder) {
     ...s.songs
       .filter((song, index, all) => all.findIndex((row) => row.songId === song.songId) === index)
       .map((song) => ({
-        label: `${host.catalog!.songTitle(song.songId)} / ${t("songMemory")}`,
+        label: html`<span lang=${host.catalog!.songTitleLanguage(song.songId)}>${host.catalog!.songTitle(song.songId)}</span> / ${t("songMemory")}`,
         value: resolved.musicMemory.get(song.songId) ?? 0,
         recorded: team.player.musicMemory[String(song.songId)] != null,
       })),
@@ -298,23 +298,9 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     value: string,
     options: { value: string; label: string; disabled?: boolean }[],
     change: (value: string) => void,
-  ) => html`
-    <md-outlined-select
-      id=${id}
-      data-sc-field
-      label=${label}
-      .value=${value}
-      @change=${(e: Event) => change((e.target as HTMLSelectElement).value)}
-    >
-      ${options.map(
-        (option) => html`
-          <md-select-option .value=${option.value} ?selected=${value === option.value} ?disabled=${option.disabled}>
-            <div slot="headline">${option.label}</div>
-          </md-select-option>
-        `,
-      )}
-    </md-outlined-select>
-  `;
+  ) => html`<div id=${id} data-sc-field>
+    ${choiceField({label, value, options, onSelect: change})}
+  </div>`;
   const number = (
     id: string,
     label: string,

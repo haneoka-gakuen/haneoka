@@ -22,6 +22,7 @@ export interface ChartExportStat {
 
 export interface ChartOverviewExportMeta {
   title: string;
+  titleLanguage?: string;
   artist?: string;
   jacketUrl?: string;
   /** Attribute (musicType) mark shown beside the credit row. */
@@ -170,7 +171,7 @@ const ensureFonts = async (meta: ChartOverviewExportMeta): Promise<void> => {
     .join(" ")} 0123456789 Lv.${meta.displayLevel}`;
   const weights = ["400 32px", "500 20px", "400 18px", "500 12px"];
   await Promise.allSettled(
-    weights.map(weight => document.fonts.load(`${weight} ${chartCanvasFontFamily(meta.locale)}`, sample)),
+    weights.flatMap(weight => [...new Set([meta.locale, meta.titleLanguage || meta.locale])].map(locale => document.fonts.load(`${weight} ${chartCanvasFontFamily(locale)}`, sample))),
   );
 };
 
@@ -285,7 +286,7 @@ export async function composeChartOverviewImage(
   // brand block on the right edge.
   const textLeft = padding + (jacket ? jacketSize + Math.round(24 * scale) : 0);
   const titleSize = Math.round(40 * scale);
-  context.font = `400 ${titleSize}px/${Math.round(50 * scale)}px ${fontStack}`;
+  context.font = `400 ${titleSize}px/${Math.round(50 * scale)}px ${chartCanvasFontFamily(meta.titleLanguage || meta.locale)}`;
   const titleRowCenter = padding + Math.round(34 * scale);
   const titleMaxWidth = width - padding - textLeft - Math.round(320 * scale);
   const title = clampText(context, meta.title, titleMaxWidth);

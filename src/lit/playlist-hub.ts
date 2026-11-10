@@ -214,6 +214,10 @@ export class PlaylistHub extends LitElement {
     return songTitle(song.row, this.locale).text;
   }
 
+  private songLanguage(song: LibrarySong) {
+    return song.bgm ? this.locale : songTitle(song.row, this.locale).locale;
+  }
+
   private artistOf(song: LibrarySong) {
     const names = song.performer?.names ?? [];
     return names.length
@@ -1400,7 +1404,7 @@ export class PlaylistHub extends LitElement {
           <span class="playlist-song__index">${playing ? icon("graphic_eq", 18) : index + 1}</span>
           <span class="playlist-song__art"><img src=${song.thumb} alt="" loading="lazy" decoding="async" /></span>
           <span class="playlist-song__text">
-            <span class="playlist-song__title">${this.songName(song)}</span>
+            <span class="playlist-song__title" lang=${this.songLanguage(song)}>${this.songName(song)}</span>
             <span class="playlist-song__artist">
               <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
                 ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
@@ -1737,7 +1741,7 @@ export class PlaylistHub extends LitElement {
         </span>
         <span class="playlist-song__text">
           <span class="playlist-song__title">
-            ${song ? this.songName(song) : this.t("songUnavailable", "Song unavailable")}
+            <span lang=${song ? this.songLanguage(song) : this.locale}>${song ? this.songName(song) : this.t("songUnavailable", "Song unavailable")}</span>
           </span>
           ${
             song
@@ -1858,7 +1862,7 @@ export class PlaylistHub extends LitElement {
                                   <img src=${song.thumb} alt="" loading="lazy" decoding="async" />
                                 </span>
                                 <span class="playlist-song__text">
-                                  <span class="playlist-song__title">${this.songName(song)}</span>
+                                  <span class="playlist-song__title" lang=${this.songLanguage(song)}>${this.songName(song)}</span>
                                   <span class="playlist-song__artist">
                                     <span class=${`playlist-source playlist-source--${song.ref.provider}`}>
                                       ${song.ref.provider === "our-notes" ? "Our Notes" : "GBP"}
@@ -1901,7 +1905,7 @@ export class PlaylistHub extends LitElement {
         <div class="dialog__surface">
           <header class="dialog__header">
             <h2 id="playlist-add-title">${this.t("addToPlaylist", "Add to playlist")}</h2>
-            <p class="playlist-add__song">${this.songName(song)}</p>
+            <p class="playlist-add__song" lang=${this.songLanguage(song)}>${this.songName(song)}</p>
           </header>
           <div class="dialog__body">
             <ul class="playlist-add__list" role="list">

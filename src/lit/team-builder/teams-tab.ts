@@ -718,7 +718,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                   team.song
                                     ? html`
                                         <span class="tb-saved__song">
-                                          ${icon("music_note", 18)}${catalog.songTitle(team.song.songId)}
+                                          ${icon("music_note", 18)}<span lang=${catalog.songTitleLanguage(team.song.songId)}>${catalog.songTitle(team.song.songId)}</span>
                                           <small>${catalog.difficultyLabel(team.song.songId, team.song.difficulty)}</small>
                                         </span>
                                       `

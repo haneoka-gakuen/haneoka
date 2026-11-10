@@ -641,7 +641,7 @@ export class TeamGrowthComparison {
         <div class="tb-team-growth__body">
           <div class="tb-team-growth__results stack">
             <div class="stack">
-              <strong>${source.hit.song ? catalog.songTitle(source.hit.song.songId) : metric(source.hit).label}</strong>
+              <strong lang=${source.hit.song ? catalog.songTitleLanguage(source.hit.song.songId) : host.locale}>${source.hit.song ? catalog.songTitle(source.hit.song.songId) : metric(source.hit).label}</strong>
               <div class="cluster supporting-text">
                 ${
                   source.hit.song
@@ -705,7 +705,7 @@ export class TeamGrowthComparison {
                           hit("searchAfter")!.song
                             ? html`
                                 <div class="cluster">
-                                  <span>${catalog.songTitle(hit("searchAfter")!.song!.songId)}</span>
+                                  <span lang=${catalog.songTitleLanguage(hit("searchAfter")!.song!.songId)}>${catalog.songTitle(hit("searchAfter")!.song!.songId)}</span>
                                   <span>
                                     ${catalog.difficultyLabel(hit("searchAfter")!.song!.songId, hit("searchAfter")!.song!.difficulty)}
                                   </span>

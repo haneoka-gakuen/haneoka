@@ -3,6 +3,7 @@
 // Output: Immediate growth inputs, board coverage and paged exact matches inside the requested neighborhoods.
 // Pos: [Map](L2-2.md); lazy activity-only action from the shared ranking rows.
 // Effects/Dependencies: Reads saved activity snapshots and release-pinned team data; lazily owns one cancellable shared Rust/WASM engine Worker.
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { live } from "lit/directives/live.js";
@@ -109,7 +110,10 @@ class EventTeamAnalysisElement extends LitElement {
     this.rangeError = false;
   }
 
+  private disposeSongDisplay?: () => void;
   setup(options: Options) {
+    this.disposeSongDisplay?.();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.options = options;
     this.locale = options.locale;
     this.region = options.region;
@@ -121,6 +125,7 @@ class EventTeamAnalysisElement extends LitElement {
   createRenderRoot() { return this; }
   private close = () => this.remove();
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.lifetime.abort();
     this.engine?.dispose();
     super.disconnectedCallback();
@@ -313,10 +318,11 @@ class EventTeamAnalysisElement extends LitElement {
   }
   private band(id: number) { return localizedText(this.data!.bands[String(id)]?.bandName, this.locale); }
   private song(challengeId: number) {
-    if (challengeId === 0) return { title: this.text("totalRanking"), jacket: "" };
+    if (challengeId === 0) return { title: this.text("totalRanking"), titleLanguage: this.locale, jacket: "" };
     const board = this.boards.find((entry) => entry.challengeId === challengeId);
     const source = board?.musicId ? this.data?.songs[board.musicId] : undefined;
-    return { title: localizedText(source?.musicTitle, this.locale) || `#${challengeId}`,
+    return { title: source ? songTitle(source, this.locale).text : `#${challengeId}`,
+      titleLanguage: source ? songTitle(source, this.locale).locale : this.locale,
       jacket: String(source?.jacketThumbUrl ?? source?.jacketUrl ?? "") };
   }
   private renderCoverage() {
@@ -328,7 +334,7 @@ class EventTeamAnalysisElement extends LitElement {
       <div class="menu ranking-team-analysis__coverage" id=${this.coverageId} popover="auto" role="region" aria-label=${coverage}>
         <ul class="stack">
           ${this.boards.map((board) => html`<li class="row row--between">
-            <span>${this.song(board.challengeId).title}</span>
+            <span lang=${this.song(board.challengeId).titleLanguage}>${this.song(board.challengeId).title}</span>
             <span class="md-label-medium">${this.text(board.status)}</span>
           </li>`)}
         </ul>
@@ -453,9 +459,9 @@ class EventTeamAnalysisElement extends LitElement {
       ${configuration.equivalents.map((equivalent, variant) => html`
         ${configuration.equivalents.length > 1 ? this.renderEquivalent(equivalent, variant, groups, open) : nothing}
         ${open ? equivalent.witnesses.map((witness) => {
-          const { title, jacket } = this.song(witness.challengeId);
+          const { title, titleLanguage, jacket } = this.song(witness.challengeId);
           return html`<tr class="ranking-team-analysis__detail" ?hidden=${!open}>
-            <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title}>
+            <th scope="row" class="is-sticky ranking-team-analysis__key" title=${title} lang=${titleLanguage}>
               ${jacket ? html`<img class="ranking-team-analysis__jacket" width="32" height="32" src=${jacket} alt=${title} loading="lazy" decoding="async" />`
                 : html`<span class="truncate">${title}</span>`}</th>
             <td></td>

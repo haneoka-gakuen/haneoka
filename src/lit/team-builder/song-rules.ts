@@ -2,20 +2,22 @@
 // Input: Song-rule drafts, multi-song objective and the current calculation mode.
 // Output: Read-only current-rule summary, attribute/three-range overrides and multi-song objective controls.
 // Pos: [Map](../L2-2.md); common controls used by Arena, automatic and manual builders.
-// Effects/Dependencies: Saves through the owning controller; uses shared Material selects and accordion.
+// Effects/Dependencies: Saves through the owning controller; uses shared segmented controls and accordion.
 import { html, nothing } from "lit";
 import type { TeamBuilder } from "../team-builder";
 import { ORIGINAL_SONG_RULES, type SongRules } from "../../lib/team-builder/arena";
 import { segmented } from "../ui/controls";
 import { accordion } from "../ui/accordion";
-import { icon } from "../ui/icon";
+import { gameGlyph, icon } from "../ui/icon";
+import { choiceField } from "./catalog";
 
 export function songRuleSummary(host: TeamBuilder, rule: SongRules) {
   const catalog = host.catalog!,
     image = catalog.attributeIcon(rule.musicType);
-  const missionIcon = (value: number) =>
-    value === 1 ? icon("touch_app", 20) : value === 2 ? icon("casino", 20) :
-      value === 3 ? icon("center_focus_strong", 20) : icon("music_note", 20);
+  const missionIcon = (value: number) => {
+    const source = value ? catalog.missionIcon(value) : "";
+    return html`<span class="tb-game-icon">${source ? gameGlyph(source, 20) : nothing}</span>`;
+  };
   const label = (value: number) =>
     value ? ["", "COMBO", "LUCK", "JUST"][value] : host.t("arena.original", "Original song");
   const same = rule.missions.every((value) => value === rule.missions[0]);
@@ -43,49 +45,36 @@ export function songRuleFields(
   gekiso = true,
 ) {
   const catalog = host.catalog!;
-  const option = (value: number, label: string, image?: string) => html`
-    <md-select-option value=${String(value)}>
-      ${
-      image
-        ? html`
-            <img slot="start" src=${image} width="20" height="20" alt="" />
-          `
-        : nothing
-    }
-      <div slot="headline">${label}</div>
-    </md-select-option>
-  `;
+  const nativeIcon = (source: string) => html`<span class="tb-game-icon">${source ? gameGlyph(source, 20) : nothing}</span>`;
+  const original = host.t("arena.original", "Original song");
   return html`
-    <md-outlined-select
-      label=${host.t("arena.attribute", "Song attribute")}
-      .value=${String(rule.musicType)}
-      @change=${(e: Event) => change({ musicType: Number((e.target as HTMLInputElement).value) })}
-    >
-      ${option(0, host.t("arena.original", "Original song"))}${[1, 2, 3, 4, 5, 99].map((value) => option(value, catalog.attributeName(value), catalog.attributeIcon(value)))}
-    </md-outlined-select>
-    ${
-      gekiso
-        ? html`
-            <div class="stack">
-              ${rule.missions.map(
-                (mission, index) => html`
-                  <md-outlined-select
-                    label=${host.t("arena.range", "Range {count}", { count: index + 1 })}
-                    .value=${String(mission)}
-                    @change=${(e: Event) => {
+    ${choiceField({
+      primary: true,
+      label: host.t("arena.attribute", "Song attribute"),
+      value: String(rule.musicType),
+      options: [0, 1, 2, 3, 4, 5, 99].map(value => ({
+        value: String(value),
+        label: value ? catalog.attributeName(value) : original,
+        leading: value && catalog.attributeIcon(value)
+          ? html`<img src=${catalog.attributeIcon(value)} width="20" height="20" alt="" loading="lazy" />` : undefined,
+      })),
+      onSelect: value => change({ musicType: Number(value) }),
+    })}
+    ${gekiso ? rule.missions.map((mission, index) => choiceField({
+      primary: true,
+      label: host.t("arena.range", "Range {count}", { count: index + 1 }),
+      value: String(mission),
+      options: [0, 1, 2, 3].map(value => ({
+        value: String(value),
+        label: value ? ["", "COMBO", "LUCK", "JUST"][value]! : original,
+        leading: value ? nativeIcon(catalog.missionIcon(value)) : undefined,
+      })),
+      onSelect: value => {
         const missions: SongRules["missions"] = [...rule.missions];
-        missions[index] = Number((e.target as HTMLInputElement).value);
+        missions[index] = Number(value);
         change({ missions });
-      }}
-                  >
-                    ${[0, 1, 2, 3].map((value) => option(value, value === 0 ? host.t("arena.original", "Original song") : ["", "COMBO", "LUCK", "JUST"][value]!))}
-                  </md-outlined-select>
-                `,
-              )}
-            </div>
-          `
-        : nothing
-    }
+      },
+    })) : nothing}
   `;
 }
 export function songRulesControl(

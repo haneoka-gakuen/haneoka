@@ -5,7 +5,7 @@ import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { beginLoading } from "../lib/loading-progress";
 import { resourcePath } from "../lib/resource-route";
-import { songTitle } from "../lib/song-display";
+import { defaultJapaneseSongTitles, japaneseSongTitles, observeSongDisplay, songTitle } from "../lib/song-display";
 import { catalogUrl, currentReleaseServer, fetchJson, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { segmented } from "./ui/controls";
 import { errorState, loadingState } from "./ui/state";
@@ -18,6 +18,8 @@ import "../styles/song-guess.css";
 interface Song {
   id: number;
   title: string;
+  titleLanguage: string;
+  source: Record<string, unknown>;
   band: string;
   bandId: number;
   jacket: string;
@@ -52,10 +54,19 @@ export class SongGuess extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     const payload = readPageData<PublicSongsPageData>(this);
     if (payload?.schema === "haneoka-public-songs-page-v1") this.preparePage(payload);
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => {
+      for (const song of this.songs) {
+        const title = songTitle(song.source, this.locale);
+        song.title = title.text;
+        song.titleLanguage = title.locale;
+      }
+      this.requestUpdate();
+    });
     this.locale = preferredLocale(this.locale);
     if (payload) void this.updateComplete.then(() => {
       this.server = currentReleaseServer() as ReleaseServer;
@@ -65,6 +76,10 @@ export class SongGuess extends LitElement {
       this.server = currentReleaseServer() as ReleaseServer;
       void this.load();
     }
+  }
+  disconnectedCallback() {
+    this.disposeSongDisplay?.();
+    super.disconnectedCallback();
   }
   preparePage(payload: PublicSongsPageData, server = payload.server) {
     this.pageData = payload;
@@ -78,6 +93,10 @@ export class SongGuess extends LitElement {
     this.round = options.length === 4 ? { answer: options[0]!, options, misses: [], focus: [50, 50], solved: false } : null;
   }
   protected update(changed: PropertyValues) {
+    if (this.hasAttribute("data-prerendered") && japaneseSongTitles(this.locale) !== defaultJapaneseSongTitles(this.locale)) {
+      this.replaceChildren();
+      this.removeAttribute("data-prerendered");
+    }
     if (this.hasAttribute("data-prerendered")) {
       hydrate(this.render(), this, this.renderOptions);
       this.removeAttribute("data-prerendered");
@@ -86,7 +105,7 @@ export class SongGuess extends LitElement {
   }
   private applySongs(songs: Record<string, Record<string, unknown>>) {
     this.songs = Object.values(songs)
-      .map(song => ({ id: Number(song.musicId), title: songTitle(song, this.locale).text,
+      .map(song => ({ id: Number(song.musicId), title: songTitle(song, this.locale).text, titleLanguage: songTitle(song, this.locale).locale, source: song,
         band: localizedText(song.bandName, this.locale), bandId: Number(song.bandId || 0),
         jacket: String(song.jacketUrl || song.jacketThumbUrl || "") }))
       .filter(song => song.id && song.jacket && song.title);
@@ -171,14 +190,14 @@ export class SongGuess extends LitElement {
                     @click=${() => this.choose(song)}
                   >
                     ${state === "correct" ? icon("check_circle", 20) : state === "wrong" ? icon("close", 20) : nothing}
-                    <span>${song.title}</span>
+                    <span lang=${song.titleLanguage}>${song.title}</span>
                   </button>
                 </li>`;
               })}
             </ol>
             <div class="song-guess__bar">
               ${round.solved
-                ? html`<a class="button button--text" href=${href}>${icon("library_music", 18)}${round.answer.title}</a>`
+                ? html`<a class="button button--text" href=${href}>${icon("library_music", 18)}<span lang=${round.answer.titleLanguage}>${round.answer.title}</span></a>`
                 : html`<span></span>`}
               <button class="button" type="button" @click=${() => this.next()}>
                 ${icon(round.solved ? "arrow_forward" : "skip_next", 18)}${round.solved ? this.text("next", "Next") : this.text("skip", "Skip")}

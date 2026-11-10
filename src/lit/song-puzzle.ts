@@ -5,7 +5,7 @@
 // Effects/Dependencies: 启停求解 Worker 与回放定时器，监听窗口快捷键，写入应用栏槽；按需加载截图导入。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { disambiguateTitles } from "../lib/title-disambiguation";
-import { defaultJapaneseSongTitles, japaneseSongTitles, songTitle } from "../lib/song-display";
+import { defaultJapaneseSongTitles, japaneseSongTitles, observeSongDisplay, songTitle } from "../lib/song-display";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -226,11 +226,13 @@ export class SongPuzzle extends LitElement {
     else return;
     event.preventDefault();
   };
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     const payload = readPageData<SongPuzzlePageData>(this);
     if (!this.loaded && payload?.schema === "haneoka-song-puzzle-page-v1") this.preparePage(payload);
     const restored = this.loaded && this.restoreLastGame();
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => { this.nameSongs(); this.requestUpdate(); });
     this.locale = getI18nClient()?.committed || this.locale;
     window.addEventListener("haneoka:locale-ready", this.localeReady);
     window.addEventListener("keydown", this.windowKey);
@@ -315,6 +317,7 @@ export class SongPuzzle extends LitElement {
     this.syncAppBar();
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.saveGame();
     window.removeEventListener("haneoka:locale-ready", this.localeReady);
     window.removeEventListener("keydown", this.windowKey);
@@ -341,7 +344,7 @@ export class SongPuzzle extends LitElement {
       [(song, locale) => localizedText(song.band, locale), (song, locale) => localizedText(song.artist, locale)],
       (song) => `#${song.id}`,
     );
-    for (const song of this.songs) song.name = song.labels[this.locale as Locale] || song.id;
+    for (const song of this.songs) song.name = song.labels[songTitle(song.row, this.locale).locale as Locale] || song.id;
   }
   protected updated() {
     if (this.loaded) this.saveGame();
@@ -485,7 +488,7 @@ export class SongPuzzle extends LitElement {
             song.row,
             {
               locale: this.locale,
-              title: () => ({ text: song.name }),
+              title: () => ({ text: song.name, locale: songTitle(song.row, this.locale).locale }),
               image: () => song.cover,
               artist: () =>
                 dto?.artist ?? (localizedText(song.band, this.locale) || localizedText(song.artist, this.locale)),
@@ -1460,6 +1463,7 @@ export class SongPuzzle extends LitElement {
                   .locale=${this.locale}
                   .cover=${song.cover}
                   .songName=${song.name}
+                  .songLanguage=${songTitle(song.row, this.locale).locale}
                   .size=${this.size}
                   .goalBlank=${this.goalBlank}
                   @puzzle-import=${(event: CustomEvent<ImportedPuzzle>) => this.importPuzzle(event)}
@@ -1734,7 +1738,7 @@ export class SongPuzzle extends LitElement {
             }
           </span>
           <span class="list-item__body">
-            <strong class="list-item__headline">${song?.name || this.text("song")}</strong>
+            <strong class="list-item__headline" lang=${song ? songTitle(song.row, this.locale).locale : this.locale}>${song?.name || this.text("song")}</strong>
             <span class="list-item__supporting">
               ${song ? localizedText(song.band, this.locale) || localizedText(song.artist, this.locale) : ""}
             </span>

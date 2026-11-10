@@ -6205,6 +6205,7 @@ export class CatalogScreen extends LitElement {
     if (!simulator) return;
     const bandId = Number(item.bandId || 0);
     const payload = createChartOverviewMeta({
+      title: songTitle(item, this.settings.locale),
       song: item, difficulty: this.chartRow(item), chartMeta: this.songChartMeta(item), locale: this.settings.locale,
       label: key => this.label(key, key), localized: value => this.localized(value),
       jacket: typeof item.jacketUrl === "string" ? item.jacketUrl : undefined,

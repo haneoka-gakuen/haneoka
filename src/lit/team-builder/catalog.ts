@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Release-pinned team data, catalogue visuals, locale and song display preference.
+// Output: Card/song presentation, native game icons and shared width-aware choice fields.
+// Pos: [Map](../L2-2.md); team workspace presentation helpers.
+// Effects/Dependencies: Caches titles by language and preference; lazily reads the pinned live atlas and aborts on disposal.
 import { CONTENT_SOURCE_IDS } from "../../lib/content-access-state";
 import { isReleasedContent } from "../../lib/content-release";
 import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
@@ -6,11 +11,13 @@ import type { SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
 import { html, nothing } from "lit";
 import { clientText, getI18nClient } from "../../i18n/client";
-import { formatList } from "../shared/catalog";
+import { formatList, fetchJson } from "../shared/catalog";
+import { gekisouMission, gekisouMissionIcons } from "../../lib/gekisou";
+export { choiceField } from "./choice-field";
 import { resolveLocalizedText, resolveRelationshipText } from "../../lib/localized-text";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../../lib/song-performer";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
-import { songTitle } from "../../lib/song-display";
+import { japaneseSongTitles, songTitle } from "../../lib/song-display";
 import type { TeamBuilderData, MemberCatalog, SnapshotCatalog } from "../../lib/team-builder/data";
 import { dataRows } from "../../lib/team-builder/data";
 import type { EngineMaster } from "../../lib/team-builder/engine/master";
@@ -48,6 +55,36 @@ type GrowthValues = {
 };
 
 export class Catalog {
+  private missionIcons: Record<string, string> = {};
+  private missionIconRequest?: AbortController;
+  missionIcon(value: number) {
+    if (!this.missionIconRequest) {
+      const controller = this.missionIconRequest = new AbortController();
+      const { server, releaseId } = this.data.identity;
+      void fetchJson<unknown>(
+        `/api/v1/servers/${server}/sources/Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2?release=${encodeURIComponent(releaseId)}`,
+        { signal: controller.signal },
+      ).then((descriptor) => {
+        if (controller.signal.aborted || this.host.catalog !== this) return;
+        this.missionIcons = Object.fromEntries(Object.entries(gekisouMissionIcons(descriptor, server))
+          .map(([key, path]) => [key, `${path}?release=${encodeURIComponent(releaseId)}`]));
+        this.host.requestUpdate();
+      }).catch(() => {});
+    }
+    return this.missionIcons[gekisouMission(value)?.icon ?? ""] ?? "";
+  }
+  rewardIcon(metric: "points" | "challenge-points" | "items", eventId: number | null) {
+    if (metric === "items") {
+      const item = this.data.events[String(eventId)]?.eventItem as Record<string, unknown> | undefined;
+      return String(item?.image ?? "");
+    }
+    const { server, releaseId } = this.data.identity;
+    return `/assets/${server}/Assets/AddressableResources/Item/event/item_icon_event_point_00${metric === "points" ? 1 : 2}.png?release=${encodeURIComponent(releaseId)}`;
+  }
+  dispose() {
+    this.missionIconRequest?.abort();
+    this.missionIconRequest = undefined;
+  }
   private eventReleases?: EventSongReleases;
   visuals: Visuals | null = null;
   private readonly songMetadata = new Map<
@@ -108,8 +145,9 @@ export class Catalog {
   private performerRegistry?: PerformerRegistry;
   private readonly songRows = new Map<number, Record<string, unknown>>();
   private readonly songTiles = new Map<string, TileOptions>();
-  private readonly songTitles = new Map<string, string>();
+  private readonly songTitles = new Map<string, ReturnType<typeof songTitle>>();
   private songMessages: object | undefined;
+  private songDisplayChoice?: boolean;
   constructor(
     private readonly host: TeamBuilder,
     readonly data: TeamBuilderData,
@@ -351,15 +389,17 @@ export class Catalog {
   songArtist(id: number) {
     return resolveRelationshipText(this.songPerformer(id).names, this.host.locale).text;
   }
-  songTitle(id: number) {
-    const key = `${this.host.locale}:${id}`;
+  songTitleValue(id: number) {
+    const key = `${this.host.locale}:${japaneseSongTitles(this.host.locale)}:${id}`;
     let title = this.songTitles.get(key);
-    if (title === undefined) {
-      title = songTitle(this.song(id), this.host.locale).text;
+    if (!title) {
+      title = songTitle(this.song(id), this.host.locale);
       this.songTitles.set(key, title);
     }
     return title;
   }
+  songTitle(id: number) { return this.songTitleValue(id).text; }
+  songTitleLanguage(id: number) { return this.songTitleValue(id).locale; }
   songBands(id: number): number[] {
     const song = this.data.songs[String(id)];
     const ids = Array.isArray(song?.bandIds) ? song.bandIds : song?.bandId ? [song.bandId] : [];
@@ -374,9 +414,11 @@ export class Catalog {
   }
   songOptions(id: number, difficulty?: number): TileOptions {
     const messages = getI18nClient()?.current();
-    if (messages !== this.songMessages) {
+    const displayChoice = japaneseSongTitles(this.host.locale);
+    if (messages !== this.songMessages || displayChoice !== this.songDisplayChoice) {
       this.songTiles.clear();
       this.songMessages = messages;
+      this.songDisplayChoice = displayChoice;
     }
     const key = `${this.host.locale}:${id}:${difficulty ?? "default"}`;
     const cached = this.songTiles.get(key);

@@ -43,12 +43,14 @@ export class SongPuzzleImport extends LitElement {
     locale: { type: String },
     cover: { type: String },
     songName: { type: String },
+    songLanguage: { type: String },
     size: { type: Number },
     goalBlank: { type: Number },
   };
   declare locale: string;
   declare cover: string;
   declare songName: string;
+  declare songLanguage: string;
   declare size: number;
   declare goalBlank: number;
   private image?: PuzzlePixels;
@@ -70,6 +72,7 @@ export class SongPuzzleImport extends LitElement {
     this.locale = "en";
     this.cover = "";
     this.songName = "";
+    this.songLanguage = "ja";
     this.size = 3;
     this.goalBlank = 8;
   }
@@ -455,7 +458,7 @@ export class SongPuzzleImport extends LitElement {
               result
                 ? html`
                     <section class="stack">
-                      <h3 class="detail-section-title">${this.songName}</h3>
+                      <h3 class="detail-section-title" lang=${this.songLanguage}>${this.songName}</h3>
                       <div
                         class="puzzle-import__preview"
                         role="region"

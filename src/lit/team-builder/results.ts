@@ -177,7 +177,7 @@ export function resultSong(host: TeamBuilder, song: SongRef, rule: { musicType?:
               `
             : nothing
         }
-          <a href=${href}>${title}</a>
+          <a href=${href} lang=${catalog.songTitleLanguage(song.songId)}>${title}</a>
         </div>
         <div class="cluster tb-result-song__meta">
           <span class="supporting-text">${catalog.difficultyLabel(song.songId, song.difficulty)}</span>
@@ -1531,7 +1531,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
                     (result) => html`
                       <md-select-option value=${`${result.song!.songId}:${result.song!.difficulty}`}>
                         <div slot="headline">
-                          ${catalog.songTitle(result.song!.songId)}
+                          <span lang=${catalog.songTitleLanguage(result.song!.songId)}>${catalog.songTitle(result.song!.songId)}</span>
                           ${catalog.difficultyLabel(result.song!.songId, result.song!.difficulty)}
                         </div>
                       </md-select-option>

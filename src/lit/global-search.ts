@@ -1,4 +1,5 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
@@ -43,6 +44,7 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 
 type RecordValue = Record<string, unknown>;
 interface SearchResult {
+  song?: RecordValue;
   url: string;
   excerpt: string;
   meta: { title?: string; label?: string; image?: string; kind?: string };
@@ -142,6 +144,7 @@ export class GlobalSearch extends LitElement {
         collections.set(key, pending);
       }
       const item = (await pending)[route.id];
+      if (resource === "songs" && item) row.song = item;
       return !!item && isContentListed(resource, item, route.id);
     }));
     return rows.filter((_, index) => visible[index]);
@@ -199,8 +202,10 @@ export class GlobalSearch extends LitElement {
     if (this.scope === "community") return;
     void searchIndex().then((api) => Promise.all([api.filters(), query ? api.preload(query) : Promise.resolve()])).catch(() => {});
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     addEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     if (this.hasAttribute("data-prerendered")) void this.updateComplete.then(() => this.connectSearch());
     else this.connectSearch();
@@ -260,6 +265,7 @@ export class GlobalSearch extends LitElement {
     this.recent = readRecent();
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     removeEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     ++this.generation;
     window.clearTimeout(this.timer); this.communityRequest?.abort(); this.lifetime?.abort();
@@ -473,7 +479,7 @@ export class GlobalSearch extends LitElement {
         ${this.results.map((result) => html`<li><a class="search-result state-layer" href=${this.resultHref(result.url)}>
           ${this.image(result.meta.image)}<span class="search-result__copy">
             <span class="search-result__kind md-label-small">${this.kindLabel(String(result.meta.kind))}</span>
-            <strong>${unsafeHTML(result.meta.label ?? "")}</strong>
+            <strong lang=${result.song ? songTitle(result.song, this.locale).locale : nothing}>${result.song ? songTitle(result.song, this.locale).text : unsafeHTML(result.meta.label ?? "")}</strong>
             ${result.excerpt ? html`<p>${unsafeHTML(result.excerpt)}</p>` : nothing}
           </span></a></li>`)}
       </ul>`;
@@ -503,7 +509,7 @@ export class GlobalSearch extends LitElement {
                   const target = result.sub_results?.find((row) => row.url.includes("#")) || result;
                   return html`<li><a class="search-result state-layer" href=${this.resultHref(target.url)}>
                     ${this.image(result.meta.image)}<span class="search-result__copy">
-                      <strong>${result.meta.label || result.meta.title || target.url}</strong><p>${unsafeHTML(target.excerpt)}</p>
+                      <strong lang=${result.song ? songTitle(result.song, this.locale).locale : nothing}>${result.song ? songTitle(result.song, this.locale).text : result.meta.label || result.meta.title || target.url}</strong><p>${unsafeHTML(target.excerpt)}</p>
                     </span></a></li>`;
                 })}
               </ul></div>`)}

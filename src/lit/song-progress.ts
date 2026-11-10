@@ -11,7 +11,7 @@ import { chooseAppAccount } from "./ui/app-account-chooser";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
 import { resourcePath } from "../lib/resource-route";
-import { defaultJapaneseSongTitles, japaneseSongTitles, songTitle } from "../lib/song-display";
+import { defaultJapaneseSongTitles, japaneseSongTitles, observeSongDisplay, songTitle } from "../lib/song-display";
 import { catalogUrl, currentReleaseServer, fetchJson, localizedText, preferredLocale, uiText } from "./shared/catalog";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { collectionTable } from "./ui/collection-view";
@@ -33,6 +33,7 @@ interface Chart {
   /** The level the game shows. */
   levelText: string;
   title: string;
+  titleLanguage: string;
   artist: string;
   jacket: string;
 }
@@ -58,6 +59,8 @@ export class SongProgress extends LitElement {
   declare filter: Filter;
   declare query: string;
   private charts: Chart[] = [];
+  private songSources: Record<string, Row> = {};
+  private disposeSongDisplay?: () => void;
   private pageData?: PublicSongsPageData;
   private store: BoxStore | null = null;
   private snapshot: BoxSnapshot | null = null;
@@ -79,6 +82,10 @@ export class SongProgress extends LitElement {
     const payload = readPageData<PublicSongsPageData>(this);
     if (payload?.schema === "haneoka-public-songs-page-v1") this.preparePage(payload);
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => {
+      this.applySongs(this.songSources);
+      this.requestUpdate();
+    });
     this.locale = preferredLocale(this.locale);
     if (payload) void this.updateComplete.then(() => this.start());
     else this.start();
@@ -152,6 +159,7 @@ export class SongProgress extends LitElement {
     });
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     clearAppBarSearch(OWNER);
     clearAppBarActions(OWNER);
     this.unsubscribe?.();
@@ -176,7 +184,8 @@ export class SongProgress extends LitElement {
     }
   }
   private applySongs(songs: Record<string, Row>) {
-      this.charts = Object.values(songs).flatMap((song) => {
+    this.songSources = songs;
+    this.charts = Object.values(songs).flatMap((song) => {
         const songId = Number(song.musicId);
         const rows = Array.isArray(song.difficulty) ? (song.difficulty as Row[]) : [];
         return rows.flatMap((row, index) => {
@@ -190,6 +199,7 @@ export class SongProgress extends LitElement {
             level,
             levelText: String(row.displayLevel ?? row.playLevel ?? level),
             title: songTitle(song, this.locale).text,
+            titleLanguage: songTitle(song, this.locale).locale,
             artist: localizedText(song.bandName, this.locale),
             jacket: String(song.jacketThumbUrl || song.jacketUrl || ""),
           }];
@@ -257,7 +267,7 @@ export class SongProgress extends LitElement {
         <a class="song-progress__song" href=${href}>
           <img src=${chart.jacket} alt="" width="48" height="48" loading="lazy" decoding="async" />
           <span class="song-progress__copy">
-            <strong>${chart.title}</strong>
+            <strong lang=${chart.titleLanguage}>${chart.title}</strong>
             <small>${chart.artist}</small>
           </span>
         </a>

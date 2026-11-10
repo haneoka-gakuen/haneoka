@@ -1,7 +1,8 @@
-import { html, type TemplateResult } from "lit";
+import type { TemplateResult } from "lit";
 import type { EngineHit, EngineRequest } from "../../lib/team-builder/engine/api";
 import { manualEventFromEffects } from "../../lib/team-builder/manual-event";
 import { DEFAULT_SETTINGS, type BuildSettings } from "./types";
+import { choiceField } from "./catalog";
 import type { TeamBuilder } from "../team-builder";
 
 export interface ManualResultSource {
@@ -90,36 +91,20 @@ export const SCORE_GOALS = {
 } as const;
 
 export function renderScoreGoal(host: TeamBuilder, s: BuildSettings, set: (patch: Partial<BuildSettings>) => void): TemplateResult {
-  return html`
-    <md-outlined-select
-      label=${host.t("criterion", "Score goal")}
-      ?disabled=${s.aggregation === "mean"}
-      .value=${scoreGoal(s)}
-      @change=${(e: Event) => {
-        const value = (e.target as HTMLInputElement).value as keyof typeof SCORE_GOALS;
-        set(
-          value === "max-best-timing" || value === "max-worst-timing"
-            ? { scoreTiming: value === "max-best-timing" ? "best" : "worst", criterion: "max", scoreTarget: "none" }
-            : s.goal === "gekiso" && (value === "mean" || value === "max" || value === "min")
-            ? { criterion: value }
-            : value === "at-least" || value === "capped"
-              ? { scoreTarget: value, criterion: "mean", scoreTiming: "nominal" }
-              : { scoreTarget: "none", criterion: value, scoreTiming: "nominal" },
-        );
-      }}
-    >
-      ${(s.goal === "score"
-        ? (["mean", "max", "max-best-timing", "max-worst-timing", "min", "at-least", "capped"] as const)
-        : (["mean", "max", "min"] as const)
-      ).map(
-        (value) => html`
-          <md-select-option value=${value}>
-            <div slot="headline">${scoreText(host, SCORE_GOALS[value].label)}</div>
-          </md-select-option>
-        `,
-      )}
-    </md-outlined-select>
-  `;
+  const goals = s.goal === "score"
+    ? (["mean", "max", "max-best-timing", "max-worst-timing", "min", "at-least", "capped"] as const)
+    : (["mean", "max", "min"] as const);
+  return choiceField({
+    label: host.t("criterion", "Score goal"), value: scoreGoal(s),
+    options: goals.map(value => ({value, label: scoreText(host, SCORE_GOALS[value].label), disabled: s.aggregation === "mean"})),
+    onSelect: value => set(
+      value === "max-best-timing" || value === "max-worst-timing"
+        ? {scoreTiming: value === "max-best-timing" ? "best" : "worst", criterion: "max", scoreTarget: "none"}
+        : s.goal === "gekiso" && (value === "mean" || value === "max" || value === "min") ? {criterion: value}
+        : value === "at-least" || value === "capped" ? {scoreTarget: value, criterion: "mean", scoreTiming: "nominal"}
+        : {scoreTarget: "none", criterion: value, scoreTiming: "nominal"},
+    ),
+  });
 }
 
 /** The score goal's ranking: a target when one is set, otherwise the criterion. */

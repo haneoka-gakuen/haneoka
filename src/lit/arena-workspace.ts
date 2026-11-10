@@ -39,7 +39,7 @@ import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import { filterChip, iconButton, rovingKeydown, segmented } from "./ui/controls";
 import "./arena-ranking";
-import { songTitle } from "../lib/song-display";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import "../styles/settings.css";
 import "../styles/arena.css";
 import { formatDate, formatDateRange } from "../lib/date-format";
@@ -144,8 +144,10 @@ export class ArenaWorkspace extends LitElement {
     this.region = defaultGameRecordsRegion(payload.server, locale);
     this.phase = "ready";
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.locale = preferredLocale(this.locale) as Locale;
     this.server = this.dataServer = releaseServerFromPath(location.pathname) || "jp";
     addEventListener("haneoka:locale-ready", this.localeReady);
@@ -154,6 +156,7 @@ export class ArenaWorkspace extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.request?.abort();
     this.sourceRequest?.abort();
     this.populationRequest?.abort();
@@ -1023,7 +1026,7 @@ export class ArenaWorkspace extends LitElement {
                     height="40"
                     loading="lazy"
                   />
-                  <span>${songTitle(song, this.locale).text}</span>
+                  <span lang=${songTitle(song, this.locale).locale}>${songTitle(song, this.locale).text}</span>
                 </a>
               `,
               this.ruleMarks(

@@ -3,6 +3,7 @@
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
+import { observeSongDisplay } from "../lib/song-display";
 import { renderSkillRoleEditor, type SkillRoleEdit } from "./team-builder/skill-role-controls";
 import { ResultAnalysis } from "./team-builder/result-analysis";
 import { hasSkillRoleLimits } from "../lib/team-builder/skill-roles";
@@ -145,6 +146,7 @@ export class TeamBuilder extends LitElement {
     this.requestUpdate();
   }
   private resetTasks() {
+    this.catalog?.dispose();
     this.skillRoleEditor = null;
     this.analysis.close();
     this.teamGrowth.close();
@@ -382,6 +384,7 @@ export class TeamBuilder extends LitElement {
   createRenderRoot() {
     return this;
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     const startTab = navigationDocumentUrl().searchParams.get("tab");
     const league = Number(navigationDocumentUrl().searchParams.get("league"));
@@ -389,6 +392,7 @@ export class TeamBuilder extends LitElement {
     const payload = readPageData<TeamBuilderPageData>(this);
     if (payload?.schema === "haneoka-team-builder-page-v1") this.preparePage(payload);
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.layoutObserver = new ResizeObserver(() => {
       const surface = this.querySelector<HTMLElement>(".team-builder");
       const style = surface ? getComputedStyle(surface) : null;
@@ -441,6 +445,7 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.layoutObserver?.disconnect();
     clearTimeout(this.noticeTimer);
     super.disconnectedCallback();

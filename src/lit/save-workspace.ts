@@ -3,6 +3,7 @@
 // Output: Persistent save collection, readable progress and confirmed Box handoff.
 // Pos: [Map](L2-2.md); shared browser and native-shell save workspace.
 // Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads, tab-local handoff and the app's save sources (saveSourcesV1).
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -105,8 +106,10 @@ export class SaveWorkspace extends LitElement {
   private t(key: string) {
     return this.messages[key] ?? key;
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     if (this.controller.signal.aborted) this.controller = new AbortController();
     this.messages = JSON.parse(this.dataset.messages ?? "{}");
     window.addEventListener("hashchange", this.route);
@@ -114,6 +117,7 @@ export class SaveWorkspace extends LitElement {
     void this.run(() => this.reload());
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     super.disconnectedCallback();
     this.controller.abort();
     this.catalogController?.abort();
@@ -275,7 +279,9 @@ export class SaveWorkspace extends LitElement {
     else if (source === "folder") this.read(() => appCall("readFiles", { folder: true }));
     else if (source === "shizuku")
       this.read(async () => {
-        let { status, installed } = await appCall("deviceStatus", {});
+        const device = await appCall("deviceStatus", {});
+        const { installed } = device;
+        let { status } = device;
         if (status === "needsPermission") status = (await appCall("shizukuRequest", {})).granted ? "ready" : status;
         if (status === "ready") return appCall("shizukuRead", {});
         if (status === "notRunning" && installed) await appCall("openShizuku", {});
@@ -527,6 +533,7 @@ export class SaveWorkspace extends LitElement {
   }
   private name(resource: string, id: unknown) {
     const row = saveEntity(this.catalog, resource, id);
+    if (resource === "songs") return songTitle(row, this.locale).text;
     const name = text(
       row.prefix ?? row.musicTitle ?? row.musicName ?? row.characterName ?? row.itemName ?? row.name ?? row.title,
       this.locale,
@@ -645,7 +652,7 @@ export class SaveWorkspace extends LitElement {
                 const id = row._mLiveMusicId ?? row._masterMusicId ?? row._masterId;
                 return [
                   html`
-                    <a href=${`/${record.snapshot.server}/${this.locale}/songs/${id}/`}>${this.name("songs", id)}</a>
+                    <a href=${`/${record.snapshot.server}/${this.locale}/songs/${id}/`} lang=${songTitle(saveEntity(this.catalog, "songs", id), this.locale).locale}>${this.name("songs", id)}</a>
                   `,
                   ...difficulties.map((k) => marks[String(row[`_${k}ClearedStatus`])] ?? this.t("unknown")),
                 ];

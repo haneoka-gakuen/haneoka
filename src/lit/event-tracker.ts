@@ -35,7 +35,7 @@ import { browseRail, browseResultsId, type BrowseRailItem } from "./ui/browse";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { songTitle } from "../lib/song-display";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { SongRanking } from "./song-ranking";
 import { ArenaRanking } from "./arena-ranking";
 import "../styles/settings.css";
@@ -158,8 +158,10 @@ export class EventTracker extends LitElement {
     if (this.catalogRequests.current(signal) && !this.info) this.infoFor = "";
   }
   renderStaticChrome() { this.syncAppBar(); }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.lifetime = new AbortController();
     const pageData = readPageData<TrackerPageData>(this) || {};
     this.applyPageCatalogs(pageData);
@@ -198,6 +200,7 @@ export class EventTracker extends LitElement {
     void this.load();
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.requests.cancel();
     this.catalogRequests.cancel();
     this.lazyImages.disconnect();

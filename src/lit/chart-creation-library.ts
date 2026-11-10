@@ -17,7 +17,7 @@ import { isReleasedContent } from "../lib/content-release";
 import { needsEventSongRelease, withEventSongRelease } from "../lib/event-song-release";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { visibilityPolicyKey } from "../lib/content-policy-browser";
-import { songTitle } from "../lib/song-display";
+import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { readReleaseServer } from "../lib/release-server";
 import { beginLoading } from "../lib/loading-progress";
 import { loadingState } from "./ui/state";
@@ -134,8 +134,10 @@ export class ChartCreationLibrary extends LitElement {
     }
     super.update(changed);
   }
+  private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
+    this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
     this.unlocale = initializeI18nClient().subscribe((c) => {
       const changed = this.locale !== c.locale;
       this.locale = c.locale;
@@ -154,6 +156,7 @@ export class ChartCreationLibrary extends LitElement {
     });
   }
   disconnectedCallback() {
+    this.disposeSongDisplay?.();
     this.cancelRequest();
     this.images?.disconnect();
     this.unlocale?.();
@@ -512,7 +515,7 @@ export class ChartCreationLibrary extends LitElement {
         ${
           selected
             ? html`
-                <strong>${songTitle(selected as unknown as Record<string, unknown>, this.locale).text}</strong>
+                <strong lang=${songTitle(selected as unknown as Record<string, unknown>, this.locale).locale}>${songTitle(selected as unknown as Record<string, unknown>, this.locale).text}</strong>
                 ${this.mediaKind ? nothing : difficultyPicker({ rows: selected.difficulty as unknown as Record<string, unknown>[], selected: this.difficulty, locale: this.locale, onSelect: (key) => (this.difficulty = key) })}
                 <button class="button button--filled" ?disabled=${this.busy || !this.difficulty} @click=${() => void this.importChosen()}>
                   ${this.mediaKind ? clientText(this.locale, `community.charts.${this.mediaKind === "audio" ? "useAudio" : "useCover"}`) : this.t("importServerBoth")}

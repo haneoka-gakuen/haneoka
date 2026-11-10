@@ -18,10 +18,16 @@ import {
   type RewardPlan,
 } from "../../lib/team-builder/reward-plan";
 import { segmented } from "../ui/controls";
-import { sectionHeading } from "./catalog";
+import { choiceField, sectionHeading } from "./catalog";
 
 export const rewardLabel = (host: TeamBuilder, metric: RewardMetric): string =>
   metric === "points" ? "PT" : metric === "challenge-points" ? "CP" : host.t("rewardPlan.badges", "Badges");
+const rewardIcon = (host: TeamBuilder, metric: RewardMetric) => {
+  const settings = host.searchSettings;
+  const eventId = settings.manualEventEnabled ? settings.manualEvent.templateId : settings.eventId;
+  const source = host.catalog!.rewardIcon(metric, eventId);
+  return html`<span class="tb-game-icon">${source ? html`<img src=${source} width="24" height="24" alt="" loading="lazy" />` : nothing}</span>`;
+};
 export const rewardRankingLabel = (host: TeamBuilder, plan: RewardRankingPlan): string =>
   plan.levels
     .map((level, index) => {
@@ -67,8 +73,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
         onSelect: (criterion) => set({ ...plan, criterion }),
       })}
       ${host.searchSettings.route !== "skip" ? html`
-      <span class="tb-field__label">${host.t("analysis.minimumRank", "Every order reaches")}</span>
-      ${segmented({
+      ${choiceField({
         label: host.t("analysis.minimumRank", "Every order reaches"),
         value: String(plan.minimumRank ?? 0),
         options: [0, 3, 4, 5, 6, 7].map((rank, index) => ({
@@ -82,7 +87,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
       ${segmented({
         label: host.t("rewardPlan.primary", "Main reward"),
         value: plan.primary,
-        options: primaryOptions.map((value) => ({ value, label: rewardLabel(host, value) })),
+        options: primaryOptions.map((value) => ({ value, label: rewardLabel(host, value), leading: rewardIcon(host, value) })),
         onSelect: (metric) => set(changePrimaryReward(plan, metric)),
       })}
       ${REWARD_METRICS.filter(
@@ -92,7 +97,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
         const option = plan.options[metric];
         return html`
           <div class="stack">
-            <span class="tb-field__label">${rewardLabel(host, metric)}</span>
+            <span class="tb-field__label"><span class="cluster">${rewardIcon(host, metric)}<span>${rewardLabel(host, metric)}</span></span></span>
             ${segmented({
             label: rewardLabel(host, metric),
             value: option.mode,

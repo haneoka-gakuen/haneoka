@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Localized song records, interface locale and the reader's explicit title preference.
+// Output: Display title with its source language; English/Korean localized defaults and preference notifications.
+// Pos: [Map](L2-2.md); shared song title policy for catalogue and tools.
+// Effects/Dependencies: Stores an explicit preference locally, synchronizes in-window caches through event detail and observes cross-window storage changes.
 import { resolveLocalizedText } from "./localized-text";
 
 const KEY = "haneoka:song-display:v1";
@@ -13,13 +18,13 @@ function storedChoice(): boolean | null {
     return null;
   }
 }
-/** What a reader who has not chosen sees: Japanese titles except on English pages. Build-time pages use it. */
-export const defaultJapaneseSongTitles = (locale: string): boolean => locale !== "en";
+/** Build-time defaults also apply until the reader chooses a title language. */
+export const defaultJapaneseSongTitles = (locale: string): boolean => locale !== "en" && locale !== "ko";
 /** A song's built title in [locale] from its per-locale titles, by the default above. */
 export function defaultSongTitle<L extends string>(titles: Record<L, string>, locale: L): string {
   return (defaultJapaneseSongTitles(locale) && titles["ja" as L]) || titles[locale];
 }
-/** Japanese titles unless the reader chose otherwise; English pages default to their own titles. */
+/** English and Korean pages default to localized titles; an explicit choice applies across locales. */
 export function japaneseSongTitles(locale: string): boolean {
   return storedChoice() ?? defaultJapaneseSongTitles(locale);
 }
@@ -28,19 +33,23 @@ export function setJapaneseSongTitles(enabled: boolean): void {
   try {
     localStorage.setItem(KEY, JSON.stringify({ forceJapaneseTitles: enabled }));
   } catch {}
-  dispatchEvent(new Event(SONG_DISPLAY_EVENT));
+  dispatchEvent(new CustomEvent(SONG_DISPLAY_EVENT, { detail: enabled }));
 }
 export function observeSongDisplay(update: () => void): () => void {
+  const changed = (event: Event) => {
+    cached = (event as CustomEvent<boolean>).detail;
+    update();
+  };
   const storage = (event: StorageEvent) => {
     if (event.key === KEY || event.key === null) {
       cached = undefined;
       update();
     }
   };
-  addEventListener(SONG_DISPLAY_EVENT, update);
+  addEventListener(SONG_DISPLAY_EVENT, changed);
   addEventListener("storage", storage);
   return () => {
-    removeEventListener(SONG_DISPLAY_EVENT, update);
+    removeEventListener(SONG_DISPLAY_EVENT, changed);
     removeEventListener("storage", storage);
   };
 }

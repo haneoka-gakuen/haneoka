@@ -142,6 +142,8 @@ export default defineConfig({
       },
     },
     resolve: { dedupe: ["lit", "three"] },
+    // The chart adapters use independent core versions; a shared dev bundle cannot serve both.
+    optimizeDeps: { exclude: ["@sonolus/core"] },
     server: {
       fs: { allow: workspaceFiles },
       watch: { ignored: ["**/data/**", "**/tmp/**", "**/.output/**", "**/.dependencies/**"] },

@@ -17,7 +17,7 @@ import { DEFAULT_SETTINGS } from "./types";
 import { restoreBuildSettings } from "./workspace-state";
 import { songRuleFields, songRuleSummary } from "./song-rules";
 import { toolLayout } from "./tool-layout";
-import { sectionHeading } from "./catalog";
+import { choiceField, sectionHeading } from "./catalog";
 import {
   comboBonusControl,
   missionMembersControl,
@@ -226,39 +226,23 @@ export function renderArenaTab(host: TeamBuilder) {
     catalog = host.catalog!;
   const rule = arena.rule,
     period = arena.period;
-  const option = (value: string | number, label: string, image?: string) => html`
-    <md-select-option value=${String(value)}>
-      ${
-        image
-          ? html`
-              <img slot="start" src=${image} alt="" width="20" height="20" />
-            `
-          : nothing
-      }
-      <div slot="headline">${label}</div>
-    </md-select-option>
-  `;
   return toolLayout(
     host,
     html`
       <section class="surface stack" id="tb-arena-rules" data-tb-field tabindex="-1">
         ${sectionHeading({ icon: "swords", label: host.t("arena.tab", "GEKISO Arena") })}
-        <div class="stack">
-          <md-outlined-select
-            label=${host.t("arena.server", "Server")}
-            .value=${host.server}
-            @change=${(e: Event) => host.switchServer((e.target as HTMLInputElement).value)}
-          >
-            ${["jp", "intl"].map((server) => option(server, host.t(`arena.${server}`, server.toUpperCase())))}
-          </md-outlined-select>
-          <md-outlined-select
-            label=${host.t("arena.league", "League")}
-            .value=${String(draft.leagueId)}
-            @change=${(e: Event) => arena.league(Number((e.target as HTMLInputElement).value))}
-          >
-            ${[1, 2, 3, 4, 5].map((id) => option(id, catalog.bandName(id), catalog.bandIcon(id)))}
-          </md-outlined-select>
-        </div>
+        ${choiceField({
+          label: host.t("arena.server", "Server"), value: host.server,
+          options: ["jp", "intl"].map(server => ({value: server, label: host.t(`arena.${server}`, server.toUpperCase())})),
+          onSelect: server => void host.switchServer(server),
+        })}
+        ${choiceField({
+          label: host.t("arena.league", "League"), value: String(draft.leagueId),
+          iconOnly: true,
+          options: [1,2,3,4,5].map(id => ({value: String(id), label: catalog.bandName(id),
+            leading: html`<img src=${catalog.bandIcon(id)} width="24" height="24" alt="" loading="lazy" />`})),
+          onSelect: value => arena.league(Number(value)),
+        })}
         <div class="cluster">
           <span class="chip">
             ${period.season ? host.t("arena.season", "Season {count}", { count: period.season.id }) : host.t("arena.noSeason", "No active season")}
@@ -298,13 +282,11 @@ export function renderArenaTab(host: TeamBuilder) {
         ${
           draft.mode === "individual"
             ? html`
-                <md-outlined-select
-                  label=${host.t("criterion", "Score goal")}
-                  .value=${settings.criterion}
-                  @change=${(e: Event) => arena.updateBuild({ criterion: (e.target as HTMLInputElement).value as BuildSettings["criterion"] })}
-                >
-                  ${(["mean", "max", "min"] as const).map((value) => option(value, scoreText(host, SCORE_GOALS[value].label)))}
-                </md-outlined-select>
+                ${choiceField({
+                  label: host.t("criterion", "Score goal"), value: settings.criterion,
+                  options: (["mean", "max", "min"] as const).map(value => ({value, label: scoreText(host, SCORE_GOALS[value].label)})),
+                  onSelect: criterion => arena.updateBuild({criterion}),
+                })}
               `
             : nothing
         }

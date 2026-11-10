@@ -20,7 +20,7 @@ import "../../styles/catalog.css";
 import { renderCatalogPage } from "../../server/render-catalog";
 import { catalogPageData } from "../../server/catalog-page-projector";
 import { serializePageData } from "../../lib/page-data";
-import { defaultSongTitle } from "../../lib/song-display";
+import { defaultSongTitle, songTitle } from "../../lib/song-display";
 import { eventSongPayload } from "../../server/event-song-release";
 import { eventStoryPayload } from "../../server/story-visibility";
 
@@ -76,6 +76,7 @@ const displayTitle = page.resource === "songs" ? defaultSongTitle(page.titles, l
 const entity = canonical
   ? {
       title: displayTitle,
+      titleLanguage: page.resource === "songs" ? songTitle(payload.item, locale).locale : locale,
       backHref,
       previous,
       next,

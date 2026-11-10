@@ -1,12 +1,13 @@
 // L3 — GEB
-// Input: 歌曲、难度、统计、标签及已解析的素材。
-// Output: 网页与程序化导出共用的页头和统计。
+// Input: 歌曲、难度、统计、标签、已解析的素材及可选的显示标题与语言。
+// Output: 网页与程序化导出共用的页头和统计；网页保留歌名偏好及标题字体语言。
 // Pos: [Map](../L2-2.md)；谱面导出元数据。
 // Effects/Dependencies: 纯格式化，无 I/O。
 import type { ChartOverviewExportMeta } from "../../lit/runtime/chart-image-export";
 type Row = Record<string, unknown>;
 export function createChartOverviewMeta(input: {
   song: Row; difficulty: Row; chartMeta: Row; locale: string;
+  title?: {text: string; locale: string};
   label: (key: string) => string; localized: (value: unknown) => string;
   bandName?: string | undefined; bandIcon?: string | undefined; attributeIcon?: string | undefined; jacket?: string | undefined;
   publishedAt?: string | undefined;
@@ -17,7 +18,8 @@ export function createChartOverviewMeta(input: {
   const value = (key: string, format: (n: number) => string) => number(m[key]) === undefined ? undefined : format(Number(m[key]));
   const stat = (id: "notes" | "time" | "bpm" | "nps" | undefined, key: string, text: string | undefined) => ({ ...(id ? { id } : {}), label: label(key), value: text || "—" });
   return {
-    title: localized(song.musicTitle), bandName: input.bandName, bandIconUrl: input.bandIcon,
+    title: input.title?.text ?? localized(song.musicTitle),
+    titleLanguage: input.title?.locale, bandName: input.bandName, bandIconUrl: input.bandIcon,
     attributeIconUrl: input.attributeIcon, jacketUrl: input.jacket,
     difficultyName: String(difficulty.difficultyName), displayLevel: String(difficulty.displayLevel ?? difficulty.playLevel ?? ""),
     songId: String(song.musicId), locale,

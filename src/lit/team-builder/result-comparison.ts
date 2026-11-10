@@ -238,6 +238,9 @@ export class ResultComparison {
       ? `${host.catalog!.songTitle(item.hit.song.songId)} / ${host.catalog!.difficultyLabel(item.hit.song.songId, item.hit.song.difficulty)}`
       : item.metric.label;
   }
+  private titleView(host: TeamBuilder, item: ComparisonEntry) {
+    return item.hit.song ? html`<span lang=${host.catalog!.songTitleLanguage(item.hit.song.songId)}>${host.catalog!.songTitle(item.hit.song.songId)}</span> / ${host.catalog!.difficultyLabel(item.hit.song.songId, item.hit.song.difficulty)}` : item.metric.label;
+  }
   tray(host: TeamBuilder) {
     return this.items.length
       ? html`
@@ -251,6 +254,7 @@ export class ResultComparison {
                     this.remove(item.id);
                     host.requestUpdate();
                   },
+                  html`#${this.items.indexOf(item) + 1} / ${this.titleView(host, item)}`,
                 ),
               )}
             </div>
@@ -283,8 +287,6 @@ export class ResultComparison {
     const wideValues = this.items.some((item) => format(item.metric.value, item.metric.digits).length > 12);
     const side = (item: ComparisonEntry) =>
       item.id === base.id ? "is-baseline" : item.id === this.candidate ? "is-candidate" : "is-hidden-mobile";
-    const identity = (item: ComparisonEntry) =>
-      `#${this.items.indexOf(item) + 1} / ${this.title(host, item)} / ${host.catalog!.cardName("members", cardIdOf(item.hit.members[0]!))}`;
     const row = (label: string, value: (item: ComparisonEntry) => unknown, main = false) => html`
       <tr class=${main ? "tb-comparison-primary" : ""}>
         <th scope="row">${label}</th>
@@ -351,7 +353,7 @@ export class ResultComparison {
                 .filter((item) => item.id !== base.id)
                 .map(
                   (item) => html`
-                    <md-select-option value=${item.id}><div slot="headline">${identity(item)}</div></md-select-option>
+                    <md-select-option value=${item.id}><div slot="headline">#${this.items.indexOf(item) + 1} / ${this.titleView(host, item)} / ${host.catalog!.cardName("members", cardIdOf(item.hit.members[0]!))}</div></md-select-option>
                   `,
                 )}
             </md-outlined-select>
@@ -364,7 +366,7 @@ export class ResultComparison {
                   (item) => html`
                     <th scope="col" class=${side(item)}>
                       <span class="tb-comparison-title">
-                        #${this.items.indexOf(item) + 1} / ${this.title(host, item)}
+                        #${this.items.indexOf(item) + 1} / ${this.titleView(host, item)}
                       </span>
                       <button
                         class="button button--text"
