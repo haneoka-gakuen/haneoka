@@ -146,6 +146,7 @@ export function visibilityId(kind: VisibilityType, row: Record<string, unknown>)
   return String([...(ID_FIELDS[kind] || []), "id", "_key"].map((key) => row[key]).find((id) => id !== undefined) ?? "");
 }
 export function inferredVisibilityType(row: Record<string, unknown>): VisibilityType | undefined {
+  if (typeof row.voiceKey === "string" && Array.isArray(row.characterIds)) return "characters";
   for (const kind of [
     "cards",
     "support-cards",
