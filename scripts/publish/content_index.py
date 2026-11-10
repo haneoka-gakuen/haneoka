@@ -10,9 +10,9 @@ import argparse
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 from build.catalog_storage import _content_access_index
-from core.config import load_server_config
 from core.storage import cas_key, fnv1a32_shard
 from publish.r2 import R2Store, IMMUTABLE_CACHE, _validate_release_manifest_for_gc
 
@@ -23,8 +23,7 @@ KINDS = {
 }
 
 
-def publish_index(server: str, store=None) -> dict:
-    store = store or R2Store(load_server_config(server), concurrency=6)
+def publish_index(server: str, store) -> dict:
     pointer = store.get_json(f"servers/{server}/current.json")
     release_id = pointer["releaseId"]
     target = f"content-index/v2/{server}/{release_id}.json"
@@ -118,9 +117,11 @@ def publish_index(server: str, store=None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", choices=["jp", "intl"], action="append")
+    parser.add_argument("--bucket", default="hotdori-assets")
     args = parser.parse_args()
+    store = R2Store(SimpleNamespace(r2_bucket=args.bucket), concurrency=6)
     for server in args.server or ["jp", "intl"]:
-        print(json.dumps(publish_index(server)))
+        print(json.dumps(publish_index(server, store)))
 
 
 if __name__ == "__main__":
