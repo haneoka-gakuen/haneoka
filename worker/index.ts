@@ -4422,6 +4422,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const headers = new Headers(request.headers);
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
+  headers.delete("Range");
+  headers.delete("If-Range");
   const assetRequest = new Request(request, { headers });
   const { publicationId, webBuildId } = await staticPublicationContext(request, env);
   const contentView = await requestContentView(request, env);
