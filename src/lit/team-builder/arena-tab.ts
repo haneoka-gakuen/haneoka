@@ -232,11 +232,13 @@ export function renderArenaTab(host: TeamBuilder) {
       <section class="surface stack" id="tb-arena-rules" data-tb-field tabindex="-1">
         ${sectionHeading({ icon: "swords", label: host.t("arena.tab", "GEKISO Arena") })}
         ${choiceField({
+          type: "buttons",
           label: host.t("arena.server", "Server"), value: host.server,
           options: ["jp", "intl"].map(server => ({value: server, label: host.t(`arena.${server}`, server.toUpperCase())})),
           onSelect: server => void host.switchServer(server),
         })}
         ${choiceField({
+          type: "buttons",
           label: host.t("arena.league", "League"), value: String(draft.leagueId),
           iconOnly: true,
           options: [1,2,3,4,5].map(id => ({value: String(id), label: catalog.bandName(id),
@@ -283,6 +285,7 @@ export function renderArenaTab(host: TeamBuilder) {
           draft.mode === "individual"
             ? html`
                 ${choiceField({
+                  type: "select",
                   label: host.t("criterion", "Score goal"), value: settings.criterion,
                   options: (["mean", "max", "min"] as const).map(value => ({value, label: scoreText(host, SCORE_GOALS[value].label)})),
                   onSelect: criterion => arena.updateBuild({criterion}),

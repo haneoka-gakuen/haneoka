@@ -95,6 +95,7 @@ export function renderScoreGoal(host: TeamBuilder, s: BuildSettings, set: (patch
     ? (["mean", "max", "max-best-timing", "max-worst-timing", "min", "at-least", "capped"] as const)
     : (["mean", "max", "min"] as const);
   return choiceField({
+    type: "select",
     label: host.t("criterion", "Score goal"), value: scoreGoal(s),
     options: goals.map(value => ({value, label: scoreText(host, SCORE_GOALS[value].label), disabled: s.aggregation === "mean"})),
     onSelect: value => set(

@@ -74,6 +74,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
       })}
       ${host.searchSettings.route !== "skip" ? html`
       ${choiceField({
+        type: "select",
         label: host.t("analysis.minimumRank", "Every order reaches"),
         value: String(plan.minimumRank ?? 0),
         options: [0, 3, 4, 5, 6, 7].map((rank, index) => ({

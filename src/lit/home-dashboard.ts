@@ -2038,7 +2038,7 @@ export class HomeDashboard extends LitElement {
       : nothing;
     return html`
       <section class="home-card home-info home-birthdays" data-recruitment=${!!recruitment} aria-labelledby="home-birthdays-title">
-        <h2 class="sr-only" id="home-birthdays-title">${this.text("birthdaysTitle", "Birthday countdown")}</h2>
+        <h2 class="home-birthday-eyebrow" id="home-birthdays-title">${icon("cake", 16)}${this.text("birthdaysTitle", "Birthday countdown")}</h2>
         ${
           featured
             ? html`

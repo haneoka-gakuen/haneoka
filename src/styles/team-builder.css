@@ -3014,28 +3014,13 @@
       block-size: 28px;
     }
   }
-  .team-builder team-choice-field { display: block; min-inline-size: 0; }
-  .team-builder .tb-choice { position: relative; }
-  .team-builder .tb-choice__visible { min-block-size: 56px; display: flex; }
-  .team-builder .tb-choice__visible > :is(.segmented, md-outlined-select) { inline-size: 100%; }
-  .team-builder .tb-choice .segmented { flex-wrap: nowrap; }
-  .team-builder .tb-choice .segmented > button {
-    flex: 1 1 auto;
+  .team-builder .tb-choice { min-inline-size: 0; inline-size: 100%; }
+  .team-builder .tb-choice > .segmented { flex-wrap: nowrap; }
+  .team-builder .tb-choice > .segmented > button {
     min-inline-size: 48px;
     min-block-size: 48px;
     padding-inline: var(--md-sys-spacing-2);
-    white-space: nowrap;
   }
-  .team-builder .tb-choice__measure {
-    position: absolute;
-    visibility: hidden;
-    pointer-events: none;
-    inline-size: 100%;
-    block-size: 0;
-    overflow: hidden;
-  }
-  .team-builder .tb-choice__measure .segmented { inline-size: max-content; }
-  .team-builder .tb-choice__measure .segmented > button { flex: 0 0 auto; }
   .team-builder .tb-game-icon {
     display: inline-flex;
     align-items: center;
@@ -3044,9 +3029,4 @@
     block-size: 24px;
     flex: 0 0 24px;
   }
-
-  .team-builder .tb-choice--primary .tb-choice__visible > .segmented > button:first-child {
-    min-inline-size: var(--tb-choice-primary-width);
-  }
-
 }

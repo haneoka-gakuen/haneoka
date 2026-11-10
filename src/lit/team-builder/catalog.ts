@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Release-pinned team data, catalogue visuals, locale and song display preference.
-// Output: Card/song presentation, native game icons and shared width-aware choice fields.
+// Output: Card/song presentation, native game icons and explicit select/button fields.
 // Pos: [Map](../L2-2.md); team workspace presentation helpers.
 // Effects/Dependencies: Caches titles by language and preference; lazily reads the pinned live atlas and aborts on disposal.
 import { CONTENT_SOURCE_IDS } from "../../lib/content-access-state";

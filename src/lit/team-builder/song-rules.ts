@@ -49,7 +49,7 @@ export function songRuleFields(
   const original = host.t("arena.original", "Original song");
   return html`
     ${choiceField({
-      primary: true,
+      type: "select",
       label: host.t("arena.attribute", "Song attribute"),
       value: String(rule.musicType),
       options: [0, 1, 2, 3, 4, 5, 99].map(value => ({
@@ -61,7 +61,7 @@ export function songRuleFields(
       onSelect: value => change({ musicType: Number(value) }),
     })}
     ${gekiso ? rule.missions.map((mission, index) => choiceField({
-      primary: true,
+      type: "select",
       label: host.t("arena.range", "Range {count}", { count: index + 1 }),
       value: String(mission),
       options: [0, 1, 2, 3].map(value => ({

@@ -681,11 +681,13 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                     </label>
                     ` : nothing}
                     ${choiceField({
+                      type: "select",
                       label: host.t("resultCount", "Results"), value: String(f.k),
                       options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
                       onSelect: value => set({k: Number(value)}),
                     })}
                     ${choiceField({
+                      type: "select",
                       label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
                       options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
                         ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),

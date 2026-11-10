@@ -733,6 +733,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
           : html`
               <div class="row row--wrap">
                 ${choiceField({
+                  type: "select",
                   label: host.t("resultCount", "Results"), value: String(s.k),
                   options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
                   onSelect: value => set({k: Number(value)}),
@@ -785,6 +786,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         activity && s.rewardMode !== "plan" && s.scope === "box"
           ? html`
               ${choiceField({
+                type: "select",
                 label: host.t("unknownPolicy", "Growth not entered"),
                 value: farmingConditions(s.farming).requireGrowth ? "required" : s.unknownPolicy,
                 options: [
@@ -1085,6 +1087,7 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
         showTimeLimit
           ? html`
               ${choiceField({
+                type: "select",
                 label: host.t("timeLimit", "Time limit"), value: String(s.timeLimit ?? 0),
                 options: [3,5,15,60,0].map(limit => ({value: String(limit), label: limit
                   ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),

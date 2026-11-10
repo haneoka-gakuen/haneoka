@@ -294,12 +294,13 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);
   const select = (
     id: string,
+    type: "buttons" | "select",
     label: string,
     value: string,
     options: { value: string; label: string; disabled?: boolean }[],
     change: (value: string) => void,
   ) => html`<div id=${id} data-sc-field>
-    ${choiceField({label, value, options, onSelect: change})}
+    ${choiceField({type, label, value, options, onSelect: change})}
   </div>`;
   const number = (
     id: string,
@@ -437,6 +438,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         ${songRulesControl(host, s.songRules, songRules => c.update({songRules}), true)}
         ${select(
           "sc-target",
+          "buttons",
           t("target"),
           s.target,
           [
@@ -447,6 +449,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         )}
         ${select(
           "sc-players",
+          "buttons",
           t("players"),
           String(s.players),
           [2, 3, 4, 5].map((value) => ({ value: String(value), label: String(value) })),
@@ -454,6 +457,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         )}
         ${select(
           "sc-mode",
+          "buttons",
           t("mode"),
           s.mode ?? "",
           [
@@ -563,6 +567,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
                   ></md-linear-progress>
                   ${select(
                     "sc-sort",
+          "buttons",
                     t("sort"),
                     s.sort,
                     [
