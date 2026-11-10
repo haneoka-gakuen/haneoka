@@ -189,7 +189,9 @@ export async function contentResourceBoundary(
     offlineAuthorization && server ? await readIndex(server, url.searchParams.get("release") ?? undefined) : null;
   const offlinePublications =
     offlineIndex &&
-    Object.entries(offlineIndex.publications ?? {}).filter(([key]) => /^(stories|characters|bands):/u.test(key));
+    Object.entries(offlineIndex.publications ?? {}).filter(([key]) =>
+      /^(stories|characters|bands):/u.test(key) &&
+      `${key.slice(0, key.indexOf(":"))}:${key}` in offlineIndex.records);
   const authorizationResponse = (publicContent: boolean) =>
     new Response(null, {
       status: 204,
