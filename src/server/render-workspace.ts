@@ -91,7 +91,8 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
     return withPrerenderView(false, () => markup(workspace.render()));
   });
   const kind = (owner: string) => owner.replace(/-\d+$/u, "");
-  const publicBody = withPrerenderView(true, () => markup(workspace.render())).result;
+  const { result: publicBody } = captureAppBar(locale, () =>
+    withPrerenderView(true, () => markup(workspace.render())).result);
   const refs = JSON.stringify(body.references).replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
   const rendered = body.references.length || body.result !== publicBody
     ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${body.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
