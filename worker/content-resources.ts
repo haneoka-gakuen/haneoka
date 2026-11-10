@@ -6,6 +6,7 @@
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
 import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
+import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import {
   requestContentView,
   inheritContentView,
@@ -87,6 +88,14 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
     ]
   );
 }
+function publicInterfaceAsset(path: string): boolean {
+  if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
+    return true;
+  const sprite = /^runtime\/unity\/Assets\/AddressableResources\/(UI\/Atlas\/FixUiSpriteAtlas|Live\/Images\/Atlas\/LiveAtlas)\.spriteatlasv2\/([^/]+)--Sprite--?\d+\.png$/u.exec(path);
+  return Boolean(sprite && (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
+    ? UI_MARK_NAMES.test(`${sprite[2]}.png`)
+    : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)));
+}
 function mayReadAsset(
   index: ContentResourceIndex,
   path: string,
@@ -157,6 +166,7 @@ export async function contentResourceBoundary(
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
   if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
+  if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
     response.headers.set("Cache-Control", "private, no-store");
