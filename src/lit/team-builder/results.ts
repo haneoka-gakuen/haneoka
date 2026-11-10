@@ -2,7 +2,7 @@
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
 // Output: 排名卡片、结果／已存队伍共用编队、评分详情、所选技能顺序与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
+// Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，教程区分所选顺序无收益与提前方案不可用，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
@@ -832,6 +832,13 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
     id: `tb-${key.replace(/[^a-z0-9]/giu, "-")}`,
     label: host.t("timingGuide", "Timing guide"),
     disabled: !timing || timing.guideAvailable === false || timing.best <= timing.score,
+    metadata: !timing ? nothing : timing.guideAvailable === false
+      ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
+      : timing.best <= timing.score
+        ? timing.optimal > timing.score
+          ? host.t("timingPlanNoGain", "No gain with this plan")
+          : host.t("timingOrderNoGain", "No extra gain in this order")
+        : nothing,
     expanded: host.expanded.has(key),
     onExpandedChange: (open) => {
       if (open) host.expanded.add(key);
