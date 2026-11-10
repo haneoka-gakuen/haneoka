@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
-// Output: 排名卡片、结果／已存队伍共用编队、评分详情、所选技能顺序与导出上下文。
+// Output: 排名卡片、结果／已存队伍共用编队、评分详情、以正方形卡面展示的技能顺序与导出上下文。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，教程区分所选顺序无收益与提前方案不可用，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
@@ -721,10 +721,9 @@ function memberFace(host: TeamBuilder, hit: EngineHit, slot: number) {
   const card = catalog.member(cardIdOf(hit.members[slot]!));
   const character = card?.characterId ?? 0;
   const image = card?.image || catalog.characterFace(character);
-  return { character, name: catalog.characterName(character), card: image, color: catalog.characterColor(character) };
+  return { name: catalog.characterName(character), card: image, color: catalog.characterColor(character) };
 }
 
-/** An order as numbered character faces in firing order. */
 function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: readonly number[]) {
   const names = firing.map((event) => memberFace(host, hit, ORDERS[index]![event]!).name);
   return html`
@@ -733,7 +732,7 @@ function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: re
         const member = memberFace(host, hit, ORDERS[index]![event]!);
         return html`
           <li title=${`${position + 1} / ${member.name}`} style=${`--member-color:${member.color}`}>
-            <img src=${host.catalog!.characterFace(member.character)} alt="" width="28" height="28" loading="lazy" decoding="async" />
+            <img class="tb-order-card" src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />
             <span aria-hidden="true">${position + 1}</span>
           </li>
         `;
@@ -776,7 +775,7 @@ function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: 
   return html`
     <li class="tb-timing__window" style=${`--member-color:${member.color}`}>
       <div class="tb-timing__head">
-        <img src=${host.catalog!.characterFace(member.character)} alt="" width="28" height="28" loading="lazy" decoding="async" />
+        <img class="tb-order-card" src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />
         <span>${member.name}</span>
         <span class="tabular">${chartClock(window.startMs)} – ${chartClock(window.endMs)}</span>
       </div>
@@ -955,7 +954,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 @click=${() => pick(position)}
               >
                 <span class="tb-order-slot__index">${position + 1}</span>
-                <img src=${member.card} alt="" width="48" height="64" decoding="async" />
+                <img class="tb-order-card" src=${member.card} alt="" width="48" height="48" decoding="async" />
                 <span class="tb-order-slot__swap">${icon("swap_horiz", 18)}</span>
               </button>
             </li>
@@ -1020,7 +1019,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                     startMs: window.startMs,
                     endMs: window.endMs,
                     color: member.color,
-                    image: host.catalog!.characterFace(member.character),
+                    image: member.card,
                     label: member.name,
                     value,
                   };
@@ -1053,7 +1052,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 </span>
               `,
               media: html`
-                <img src=${member.card} alt="" width="42" height="56" decoding="async" />
+                <img class="tb-order-card" src=${member.card} alt="" width="42" height="42" loading="lazy" decoding="async" />
               `,
               onOpen: () => choose(entry.index),
             };

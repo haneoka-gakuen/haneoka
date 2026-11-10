@@ -90,7 +90,7 @@
   object-position: 50% 25%;
   width: 28px;
   height: 28px;
-  border-radius: var(--md-sys-shape-corner-full);
+  border-radius: var(--skill-timeline-image-radius, var(--md-sys-shape-corner-full));
   object-fit: cover;
 }
 .skill-timeline__index {

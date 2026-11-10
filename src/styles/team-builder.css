@@ -1360,7 +1360,17 @@
     font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
       var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
+  .team-builder .tb-order-card {
+    object-fit: cover;
+    object-position: 50% 25%;
+    border-radius: var(--md-sys-shape-corner-small);
+  }
+  .team-builder .tb-order .list-item__leading > img {
+    width: 42px;
+    height: 42px;
+  }
   .tb-order__timeline {
+    --skill-timeline-image-radius: var(--md-sys-shape-corner-small);
     min-height: 250px;
   }
   .tb-order__timeline[aria-busy="true"] .skill-timeline {
@@ -1379,6 +1389,11 @@
     padding: 0;
     list-style: none;
   }
+  @media (max-width: 599px) {
+    .team-builder .tb-order-editor {
+      gap: var(--md-sys-spacing-1);
+    }
+  }
   .tb-order-slot {
     position: relative;
     display: grid;
@@ -1394,7 +1409,8 @@
   }
   .tb-order-slot img {
     width: 48px;
-    height: 64px;
+    height: auto;
+    aspect-ratio: 1;
     border-radius: var(--md-sys-shape-corner-small);
     object-fit: cover;
     box-shadow: 0 0 0 2px var(--member-color, transparent);
