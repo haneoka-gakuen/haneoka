@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
+import { CHART_ASSETS_PROJECTION, chartAssets } from "./chart-assets";
 import { contentPublished, eventStoryStarts } from "../src/lib/content-publication";
 import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
   type ContentResourceIndex,
@@ -2529,6 +2530,25 @@ async function handleCatalogApiRequest(
         releases: eventSongReleases(events, challenges) }, CATALOG_API_CACHE_CONTROL);
     }, CATALOG_API_CACHE_CONTROL);
     return releaseResponseHeaders(response, release);
+  }
+  if (tail === "chart-assets") {
+    const bandValues = new URL(request.url).searchParams.getAll("bandId");
+    if (bandValues.length > 1 || (bandValues[0] !== undefined && (!/^\d{1,10}$/u.test(bandValues[0]) || Number(bandValues[0]) > 2_147_483_647)))
+      return errorResponse(request, 400, "invalid_band_id", "Band ID must be a non-negative integer");
+    const bandId = bandValues[0] === undefined ? undefined : Number(bandValues[0]);
+    const cacheUrl = new URL(request.url);
+    cacheUrl.search = "";
+    cacheUrl.searchParams.set("projection", String(CHART_ASSETS_PROJECTION));
+    if (bandId !== undefined) cacheUrl.searchParams.set("bandId", String(bandId));
+    return releaseResponseHeaders(await edgeCached(
+      releaseCacheRequest(new Request(cacheUrl, request), release.releaseId), ctx, SOURCE_CACHE_TTL,
+      async () => jsonResponse(request, {
+        schema: "haneoka-chart-assets-v1",
+        identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },
+        ...await chartAssets(await readReleaseJson(env, release, "metadata/source-index/tree.json"),
+          source => readReleaseJson(env, release, `metadata/sources/${source}.json`), bandId),
+      }, CATALOG_API_CACHE_CONTROL), CATALOG_API_CACHE_CONTROL,
+    ), release);
   }
   if (tail === "ui-marks") {
     const cacheRequest = releaseCacheRequest(

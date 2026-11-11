@@ -989,6 +989,25 @@ export interface Timeline {
   }[];
   score: number;
   timing?: OrderTiming | null;
+  guide?: TimingGuide | null;
+}
+export interface TimingGuideAction {
+  kind: "combo-opening" | "combo-chord" | "combo-ending" | "skill";
+  event: number | null;
+  range: number | null;
+  timeMs: number;
+  noteIndices: number[];
+  noteTimesMs: number[];
+  inputTimesMs: number[];
+  included: boolean;
+  gain: number | null;
+  comboGain?: number | null;
+}
+export interface TimingGuide {
+  frameRate: number;
+  score: number | null;
+  best: number | null;
+  actions: TimingGuideAction[];
 }
 /** Counted notes and legal early inputs; noteIndices address the canonical judged-note stream. */
 export interface TimingWindow {
@@ -997,7 +1016,7 @@ export interface TimingWindow {
   endMs: number;
   unit: number;
   notes: number[];
-  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; gain: number }[];
+  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; noteTimesMs?: number[]; inputTimesMs?: number[]; gain: number }[];
 }
 /** Selected order's nominal score, legal timing extrema and attainable 17 ms input guide. */
 export interface OrderTiming {

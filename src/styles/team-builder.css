@@ -1,6 +1,10 @@
 @import "./components/selection-pane.css";
 
 @layer pages {
+  .team-builder timing-chart-preview {
+    display: block;
+    min-inline-size: 0;
+  }
   .team-builder .tb-timing__chart {
     block-size: calc(360px + var(--md-sys-spacing-4));
     max-inline-size: 100%;
@@ -9,9 +13,15 @@
   .team-builder .tb-timing__chart canvas {
     display: block;
     max-inline-size: none;
+    margin-inline: auto;
   }
   .team-builder .tb-timing__chart canvas[hidden] {
     display: none;
+  }
+  .team-builder .tb-timing__chart-strip {
+    position: relative;
+    min-inline-size: 100%;
+    min-block-size: 360px;
   }
   .team-builder .tb-team-growth {
     width: min(1160px, calc(100vw - 32px));
@@ -1242,11 +1252,6 @@
       flex-basis: 100%;
     }
   }
-  .tb-timing {
-    padding: 12px;
-    border-radius: var(--md-sys-shape-corner-large);
-    background: var(--md-sys-color-surface-container);
-  }
   .tb-timing__advance {
     display: inline-flex;
     align-items: center;
@@ -1258,6 +1263,18 @@
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
+  .tb-timing__advance[data-kind="skill"] {
+    color: var(--md-sys-color-on-tertiary-container);
+    background: var(--md-sys-color-tertiary-container);
+  }
+  .tb-timing__advance[data-kind="both"] {
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+  }
+  .team-builder .tb-timing__jump {
+    min-block-size: 48px;
+    padding-inline: 4px;
+  }
   .tb-timing__windows {
     display: grid;
     gap: 12px;
@@ -1268,12 +1285,16 @@
   .tb-timing__window {
     display: grid;
     gap: 8px;
+    padding: 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-lowest);
   }
   .tb-timing__head {
     display: flex;
     min-width: 0;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
     font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
@@ -1288,32 +1309,6 @@
     margin-inline-start: auto;
     color: var(--md-sys-color-on-surface-variant);
   }
-  .tb-timing__strip {
-    position: relative;
-    height: 52px;
-    margin-inline: 10px;
-    border-radius: var(--md-sys-shape-corner-small);
-    background: linear-gradient(var(--md-sys-color-outline-variant), var(--md-sys-color-outline-variant)) center / 100% 2px no-repeat;
-  }
-  .tb-timing__note,
-  .tb-timing__step {
-    position: absolute;
-    top: 50%;
-    translate: -50% -50%;
-    border-radius: var(--md-sys-shape-corner-full);
-  }
-  .tb-timing__step[data-row="1"] {
-    top: 25%;
-  }
-  .tb-timing__step[data-row="0"] {
-    top: 75%;
-  }
-  .tb-timing__note {
-    width: 6px;
-    height: 6px;
-    background: var(--md-sys-color-outline);
-  }
-  .tb-timing__step,
   .tb-timing__badge {
     display: inline-grid;
     width: 20px;
@@ -1322,11 +1317,18 @@
     color: var(--md-sys-color-on-primary);
     background: var(--md-sys-color-primary);
     font: 700 11px / 1 var(--app-font);
-  }
-  .tb-timing__badge {
     margin-inline-end: 8px;
     border-radius: var(--md-sys-shape-corner-full);
     vertical-align: middle;
+  }
+  .tb-timing__badge--group {
+    display: inline-flex;
+    width: auto;
+    min-width: 20px;
+    padding-inline: 4px;
+    white-space: nowrap;
+    align-items: center;
+    justify-content: center;
   }
   .tb-timing__steps {
     width: 100%;
@@ -1347,13 +1349,6 @@
     padding-inline-end: 0;
     text-align: end;
     color: var(--md-sys-color-primary);
-  }
-  .tb-timing__chord {
-    padding: 1px 6px;
-    border-radius: var(--md-sys-shape-corner-extra-small);
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) / 1.4 var(--app-font);
   }
   .tb-timing__hint {
     color: var(--md-sys-color-on-surface-variant);

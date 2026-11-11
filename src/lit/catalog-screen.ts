@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
 import { unpublishedState } from "./ui/unpublished-state";
+import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../packages/api-client/src/chart-assets";
 import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
@@ -6013,12 +6014,13 @@ export class CatalogScreen extends LitElement {
     }
     if (Object.keys(this.missionIcons).length || this.missionIconProvision) return;
     const signal = this.missionIconRequests.begin();
-    const pending = fetchJson<unknown>(
-      catalogUrl("sources/Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2", "", server),
+    const pending = fetchJson<import("../../packages/api-client/src/chart-assets").HaneokaChartAssets>(
+      `${catalogUrl("chart-assets", "", server)}?projection=${HANEOKA_CHART_ASSETS_PROJECTION}`,
       { signal },
     )
-      .then((descriptor) => {
+      .then((assets) => {
         if (this.isConnected && this.missionIconRequests.current(signal)) {
+          const descriptor = Object.entries(assets.sources).find(([path]) => path.endsWith("/LiveAtlas.spriteatlasv2"))![1];
           this.missionIcons = gekisouMissionIcons(descriptor, server);
           this.requestUpdate();
         }

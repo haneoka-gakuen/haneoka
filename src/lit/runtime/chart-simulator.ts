@@ -2,9 +2,10 @@
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
 // Output: 使用网页字体并支持指针／键盘位置查询的分块 2D 概览、按需 3D 观看和完整 PNG／分页 PNG ZIP。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
-// Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；音频缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
+// Effects/Dependencies: 公开舞台／按需乐队开场清单、Cassiopeia、媒体、WebGL 和音频；缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
 import { LitElement, html, nothing } from "lit";
+import { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets, type HaneokaChartAssetOutput, type HaneokaChartAssetSource } from "../../../packages/api-client/src/chart-assets";
 import { NoColorSpace, TextureLoader, type Texture } from "three";
 import { fetchJson, uiText } from "../shared/catalog";
 import type { CommunityChartPlayback } from "../../lib/chart-creation/community-types";
@@ -118,15 +119,8 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   watch: "common.actions.watch",
 };
 
-type RuntimeOutput = { objectId: string | number; path: string; type: string; serializedFile?: string };
-type RuntimeDescriptor = {
-  sourcePath?: string;
-  serializedFile?: string;
-  runtimeProjectionPolicy?: string;
-  preloadObjectReferences?: Array<{ serializedFile: string; pathId: string }>;
-  outputs?: RuntimeOutput[];
-  runtimeObjects?: Array<{ type: string; path: string }>;
-};
+type RuntimeOutput = HaneokaChartAssetOutput;
+type RuntimeDescriptor = HaneokaChartAssetSource;
 type StageBackground = "auto" | "none" | "0" | "1" | "2" | "3" | "4" | "5";
 type NumericRenderSetting =
   "noteSpeed" | "noteSize" | "longAlpha" | "guideAlpha" | "guidelineOpacity" | "laneOpacity" | "backgroundBrightness";
@@ -405,7 +399,7 @@ export class ChartSimulator extends LitElement {
   };
   private availableNoteSkins: readonly OurNotesNoteSkin[] = OUR_NOTES_NOTE_SKINS;
   private availableNoteEffectSkins: readonly OurNotesNoteEffectSkin[] = ["effect001"];
-  private sourceFilesCache?: { key: string; promise: Promise<Set<string>> };
+  private chartAssetCache = new Map<string, Promise<HaneokaChartAssets>>();
   private backgroundLiveAtlas?: { server: string; release: string | undefined; descriptor: RuntimeDescriptor };
   private resumeAfterScrub = false;
   private viewportFullscreen: ViewportFullscreenController;
@@ -562,44 +556,26 @@ export class ChartSimulator extends LitElement {
     return this.playback || this.chartFormat === "community" ? path : this.pinResourceUrl(path);
   }
 
-  private descriptorUrl(source: string) {
-    return this.pinResourceUrl(
-      `/api/v1/servers/${encodeURIComponent(this.server)}/sources/${source
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}`,
-    );
+  private chartAssets(signal: AbortSignal, intro = false) {
+    const base = `/api/v1/servers/${encodeURIComponent(this.server)}/chart-assets?projection=${HANEOKA_CHART_ASSETS_PROJECTION}`;
+    const url = this.pinResourceUrl(intro ? `${base}&bandId=${this.bandId}` : base);
+    const pending = this.chartAssetCache.get(url);
+    if (pending) return pending;
+    const promise = fetchJson<HaneokaChartAssets>(url, { signal }).catch(error => {
+      if (this.chartAssetCache.get(url) === promise) this.chartAssetCache.delete(url);
+      throw error;
+    });
+    this.chartAssetCache.set(url, promise);
+    return promise;
   }
-  private async descriptor(source: string, signal: AbortSignal) {
-    return await fetchJson<RuntimeDescriptor>(this.descriptorUrl(source), { signal });
+  private async descriptor(source: string, signal: AbortSignal): Promise<RuntimeDescriptor> {
+    const base = await this.chartAssets(signal);
+    const descriptor = base.sources[source] ?? (await this.chartAssets(signal, true)).sources[source];
+    if (!descriptor) throw new Error(`Native chart descriptor missing: ${source}`);
+    return descriptor;
   }
   private async sourceFiles(signal: AbortSignal) {
-    const server = this.server;
-    const key = `${new URL(this.source, window.location.href).origin}:${server}:${this.sourceRelease() ?? "current"}`;
-    if (this.sourceFilesCache?.key === key) return this.sourceFilesCache.promise;
-    const promise = (async () => {
-      const tree = await fetchJson<Record<string, unknown>>(
-        this.pinResourceUrl(`/api/v1/servers/${encodeURIComponent(server)}/sources/tree`),
-        { signal },
-      );
-      const files = new Set<string>();
-      const walk = (value: unknown, prefix: string) => {
-        if (typeof value === "number") {
-          files.add(prefix);
-        } else if (value && typeof value === "object" && !Array.isArray(value)) {
-          for (const [part, child] of Object.entries(value)) walk(child, prefix ? `${prefix}/${part}` : part);
-        }
-      };
-      walk(tree, "");
-      return files;
-    })();
-    this.sourceFilesCache = { key, promise };
-    try {
-      return await promise;
-    } catch (error) {
-      if (this.sourceFilesCache?.promise === promise) this.sourceFilesCache = undefined;
-      throw error;
-    }
+    return new Set((await this.chartAssets(signal)).files);
   }
   private sourceWithName(files: Set<string>, name: string) {
     const matches = [...files].filter((path) => path.endsWith(`/${name}`));
@@ -2435,7 +2411,7 @@ export class ChartSimulator extends LitElement {
     this.noteSoundSwap = undefined;
     this.noteSoundSwapTarget = undefined;
     this.noteSoundStatus = "idle";
-    this.sourceFilesCache = undefined;
+    this.chartAssetCache.clear();
     this.session?.dispose?.();
     this.session = undefined;
     this.watchSessionFactory = undefined;

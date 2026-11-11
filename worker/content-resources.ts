@@ -15,6 +15,7 @@ import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
 import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
+import { publicChartAsset } from "./chart-assets";
 import {
   requestContentView,
   inheritContentView,
@@ -113,6 +114,7 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
   );
 }
 function publicInterfaceAsset(path: string): boolean {
+  if (publicChartAsset(path)) return true;
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
     return true;
   const sprite =
@@ -270,6 +272,7 @@ export async function contentResourceBoundary(
     api &&
     ((tail === "release" && url.searchParams.get("projection") === "identity") ||
       tail === "song-release-times" ||
+      tail === "chart-assets" ||
       tail === "ui-marks");
   const pageData = api && tail === "release" && url.searchParams.get("projection") === "page-data";
   const raw = Boolean(
