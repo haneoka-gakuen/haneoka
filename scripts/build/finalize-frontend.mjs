@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { assertPublicStaticDocumentPath, withSearchMetadata } from "./search-metadata.mjs";
-import { existsSync, readdirSync, rmSync, unlinkSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, rmSync, unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as pagefind from "pagefind";
@@ -11,6 +11,8 @@ import { finalizeStaticDocuments, packCoreStaticDocuments } from "../../src/serv
 import { restrictShardCoverage } from "./static-build-shards.mjs";
 
 const output = path.resolve(".output/public");
+if (existsSync(".generated-public/playback-data"))
+  cpSync(".generated-public/playback-data", path.join(output, "playback-data"), { recursive: true, force: false });
 const calendarImages = await copyCalendarStaticAssets({ outputRoot: output });
 if (calendarImages) console.log(`finalized ${calendarImages} generated calendar images`);
 // The Cubism declaration is useful to developers but is not a browser asset

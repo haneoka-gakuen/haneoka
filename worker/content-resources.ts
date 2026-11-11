@@ -121,6 +121,8 @@ function functionalDocument(request: Request): boolean {
     if (page.origin !== new URL(request.url).origin) return false;
     return /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)\/(?:team-builder|chart-editor|story-editor|studio|assets)(?:\/|$)/u.test(page.pathname) ||
       /\/(?:songs|charts)\/[^/]+\/chart\/?$/u.test(page.pathname) ||
+      /\/(?:live2d|spine)\/[^/]+\/?$/u.test(page.pathname) ||
+      /\/community\/(?:stories|charts)\/[^/]+\/(?:read|chart)\/?$/u.test(page.pathname) ||
       (/\/stories\/[^/]+\/?$/u.test(page.pathname) && page.searchParams.get("playback") === "play");
   } catch {
     return false;
@@ -221,13 +223,23 @@ export async function contentResourceBoundary(
   if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
   const tail = api?.[2] ?? "";
   const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
-  if ((media || componentData) && functionalDocument(request)) return serve(request);
+  const serveFunctional = async () => {
+    const response = await serve(request);
+    if (!api || !url.searchParams.get("release") || (!response.ok && response.status !== 304)) return response;
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    return new Response(response.body, {
+      status: response.status, statusText: response.statusText, headers,
+      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+    });
+  };
+  if ((media || componentData) && functionalDocument(request)) return serveFunctional();
   const functional = api && (
     ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "options"].includes(tail) ||
     (tail === "release" && url.searchParams.get("projection") === "identity") ||
     (url.searchParams.get("asset") === "1" && componentData)
   );
-  if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serve(request);
+  if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serveFunctional();
   if (api && (
     /^\/api\/v1\/(?:team-builder|meta-reference)\//u.test(url.pathname) ||
     (!visibilityType(tail.split("/")[0]!) && !/^(?:catalog|release)(?:\/|$)/u.test(tail))

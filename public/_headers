@@ -71,5 +71,8 @@
   Content-Type: application/wasm
 
 # A public resource site: every static file is readable from any origin.
+/playback-data/v1/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /*
   Access-Control-Allow-Origin: *
