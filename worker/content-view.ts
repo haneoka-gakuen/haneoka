@@ -60,9 +60,14 @@ export function inheritContentView(target: Request, source: Request): void {
   const view = requests.get(source);
   if (view) requests.set(target, view);
 }
-export function privateContentResponse(response: Response): Response {
+export function privateContentResponse(response: Response, maxAge = 0): Response {
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+  const immutable = maxAge > 0 && (response.ok || response.status === 304);
+  headers.set("Cache-Control", immutable ? `private, max-age=${maxAge}, immutable` : "private, max-age=0, must-revalidate");
+  if (immutable) {
+    headers.set("Date", new Date().toUTCString());
+    headers.delete("Age");
+  }
   headers.set("Vary", "Cookie, Authorization, Referer, Accept-Encoding");
   return new Response(response.body, {
     status: response.status,

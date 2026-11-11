@@ -116,6 +116,8 @@ import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
   type ChartCatalogSnapshot,
+  type ChartDataProvider,
+  type PreparedChartData,
   RevisionCache,
   sonolusLevelName,
   sonolusPlaylistName,
@@ -3249,19 +3251,37 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
   };
 }
 
-function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): RuntimeChartDataProvider {
-  const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
-  if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
-  return new RuntimeChartDataProvider({
-    readBytes: async (dataId) => {
-      const reference = parseReleaseChartDataId(dataId);
-      if (!reference) return null;
-      const release = releasesByKey.get(sonolusReleaseKey(reference));
-      return release ? readReleaseBytes(env, release, reference.path) : null;
-    },
-    onInvalidChart: (chart, error) => {
-      console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
-    },
+const sonolusDataProviders = new RevisionCache<ChartDataProvider>(2);
+function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): Promise<ChartDataProvider> {
+  return sonolusDataProviders.getOrCreate(ourNotesSonolusRevision(releases), () => {
+    const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
+    if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
+    const provider = new RuntimeChartDataProvider({
+      readBytes: async (dataId) => {
+        const reference = parseReleaseChartDataId(dataId);
+        if (!reference) return null;
+        const release = releasesByKey.get(sonolusReleaseKey(reference));
+        return release ? readReleaseBytes(env, release, reference.path) : null;
+      },
+      onInvalidChart: (chart, error) => {
+        console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
+      },
+    });
+    // Listing metadata remains valid after the bounded gzip body cache evicts a chart.
+    const prepared = new Map<string, PreparedChartData>();
+    return {
+      async prepare(chart) {
+        const known = prepared.get(chart.dataId);
+        if (known) return known;
+        const value = await provider.prepare(chart);
+        if (value) {
+          prepared.set(chart.dataId, value);
+          if (prepared.size > 1024) prepared.delete(prepared.keys().next().value!);
+        }
+        return value;
+      },
+      load: (chart, hash) => provider.load(chart, hash),
+    };
   });
 }
 
@@ -3534,6 +3554,12 @@ async function handleSonolus(
     ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
     : ourNotesRevision;
   const cacheRequest = releaseCacheRequest(request, revision);
+  if (sonolusView && request.method === "GET" && !request.headers.has("Range") && !request.headers.has("If-Range") &&
+    assetUrl.searchParams.get("type") !== "random" &&
+    (pathname === "/sonolus/info" || /^\/sonolus\/(?:levels|playlists)\/(?!info$)[^/]+$/u.test(pathname))) {
+    const hit = await caches.default.match(cacheRequest);
+    if (hit) return privateContentResponse(hit);
+  }
   let fallbackThumbnail: JsonObject | undefined;
   let repositoryPublic = false;
   try {
@@ -3563,7 +3589,7 @@ async function handleSonolus(
       communityProviders?.dataProvider ??
       (isBestdoriCatalog
         ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
-        : ourNotesSonolusDataProvider(env, releases));
+        : await ourNotesSonolusDataProvider(env, releases));
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const repositoryHash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(assetUrl.pathname)?.[1];
@@ -3592,7 +3618,7 @@ async function handleSonolus(
         return new Response(JSON.stringify({ message: "Content is not public" }), { status: 403, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "private, no-store" } });
       const hit = await caches.default.match(releaseCacheRequest(request, baseRevision));
       if (hit) {
-        const response = privateContentResponse(hit), matched = etagMatches(request.headers.get("If-None-Match"), response.headers.get("ETag"));
+        const response = privateContentResponse(hit, 21600), matched = etagMatches(request.headers.get("If-None-Match"), response.headers.get("ETag"));
         if (matched || request.method === "HEAD") { await response.body?.cancel(); return new Response(null, { status: matched ? 304 : response.status, headers: response.headers }); }
         return response;
       }
@@ -3687,7 +3713,7 @@ async function handleSonolus(
       const response = projected.cacheControl === "no-store" || projected.status >= 400
         ? await produce()
         : await edgeCached(projectedKey, ctx, API_CACHE_TTL, produce, projected.cacheControl);
-      return sonolusView ? privateContentResponse(response) : response;
+      return sonolusView ? privateContentResponse(response, projected.kind === "data" ? 21600 : 0) : response;
     }
   } catch (error) {
     console.warn("Unable to project the Sonolus chart catalog", error);
@@ -3730,7 +3756,7 @@ async function handleSonolus(
   const extra = repository ? SONOLUS_REPOSITORY_HEADERS : SONOLUS_JSON_HEADERS;
   for (const [key, value] of Object.entries(extra)) if (key !== "Content-Type") headers.set(key, value);
   const outgoing = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-  return sonolusView && !repositoryPublic ? privateContentResponse(outgoing) : outgoing;
+  return sonolusView && !repositoryPublic ? privateContentResponse(outgoing, repository ? 21600 : 0) : outgoing;
 }
 
 function redirectToHttps(url: URL): Response {
