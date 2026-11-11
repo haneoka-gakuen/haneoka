@@ -115,6 +115,7 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
 }
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
+  if (/^(?:objects\/|runtime\/unity-json\/)/u.test(path)) return true;
   if (/^assets\/Assets\/AddressableResources\/Adv\/(?:Transition\/adv_transition_0001\/texture\.png|PostEffect\/)/u.test(path))
     return true;
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
@@ -136,7 +137,8 @@ function mayReadAsset(
   view: RequestContentView,
 ): { allowed: boolean; public: boolean } {
   const owners = assetOwners(index, path);
-  if (!owners) return { allowed: true, public: true };
+  if (!owners?.length || owners.some((chain) => chain.some((id) => !index.records[id])))
+    return { allowed: true, public: true };
   const publicAsset = owners.some((chain) =>
     chain.every((id) => {
       const ref = index.records[id];
@@ -204,6 +206,17 @@ export async function contentResourceBoundary(
   if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
   if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
+  const tail = api?.[2] ?? "";
+  const functional = api && (
+    ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "options"].includes(tail) ||
+    (tail === "release" && url.searchParams.get("projection") === "identity") ||
+    (url.searchParams.get("asset") === "1" && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail))
+  );
+  if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serve(request);
+  if (api && (
+    /^\/api\/v1\/(?:team-builder|meta-reference)\//u.test(url.pathname) ||
+    (!visibilityType(tail.split("/")[0]!) && !/^(?:catalog|release)(?:\/|$)/u.test(tail))
+  )) return serve(request);
   if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
@@ -225,7 +238,8 @@ export async function contentResourceBoundary(
     if (!mediaIndex) return serve(request);
     if (mediaIndex) {
       const owners = assetOwners(mediaIndex, `${media[1]}/${decodeURIComponent(media[3]!)}`);
-      if (!owners) return serve(request);
+      if (!owners?.length || owners.some((chain) => chain.some((id) => !mediaIndex!.records[id])))
+        return serve(request);
       if (
         owners?.some((chain) =>
           chain.every((id) => mediaIndex!.records[id] && contentPublished(mediaIndex!.records[id]!.publication)),
@@ -234,7 +248,6 @@ export async function contentResourceBoundary(
         return serve(request);
     }
   }
-  const tail = api?.[2] ?? "";
   const offlineAuthorization =
     api && tail === "stories" && url.searchParams.get("projection") === "offline-authorization";
   const offlineIndex =
@@ -258,7 +271,6 @@ export async function contentResourceBoundary(
   if (offlinePublications?.length && offlinePublications.every(([, publication]) => contentPublished(publication)))
     return authorizationResponse(true);
   const view = await requestContentView(request, env);
-  if (api?.[2] === "story-runtime") return serve(request);
   if (offlineAuthorization) {
     if (
       !offlinePublications?.length ||
