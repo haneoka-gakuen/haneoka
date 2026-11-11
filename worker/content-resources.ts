@@ -13,7 +13,7 @@ import {
 
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, visibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import { publicChartAsset } from "./chart-assets";
 import {
@@ -85,8 +85,8 @@ export type ContentIndexReader = (
   release?: string,
   assetPath?: string,
 ) => Promise<ContentResourceIndex | null>;
-export const unrestricted = (view: RequestContentView): boolean =>
-  VISIBILITY_TYPES.every((kind) => {
+export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
+  kinds.every((kind) => {
     const rule = view.policy.types[kind];
     return (
       contentVisible(view, kind, { __publicationPending: true }) &&
@@ -115,6 +115,8 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
 }
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
+  if (/^assets\/Assets\/AddressableResources\/Adv\/(?:Transition\/adv_transition_0001\/texture\.png|PostEffect\/)/u.test(path))
+    return true;
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
     return true;
   const sprite =
@@ -124,7 +126,7 @@ function publicInterfaceAsset(path: string): boolean {
   return Boolean(
     sprite &&
     (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
-      ? UI_MARK_NAMES.test(`${sprite[2]}.png`)
+      ? UI_MARK_NAMES.test(`${sprite[2]}.png`) || /^(?:WhiteRect|NormalButtonFrame_H96(?:_Blue)?|sp_adv_next|sp_adv_text_alt_edge|sp_adv_line|IconTapNext(?:Glow)?)$/u.test(sprite[2]!)
       : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)),
   );
 }
@@ -134,7 +136,7 @@ function mayReadAsset(
   view: RequestContentView,
 ): { allowed: boolean; public: boolean } {
   const owners = assetOwners(index, path);
-  if (!owners) return { allowed: unrestricted(view), public: false };
+  if (!owners) return { allowed: true, public: true };
   const publicAsset = owners.some((chain) =>
     chain.every((id) => {
       const ref = index.records[id];
@@ -219,9 +221,11 @@ export async function contentResourceBoundary(
       server,
       url.searchParams.get("release") ?? undefined,
       `${media[1]}/${decodeURIComponent(media[3]!)}`,
-    );
+    ).catch(() => null);
+    if (!mediaIndex) return serve(request);
     if (mediaIndex) {
       const owners = assetOwners(mediaIndex, `${media[1]}/${decodeURIComponent(media[3]!)}`);
+      if (!owners) return serve(request);
       if (
         owners?.some((chain) =>
           chain.every((id) => mediaIndex!.records[id] && contentPublished(mediaIndex!.records[id]!.publication)),
@@ -254,6 +258,7 @@ export async function contentResourceBoundary(
   if (offlinePublications?.length && offlinePublications.every(([, publication]) => contentPublished(publication)))
     return authorizationResponse(true);
   const view = await requestContentView(request, env);
+  if (api?.[2] === "story-runtime") return serve(request);
   if (offlineAuthorization) {
     if (
       !offlinePublications?.length ||
@@ -306,10 +311,11 @@ export async function contentResourceBoundary(
       if (refs.length && !refs.some((ref) => contentVisible(view, kind, ref.publication, id))) return notPublic();
     }
   }
+  if (api && /^live2d\/[^/]+$/u.test(tail) && unrestricted(view, ["live2d", "characters", "bands"]))
+    return privateContentResponse(await serve(request));
   if (media && server) {
     const index = mediaIndex;
-    if (!index)
-      return new Response("Resource metadata unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
+    if (!index) return serve(request);
     const access = mayReadAsset(index, `${media[1]}/${decodeURIComponent(media[3]!)}`, view);
     if (!access.allowed) return notPublic();
     const response = await serve(request);
