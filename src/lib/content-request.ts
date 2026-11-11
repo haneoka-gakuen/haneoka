@@ -28,7 +28,8 @@ export function contentRequestUrl(source: string): string {
   url.searchParams.set("__content", "1");
   const override = navigationDocumentUrl().searchParams.get("spoiler");
   if (override !== null && !url.searchParams.has("spoiler")) url.searchParams.set("spoiler", override);
-  if (/^\/(?:assets|runtime|objects)\//u.test(url.pathname)) url.searchParams.set("cv", contentCacheScope(url));
+  if (globalThis.document?.documentElement && /^\/(?:assets|runtime|objects)\//u.test(url.pathname))
+    url.searchParams.set("cv", contentCacheScope(url));
   return url.pathname + url.search + url.hash;
 }
 let installed = false;
