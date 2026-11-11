@@ -55,6 +55,18 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
   }
   return `${index.releaseId ?? "legacy"}-${timeline[low - 1] ?? 0}`;
 }
+export function nextContentPublication(index: ContentResourceIndex | null | undefined, now: number): number | undefined {
+  if (!index) return undefined;
+  contentCacheEpoch(index, now);
+  const timeline = publicationTimelines.get(index)!;
+  let low = 0, high = timeline.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (timeline[middle]! <= now) low = middle + 1;
+    else high = middle;
+  }
+  return timeline[low];
+}
 export type ContentIndexReader = (
   server: string,
   release?: string,
@@ -276,7 +288,13 @@ export async function contentResourceBoundary(
     const access = mayReadAsset(index, `${media[1]}/${decodeURIComponent(media[3]!)}`, view);
     if (!access.allowed) return notPublic();
     const response = await serve(request);
-    return access.public ? response : privateContentResponse(response);
+    if (access.public) return response;
+    const result = privateContentResponse(response);
+    if (response.ok) {
+      result.headers.set("Cache-Control", "private, max-age=21600");
+      if (url.searchParams.get("cv") === view.key) result.headers.set("Vary", "Accept-Encoding");
+    }
+    return result;
   }
   if (identityOnly) return serve(request);
   // JSON source caches are shared internally. Conditional validation applies to
@@ -292,6 +310,7 @@ export async function contentResourceBoundary(
   const cacheUrl = new URL(url);
   cacheUrl.searchParams.delete("spoiler");
   cacheUrl.searchParams.delete("__content");
+  cacheUrl.searchParams.delete("cv");
   cacheUrl.searchParams.sort();
   cacheUrl.searchParams.set("__content-view", `${view.key}:${epoch}`);
   const key = new Request(cacheUrl, { method: "GET" });

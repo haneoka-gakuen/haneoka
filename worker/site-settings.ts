@@ -13,6 +13,7 @@ import { decodePageData } from "../src/lib/page-data-codec";
 import { unrestricted } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
+import { spoilerOverrideEnabled } from "../src/lib/spoiler-cookie";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
 
@@ -44,6 +45,7 @@ export const restrictedResourceRequest = (request: Request): boolean =>
 
 export interface DocumentContentContext {
   epoch?: string;
+  freshUntil?: number;
   publication?: Record<string, unknown>;
   publications?: Record<string, Record<string, unknown>>;
   unavailable?: boolean;
@@ -64,6 +66,8 @@ export async function applySiteSettings(
   let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+  headers.set("X-Haneoka-Content-View", view.key);
+  if (context.freshUntil) headers.set("X-Haneoka-Content-Until", String(context.freshUntil));
   const vary = new Set(
     (headers.get("Vary") || "")
       .split(",")
@@ -238,6 +242,8 @@ export async function applySiteSettings(
         target.searchParams.set("__content", "1");
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
+        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname))
+          target.searchParams.set("cv", `view-v1-${visibility.version}-${group}-${Number(view.spoilers)}-${Number(spoilerOverrideEnabled(target))}`);
         element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },
     })

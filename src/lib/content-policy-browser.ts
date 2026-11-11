@@ -7,9 +7,11 @@ import {
 import { SPOILER_CONTENT_EVENT, spoilerContentEnabled } from "./spoiler-content";
 import { RequestScope } from "./request-scope";
 import { isUserGroup, type UserGroup } from "./user-roles";
+import { publishContentCacheScope } from "./content-request";
 
 const requests = new RequestScope();
 let installed = false;
+let activeRefresh: AbortSignal | undefined;
 let parsed = "",
   policy = DEFAULT_VISIBILITY_POLICY;
 export function currentVisibilityPolicy(): ContentVisibilityPolicy {
@@ -37,10 +39,13 @@ export function applyVisibilitySettings(settings: ContentVisibilitySettings & { 
   document.documentElement.dataset.contentVisibilityVersion = String(settings.version);
   document.documentElement.dataset.contentVisibilityAt = String(Date.now());
   if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
+  publishContentCacheScope();
   if (previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
 function refreshVisibility(): void {
+  if (activeRefresh && !activeRefresh.aborted) return;
   const signal = requests.begin();
+  activeRefresh = signal;
   void fetch("/api/v1/content-visibility", { credentials: "same-origin", cache: "no-store", signal })
     .then(async (response) => {
       if (response.ok) {
@@ -48,24 +53,34 @@ function refreshVisibility(): void {
         if (requests.current(signal)) applyVisibilitySettings(settings);
       }
     })
-    .catch(() => undefined);
+    .catch(() => undefined)
+    .finally(() => { if (activeRefresh === signal) activeRefresh = undefined; });
 }
-/** A document whose policy the Worker wrote within the last minute needs no second read. */
-const POLICY_FRESHNESS = 60_000;
-function refreshStaleVisibility(): void {
+/** The document response already selects the current display policy. */
+function refreshDocumentVisibility(): void {
   const data = document.documentElement.dataset;
-  const age = Math.abs(Date.now() - Number(data.contentVisibilityAt));
-  if (!data.contentVisibilityPolicy || !(age <= POLICY_FRESHNESS)) refreshVisibility();
+  if (!data.contentVisibilityPolicy) refreshVisibility();
 }
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
+  publishContentCacheScope();
+  navigator.serviceWorker?.addEventListener("controllerchange", publishContentCacheScope);
+  addEventListener(SPOILER_CONTENT_EVENT, publishContentCacheScope);
   addEventListener(SPOILER_CONTENT_EVENT, () => { if (document.querySelector("[data-content-unavailable]")) location.reload(); });
-  refreshStaleVisibility();
-  addEventListener("haneoka:session-changed", refreshVisibility);
-  document.addEventListener("astro:page-load", refreshStaleVisibility);
+  refreshDocumentVisibility();
+  addEventListener("haneoka:session-changed", () => {
+    requests.cancel();
+    activeRefresh = undefined;
+    navigator.serviceWorker?.controller?.postMessage({ type: "haneoka:content-view-reset" });
+    refreshVisibility();
+  });
+  addEventListener("focus", refreshVisibility);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVisibility(); });
+  document.addEventListener("astro:page-load", () => { publishContentCacheScope(); refreshDocumentVisibility(); });
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();
+    activeRefresh = undefined;
     const next = (event as Event & { newDocument: Document }).newDocument;
     const current = document.documentElement.dataset;
     if (

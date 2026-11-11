@@ -5,7 +5,7 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
 import { contentPublished, eventStoryStarts } from "../src/lib/content-publication";
-import { contentCacheEpoch, contentResourceBoundary, unrestricted, type ContentResourceIndex } from "./content-resources";
+import { contentCacheEpoch, nextContentPublication, contentResourceBoundary, unrestricted, type ContentResourceIndex } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { requestContentView, privateContentResponse } from "./content-view";
 import { contentVisible, filterContentData, type ContentView } from "../src/lib/content-view";
@@ -831,6 +831,7 @@ function releaseCacheRequest(request: Request, releaseRevision: string): Request
   url.searchParams.delete("spoiler");
   url.searchParams.delete("__content-view");
   url.searchParams.delete("__content");
+  url.searchParams.delete("cv");
   url.searchParams.delete("release");
   url.searchParams.set("__release", releaseRevision);
   url.searchParams.set("__representation", RELEASE_REPRESENTATION_VERSION);
@@ -4436,8 +4437,16 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const assetRequest = new Request(request, { headers });
   const { publicationId, webBuildId } = await staticPublicationContext(request, env);
   const contentView = await requestContentView(request, env);
-  const documentIndex = ["jp", "intl"].includes(segments[0] || "") ? await resourceContentIndex(env, ctx, segments[0]!) : null;
-  const visibilityEpoch = contentCacheEpoch(documentIndex, contentView.now);
+  const regionalDocument = ["jp", "intl"].includes(segments[0] || "");
+  const documentIndexes = await Promise.all((regionalDocument ? [segments[0]!] : ["jp", "intl"])
+    .map((server) => resourceContentIndex(env, ctx, server)));
+  const documentIndex = regionalDocument ? documentIndexes[0] : null;
+  const visibilityEpoch = documentIndexes.map((index) => contentCacheEpoch(index, contentView.now)).join(":");
+  const publications = documentIndexes.flatMap((index) => {
+    const at = nextContentPublication(index, contentView.now);
+    return at === undefined ? [] : [at];
+  });
+  const freshUntil = publications.length ? Math.min(...publications) : undefined;
   const rawAssetDocument = Boolean(assetStaticDocumentFromUrl(url) || /^\/asset-static\/(jp|intl)\//u.test(url.pathname));
   const unavailableAssetDocument = rawAssetDocument && !unrestricted(contentView);
   const contentRoute = parseResourceRoute(url.pathname);
@@ -4520,7 +4529,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
       : response;
     if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
-    const rendered = await applySiteSettings(request, page, webBuildId, env, { epoch: visibilityEpoch, ...(currentPublication ? { publication: currentPublication } : {}), ...(documentIndex?.publications ? { publications: documentIndex.publications } : {}), unavailable: unavailableAssetDocument });
+    const rendered = await applySiteSettings(request, page, webBuildId, env, { epoch: visibilityEpoch, ...(freshUntil === undefined ? {} : { freshUntil }), ...(currentPublication ? { publication: currentPublication } : {}), ...(documentIndex?.publications ? { publications: documentIndex.publications } : {}), unavailable: unavailableAssetDocument });
     if (!guestKey || request.method !== "GET" || rendered.status !== 200 || !rendered.body || !rendered.headers.get("Content-Type")?.includes("text/html"))
       return rendered;
     const [body, copy] = rendered.body.tee();

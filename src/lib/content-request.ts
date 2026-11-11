@@ -1,10 +1,21 @@
 // L3 — GEB
 // Input: Same-origin resource URLs and the active document context.
-// Output: Resource requests that retain the current content view.
+// Output: Resource requests and cache identities that retain the current content view.
 // Pos: [Map](L2-2.md); browser resource-request context propagation.
-// Effects/Dependencies: Installs the browser fetch adapter and marks versioned resource requests.
+// Effects/Dependencies: Installs the fetch adapter and shares the current display scope with the browser cache.
 import { visibilityType } from "./content-visibility-policy";
 import { navigationDocumentUrl } from "./document-url";
+import { spoilerContentEnabled } from "./spoiler-content";
+import { spoilerOverrideEnabled } from "./spoiler-cookie";
+
+export function contentCacheScope(target = navigationDocumentUrl()): string {
+  const data = document.documentElement.dataset;
+  return `view-v1-${data.contentVisibilityVersion ?? "0"}-${data.contentGroup ?? "guest"}-${Number(spoilerContentEnabled())}-${Number(spoilerOverrideEnabled(target))}`;
+}
+
+export function publishContentCacheScope(): void {
+  navigator.serviceWorker?.controller?.postMessage({ type: "haneoka:content-view", scope: contentCacheScope() });
+}
 
 const resourcePath =
   /^(?:\/api\/v1\/community\/(?:entity-threads|entity-comments|posts|bootstrap|charts)(?:\/|$)|\/(?:assets|runtime|objects|artifacts|game-client|static-views|asset-static|playlist-static|downloads\/stories)\/|\/api\/v1\/(?:servers|team-builder|meta-reference|search|live2d|spine)(?:\/|$))/u;
@@ -16,8 +27,8 @@ export function contentRequestUrl(source: string): string {
     return source;
   url.searchParams.set("__content", "1");
   const override = navigationDocumentUrl().searchParams.get("spoiler");
-  if (override === null || url.searchParams.has("spoiler")) return url.pathname + url.search + url.hash;
-  url.searchParams.set("spoiler", override);
+  if (override !== null && !url.searchParams.has("spoiler")) url.searchParams.set("spoiler", override);
+  if (/^\/(?:assets|runtime|objects)\//u.test(url.pathname)) url.searchParams.set("cv", contentCacheScope(url));
   return url.pathname + url.search + url.hash;
 }
 let installed = false;
