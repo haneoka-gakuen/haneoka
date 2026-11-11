@@ -20,7 +20,8 @@ export function publishContentCacheScope(): void {
 const resourcePath =
   /^(?:\/api\/v1\/community\/(?:entity-threads|entity-comments|posts|bootstrap|charts)(?:\/|$)|\/(?:assets|runtime|objects|artifacts|game-client|static-views|asset-static|playlist-static|downloads\/stories)\/|\/api\/v1\/(?:servers|team-builder|meta-reference|search|live2d|spine)(?:\/|$))/u;
 export function contentRequestUrl(source: string): string {
-  if (typeof location === "undefined" || !source) return source;
+  if (typeof location === "undefined" || typeof document === "undefined" || !document.documentElement || import.meta.env?.SSR || !source)
+    return source;
   const url = new URL(source, location.href);
   const kind = /^\/api\/v1\/([^/]+)/u.exec(url.pathname)?.[1];
   if (url.origin !== location.origin || (!resourcePath.test(url.pathname) && !(kind && visibilityType(kind))))
