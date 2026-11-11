@@ -73,6 +73,7 @@ const CONTROL =
 const views = new Map<string, FullView>();
 /** Public documents as first served, for turning private content off without the network. */
 const publicDocuments = new Map<string, string>();
+const checkedBodies = new WeakSet<HTMLElement>();
 let pending: Document | undefined;
 let swapping = false;
 let scroll: [number, number] | undefined;
@@ -148,18 +149,6 @@ function permitted(metadata: Metadata, types: readonly VisibilityType[]): boolea
   });
 }
 
-/** Mirrors the endpoint's grant decision: every omitted type is visible in full. */
-function unrestrictedFor(metadata: Metadata, types: readonly VisibilityType[]): boolean {
-  if (!metadata.policy) return true;
-  const spoilers = spoilerContentEnabled();
-  const override = overridden();
-  return (types.length ? types : VISIBILITY_TYPES).every((kind) => {
-    const rule = metadata.policy!.types[kind] ?? DEFAULT_VISIBILITY_RULE;
-    const overridable = override && rule.allowOverride;
-    const pending = overridable || (rule.groups.includes(metadata.group) && (rule.mode === "visible" || spoilers));
-    return pending && (!rule.hide.length || overridable);
-  });
-}
 const wantsGrant = (descriptor: Descriptor): boolean =>
   Boolean(descriptor.private) && !grantFailed && grantSupported();
 
@@ -578,7 +567,8 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
   const shownPath = document.documentElement.getAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
   const shown = shownPath === descriptor.path;
   const known = views.get(descriptor.path);
-  if (reason !== "refresh" && known?.local === local && known.until > Date.now() && (shown || known.html)) {
+  if (reason !== "refresh" && (reason !== "load" || checkedBodies.has(document.body)) &&
+    known?.local === local && known.until > Date.now() && (shown || known.html)) {
     if (shown) return release(true);
     if (!shownPath) await retainPublic(descriptor.path);
     if (current !== controller) return;
@@ -597,7 +587,7 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
     const [response] = await Promise.all([
       fetch(endpoint(descriptor, !documentOnly && wantsGrant(descriptor)), {
         credentials: "same-origin",
-        cache: reason === "refresh" ? "no-cache" : "default",
+        cache: "no-cache",
         signal: current.signal,
       }),
       shownPath ? undefined : retainPublic(descriptor.path),
@@ -607,6 +597,7 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
       return;
     }
     storeMetadata(response.headers);
+    if (response.headers.has("X-Haneoka-Content-Group")) checkedBodies.add(document.body);
     if (response.status === 204) {
       views.delete(descriptor.path);
       window.clearTimeout(deadline);
@@ -681,13 +672,11 @@ export function preparePageData(): Promise<boolean> {
     preparation = { body, promise: Promise.resolve(false), settled: true };
     return preparation.promise;
   }
-  const metadata = readMetadata();
   const eligible =
     descriptor?.unreleased &&
     wantsGrant(descriptor) &&
     !INDEXER.test(navigator.userAgent) &&
-    !document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE) &&
-    (metadata ? unrestrictedFor(metadata, descriptor.types) : spoilerContentEnabled() || overridden());
+    !document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
   const current = { body, promise: Promise.resolve(false), settled: !eligible };
   if (eligible)
     current.promise = prepare(descriptor, body)
@@ -699,14 +688,14 @@ export function preparePageData(): Promise<boolean> {
 async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boolean> {
   controller?.abort();
   const current = (controller = new AbortController());
-  const local = localKey();
   void retainPublic(descriptor.path);
-  const response = await fetch(endpoint(descriptor, true), { credentials: "same-origin", signal: current.signal });
+  const response = await fetch(endpoint(descriptor, true), { credentials: "same-origin", cache: "no-cache", signal: current.signal });
   if (current !== controller || document.body !== body) {
     void response.body?.cancel();
     return false;
   }
   storeMetadata(response.headers);
+  if (response.headers.has("X-Haneoka-Content-Group")) checkedBodies.add(body);
   if (!response.ok || response.status === 204) {
     void response.body?.cancel();
     return false;
@@ -715,7 +704,7 @@ async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boole
   const until = Date.now() + maxAge(response);
   if (!isGrant(response)) {
     // A partial view: its complete document is adopted by the regular upgrade.
-    remember({ descriptor, local, etag, html: await response.text(), until });
+    remember({ descriptor, local: localKey(), etag, html: await response.text(), until });
     return false;
   }
   const grant = (await response.json()) as Grant;
@@ -727,7 +716,7 @@ async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boole
     return false;
   }
   if (current !== controller || document.body !== body) return false;
-  remember({ descriptor, local, etag, html: "", payload: payloadOf(grant), until });
+  remember({ descriptor, local: localKey(), etag, html: "", payload: payloadOf(grant), until });
   if (installPageData(next)) {
     document.documentElement.setAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE, descriptor.path);
     return true;
@@ -790,7 +779,7 @@ function decide(reason: Reason): void {
     return;
   }
   if (!fresh && !spoilerContentEnabled() && !overridden() && reason !== "refresh" &&
-    metadata?.policy && !permitted(metadata, descriptor.types)) {
+    checkedBodies.has(document.body) && metadata?.policy && !permitted(metadata, descriptor.types)) {
     controller?.abort();
     deferred?.abort();
     void downgrade();
@@ -798,9 +787,8 @@ function decide(reason: Reason): void {
   }
   const shown = document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
   if (!shown && reason !== "interaction") {
-    // The denial cache only saves the first request; focus and visibility always revalidate.
     const metadata = reason === "load" && !fresh ? readMetadata() : undefined;
-    if (metadata && !permitted(metadata, descriptor.types)) return;
+    if (checkedBodies.has(document.body) && metadata && !permitted(metadata, descriptor.types)) return;
     if (!descriptor.differs && !fresh) {
       if (
         reason === "load" &&
@@ -876,10 +864,17 @@ export function installPublicStaticView(): void {
   });
   document.addEventListener("astro:page-load", () => {
     lastLocal = localKey();
+    const internal = swapping;
     const current = swapping ? hold : undefined;
     swapping = false;
     if (current) void finish(current);
-    if (document.body === evaluatedBody || document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE)) return;
+    if (internal) checkedBodies.add(document.body);
+    if (document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE)) {
+      if (!internal && document.body !== evaluatedBody) refreshPublicStaticView();
+      evaluatedBody = document.body;
+      return;
+    }
+    if (document.body === evaluatedBody) return;
     evaluatedBody = document.body;
     evaluate("load");
   });
