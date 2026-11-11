@@ -246,7 +246,7 @@ export async function contentResourceBoundary(
   };
   if ((media || componentData) && functionalDocument(request)) return serveFunctional();
   const functional = api && (
-    ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "options"].includes(tail) ||
+    ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "song-meta", "options"].includes(tail) ||
     (tail === "release" && url.searchParams.get("projection") === "identity") ||
     (url.searchParams.get("asset") === "1" && componentData)
   );
