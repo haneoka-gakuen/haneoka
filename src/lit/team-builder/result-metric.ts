@@ -17,6 +17,8 @@ export interface ResultMetric {
   relative: boolean;
 }
 export function sampledLuck(host: TeamBuilder, hit: EngineHit): boolean {
+  if (hit.sectionPerformance) return hit.sectionPerformance.sampled;
+  if (hit.sectionSummary) return hit.sectionSummary.sampled;
   if (hit.gekiso) return hit.gekiso.sampled;
   if (hit.aggregate) return hit.aggregate.songs.some(part => sampledLuck(host, part));
   const request = resultRequest(host, hit);
@@ -39,6 +41,10 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     unit,
     relative,
   });
+  if (hit.sectionReference) return metric("arena-section-reference", host.t("arena.sections.referenceTeam", "Score reference team"), hit.score?.mean ?? 0);
+  if (hit.sectionPerformance) return hit.sectionPerformance.versus
+    ? metric("arena-section-wins", host.t("arena.sections.expectedWins", "Expected sections won"), hit.key, 2, "", false)
+    : metric("arena-section-strength", host.t("arena.sections.weakestGain", "Weakest section improvement"), (hit.key - 1) * 100, 2, "%", false);
   if (hit.aggregate && !hit.event) return metric("arena-shared-mean", host.t("arena.mean", "Average across songs"), hit.key);
   if (s.goal === "potential" && hit.potential)
     return metric("potential", host.t("potential", "Potential"), hit.potential.value);

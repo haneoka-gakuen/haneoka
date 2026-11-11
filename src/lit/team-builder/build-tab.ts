@@ -40,21 +40,23 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
   const mode = context === "rewards" ? draft.ptSamplingMode : draft.gekisoSamplingMode;
   const samples = context === "rewards" ? draft.ptLuckSamples : draft.gekisoSeeds;
-  const expected = context === "score" && mode === "auto";
+  const sections = context === "score" && host.searchSettings.arena?.objective === "sections";
+  const expected = context === "score" && mode === "auto" && !sections;
+  const title = sections ? host.t("arena.sections.sampling", "Random sampling") : host.t("pt.luckSampling", "LUCK calculation");
   return html`
     <div class="stack">
       <div class="row row--between">
-        <span class="tb-field__label">${host.t("pt.luckSampling", "LUCK calculation")}</span>
-        ${gekisoHelpButton(host, "luck")}
+        <span class="tb-field__label">${title}</span>
+        ${gekisoHelpButton(host, sections ? "sections" : "luck")}
       </div>
       ${segmented({
-      label: host.t("pt.luckSampling", "LUCK calculation"),
-      value: context === "score" ? (expected ? "auto" : "manual") : mode,
+      label: title,
+      value: mode,
       options: [
         {
           value: "auto",
           label:
-            context === "score"
+            context === "score" && !sections
               ? host.t("luckExpectation", "Probability expectation")
               : host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }),
         },
@@ -136,6 +138,10 @@ export function missionMembersControl(host: TeamBuilder): TemplateResult {
 
 export function gekisoSamplingAdvanced(host: TeamBuilder): TemplateResult | typeof nothing {
   const s = host.searchSettings;
+  if (s.arena?.objective === "sections") return accordion({ id: "tb-section-sampling", label: host.t("arena.sections.sampling", "Random sampling"),
+    expanded: host.expanded.has("section-sampling"), onExpandedChange: expanded => { if (expanded) host.expanded.add("section-sampling"); else host.expanded.delete("section-sampling"); host.requestUpdate(); },
+    metadata: s.gekisoSamplingMode === "auto" ? host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }) : String(s.gekisoSeeds),
+    content: gekisoSamplesControl(host) });
   return s.gekisoSamplingMode === "manual" || host.hasMission("Luck", s.songs) ? gekisoSamplesControl(host) : nothing;
 }
 
@@ -541,10 +547,10 @@ export function playSection(
                 host.hasMission("JustCount", s.songs)
                   ? html`
                       <div class="tb-field">
-                        <span class="tb-field__label">
+                        <div class="row row--between"><span class="tb-field__label">
                           JUST
                           <output>${s.just}%</output>
-                        </span>
+                        </span>${gekisoHelpButton(host, "accuracy")}</div>
                         <md-slider
                           class="md3-slider"
                           labeled

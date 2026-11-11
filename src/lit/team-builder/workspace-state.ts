@@ -29,10 +29,11 @@ export function parseOpponents(drafts: readonly string[]) {
 }
 
 export function resolveLuckSamples(settings: Pick<BuildSettings,
-  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples">,
+  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples" | "arena">,
   context: "score" | "rewards" = "score"): number {
   if (context === "rewards") return settings.ptSamplingMode === "manual" ? settings.ptLuckSamples : 32;
-  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds : 0;
+  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds
+    : settings.arena?.objective === "sections" ? 32 : 0;
 }
 
 const baseJustWindows = new WeakMap<TeamBuilderData, number>();

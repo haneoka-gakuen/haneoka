@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: Current Box, release-pinned Arena schedules and user overrides.
-// Output: Independent Arena draft and the second team-builder task panel.
+// Output: Independent Arena draft, score / section objectives and frozen reference-opponent choices.
 // Pos: [Map](../L2-2.md); Arena rules, schedule lifecycle and shared tool presentation.
-// Effects/Dependencies: Persists Box preferences, schedules rule transitions and cancels obsolete calculations.
+// Effects/Dependencies: Persists Box preferences; opponent formations stay local to the workspace. Schedules rule transitions and cancels obsolete calculations.
 import { skillRoleControls } from "./skill-role-controls";
 import { rangeRankControl } from "./gekiso-rank";
 import { html, nothing } from "lit";
@@ -10,7 +10,11 @@ import type { TeamBuilder } from "../team-builder";
 import { arenaPeriod, arenaReleaseAt, arenaReleased, type ArenaRule } from "../../lib/team-builder/arena";
 import { objectRow } from "../../lib/team-builder/data";
 import { availableOnServer } from "../../lib/team-builder/song-comparison";
-import type { ArenaGoal } from "../../lib/team-builder/engine/api";
+import type { ArenaGoal, ArenaOpponent } from "../../lib/team-builder/engine/api";
+import { inputChip } from "../ui/controls";
+import { live } from "lit/directives/live.js";
+import { accordion } from "../ui/accordion";
+import { gekisoHelpButton } from "./gekiso-help";
 import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import type { BuildSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
@@ -35,6 +39,8 @@ import { SCORE_GOALS, scoreText } from "./score-goal";
 import { formatDate } from "../../lib/date-format";
 
 interface ArenaDraft {
+  objective: "score" | "sections";
+  maxBaseLossPercent: number;
   leagueId: number;
   automatic: boolean;
   customized: boolean;
@@ -43,6 +49,8 @@ interface ArenaDraft {
   build: BuildSettings;
 }
 const defaults = (): ArenaDraft => ({
+  objective: "score",
+  maxBaseLossPercent: 3,
   leagueId: 1,
   automatic: true,
   customized: false,
@@ -53,6 +61,7 @@ const defaults = (): ArenaDraft => ({
 
 export class ArenaController {
   draft = defaults();
+  opponents: { id: string; name: string; input: ArenaOpponent }[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
   private scheduleKey = "";
   private physicsKey = "";
@@ -67,6 +76,8 @@ export class ArenaController {
       build: { ...restoreBuildSettings({ ...objectRow(saved.build), goal: "gekiso" }), required },
       rule: { ...initial.rule, ...objectRow(saved.rule) },
     } as ArenaDraft;
+    this.draft.objective = saved.objective === "sections" ? "sections" : "score";
+    this.draft.maxBaseLossPercent = typeof saved.maxBaseLossPercent === "number" ? saved.maxBaseLossPercent : 3;
     const requested = this.host.requestedArenaLeague;
     if (requested && requested !== this.draft.leagueId)
       this.draft = { ...this.draft, leagueId: requested, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } };
@@ -92,6 +103,8 @@ export class ArenaController {
       mode: this.draft.mode,
       server: this.host.server,
       regulationId: this.draft.automatic ? (this.period.regulation?.id ?? null) : null,
+      ...(this.draft.objective === "sections" ? { objective: "sections" as const, maxBaseLoss: this.draft.maxBaseLossPercent / 100,
+        opponents: this.opponents.map(opponent => opponent.input) } : {}),
     };
   }
   get allowedSongIds() {
@@ -122,8 +135,8 @@ export class ArenaController {
       ...this.draft.build,
       goal: "gekiso",
       bands: [this.bandId],
-      criterion: this.draft.mode === "shared" ? "mean" : this.draft.build.criterion,
-      gekisoPlacementMode: this.draft.mode === "shared" ? "rank" : this.draft.build.gekisoPlacementMode,
+      criterion: this.draft.mode === "shared" || this.draft.objective === "sections" ? "mean" : this.draft.build.criterion,
+      gekisoPlacementMode: this.draft.mode === "shared" || this.draft.objective === "sections" ? "rank" : this.draft.build.gekisoPlacementMode,
       arena: this.goal,
       songs: this.draft.build.songs.filter((song) => allowed.has(`${song.songId}:${song.difficulty}`)),
     };
@@ -146,6 +159,7 @@ export class ArenaController {
   }
   league(leagueId: number) {
     this.host.requestedArenaLeague = 0;
+    this.opponents = [];
     this.update({ leagueId, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } });
   }
   selectPool() {
@@ -204,12 +218,13 @@ export class ArenaController {
       );
   }
   dispose() {
+    this.opponents = [];
     clearTimeout(this.timer);
     this.scheduleKey = "";
     this.physicsKey = "";
   }
   issues() {
-    return this.draft.automatic && !this.period.regulation
+    const issues = this.draft.automatic && !this.period.regulation
       ? [
           {
             field: "tb-arena-rules",
@@ -217,7 +232,52 @@ export class ArenaController {
           },
         ]
       : [];
+    if (this.draft.objective === "sections" && (!Number.isFinite(this.draft.maxBaseLossPercent) || this.draft.maxBaseLossPercent < 0 || this.draft.maxBaseLossPercent > 100))
+      issues.push({ field: "tb-section-loss", message: this.host.t("arena.sections.lossInvalid", "Enter a base score loss from 0% to 100%") });
+    return issues;
   }
+}
+
+function sectionControls(host: TeamBuilder) {
+  const arena = host.arena, draft = arena.draft;
+  const candidates: { id: string; name: string; input: ArenaOpponent }[] = [];
+  const sameBand = (ids: number[]) => ids.length === 5 && ids.every(id => host.master!.members.get(id)?.bandId === arena.bandId);
+  for (const team of host.view!.teams) {
+    if (!sameBand(team.members)) continue;
+    const growth = host.manualInputs({ members: team.members, snaps: team.snaps, leader: Math.max(0, team.members.indexOf(team.leader ?? team.members[0]!)) }, arena.settings.scope);
+    if (growth.members.length !== 5 || growth.snaps.length !== team.snaps.filter(id => id !== null).length) continue;
+    candidates.push({ id: `saved:${team.id}`, name: team.name, input: { members: growth.members, snaps: growth.snaps,
+      player: host.view!.player, unknownPolicy: arena.settings.scope === "theoretical" ? "max" : arena.settings.unknownPolicy,
+      team: { members: team.members.map(id => `m${id}`), snaps: team.snaps.map(id => id === null ? null : `s${id}`), leader: `m${team.leader ?? team.members[0]}` },
+      ranks: [...arena.settings.gekisoRanks] as [number, number, number] } });
+  }
+  for (const entry of host.comparison.items) {
+    const { hit, input } = entry;
+    if (!sameBand(hit.members.map(key => input.members.find(row => row.key === key)!.cardId))) continue;
+    candidates.push({ id: `comparison:${entry.id}`, name: `${host.t("comparison", "Comparison")} ${host.comparison.items.indexOf(entry) + 1}`,
+      input: { members: input.members.filter(row => hit.members.includes(row.key)), snaps: input.snaps.filter(row => hit.snaps.includes(row.key)),
+        player: input.player, unknownPolicy: input.unknownPolicy, team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! },
+        ...(input.goal.kind === "gekiso" ? { accuracy: input.goal.accuracy, ranks: input.goal.ranks ?? [input.goal.rank, input.goal.rank, input.goal.rank] as [number, number, number] } : {}) } });
+  }
+  return html`<div class="stack" id="tb-arena-objective" data-tb-field tabindex="-1">
+    <div class="row row--between"><span class="tb-field__label">${host.t("arena.sections.target", "Optimization target")}</span>${gekisoHelpButton(host, "sections")}</div>
+    ${segmented({ label: host.t("arena.sections.target", "Optimization target"), value: draft.objective,
+      options: [{ value: "score", label: host.t("arena.sections.score", "Total score") }, { value: "sections", label: host.t("arena.sections.priority", "GEKISO sections") }],
+      onSelect: objective => arena.update({ objective }) })}
+    ${draft.objective === "sections" ? html`<md-outlined-text-field id="tb-section-loss" data-tb-field type="number" min="0" max="100" step="0.5" suffix-text="%"
+      ?error=${host.submitted && (!Number.isFinite(draft.maxBaseLossPercent) || draft.maxBaseLossPercent < 0 || draft.maxBaseLossPercent > 100)}
+      label=${host.t("arena.sections.maxLoss", "Maximum base score loss")} .value=${live(String(draft.maxBaseLossPercent))}
+      @change=${(event: Event) => arena.update({ maxBaseLossPercent: Number((event.target as HTMLInputElement).value) })}></md-outlined-text-field>
+      ${accordion({id: "tb-section-opponents", expanded: host.expanded.has("section-opponents"),
+        onExpandedChange: expanded => { if (expanded) host.expanded.add("section-opponents"); else host.expanded.delete("section-opponents"); host.requestUpdate(); },
+        label: host.t("arena.sections.opponents", "Opponent scenarios"), metadata: String(arena.opponents.length), content: html`
+        ${choiceField({ type: "select", label: host.t("arena.sections.addOpponent", "Add a reference opponent"), value: "",
+          options: [{value:"",label:host.t("arena.sections.chooseOpponent", "Choose a saved or comparison team")}, ...candidates.filter(row => !arena.opponents.some(selected => selected.id === row.id)).map(row=>({value:row.id,label:row.name,disabled:arena.opponents.length>=4}))],
+          onSelect: value => { const selected = candidates.find(row => row.id === value); if (selected && arena.opponents.length < 4) { host.cancel(); arena.opponents = [...arena.opponents, structuredClone(selected)]; host.requestUpdate(); } } })}
+        <div class="cluster">${arena.opponents.map(row => inputChip(row.name, host.common("common.actions.remove", "Remove"), () => {
+          host.cancel(); arena.opponents = arena.opponents.filter(selected => selected.id !== row.id); host.requestUpdate();
+        }))}</div>` })}` : nothing}
+  </div>`;
 }
 
 export function renderArenaTab(host: TeamBuilder) {
@@ -281,8 +341,9 @@ export function renderArenaTab(host: TeamBuilder) {
           ],
           onSelect: (mode) => arena.update({ mode }),
         })}
+        ${sectionControls(host)}
         ${
-          draft.mode === "individual"
+          draft.mode === "individual" && draft.objective === "score"
             ? html`
                 ${choiceField({
                   type: "select",
@@ -295,7 +356,7 @@ export function renderArenaTab(host: TeamBuilder) {
         }
         ${playConditions(host)}
         ${
-          draft.mode === "individual"
+          draft.objective === "sections" ? nothing : draft.mode === "individual"
             ? placementControl(host)
             : html`
                 <div id="tb-placement">

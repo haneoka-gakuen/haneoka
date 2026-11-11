@@ -1016,9 +1016,9 @@ export class TeamBuilder extends LitElement {
       ),
     };
   }
-  manualInputs(team = this.manual) {
+  manualInputs(team = this.manual, scope = this.settings.scope) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
-    const theoretical = this.settings.scope === "theoretical";
+    const theoretical = scope === "theoretical";
     const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
       if (row) return [row];
@@ -1377,6 +1377,7 @@ export class TeamBuilder extends LitElement {
         this.results.results.every(result => result.proven && !result.hits.length) && !this.results.overall.length && !this.stale;
     if (!issues.length && emptyProof) {
       const fields = [
+        ...(s.arena?.objective === "sections" ? ["tb-section-loss"] : []),
         ...(gekiso && s.minComboBonus > 1 ? ["tb-combo"] : []),
         ...(gekiso && s.justWindowMs > 0 ? ["tb-just-window"] : []),
         ...(s.goal === "gekiso" && s.minMissionMembers.some(Boolean) ? ["tb-mission-members"] : []),
