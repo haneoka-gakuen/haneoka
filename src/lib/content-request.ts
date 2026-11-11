@@ -7,7 +7,6 @@ import { visibilityType } from "./content-visibility-policy";
 import { navigationDocumentUrl } from "./document-url";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { spoilerOverrideEnabled } from "./spoiler-cookie";
-import { isAssetBrowserDocument } from "./asset-static-routing";
 
 export function contentCacheScope(target = navigationDocumentUrl()): string {
   const data = document.documentElement.dataset;
@@ -38,10 +37,9 @@ export function contentRequestUrl(source: string): string {
   const override = navigationDocumentUrl().searchParams.get("spoiler");
   if (override !== null && !url.searchParams.has("spoiler")) url.searchParams.set("spoiler", override);
   if (/^\/(?:assets|runtime|objects)\//u.test(url.pathname)) {
-    if (isAssetBrowserDocument(navigationDocumentUrl()) || functionalComponentMounted())
-      url.searchParams.set("asset", "1");
-    if (url.searchParams.get("asset") === "1") url.searchParams.delete("cv");
-    else url.searchParams.set("cv", contentCacheScope(url));
+    url.searchParams.set("asset", "1");
+    url.searchParams.delete("cv");
+    url.searchParams.delete("__content");
   }
   if (
     /^\/api\/v1\/servers\/(?:jp|intl)\/(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(url.pathname) &&
@@ -52,7 +50,7 @@ export function contentRequestUrl(source: string): string {
 }
 function functionalComponentMounted(): boolean {
   return Boolean(document.querySelector(
-    "vega-story-stage,chart-simulator,timing-chart-preview,model-preview-stage,live2d-workspace,spine-workspace,story-creation-workspace,chart-creation-workspace,team-builder,studio-workspace",
+    "vega-story-stage,story-workspace[data-entity-ready=\"true\"],chart-simulator,timing-chart-preview,model-preview-stage,live2d-workspace,spine-workspace,story-creation-workspace,chart-creation-workspace,team-builder,studio-workspace",
   ));
 }
 let installed = false;

@@ -45,6 +45,12 @@
 /entity-data/v1/*
   Cache-Control: public, max-age=31536000, immutable
 
+/playback-data/v1/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/public-media/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # Public standalone embed modules and their bundled assets allow external imports.
 /embed/*
   Access-Control-Allow-Methods: GET, HEAD, OPTIONS
@@ -71,8 +77,5 @@
   Content-Type: application/wasm
 
 # A public resource site: every static file is readable from any origin.
-/playback-data/v1/*
-  Cache-Control: public, max-age=31536000, immutable
-
 /*
   Access-Control-Allow-Origin: *

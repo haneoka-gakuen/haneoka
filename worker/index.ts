@@ -23,6 +23,7 @@ import { readArenaCatalog } from "../src/lib/arena-catalog";
 import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
 import { handleContentVisibilityRequest } from "./content-visibility";
+import { handlePublicStaticViewRequest } from "./public-static-view";
 import { eventSongReleases } from "../src/lib/event-song-release";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
@@ -2999,6 +3000,7 @@ const LATEST_CATALOG_RESERVED_SEGMENTS = new Set([
   "auth",
   "catalog",
   "community",
+  "content-view",
   "garupa",
   "me",
   "release",
@@ -4474,6 +4476,27 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (media) return media;
   const artifact = await handleArtifact(env, ctx, request, url.pathname);
   if (artifact) return artifact;
+  const staticViewResponse = await handlePublicStaticViewRequest(request, env, ctx, async (canonical, view) => {
+    const target = new URL(canonical.url);
+    const regional = /^\/(jp|intl)\//u.exec(target.pathname)?.[1];
+    const indexes = await Promise.all((regional ? [regional] : ["jp", "intl"])
+      .map((server) => resourceContentIndex(env, ctx, server)));
+    const index = regional ? indexes[0] : undefined;
+    const route = parseResourceRoute(target.pathname);
+    const kind = route && visibilityType(route.kind);
+    const publication = route?.id && kind ? index?.publications?.[`${kind}:${route.id}`] : undefined;
+    const boundaries = indexes.flatMap((value) => {
+      const next = nextContentPublication(value, view.now);
+      return next === undefined ? [] : [next];
+    });
+    return {
+      epoch: indexes.map((value) => contentCacheEpoch(value, view.now)).join(":"),
+      ...(boundaries.length ? { freshUntil: Math.min(...boundaries) } : {}),
+      ...(publication ? { publication } : {}),
+      ...(index?.publications ? { publications: index.publications } : {}),
+    };
+  });
+  if (staticViewResponse) return staticViewResponse;
   if (url.pathname.startsWith("/api/")) return errorResponse(request, 404, "route_not_found", "API route not found");
   const documentRequest =
     url.pathname.endsWith("/") || url.pathname.endsWith(".html") || !/\.[^/]+$/u.test(url.pathname);

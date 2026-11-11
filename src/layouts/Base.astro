@@ -10,6 +10,7 @@ import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
 import { renderUnavailableContent } from "../server/render-workspace";
 import { themeCharacters } from "../server/theme-characters";
 import { contentPublished, publicationFields } from "../lib/content-publication";
+import { communityVisibilityCss, DEFAULT_COMMUNITY_HIDDEN_HOSTS } from "../lib/site-community";
 import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
 interface Props {
   locale: Locale;
@@ -41,6 +42,7 @@ const {
 } = Astro.props;
 const noindex = Astro.props.noindex || shouldNoindex(route);
 const origin = Astro.site?.origin ?? "https://haneoka.org";
+const communityHiddenHosts = process.env.COMMUNITY_HIDDEN_HOSTS ?? DEFAULT_COMMUNITY_HIDDEN_HOSTS;
 const isLocalizedRoute = canonicalRoute
   ? localeFromPath(canonicalRoute) !== undefined
   : localeFromPath(Astro.url.pathname) !== undefined;
@@ -75,6 +77,11 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
 <!doctype html>
 <html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" data-pagefind-ignore={Astro.props.publication && !contentPublished(Astro.props.publication) ? "all" : undefined} transition:animate="none">
   <head>
+    <style is:inline data-community-visibility set:html={communityVisibilityCss(origin)} />
+    <script is:inline data-astro-rerun define:vars={{ communityHiddenHosts }}>
+      if (!document.documentElement.hasAttribute("data-community-pages"))
+        document.documentElement.dataset.communityPages = communityHiddenHosts.split(",").some((host) => host.trim() === location.hostname) ? "0" : "1";
+    </script>
     <meta name="haneoka-content-route" content={publicRoute} />
     <meta name="haneoka-content-placeholder" content={JSON.stringify(renderUnavailableContent(locale))} data-title={JSON.stringify(t(locale, "common.states.unpublished"))} />
     <script is:inline data-astro-rerun>
@@ -113,6 +120,15 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       }
     </script>
     <ClientRouter fallback="none" />
+    <script>
+      import { legacyEntityRedirectTarget } from "../lib/resource-route";
+      const redirectLegacyEntity = () => {
+        const target = legacyEntityRedirectTarget(location.pathname, location.search);
+        if (target) location.replace(target);
+      };
+      redirectLegacyEntity();
+      document.addEventListener("astro:page-load", redirectLegacyEntity);
+    </script>
     <script>
       const loadAnalytics = () => {
         const script = document.createElement("script");

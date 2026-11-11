@@ -23,6 +23,10 @@ on:
       resource_servers:
         type: string
         default: intl,jp
+env:
+  STATIC_PUBLIC_DOCUMENTS: "1"
+  STATIC_PUBLIC_MEDIA: "1"
+  STATIC_PUBLIC_MEDIA_MAX_BYTES: "536870912"
 jobs:
   render:
     name: Render ${{ inputs.locale }} partition ${{ matrix.partition }}

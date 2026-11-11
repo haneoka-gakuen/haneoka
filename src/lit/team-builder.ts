@@ -4,6 +4,8 @@
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
 // Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
+import { isContentVisible } from "../lib/content-release";
+import { observeSpoilerContent } from "../lib/spoiler-content";
 import { TemporaryCards, type TemporaryCardKind } from "./team-builder/temporary-cards";
 import { renderSkillRoleEditor, type SkillRoleEdit } from "./team-builder/skill-role-controls";
 import { ResultAnalysis } from "./team-builder/result-analysis";
@@ -20,7 +22,7 @@ import { clearManualOrders, seedManualOrder } from "./team-builder/manual-result
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
-import { readPageData } from "../lib/page-data";
+import { readPageData, waitForPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { TeamBuilderPageData } from "../server/tool-page-data";
 import "@material/web/checkbox/checkbox.js";
@@ -384,6 +386,11 @@ export class TeamBuilder extends LitElement {
   private visualsController?: AbortController;
   catalogMetadataError = false;
   private pageData?: TeamBuilderPageData;
+  private pendingPageData?: TeamBuilderPageData;
+  private get pageDataBusy(): boolean {
+    return Boolean(this.running || this.manualBusy || this.task || this.slotPicker || this.requiredPicker ||
+      this.editing || this.songPicker || this.querySelector("dialog[open]"));
+  }
   /** League named by `?tab=arena&league=`, applied once the owner's Arena draft is restored. */
   /** The league a link asked for (?tab=arena&league=); restores apply it until the reader picks another. */
   requestedArenaLeague = 0;
@@ -397,7 +404,9 @@ export class TeamBuilder extends LitElement {
     return this;
   }
   private disposeSongDisplay?: () => void;
+  private disposeVisibility?: () => void;
   connectedCallback() {
+    if (waitForPageData(this, () => this.connectedCallback())) return;
     const startTab = navigationDocumentUrl().searchParams.get("tab");
     const league = Number(navigationDocumentUrl().searchParams.get("league"));
     if (startTab === "arena") this.requestedArenaLeague = Number.isSafeInteger(league) && league > 0 ? league : 0;
@@ -405,6 +414,7 @@ export class TeamBuilder extends LitElement {
     if (payload?.schema === "haneoka-team-builder-page-v1") this.preparePage(payload);
     super.connectedCallback();
     this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
+    this.disposeVisibility = observeSpoilerContent(() => this.requestUpdate());
     this.layoutObserver = new ResizeObserver(() => {
       const surface = this.querySelector<HTMLElement>(".team-builder");
       const style = surface ? getComputedStyle(surface) : null;
@@ -449,6 +459,35 @@ export class TeamBuilder extends LitElement {
     this.catalog.setVisuals({ ...visuals, marks: new Map(visuals.marks) });
     this.view = readBox({});
   }
+  adoptPageData(): boolean {
+    const payload = readPageData<TeamBuilderPageData>(this);
+    if (payload?.schema !== "haneoka-team-builder-page-v1") return false;
+    if (this.pageDataBusy) {
+      this.pendingPageData = payload;
+      return true;
+    }
+    return this.applyPageData(payload);
+  }
+  private applyPageData(payload: TeamBuilderPageData): boolean {
+    const initialized = Boolean(this.engine && this.view);
+    this.dataController?.abort();
+    this.visualsController?.abort();
+    if (!initialized) {
+      this.preparePage(payload, this.server);
+      this.loadedServer = "";
+      void this.load(this.server);
+      return true;
+    }
+    const view = this.view;
+    this.catalog?.dispose();
+    this.preparePage(payload, this.server);
+    this.view = view;
+    this.engine?.dispose();
+    this.engine = new EngineClient(this.data!, () => this.requestUpdate());
+    this.engine.prefetch(this.searchSettings.songs);
+    this.requestUpdate();
+    return true;
+  }
   protected override update(changed: import("lit").PropertyValues) {
     if (this.hasAttribute("data-prerendered")) {
       hydrate(this.render(), this, this.renderOptions);
@@ -457,6 +496,7 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    this.disposeVisibility?.();
     this.temporary.clear();
     this.temporaryDraft = null;
     this.temporaryPicker = null;
@@ -539,6 +579,12 @@ export class TeamBuilder extends LitElement {
   }
   private releaseSearch?: () => void;
   protected updated() {
+    if (this.pendingPageData && !this.pageDataBusy && this.isConnected) {
+      const payload = this.pendingPageData;
+      this.pendingPageData = undefined;
+      this.applyPageData(payload);
+      return;
+    }
     if (!this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot && (inApp() || new URL(location.href).searchParams.has("saveImport"))) {
       this.pendingImportChecked = true;
       void this.imports.takePending();
@@ -922,6 +968,7 @@ export class TeamBuilder extends LitElement {
     const memberOk = (cardId: number) => {
       const card = master.members.get(cardId);
       if (!card) return false;
+      if (s.scope === "theoretical" && !isContentVisible("cards", this.data!.members[String(cardId)], String(cardId))) return false;
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) &&
         (!s.bands.length || s.bands.includes(card.bandId)) &&
@@ -931,6 +978,7 @@ export class TeamBuilder extends LitElement {
     const snapOk = (cardId: number) => {
       const card = master.snaps.get(cardId);
       if (!card) return false;
+      if (s.scope === "theoretical" && !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))) return false;
       return (!s.attributes.length || s.attributes.includes(card.cardType)) && card.rarity >= s.minRarity;
     };
     const fixedMembers = new Set([

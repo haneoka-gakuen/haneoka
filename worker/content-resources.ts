@@ -128,6 +128,17 @@ function functionalDocument(request: Request): boolean {
     return false;
   }
 }
+function siteDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    return page.origin === new URL(request.url).origin &&
+      /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)(?:\/|$)/u.test(page.pathname);
+  } catch {
+    return false;
+  }
+}
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
   if (/^(?:objects\/|runtime\/unity-json\/)/u.test(path)) return true;
@@ -220,7 +231,7 @@ export async function contentResourceBoundary(
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
   if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
-  if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
+  if (sourceBrowser || (media && (url.searchParams.get("asset") === "1" || siteDocument(request)))) return serve(request);
   const tail = api?.[2] ?? "";
   const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
   const serveFunctional = async () => {

@@ -74,6 +74,8 @@ let flush = 0;
 /** The intrinsic size of a released artwork URL, when its family is known. */
 export function familyImageSize(source: unknown): ImageSize | undefined {
   if (typeof source !== "string" || !source) return undefined;
+  const size = /\/public-media\/[a-f0-9]{64}\.[a-z]+\?size=(\d+)x(\d+)(?:&|$)/u.exec(source);
+  if (size) return { width: Number(size[1]), height: Number(size[2]) };
   const path = source.split("?")[0] || source;
   for (const [pattern, size] of FAMILIES) if (pattern.test(path)) return size;
   return undefined;

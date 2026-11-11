@@ -91,16 +91,21 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
     return withPrerenderView(false, () => markup(workspace.render()));
   });
   const kind = (owner: string) => owner.replace(/-\d+$/u, "");
-  const { result: publicBody } = captureAppBar(locale, () =>
-    withPrerenderView(true, () => markup(workspace.render())).result);
+  const { result: publicBody, bar: publicBar } = captureAppBar(locale, () =>
+    withPrerenderView(true, () => {
+      workspace.renderStaticChrome?.();
+      return markup(workspace.render());
+    }).result);
   const refs = JSON.stringify(body.references).replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
   const rendered = body.references.length || body.result !== publicBody
     ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${body.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
     : body.result;
+  const view = (full: string, published: string) => full === published ? full
+    : `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${full}</div><div data-content-view="public" style="display:contents">${published}</div>`;
   return { body: rendered, appBar: {
-    actions: markup([...bar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)),
-    identity: markup([...bar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)),
-    search: markup([...bar.search].map(([owner, search]) => html`<div class="top-app-bar__search-group" data-app-bar-search="true" data-app-bar-search-owner=${owner} data-search-expanded=${String(search.expanded)} data-search-input-id=${search.inputId} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${search.content}</div>`)),
+    actions: view(markup([...bar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)), markup([...publicBar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`))),
+    identity: view(markup([...bar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)), markup([...publicBar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`))),
+    search: view(markup([...bar.search].map(([owner, search]) => html`<div class="top-app-bar__search-group" data-app-bar-search="true" data-app-bar-search-owner=${owner} data-search-expanded=${String(search.expanded)} data-search-input-id=${search.inputId} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${search.content}</div>`)), markup([...publicBar.search].map(([owner, search]) => html`<div class="top-app-bar__search-group" data-app-bar-search="true" data-app-bar-search-owner=${owner} data-search-expanded=${String(search.expanded)} data-search-input-id=${search.inputId} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${search.content}</div>`))),
   } };
   });
 }

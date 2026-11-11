@@ -20,6 +20,10 @@ on:
         value: ${{ jobs.prepare.outputs.inputs_sha }}
       node_version:
         value: ${{ jobs.prepare.outputs.node_version }}
+env:
+  STATIC_PUBLIC_DOCUMENTS: "1"
+  STATIC_PUBLIC_MEDIA: "1"
+  STATIC_PUBLIC_MEDIA_MAX_BYTES: "536870912"
 jobs:
   prepare:
     name: Freeze shared static inputs
