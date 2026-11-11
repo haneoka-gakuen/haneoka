@@ -49,6 +49,7 @@ jobs:
           node scripts/verify/catalog-page-projector.mjs
           node scripts/verify/frozen-entity-projection.mjs
           node scripts/verify/catalog-page-snapshot.mjs
+          node scripts/verify/content-access.mjs
 
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout

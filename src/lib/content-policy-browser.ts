@@ -7,7 +7,6 @@ import {
 import { SPOILER_CONTENT_EVENT, spoilerContentEnabled } from "./spoiler-content";
 import { RequestScope } from "./request-scope";
 import { isUserGroup, type UserGroup } from "./user-roles";
-import { publishContentCacheScope } from "./content-request";
 
 const requests = new RequestScope();
 let installed = false;
@@ -39,7 +38,6 @@ export function applyVisibilitySettings(settings: ContentVisibilitySettings & { 
   document.documentElement.dataset.contentVisibilityVersion = String(settings.version);
   document.documentElement.dataset.contentVisibilityAt = String(Date.now());
   if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
-  publishContentCacheScope();
   if (previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
 function refreshVisibility(): void {
@@ -64,20 +62,16 @@ function refreshDocumentVisibility(): void {
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
-  publishContentCacheScope();
-  navigator.serviceWorker?.addEventListener("controllerchange", publishContentCacheScope);
-  addEventListener(SPOILER_CONTENT_EVENT, publishContentCacheScope);
   addEventListener(SPOILER_CONTENT_EVENT, () => { if (document.querySelector("[data-content-unavailable]")) location.reload(); });
   refreshDocumentVisibility();
   addEventListener("haneoka:session-changed", () => {
     requests.cancel();
     activeRefresh = undefined;
-    navigator.serviceWorker?.controller?.postMessage({ type: "haneoka:content-view-reset" });
     refreshVisibility();
   });
   addEventListener("focus", refreshVisibility);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVisibility(); });
-  document.addEventListener("astro:page-load", () => { publishContentCacheScope(); refreshDocumentVisibility(); });
+  document.addEventListener("astro:page-load", refreshDocumentVisibility);
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();
     activeRefresh = undefined;

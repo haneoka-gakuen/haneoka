@@ -1,4 +1,5 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
+import { contentRequestUrl } from "../lib/content-request";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -363,9 +364,9 @@ export class AssetExplorer extends LitElement {
   }
   private url(file: string) {
     const [root, ...parts] = this.localized(file).split("/").filter(Boolean);
-    return ["assets", "runtime", "objects"].includes(root || "")
-      ? `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}?asset=1${this.sourceRelease ? `&release=${encodeURIComponent(this.sourceRelease)}` : ""}`
-      : "";
+    if (!["assets", "runtime", "objects"].includes(root || "")) return "";
+    const path = `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}`;
+    return contentRequestUrl(this.sourceRelease ? `${path}?release=${encodeURIComponent(this.sourceRelease)}` : path);
   }
   private server() {
     return this.sourceServer || currentReleaseServer();
@@ -383,6 +384,7 @@ export class AssetExplorer extends LitElement {
     if (this.kind(file) === "text") {
       try {
         const response = await fetch(this.url(file));
+        if (!response.ok) throw new Error("Asset preview unavailable");
         this.textPreview = (await response.text()).slice(0, 200000);
       } catch {
         this.textPreview = uiText(preferredLocale(), "common.states.unavailable");

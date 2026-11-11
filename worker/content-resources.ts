@@ -2,7 +2,7 @@
 // Input: Complete immutable catalog indexes, resource requests and their display context.
 // Output: Authorized media or a filtered, versioned JSON representation.
 // Pos: [Map](L2.md); shared public-resource response boundary.
-// Effects/Dependencies: Uses internal edge caches after resolving current permissions; source objects remain immutable.
+// Effects/Dependencies: Uses internal edge caches after resolving current permissions; restricted media cannot be cached by browsers.
 import {
   criSourceShard,
   projectCriSources,
@@ -201,7 +201,7 @@ export async function contentResourceBoundary(
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
   if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
-  if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
+  if (sourceBrowser) return serve(request);
   if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
@@ -315,12 +315,7 @@ export async function contentResourceBoundary(
     const response = await serve(request);
     if (access.public) return response;
     const result = privateContentResponse(response);
-    if (response.ok || response.status === 304) {
-      result.headers.set("Cache-Control", "private, max-age=21600");
-      result.headers.set("Date", new Date().toUTCString());
-      result.headers.delete("Age");
-      if (url.searchParams.get("cv") === view.key) result.headers.set("Vary", "Accept-Encoding");
-    }
+    result.headers.set("Cache-Control", "private, no-store");
     return result;
   }
   if (identityOnly) return serve(request);

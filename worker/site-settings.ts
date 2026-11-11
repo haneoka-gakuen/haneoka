@@ -13,7 +13,6 @@ import { decodePageData } from "../src/lib/page-data-codec";
 import { unrestricted } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
-import { spoilerOverrideEnabled } from "../src/lib/spoiler-cookie";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
 import { isAssetBrowserDocument } from "../src/lib/asset-static-routing";
@@ -67,7 +66,6 @@ export async function applySiteSettings(
   let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
-  headers.set("X-Haneoka-Content-View", view.key);
   if (context.freshUntil) headers.set("X-Haneoka-Content-Until", String(context.freshUntil));
   const vary = new Set(
     (headers.get("Vary") || "")
@@ -87,6 +85,8 @@ export async function applySiteSettings(
   const spoilers = view.override || view.spoilers;
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
   const completeView = sourceBrowser || unrestricted(view);
+  headers.delete("X-Haneoka-Offline-Document");
+  if (group === "guest" && !spoilers && !completeView) headers.set("X-Haneoka-Offline-Document", "public");
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -241,16 +241,13 @@ export async function applySiteSettings(
           !(kind && visibilityType(kind))
         )
           return;
-        target.searchParams.set("__content", "1");
+        const gameMedia = /^\/(?:assets|runtime|objects)\//u.test(target.pathname);
+        target.searchParams.set("__content", gameMedia ? "2" : "1");
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
-        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname)) {
-          if (sourceBrowser) target.searchParams.set("asset", "1");
-          else
-            target.searchParams.set(
-              "cv",
-              `view-v1-${visibility.version}-${group}-${Number(view.spoilers)}-${Number(spoilerOverrideEnabled(target))}`,
-            );
+        if (gameMedia) {
+          target.searchParams.delete("asset");
+          target.searchParams.delete("cv");
         }
         element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },
