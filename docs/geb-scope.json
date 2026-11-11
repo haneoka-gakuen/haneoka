@@ -368,6 +368,7 @@
     "src/lib/team-builder/team-growth.ts",
     "src/lit/team-builder/team-growth.ts",
     "src/lit/team-builder/box-tab.ts",
+    "src/lit/team-builder/temporary-cards.ts",
     "src/lit/team-builder/card-editor-preview.ts",
     "src/lib/arena.ts",
     "src/lib/card-rarity.ts",

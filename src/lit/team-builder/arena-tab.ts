@@ -149,11 +149,12 @@ export class ArenaController {
     this.update({ leagueId, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } });
   }
   selectPool() {
+    const difficulties = this.host.songDifficulties;
     this.updateBuild({
       songs: this.allowedSongIds.flatMap((id) => {
         const rows = this.host.catalog!.difficultyRows(id).filter((row) => arenaReleased(row));
-        const difficulty = rows.find((r) => Number(r.difficulty) === 3) ?? rows.at(-1);
-        return difficulty ? [{ songId: id, difficulty: Number(difficulty.difficulty) }] : [];
+        return rows.filter(row => difficulties.includes(Number(row.difficulty)))
+          .map(row => ({ songId: id, difficulty: Number(row.difficulty) }));
       }),
     });
   }
@@ -238,9 +239,8 @@ export function renderArenaTab(host: TeamBuilder) {
           onSelect: server => void host.switchServer(server),
         })}
         ${choiceField({
-          type: "buttons",
+          type: "select",
           label: host.t("arena.league", "League"), value: String(draft.leagueId),
-          iconOnly: true,
           options: [1,2,3,4,5].map(id => ({value: String(id), label: catalog.bandName(id),
             leading: html`<img src=${catalog.bandIcon(id)} width="24" height="24" alt="" loading="lazy" />`})),
           onSelect: value => arena.league(Number(value)),
