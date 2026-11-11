@@ -654,27 +654,19 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         })}
       </div>
       ${addRequired("members")}${s.noSnaps ? nothing : addRequired("snaps")}
-      <md-outlined-select
-        label=${host.t("leader", "Leader")}
-        .value=${s.leader === null ? "" : String(s.leader)}
-        @change=${(e: Event) => {
-          const value = (e.target as HTMLInputElement).value;
-          set({ leader: value ? Number(value) : null });
-        }}
-      >
-        <md-select-option value="">
-          <div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div>
-        </md-select-option>
-        ${ownedMembers.map(
-          (id) => html`
-            <md-select-option value=${String(id)}>
-              <div slot="headline">
-                ${catalog.cardName("members", id)} / ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
-              </div>
-            </md-select-option>
-          `,
-        )}
-      </md-outlined-select>
+      ${choiceField({
+        type: "select",
+        label: host.t("leader", "Leader"),
+        value: s.leader === null ? "auto" : String(s.leader),
+        options: [
+          { value: "auto", label: host.t("leaderAuto", "Best leader (automatic)") },
+          ...ownedMembers.map(id => ({
+            value: String(id),
+            label: `${catalog.cardName("members", id)} / ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}`,
+          })),
+        ],
+        onSelect: value => set({ leader: value === "auto" ? null : Number(value) }),
+      })}
       <label class="tb-check">
         <md-checkbox
           touch-target="wrapper"
