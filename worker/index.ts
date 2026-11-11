@@ -5,7 +5,9 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
 import { contentPublished, eventStoryStarts } from "../src/lib/content-publication";
-import { contentCacheEpoch, nextContentPublication, contentResourceBoundary, unrestricted, type ContentResourceIndex } from "./content-resources";
+import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
+  type ContentResourceIndex,
+} from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { requestContentView, privateContentResponse } from "./content-view";
 import { contentVisible, filterContentData, type ContentView } from "../src/lib/content-view";
@@ -28,6 +30,9 @@ import { parseHtmlJson } from "../src/lib/html-json";
 import { handlePageData, type PageDataBindings } from "./catalog-page-data";
 import { PageDataError, type PageSource } from "../src/lib/catalog-page-contract";
 import { fnv1a32Shard } from "../src/lib/hash-partition.ts";
+import { CRI_SOURCE_ROOT, criSourceDescriptor, mergeCriSourceTree } from "../src/lib/asset-page-data";
+import type { SourceNode } from "../src/lib/source-tree-search";
+import { criSourceEntry, criSourceIndex } from "./content-resources";
 import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ranking";
 import { handleCommunityBootstrap } from "./community-bootstrap";
 import { withRequestWork } from "./request-work";
@@ -51,7 +56,7 @@ import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documen
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "../src/lib/provider-entity-data";
 import { staticViewFromUrl } from "../src/lib/static-view-routing";
-import { assetStaticDocumentFromUrl } from "../src/lib/asset-static-routing";
+import { assetStaticDocumentFromUrl, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
 import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
 import { isCommunityForumDetailPath, restoreCommunityForumDetailShell } from "../src/lib/community-forum-document";
 import { collectorFor, handleOfficialHost } from "./official-host";
@@ -832,6 +837,7 @@ function releaseCacheRequest(request: Request, releaseRevision: string): Request
   url.searchParams.delete("__content-view");
   url.searchParams.delete("__content");
   url.searchParams.delete("cv");
+  url.searchParams.delete("asset");
   url.searchParams.delete("release");
   url.searchParams.set("__release", releaseRevision);
   url.searchParams.set("__representation", RELEASE_REPRESENTATION_VERSION);
@@ -2556,55 +2562,75 @@ async function handleCatalogApiRequest(
       );
       return releaseResponseHeaders(response, release);
     }
-    const response = await edgeCached(releaseCacheRequest(request, release.releaseId), ctx, API_CACHE_TTL,
-      async () => await serveR2Object(env, request, release.manifestKey, "application/json; charset=utf-8", { cacheControl: CATALOG_API_CACHE_CONTROL })
-        ?? errorResponse(request, 502, "release_invalid", "Release manifest is missing"), CATALOG_API_CACHE_CONTROL);
+    const response = await edgeCached(
+      releaseCacheRequest(request, release.releaseId),
+      ctx,
+      API_CACHE_TTL,
+      async () =>
+        (await serveR2Object(env, request, release.manifestKey, "application/json; charset=utf-8", {
+          cacheControl: CATALOG_API_CACHE_CONTROL,
+        })) ?? errorResponse(request, 502, "release_invalid", "Release manifest is missing"),
+      CATALOG_API_CACHE_CONTROL,
+    );
     return releaseResponseHeaders(
       response ? response : errorResponse(request, 502, "release_invalid", "Release manifest is missing"),
       release,
     );
   }
-  if (tail === "sources/tree") {
-    const cacheRequest = releaseCacheRequest(request, release.releaseId);
-    return releaseResponseHeaders(
-      await edgeCached(
-        cacheRequest,
-        ctx,
-        SOURCE_CACHE_TTL,
-        async () => {
-          const tree = await serveReleaseObject(
-            env,
-            request,
-            release,
-            "metadata/source-index/tree.json",
-            "application/json; charset=utf-8",
-          );
-          return tree || errorResponse(request, 502, "source_index_missing", "Source index is missing");
-        },
-        CATALOG_API_CACHE_CONTROL,
-      ),
-      release,
-    );
-  }
   if (tail.startsWith("sources/")) {
     const sourcePath = tail.slice("sources/".length);
-    if (!sourcePath.startsWith("Assets/") && !sourcePath.startsWith("Packages/")) {
-      return errorResponse(request, 404, "source_not_found", "Unity source not found");
+    const cri = sourcePath.startsWith(`${CRI_SOURCE_ROOT}/`);
+    if (tail !== "sources/tree" && !cri && !sourcePath.startsWith("Assets/") && !sourcePath.startsWith("Packages/")) {
+      return errorResponse(request, 404, "source_not_found", "Source not found");
     }
-    const cacheRequest = releaseCacheRequest(request, release.releaseId);
+    const loadCri = async () => {
+      const entry = await releaseEntry(env, release, "metadata/cri.json");
+      const object = entry ? await env.ASSET_BUCKET.get(entry.key) : null;
+      return object ? object.json() : null;
+    };
+    const sourceJson = (value: JsonObject) => {
+      const response = jsonResponse(request, value, CATALOG_API_CACHE_CONTROL);
+      response.headers.set("ETag", `"sources-v1-${release.releaseId}"`);
+      return response;
+    };
+    const cacheUrl = new URL(request.url);
+    cacheUrl.searchParams.set("__cri_sources", "v1");
     return releaseResponseHeaders(
       await edgeCached(
-        cacheRequest,
+        releaseCacheRequest(new Request(cacheUrl, request), release.releaseId),
         ctx,
         SOURCE_CACHE_TTL,
         async () => {
-          const response = await serveReleaseObject(
-            env,
-            request,
-            release,
-            `metadata/sources/${sourcePath}.json`,
-            "application/json; charset=utf-8",
-          );
+          if (tail === "sources/tree") {
+            const [tree, index] = await Promise.all([
+              readReleaseJson(env, release, "metadata/source-index/tree.json"),
+              criSourceIndex(release, loadCri, ctx),
+            ]);
+            if (!isJsonObject(tree))
+              return errorResponse(request, 502, "source_index_missing", "Source index is missing");
+            return sourceJson(mergeCriSourceTree(tree as Record<string, SourceNode>, index.paths) as JsonObject);
+          }
+          if (cri) {
+            const entry = await criSourceEntry(release, sourcePath, loadCri, ctx);
+            return entry
+              ? sourceJson(criSourceDescriptor(sourcePath, entry) as unknown as JsonObject)
+              : errorResponse(request, 404, "source_not_found", "Source not found");
+          }
+          const path = `metadata/sources/${sourcePath}.json`;
+          if ((await criSourceIndex(release, loadCri, ctx)).unity.includes(sourcePath)) {
+            const [descriptor, entry] = await Promise.all([
+              readReleaseJson(env, release, path),
+              criSourceEntry(release, sourcePath, loadCri, ctx),
+            ]);
+            if (isJsonObject(descriptor)) {
+              const outputs = Array.isArray(descriptor.outputs) ? descriptor.outputs : [];
+              return sourceJson({
+                ...descriptor,
+                outputs: [...outputs, ...(entry!.outputs as unknown as JsonValue[])],
+              });
+            }
+          }
+          const response = await serveReleaseObject(env, request, release, path, "application/json; charset=utf-8");
           if (response) return response;
           if (sourcePath === CAMERA_MANAGER_SOURCE) return Response.json(cameraManagerDescriptor, { headers: CORS });
           return errorResponse(request, 404, "source_not_found", "Unity source not found");
@@ -3042,15 +3068,21 @@ async function handleReleaseMedia(
       : new Response("not found", { status: 404, headers: CORS });
   }
   const retired = tree === "objects" ? retiredObject(relative) : null;
-  if (retired) return new Response(retired, { headers: { ...CORS, "Content-Type": "application/gzip", "Cache-Control": PINNED_MEDIA_CACHE_CONTROL } });
-  if (tree === "runtime" && relative.includes("LiveAtlas.spriteatlasv2/sactx-") && !(await releaseEntry(env, release, `runtime/${relative}`))) {
-    const atlas = await readReleaseJson(env, release, LIVE_ATLAS_SOURCE).catch(() => null) as { outputs?: { path: string }[] } | null;
+  if (retired) return new Response(retired, { headers: { ...CORS, "Content-Type": "application/gzip", "Cache-Control": PINNED_MEDIA_CACHE_CONTROL },
+    });
+  if (tree === "runtime" && relative.includes("LiveAtlas.spriteatlasv2/sactx-") && !(await releaseEntry(env, release, `runtime/${relative}`))
+  ) {
+    const atlas = (await readReleaseJson(env, release, LIVE_ATLAS_SOURCE).catch(() => null)) as {
+      outputs?: { path: string }[];
+    } | null;
     relative = renamedAtlasPage(relative, atlas?.outputs ?? []) ?? relative;
   }
   let servedTree = tree;
   const reference = tree === "assets" ? atlasReferenceSource(relative) : null;
   if (reference && !(await releaseEntry(env, release, `assets/${relative}`))) {
-    const atlas = await readReleaseJson(env, release, reference.source).catch(() => null) as { outputs?: { path: string }[] } | null;
+    const atlas = (await readReleaseJson(env, release, reference.source).catch(() => null)) as {
+      outputs?: { path: string }[];
+    } | null;
     const sprite = atlasReferenceSprite(reference.name, atlas?.outputs ?? []);
     if (sprite) {
       servedTree = "runtime";
@@ -4437,9 +4469,13 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const assetRequest = new Request(request, { headers });
   const { publicationId, webBuildId } = await staticPublicationContext(request, env);
   const contentView = await requestContentView(request, env);
+  const rawAssetDocument = isAssetBrowserDocument(url);
   const regionalDocument = ["jp", "intl"].includes(segments[0] || "");
-  const documentIndexes = await Promise.all((regionalDocument ? [segments[0]!] : ["jp", "intl"])
-    .map((server) => resourceContentIndex(env, ctx, server)));
+  const documentIndexes = await Promise.all(
+    (rawAssetDocument ? [] : regionalDocument ? [segments[0]!] : ["jp", "intl"]).map((server) =>
+      resourceContentIndex(env, ctx, server),
+    ),
+  );
   const documentIndex = regionalDocument ? documentIndexes[0] : null;
   const visibilityEpoch = documentIndexes.map((index) => contentCacheEpoch(index, contentView.now)).join(":");
   const publications = documentIndexes.flatMap((index) => {
@@ -4447,8 +4483,6 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     return at === undefined ? [] : [at];
   });
   const freshUntil = publications.length ? Math.min(...publications) : undefined;
-  const rawAssetDocument = Boolean(assetStaticDocumentFromUrl(url) || /^\/asset-static\/(jp|intl)\//u.test(url.pathname));
-  const unavailableAssetDocument = rawAssetDocument && !unrestricted(contentView);
   const contentRoute = parseResourceRoute(url.pathname);
   const contentKind = contentRoute && visibilityType(contentRoute.kind);
   const currentPublication = contentRoute?.id && contentKind ? documentIndex?.publications?.[`${contentKind}:${contentRoute.id}`] : undefined;
@@ -4494,7 +4528,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
               (await notFoundDocument(assetRequest, env, pageRoute.locale)) ??
               new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
             );
-          if (lookup?.ok) pageReady = (await lookup.json() as { state?: string }).state === "ready";
+          if (lookup?.ok) pageReady = ((await lookup.json()) as { state?: string }).state === "ready";
         }
         const provider = providerEntityFromUrl(url);
         const view = staticViewFromUrl(url);
@@ -4509,9 +4543,28 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
           const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
           if (hit) return hit;
         }
+        if (rawAssetDocument) {
+          const source = new URL(url);
+          source.searchParams.delete("file");
+          const base = assetStaticDocumentFromUrl(source);
+          if (base && !documents.includes(base)) {
+            const hit = await serveStaticDocument(assetRequest, env, ctx, base, publicationId);
+            if (hit) return hit;
+          }
+          if (["jp", "intl"].includes(segments[0] || "") && segments[2] === "assets") {
+            source.pathname = `/${segments[0]}/${segments[1]}/assets/`;
+            const root = assetStaticDocumentFromUrl(source);
+            if (root) {
+              const hit = await serveStaticDocument(assetRequest, env, ctx, root, publicationId);
+              if (hit) return hit;
+            }
+          }
+        }
         if (provider && provider.resource !== "songs")
-          return (await notFoundDocument(assetRequest, env, provider.locale)) ??
-            new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+          return (
+            (await notFoundDocument(assetRequest, env, provider.locale)) ??
+            new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
+          );
         if (view) {
           const hit = await env.ASSETS.fetch(new Request(new URL(view, url), assetRequest));
           if (hit.status !== 404) return hit;
@@ -4525,12 +4578,32 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     ]);
     const chartEtag = response.headers.get("ETag");
     const chartPath = parseCommunityChartDocument(url.pathname) || parseCommunityStoryDocument(url.pathname);
-    const page = chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
-      ? new Response(response.body, { status: response.status, statusText: response.statusText, headers: new Headers(response.headers) })
-      : response;
-    if (page !== response && chartEtag) page.headers.set("ETag", communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname));
-    const rendered = await applySiteSettings(request, page, webBuildId, env, { epoch: visibilityEpoch, ...(freshUntil === undefined ? {} : { freshUntil }), ...(currentPublication ? { publication: currentPublication } : {}), ...(documentIndex?.publications ? { publications: documentIndex.publications } : {}), unavailable: unavailableAssetDocument });
-    if (!guestKey || request.method !== "GET" || rendered.status !== 200 || !rendered.body || !rendered.headers.get("Content-Type")?.includes("text/html"))
+    const page =
+      chartEtag && chartPath && response.headers.get("Content-Type")?.includes("text/html")
+        ? new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: new Headers(response.headers),
+          })
+        : response;
+    if (page !== response && chartEtag)
+      page.headers.set(
+        "ETag",
+        communityStoryDocumentEtag(communityChartDocumentEtag(chartEtag, url.pathname), url.pathname),
+      );
+    const rendered = await applySiteSettings(request, page, webBuildId, env, {
+      epoch: visibilityEpoch,
+      ...(freshUntil === undefined ? {} : { freshUntil }),
+      ...(currentPublication ? { publication: currentPublication } : {}),
+      ...(documentIndex?.publications ? { publications: documentIndex.publications } : {}),
+    });
+    if (
+      !guestKey ||
+      request.method !== "GET" ||
+      rendered.status !== 200 ||
+      !rendered.body ||
+      !rendered.headers.get("Content-Type")?.includes("text/html")
+    )
       return rendered;
     const [body, copy] = rendered.body.tee();
     const stored = new Headers(rendered.headers);

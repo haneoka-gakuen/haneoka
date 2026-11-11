@@ -3,6 +3,13 @@
 // Output: 目录／实体 JSON、批量记录及来源一致性错误。
 // Pos: [Map](L2-2.md)；构建期目录读取与固定身份边界。
 // Effects/Dependencies: Node 文件读取、HTTP 请求与正文超时重试、内存请求缓存及静态输入捕获；回退受身份策略约束。
+import {
+  projectCriSources,
+  mergeCriSourceTree,
+  criSourceDescriptor,
+  criSourceShard,
+  type CriSourceProjection,
+} from "./asset-page-data";
 import { withUiMarksProjection } from "./ui-marks";
 import { isPublicReleaseServer } from "./temporary-public-routing";
 import { fnv1a32Shard } from "./hash-partition.ts";
@@ -115,6 +122,18 @@ function localCatalog(server: string): ReleaseCatalog | null {
 }
 export const hasLocalStaticCatalog = (server: string): boolean => localCatalog(server) !== null;
 
+const localCriSources = new WeakMap<ReleaseCatalog, CriSourceProjection>();
+function readLocalCriSources(catalog: ReleaseCatalog): CriSourceProjection {
+  let projection = localCriSources.get(catalog);
+  if (!projection) {
+    projection = projectCriSources(
+      catalog.releaseEntry("metadata/cri.json") ? catalog.readReleaseJson("metadata/cri.json") : null,
+    );
+    localCriSources.set(catalog, projection);
+  }
+  return projection;
+}
+
 function readLocalPath(catalog: ReleaseCatalog, route: string): unknown {
   const url = new URL(route, "https://catalog.invalid/");
   const parts = url.pathname.slice(1).split("/").map(decodeURIComponent);
@@ -125,9 +144,24 @@ function readLocalPath(catalog: ReleaseCatalog, route: string): unknown {
       stampIds: new Set(Object.keys(catalog.readCollection("stamps") as Record<string, unknown>)),
     });
   if (resource === "ui-marks" && parts.length === 1) return catalog.readUiMarks();
-  if (resource === "sources" && action === "tree" && parts.length === 2)
-    return catalog.readReleaseJson("metadata/source-index/tree.json");
-  if (resource === "sources" && parts.length > 1) return catalog.readSource(parts.slice(1).join("/"));
+  if (resource === "sources" && parts.length > 1) {
+    const projection = readLocalCriSources(catalog);
+    if (action === "tree" && parts.length === 2)
+      return mergeCriSourceTree(
+        catalog.readReleaseJson("metadata/source-index/tree.json") as Record<
+          string,
+          import("./source-tree-search").SourceNode
+        >,
+        projection.index.paths,
+      );
+    const path = parts.slice(1).join("/");
+    const entry = projection.shards[criSourceShard(path)]![path];
+    if (path.startsWith("CRI/") && entry) return criSourceDescriptor(path, entry);
+    const descriptor = catalog.readSource(path);
+    return entry
+      ? { ...descriptor, outputs: [...((descriptor.outputs as unknown[]) || []), ...entry.outputs] }
+      : descriptor;
+  }
   if (resource === "catalog") {
     return action === "summary" ? catalog.readSummary() : catalog.manifest.document;
   }

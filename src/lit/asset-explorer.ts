@@ -311,7 +311,11 @@ export class AssetExplorer extends LitElement {
     try {
       const page = readPageData<AssetPageData>(this);
       if (page?.schema === "haneoka-asset-page-v1") this.preparePage(page);
-      else this.applyTree(await fetchJson<Record<string, AssetNode>>(catalogUrl("sources/tree")));
+      if (!page || this.node() === undefined) {
+        const url = new URL(catalogUrl("sources/tree", "", this.server()), navigationDocumentUrl().origin);
+        if (this.sourceRelease) url.searchParams.set("release", this.sourceRelease);
+        this.applyTree(await fetchJson<Record<string, AssetNode>>(url.toString()));
+      }
       if (typeof this.node() === "number") await this.loadFiles();
       if (this.selected) await this.prepareSelected(this.selected);
     } catch (error) {
@@ -358,7 +362,7 @@ export class AssetExplorer extends LitElement {
   private url(file: string) {
     const [root, ...parts] = this.localized(file).split("/").filter(Boolean);
     return ["assets", "runtime", "objects"].includes(root || "")
-      ? `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}${this.sourceRelease ? `?release=${encodeURIComponent(this.sourceRelease)}` : ""}`
+      ? `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}?asset=1${this.sourceRelease ? `&release=${encodeURIComponent(this.sourceRelease)}` : ""}`
       : "";
   }
   private server() {
@@ -528,11 +532,11 @@ export class AssetExplorer extends LitElement {
                 `
               : kind === "audio"
                 ? html`
-                    <audio src=${url} controls></audio>
+                    <audio src=${url} controls preload="metadata"></audio>
                   `
                 : kind === "video"
                   ? html`
-                      <video src=${url} controls></video>
+                      <video src=${url} controls preload="metadata" playsinline></video>
                     `
                   : kind === "model"
                     ? html`

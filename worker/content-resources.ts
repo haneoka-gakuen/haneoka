@@ -3,6 +3,14 @@
 // Output: Authorized media or a filtered, versioned JSON representation.
 // Pos: [Map](L2.md); shared public-resource response boundary.
 // Effects/Dependencies: Uses internal edge caches after resolving current permissions; source objects remain immutable.
+import {
+  criSourceShard,
+  projectCriSources,
+  type CriSourceEntry,
+  type CriSourceIndex,
+  type CriSourceProjection,
+} from "../src/lib/asset-page-data";
+
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
 import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
@@ -55,11 +63,15 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
   }
   return `${index.releaseId ?? "legacy"}-${timeline[low - 1] ?? 0}`;
 }
-export function nextContentPublication(index: ContentResourceIndex | null | undefined, now: number): number | undefined {
+export function nextContentPublication(
+  index: ContentResourceIndex | null | undefined,
+  now: number,
+): number | undefined {
   if (!index) return undefined;
   contentCacheEpoch(index, now);
   const timeline = publicationTimelines.get(index)!;
-  let low = 0, high = timeline.length;
+  let low = 0,
+    high = timeline.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
     if (timeline[middle]! <= now) low = middle + 1;
@@ -103,10 +115,16 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
 function publicInterfaceAsset(path: string): boolean {
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
     return true;
-  const sprite = /^runtime\/unity\/Assets\/AddressableResources\/(UI\/Atlas\/FixUiSpriteAtlas|Live\/Images\/Atlas\/LiveAtlas)\.spriteatlasv2\/([^/]+)--Sprite--?\d+\.png$/u.exec(path);
-  return Boolean(sprite && (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
-    ? UI_MARK_NAMES.test(`${sprite[2]}.png`)
-    : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)));
+  const sprite =
+    /^runtime\/unity\/Assets\/AddressableResources\/(UI\/Atlas\/FixUiSpriteAtlas|Live\/Images\/Atlas\/LiveAtlas)\.spriteatlasv2\/([^/]+)--Sprite--?\d+\.png$/u.exec(
+      path,
+    );
+  return Boolean(
+    sprite &&
+    (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
+      ? UI_MARK_NAMES.test(`${sprite[2]}.png`)
+      : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)),
+  );
 }
 function mayReadAsset(
   index: ContentResourceIndex,
@@ -170,6 +188,9 @@ export async function contentResourceBoundary(
   const imageEntity = /^\/api\/v1\/(live2d|spine)\/([^/]+)\/image\.png$/u.exec(url.pathname);
   if (!["GET", "HEAD"].includes(request.method) && !imageEntity) return serve(request);
   const api = /^\/api\/v1\/(?:servers|team-builder|meta-reference)\/(jp|intl)(?:\/(.*))?$/u.exec(url.pathname);
+  const sourceBrowser =
+    /^\/api\/v1\/servers\/(?:jp|intl)\/sources\//u.test(url.pathname) ||
+    /^\/asset-static\/(?:jp|intl)\/.*\.json$/u.test(url.pathname);
   const media = /^\/(assets|runtime|objects)\/(jp|intl)\/(.+)$/u.exec(url.pathname);
   const bulk = /^\/(?:game-client|artifacts)\/(jp|intl)\//u.exec(url.pathname);
   const packed = url.pathname.startsWith("/provider-static/content/");
@@ -178,6 +199,7 @@ export async function contentResourceBoundary(
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
   if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
+  if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
   if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
@@ -363,4 +385,88 @@ export async function contentResourceBoundary(
     });
   }
   return result;
+}
+
+const CACHE_ORIGIN = "https://cri-sources.haneoka.internal/v1/";
+const CACHE_TTL = 86_400;
+const PART_LIMIT = 12;
+const parts = new Map<string, Promise<unknown>>();
+const projections = new Map<string, Promise<CriSourceProjection>>();
+
+export interface CriSourceRelease {
+  server: string;
+  releaseId: string;
+}
+export type CriManifestLoader = () => Promise<unknown>;
+
+const partUrl = (release: CriSourceRelease, name: string) =>
+  `${CACHE_ORIGIN}${encodeURIComponent(release.server)}/${release.releaseId}/${name}.json`;
+
+function project(
+  release: CriSourceRelease,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceProjection> {
+  let pending = projections.get(release.releaseId);
+  if (!pending) {
+    pending = load().then((manifest) => {
+      const projection = projectCriSources(manifest);
+      const values: [string, unknown][] = [["index", projection.index], ...Object.entries(projection.shards)];
+      ctx.waitUntil(
+        Promise.all(
+          values.map(([name, value]) =>
+            caches.default.put(
+              partUrl(release, name),
+              new Response(JSON.stringify(value), {
+                headers: { "Cache-Control": `public, max-age=${CACHE_TTL}`, "Content-Type": "application/json" },
+              }),
+            ),
+          ),
+        ).catch(() => undefined),
+      );
+      return projection;
+    });
+    projections.set(release.releaseId, pending);
+    pending.finally(() => projections.delete(release.releaseId)).catch(() => undefined);
+  }
+  return pending;
+}
+
+function part<T>(
+  release: CriSourceRelease,
+  name: string,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+  pick: (projection: CriSourceProjection) => T,
+): Promise<T> {
+  const url = partUrl(release, name);
+  let pending = parts.get(url) as Promise<T> | undefined;
+  if (!pending) {
+    pending = (async () => {
+      const hit = await caches.default.match(url);
+      return hit ? ((await hit.json()) as T) : pick(await project(release, load, ctx));
+    })();
+    parts.set(url, pending);
+    pending.catch(() => parts.delete(url));
+    while (parts.size > PART_LIMIT) parts.delete(parts.keys().next().value!);
+  }
+  return pending;
+}
+
+export function criSourceIndex(
+  release: CriSourceRelease,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceIndex> {
+  return part(release, "index", load, ctx, (projection) => projection.index);
+}
+
+export async function criSourceEntry(
+  release: CriSourceRelease,
+  key: string,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceEntry | undefined> {
+  const shard = criSourceShard(key);
+  return (await part(release, shard, load, ctx, (projection) => projection.shards[shard]!))[key];
 }

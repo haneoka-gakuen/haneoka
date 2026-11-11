@@ -7,6 +7,7 @@ import { visibilityType } from "./content-visibility-policy";
 import { navigationDocumentUrl } from "./document-url";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { spoilerOverrideEnabled } from "./spoiler-cookie";
+import { isAssetBrowserDocument } from "./asset-static-routing";
 
 export function contentCacheScope(target = navigationDocumentUrl()): string {
   const data = document.documentElement.dataset;
@@ -29,7 +30,11 @@ export function contentRequestUrl(source: string): string {
   url.searchParams.set("__content", "1");
   const override = navigationDocumentUrl().searchParams.get("spoiler");
   if (override !== null && !url.searchParams.has("spoiler")) url.searchParams.set("spoiler", override);
-  if (/^\/(?:assets|runtime|objects)\//u.test(url.pathname)) url.searchParams.set("cv", contentCacheScope(url));
+  if (/^\/(?:assets|runtime|objects)\//u.test(url.pathname)) {
+    if (isAssetBrowserDocument(navigationDocumentUrl())) url.searchParams.set("asset", "1");
+    if (url.searchParams.get("asset") === "1") url.searchParams.delete("cv");
+    else url.searchParams.set("cv", contentCacheScope(url));
+  }
   return url.pathname + url.search + url.hash;
 }
 let installed = false;

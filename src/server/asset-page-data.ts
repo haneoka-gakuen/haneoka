@@ -194,7 +194,8 @@ export function assetStaticEntries(server: ReleaseServer): Promise<AssetStaticEn
       for (const parts of paths) {
         for (const locale of LOCALES) {
           const outputs = await assetOutputs(page, parts, locale);
-          for (const selected of new Set(["", ...outputs.map((output) => output.path)])) {
+          const cri = parts[0] === "CRI" || parts.join("/").startsWith("Assets/AddressableResources/Cri/");
+          for (const selected of new Set(["", ...(cri ? [] : outputs.map((output) => output.path))])) {
             result.push({
               params: { server, locale, id: `${assetStaticId(parts, selected)}.html` },
               props: { path: parts, selected },

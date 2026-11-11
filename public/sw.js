@@ -171,9 +171,9 @@ const gameMedia = async (event, request, url) => {
     if (response) return response;
   }
   const range = request.headers.get("Range");
-  const fullAudio = request.destination === "audio" && /^bytes=\d*-\d*$/.test(range || "");
+  const fullMedia = ["audio", "video"].includes(request.destination) && /^bytes=\d*-\d*$/.test(range || "");
   let source = request;
-  if (fullAudio) {
+  if (fullMedia) {
     const headers = new Headers(request.headers);
     for (const field of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(field);
     source = new Request(request, { headers, referrer: request.referrer, referrerPolicy: request.referrerPolicy });
@@ -200,7 +200,7 @@ const gameMedia = async (event, request, url) => {
       event.waitUntil(cache.put(key, stored).then(() => trimCache(name, MAX_IMAGES)).catch(() => {}));
     }
   }
-  return fullAudio && response.status === 200 ? (await mediaRange(request, response)) || response : response;
+  return fullMedia && response.status === 200 ? (await mediaRange(request, response)) || response : response;
 };
 
 const trimCache = async (cacheName, limit) => {
