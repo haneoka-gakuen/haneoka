@@ -212,14 +212,19 @@ async function streamToCache(url, headers, expected, cacheFile, releaseId) {
  * pinned release proves, then return per-locale exact URL rewrites.
  * `collect(html, record)` walks the same URL sites the rewrite hook edits.
  */
-export async function preparePublicMedia({ outputRoot, documentsRoot, staged, collect, familyImageSize }) {
+export async function preparePublicMedia({ outputRoot, documentsRoot, staged, collect, references, familyImageSize }) {
   const started = performance.now();
   console.log("loading public media release manifests");
   const releases = process.env.STATIC_BUILD_INPUT_MODE === "frozen" ? capturedReleases() : await catalogReleases();
   if (!releases) throw new Error("Frozen public media requires the captured release manifests");
   console.log(`collecting public images from ${staged.length} documents`);
   const found = new Map();
-  for (const relative of staged) {
+  if (references) {
+    for (const [value, uses] of references) {
+      const asset = parseAssetUrl(value);
+      if (asset) found.set(value, { ...asset, uses });
+    }
+  } else for (const relative of staged) {
     const html = fs.readFileSync(path.join(documentsRoot, "public-staging", relative), "utf8");
     const functional = /<html\b[^>]*\bdata-content-functional="1"/u.test(html);
     collect(html, (value, site) => {

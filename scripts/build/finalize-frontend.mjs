@@ -98,6 +98,7 @@ async function loadPublicStatic() {
   const staged = [];
   const targets = new Set();
   const privatePages = new Map();
+  const mediaReferences = new Map();
   const token = process.env.STATIC_CATALOG_TOKEN || "";
   const selected = module.publicStaticSelection(value);
   if (selected) {
@@ -114,9 +115,18 @@ async function loadPublicStatic() {
       if (!target || !selected(target)) continue;
       targets.add(sourcePath);
       const content = readFileSync(path.join(output, sourcePath), "utf8");
+      const references = new Map();
+      const functional = target.scope === "global" && /\/team-builder\/$/u.test(target.path);
       const published =
-        !isPublicStaticDocument(content) && module.materializePublicStaticDocument(content, target, options);
+        !isPublicStaticDocument(content) && module.materializePublicStaticDocument(content, target, {
+          ...options,
+          ...(media && { rewriteUrl(value, site) {
+            if (!(functional && "script" in site)) references.set(value, (references.get(value) || 0) + 1);
+            return undefined;
+          } }),
+        });
       if (!published) continue;
+      for (const [value, count] of references) mediaReferences.set(value, (mediaReferences.get(value) || 0) + count);
       module.stagePublicStaticDocument(documentsRoot, sourcePath, published.html);
       staged.push(sourcePath);
       if (published.privateData) privatePages.set(sourcePath, { path: target.path, build: options.build, ...published.privateData });
@@ -131,6 +141,7 @@ async function loadPublicStatic() {
       outputRoot: output,
       documentsRoot,
       staged,
+      references: mediaReferences,
       collect: (html, record) => module.rewriteStaticDocumentUrls(html, record),
       familyImageSize,
     });
@@ -149,7 +160,13 @@ async function loadPublicStatic() {
       const file = path.join(publicStaticStagingRoot(documentsRoot), sourcePath);
       writeFileSync(
         file,
-        module.rewriteStaticDocumentUrls(readFileSync(file, "utf8"), rewriteFor(localeOf(sourcePath))),
+        module.rewriteStaticDocumentUrls(readFileSync(file, "utf8"), rewriteFor(localeOf(sourcePath)), (_id, data) => {
+          const sha256 = createHash("sha256").update(data).digest("hex");
+          const target = path.join(output, "entity-data", "v1", `${sha256}.json`);
+          mkdirSync(path.dirname(target), { recursive: true });
+          if (!existsSync(target)) writeFileSync(target, data);
+          return `/entity-data/v1/${sha256}.json`;
+        }),
       );
     }
     setStaticDocumentTransform((html, pathname) =>
@@ -157,17 +174,6 @@ async function loadPublicStatic() {
     );
   }
   sealPrivatePageData(module, privatePages, token, rewriteFor);
-  for (const sourcePath of staged) {
-    const file = path.join(publicStaticStagingRoot(documentsRoot), sourcePath);
-    const content = module.externalizePublicPageData(readFileSync(file, "utf8"), (_id, data) => {
-      const sha256 = createHash("sha256").update(data).digest("hex");
-      const target = path.join(output, "entity-data", "v1", `${sha256}.json`);
-      mkdirSync(path.dirname(target), { recursive: true });
-      if (!existsSync(target)) writeFileSync(target, data);
-      return `/entity-data/v1/${sha256}.json`;
-    });
-    writeFileSync(file, content);
-  }
   return { module, staged: new Set(staged), targets, rewriteFor };
 }
 
@@ -245,6 +251,7 @@ let index;
 try {
   const created = await pagefind.createIndex({
     excludeSelectors: ["script", "style", "button", "input", "select", "[aria-hidden=true]", ".audio-dock"],
+    maxFragments: 1000,
   });
   index = created.index;
   if (created.errors.length || !index)

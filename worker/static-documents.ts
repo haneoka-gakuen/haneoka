@@ -26,16 +26,25 @@ import {
 } from "../src/lib/static-documents";
 
 type DocumentIndex = { schema: string; entries: Record<string, StaticDocumentRecord> };
+type PublicationContext = { webBuildId: string; publicationId: string | null };
+const publications = new WeakMap<object, Promise<PublicationContext>>();
 
 /** Input identity labels the browser; the final reference seal partitions mutable indices. */
 export async function staticPublicationContext(
   request: Request,
   env: Env,
-): Promise<{ webBuildId: string; publicationId: string | null }> {
-  const response = await env.ASSETS.fetch(new URL("/build.json", request.url));
-  if (!response.ok) throw new Error(`Static publication identity returned ${response.status}`);
-  const build = await response.json<{ id?: unknown; web?: unknown; publication?: unknown }>();
-  return { webBuildId: publishedWebBuildId(build), publicationId: staticPublicationOutputIdentity(build.publication) };
+): Promise<PublicationContext> {
+  let pending = publications.get(env.ASSETS);
+  if (!pending) {
+    pending = (async () => {
+      const response = await env.ASSETS.fetch(new URL("/build.json", request.url));
+      if (!response.ok) throw new Error(`Static publication identity returned ${response.status}`);
+      const build = await response.json<{ id?: unknown; web?: unknown; publication?: unknown }>();
+      return { webBuildId: publishedWebBuildId(build), publicationId: staticPublicationOutputIdentity(build.publication) };
+    })().catch((error: unknown) => { publications.delete(env.ASSETS); throw error; });
+    publications.set(env.ASSETS, pending);
+  }
+  return pending;
 }
 
 const indices = new Map<string, DocumentIndex>();

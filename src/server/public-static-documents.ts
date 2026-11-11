@@ -362,9 +362,13 @@ const isPageData = (node: Element): boolean =>
  * Replace URLs in a complete prerender where the callback names a public copy
  * of the same bytes. Every other byte, including untouched page data, stays as rendered.
  */
-export function rewriteStaticDocumentUrls(html: string, rewrite: PublicUrlRewrite): string {
+export function rewriteStaticDocumentUrls(
+  html: string,
+  rewrite: PublicUrlRewrite,
+  externalize?: (id: string, text: string) => string,
+): string {
   const edits: Edit[] = [];
-  const visit = (node: Node): void => {
+  const visit = (node: Node, inTemplate = false): void => {
     if ("tagName" in node) {
       for (const name of urlAttributes(node)) {
         const edit = attributeEdit(node, name, rewrite, false);
@@ -380,11 +384,19 @@ export function rewriteStaticDocumentUrls(html: string, rewrite: PublicUrlRewrit
           attr(node, "id") ?? "",
           rewrite,
         );
-        if (result.changed) edits.push({ from: startOffset, to: endOffset, text: serializePageData(result.value) });
+        const id = attr(node, "id") ?? "";
+        const rewritten = result.changed ? serializePageData(result.value) : html.slice(startOffset, endOffset);
+        const location = node.sourceCodeLocation;
+        if (externalize && !inTemplate && (id === "team-builder-page" || id.startsWith("catalog-collection-")) &&
+          location?.startTag && location.endTag && Buffer.byteLength(rewritten) > 128 * 1024) {
+          const source = externalize(id, rewritten);
+          edits.push({ from: location.startTag.endOffset - 1, to: location.endTag.startOffset,
+            text: ` data-src="${escapeAttribute(source)}">` });
+        } else if (result.changed) edits.push({ from: startOffset, to: endOffset, text: rewritten });
       }
-      if (node.tagName === "template") visit((node as DefaultTreeAdapterMap["template"]).content);
+      if (node.tagName === "template") visit((node as DefaultTreeAdapterMap["template"]).content, true);
     }
-    if ("childNodes" in node) for (const child of node.childNodes) visit(child);
+    if ("childNodes" in node) for (const child of node.childNodes) visit(child, inTemplate);
   };
   visit(parse(html, { sourceCodeLocationInfo: true }));
   return edits.length ? applyEdits(html, edits) : html;

@@ -183,7 +183,7 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
-        if (completeView) return;
+        if (completeView || jsonId === "team-builder-page") return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();

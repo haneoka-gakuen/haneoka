@@ -5,7 +5,7 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
 import { CHART_ASSETS_PROJECTION, chartAssets } from "./chart-assets";
-import { contentPublished, eventStoryStarts } from "../src/lib/content-publication";
+import { contentPublished } from "../src/lib/content-publication";
 import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
   type ContentResourceIndex,
 } from "./content-resources";
@@ -2072,11 +2072,12 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   if (!release) return null;
   const identity = `${slug}:${release.releaseId}`;
   let pending = resourceContentIndexes.get(identity);
+  if (pending) {
+    resourceContentIndexes.delete(identity);
+    resourceContentIndexes.set(identity, pending);
+  }
   if (!pending) {
     pending = (async () => {
-      const key = new Request(`https://content-index.haneoka.internal/v3/${identity}`);
-      const hit = await caches.default.match(key);
-      if (hit) return await hit.json<ContentResourceIndex>();
       const prepared = await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
@@ -2091,56 +2092,13 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
         for (const [song, start] of Object.entries(starts)) if (result.publications?.[`songs:${song}`]) result.publications[`songs:${song}`]!.eventPublishedAt = start;
         return result;
       }
-      const storage = await catalogStorageManifest(env, release);
-      if (!storage) return null;
-      const result: ContentResourceIndex = { server: slug, releaseId: release.releaseId, sourceId: release.sourceId, records: {}, assets: {}, previewAssets: [], publications: {} };
-      const storyStarts = new Map<string, number>();
-      const resources = Object.entries(storage.resources).filter(([name]) => visibilityType(name));
-      // New releases carry compact ownership records; an older immutable
-      // release is indexed once from its complete entity partitions.
-      for (const [name, resource] of resources) {
-        const raw = await readReleaseJson(env, release, `api/v1/catalog/${name}/access.json`);
-        let index = raw as unknown as ContentResourceIndex | null;
-        if (!index) index = await legacyContentIndex(env, release, name, resource);
-        if (name === "stories") {
-          const document = await readReleaseJson(env, release, resource.index);
-          for (const [chapter, at] of eventStoryStarts(document)) storyStarts.set(chapter, at);
-        }
-        const prefix = `${name}:`;
-        for (const [record, reference] of Object.entries(index.records)) {
-          const kind = visibilityType(reference.kind) ?? reference.kind;
-          result.records[prefix + record] = { ...reference, kind };
-          if (kind === visibilityType(name) && !result.publications![`${kind}:${reference.id}`])
-            result.publications![`${kind}:${reference.id}`] = reference.publication;
-        }
-        for (const [key, publication] of Object.entries(index.publications ?? {})) {
-          const at = key.indexOf(":"), kind = visibilityType(key.slice(0, at));
-          result.publications![kind ? `${kind}${key.slice(at)}` : key] = publication;
-        }
-        for (const [path, chains] of Object.entries(index.assets)) {
-          const owners = result.assets[path] ??= [];
-          owners.push(...chains.map((chain) => chain.map((record) => prefix + record)));
-        }
-        result.previewAssets!.push(...(index.previewAssets ?? []));
-      }
-      const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
-      const starts = eventSongReleases(events, challenges);
-      for (const reference of Object.values(result.records)) if (reference.kind === "songs" && starts[reference.id]) {
-        const raw = result.publications?.[`songs:${reference.id}`]?.publishedAt;
-        const base = Number(Array.isArray(raw) ? raw.find((at) => Number(at) > 0) : raw);
-        if (!base || contentPublished(reference.publication, base)) reference.publication.eventPublishedAt = starts[reference.id];
-      }
-      for (const reference of Object.values(result.records)) if (reference.kind === "stories") {
-        const at = storyStarts.get(String(reference.publication.chapterId));
-        if (at) reference.publication.eventPublishedAt = at;
-      }
-      ctx.waitUntil(caches.default.put(key, Response.json(result, { headers: { "Cache-Control": "public, max-age=86400" } })).catch(() => undefined));
-      return result;
+      return null;
     })();
-    boundedPromiseCache(resourceContentIndexes, identity, pending, 2);
+    boundedPromiseCache(resourceContentIndexes, identity, pending, 4);
   }
   try {
     const index = await pending;
+    if (!index) resourceContentIndexes.delete(identity);
     if (!index?.assetShards || !assetPath) return index;
     const path = assetPath.replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/").replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "");
     const shard = `${index.assetShards.prefix}${fnv1a32Shard(path, index.assetShards.count)}.json`;
@@ -2153,44 +2111,6 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
     return { ...index, assets: values?.assets ?? {}, previewAssets: values?.previewAssets ?? [] };
   }
   catch (error) { resourceContentIndexes.delete(identity); throw error; }
-}
-async function legacyContentIndex(env: Env, release: Release, name: string, resource: CatalogResourceStorage): Promise<ContentResourceIndex> {
-  const { contentReference, contentFieldType } = await import("../src/lib/content-view");
-  const { inferredVisibilityType, visibilityId } = await import("../src/lib/content-visibility-policy");
-  const result: ContentResourceIndex = { records: {}, assets: {}, previewAssets: [], publications: {} };
-  const rootKind = visibilityType(name)!;
-  const walk = (value: JsonValue, kind = rootKind, owners: string[] = [], field = "") => {
-    if (typeof value === "string") {
-      const path = value.replace(/^\/(assets|runtime|objects)\/(jp|intl)\//u, "$1/").split("?")[0]!;
-      if (/^(assets|runtime|objects)\//u.test(path) && owners.length) {
-        (result.assets[path] ??= []).push(owners);
-        if (["image", "thumbnailImage", "faceImage", "jacketUrl", "jacketThumbUrl"].includes(field)) result.previewAssets!.push(path);
-      }
-    } else if (Array.isArray(value)) value.forEach((entry) => walk(entry, kind, owners, field));
-    else if (isJsonObject(value)) {
-      kind = inferredVisibilityType(value) ?? kind;
-      const identity = visibilityId(kind, value);
-      if (identity || !owners.length) {
-        const ref = `${kind}:${identity}:${Object.keys(result.records).length}`;
-        result.records[ref] = contentReference(kind, value, identity);
-        owners = [...owners, ref];
-      }
-      for (const [key, child] of Object.entries(value)) walk(child, contentFieldType(key) ?? kind, owners, key);
-    }
-  };
-  if (resource.entities) {
-    const shards = [...resource.entities.shards];
-    for (let offset = 0; offset < shards.length; offset += 8) {
-      const values = await Promise.all(shards.slice(offset, offset + 8).map((shard) => readCatalogShardAt(env, release, resource.entities!, shard)));
-      for (const value of values) if (isJsonObject(value)) for (const [id, entity] of Object.entries(value)) {
-        const owner = `${rootKind}:${id}`;
-        result.records[owner] = contentReference(rootKind, isJsonObject(entity) ? entity : {}, id);
-        result.publications![`${rootKind}:${id}`] = result.records[owner]!.publication;
-        walk(entity, rootKind, [owner]);
-      }
-    }
-  } else { const value = await readReleaseJson(env, release, resource.index); if (value) walk(value); }
-  return result;
 }
 
 async function handleCatalogStorageApi(
@@ -4308,7 +4228,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       let visibleKeys: string[] | undefined;
       if (server === "jp" || server === "intl") {
         const [view, index] = await Promise.all([requestContentView(request, env), resourceContentIndex(env, ctx, server)]);
-        visibleKeys = Object.entries(index?.publications ?? {}).flatMap(([key, publication]) => {
+        if (index) visibleKeys = Object.entries(index.publications ?? {}).flatMap(([key, publication]) => {
           const colon = key.indexOf(":"), kind = visibilityType(key.slice(0, colon)), id = key.slice(colon + 1);
           return kind && contentVisible(view, kind, publication, id) ? [`${kind}:${encodeURIComponent(id)}`] : [];
         });
