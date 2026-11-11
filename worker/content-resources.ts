@@ -113,6 +113,19 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
     ]
   );
 }
+function functionalDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    if (page.origin !== new URL(request.url).origin) return false;
+    return /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)\/(?:team-builder|chart-editor|story-editor|studio|assets)(?:\/|$)/u.test(page.pathname) ||
+      /\/(?:songs|charts)\/[^/]+\/chart\/?$/u.test(page.pathname) ||
+      (/\/stories\/[^/]+\/?$/u.test(page.pathname) && page.searchParams.get("playback") === "play");
+  } catch {
+    return false;
+  }
+}
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
   if (/^(?:objects\/|runtime\/unity-json\/)/u.test(path)) return true;
@@ -207,10 +220,12 @@ export async function contentResourceBoundary(
     return serve(request);
   if (sourceBrowser || (media && url.searchParams.get("asset") === "1")) return serve(request);
   const tail = api?.[2] ?? "";
+  const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
+  if ((media || componentData) && functionalDocument(request)) return serve(request);
   const functional = api && (
     ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "options"].includes(tail) ||
     (tail === "release" && url.searchParams.get("projection") === "identity") ||
-    (url.searchParams.get("asset") === "1" && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail))
+    (url.searchParams.get("asset") === "1" && componentData)
   );
   if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serve(request);
   if (api && (
