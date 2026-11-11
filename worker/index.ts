@@ -116,6 +116,7 @@ import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
   type ChartCatalogSnapshot,
+  type ChartDataPayload,
   type ChartDataProvider,
   type PreparedChartData,
   RevisionCache,
@@ -3252,8 +3253,8 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
 }
 
 const sonolusDataProviders = new RevisionCache<ChartDataProvider>(2);
-function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): Promise<ChartDataProvider> {
-  return sonolusDataProviders.getOrCreate(ourNotesSonolusRevision(releases), () => {
+function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[], revision: string): Promise<ChartDataProvider> {
+  return sonolusDataProviders.getOrCreate(`${revision}:${ourNotesSonolusRevision(releases)}`, () => {
     const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
     if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
     const provider = new RuntimeChartDataProvider({
@@ -3267,20 +3268,60 @@ function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): Pr
         console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
       },
     });
+    const cacheKey = (dataId: string) => revision === "unversioned" ? undefined :
+      new Request(`https://sonolus-converted.haneoka.internal/v1/${revision}/${encodeURIComponent(dataId)}`);
+    const cached = async (dataId: string) => {
+      const key = cacheKey(dataId);
+      const response = key ? await caches.default.match(key).catch(() => undefined) : undefined;
+      const hash = response?.headers.get("ETag")?.match(/^"([a-f0-9]{40})"$/u)?.[1];
+      if (response && hash) return { response, hash };
+      await response?.body?.cancel().catch(() => undefined);
+      return undefined;
+    };
+    const store = async (dataId: string, hash: string, payload: ChartDataPayload) => {
+      const key = cacheKey(dataId);
+      if (!key) return;
+      await caches.default.put(key, new Response(payload.body, { headers: {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Type": payload.contentType ?? "application/gzip",
+        ETag: `"${hash}"`,
+      } })).catch(() => undefined);
+    };
     // Listing metadata remains valid after the bounded gzip body cache evicts a chart.
     const prepared = new Map<string, PreparedChartData>();
     return {
       async prepare(chart) {
         const known = prepared.get(chart.dataId);
         if (known) return known;
-        const value = await provider.prepare(chart);
+        const hit = await cached(chart.dataId);
+        let value: PreparedChartData | null;
+        if (hit) {
+          value = { hash: hit.hash, resource: { hash: hit.hash } };
+          await hit.response.body?.cancel().catch(() => undefined);
+        } else {
+          value = await provider.prepare(chart);
+          if (value) {
+            const payload = await provider.load(chart, value.hash);
+            if (payload) await store(chart.dataId, value.hash, payload);
+          }
+        }
         if (value) {
           prepared.set(chart.dataId, value);
           if (prepared.size > 1024) prepared.delete(prepared.keys().next().value!);
         }
         return value;
       },
-      load: (chart, hash) => provider.load(chart, hash),
+      async load(chart, hash) {
+        const hit = await cached(chart.dataId);
+        if (hit && hit.hash === hash) {
+          const body = await hit.response.arrayBuffer().catch(() => undefined);
+          if (body) return { body, cacheControl: "public, max-age=31536000, immutable",
+            contentType: hit.response.headers.get("Content-Type") ?? "application/gzip", etag: `"${hash}"` };
+        } else await hit?.response.body?.cancel().catch(() => undefined);
+        const payload = await provider.load(chart, hash);
+        if (payload) await store(chart.dataId, hash, payload);
+        return payload;
+      },
     };
   });
 }
@@ -3589,7 +3630,7 @@ async function handleSonolus(
       communityProviders?.dataProvider ??
       (isBestdoriCatalog
         ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
-        : await ourNotesSonolusDataProvider(env, releases));
+        : await ourNotesSonolusDataProvider(env, releases, payloadRevision));
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const repositoryHash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(assetUrl.pathname)?.[1];
