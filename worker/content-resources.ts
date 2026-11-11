@@ -290,8 +290,10 @@ export async function contentResourceBoundary(
     const response = await serve(request);
     if (access.public) return response;
     const result = privateContentResponse(response);
-    if (response.ok) {
+    if (response.ok || response.status === 304) {
       result.headers.set("Cache-Control", "private, max-age=21600");
+      result.headers.set("Date", new Date().toUTCString());
+      result.headers.delete("Age");
       if (url.searchParams.get("cv") === view.key) result.headers.set("Vary", "Accept-Encoding");
     }
     return result;
