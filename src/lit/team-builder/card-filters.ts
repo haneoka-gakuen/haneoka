@@ -1,8 +1,8 @@
-/** One card filter surface for the owned library and manual formation picker. */
+/** Shared card filters for My Cards and team-building pickers. */
 import { html } from "lit";
 import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
-import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillTypeKey, skillTypeTitle, skillFacetValues, matchesSelections } from "../../lib/catalog-filters";
+import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillTypeKey, skillTypeTitle, matchesSelections } from "../../lib/catalog-filters";
 import { filterDateBound } from "../../lib/filter-date";
 import { catalogQueryNames, parseCatalogQuery, type CatalogQuery } from "../../lib/catalog-query";
 import { chooserGroup } from "../ui/chooser-filters";
@@ -20,6 +20,7 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   "bands": "catalog.fields.bands",
   "character": "catalog.fields.character",
   "characters": "navigation.characters",
+  "gekisouSupportSkill": "catalog.cards.fields.gekisouSupportSkill",
   "maximum": "common.fields.maximum",
   "minimum": "common.fields.minimum",
   "no": "common.states.no",
@@ -27,12 +28,16 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   "rarity": "catalog.cards.fields.rarity",
   "release": "catalog.fields.release",
   "support": "navigation.support",
+  "supportSkill": "catalog.cards.fields.supportSkill",
   "technique": "catalog.cards.fields.technique",
   "total": "common.fields.total",
   "visual": "catalog.cards.fields.visual",
   "yes": "common.states.yes"
 };
 
+function snapshotSkillType(title: string): string {
+  return title.trim().replace(/\s*(?:\([^()]+(?:ボーナス| Bonus| 보너스)\)|（[^（）]+加成）)$/u, "");
+}
 
 const queryCache = new WeakMap<object, { query: string; plan: CatalogQuery }>();
 function cardQuery(host: TeamBuilder, query: string): CatalogQuery {
@@ -59,9 +64,11 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
       !matchesSelections([String(card.attribute)], f.attributes.map(String)) ||
       !matchesSelections([String(card.rarity)], f.rarities.map(String))) return false;
   const item = catalog.cardFilterItem(kind, id);
+  const skillType = kind === "snaps" ? snapshotSkillType : skillTypeTitle;
   for (const facet of CARD_SKILL_FACETS) {
     if (!(facet.kinds as readonly string[]).includes(kind === "members" ? "member" : "support")) continue;
-    if (!matchesSelections(skillFacetValues(item, facet.key)!, f.facets[facet.key] || [])) return false;
+    const selected = f.facets[facet.key];
+    if (selected?.length && !cardSkills(item, facet.role).some((skill) => selected.includes(skillType(skillTypeKey(skill))))) return false;
   }
   if (!matchesSelections([cardArtwork(item) ? "yes" : "no"], f.facets.artwork || [])) return false;
   const total = ["performance", "technique", "visual"].reduce((sum, key) => {
@@ -99,6 +106,7 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
   const numeric = (key: "bands" | "characters" | "attributes" | "rarities", title: string, options: {value: string; label: string; image?: string; imageOnly?: boolean}[]) => group(title, f[key].map(String), options, (values) => set({[key]: values.map(Number)}));
   const facetSet = (key: string, values: string[]) => set({ facets: {...f.facets, [key]: values} });
   const role = kind === "members" ? "member" : "support";
+  const skillType = kind === "snaps" ? snapshotSkillType : skillTypeTitle;
   return html`
     ${numeric("bands", label("band"), [...new Set(cards.flatMap((card) => catalog.bandIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.bandName(id),image:catalog.bandIcon(id) || undefined})))}
     ${numeric("characters", label("character"), [...new Set(cards.flatMap((card) => catalog.characterIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.characterName(id),image:catalog.characterFace(id) || undefined})))}
@@ -107,8 +115,8 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
     ${CARD_SKILL_FACETS.filter((facet) => (facet.kinds as readonly string[]).includes(role)).map((facet) => {
       const options = new Map<string, {value:string;label:string;image?:string}>();
       for (const card of cards) for (const skill of cardSkills(catalog.cardFilterItem(kind, card.id), facet.role)) {
-        const value = skillTypeKey(skill);
-        if (value && !options.has(value)) options.set(value, {value,label:skillTypeTitle(catalog.text(skill.skillName)),image:String(skill.icon || "") || undefined});
+        const value = skillType(skillTypeKey(skill));
+        if (value && !options.has(value)) options.set(value, {value,label:skillType(catalog.text(skill.skillName)),image:String(skill.icon || "") || undefined});
       }
       return group(label(facet.key), f.facets[facet.key] || [], [...options.values()], (values) => facetSet(facet.key, values));
     })}
