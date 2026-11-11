@@ -313,6 +313,7 @@ export class AssetExplorer extends LitElement {
       if (page?.schema === "haneoka-asset-page-v1") this.preparePage(page);
       if (!page || this.node() === undefined) {
         const url = new URL(catalogUrl("sources/tree", "", this.server()), navigationDocumentUrl().origin);
+        url.searchParams.set("projection", "asset-browser-v1");
         if (this.sourceRelease) url.searchParams.set("release", this.sourceRelease);
         this.applyTree(await fetchJson<Record<string, AssetNode>>(url.toString()));
       }
@@ -349,6 +350,7 @@ export class AssetExplorer extends LitElement {
         navigationDocumentUrl().origin,
       );
       if (this.sourceRelease) url.searchParams.set("release", this.sourceRelease);
+      url.searchParams.set("projection", "asset-browser-v1");
       const descriptor = await fetchJson<Descriptor>(url.toString());
       if (this.path.join("/") !== path) return;
       this.files = [

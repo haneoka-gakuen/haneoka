@@ -24,7 +24,7 @@ export function assetPageData(server: ReleaseServer): Promise<AssetPageData> {
   if (!pending) {
     pending = (async () => {
       const release = await staticCatalogRelease(server);
-      const tree = (await fetchStaticCatalog("sources/tree", server, release)) as AssetPageData["tree"];
+      const tree = (await fetchStaticCatalog("sources/tree?projection=asset-browser-v1", server, release)) as AssetPageData["tree"];
       return { schema: "haneoka-asset-page-v1", ...release, server, tree };
     })();
     pages.set(server, pending);
@@ -69,7 +69,7 @@ async function assetOutputs(page: AssetPageData, parts: readonly string[], local
   let pending = descriptors.get(key);
   if (!pending) {
     pending = (async () => {
-      const descriptor = (await fetchStaticCatalog(`sources/${source}`, page.server, page)) as {
+      const descriptor = (await fetchStaticCatalog(`sources/${source}?projection=asset-browser-v1`, page.server, page)) as {
         outputs?: AssetOutput[];
         objectArchive?: AssetOutput;
       };
