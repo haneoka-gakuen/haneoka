@@ -1,4 +1,4 @@
-import { currentContentGroup, visibilityPolicyKey } from "./content-policy-browser";
+import { currentContentGroup, preparePublicStaticData, visibilityPolicyKey } from "./content-policy-browser";
 import { showUnreleasedContent } from "./content-release";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { decodePageData } from "./page-data-codec";
@@ -33,7 +33,7 @@ function privatePreparation(document: Document): Promise<unknown> {
   } catch {
     return Promise.resolve();
   }
-  return import("./public-static-browser").then((view) => view.preparePageData()).catch(() => undefined);
+  return preparePublicStaticData().catch(() => undefined);
 }
 
 export function waitForPageData(owner: HTMLElement, connect: () => void): boolean {

@@ -282,7 +282,9 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installNavigationPrefetch } from "../lib/navigation-prefetch";
       import { installContentRequests } from "../lib/content-request";
-      import { installContentVisibility } from "../lib/content-policy-browser";
+      import { installContentVisibility, registerPublicStaticView } from "../lib/content-policy-browser";
+      import * as publicStaticView from "../lib/public-static-browser";
+      registerPublicStaticView(publicStaticView);
       installSpoilerNavigation();
       installNavigationPrefetch();
       installContentRequests();

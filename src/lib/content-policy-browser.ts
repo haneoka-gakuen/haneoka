@@ -65,7 +65,21 @@ export const ensureContentVisibility = (fresh = false): Promise<void> =>
 /** Display metadata last returned by the public-static view endpoint. */
 export const PUBLIC_STATIC_METADATA_KEY = "haneoka:content-view-meta:v1";
 type PublicStaticView = typeof import("./public-static-browser");
-let publicStatic: Promise<PublicStaticView> | undefined;
+let publicStatic: PublicStaticView | undefined;
+let resolvePublicStatic: () => void;
+const publicStaticReady = new Promise<void>((resolve) => { resolvePublicStatic = resolve; });
+export function registerPublicStaticView(view: PublicStaticView): void {
+  publicStatic = view;
+  resolvePublicStatic();
+}
+export async function preparePublicStaticData(): Promise<unknown> {
+  if (!publicStatic) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([publicStaticReady, new Promise<void>((resolve) => { timer = setTimeout(resolve, 1500); })]);
+    clearTimeout(timer);
+  }
+  return publicStatic?.preparePageData();
+}
 /** Served by the static host in its public view, or replaced by the full document of such a page. */
 const publicStaticDocument = (): boolean =>
   Boolean(
@@ -73,11 +87,9 @@ const publicStaticDocument = (): boolean =>
       document.head?.querySelector('meta[name="haneoka-public-static"]'),
   );
 function withPublicStatic(run: (view: PublicStaticView) => void): void {
-  publicStatic ??= import("./public-static-browser").then((view) => {
-    view.installPublicStaticView();
-    return view;
-  });
-  void publicStatic.then(run).catch(() => undefined);
+  const apply = () => { publicStatic!.installPublicStaticView(); run(publicStatic!); };
+  if (publicStatic) apply();
+  else void publicStaticReady.then(apply).catch(() => undefined);
 }
 /** The document response already selects the current display policy; public static pages decide on their own. */
 function refreshDocumentVisibility(): void {
@@ -86,7 +98,7 @@ function refreshDocumentVisibility(): void {
 }
 function refreshCurrentVisibility(): void {
   if (!publicStaticDocument()) refreshVisibility();
-  else if (publicStatic) void publicStatic.then((view) => view.refreshPublicStaticView());
+  else publicStatic?.refreshPublicStaticView();
 }
 export function installContentVisibility(): void {
   if (installed) return;
