@@ -1,6 +1,9 @@
 name: Render and index complete locale
 on:
   workflow_call:
+    secrets:
+      CONTENT_BUILD_TOKEN:
+        required: false
     inputs:
       locale:
         type: string
@@ -87,7 +90,7 @@ jobs:
     name: Render complete ${{ inputs.locale }} frontend
     needs: render
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
     env:

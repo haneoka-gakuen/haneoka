@@ -320,6 +320,8 @@ jobs:
           - zh-CN
           - zh-TW
     uses: ./.github/workflows/static-locale.yml
+    secrets:
+      CONTENT_BUILD_TOKEN: ${{ secrets.CONTENT_BUILD_TOKEN }}
     with:
       locale: ${{ matrix.locale }}
       inputs_artifact: ${{ needs.prepare.outputs.artifact }}

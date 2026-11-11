@@ -352,6 +352,7 @@ export async function preparePublicMedia({ outputRoot, documentsRoot, staged, co
           const [tree, ...parts] = file.relative.split("/");
           const url = new URL(`/${tree}/${file.server}/${parts.map(encodeURIComponent).join("/")}`, origin);
           url.searchParams.set("release", release.pin.releaseId);
+          url.searchParams.set("asset", "1");
           try {
             await streamToCache(url, headers, file, cacheFile, release.pin.releaseId);
           } catch (error) {
