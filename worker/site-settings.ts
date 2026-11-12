@@ -86,6 +86,13 @@ export async function applySiteSettings(
   const spoilers = view.override || view.spoilers;
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
   const completeView = sourceBrowser || unrestricted(view);
+  headers.delete("X-Haneoka-Offline-Document");
+  const guestUnpublished = Object.entries(view.policy.types).some(
+    ([kind, rule]) => !["live2d", "spine"].includes(kind) && rule.groups.includes("guest") &&
+      (rule.mode === "visible" || rule.show.length > 0),
+  );
+  if (group === "guest" && !spoilers && !completeView && !guestUnpublished)
+    headers.set("X-Haneoka-Offline-Document", "public");
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -99,7 +106,7 @@ export async function applySiteSettings(
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v1:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v2:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
   );
   if (etag) {
     headers.set("ETag", etag);

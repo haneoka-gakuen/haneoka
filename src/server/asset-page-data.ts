@@ -1,9 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import { createHash } from "node:crypto";
-import { fetchStaticCatalog, staticCatalogRelease, staticCatalogUrl } from "../lib/static-catalog-source";
+import { fetchStaticCatalog, staticCatalogRelease } from "../lib/static-catalog-source";
 import type { ReleaseServer } from "../lib/release-server";
-import { assetOutputKind, type AssetPageData, type AssetViewData } from "../lib/asset-page-data";
+import type { AssetPageData, AssetViewData } from "../lib/asset-page-data";
 import { assetStaticDocumentPath, assetStaticId } from "../lib/asset-static-routing";
 import { localizedFallbacks } from "../lib/localized-text";
 import { sourceVariant, type SourceNode } from "../lib/source-tree-search";
@@ -12,13 +9,10 @@ import { PUBLIC_RELEASE_SERVERS } from "../lib/temporary-public-routing";
 import { registerStaticDocumentCoverage } from "./static-documents";
 import { serializePageData } from "../lib/page-data";
 import { staticPageGroupEnabled } from "./static-build";
-import { staticBuildJson } from "./static-input-store";
 const pages = new Map<ReleaseServer, Promise<AssetPageData>>();
 const serializedPages = new WeakMap<AssetPageData, string>();
-type AssetOutput = { path: string; sha256?: string; bytes?: number };
+type AssetOutput = { path: string };
 const descriptors = new Map<string, Promise<AssetOutput[]>>();
-const previews = new Map<string, string>();
-let previewBytes = 0;
 export function assetPageData(server: ReleaseServer): Promise<AssetPageData> {
   let pending = pages.get(server);
   if (!pending) {
@@ -75,70 +69,11 @@ async function assetOutputs(page: AssetPageData, parts: readonly string[], local
       };
       return [...(descriptor.outputs || []), ...(descriptor.objectArchive ? [descriptor.objectArchive] : [])]
         .filter((value) => typeof value.path === "string" && value.path)
-        .map((value) => ({ path: value.path, sha256: value.sha256, bytes: value.bytes }));
+        .map((value) => ({ path: value.path }));
     })();
     descriptors.set(key, pending);
   }
   return pending;
-}
-async function assetTextPreview(page: AssetPageData, output: AssetOutput): Promise<string> {
-  const key = output.sha256;
-  if (!key || !/^[a-f0-9]{64}$/u.test(key) || !Number.isSafeInteger(output.bytes))
-    throw new Error(`Asset output identity is missing: ${output.path}`);
-  const cached = previews.get(key);
-  if (cached !== undefined) {
-    previews.delete(key);
-    previews.set(key, cached);
-    return cached;
-  }
-  const text = await staticBuildJson(
-    `asset-preview:${page.server}:${page.releaseId}:${key}`,
-    "public-data",
-    async () => {
-      const local = path.join(process.cwd(), "data", "servers", page.server, "releases", page.releaseId, output.path);
-      let body: Buffer;
-      if (fs.existsSync(local)) body = fs.readFileSync(local);
-      else {
-        const [tree, ...parts] = output.path.split("/");
-        if (!["assets", "runtime", "objects"].includes(tree)) throw new Error(`Invalid asset output: ${output.path}`);
-        const url = new URL(
-          `/${tree}/${page.server}/${parts.map(encodeURIComponent).join("/")}`,
-          staticCatalogUrl("release", page.server),
-        );
-        url.searchParams.set("release", page.releaseId);
-        const response = await fetch(url, {
-          signal: AbortSignal.timeout(30_000),
-          headers: {
-            ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
-          },
-        });
-        try {
-          if (
-            !response.ok ||
-            response.headers.get("x-haneoka-release-id") !== page.releaseId ||
-            response.headers.get("x-haneoka-source-id") !== page.sourceId
-          )
-            throw new Error(`Asset preview release mismatch: ${output.path}`);
-          body = Buffer.from(await response.arrayBuffer());
-        } finally {
-          const stream = response.body as { destroy?: () => void; cancel?: () => Promise<void> } | null;
-          if (typeof stream?.destroy === "function") stream.destroy();
-          else if (!response.bodyUsed) await stream?.cancel?.();
-        }
-      }
-      if (body.length !== output.bytes || createHash("sha256").update(body).digest("hex") !== key)
-        throw new Error(`Asset output hash mismatch: ${output.path}`);
-      return new TextDecoder().decode(body).slice(0, 200000);
-    },
-  );
-  previews.set(key, text);
-  previewBytes += Buffer.byteLength(text);
-  while (previewBytes > 32 * 1024 * 1024 && previews.size > 1) {
-    const oldest = previews.keys().next().value!;
-    previewBytes -= Buffer.byteLength(previews.get(oldest)!);
-    previews.delete(oldest);
-  }
-  return text;
 }
 export async function assetViewData(
   server: ReleaseServer,
@@ -158,7 +93,6 @@ export async function assetViewData(
     path: parts,
     files: outputs.map((output) => output.path),
     selected,
-    textPreview: output && assetOutputKind(selected) === "text" ? await assetTextPreview(page, output) : "",
   };
 }
 type AssetStaticEntry = {

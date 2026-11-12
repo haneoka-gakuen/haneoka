@@ -6,7 +6,7 @@
 // haneoka service worker: repeat visits should not re-pay the network.
 //
 // Strategy per request class:
-// - HTML navigations: network-first with a display-scoped offline fallback.
+// - HTML navigations: network-first with a public offline fallback.
 // - Hashed build output (/_astro/*): cache-first. URLs are immutable.
 // - Icon sprite: stale-while-revalidate with an HTTP cache validation.
 // - Game media: public bytes are shared, restricted bytes use the current
@@ -17,54 +17,22 @@
 //   with an entry cap.
 // - Everything else (API, auth, worker routes): network only.
 
-const VERSION = "v7";
-const PAGES_CACHE = "haneoka.pages.v9";
-const ASSETS_CACHE = `haneoka.assets.${VERSION}`;
-const IMAGES_CACHE = "haneoka.images.v8";
-const DATA_CACHE = `haneoka.data.${VERSION}`;
-const PUBLIC_MEDIA_CACHE = "haneoka.media.public.v1";
-const SCOPED_MEDIA_CACHE = "haneoka.media.scoped.v1";
+const PAGES_CACHE = "haneoka.pages.v10";
+const ASSETS_CACHE = "haneoka.assets.v7";
+const IMAGES_CACHE = "haneoka.images.v9";
+const DATA_CACHE = "haneoka.data.v8";
+const PUBLIC_MEDIA_CACHE = "haneoka.media.public.v2";
+const SCOPED_MEDIA_CACHE = "haneoka.media.scoped.v2";
 const ACTIVE_CACHES = [PAGES_CACHE, ASSETS_CACHE, IMAGES_CACHE, DATA_CACHE, PUBLIC_MEDIA_CACHE, SCOPED_MEDIA_CACHE];
 const clientScopes = new Map();
-const SCOPE_KEY = new Request(new URL("/__haneoka-content-view", self.location.origin));
-let lastScope;
-let scopeRevision = 0;
-let scopeWrites = Promise.resolve();
-
-const rememberScope = (scope) => {
-  if (lastScope === scope) return scopeWrites;
-  lastScope = scope;
-  scopeRevision++;
-  scopeWrites = scopeWrites.catch(() => {}).then(async () => {
-    const cache = await caches.open(DATA_CACHE);
-    if (scope) await cache.put(SCOPE_KEY, new Response(scope));
-    else await cache.delete(SCOPE_KEY);
-  }).catch(() => {});
-  return scopeWrites;
-};
-
-const rememberedScope = async () => {
-  if (lastScope !== undefined) return lastScope;
-  const revision = scopeRevision;
-  try {
-    const cache = await caches.open(DATA_CACHE);
-    const value = await cache.match(SCOPE_KEY);
-    const scope = value ? await value.text() : null;
-    if (scopeRevision === revision) lastScope = scope;
-  } catch {}
-  return lastScope;
-};
-
 self.addEventListener("message", (event) => {
   if (event.data?.type === "haneoka:content-view-reset") {
     clientScopes.clear();
-    event.waitUntil(rememberScope(null));
   }
   else if (event.data?.type === "haneoka:content-view" && event.source?.id && typeof event.data.scope === "string")
     {
       clientScopes.set(event.source.id, event.data.scope);
       if (clientScopes.size > 128) clientScopes.delete(clientScopes.keys().next().value);
-      event.waitUntil(rememberScope(event.data.scope));
     }
 });
 
@@ -156,8 +124,13 @@ const mediaRange = async (request, response) => {
   return new Response(body, { status: 206, headers });
 };
 
+const explicitlyPublic = (response) => {
+  const directives = response.headers.get("Cache-Control") || "";
+  return /(?:^|,)\s*public\s*(?:,|$)/i.test(directives) && !/(?:^|,)\s*(?:private|no-store)\b/i.test(directives);
+};
+
 const gameMedia = async (event, request, url) => {
-  const scope = requestedScope(url, url.searchParams.get("cv") || clientScopes.get(event.clientId));
+  const scope = requestedScope(url, clientScopes.get(event.clientId));
   const publicKey = mediaKey(url);
   const privateKey = scope ? mediaKey(url, scope) : null;
   const shared = await readCache(publicKey, PUBLIC_MEDIA_CACHE);
@@ -179,7 +152,7 @@ const gameMedia = async (event, request, url) => {
     source = new Request(request, { headers, referrer: request.referrer, referrerPolicy: request.referrerPolicy });
   }
   let response;
-  try { response = await fetch(source); }
+  try { response = await fetch(source, { cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
   catch (error) {
     const cached = shared.cached || scoped.cached;
     if (cached) {
@@ -188,8 +161,8 @@ const gameMedia = async (event, request, url) => {
     }
     throw error;
   }
-  if (response.status === 200) {
-    const published = /(?:^|,)\s*public(?:\s|,|$)/i.test(response.headers.get("Cache-Control") || "");
+  if (response.status === 200 && !response.redirected && !/\bno-store\b/i.test(response.headers.get("Cache-Control") || "")) {
+    const published = explicitlyPublic(response);
     const key = published ? publicKey : privateKey;
     const cache = published ? shared.cache : scoped.cache;
     if (key && cache) {
@@ -266,26 +239,31 @@ const staleWhileRevalidate = async (event, request, cacheName, limit, freshMs = 
 // network keeps going and refreshes the copy for next time.
 const NETWORK_GRACE_MS = 4000;
 
-const networkFirst = async (event, request, cacheName, limit = MAX_PAGES) => {
-  const url = new URL(request.url);
-  const previous = clientScopes.get(event.clientId) || await rememberedScope();
-  const value = Number(url.searchParams.get("spoiler"));
-  const scope = previous?.replace(/-[01]$/, `-${Number(Number.isFinite(value) && value !== 0)}`);
-  const lookup = scope ? mediaKey(request.url, scope) : null;
-  const entry = lookup ? await readCache(lookup, cacheName) : { cache: await caches.open(cacheName).catch(() => undefined) };
-  const cache = entry.cache;
-  const shared = await cache?.match(request).catch(() => undefined);
-  const stored = entry.cached || (shared && !shared.headers.has("X-Haneoka-Content-View") ? shared : undefined);
-  const until = Number(stored?.headers.get("X-Haneoka-Content-Until"));
-  const cached = until > 0 && Date.now() >= until ? undefined : stored;
+const networkFirst = async (event, request) => {
+  const key = new Request(request.url);
+  const { cache, cached: entry } = await readCache(key, PAGES_CACHE);
+  const until = Number(entry?.headers.get("X-Haneoka-Content-Until"));
+  const cached = until > 0 && Date.now() >= until ? undefined : entry;
   const network = fetch(request, { cache: "no-cache" }).then((response) => {
-    const current = response.headers.get("X-Haneoka-Content-View");
-    if (current) {
-      event.waitUntil(rememberScope(current));
-      cacheResponse(event, mediaKey(request.url, current), response, cache, cacheName, limit);
+    if (!cache || response.status !== 200 || response.redirected) return response;
+    if (response.headers.get("X-Haneoka-Offline-Document") === "public") {
+      cacheResponse(event, key, response, cache, PAGES_CACHE, MAX_PAGES);
+    } else if (
+      explicitlyPublic(response) &&
+      !response.headers.has("X-Haneoka-Content-View") &&
+      response.headers.get("Content-Type")?.startsWith("text/html")
+    ) {
+      const copy = response.clone();
+      const html = response.clone();
+      event.waitUntil((async () => {
+        if (!(await html.text()).includes('<meta name="haneoka-public-static"')) {
+          await copy.body?.cancel();
+          return;
+        }
+        await cache.put(key, copy);
+        await trimCache(PAGES_CACHE, MAX_PAGES);
+      })().catch(() => {}));
     }
-    else if (/(?:^|,)\s*public(?:\s|,|$)/i.test(response.headers.get("Cache-Control") || ""))
-      cacheResponse(event, request, response, cache, cacheName, limit);
     return response;
   });
   if (!cached) return network.catch(() => Response.error());
@@ -311,7 +289,7 @@ self.addEventListener("fetch", (event) => {
   if (isNeverCached(url)) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(event, request, PAGES_CACHE));
+    event.respondWith(networkFirst(event, request));
     return;
   }
   if (url.pathname === "/icons.svg") {
@@ -326,7 +304,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(event, request, DATA_CACHE, MAX_DATA));
     return;
   }
-  if (/^\/(?:assets|runtime|objects)\//.test(url.pathname)) {
+  if (/^\/(?:assets|runtime|objects|public-media)\//.test(url.pathname)) {
     event.respondWith(gameMedia(event, request, url));
     return;
   }

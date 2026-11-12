@@ -14,7 +14,6 @@ export interface AssetViewData {
   path: string[];
   files: string[];
   selected: string;
-  textPreview: string;
 }
 export function assetOutputKind(file: string): "image" | "audio" | "video" | "model" | "text" | "binary" {
   const extension = file.split(".").pop()?.toLowerCase() || "";
