@@ -234,6 +234,7 @@ export function projectPlannerData(
     if (draft.kind === "members") {
       const original = base.members[String(draft.templateId)]!,
         costs = base.members[String(draft.materialTemplateId)]!;
+      const { levelLimits: _levelLimits, ...member } = original;
       const rankGroup = draft.id + 100;
       data.progression.memberCardRanks!.push(
         ...base.progression
@@ -246,7 +247,7 @@ export function projectPlannerData(
           })),
       );
       data.members[String(draft.id)] = {
-        ...original,
+        ...member,
         id: draft.id,
         name: draft.name,
         image,
@@ -264,7 +265,7 @@ export function projectPlannerData(
         levelGroup: costs.levelGroup,
         trainingGroup: costs.trainingGroup,
         awakeningGroup: rankGroup,
-        levelLimits: costs.levelLimits,
+        ...(costs.levelLimits ? { levelLimits: costs.levelLimits } : {}),
         trainingResourceGroup: costs.trainingResourceGroup,
         liveResourceGroup: costs.liveResourceGroup,
         gekisoResourceGroup: costs.gekisoResourceGroup,
@@ -422,7 +423,7 @@ export function plannerCardFromTemplate(
     skills: ids.map((id, index) => ({
       family: families[index]!,
       templateId: id,
-      origin: plannerSkillOrigin(data, families[index]!, id),
+      ...(plannerSkillOrigin(data, families[index]!, id) ? { origin: plannerSkillOrigin(data, families[index]!, id)! } : {}),
       name: "",
       effects: {},
     })),
