@@ -1,4 +1,3 @@
-// L3 — GEB
 // Input: A single normal-live event request and its existing Worker pool.
 // Output: Ranked distinct member sets and proof from disjoint search partitions.
 // Pos: [Map](L2-2.md); single-chart activity reward search in EngineClient.

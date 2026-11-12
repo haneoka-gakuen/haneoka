@@ -1,4 +1,3 @@
-// L3 — GEB
 // Input: An ordinary shared live goal, certified roster ceilings, and feasible joint candidates.
 // Output: Distinct rosters with proven joint reward ranks, or an incomplete proof for the native fallback.
 // Pos: [Map](L2-2.md); EngineClient shared-event proof.

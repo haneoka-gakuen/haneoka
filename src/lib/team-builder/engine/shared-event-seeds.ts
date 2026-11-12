@@ -1,4 +1,3 @@
-// L3 — GEB
 // Input: Resolved ordinary-live mean reward request, Worker batch callback and cancellation state.
 // Output: Fully scored legal joint candidates, distinct by member set, plus native work statistics.
 // Pos: [Map](L2-2.md); incumbent candidates for ordinary-live multi-chart reward proof.

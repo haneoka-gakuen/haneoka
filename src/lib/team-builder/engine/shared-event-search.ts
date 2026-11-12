@@ -1,4 +1,3 @@
-// L3 — GEB
 // Input: Ordinary Live shared reward request and its native Worker scheduler.
 // Output: Feasible joint candidates and a completed joint ranking when all domains are proved.
 // Pos: [Map](L2-2.md); ordinary shared reward orchestration in EngineClient.

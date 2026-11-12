@@ -1,4 +1,3 @@
-// L3 — GEB
 // Input: A joint ordinary-live PT plan, release data and a feasible rank threshold.
 // Output: Fixed member sets that can reach the threshold, with exact per-chart PT bounds.
 // Pos: [Map](L2-2.md); first stage of the shared event proof in EngineClient.
