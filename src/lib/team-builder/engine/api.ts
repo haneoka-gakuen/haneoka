@@ -7,6 +7,7 @@
 import { battleRank, compileChart, scoreRank, type ChartSource, type CompiledChart } from "./chart";
 import { AP, ORDERS, isAllPerfect, playJudgements, prepareLive, skipScore, type PlayModel, type PreparedLive } from "./live";
 import type { EngineMaster, EventEffectRow } from "./master";
+import { plannerMaster } from "../planner-data";
 import type { PlayerInput } from "./box";
 import {
   eventObjective,
@@ -60,6 +61,34 @@ export interface ArenaOpponent {
   accuracy?: Accuracy;
   ranks?: [number, number, number];
 }
+export interface JustWindowPolicy {
+  minimumMs: number;
+  minCoverage: number;
+  minDurationMs: number;
+  minContinuousMs: number;
+}
+export interface JustWindowRange {
+  notes: number;
+  coveredNotes: number;
+  minimumCoveredNotes: number;
+  coverage: number;
+  minimumCoverage: number;
+  durationMs: number;
+  coveredMs: number;
+  minimumCoveredMs: number;
+  longestMs: number;
+  minimumLongestMs: number;
+  peakMs: number;
+  minimumPeakMs: number;
+}
+export interface JustWindow {
+  beforeMs: number;
+  afterMs: number;
+  meetsTarget: boolean;
+  coverage?: { targetMs: number; plays: number; ranges: JustWindowRange[] };
+}
+export interface JustWindowSegment { range: number; startMs: number; endMs: number; beforeMs: number; afterMs: number }
+export interface JustWindowProfile { window: JustWindow; segments: JustWindowSegment[]; sampled: boolean }
 export interface SectionSummary {
   sampled: boolean;
   metrics: number[];
@@ -73,7 +102,7 @@ export interface SectionSummary {
   wins: number[] | null;
   allWin: number | null;
   samples: number;
-  window?: [number, number] | null;
+  window?: JustWindow | null;
 }
 export interface SectionPerformance {
   sampled: boolean;
@@ -170,6 +199,7 @@ export type Goal =
       minComboBonus?: number;
       /** Minimum steady JUST tap half-window, in milliseconds. */
       minJustWindowMs?: number;
+      justWindow?: JustWindowPolicy;
       /** Opponents' scores in each range; when given they decide the placements instead of `rank`. */
       opponents?: number[][];
       /** Luck ranges: 0 takes the exact nominal lottery expectation; n > 0 averages n native lottery seeds instead. */
@@ -258,7 +288,7 @@ export interface EngineHit {
   rewardRanking?: RewardFraction[];
   /** Base multiplier, including the first-COMBO sustained bonus. */
   comboBonus?: number | null;
-  justWindow?: { beforeMs: number; afterMs: number; meetsTarget: boolean };
+  justWindow?: JustWindow;
   gekiso?: { just: GekisoJustSummary; luckSamples: number; sampled: boolean; rank: 1 };
   song: SongRef | null;
   /** Leader first. */
@@ -413,6 +443,7 @@ export function musicView(master: EngineMaster, songId: number, challengeEventId
   return { musicType, bestTags: song.bestTags, memoryKey: songId };
 }
 export function eventRoute(master: EngineMaster, eventId: number, route: "live" | "challenge" | "skip", consumption: number, effects?: readonly EventEffectRow[]): EventRoute {
+  master=plannerMaster(master,eventId,route==="challenge"||route==="skip"&&consumption>10);
   const event = master.events.get(eventId);
   if (!event) throw new RangeError(`unknown-event:${eventId}`);
   const challenge = route === "challenge" || (route === "skip" && consumption > 10);
@@ -505,6 +536,9 @@ function mergeRewardScoreTies<Detail>(first: readonly SearchHit<Detail>[], tied:
 export const GEKISO_CLOSED_FORM_MARGIN = 3e-5;
 
 export async function runEngine(master: EngineMaster, charts: ChartCache, request: EngineRequest, onProgress?: (done: number, total: number) => void, onSnapshot?: (snapshot: EngineSnapshot) => void): Promise<EngineResponse> {
+  const activity=request.goal;
+  if(activity.kind==="event")master=plannerMaster(master,activity.eventId,activity.route==="challenge"||activity.route==="skip"&&activity.consumption>10);
+  else if((activity.kind==="score"||activity.kind==="power")&&activity.challengeEventId)master=plannerMaster(master,activity.challengeEventId,true);
   request = singleSongRequest(request);
   if (request.songRules) throw new Error("song-rules-native-required");
   if (request.aggregation === "mean") throw new Error("shared-native-required");
@@ -517,8 +551,8 @@ export async function runEngine(master: EngineMaster, charts: ChartCache, reques
   if (request.goal.kind === "event" && request.goal.rewardRoom && (request.goal.rewardRoom.mode === "solo" || request.goal.rewardRoom.players !== 5 || request.goal.rewardRoom.otherAverageScore !== undefined)) throw new Error("reward-room-native-required");
   if (request.constraints.skillRoles) throw new Error("skill-roles-native-required");
   if (request.constraints.minMissionMembers?.some(Boolean)) throw new Error("gekiso-members-native-required");
-  if ((request.goal.kind === "gekiso" && request.goal.minJustWindowMs) ||
-    (request.goal.kind === "event" && request.goal.gekiso?.minJustWindowMs)) throw new Error("just-window-native-required");
+  if ((request.goal.kind === "gekiso" && (request.goal.minJustWindowMs || request.goal.justWindow)) ||
+    (request.goal.kind === "event" && (request.goal.gekiso?.minJustWindowMs || request.goal.gekiso?.justWindow))) throw new Error("just-window-native-required");
   const started = performance.now();
   const deadline = deadlineOf(request);
   request = { ...request, deadline };
@@ -956,13 +990,15 @@ export interface TeamEvaluation {
   score: HitScore;
   skipScore: number;
   event: { points: number; items: number; bonusPercent: number; itemBonusPercent: number } | null;
-  justWindow?: { beforeMs: number; afterMs: number; meetsTarget: boolean };
+  justWindow?: JustWindow;
 }
 export async function evaluateTeam(
   master: EngineMaster,
   charts: ChartCache,
   request: { members: MemberInput[]; snaps: SnapInput[]; player: PlayerInput; unknownPolicy: UnknownPolicy; team: TeamSpec; songs: SongRef[]; play: PlayModel; challengeEventId: number | null; event: { eventId: number; route: "live" | "challenge"; consumption: number; eventEffects?: readonly import("./master").EventEffectRow[] } | null },
 ): Promise<TeamEvaluation[]> {
+  const activityId=request.event?.eventId??request.challengeEventId;
+  if(activityId!==null)master=plannerMaster(master,activityId,request.event?request.event.route==="challenge":true);
   if (request.play.frameRate && request.play.frameRate !== 60) throw new Error("frame-rate-native-required");
   const box = resolveBox(master, request.members, request.snaps, request.unknownPolicy);
   const player = playerState(master, request.player);
@@ -1019,6 +1055,7 @@ export async function evaluateTeam(
 
 /** Skill windows and note density of one order, for the timeline view. */
 export interface Timeline {
+  windowProfile?: JustWindowProfile | null;
   durationMs: number;
   /** Note counts per 500 ms bucket. */
   density: number[];

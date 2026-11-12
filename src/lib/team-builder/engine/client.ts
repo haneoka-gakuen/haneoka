@@ -175,7 +175,7 @@ class EngineWorker {
     const ready = this.spawn();
     const worker = this.worker;
     const songs = message.type === "run" || message.type === "growth" ? requestChartSongs(message.request).filter((song): song is SongRef => song !== null)
-      : message.type === "evaluate" ? message.request.songs : message.type === "explain" ? [message.request.song]
+      : message.type === "evaluate" || message.type === "sample" ? message.request.songs : message.type === "explain" ? [message.request.song]
         : message.type === "charts" ? message.songs : [];
     const staged = [...this.cachedCharts];
     const missing = songs.filter(song => {
@@ -187,9 +187,10 @@ class EngineWorker {
       return index < 0;
     });
     let loading = true;
+    const requestedCharts = new Set(songs.map(chartKey));
     const loaded = (
       message.loadedCharts
-        ? Promise.resolve(message.loadedCharts)
+        ? Promise.resolve(message.loadedCharts.filter(row => requestedCharts.has(chartKey(row.song))))
         : songs.length <= 4 ? Promise.all(missing.map(song => this.downloads.load(song))) : Promise.resolve(undefined)).finally(() => { loading = false; });
     const initialized = ready.then(() => { if (loading) this.setPhase("networkMs"); });
     try {
@@ -393,7 +394,7 @@ export class EngineClient {
       || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded || request.rewardPhase
       || request.resolveRewardPlan || request.floors || request.rewardIncumbent || request.cutoff || request.rewardCutoff !== undefined || request.completed?.length) return null;
     const { timeLimitMs: _time, deadline: _deadline, requestId: _id, contextKey: _context, ...input } = request;
-    return JSON.stringify(["native-conservative-bounds-v8", input]);
+    return JSON.stringify(["native-window-coverage-v1", input]);
   }
 
   run(request: EngineRequest, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler): Promise<EngineResponse> {
@@ -472,8 +473,8 @@ export class EngineClient {
   }
 
   private async execute(request: EngineRequest, started: number, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler, responseKey: string | null = null, pool = this.pool): Promise<EngineResponse> {
-    const justWindow = request.goal.kind === "gekiso" ? request.goal.minJustWindowMs
-      : request.goal.kind === "event" ? request.goal.gekiso?.minJustWindowMs : undefined;
+    const justWindow = request.goal.kind === "gekiso" ? request.goal.justWindow?.minimumMs ?? request.goal.minJustWindowMs
+      : request.goal.kind === "event" ? request.goal.gekiso?.justWindow?.minimumMs ?? request.goal.gekiso?.minJustWindowMs : undefined;
     if (justWindow && justWindow > 0) request = { ...request, noFloor: true };
     const idlest = () => this.idlest(pool);
     const before = pool.map(worker => worker.timing());
@@ -579,11 +580,12 @@ export class EngineClient {
         let sharedSeed: EngineHit | undefined;
         let sharedUnknown: string[] = [];
         if (count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
-          && (request.goal.minComboBonus ?? 1) <= 1 && request.goal.arena?.missions.every(type => type > 0)) {
+          && (request.goal.minComboBonus ?? 1) <= 1 && (!request.goal.arena || request.goal.arena.missions.every(type => type > 0))) {
           const goal = request.goal;
           const warm = await workers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
-            request: { ...request, aggregation: undefined, seedOnly: undefined, seeded: undefined, shard: undefined, floors: undefined,
-              goal: { ...goal, songs: [goal.songs[0]!], arena: { ...goal.arena!, mode: "individual" } } } });
+            request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,
+              deadline: Math.min(deadline, clock() + 80),
+              goal: { ...goal, songs: [goal.songs[0]!], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) } } });
           if (stopped) return latest;
           sharedUnknown = warm.unknownCards;
           const team = warm.overall[0];
@@ -594,7 +596,7 @@ export class EngineClient {
                 team: { members: team.members, snaps: team.snaps, leader: team.members[0]! },
                 songs: goal.songs.filter((_, position) => position % count === index),
                 play: { great: 0, good: 0, bad: 0, miss: 0 }, challengeEventId: null, event: null,
-                gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs } },
+                gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs, justWindow: goal.justWindow } },
             })))).flat();
             if (stopped) return latest;
             const bySong = new Map(evaluated.map(value => [chartKey(value.song), value]));
@@ -723,7 +725,7 @@ export class EngineClient {
             songRules: request.songRules,
             members: request.members, snaps: request.snaps, player: request.player, unknownPolicy: request.unknownPolicy,
             team: { members: hit.members, snaps: hit.snaps, leader: hit.members[0]! }, songs: [hit.song!],
-            play: { great: 0, good: 0, bad: 0, miss: 0 }, gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs },
+            play: { great: 0, good: 0, bad: 0, miss: 0 }, gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs, justWindow: goal.justWindow },
             challengeEventId: null, event: null,
           } });
           if (stopped) return;

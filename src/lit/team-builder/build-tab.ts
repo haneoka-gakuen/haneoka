@@ -181,12 +181,23 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
   const limit = host.constraintLimits()?.justMs;
   const base = justBaseWindow(host.data);
   const upper = limit == null ? "—" : percent && base ? `+${Math.floor((limit / base - 1) * 100)}%` : `±${limit} ms`;
+  const t = (key: string, fallback: string) => host.t(`justCoverage.${key}`, fallback);
+  const issue = () => host.submitted && host.inputIssues().some(issue => issue.field === "tb-just-coverage");
+  const duration = (key: "justDurationSeconds" | "justContinuousSeconds", label: string) => html`<md-outlined-text-field
+    type="number" min="0" step="0.1" suffix-text="s" label=${label}
+    .value=${live(s[key] ? String(s[key]) : "")} placeholder=${host.t("unlimitedCombo", "No minimum")}
+    ?error=${issue()} @change=${(event: Event) => host.updateSettings({ [key]: Number((event.target as HTMLInputElement).value) })}></md-outlined-text-field>`;
   return html`
     <div class="stack">
       <div class="row row--between">
-        <span class="tb-field__label">${host.t("justWindowTarget", "JUST window minimum")}</span>
+        <span class="tb-field__label">${t("title", "JUST window coverage")}</span>
         ${gekisoHelpButton(host, "just")}
       </div>
+      ${segmented({ label: t("title", "JUST window coverage"), value: s.justWindowMode,
+        options: [{ value: "off", label: t("off", "Unrestricted") }, { value: "partial", label: t("partial", "Partial coverage") }, { value: "steady", label: t("steady", "Sustained window") }],
+        onSelect: mode => host.updateSettings({ justWindowMode: mode,
+          ...(mode !== "off" && !value ? percent ? { justWindowPercent: 100 } : base ? { justWindowMs: base * 2 } : {} : {}) }) })}
+      ${s.justWindowMode === "off" ? nothing : html`
       ${segmented({
       label: host.t("justWindowUnit", "JUST window unit"),
       value: s.justWindowUnit,
@@ -228,6 +239,15 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
             : { justWindowMs: Number((event.target as HTMLInputElement).value) },
         )}
       ></md-outlined-text-field>
+      ${s.justWindowMode === "partial" ? html`<div class="stack" id="tb-just-coverage" data-tb-field tabindex="-1">
+        <md-outlined-text-field type="number" min="0" max="100" step="1" suffix-text="%"
+          label=${t("minimumCoverage", "Minimum note coverage")} .value=${live(s.justCoveragePercent ? String(s.justCoveragePercent) : "")}
+          placeholder=${t("oneNote", "At least one note")} ?error=${issue()}
+          @change=${(event: Event) => host.updateSettings({ justCoveragePercent: Number((event.target as HTMLInputElement).value) })}></md-outlined-text-field>
+        ${accordion({id: "tb-just-duration", label: t("duration", "Coverage duration"), expanded: host.expanded.has("just-duration"),
+          onExpandedChange: expanded => { if (expanded) host.expanded.add("just-duration"); else host.expanded.delete("just-duration"); host.requestUpdate(); },
+          content: html`<div class="stack">${duration("justDurationSeconds", t("minimumDuration", "Minimum total duration"))}${duration("justContinuousSeconds", t("minimumContinuous", "Minimum continuous duration"))}</div>` })}
+      </div>` : nothing}`}
     </div>
   `;
 }
@@ -384,10 +404,6 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
   const manualAllowed = host.tab === "pt" && s.goal !== "plan";
   const manual = manualAllowed && s.manualEventEnabled;
-  if (!events.length && !manualAllowed)
-    return html`
-      <p class="inline-message">${icon("info", 18)}${host.t("noEvents", "This server's data has no event yet.")}</p>
-    `;
   const eventId = host.settings.eventId ?? events[0]?.id ?? null;
   if (host.settings.eventId === null && eventId !== null && !manual) queueMicrotask(() => set({ eventId }));
   const challengeSongs = catalog.challengeSongs(eventId);
@@ -397,7 +413,7 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
       id="tb-event"
       data-tb-field
       label=${host.t("event", "Event")}
-      .value=${manual ? "manual" : String(eventId ?? "")}
+      .value=${live(manual ? "manual" : String(eventId ?? ""))}
       @change=${(e: Event) => {
         const value = (e.target as HTMLInputElement).value;
         if (value === "manual") enableManualEvent(host);
@@ -428,6 +444,14 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
         `,
       )}
     </md-outlined-select>
+    <div class="cluster">
+      <button class="button button--tonal" type="button" @click=${()=>host.planner.editEvent()}>${icon("add",18)}${host.t("planner.newEvent","New custom event")}</button>
+      <button class="button button--text" type="button" @click=${()=>host.planner.open("events")}>${host.t("planner.manageEvents","Manage events")}</button>
+    </div>
+    ${eventId!==null&&!manual?html`<div class="cluster">
+      ${host.planner.events.some(event=>event.id===eventId)?html`<button class="button button--text" type="button" @click=${()=>host.planner.editEvent(eventId)}>${host.t("planner.edit","Edit")}</button>`:nothing}
+      <button class="button button--text" type="button" @click=${()=>host.planner.editEvent(undefined,eventId)}>${host.t("planner.copyEvent","Copy as custom event")}</button>
+    </div>`:nothing}
     ${manual ? renderManualEvent(host) : nothing}
     ${
       !manual && challenge && challengeSongs.length
@@ -437,11 +461,9 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
                 class="button button--text button--small"
                 type="button"
                 @click=${() => {
-                  const songs = challengeSongs
-                    .filter((row) =>
-                      catalog.difficultyRows(row.liveMusicId).some((difficulty) => Number(difficulty.difficulty) === 3),
-                    )
-                    .map((row) => ({ songId: row.liveMusicId, difficulty: 3 }));
+                  const songs = challengeSongs.flatMap(row=>catalog.difficultyRows(row.liveMusicId)
+                    .filter(difficulty=>host.songDifficulties.includes(Number(difficulty.difficulty)))
+                    .map(difficulty=>({songId:row.liveMusicId,difficulty:Number(difficulty.difficulty)})));
                   set(
                     s.goal === "plan"
                       ? { planChallengeSongs: songs }
@@ -1034,23 +1056,31 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                       `
                     : nothing
                 }
-                ${
-                  s.goal === "score" || s.goal === "power"
-                    ? html`
-                        <label class="tb-check">
-                          <md-checkbox
-                            touch-target="wrapper"
-                            .checked=${live(s.challengeRules)}
-                            @change=${(e: Event) => set({ challengeRules: (e.target as HTMLInputElement).checked })}
-                          ></md-checkbox>
-                          <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
-                        </label>
-                        ${s.challengeRules ? eventSection(host) : nothing}
-                      `
-                    : nothing
-                }
                 ${s.goal === "score" || s.goal === "gekiso" ? playConditions(host, s) : nothing}
                 ${s.goal === "gekiso" ? gekisoSamplingAdvanced(host) : nothing}
+              </section>
+            `
+          : nothing
+      }
+      ${
+        host.tab === "build" && s.goal !== "plan"
+          ? html`
+              <section class="surface stack">
+                ${sectionHeading({ icon: "event", label: host.t("event", "Event") })}
+                ${eventSection(host)}
+                ${s.goal === "score" || s.goal === "power" ? html`
+                  <label class="tb-check">
+                    <md-checkbox
+                      touch-target="wrapper"
+                      .checked=${live(s.challengeRules)}
+                      @change=${(event: Event) => set({ challengeRules: (event.target as HTMLInputElement).checked })}
+                    ></md-checkbox>
+                    <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
+                  </label>
+                ` : nothing}
+                <button class="button button--text" type="button" @click=${() => host.setTab("pt")}>
+                  ${icon("emoji_events", 18)}${host.t("pt.tab", "Event rewards")}
+                </button>
               </section>
             `
           : nothing
@@ -1081,7 +1111,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                     @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                   ></md-outlined-text-field>
                 </div>
-                ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
+                ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: host.settlementMaster!.challengeBoosts.map(row=>row.consumed).filter(cp=>cp>0).map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
                 <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                 ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }), false, challengeSongs, "tb-challenge-songs")}
               </section>

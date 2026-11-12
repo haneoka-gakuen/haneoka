@@ -28,7 +28,7 @@ export function conditionSummary(host: TeamBuilder) {
       .filter(([index]) => s.minMissionMembers[index] > 0)
       .map(([index, role]) => `${host.t("missionMemberMinimum", "{role} members (minimum)", { role })} ${s.minMissionMembers[index]}`) : []),
     ...(gekiso && host.hasComboSongs() && s.minComboBonus > 1 ? [`COMBO BONUS ≥ ×${s.minComboBonus}`] : []),
-    ...(gekiso && s.justWindowMs > 0 ? [`${host.t("justWindowTarget", "JUST window minimum")} ${s.justWindowUnit === "percent" ? `+${s.justWindowPercent}%` : `±${s.justWindowMs} ms`}`] : []),
+    ...(gekiso && s.justWindowMs > 0 ? [`${host.t(s.justWindowMode === "partial" ? "justCoverage.title" : "justWindowTarget", "JUST window")} ${s.justWindowUnit === "percent" ? `+${s.justWindowPercent}%` : `±${s.justWindowMs} ms`}${s.justWindowMode === "partial" ? ` / ${s.justCoveragePercent ? `${s.justCoveragePercent}%` : host.t("justCoverage.oneNote", "At least one note")}` : ""}`] : []),
   ] : [];
   if (host.tab === "arena")
     return [`${host.catalog!.bandName(host.arena.bandId)} ${host.t("chartCount", "{count} charts", { count })}`, ...requirements].join(" / ");

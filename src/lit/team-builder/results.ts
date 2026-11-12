@@ -5,6 +5,7 @@
 // Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
 import { evaluateResult, rankRisk } from "./result-analysis";
 import { sectionResults } from "./section-results";
+import { justWindowResults } from "./just-window-results";
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
@@ -818,10 +819,10 @@ function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: T
     </div>
   </li>`;
 }
-function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, guide: TimingGuide | null | undefined) {
+function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, guide: TimingGuide | null | undefined, coverage?: Timeline["windowProfile"]) {
   const actions = guide?.actions ?? guideActions(timing);
   const unavailable = timing?.guideAvailable === false || timing === null || guide === null;
-  if (!actions.length) return html`<div class="row row--between row--wrap"><strong>${host.t("timingGuide", "Timing guide")}</strong>
+  if (!actions.length && !coverage) return html`<div class="row row--between row--wrap"><strong>${host.t("timingGuide", "Timing guide")}</strong>
     <span>${unavailable ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
       : timing ? timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
       : guide ? host.t("timingPlanNoGain", "No gain with this plan") : nothing}</span></div>`;
@@ -843,11 +844,12 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
   return html`<section class="tb-timing stack stack--flex stack--tight" aria-label=${host.t("timingGuide", "Timing guide")}>
     <div class="row row--between row--wrap"><strong class="tb-subtitle">${host.t("timingGuide", "Timing guide")}</strong>
       <span class="tb-timing__advance">${guide?.frameRate ?? resultSettings(host, hit).frameRate ?? 60} FPS</span></div>
-    <div class="cluster">${["combo", "skill", "both"].filter(kind => present.has(kind as "combo" | "skill" | "both")).map(kind => html`
+    ${coverage ? html`<div class="stack">${justWindowResults(host, coverage.window)}<div class="cluster"><span class="chip">${guide?.actions.some(action => !action.included) ? host.t("justCoverage.plan", "Combined timing plan") : host.t("justCoverage.selected", "Selected skill order")}</span>${coverage.sampled ? html`<span class="chip">${host.t("justCoverage.sampleCurve", "Sample 1 curve")}</span>` : nothing}</div></div>` : nothing}
+    <div class="cluster">${coverage ? html`<span class="chip">${host.t("justCoverage.title", "JUST HIT Zone")}</span>` : nothing}${["combo", "skill", "both"].filter(kind => present.has(kind as "combo" | "skill" | "both")).map(kind => html`
       <span class="tb-timing__advance" data-kind=${kind}>${kind === "combo" ? host.t("timingLegendCombo", "COMBO inputs")
         : kind === "skill" ? host.t("timingLegendSkill", "Skill inputs") : host.t("timingLegendBoth", "COMBO and skill inputs")}</span>`)}</div>
     <timing-chart-preview id=${chartId} .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
-      .window=${window} .kinds=${kinds} .numberNotes=${true} .whole=${true} .active=${true} .locale=${host.locale}
+      .window=${window} .kinds=${kinds} .coverage=${coverage} .numberNotes=${true} .whole=${true} .active=${true} .locale=${host.locale}
       .label=${host.t("timingFullChart", "Annotated full chart")} .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}></timing-chart-preview>
     <div class="row row--between row--wrap"><strong class="tb-subtitle">${host.t("timingChartOrder", "In chart order")}</strong>
       <span>${host.t("timingMarkedNotes", "{count} marked notes", { count: notes.size })}</span></div>
@@ -995,7 +997,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
                 <span class="tb-delta" data-sign="up">+${format(host, guide.best - guide.score)}</span></dd></div>` : nothing
               : timingRow(host, timing, true, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
           </dl>
-          ${timingDetails(host, hit, current, timing, guide)}
+          ${timingDetails(host, hit, current, timing, guide, typeof timingResult === "object" ? timingResult.windowProfile : undefined)}
         </div>`,
       }) : nothing}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
@@ -1105,6 +1107,7 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
       ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference)) : nothing}
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
+      ${hit.justWindow?.coverage ? justWindowResults(host, hit.justWindow) : nothing}
       ${hit.event && hit.score && hit.song ? (() => {
         const rank = host.analysis.targetRank, room = resultRoom(host,hit), rows = host.master?.scoreRanks.get(host.master.songs.get(hit.song!.songId)?.rankGroup ?? 0) ?? [];
         const target = rows.find(row => row.rank === rank), risk = rankRisk(hit,rank);

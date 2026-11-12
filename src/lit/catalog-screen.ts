@@ -36,6 +36,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
+import { cardTile } from "./shared/card-tile";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import {
   serverAvailabilityBadge,
@@ -5568,25 +5569,26 @@ export class CatalogScreen extends LitElement {
     const image = this.imageSource(this.first(item, ["images.thumbnail", "thumbnail", "image"]));
     const attribute = this.itemAttributeMark(item);
     const rarity = this.itemRarityMark(item);
+    const relation = this.itemCharacterRelation(item);
+    const attributeLabel = this.fieldValue(item, "cardType");
+    const rarityLabel = this.fieldValue(item, "rarity");
     return {
-      kind,
-      title,
-      titleLanguage: resolved.locale,
-      subtitle: this.tileDescriptionContent(item, kind),
-      adornment: catalogCharacterRelationship(this.itemCharacterIds(item), this.settings.locale, (id) =>
-        this.itemCharacter(item, id),
-      ).adornment,
-      label: title,
-      image,
+      ...cardTile({
+        kind,
+        title,
+        titleLanguage: resolved.locale,
+        subtitle: relation.content,
+        adornment: relation.adornment,
+        label: [title, relation.label, rarityLabel, attributeLabel].filter(Boolean).join(" / "),
+        image,
+        attributeIcon: attribute,
+        attributeLabel,
+        rarityIcon: rarity,
+        rarityLabel,
+      }),
       imageFallback: image,
       aspectRatio: kind === "support" ? "16 / 9" : "3 / 4",
-      placeholder: icon("image", 32),
-      fit: "contain",
       onImageError: this.imageError,
-      marks: [
-        attribute ? { at: "start", image: attribute, label: this.fieldValue(item, "cardType") } : null,
-        rarity ? { at: "end", image: rarity, label: this.fieldValue(item, "rarity") } : null,
-      ],
     };
   }
 

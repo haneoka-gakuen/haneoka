@@ -44,7 +44,7 @@ import { rovingKeydown, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { accordion } from "../ui/accordion";
 import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
-import { farmingConditions, farmingMode, farmingSettings, resolveLuckSamples } from "./workspace-state";
+import { farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
 import { usesPtResults } from "./score-goal";
 import { changeRewardMode } from "../../lib/team-builder/reward-plan";
@@ -144,7 +144,7 @@ export class PtController {
               luckSamples: resolveLuckSamples(s, "rewards"),
               rank: 1 as const,
               minComboBonus: s.minComboBonus,
-              ...(s.justWindowMs > 0 ? { minJustWindowMs: s.justWindowMs } : {}),
+              ...justWindowGoal(s),
             },
           }
         : {}),
@@ -512,7 +512,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
               label: host.t("cpPerLive", "CP per live"),
               value: String(s.challengePoints),
               options: host
-                .master!.challengeBoosts.filter((row) => row.consumed > 0)
+                .settlementMaster!.challengeBoosts.filter((row) => row.consumed > 0)
                 .map((row) => ({ value: String(row.consumed), label: `${row.consumed} CP` })),
               onSelect: (value) => host.updateSettings({ challengePoints: Number(value) }),
             })
@@ -595,7 +595,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                           label: host.t("cpPerLive", "CP per live"),
                           value: String(s.challengePoints),
                           options: host
-                            .master!.challengeBoosts.filter((row) => row.consumed > 0)
+                            .settlementMaster!.challengeBoosts.filter((row) => row.consumed > 0)
                             .map((row) => ({ value: String(row.consumed), label: `${row.consumed} CP` })),
                           onSelect: (value) => host.updateSettings({ challengePoints: Number(value) }),
                         }),
