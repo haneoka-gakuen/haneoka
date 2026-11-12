@@ -12,6 +12,7 @@ import { resolveSlotSkill } from "./skills";
 import { missionPattern } from "./full/gekisou";
 import { liveBoostRow } from "./boosts";
 import { satI32 } from "./full/num";
+import { plannerMaster } from "../planner-data";
 
 export interface PtIssue {
   code: "mode" | "inventory" | "practice" | "player" | "constraint" | "event" | "chart" | "skill" | "rules";
@@ -21,6 +22,7 @@ const integer = (n: unknown, min = 0): n is number =>
   typeof n === "number" && Number.isSafeInteger(n) && n >= min && n <= 2_147_483_647;
 
 export function validatePtRequest(master: EngineMaster, request: EngineRequest): PtIssue[] {
+  if(request.goal.kind==="event")master=plannerMaster(master,request.goal.eventId,request.goal.route==="challenge");
   if (request.songRules) {
     const rule = request.songRules;
     master = { ...master, songs: new Map([...master.songs].map(([id,song]) => [id,{...song,musicType:rule.musicType || song.musicType,gekisoMissions:song.gekisoMissions.map((mission,index)=>rule.missions[index] || mission)}])) };

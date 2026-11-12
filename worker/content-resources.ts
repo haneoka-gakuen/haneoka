@@ -2,7 +2,7 @@
 // Input: Complete immutable catalog indexes, resource requests and their display context.
 // Output: Authorized media or a filtered, versioned JSON representation.
 // Pos: [Map](L2.md); shared public-resource response boundary.
-// Effects/Dependencies: Uses internal edge caches after resolving current permissions; restricted media cannot be cached by browsers.
+// Effects/Dependencies: Uses internal edge caches after resolving current permissions; source objects remain immutable.
 import {
   criSourceShard,
   projectCriSources,
@@ -13,7 +13,7 @@ import {
 
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, visibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import { publicChartAsset } from "./chart-assets";
 import {
@@ -34,6 +34,7 @@ export interface ContentResourceIndex {
   previewAssets?: string[];
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
+  eventSongReleasesPrepared?: true;
 }
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
@@ -51,7 +52,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
       if (value.catalogMetadata && typeof value.catalogMetadata === "object")
         collect(value.catalogMetadata as Record<string, unknown>);
     };
-    Object.values(index.records).forEach((reference) => collect(reference.publication));
+    Object.values(index.records).forEach((reference) => { if (!isModelVisibilityType(reference.kind)) collect(reference.publication); });
     timeline = [...times].sort((a, b) => a - b);
     publicationTimelines.set(index, timeline);
   }
@@ -62,7 +63,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
     if (timeline[middle]! <= now) low = middle + 1;
     else high = middle;
   }
-  return `${index.releaseId ?? "legacy"}-${timeline[low - 1] ?? 0}`;
+  return `${index.releaseId ?? "legacy"}-models-public-v1-${timeline[low - 1] ?? 0}`;
 }
 export function nextContentPublication(
   index: ContentResourceIndex | null | undefined,
@@ -83,9 +84,11 @@ export function nextContentPublication(
 export type ContentIndexReader = (
   server: string,
   release?: string,
+  assetPath?: string,
 ) => Promise<ContentResourceIndex | null>;
 export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
   kinds.every((kind) => {
+    if (isModelVisibilityType(kind)) return true;
     const rule = view.policy.types[kind];
     return (
       contentVisible(view, kind, { __publicationPending: true }) &&
@@ -127,8 +130,20 @@ function functionalDocument(request: Request): boolean {
     return false;
   }
 }
+function siteDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    return page.origin === new URL(request.url).origin &&
+      /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)(?:\/|$)/u.test(page.pathname);
+  } catch {
+    return false;
+  }
+}
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
+  if (/^(?:objects\/|runtime\/unity-json\/)/u.test(path)) return true;
   if (/^assets\/Assets\/AddressableResources\/Adv\/(?:Transition\/adv_transition_0001\/texture\.png|PostEffect\/)/u.test(path))
     return true;
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
@@ -147,22 +162,45 @@ function publicInterfaceAsset(path: string): boolean {
 function mayReadAsset(
   index: ContentResourceIndex,
   path: string,
-  owners: string[][] | undefined,
   view: RequestContentView,
-): boolean {
-  if (!owners?.length) return unrestricted(view);
-  const allowed = owners.some((chain) =>
-    chain.length > 0 && chain.every((id) => {
+): { allowed: boolean; public: boolean } {
+  const owners = assetOwners(index, path);
+  if (!owners?.length || owners.some((chain) => chain.some((id) => !index.records[id])))
+    return { allowed: true, public: true };
+  const publicAsset = owners.some((chain) =>
+    chain.every((id) => {
       const ref = index.records[id];
-      return ref && contentVisible(view, ref.kind, ref.publication, ref.id);
+      return (
+        ref &&
+        contentVisible(
+          {
+            ...view,
+            group: "guest",
+            spoilers: false,
+            override: false,
+            policy: { eventChallengeSongs: true, types: {} },
+          },
+          ref.kind,
+          ref.publication,
+          ref.id,
+        )
+      );
     }),
   );
+  const allowed =
+    publicAsset ||
+    owners.some((chain) =>
+      chain.every((id) => {
+        const ref = index.records[id];
+        return ref && contentVisible(view, ref.kind, ref.publication, ref.id);
+      }),
+    );
   const preview =
     !allowed &&
     view.spoilers &&
     index.previewAssets?.includes(path) &&
     owners.some((chain) =>
-      chain.length > 0 && chain.every((id) => {
+      chain.every((id) => {
         const ref = index.records[id];
         return (
           ref &&
@@ -171,33 +209,7 @@ function mayReadAsset(
         );
       }),
     );
-  return allowed || Boolean(preview);
-}
-export async function gameMediaBoundary(
-  request: Request,
-  env: Env,
-  path: string,
-  readIndex: (path: string) => Promise<ContentResourceIndex | null>,
-  serve: () => Promise<Response>,
-): Promise<Response> {
-  if (!(await isContentBuildRequest(request, env))) {
-    const index = await readIndex(path);
-    if (!index)
-      return new Response("Resource metadata unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
-    const owners = assetOwners(index, path);
-    const published = owners?.some((chain) =>
-      chain.length > 0 && chain.every((id) => {
-        const ref = index.records[id];
-        return ref && contentPublished(ref.publication);
-      }),
-    );
-    if (published || (!owners?.length && publicInterfaceAsset(path))) return serve();
-    const view = await requestContentView(request, env);
-    if (!mayReadAsset(index, path, owners, view)) return notPublic();
-  }
-  const response = privateContentResponse(await serve());
-  response.headers.set("Cache-Control", "private, no-store");
-  return response;
+  return { allowed: allowed || Boolean(preview), public: publicAsset };
 }
 export async function contentResourceBoundary(
   request: Request,
@@ -213,15 +225,17 @@ export async function contentResourceBoundary(
   const sourceBrowser =
     /^\/api\/v1\/servers\/(?:jp|intl)\/sources\//u.test(url.pathname) ||
     /^\/asset-static\/(?:jp|intl)\/.*\.json$/u.test(url.pathname);
+  const media = /^\/(assets|runtime|objects)\/(jp|intl)\/(.+)$/u.exec(url.pathname);
   const bulk = /^\/(?:game-client|artifacts)\/(jp|intl)\//u.exec(url.pathname);
   const packed = url.pathname.startsWith("/provider-static/content/");
   const staticJson = /^\/(?:static-views|provider-static|asset-static|playlist-static)\/.*\.json$/u.test(url.pathname);
   const search = url.pathname === "/api/v1/search";
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
-  if (!api && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
+  if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
-  if (sourceBrowser) return serve(request);
+  if (sourceBrowser || (media && (url.searchParams.get("asset") === "1" || siteDocument(request)))) return serve(request);
   const tail = api?.[2] ?? "";
+  if (imageEntity || (api && isModelVisibilityType(visibilityType(tail.split("/")[0]!)))) return serve(request);
   const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
   const serveFunctional = async () => {
     const response = await serve(request);
@@ -233,7 +247,7 @@ export async function contentResourceBoundary(
       encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
     });
   };
-  if (componentData && functionalDocument(request)) return serveFunctional();
+  if ((media || componentData) && functionalDocument(request)) return serveFunctional();
   const functional = api && (
     ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "song-meta", "options"].includes(tail) ||
     (tail === "release" && url.searchParams.get("projection") === "identity") ||
@@ -244,6 +258,7 @@ export async function contentResourceBoundary(
     /^\/api\/v1\/(?:team-builder|meta-reference)\//u.test(url.pathname) ||
     (!visibilityType(tail.split("/")[0]!) && !/^(?:catalog|release)(?:\/|$)/u.test(tail))
   )) return serve(request);
+  if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
     response.headers.set("Cache-Control", "private, no-store");
@@ -251,8 +266,32 @@ export async function contentResourceBoundary(
   }
   const server =
     api?.[1] ??
+    media?.[2] ??
     bulk?.[1] ??
     (search || imageEntity ? (url.searchParams.get("server") ?? "intl") : undefined);
+  let mediaIndex: ContentResourceIndex | null | undefined;
+  if (media && server) {
+    mediaIndex = await readIndex(
+      server,
+      url.searchParams.get("release") ?? undefined,
+      `${media[1]}/${decodeURIComponent(media[3]!)}`,
+    ).catch(() => null);
+    if (!mediaIndex) return serve(request);
+    if (mediaIndex) {
+      const owners = assetOwners(mediaIndex, `${media[1]}/${decodeURIComponent(media[3]!)}`);
+      if (!owners?.length || owners.some((chain) => chain.some((id) => !mediaIndex!.records[id])))
+        return serve(request);
+      if (
+        owners?.some((chain) =>
+          chain.every((id) => {
+            const reference = mediaIndex!.records[id];
+            return reference && (isModelVisibilityType(reference.kind) || contentPublished(reference.publication));
+          }),
+        )
+      )
+        return serve(request);
+    }
+  }
   const offlineAuthorization =
     api && tail === "stories" && url.searchParams.get("projection") === "offline-authorization";
   const offlineIndex =
@@ -330,6 +369,22 @@ export async function contentResourceBoundary(
   }
   if (api && /^live2d\/[^/]+$/u.test(tail) && unrestricted(view, ["live2d", "characters", "bands"]))
     return privateContentResponse(await serve(request));
+  if (media && server) {
+    const index = mediaIndex;
+    if (!index) return serve(request);
+    const access = mayReadAsset(index, `${media[1]}/${decodeURIComponent(media[3]!)}`, view);
+    if (!access.allowed) return notPublic();
+    const response = await serve(request);
+    if (access.public) return response;
+    const result = privateContentResponse(response);
+    if (response.ok || response.status === 304) {
+      result.headers.set("Cache-Control", "private, max-age=21600");
+      result.headers.set("Date", new Date().toUTCString());
+      result.headers.delete("Age");
+      if (url.searchParams.get("cv") === view.key) result.headers.set("Vary", "Accept-Encoding");
+    }
+    return result;
+  }
   if (identityOnly) return serve(request);
   // JSON source caches are shared internally. Conditional validation applies to
   // the filtered representation, whose identity includes the display policy.

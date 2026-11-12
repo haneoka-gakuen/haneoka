@@ -1,6 +1,7 @@
 import { cubismModelMetadata } from "../server/captured-cubism-model-metadata";
 import { LOCALES, type Locale } from "../i18n/locales";
 import { resolveLocalizedText } from "./localized-text";
+import { live2dModelName, compareLive2dModelKeys } from "./model-name";
 import {
   asRecord,
   fetchOptionalStaticCatalog,
@@ -80,7 +81,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
   for (const [key, model] of live2dModels) {
     const detail = live2dDetails.get(key) ?? model;
     const character = localizedAll(model.characterName);
-    const costumes = localizedAll(model.title);
+    const costumes = localizedAll(live2dModelName(model));
     const titles = Object.fromEntries(
       LOCALES.map((locale) => {
         const name = character[locale] || key;
@@ -176,8 +177,6 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
     };
   });
 
-  // Live-mode and stage variants of one costume resolve to the same
-  // character + costume title; the internal model name tells them apart.
   disambiguateTitles(
     live2dPages,
     (page, locale) => page.titles[locale],
@@ -198,6 +197,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
       ]),
     ) as Record<Locale, string>;
 
+  live2dPages.sort((left, right) => compareLive2dModelKeys(left.id, right.id));
   return [...live2dPages, ...spinePages];
 }
 

@@ -1,5 +1,6 @@
 import { html } from "lit";
 import { resolveLocalizedText } from "../../lib/localized-text";
+import { live2dModelName } from "../../lib/model-name";
 import { localizedText } from "../shared/catalog";
 import { modelPreviewSources } from "../../lib/model-artwork";
 export { modelPreviewSources } from "../../lib/model-artwork";
@@ -11,7 +12,7 @@ import "../../styles/model-tile.css";
 
 type Model = Record<string, unknown>;
 export function modelTitle(model: Model, locale: string) {
-  return resolveLocalizedText(model.title || model.live2dName || model.characterName || model.live2dKey || "", locale);
+  return resolveLocalizedText(live2dModelName(model), locale);
 }
 export function subCharacterLabel(key: string) {
   return key

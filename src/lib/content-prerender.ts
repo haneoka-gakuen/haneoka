@@ -6,7 +6,7 @@
 import type { ContentReference } from "./content-view";
 import { contentReference } from "./content-view";
 import { contentPublished } from "./content-publication";
-import type { VisibilityType } from "./content-visibility-policy";
+import { isModelVisibilityType, type VisibilityType } from "./content-visibility-policy";
 
 let publicView = false;
 let references: Map<string, ContentReference> | undefined;
@@ -18,6 +18,7 @@ export function prerenderContentVisible(
   value: Record<string, unknown>,
   id?: string,
 ): boolean {
+  if (isModelVisibilityType(kind)) return true;
   if (kind && !contentPublished(value)) {
     const reference = contentReference(kind, value, id);
     references?.set(JSON.stringify(reference), reference);

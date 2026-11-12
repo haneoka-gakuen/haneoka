@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Frozen skill catalogue and current collection or canonical skill page.
+// Output: Searchable skill effects, level values and links to associated cards.
+// Pos: [Map](L2-2.md); skill collection and detail workspace.
+// Effects/Dependencies: Shared browse and detail components; card pages own upgrade requirements.
 import { unpublishedState } from "./ui/unpublished-state";
 import { LitElement, html, nothing } from "lit";
 import { clientText } from "../i18n/client";
@@ -19,12 +24,13 @@ import { tile } from "./ui/tile";
 import { icon } from "./ui/icon";
 import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
 import { paneSection, renderPane } from "./ui/pane";
+import { cardTile } from "./shared/card-tile";
+import { cardRarityName } from "./shared/rarity-icon";
+import { catalogCharacterRelationship } from "./shared/catalog-relationships";
+import { catalogLabelPath } from "../config/catalog-labels";
 import { detailLayout } from "./ui/detail-layout";
 import "./ui/image-gallery";
 import { emptyState } from "./ui/state";
-import { upgradeCost } from "./ui/upgrade-cost";
-import { renderLevelSwitch } from "./ui/level-switch";
-import "../styles/card-detail.css";
 
 /**
  * Skills, as a catalogue collection: grid, list and table views linking to
@@ -62,7 +68,6 @@ export class SkillsWorkspace extends LitElement {
   declare private view: CollectionView;
   declare private filtersOpen: boolean;
   private data?: SkillCatalogPayload;
-  private targets = new Map<string, number>();
   private lazyImages = new LazyImages();
   private releaseSearch?: () => void;
   private policyChanged = () => this.requestUpdate();
@@ -361,97 +366,33 @@ export class SkillsWorkspace extends LitElement {
     const supports = entry.cards.filter((card) => card.kind === "support-cards");
     const cardGrid = (cards: SkillCatalogEntry["cards"], kind: "member" | "support") => html`
       <div class=${`collection collection--${kind}`}>
-        ${cards.map((card) =>
-          tile({
-            kind,
-            title: this.name(card.name) || card.id,
-            label: this.name(card.name) || card.id,
-            image: card.image,
-            fit: "contain",
-            placeholder: icon("image", 32),
+        ${cards.map((card) => {
+          const relation = catalogCharacterRelationship(card.characterIds, this.locale, (id) => data.characters[String(id)]);
+          const title = resolveLocalizedText(card.name, this.locale);
+          const rarity = cardRarityName(card.rarity);
+          const color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][card.attribute] ?? "";
+          const attribute = color ? this.text(catalogLabelPath(color.toLowerCase())!, color) : "";
+          return tile({
+            ...cardTile({
+              kind,
+              title: title.text || card.id,
+              titleLanguage: title.locale,
+              subtitle: relation.content,
+              adornment: relation.adornment,
+              label: [title.text, relation.label, rarity, attribute].filter(Boolean).join(" / "),
+              image: card.image,
+              attributeIcon: data.marks[`CardType-${color}.png`] || "",
+              attributeLabel: attribute,
+              rarityIcon: data.marks[`RarityIconCenter_${rarity}.png`] || "",
+              rarityLabel: rarity,
+            }),
+            aspectRatio: kind === "member" ? "3 / 4" : "16 / 9",
             onImageError: nextImageCandidate,
             href: cardHref(card),
-          }),
-        )}
+          });
+        })}
       </div>
     `;
-    const costs = entry.costs.filter((cost) => cost.steps.length);
-    const costBlock = (cost: SkillCatalogEntry["costs"][number]) => {
-      const key = `${data.server}:${data.releaseId}:${entry.key}:${cost.key}`;
-      const stages = [1, ...new Set(cost.steps.map((step) => step.to))].sort((a, b) => a - b);
-      const to = this.targets.get(key) ?? stages.at(-1)!;
-      const label = this.text(
-        cost.kind === "awakening"
-          ? "catalog.cards.fields.rankUp"
-          : cost.kind === "rank"
-            ? "catalog.cards.fields.rank"
-            : "common.fields.level",
-        cost.kind,
-      );
-      const steps = cost.steps.map((step) => ({
-        from: step.from,
-        to: step.to,
-        items: step.costs.map((value) => ({
-          identity: value.reference
-            ? `${value.reference.resource}:${value.reference.id}`
-            : value.itemId !== undefined
-              ? `items:${value.itemId}`
-              : "",
-          name: this.name(value.reference?.name) || this.text("common.fields.required", "Required"),
-          count: value.count,
-          image: String(value.reference?.image ?? ""),
-          ...(value.reference?.resource === "items" || value.reference?.resource === "support-cards"
-            ? {
-                href: resourcePath({
-                  server: data.server,
-                  locale: this.locale as Locale,
-                  kind: value.reference.resource,
-                  id: value.reference.id,
-                }),
-              }
-            : {}),
-        })),
-      }));
-      const users = entry.cards.filter((card) => card.costKey === cost.key);
-      return html`
-        <div class="card-detail-controls">
-          ${
-            costs.length > 1 || users.length < entry.cards.length
-              ? html`
-                  <div class="card-relation-list">
-                    ${users.map(
-                      (card) => html`
-                        <a href=${cardHref(card)}>
-                          ${
-                            card.image
-                              ? html`
-                                  <img src=${card.image} alt="" loading="lazy" decoding="async" />
-                                `
-                              : nothing
-                          }
-                          ${this.name(card.name) || card.id}
-                        </a>
-                      `,
-                    )}
-                  </div>
-                `
-              : nothing
-          }
-          ${renderLevelSwitch(
-            label,
-            stages,
-            to,
-            (value) => {
-              this.targets.set(key, value);
-              this.requestUpdate();
-            },
-            String,
-            { context: key },
-          )}
-          ${upgradeCost({ label, from: Math.max(1, to - 1), to, initial: 1, locale: this.locale, scope: key, items: [], steps })}
-        </div>
-      `;
-    };
     return renderPane({
       title,
       titleLanguage: resolveLocalizedText(entry.name, this.locale).locale,
@@ -517,17 +458,6 @@ export class SkillsWorkspace extends LitElement {
                     </dl>
                   `,
                   entry.levels.length,
-                )
-              : nothing
-          }
-          ${
-            costs.length
-              ? paneSection(
-                  this.text("catalog.skills.upgradeCosts", "Upgrade materials"),
-                  icon("inventory_2", 20),
-                  html`
-                    ${costs.map(costBlock)}
-                  `,
                 )
               : nothing
           }

@@ -741,8 +741,10 @@
   }
   .home-cards .tile,
   .home-songs .tile {
-    height: 100%;
+    height: auto;
     min-width: 0;
+    content-visibility: visible;
+    contain-intrinsic-size: none;
   }
   .home-cards .tile__mark--bottom-start,
   .home-songs .tile__mark--bottom-start {

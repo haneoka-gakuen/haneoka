@@ -1,14 +1,6 @@
 /** Compact, build-time associations. References inherit their payload's server and release. */
-import { LOCALES } from "../i18n/locales";
-import {
-  buildSkillReferenceIndex,
-  resolveSkillDescription,
-  resolveSkillLevelEffects,
-  stripSkillDescriptionMarkup,
-  unresolvedSkillDescriptionTokens,
-} from "../lit/shared/skill-text";
+export { skillDisplay } from "../lit/shared/skill-text";
 import { asRecord, type RecordValue } from "./static-catalog-source";
-import { resolveLocalizedText } from "./localized-text";
 
 export const associationRows = (value: unknown): RecordValue[] =>
   (Array.isArray(value) ? value : Object.values(asRecord(value) || {})).flatMap((row) =>
@@ -101,44 +93,6 @@ export function upgradeSteps(
   return [...grouped.values()].sort((a, b) => a.to - b.to);
 }
 
-/** Resolve each authored skill level once for all supported archive text locales. */
-export function skillDisplay(item: RecordValue, reference: RecordValue): RecordValue[] {
-  const index = buildSkillReferenceIndex(reference);
-  return Object.entries(asRecord(item.resolvedSkills) || {}).flatMap(([group, value]) =>
-    associationRows(Array.isArray(value) ? value : [value]).map((skill, slot) => {
-      const effects = associationRows(skill.effects);
-      const levels = [...new Set(effects.map((effect) => Number(effect.level ?? raw(effect)._level)))]
-        .filter((level) => Number.isFinite(level) && level > 0)
-        .sort((a, b) => a - b);
-      return {
-        group,
-        slot,
-        name: skill.skillName ?? skill.name,
-        levels: (levels.length ? levels : [1]).map((level) => {
-          const selected = resolveSkillLevelEffects(effects, index, level).effects;
-          const localized = LOCALES.map((locale) => resolveLocalizedText(skill.description, locale));
-          const rendered = localized.map((source) =>
-            stripSkillDescriptionMarkup(
-              resolveSkillDescription(
-                source.text,
-                selected,
-                (value) => resolveLocalizedText(value, source.locale).text,
-              ),
-            ),
-          );
-          const unresolved = [...new Set(rendered.flatMap(unresolvedSkillDescriptionTokens))];
-          const valid = (text: string) => text.length > 0 && !unresolvedSkillDescriptionTokens(text).length;
-          const fallback = rendered.findIndex(valid);
-          const description = rendered.map((text) => (valid(text) ? text : fallback >= 0 ? rendered[fallback] : ""));
-          const descriptionLocales = rendered.map((text, slot) =>
-            valid(text) ? localized[slot].locale : fallback >= 0 ? localized[fallback].locale : "und",
-          );
-          return { level, description, descriptionLocales, ...(unresolved.length ? { unresolved } : {}) };
-        }),
-      };
-    }),
-  );
-}
 
 export function characterRankAssociations(
   id: number,

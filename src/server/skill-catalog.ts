@@ -1,9 +1,11 @@
+// L3 — GEB
+// Input: Release-pinned skill definitions and their related member and Snapshot cards.
+// Output: Skill catalogue with level effects, card attributes, rarity, characters and pinned artwork.
+// Pos: [Map](L2-2.md); shared skill page data.
+// Effects/Dependencies: Reads immutable catalogue resources; card upgrade costs stay with card details.
 import {
   skillDisplay,
   associationRows,
-  upgradeSteps,
-  entityReference,
-  type UpgradeStep,
 } from "../lib/entity-associations";
 import {
   fetchStaticCatalog,
@@ -36,21 +38,22 @@ export interface SkillCatalogEntry {
     id: string;
     name: unknown;
     image: string;
-    costGroup?: number;
-    costKey?: string;
-  }>;
-  costs: Array<{
-    key: string;
-    kind: "level" | "awakening" | "rank";
-    group: number;
-    steps: UpgradeStep[];
-    cardIds: string[];
+    attribute: number;
+    rarity: number;
+    characterIds: number[];
   }>;
 }
 export interface SkillCatalogPayload {
   server: ReleaseServer;
   releaseId: string;
   sourceId: string;
+  marks: Record<string, string>;
+  characters: Record<string, {
+    characterId: number;
+    characterName: unknown;
+    englishName: unknown;
+    faceImage: string;
+  }>;
   entries: SkillCatalogEntry[];
 }
 
@@ -69,30 +72,25 @@ export function skillCatalogPayload(server: ReleaseServer): Promise<SkillCatalog
 
 async function buildSkillCatalog(server: ReleaseServer): Promise<SkillCatalogPayload> {
   const pin = await staticCatalogRelease(server);
+  const asset = (source: string): string => {
+    if (!/^\/(?:assets|runtime|objects)\//u.test(source)) return source;
+    const url = new URL(source, "https://asset.invalid");
+    url.searchParams.set("release", pin.releaseId);
+    return url.pathname + url.search;
+  };
   const names = Object.keys(families) as SkillFamily[];
-  const [documents, reference, members, supports, resources, progression, items] = await Promise.all([
+  const [documents, reference, members, supports, characters, marks] = await Promise.all([
     Promise.all(names.map((family) => fetchStaticCatalog(families[family], server, pin))),
     fetchStaticCatalog("skill-reference", server, pin),
     fetchStaticCatalog("cards", server, pin),
     fetchStaticCatalog("support-cards", server, pin),
-    fetchStaticCatalog("progression/views/skill-level-resources", server, pin),
-    fetchStaticCatalog("progression", server, pin),
-    fetchStaticCatalog("items", server, pin),
+    fetchStaticCatalog("characters", server, pin),
+    fetchStaticCatalog("ui-marks", server, pin),
   ]);
   const [memberEntities, supportEntities] = await Promise.all([
     fetchStaticCatalogBatch("cards", Object.keys(asRecord(members) ?? {}), server, pin),
     fetchStaticCatalogBatch("support-cards", Object.keys(asRecord(supports) ?? {}), server, pin),
   ]);
-  const itemEntries = asRecord(asRecord(items)?.items) ?? {};
-  const resolve = (resource: string, id: string) => {
-    const record =
-      resource === "items"
-        ? asRecord(itemEntries[id])
-        : resource === "support-cards"
-          ? supportEntities.get(id)
-          : undefined;
-    return record ? entityReference(resource, id, record) : undefined;
-  };
   const settings = new Map(
     associationRows(asRecord(reference)?.effectSettings).map(
       (row) => [Number(row.skillEffectType ?? asRecord(row.raw)?._skillEffectType), row.name] as const,
@@ -110,7 +108,7 @@ async function buildSkillCatalog(server: ReleaseServer): Promise<SkillCatalogPay
         id,
         family,
         name: skill.skillName,
-        image: String(skill.icon ?? ""),
+        image: asset(String(skill.icon ?? "")),
         effects: [
           ...new Set(
             associationRows(skill.effects).map((row) => Number(row.effectType ?? asRecord(row.raw)?._skillEffectType)),
@@ -120,7 +118,6 @@ async function buildSkillCatalog(server: ReleaseServer): Promise<SkillCatalogPay
           .map((id) => ({ id, name: settings.get(id) })),
         levels: (Array.isArray(display?.levels) ? display.levels : []) as SkillCatalogEntry["levels"],
         cards: [],
-        costs: [],
       });
     }
   }
@@ -136,57 +133,40 @@ async function buildSkillCatalog(server: ReleaseServer): Promise<SkillCatalogPay
         for (const skill of associationRows(Array.isArray(skills) ? skills : [skills])) {
           const entry = entries.get(`${family}:${skill.id}`);
           if (!entry || entry.cards.some((related) => related.kind === kind && related.id === id)) continue;
-          const direct = family === "live" || family === "gekisou";
-          const group = Number(
-            family === "live"
-              ? card.liveSkillLevelResourceGroup
-              : family === "gekisou"
-                ? card.gekisouSkillLevelResourceGroup
-                : family === "leader"
-                  ? card.memberCardRankGroup
-                  : card.supportCardRankGroup,
-          );
-          const costKind = direct ? "level" : family === "leader" ? "awakening" : "rank";
-          const costKey = `${family}:${group}:${direct ? "" : family === "leader" ? card.rankUpItemId : id}`;
-          let cost = entry.costs.find((cost) => cost.key === costKey);
-          if (!cost && Number.isSafeInteger(group) && group > 0) {
-            const rows = direct
-              ? associationRows(resources).filter((row) => Number(row.group) === group)
-              : associationRows(
-                  asRecord(progression)?.[family === "leader" ? "memberCardRanks" : "supportCardRanks"],
-                ).filter((row) => Number(asRecord(row.raw)?._group) === group);
-            cost = {
-              key: costKey,
-              kind: costKind,
-              group,
-              cardIds: [],
-              steps: upgradeSteps(
-                direct ? family : costKind,
-                rows,
-                direct ? "level" : "rank",
-                resolve,
-                direct
-                  ? undefined
-                  : {
-                      resource: family === "leader" ? "items" : "support-cards",
-                      id: String(family === "leader" ? card.rankUpItemId : id),
-                    },
-              ),
-            };
-            entry.costs.push(cost);
-          }
-          if (cost) cost.cardIds.push(`${kind}:${id}`);
           const images = asRecord(card.images);
           entry.cards.push({
             kind,
             id,
             name: card.prefix ?? card.cardName,
-            image: String(images?.thumbnail ?? ""),
-            ...(cost ? { costGroup: group, costKey } : {}),
+            image: asset(String(images?.thumbnail ?? "")),
+            attribute: Number(card.cardType),
+            rarity: Number(card.rarity),
+            characterIds: kind === "member-cards" ? [Number(card.characterId)] : (card.characterIds as number[]),
           });
         }
       }
     }
   }
-  return { server, releaseId: pin.releaseId, sourceId: pin.sourceId, entries: [...entries.values()] };
+  return {
+    server,
+    releaseId: pin.releaseId,
+    sourceId: pin.sourceId,
+    entries: [...entries.values()],
+    marks: Object.fromEntries(
+      Object.entries(asRecord(marks) ?? {})
+        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+        .map(([name, path]) => [name, asset(`/runtime/${server}/${path.replace(/^runtime\//u, "")}`)]),
+    ),
+    characters: Object.fromEntries(
+      Object.entries(asRecord(characters) ?? {}).map(([id, value]) => {
+        const row = asRecord(value)!;
+        return [id, {
+          characterId: Number(row.characterId ?? id),
+          characterName: row.characterName,
+          englishName: row.englishName,
+          faceImage: asset(String(row.faceImage || row.thumbnailImage || "")),
+        }];
+      }),
+    ),
+  };
 }

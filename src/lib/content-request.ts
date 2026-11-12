@@ -19,7 +19,15 @@ export function contentRequestUrl(source: string): string {
     /^\/api\/v1\/servers\/(jp|intl)\/(?:live2d\/[^/]+|spine\/[^/]+|story-runtime|chart-assets|options|voices)$/u.exec(url.pathname)?.[1];
   if (mediaServer && !url.searchParams.has("release")) {
     const player = document.querySelector<HTMLElement>(`vega-story-stage[server="${mediaServer}"][release-id]`);
-    const release = player?.getAttribute("release-id");
+    let release = player?.getAttribute("release-id");
+    if (!release) {
+      for (const model of document.querySelectorAll<HTMLElement>("live2d-workspace[data-model-resource-base][data-model-release]")) {
+        if (url.pathname.startsWith(model.dataset.modelResourceBase!)) {
+          release = model.dataset.modelRelease;
+          break;
+        }
+      }
+    }
     if (release) url.searchParams.set("release", release);
   }
   const gameMedia = /^\/(?:assets|runtime|objects)\//u.test(url.pathname);

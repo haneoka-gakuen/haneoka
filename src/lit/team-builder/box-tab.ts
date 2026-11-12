@@ -311,8 +311,11 @@ export function renderTemporaryActions(host: TeamBuilder) {
     items: [
       { label: host.t("addTemporaryMembers", "Add temporary member"), leading: icon("person_add", 18), run: () => open("members") },
       { label: host.t("addTemporarySnaps", "Add temporary Snapshot"), leading: icon("library_add", 18), run: () => open("snaps") },
+      { label: host.t("planner.newMember", "New hypothetical member"), leading: icon("person_add", 18), run: () => host.planner.editCard("members") },
+      { label: host.t("planner.newSnap", "New hypothetical Snapshot"), leading: icon("library_add", 18), run: () => host.planner.editCard("snaps") },
+      { label: host.t("planner.manageCards", "Manage hypothetical cards"), leading: icon("edit",18), run:()=>host.planner.open("cards") },
       { label: host.t("clearTemporaryCards", "Clear temporary cards"), leading: icon("clear_all", 18), disabled: !host.temporary.size,
-        run: () => { host.temporary.clear(); host.refreshTemporaryView(); host.notice = host.t("temporaryCleared", "Temporary cards cleared"); } },
+        run: () => { for (const kind of ["members","snaps"] as const) for(const id of host.temporary.ids(kind)) if(!host.planner.cardById(id))host.temporary.remove(kind,id); host.refreshTemporaryView(); host.notice = host.t("temporaryCleared", "Temporary cards cleared"); } },
     ],
   })}</span>`;
 }
@@ -518,7 +521,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
               close();
             }}>${icon("remove_circle", 18)}${temporary ? host.t("removeTemporary", "Remove temporary card") : host.t("removeOwned", "Not owned")}</button>`
           : nothing}
-        ${temporary && !draft ? html`<button class="button button--text" type="button" @click=${() => { if (host.saveTemporary(kind, cardId)) close(); }}>${host.t("saveTemporary", "Save to My cards")}</button>` : nothing}
+        ${temporary && !draft && !host.planner.cardById(cardId) ? html`<button class="button button--text" type="button" @click=${() => { if (host.saveTemporary(kind, cardId)) close(); }}>${host.t("saveTemporary", "Save to My cards")}</button>` : nothing}
         <span class="row__spacer"></span>
         ${draft ? html`<button class="button button--text" type="button" @click=${close}>${host.common("common.actions.cancel", "Cancel")}</button>` : nothing}
         <button class="button" type="button" @click=${() => {
