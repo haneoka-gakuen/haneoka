@@ -62,7 +62,7 @@ function isSharedRequest(data: TeamBuilderData, request: EngineRequest): request
     primary[0]!.weight === plan.unit && isInt(plan.unit, 1) && plan.unit <= 1_000_000_000 &&
     Number.isFinite(request.constraints.minBonusPercent ?? 0) &&
     play.great === 0 && play.good === 0 && play.bad === 0 && play.miss === 0 && !play.missEvery && !play.cumulativeTiming &&
-    !!event && Number(event.id) === goal.eventId && Array.isArray(event.effects) &&
+    !!event && !event.plannerRules && Number(event.id) === goal.eventId && Array.isArray(event.effects) &&
     dataRows(objectRow(event.tables).MasterLiveEventPoint).length > 0;
 }
 
