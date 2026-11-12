@@ -46,11 +46,12 @@ export async function proveSharedEvent(
 
   const proof = await proveSharedEventRosters(data, request, floor, workers, runBatch, stopped);
   if (stopped() || !proof) return undefined;
-  const initial = response({
+  const scored = {
     ...seeds,
     stats: addStats(seeds.stats, proof.stats),
     unknownCards: [...new Set([...seeds.unknownCards, ...proof.unknownCards])],
-  });
-  publish(initial);
-  return proveSharedEventSnapshots({ request, rosters: proof.candidates, outside: proof.outside, initial, runBatch, stopped, publish });
+  };
+  // Publication can merge saved candidates into the display. Proof uses the current native replay.
+  publish(response(scored));
+  return proveSharedEventSnapshots({ request, rosters: proof.candidates, outside: proof.outside, initial: response(scored), runBatch, stopped, publish });
 }

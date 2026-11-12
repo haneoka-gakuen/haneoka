@@ -87,34 +87,37 @@ function batchJobs(
   runBatch: PartitionBatch,
   stopped: () => boolean,
   receive: (response: EngineResponse, request: EventRequest) => SongResult | undefined,
-): Submit {
+) {
   const pending: { request: EventRequest; resolve: (value?: SongResult) => void }[] = [];
-  let active = false, failed = false;
+  let active: Promise<void> | undefined;
+  let failed = false;
   const drain = async () => {
-    while (pending.length && !stopped() && !failed) {
-      const jobs = pending.splice(0, 18);
-      try {
-        await runBatch(jobs.map(job => job.request), (index, response) => {
-          const job = jobs[index]!;
-          job.resolve(receive(response, job.request));
-        }, () => {});
-      } catch {
-        failed = true;
-      } finally {
-        for (const job of jobs) job.resolve();
+    try {
+      while (pending.length && !stopped() && !failed) {
+        const jobs = pending.splice(0, 18);
+        try {
+          await runBatch(jobs.map(job => job.request), (index, response) => {
+            if (stopped()) return;
+            const job = jobs[index]!;
+            job.resolve(receive(response, job.request));
+          }, () => {}, { stopped });
+        } catch {
+          failed = true;
+        } finally {
+          for (const job of jobs) job.resolve();
+        }
       }
+    } finally {
+      active = undefined;
+      for (const job of pending.splice(0)) job.resolve();
     }
-    for (const job of pending.splice(0)) job.resolve();
-    active = false;
   };
-  return request => new Promise(resolve => {
+  const submit: Submit = request => new Promise(resolve => {
     if (failed || stopped()) { resolve(undefined); return; }
     pending.push({ request, resolve });
-    if (!active) {
-      active = true;
-      queueMicrotask(() => { void drain(); });
-    }
+    active ??= Promise.resolve().then(drain);
   });
+  return { submit, settled: async () => { await active; } };
 }
 
 interface ChartProof { rank: Rank; hit: EngineHit }
@@ -333,6 +336,8 @@ export async function proveSharedEventSnapshots({
   const covered = new Set(rosters.map(candidate => rosterKey(candidate.members)));
   if (covered.size !== rosters.length || [...initialByRoster.keys()].some(key => !covered.has(key))) return undefined;
 
+  let incomplete = false;
+  const proofStopped = () => incomplete || stopped();
   const response = (rows: EngineHit[], proven: boolean): EngineResponse => ({
     ...initial, stopReason: proven ? "complete" : undefined, elapsedMs: initial.elapsedMs + clock() - started,
     overall: rows, unknownCards: [...unknownCards],
@@ -340,18 +345,21 @@ export async function proveSharedEventSnapshots({
   });
   const cutoff = () => rank(hits.at(-1)!, levels)!;
   const offer = (hit: EngineHit) => {
+    if (proofStopped()) return;
     const next = topDistinct([...hits, hit], request.k);
     if (next.some((value, index) => value !== hits[index])) {
       hits = next;
       publish(response(hits, false));
     }
   };
-  const submit = batchJobs(runBatch, stopped, (result, job) => {
-    if (result.error || result.results.length !== 1) return undefined;
-    for (const key of result.unknownCards) unknownCards.add(key);
-    const row = result.results[0]!;
-    if (job.aggregation === "mean" ? row.song !== null : !row.song || chartKey(row.song) !== chartKey(job.goal.songs[0]!))
+  const { submit, settled } = batchJobs(runBatch, proofStopped, (result, job) => {
+    const row = result.results[0];
+    if (result.error || result.results.length !== 1 || !row?.proven ||
+        (job.aggregation === "mean" ? row.song !== null : !row.song || chartKey(row.song) !== chartKey(job.goal.songs[0]!))) {
+      incomplete = true;
       return undefined;
+    }
+    for (const key of result.unknownCards) unknownCards.add(key);
     for (const key of Object.keys(row.stats) as (keyof SongResult["stats"])[])
       stats[key] = (stats[key] ?? 0) + (row.stats[key] ?? 0);
     return row;
@@ -359,18 +367,26 @@ export async function proveSharedEventSnapshots({
 
   const candidates = [...rosters].sort((a, b) => compare([fraction(b.primary)], [fraction(a.primary)]));
   const proven: EngineHit[] = [];
-  let next = 0, incomplete = false;
+  let next = 0;
   const lane = async () => {
-    while (next < candidates.length && !incomplete && !stopped()) {
-      const candidate = candidates[next++]!;
-      if (compare([fraction(candidate.primary)], cutoff().slice(0, 1)) < 0) continue;
-      const result = await proveRoster(request, candidate, initialByRoster.get(rosterKey(candidate.members)), submit, cutoff, offer, stopped);
-      if (result === undefined) incomplete = true;
-      else if (result) proven.push(result);
+    try {
+      while (next < candidates.length && !proofStopped()) {
+        const candidate = candidates[next++]!;
+        if (compare([fraction(candidate.primary)], cutoff().slice(0, 1)) < 0) continue;
+        const result = await proveRoster(request, candidate, initialByRoster.get(rosterKey(candidate.members)), submit, cutoff, offer, proofStopped);
+        if (result === undefined) incomplete = true;
+        else if (result) proven.push(result);
+      }
+    } catch (error) {
+      incomplete = true;
+      throw error;
     }
   };
-  await Promise.all(Array.from({ length: Math.min(12, candidates.length) }, lane));
-  if (stopped() || incomplete) return undefined;
+  const lanes = await Promise.allSettled(Array.from({ length: Math.min(12, candidates.length) }, lane));
+  await settled();
+  const rejected = lanes.find(result => result.status === "rejected");
+  if (rejected) throw rejected.reason;
+  if (proofStopped()) return undefined;
   proven.sort(compareHits);
   if (proven.length < request.k || compareHitRank(proven[request.k - 1]!, hits.at(-1)!) > 0) return undefined;
   // Equal reward tuples across member sets also depend on the native formation tie-break.

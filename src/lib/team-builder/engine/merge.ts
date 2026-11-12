@@ -28,7 +28,8 @@ export const compareHitRank = (a: EngineHit, b: EngineHit): number => {
   );
 };
 export const compareHits = (a: EngineHit, b: EngineHit): number => compareHitRank(a, b) || identityOrder(a, b);
-const setKey = (hit: EngineHit) => `${songKey(hit)}|${[...hit.members].sort().join(",")}`;
+export const memberSetKey = (members: readonly string[]): string => JSON.stringify([...members].sort());
+const setKey = (hit: EngineHit) => `${songKey(hit)}|${memberSetKey(hit.members)}`;
 
 export function topDistinct(hits: readonly EngineHit[], k: number): EngineHit[] {
   const best = new Map<string, EngineHit>();

@@ -11,7 +11,7 @@ import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, T
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
-import { aspirationHeld, compareHits, mergeShardResponses } from "./merge";
+import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "./merge";
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
 import { canUseSharedEventRosters } from "./shared-event-rosters";
 import { proveSharedEvent } from "./shared-event-search";
@@ -251,7 +251,7 @@ class EngineWorker {
 
 type DeferredHit = EngineHit & { pendingScores?: true };
 const pendingScores = (hit: EngineHit) => (hit as DeferredHit).pendingScores === true;
-const memberSet = (hit: EngineHit) => [...hit.members].sort().join(",");
+const memberSet = (hit: EngineHit) => memberSetKey(hit.members);
 const exactTeam = (hit: EngineHit) => JSON.stringify([hit.song?.songId, hit.song?.difficulty, hit.members, hit.snaps, hit.power, hit.key]);
 /** Keep every variant tied at the distinct-member primary boundary until its mean is known. */
 function completionCandidates(hits: readonly EngineHit[], k: number): EngineHit[] {
@@ -512,7 +512,7 @@ export class EngineClient {
         if (previous && !result.proven) {
           const seen = new Set<string>();
           result.hits = [...result.hits, ...previous.hits].sort(compareHits).filter(hit => {
-            const key = [...hit.members].sort().join(",");
+            const key = memberSet(hit);
             if (seen.has(key)) return false;
             seen.add(key); return true;
           }).slice(0, request.k);
@@ -602,25 +602,29 @@ export class EngineClient {
           }
         };
         wakeWork = dispatch;
-        const runBatch: PartitionBatch = async (jobs, onResult, onProgress) => {
+        const runBatch: PartitionBatch = async (jobs, onResult, onProgress, options) => {
+          let failed = false;
+          const active = () => !stopped && !failed && !options?.stopped?.();
           const batch = jobs.map((job, index) => new Promise<void>((resolve, reject) => {
             const charts = sharedEvent ? requestChartSongs(job) : [];
             pending.push({ chart: charts.length === 1 && charts[0] ? chartKey(charts[0]) : null,
               run: async worker => {
                 try {
-                  const jobDeadline = Math.min(deadline, job.deadline ?? Infinity);
-                  if (worker && remaining(jobDeadline)) {
+                  const budgetDeadline = options?.budgetMs === undefined ? Infinity : clock() + options.budgetMs;
+                  const jobDeadline = Math.min(deadline, job.deadline ?? Infinity, budgetDeadline);
+                  if (worker && active() && remaining(jobDeadline)) {
                     const loadedCharts = sharedEvent && job.aggregation === "mean"
                       ? await (sharedCharts ??= worker.preload(sharedEvent.goal.songs)) : undefined;
-                    if (!stopped && remaining(jobDeadline)) {
+                    if (active() && remaining(jobDeadline)) {
                       const input = { ...job, deadline: jobDeadline };
                       const response = await worker.send<EngineResponse>({ type: "run", id: 0, request: input, loadedCharts }, undefined,
-                        value => { if (!stopped) onProgress(value.response); });
-                      if (!stopped) onResult(index, response);
+                        value => { if (active()) onProgress(value.response); });
+                      if (active()) onResult(index, response);
                     }
                   }
                   resolve();
                 } catch (error) {
+                  failed = true;
                   reject(error);
                 }
               },
@@ -644,6 +648,9 @@ export class EngineClient {
           const response = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknown] });
           partitionProgress = response;
           let done = parts.filter(part => part.proven).length;
+          const firstPassWaves = Math.ceil((goal.songs.length - done) / pool.length);
+          // FIFO gives each chart its first pass before refinement. Reserve one wave for that refinement.
+          const firstPassBudgetMs = Number.isFinite(deadline) && firstPassWaves > 1 ? remaining(deadline) / (firstPassWaves + 1) : undefined;
           await Promise.all(goal.songs.map(async (song, index) => {
             if (parts[index]!.proven) return;
             const part: EngineRequest = { ...separateEvent, goal: { ...goal, songs: [song] }, completed: undefined, seeds: undefined };
@@ -653,7 +660,7 @@ export class EngineClient {
               for (const key of value.unknownCards) unknown.add(key);
               if (final || clock() - lastShown >= snapshotInterval) publish(response(), final);
             };
-            const result = await partitionEvent(part, runBatch, update, finished);
+            const result = await partitionEvent(part, runBatch, update, finished, firstPassBudgetMs);
             if (!stopped) {
               update(result, true);
               progress?.(++done, goal.songs.length);
