@@ -13,9 +13,9 @@ import { decodePageData } from "../src/lib/page-data-codec";
 import { unrestricted } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
-import { spoilerOverrideEnabled } from "../src/lib/spoiler-cookie";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
+import { isAssetBrowserDocument } from "../src/lib/asset-static-routing";
 
 export function requestedResourceServers(request: Request): string[] {
   const url = new URL(request.url);
@@ -84,7 +84,8 @@ export async function applySiteSettings(
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilers = view.override || view.spoilers;
-  const completeView = unrestricted(view);
+  const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
+  const completeView = sourceBrowser || unrestricted(view);
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -113,6 +114,7 @@ export async function applySiteSettings(
     return new Response(null, { status: output.status, headers });
   }
   return new HTMLRewriter()
+    .on("style[data-community-visibility]", { element(element) { element.remove(); } })
     .on('meta[name="haneoka-content-route"]', {
       element(element) {
         if (!resource?.id) {
@@ -181,7 +183,7 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
-        if (completeView) return;
+        if (completeView || jsonId === "team-builder-page") return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();
@@ -224,9 +226,9 @@ export async function applySiteSettings(
         element.setAttribute("data-content-response-key", view.key);
       },
     })
-    .on("img[src], audio[src], video[src], source[src], video[poster], a[href]", {
+    .on("img[src], audio[src], video[src], source[src], video[poster], a[href], link[href]", {
       element(element) {
-        const attribute = element.tagName === "a" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
+        const attribute = element.tagName === "a" || element.tagName === "link" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
         const source = element.getAttribute(attribute);
         if (!source) return;
         const target = new URL(source, request.url);
@@ -242,8 +244,11 @@ export async function applySiteSettings(
         target.searchParams.set("__content", "1");
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
-        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname))
-          target.searchParams.set("cv", `view-v1-${visibility.version}-${group}-${Number(view.spoilers)}-${Number(spoilerOverrideEnabled(target))}`);
+        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname)) {
+          if (hideIdentity() && element.tagName === "link") { element.remove(); return; }
+          target.searchParams.set("asset", "1");
+          for (const key of ["cv", "spoiler", "__content"]) target.searchParams.delete(key);
+        }
         element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },
     })

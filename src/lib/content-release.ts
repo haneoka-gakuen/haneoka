@@ -34,6 +34,9 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
   const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
   if (typeof document === "undefined" || !document.documentElement) return prerenderContentVisible(kind, row, id);
   if (released(value, Date.now())) return true;
+  if (document.documentElement.dataset.contentFunctional === "1" &&
+    (document.documentElement.dataset.contentVisibilityPending === "1" || !document.documentElement.dataset.contentVisibilityPolicy))
+    return false;
   if (rule.allowOverride && showUnreleasedContent()) return true;
   if (!rule.groups.includes(currentContentGroup())) return false;
   const identity = id ?? (kind ? visibilityId(kind, row) : "");
@@ -44,6 +47,7 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
 }
 
 export function isContentListed(resource: string, value: unknown, id?: string): boolean {
+  if (typeof document === "undefined" || !document.documentElement) return isContentVisible(resource, value, id);
   if (isContentVisible(resource, value, id)) return true;
   const kind = visibilityType(resource);
   return Boolean(

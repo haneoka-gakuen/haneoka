@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: Box ownership and growth, catalogue limits and per-card editor state.
-// Output: Card entry and editing controls with live stat and skill comparisons.
+// Output: Permanent and temporary card controls with shared live stat and skill comparisons.
 // Pos: [Map](../L2-2.md); My cards and its member / Snapshot editor.
-// Effects/Dependencies: Saves each explicit edit through BoxStore; public skill details are loaded by card-editor-preview.
+// Effects/Dependencies: Permanent edits use BoxStore; temporary edits stay in the workspace overlay until explicitly saved. Public skill details are loaded by card-editor-preview.
 import { CARD_SKILL_FACETS } from "../../lib/catalog-filters";
 import { matchesCardFilters, renderCardFilters } from "./card-filters";
 import { ptField } from "./pt-fields";
@@ -22,6 +22,7 @@ import { renderResourceSort, sortedCards } from "./catalog-sort";
 import { chooserGroup } from "../ui/chooser-filters";
 import { actionMenu } from "../ui/action-menu";
 import { cardEditorPreview } from "./card-editor-preview";
+import { selectionPane } from "../ui/selection-pane";
 
 type Kind = "members" | "snaps";
 interface Row {
@@ -45,27 +46,31 @@ export function visibleCards(host: TeamBuilder): Row[] {
 
 const prefix = (kind: Kind) => (kind === "members" ? "m" : "s");
 function clearRequiredChanges(host: TeamBuilder) {
-  return Object.entries(host.snapshot?.entries ?? {})
+  return Object.entries(host.temporary.merge(host.snapshot?.entries ?? {}))
     .filter(([key, entry]) => /^[ms]\.[1-9]\d*\.lock$/u.test(key) && entry.v === true)
     .map(([key]) => ({ key, value: false }));
 }
 /** Bulk edits keep the previous values for one undo. */
-function bulk(host: TeamBuilder, label: string, changes: { key: string; value: BoxValue }[]) {
+function bulk(host: TeamBuilder, label: string, changes: { key: string; value: BoxValue }[], permanent = false) {
   if (!changes.length || !host.snapshot) return;
-  const previous = changes.map(({ key }) => ({ key, value: (host.snapshot!.entries[key]?.v ?? null) as BoxValue }));
-  host.write(changes);
+  const previous = changes.map(({ key }) => {
+    const local = permanent ? undefined : host.temporary.value(key);
+    return { key, value: local === undefined ? host.snapshot!.entries[key]?.v ?? null : local };
+  });
+  if (!host.write(changes, permanent)) return;
   host.notice = label;
-  undo = { notice: label, changes: previous, store: host.store, owner: host.snapshot.owner };
+  undo = { notice: label, changes: previous, store: host.store, owner: host.snapshot.owner, temporaryVersion: host.temporary.version, permanent };
   host.requestUpdate();
 }
 /** The last bulk edit's previous values, offered while its snackbar shows. */
-let undo: { notice: string; changes: { key: string; value: BoxValue }[]; store: TeamBuilder["store"]; owner: string | null | undefined } | null = null;
+let undo: { notice: string; changes: { key: string; value: BoxValue }[]; store: TeamBuilder["store"]; owner: string | null | undefined; temporaryVersion: number; permanent: boolean } | null = null;
 
 export function renderUndoAction(host: TeamBuilder) {
-  if (!undo || undo.notice !== host.notice || undo.store !== host.store || undo.owner !== host.snapshot?.owner) return nothing;
+  if (!undo || undo.notice !== host.notice || undo.store !== host.store || undo.owner !== host.snapshot?.owner || undo.temporaryVersion !== host.temporary.version) return nothing;
   const changes = undo.changes;
+  const permanent = undo.permanent;
   return html`<button class="button button--text" type="button" @click=${() => {
-    host.write(changes);
+    host.write(changes, permanent);
     undo = null;
     host.notice = "";
     host.requestUpdate();
@@ -89,6 +94,7 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
   const options = catalog.cardOptions(row.kind, row.id, quick ? null : undefined);
   if (!options) return html``;
   const owned = row.owned;
+  const temporary = host.temporary.has(row.kind, row.id);
   const using = !!owned && (quick || owned.use);
   const toggle = () => {
     const p = prefix(row.kind);
@@ -110,6 +116,7 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
         label: `${quick ? host.t("showOwned", "Owned") : host.t("editGrowth", "Edit growth")}: ${options.label}`,
         onOpen: open,
       })}
+      ${temporary ? html`<span class="badge badge--primary tb-card__temporary">${host.t("temporaryBadge", "Temporary")}</span>` : nothing}
       <button class="tb-card__check" type="button" role="checkbox" aria-checked=${String(using)}
         aria-label=${`${quick ? host.t("showOwned", "Owned") : checkLabel}: ${options.label}`} title=${quick ? host.t("showOwned", "Owned") : checkLabel} @click=${toggle}>
         <span class="tb-card__selection" aria-hidden="true">${using ? icon("check", 16) : nothing}</span>
@@ -152,6 +159,7 @@ function clearOwnershipDialog(host: TeamBuilder) {
               count: pending.changes.length,
             }),
             pending.changes,
+            true,
           );
         close();
       }}
@@ -275,7 +283,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
                     bulk(host, host.t("clearRequiredDone", "Cleared required marks on {count} cards", { count: changes.length }), changes);
                   } },
                 { label: host.common("common.actions.export", "Export"), icon: "download", run: () => host.imports.exportJson() },
-                { label: host.t("clearOwnership", "Mark all members and snapshots not owned"), icon: "remove_circle", disabled: !view.members.size && !view.snaps.size,
+                { label: host.t("clearOwnership", "Mark all members and snapshots not owned"), icon: "remove_circle", disabled: !host.persistentView!.members.size && !host.persistentView!.snaps.size,
                   run: () => {
                     clearing.set(host, { store: host.store, owner: host.snapshot?.owner, changes: Object.entries(host.snapshot?.entries ?? {}).filter(([key, entry]) => /^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true).map(([key]) => ({ key, value: false })) });
                     host.requestUpdate();
@@ -284,12 +292,72 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
             })}
       </div>
       ${clearOwnershipDialog(host)}
+      ${temporaryPicker(host)}
       ${rows.length
         ? html`<div class=${`collection collection--${f.kind === "members" ? "member" : "support"} tb-grid${host.boxQuickEntry ? " tb-grid--quick" : ""}`}>${rows.map((row) => renderCard(host, row))}</div>`
         : html`<div class="state"><p class="state__title">${!host.boxQuickEntry && f.show === "owned" && !ownedCount ? host.t("emptyBox", "No cards yet") : host.t("noMatches", "No cards match")}</p>
             ${!host.boxQuickEntry && f.show === "owned" && !ownedCount ? html`<div class="state__actions"><button class="button" type="button" @click=${() => set({ show: "all" })}>${host.t("showAll", "All")}</button><button class="button button--tonal" type="button" @click=${() => host.imports.openBox()}>${host.t("importBox", "Import")}</button></div>` : nothing}</div>`}
     </div>
   `;
+}
+
+export function renderTemporaryActions(host: TeamBuilder) {
+  if (!host.catalog || !host.view || !host.snapshot || !host.store) return nothing;
+  const open = (kind: Kind) => { host.temporaryPicker = kind; host.requestUpdate(); };
+  return html`<span data-app-bar-keep>${actionMenu({
+    id: "tb-temporary-actions",
+    label: html`${icon("add_circle", 20)}<span class="sr-only">${host.t("temporaryCards", "Temporary cards")}</span>
+      ${host.temporary.size ? html`<span class="badge">${host.temporary.size}</span>` : nothing}`,
+    items: [
+      { label: host.t("addTemporaryMembers", "Add temporary member"), leading: icon("person_add", 18), run: () => open("members") },
+      { label: host.t("addTemporarySnaps", "Add temporary Snapshot"), leading: icon("library_add", 18), run: () => open("snaps") },
+      { label: host.t("clearTemporaryCards", "Clear temporary cards"), leading: icon("clear_all", 18), disabled: !host.temporary.size,
+        run: () => { host.temporary.clear(); host.refreshTemporaryView(); host.notice = host.t("temporaryCleared", "Temporary cards cleared"); } },
+    ],
+  })}</span>`;
+}
+
+function temporaryPicker(host: TeamBuilder) {
+  const kind = host.temporaryPicker;
+  if (!kind) return nothing;
+  const catalog = host.catalog!;
+  const close = () => {
+    host.temporaryPicker = null;
+    host.slotFilters = { ...host.slotFilters, query: "", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+    host.slotFiltersOpen = false;
+    host.requestUpdate();
+  };
+  const filters = { ...host.slotFilters, kind };
+  const setFilters = (patch: Partial<typeof filters>) => { host.slotFilters = { ...filters, ...patch }; host.requestUpdate(); };
+  const ids = sortedCards(host, kind, Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number)
+    .filter(id => matchesCardFilters(host, kind, id, filters)));
+  return selectionPane({
+    id: "tb-temporary-picker",
+    title: host.t(kind === "members" ? "addTemporaryMembers" : "addTemporarySnaps", kind === "members" ? "Add temporary member" : "Add temporary Snapshot"),
+    closeLabel: host.common("common.actions.close", "Close"), close,
+    searchLabel: host.common("common.actions.search", "Search"), filterLabel: host.t("filters", "Filters"),
+    filtersOpen: host.slotFiltersOpen, toggleFilters: () => { host.slotFiltersOpen = !host.slotFiltersOpen; host.requestUpdate(); },
+    query: filters.query, search: query => setFilters({ query }), filterLayout: "facets",
+    filters: renderCardFilters(host, filters, setFilters),
+    kind: kind === "members" ? "member" : "support",
+    items: ids.map(id => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
+    selected: "",
+    select: value => {
+      const id = Number(value), row: Row = { kind, id, owned: (kind === "members" ? host.view!.members : host.view!.snaps).get(id) };
+      if (!host.temporary.has(kind, id)) {
+        const changes = row.owned ? kind === "members" ? ownMemberChanges(id, row.owned) : ownSnapChanges(id, row.owned)
+          : [...maxChanges(host, row), { key: `${prefix(kind)}.${id}.use`, value: true }, { key: `${prefix(kind)}.${id}.lock`, value: false }];
+        host.temporary.add(kind, id, changes);
+        host.temporaryDraft = { kind, cardId: id };
+        host.refreshTemporaryView();
+      }
+      close();
+      host.editing = { kind, cardId: id };
+      host.requestUpdate();
+    },
+    countLabel: host.t("cardCount", "{count} cards", { count: ids.length }), emptyLabel: host.t("noMatches", "No cards match"),
+    preview: html``,
+  });
 }
 
 /** Growth editor; every change is saved at once. */
@@ -300,7 +368,13 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
   const { kind, cardId } = editing;
   const options = catalog.cardOptions(kind, cardId);
   if (!options) return nothing;
+  const temporary = host.temporary.has(kind, cardId);
+  const draft = host.temporaryDraft?.kind === kind && host.temporaryDraft.cardId === cardId;
   const close = () => {
+    if (host.temporaryDraft?.kind === kind && host.temporaryDraft.cardId === cardId) {
+      host.temporaryDraft = null;
+      host.removeTemporary(kind, cardId);
+    }
     host.editing = null;
     host.requestUpdate();
   };
@@ -417,6 +491,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         <div class="tb-editor__heading">
           <h2 id="tb-editor-title" class="tb-editor__title" lang=${options.titleLanguage || nothing}>${options.title}</h2>
           <span class="tb-editor__subtitle">${options.subtitle}</span>
+          ${temporary ? html`<span class="badge badge--primary tb-editor__state">${host.t("temporaryBadge", "Temporary")} / ${host.t("temporaryLifetime", "Cleared when leaving this page")}</span>` : nothing}
           ${owned ? nothing : html`<span class="badge badge--primary tb-editor__state">${host.t("notOwned", "Not owned")}</span>`}
         </div>
         ${iconButton({ icon: "close", label: host.common("common.actions.close", "Close"), onClick: close })}
@@ -436,14 +511,24 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
       </div>
       <footer class="tb-editor__actions">
         <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
-        ${owned
+        ${owned && !draft
           ? html`<button class="button button--text button--danger" type="button" @click=${() => {
-              bulk(host, host.t("removedCard", "Removed from your cards"), [{ key: `${p}.${cardId}.own`, value: false }, { key: `${p}.${cardId}.lock`, value: false }]);
+              if (temporary) host.removeTemporary(kind, cardId);
+              else bulk(host, host.t("removedCard", "Removed from your cards"), [{ key: `${p}.${cardId}.own`, value: false }, { key: `${p}.${cardId}.lock`, value: false }]);
               close();
-            }}>${icon("remove_circle", 18)}${host.t("removeOwned", "Not owned")}</button>`
+            }}>${icon("remove_circle", 18)}${temporary ? host.t("removeTemporary", "Remove temporary card") : host.t("removeOwned", "Not owned")}</button>`
           : nothing}
+        ${temporary && !draft ? html`<button class="button button--text" type="button" @click=${() => { if (host.saveTemporary(kind, cardId)) close(); }}>${host.t("saveTemporary", "Save to My cards")}</button>` : nothing}
         <span class="row__spacer"></span>
-        <button class="button" type="button" @click=${close}>${host.t("done", "Done")}</button>
+        ${draft ? html`<button class="button button--text" type="button" @click=${close}>${host.common("common.actions.cancel", "Cancel")}</button>` : nothing}
+        <button class="button" type="button" @click=${() => {
+          if (draft) {
+            host.temporaryDraft = null;
+            host.editing = null;
+            host.notice = host.t("temporaryAdded", "Temporary card added");
+            host.requestUpdate();
+          } else close();
+        }}>${draft ? host.t("addTemporaryConfirm", "Add temporary card") : host.t("done", "Done")}</button>
       </footer>
     </dialog>
   `;

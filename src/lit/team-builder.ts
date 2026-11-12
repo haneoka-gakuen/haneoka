@@ -2,8 +2,11 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；连接期间更新标题栏，离页清理定时器及应用栏；按任务隔离结果并恢复滚动，避让吸顶／吸底控件以显示焦点。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
+import { isContentVisible } from "../lib/content-release";
+import { observeSpoilerContent } from "../lib/spoiler-content";
+import { TemporaryCards, type TemporaryCardKind } from "./team-builder/temporary-cards";
 import { renderSkillRoleEditor, type SkillRoleEdit } from "./team-builder/skill-role-controls";
 import { ResultAnalysis } from "./team-builder/result-analysis";
 import { hasSkillRoleLimits } from "../lib/team-builder/skill-roles";
@@ -19,7 +22,7 @@ import { clearManualOrders, seedManualOrder } from "./team-builder/manual-result
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
-import { readPageData } from "../lib/page-data";
+import { readPageData, waitForPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { TeamBuilderPageData } from "../server/tool-page-data";
 import "@material/web/checkbox/checkbox.js";
@@ -64,7 +67,7 @@ import { farmingConditions, farmingSettings, parseOpponents, resolveLuckSamples,
 import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
 import { snackbar } from "../lib/snackbar";
-import { renderBoxTab, renderCardEditor, renderUndoAction } from "./team-builder/box-tab";
+import { renderBoxTab, renderCardEditor, renderUndoAction, renderTemporaryActions } from "./team-builder/box-tab";
 import { renderAccountTab } from "./team-builder/account-tab";
 import { evaluate as evaluateManual, manualReady, renderTeamsTab, renderManualTeamTab, renderSongComparisonTab } from "./team-builder/teams-tab";
 import { renderSongPicker, type SongPickerState } from "./team-builder/song-picker";
@@ -112,6 +115,11 @@ export class TeamBuilder extends LitElement {
   catalog: Catalog | null = null;
   snapshot: BoxSnapshot | null = null;
   view: BoxView | null = null;
+  private persistentBoxView: BoxView | null = null;
+  readonly temporary = new TemporaryCards();
+  temporaryPicker: TemporaryCardKind | null = null;
+  temporaryDraft: { kind: TemporaryCardKind; cardId: number } | null = null;
+  get persistentView() { return this.persistentBoxView ?? this.view; }
   store: BoxStore | null = null;
   engine: EngineClient | null = null;
   farmResultMode: "recommendation" | "event" | null = null;
@@ -236,6 +244,11 @@ export class TeamBuilder extends LitElement {
   submitted = false;
   lastTaskTab: Tab = "build";
   songPickerPreferences = new Map<string, Partial<SongPickerState>>();
+  get songDifficulties(): number[] {
+    const stored = this.view?.prefs["song-picker"] as { difficulties?: number[] } | undefined;
+    return Array.isArray(stored?.difficulties)
+      ? stored.difficulties.filter(id => Number.isInteger(id) && id >= 0 && id <= 4) : [3];
+  }
   filters: BoxFilters = {
     kind: "members",
     query: "",
@@ -364,6 +377,7 @@ export class TeamBuilder extends LitElement {
   };
   slotFiltersOpen = false;
   requiredPicker: "members" | "snaps" | null = null;
+  excludedPicker: "members" | "snaps" | null = null;
   notice = "";
   private readonly images = new LazyImages();
   private unsubscribe?: () => void;
@@ -372,6 +386,11 @@ export class TeamBuilder extends LitElement {
   private visualsController?: AbortController;
   catalogMetadataError = false;
   private pageData?: TeamBuilderPageData;
+  private pendingPageData?: TeamBuilderPageData;
+  private get pageDataBusy(): boolean {
+    return Boolean(this.running || this.manualBusy || this.task || this.slotPicker || this.requiredPicker ||
+      this.editing || this.songPicker || this.querySelector("dialog[open]"));
+  }
   /** League named by `?tab=arena&league=`, applied once the owner's Arena draft is restored. */
   /** The league a link asked for (?tab=arena&league=); restores apply it until the reader picks another. */
   requestedArenaLeague = 0;
@@ -385,7 +404,9 @@ export class TeamBuilder extends LitElement {
     return this;
   }
   private disposeSongDisplay?: () => void;
+  private disposeVisibility?: () => void;
   connectedCallback() {
+    if (waitForPageData(this, () => this.connectedCallback())) return;
     const startTab = navigationDocumentUrl().searchParams.get("tab");
     const league = Number(navigationDocumentUrl().searchParams.get("league"));
     if (startTab === "arena") this.requestedArenaLeague = Number.isSafeInteger(league) && league > 0 ? league : 0;
@@ -393,6 +414,7 @@ export class TeamBuilder extends LitElement {
     if (payload?.schema === "haneoka-team-builder-page-v1") this.preparePage(payload);
     super.connectedCallback();
     this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
+    this.disposeVisibility = observeSpoilerContent(() => this.requestUpdate());
     this.layoutObserver = new ResizeObserver(() => {
       const surface = this.querySelector<HTMLElement>(".team-builder");
       const style = surface ? getComputedStyle(surface) : null;
@@ -437,6 +459,35 @@ export class TeamBuilder extends LitElement {
     this.catalog.setVisuals({ ...visuals, marks: new Map(visuals.marks) });
     this.view = readBox({});
   }
+  adoptPageData(): boolean {
+    const payload = readPageData<TeamBuilderPageData>(this);
+    if (payload?.schema !== "haneoka-team-builder-page-v1") return false;
+    if (this.pageDataBusy) {
+      this.pendingPageData = payload;
+      return true;
+    }
+    return this.applyPageData(payload);
+  }
+  private applyPageData(payload: TeamBuilderPageData): boolean {
+    const initialized = Boolean(this.engine && this.view);
+    this.dataController?.abort();
+    this.visualsController?.abort();
+    if (!initialized) {
+      this.preparePage(payload, this.server);
+      this.loadedServer = "";
+      void this.load(this.server);
+      return true;
+    }
+    const view = this.view;
+    this.catalog?.dispose();
+    this.preparePage(payload, this.server);
+    this.view = view;
+    this.engine?.dispose();
+    this.engine = new EngineClient(this.data!, () => this.requestUpdate());
+    this.engine.prefetch(this.searchSettings.songs);
+    this.requestUpdate();
+    return true;
+  }
   protected override update(changed: import("lit").PropertyValues) {
     if (this.hasAttribute("data-prerendered")) {
       hydrate(this.render(), this, this.renderOptions);
@@ -445,6 +496,12 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    this.disposeVisibility?.();
+    this.temporary.clear();
+    this.temporaryDraft = null;
+    this.temporaryPicker = null;
+    this.editing = null;
+    this.view = this.persistentBoxView;
     this.disposeSongDisplay?.();
     this.layoutObserver?.disconnect();
     clearTimeout(this.noticeTimer);
@@ -522,6 +579,12 @@ export class TeamBuilder extends LitElement {
   }
   private releaseSearch?: () => void;
   protected updated() {
+    if (this.pendingPageData && !this.pageDataBusy && this.isConnected) {
+      const payload = this.pendingPageData;
+      this.pendingPageData = undefined;
+      this.applyPageData(payload);
+      return;
+    }
     if (!this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot && (inApp() || new URL(location.href).searchParams.has("saveImport"))) {
       this.pendingImportChecked = true;
       void this.imports.takePending();
@@ -609,6 +672,9 @@ export class TeamBuilder extends LitElement {
 
   async load(server: string) {
     if (this.loadedServer === server) return;
+    this.temporary.clear();
+    this.temporaryDraft = null;
+    this.temporaryPicker = null;
     this.dataController?.abort();
     const loadController = (this.dataController = new AbortController());
     this.visualsController?.abort();
@@ -624,6 +690,7 @@ export class TeamBuilder extends LitElement {
       this.engine = null;
       this.snapshot = null;
       this.view = null;
+      this.persistentBoxView = null;
       this.data = null;
       this.catalog = null;
       this.editing = null;
@@ -716,12 +783,19 @@ export class TeamBuilder extends LitElement {
   }
   private adopt(snapshot: BoxSnapshot) {
     const ownerChanged = !this.snapshot || this.snapshot.owner !== snapshot.owner;
-    if (ownerChanged) this.resetTasks();
+    if (ownerChanged) {
+      this.resetTasks();
+      this.temporary.clear();
+      this.temporaryDraft = null;
+      this.temporaryPicker = null;
+      this.editing = null;
+    }
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
     if (versionChanged || ownerChanged) {
       const required = this.settings.required;
-      this.view = readBox(snapshot.entries);
+      this.persistentBoxView = readBox(snapshot.entries);
+      this.view = this.temporary.size ? readBox(this.temporary.merge(snapshot.entries)) : this.persistentBoxView;
       const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
       this.settings = restoreBuildSettings(
         stored && typeof stored === "object" ? (stored as Partial<BuildSettings>) : {},
@@ -741,14 +815,33 @@ export class TeamBuilder extends LitElement {
   }
 
   /** Box writes: applied locally at once, synced in the background. */
-  write(changes: { key: string; value: BoxValue }[]) {
-    if (!this.store || !changes.length) return;
+  write(changes: { key: string; value: BoxValue }[], permanent = false): boolean {
+    if (!this.store) return false;
+    if (!changes.length) return true;
     try {
-      this.store.set(changes);
+      const local = permanent ? [] : changes.filter(change => this.temporary.ownsKey(change.key));
+      const stored = permanent ? changes : changes.filter(change => !this.temporary.ownsKey(change.key));
+      if (stored.length) this.store.set(stored);
+      if (this.temporary.apply(local)) this.refreshTemporaryView();
+      return true;
     } catch {
       this.error = this.t("saveRejected", "That value cannot be saved.");
       this.requestUpdate();
+      return false;
     }
+  }
+  refreshTemporaryView() {
+    if (this.snapshot) this.view = this.temporary.size ? readBox(this.temporary.merge(this.snapshot.entries)) : this.persistentBoxView;
+    this.requestUpdate();
+  }
+  removeTemporary(kind: TemporaryCardKind, id: number) {
+    if (this.temporary.remove(kind, id)) this.refreshTemporaryView();
+  }
+  saveTemporary(kind: TemporaryCardKind, id: number) {
+    if (!this.write(this.temporary.changes(kind, id), true)) return false;
+    this.removeTemporary(kind, id);
+    this.notice = this.t("temporarySaved", "Saved to My cards");
+    return true;
   }
   updateSettings(patch: Partial<BuildSettings>) {
     if (this.tab === "arena") {
@@ -875,6 +968,7 @@ export class TeamBuilder extends LitElement {
     const memberOk = (cardId: number) => {
       const card = master.members.get(cardId);
       if (!card) return false;
+      if (s.scope === "theoretical" && !isContentVisible("cards", this.data!.members[String(cardId)], String(cardId))) return false;
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) &&
         (!s.bands.length || s.bands.includes(card.bandId)) &&
@@ -884,6 +978,7 @@ export class TeamBuilder extends LitElement {
     const snapOk = (cardId: number) => {
       const card = master.snaps.get(cardId);
       if (!card) return false;
+      if (s.scope === "theoretical" && !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))) return false;
       return (!s.attributes.length || s.attributes.includes(card.cardType)) && card.rarity >= s.minRarity;
     };
     const fixedMembers = new Set([
@@ -901,8 +996,11 @@ export class TeamBuilder extends LitElement {
       ...s.bindings.flatMap(([, snap]) => (snap === null ? [] : [snap])),
       ...s.required.snaps,
     ]);
+    const excludedMembers = new Set(s.scope === "theoretical" ? s.theoreticalExcluded.members : []);
+    const excludedSnaps = new Set(s.scope === "theoretical" ? s.theoreticalExcluded.snaps : []);
     return {
       members: base.members.filter((row) =>
+          !excludedMembers.has(row.cardId) &&
           (this.tab !== "arena" ||
             (master.members.get(row.cardId)?.bandId === this.arena.bandId &&
               availableOnServer(this.data!, "members", row.cardId) &&
@@ -910,6 +1008,7 @@ export class TeamBuilder extends LitElement {
           (fixedMembers.has(row.cardId) || memberOk(row.cardId)),
       ),
       snaps: base.snaps.filter((row) =>
+          !excludedSnaps.has(row.cardId) &&
           (this.tab !== "arena" ||
             (availableOnServer(this.data!, "snapshots", row.cardId) &&
               arenaReleased(this.data!.snapshots[String(row.cardId)]?.catalogMetadata ?? {}))) &&
@@ -917,9 +1016,9 @@ export class TeamBuilder extends LitElement {
       ),
     };
   }
-  manualInputs(team = this.manual) {
+  manualInputs(team = this.manual, scope = this.settings.scope) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
-    const theoretical = this.settings.scope === "theoretical";
+    const theoretical = scope === "theoretical";
     const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
       if (row) return [row];
@@ -1278,6 +1377,7 @@ export class TeamBuilder extends LitElement {
         this.results.results.every(result => result.proven && !result.hits.length) && !this.results.overall.length && !this.stale;
     if (!issues.length && emptyProof) {
       const fields = [
+        ...(s.arena?.objective === "sections" ? ["tb-section-loss"] : []),
         ...(gekiso && s.minComboBonus > 1 ? ["tb-combo"] : []),
         ...(gekiso && s.justWindowMs > 0 ? ["tb-just-window"] : []),
         ...(s.goal === "gekiso" && s.minMissionMembers.some(Boolean) ? ["tb-mission-members"] : []),
@@ -1488,9 +1588,9 @@ export class TeamBuilder extends LitElement {
       goal,
       constraints: {
         requiredMembers: locked("m"),
-        excludedMembers: [],
+        excludedMembers: theoretical ? s.theoreticalExcluded.members.map(id => `m${id}`) : [],
         requiredSnaps: locked("s"),
-        excludedSnaps: [],
+        excludedSnaps: theoretical ? s.theoreticalExcluded.snaps.map(id => `s${id}`) : [],
         leader: s.leader !== null ? `m${s.leader}` : null,
         bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
         noSnaps: s.noSnaps,
@@ -1723,7 +1823,7 @@ export class TeamBuilder extends LitElement {
       <button class="button button--tonal" type="button" aria-pressed=${this.boxQuickEntry} data-app-bar-keep
         @click=${() => { this.boxQuickEntry = !this.boxQuickEntry; this.editing = null; this.requestUpdate(); }}>
         ${this.boxQuickEntry ? this.t("finishQuickEntry", "Finish adding") : this.t("quickEntry", "Quick add")}
-      </button>`, this);
+      </button>${renderTemporaryActions(this)}`, this);
     else clearAppBarActions("team-builder-quick-entry");
 
     const snapshot = this.snapshot;

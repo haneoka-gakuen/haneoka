@@ -29,10 +29,11 @@ export function parseOpponents(drafts: readonly string[]) {
 }
 
 export function resolveLuckSamples(settings: Pick<BuildSettings,
-  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples">,
+  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples" | "arena">,
   context: "score" | "rewards" = "score"): number {
   if (context === "rewards") return settings.ptSamplingMode === "manual" ? settings.ptLuckSamples : 32;
-  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds : 0;
+  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds
+    : settings.arena?.objective === "sections" ? 32 : 0;
 }
 
 const baseJustWindows = new WeakMap<TeamBuilderData, number>();
@@ -74,6 +75,12 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): Build
   settings.frameRate = [30, 60, 90, 120].includes(settings.frameRate) ? settings.frameRate : 60;
   // Required cards hold for this visit only.
   settings.required = { members: [], snaps: [] };
+  const excludedIds = (value: unknown) => Array.isArray(value)
+    ? [...new Set(value.filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0))] : [];
+  settings.theoreticalExcluded = {
+    members: excludedIds(stored.theoreticalExcluded?.members),
+    snaps: excludedIds(stored.theoreticalExcluded?.snaps),
+  };
   if (!CUSTOM_ACCURACY) settings.playMode = "ap";
   settings.gekisoSamplingMode = stored.gekisoSamplingMode === "manual" && (stored.gekisoSeeds ?? 0) !== 0 ? "manual" : "auto";
   settings.ptSamplingMode = stored.ptSamplingMode === "manual" ? "manual" : "auto";

@@ -436,6 +436,276 @@
         }
       }
     },
+    "/api/v1/servers/{server}/chart-assets": {
+      "get": {
+        "operationId": "releases.chart-assets",
+        "tags": [
+          "Servers and releases"
+        ],
+        "summary": "Read public native chart-render assets",
+        "description": "Returns the native stage, note, effect and HUD resource paths with exact atlas and font output identities. Available without authentication. Pin a release to keep all referenced resources immutable.",
+        "parameters": [
+          {
+            "name": "server",
+            "in": "path",
+            "required": true,
+            "description": "Resource server slug from `GET /api/v1/releases`, for example `intl` or `jp`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "release",
+            "in": "query",
+            "required": false,
+            "description": "Pin an immutable release, `r-` followed by 20 lowercase hex digits. Omit it to read the current release. See [Servers and releases](https://docs.haneoka.org/concepts/servers-and-releases/).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bandId",
+            "in": "query",
+            "required": false,
+            "description": "Include this band's original live-introduction sources; falls back to the shared introduction when the band has no dedicated stage.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Native chart-render assets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "schema",
+                    "identity",
+                    "files",
+                    "sources"
+                  ],
+                  "properties": {
+                    "schema": {
+                      "type": "string",
+                      "const": "haneoka-chart-assets-v1"
+                    },
+                    "identity": {
+                      "type": "object",
+                      "required": [
+                        "server",
+                        "releaseId",
+                        "sourceId"
+                      ],
+                      "properties": {
+                        "server": {
+                          "type": "string"
+                        },
+                        "releaseId": {
+                          "type": "string"
+                        },
+                        "sourceId": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "sources": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "sourcePath",
+                          "outputs",
+                          "runtimeObjects"
+                        ],
+                        "properties": {
+                          "outputs": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "type",
+                                "path"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "objectId": {
+                                  "oneOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "integer"
+                                    }
+                                  ]
+                                },
+                                "serializedFile": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "sourcePath": {
+                            "type": "string"
+                          },
+                          "serializedFile": {
+                            "type": "string"
+                          },
+                          "runtimeProjectionPolicy": {
+                            "type": "string"
+                          },
+                          "runtimeObjects": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "type",
+                                "path"
+                              ],
+                              "properties": {
+                                "type": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "preloadObjectReferences": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "serializedFile",
+                                "pathId"
+                              ],
+                              "properties": {
+                                "serializedFile": {
+                                  "type": "string"
+                                },
+                                "pathId": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_release`: `release` is not an `r-` followed by 20 hex digits, or was sent on a route that rejects it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`server_not_found`: The server slug is not an active resource server.\n`release_not_found`: The requested release is not available on this server.\n`release_identity_missing`: The release exists in history but its identity descriptor was not retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`release_unavailable`: No current release is published for the server yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "externalDocs": {
+          "url": "https://docs.haneoka.org/reference/releases/"
+        },
+        "security": []
+      }
+    },
     "/api/v1/servers/{server}/sources/tree": {
       "get": {
         "operationId": "releases.sources-tree",

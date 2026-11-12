@@ -18,7 +18,7 @@
 // - Everything else (API, auth, worker routes): network only.
 
 const VERSION = "v7";
-const PAGES_CACHE = "haneoka.pages.v8";
+const PAGES_CACHE = "haneoka.pages.v9";
 const ASSETS_CACHE = `haneoka.assets.${VERSION}`;
 const IMAGES_CACHE = "haneoka.images.v8";
 const DATA_CACHE = `haneoka.data.${VERSION}`;
@@ -171,9 +171,9 @@ const gameMedia = async (event, request, url) => {
     if (response) return response;
   }
   const range = request.headers.get("Range");
-  const fullAudio = request.destination === "audio" && /^bytes=\d*-\d*$/.test(range || "");
+  const fullMedia = ["audio", "video"].includes(request.destination) && /^bytes=\d*-\d*$/.test(range || "");
   let source = request;
-  if (fullAudio) {
+  if (fullMedia) {
     const headers = new Headers(request.headers);
     for (const field of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(field);
     source = new Request(request, { headers, referrer: request.referrer, referrerPolicy: request.referrerPolicy });
@@ -200,7 +200,7 @@ const gameMedia = async (event, request, url) => {
       event.waitUntil(cache.put(key, stored).then(() => trimCache(name, MAX_IMAGES)).catch(() => {}));
     }
   }
-  return fullAudio && response.status === 200 ? (await mediaRange(request, response)) || response : response;
+  return fullMedia && response.status === 200 ? (await mediaRange(request, response)) || response : response;
 };
 
 const trimCache = async (cacheName, limit) => {
@@ -274,14 +274,18 @@ const networkFirst = async (event, request, cacheName, limit = MAX_PAGES) => {
   const lookup = scope ? mediaKey(request.url, scope) : null;
   const entry = lookup ? await readCache(lookup, cacheName) : { cache: await caches.open(cacheName).catch(() => undefined) };
   const cache = entry.cache;
-  const until = Number(entry.cached?.headers.get("X-Haneoka-Content-Until"));
-  const cached = until > 0 && Date.now() >= until ? undefined : entry.cached;
+  const shared = await cache?.match(request).catch(() => undefined);
+  const stored = entry.cached || (shared && !shared.headers.has("X-Haneoka-Content-View") ? shared : undefined);
+  const until = Number(stored?.headers.get("X-Haneoka-Content-Until"));
+  const cached = until > 0 && Date.now() >= until ? undefined : stored;
   const network = fetch(request, { cache: "no-cache" }).then((response) => {
     const current = response.headers.get("X-Haneoka-Content-View");
     if (current) {
       event.waitUntil(rememberScope(current));
       cacheResponse(event, mediaKey(request.url, current), response, cache, cacheName, limit);
     }
+    else if (/(?:^|,)\s*public(?:\s|,|$)/i.test(response.headers.get("Cache-Control") || ""))
+      cacheResponse(event, request, response, cache, cacheName, limit);
     return response;
   });
   if (!cached) return network.catch(() => Response.error());

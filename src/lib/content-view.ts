@@ -13,6 +13,7 @@ import {
   type ContentVisibilityPolicy,
   type VisibilityType,
 } from "./content-visibility-policy";
+import { isPublicReleaseServer } from "./temporary-public-routing";
 import type { UserGroup } from "./user-roles";
 
 export interface ContentView {
@@ -53,9 +54,11 @@ export function contentFieldType(field: string): VisibilityType | undefined {
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
-const rowIdentity = (kind: VisibilityType, value: Record<string, unknown>, key?: string): string =>
-  visibilityId(kind, value) || key || "";
 const hasPublication = (value: Record<string, unknown>): boolean => Object.keys(publicationFields(value)).length > 0;
+const dependencyFields = new Set([
+  "assets", "runtime", "commands", "resolvedSkills", "progression", "growth",
+  "master", "masterData", "tables", "rules",
+]);
 const previewFields = new Set([
   "id",
   "_key",
@@ -110,13 +113,37 @@ export interface FilteredContent {
   value: unknown;
   changed: boolean;
 }
+export type ContentPublicationsByServer = Record<string, Record<string, Record<string, unknown>>>;
 export function filterContentData(
   value: unknown,
   view: ContentView,
   resource?: string,
   previews = false,
   publications: Record<string, Record<string, unknown>> = {},
+  publicationsByServer?: ContentPublicationsByServer,
+  omitted?: ContentReference[],
 ): FilteredContent {
+  if (object(value) && (value.schema === "haneoka-team-builder-page-v1" || value.schema === "haneoka-team-builder-data-v1"))
+    return { value, changed: false };
+  const sourceServer = (node: Record<string, unknown>, inherited?: string): string | undefined => {
+    if (!publicationsByServer) return inherited;
+    const identity = object(node.identity) ? node.identity : undefined;
+    return typeof identity?.server === "string" ? identity.server : typeof node.server === "string" ? node.server : inherited;
+  };
+  const own = object(value) ? ((object(value.identity) ? value.identity.server : undefined) ?? value.server) : undefined;
+  const publicationFor = (key: string, server?: string): Record<string, unknown> | undefined =>
+    publicationsByServer && server !== undefined ? publicationsByServer[server]?.[key] : publications[key];
+  /**
+   * Without the per-server registry, `publications` belong to the payload's own
+   * server: a row from another source keeps its own dates and takes only the
+   * fields it lacks.
+   */
+  const withPublication = (row: Record<string, unknown>, key: string, server?: string): Record<string, unknown> => {
+    const publication = publicationFor(key, server);
+    if (!publication) return row;
+    const foreign = !publicationsByServer && server !== undefined && typeof own === "string" && server !== own;
+    return foreign ? { ...publication, ...row } : { ...row, ...publication };
+  };
   if (object(value)) {
     const identity = String(value.id ?? value.entityId ?? "");
     const episode = object(value.episodes) && object(value.episodes[identity]) ? value.episodes[identity] : undefined;
@@ -127,132 +154,193 @@ export function filterContentData(
         : (episode ?? (value.entityId && object(value.document) ? value.document : undefined));
     const kind = visibilityType(resource ?? String(value.resource ?? value.kind ?? (episode ? "stories" : "")));
     if (primary && kind && identity) {
-      const publication = publications[`${kind}:${identity}`] ?? primary;
-      if (!contentVisible(view, kind, publication, identity)) return { value: null, changed: true };
+      const publication = publicationFor(`${kind}:${identity}`, sourceServer(value)) ?? primary;
+      if (!contentVisible(view, kind, publication, identity)) {
+        omitted?.push(contentReference(kind, publication, identity));
+        return { value: null, changed: true };
+      }
     }
   }
   let changed = false;
   const drop = Symbol();
+  const primaryFields = ["item", "row", "model"];
+  // `songMeta` is keyed by music id, or by source and then music id in collection payloads.
+  const fieldType = (field: string): VisibilityType | undefined =>
+    field === "songMeta" ? "songs" : contentFieldType(field);
+  /** A resource document that is a bare id → row map. */
+  const rowMap = (node: Record<string, unknown>): boolean =>
+    !inferredVisibilityType(node) &&
+    !hasPublication(node) &&
+    !node.schema &&
+    !node.entries &&
+    !node.items &&
+    !Object.keys(node).some((field) => contentFieldType(field));
+  const members = (
+    node: Record<string, unknown>,
+    kind: VisibilityType | undefined,
+    server: string | undefined,
+    keyed = true,
+  ): Record<string, unknown> =>
+    Object.fromEntries(
+      Object.entries(node).flatMap(([id, entry]) => {
+        const item = walk(entry, kind, keyed ? id : undefined, true, Boolean(kind), server);
+        return item === drop ? [] : [[id, item]];
+      }),
+    );
+  /**
+   * `forceKind` marks an entity boundary: a member of a typed collection, a
+   * primary `item`/`row`/`model`, or a cross-server variant row. Only such
+   * boundaries and rows with their own identity fields are matched against the
+   * publication registry; other nested objects answer for their own dates only.
+   * `envelope` marks a resource document, whose `items`/`entries` hold rows of
+   * that resource rather than game items.
+   */
   const walk = (
     node: unknown,
     inherited?: VisibilityType,
     key?: string,
     row = false,
     forceKind = false,
+    inheritedServer?: string,
+    envelope = false,
   ): unknown | typeof drop => {
     if (!node || typeof node !== "object") return node;
     if (Array.isArray(node))
       return node.flatMap((child) => {
-        const result = walk(child, inherited, undefined, true, forceKind);
+        const result = walk(child, inherited, undefined, true, forceKind, inheritedServer);
         return result === drop ? [] : [result];
       });
     let input = node as Record<string, unknown>;
+    if (input.schema === "haneoka-team-builder-page-v1" || input.schema === "haneoka-team-builder-data-v1") return input;
+    const server = sourceServer(input,
+      publicationsByServer && key && Object.hasOwn(publicationsByServer, key) ? key : inheritedServer);
     if (object(input.value) && typeof input.id === "string" && row) {
-      const result = walk(input.value, inherited, input.id, true, forceKind);
+      const result = walk(input.value, inherited, input.id, true, forceKind, server);
       return result === drop ? drop : { ...input, value: result };
     }
-    if (input.perServer && object(input.perServer) && input.resource) {
-      const kind = visibilityType(String(input.resource));
-      const perServer = Object.fromEntries(
-        Object.entries(input.perServer).flatMap(([server, variant]) => {
-          if (!object(variant) || !object(variant.row)) return [];
-          const result = walk(variant.row, kind, String(variant.id), true, true);
-          return result === drop
-            ? []
-            : [
-                [
-                  server,
-                  { ...variant, row: result, ...(object(result) && result.__contentPreview ? { assets: {} } : {}) },
-                ],
-              ];
-        }),
-      );
-      const servers = Object.keys(perServer);
-      if (!servers.length) return drop;
-      if (servers.length !== Object.keys(input.perServer).length) {
-        changed = true;
-        return {
-          ...input,
-          perServer,
-          displayServer: servers.includes(String(input.displayServer)) ? input.displayServer : servers[0],
-          sourceIds: servers,
-          serverAvailability: Object.fromEntries(servers.map((server) => [server, true])),
-          nameOverrides: {},
-          nameFallbacks: [],
-          content: { overrides: {}, supplements: [], fields: [] },
-          variantGroups: servers.map((server) => [server]),
-        };
-      }
-      return { ...input, perServer };
-    }
+    if (input.perServer && object(input.perServer) && input.resource) return crossServer(input);
+    if (envelope && inherited && rowMap(input) && Object.values(input).every(object))
+      return members(input, inherited, server);
     const inferred = inferredVisibilityType(input);
-    const kind =
-      inherited &&
-      (forceKind ||
-        key === "item" ||
-        key === "row" ||
-        key === "model" ||
-        (node === value && (inferred || hasPublication(input))))
-        ? inherited
-        : (inferred ?? inherited);
-    const identity = kind ? rowIdentity(kind, input, key) : "";
-    const publication = kind && publications[`${kind}:${identity}`];
-    if (publication) input = { ...input, ...publication };
+    const boundary = forceKind || primaryFields.includes(key ?? "") || (node === value && hasPublication(input));
+    const kind = inherited && (boundary || (node === value && inferred)) ? inherited : (inferred ?? inherited);
+    const entity = Boolean(kind) && (boundary || inferred !== undefined);
+    const identity = kind && entity
+      ? visibilityId(kind, input) || (forceKind && key !== undefined && !primaryFields.includes(key) ? key : "")
+      : "";
+    if (entity && identity) input = withPublication(input, `${kind}:${identity}`, server);
     if (kind === "songs" && input.musicId !== undefined && Number(input.eventPublishedAt) > 0) {
       const { eventPublishedAt, ...song } = input;
       input = withEventSongRelease(song, { [String(input.musicId)]: Number(eventPublishedAt) });
     }
-    if (kind && (row || hasPublication(input)) && !contentVisible(view, kind, input, identity)) {
+    if (kind && entity && !contentVisible(view, kind, input, identity)) {
       changed = true;
+      omitted?.push(contentReference(kind, input, identity));
       const rule = view.policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
       if (previews && rule.restrictedDisplay === "unpublished" && view.spoilers) return contentPreview(input);
       return drop;
     }
     const ownKind = typeof input.resource === "string" ? visibilityType(input.resource) : kind;
+    const document = envelope || node === value || typeof input.schema === "string" || typeof input.resource === "string";
     const output: Record<string, unknown> = {};
     for (const [field, child] of Object.entries(input)) {
-      if (field === "catalogMetadata") {
+      if (field === "catalogMetadata" || dependencyFields.has(field)) {
         output[field] = child;
         continue;
       }
-      const nextKind = contentFieldType(field) ?? ownKind;
-      const collection = object(child) && !inferredVisibilityType(child) && !hasPublication(child);
-      let result: unknown;
-      if (collection && (contentFieldType(field) || ["entries", "items", "episodes", "chapters"].includes(field))) {
-        result = Object.fromEntries(
-          Object.entries(child).flatMap(([id, entry]) => {
-            const item = walk(entry, nextKind, id, true, Boolean(nextKind));
-            return item === drop ? [] : [[id, item]];
+      // Cross-server catalogues key `documents` by source; team-builder keys them by resource.
+      if (field === "documents" && object(child) && !Object.keys(child).some((source) => contentFieldType(source))) {
+        output[field] = Object.fromEntries(
+          Object.entries(child).flatMap(([source, entry]) => {
+            const result = walk(entry, ownKind, source, false, false, server, true);
+            return result === drop ? [] : [[source, result]];
           }),
         );
+        continue;
+      }
+      const typed = document && (field === "items" || field === "entries") ? undefined : fieldType(field);
+      const nextKind = typed ?? ownKind;
+      const nested = object(child) && typeof child.schema === "string";
+      const collection = object(child) && !nested && !inferredVisibilityType(child) && !hasPublication(child);
+      let result: unknown;
+      if (collection && (typed || ["entries", "items", "episodes", "chapters"].includes(field))) {
+        const sources = Object.keys(child);
+        // A source-keyed collection holds one map per server; chapter keys are chapter ids, not story ids.
+        result =
+          typed && sources.length && sources.every(isPublicReleaseServer) && Object.values(child).every(object)
+            ? Object.fromEntries(
+                sources.map((source) => [
+                  source,
+                  members(child[source] as Record<string, unknown>, nextKind, source),
+                ]),
+              )
+            : members(child, nextKind, server, field !== "chapters");
       } else
         result = walk(
           child,
           nextKind,
           field,
-          ["item", "row", "model"].includes(field),
-          Boolean(contentFieldType(field)) || ["item", "row", "model"].includes(field),
+          primaryFields.includes(field),
+          !nested && (Boolean(typed) || primaryFields.includes(field)),
+          server,
+          field === "document",
         );
       if (result !== drop) output[field] = result;
     }
     return output;
   };
+  /**
+   * Cross-server catalogue entries and details. Every copy of a variant row —
+   * `perServer`, the detail `row` and `ownershipVariant` — is filtered against
+   * its own server; hidden variants leave the entry together with the peer
+   * names and content merged from them.
+   */
+  const crossServer = (input: Record<string, unknown>): unknown | typeof drop => {
+    const kind = visibilityType(String(input.resource));
+    const variants = input.perServer as Record<string, unknown>;
+    const perServer: Record<string, Record<string, unknown>> = {};
+    for (const [server, variant] of Object.entries(variants)) {
+      if (!object(variant) || !object(variant.row)) continue;
+      const result = walk(variant.row, kind, String(variant.id), true, true, server);
+      if (result !== drop)
+        perServer[server] = { ...variant, row: result, ...(object(result) && result.__contentPreview ? { assets: {} } : {}) };
+    }
+    const servers = Object.keys(perServer);
+    if (!servers.length) return drop;
+    const removed = servers.length !== Object.keys(variants).length;
+    const output: Record<string, unknown> = { ...input, perServer };
+    if (removed) {
+      changed = true;
+      const reset: Record<string, unknown> = {
+        displayServer: servers.includes(String(input.displayServer)) ? input.displayServer : servers[0],
+        inSelectedServer: servers.includes(String(input.selectedServer)),
+        sourceIds: servers,
+        serverAvailability: Object.fromEntries(servers.map((server) => [server, true])),
+        nameOverrides: {},
+        nameFallbacks: [],
+        content: { overrides: {}, supplements: [], fields: [] },
+        variantGroups: servers.map((server) => [server]),
+      };
+      for (const [field, next] of Object.entries(reset)) if (Object.hasOwn(input, field)) output[field] = next;
+    }
+    if (object(input.row)) {
+      const identity = object(input.identity) ? input.identity : {};
+      const active = perServer[String(input.activeServer ?? identity.server)];
+      if (!active) return drop;
+      const row = removed ? active.row : walk(input.row, kind, String(active.id), true, true, String(input.activeServer ?? identity.server));
+      if (row === drop) return drop;
+      output.row = row;
+    }
+    if (object(input.ownershipVariant)) {
+      const identity = object(input.ownershipVariant.identity) ? input.ownershipVariant.identity : {};
+      output.ownershipVariant = perServer[String(identity.server)] ?? null;
+    }
+    return output;
+  };
   const kind = resource && visibilityType(resource);
-  const root =
-    object(value) &&
-    !inferredVisibilityType(value) &&
-    !hasPublication(value) &&
-    kind &&
-    !value.schema &&
-    !value.entries &&
-    !value.items;
-  const result = root
-    ? Object.fromEntries(
-        Object.entries(value).flatMap(([id, item]) => {
-          const output = walk(item, kind, id, true, true);
-          return output === drop ? [] : [[id, output]];
-        }),
-      )
-    : walk(value, kind || undefined);
+  const result =
+    object(value) && kind && rowMap(value)
+      ? members(value, kind, sourceServer(value))
+      : walk(value, kind || undefined, undefined, false, Array.isArray(value) && Boolean(kind));
   return { value: result === drop ? null : result, changed };
 }
