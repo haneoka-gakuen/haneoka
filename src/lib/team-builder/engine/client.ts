@@ -580,7 +580,10 @@ export class EngineClient {
         let sharedSeed: EngineHit | undefined;
         let sharedUnknown: string[] = [];
         if (count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
-          && (request.goal.minComboBonus ?? 1) <= 1 && (!request.goal.arena || request.goal.arena.missions.every(type => type > 0))) {
+          && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
+          && !request.goal.justWindow && !(request.goal.minJustWindowMs ?? 0)
+          && (request.goal.minComboBonus ?? 1) <= 1
+          && request.goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3))) {
           const goal = request.goal;
           const warm = await workers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
             request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,

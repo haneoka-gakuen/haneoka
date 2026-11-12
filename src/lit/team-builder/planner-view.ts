@@ -152,7 +152,7 @@ const button = (label: string, action: () => void) => html`
   <button class="button button--tonal" type="button" @click=${action}>${label}</button>
 `;
 const ranks = (host: Host) =>
-  ["F", "D", "C", "B", "A", "S", "SS"].map((label, index) => ({
+  ["E", "D", "C", "B", "A", "S", "SS"].map((label, index) => ({
     value: index + 1,
     label: host.t("planner.rank", "{rank}", { rank: label }),
   }));
