@@ -572,6 +572,7 @@ export class EngineClient {
       if (separateEvent || sharedEvent) {
         const finished = () => stopped || !remaining(deadline);
         const workers = [...pool].sort((a, b) => Number(b.started) - Number(a.started));
+        let sharedCharts: Promise<EngineChart[]> | undefined;
         const pending: { chart: string | null; run: (worker?: EngineWorker) => Promise<void> }[] = [];
         const dispatch = () => {
           if (finished()) {
@@ -609,10 +610,14 @@ export class EngineClient {
                 try {
                   const jobDeadline = Math.min(deadline, job.deadline ?? Infinity);
                   if (worker && remaining(jobDeadline)) {
-                    const input = { ...job, deadline: jobDeadline };
-                    const response = await worker.send<EngineResponse>({ type: "run", id: 0, request: input }, undefined,
-                      value => { if (!stopped) onProgress(value.response); });
-                    if (!stopped) onResult(index, response);
+                    const loadedCharts = sharedEvent && job.aggregation === "mean"
+                      ? await (sharedCharts ??= worker.preload(sharedEvent.goal.songs)) : undefined;
+                    if (!stopped && remaining(jobDeadline)) {
+                      const input = { ...job, deadline: jobDeadline };
+                      const response = await worker.send<EngineResponse>({ type: "run", id: 0, request: input, loadedCharts }, undefined,
+                        value => { if (!stopped) onProgress(value.response); });
+                      if (!stopped) onResult(index, response);
+                    }
                   }
                   resolve();
                 } catch (error) {

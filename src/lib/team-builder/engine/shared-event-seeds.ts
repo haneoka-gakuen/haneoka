@@ -20,8 +20,19 @@ export interface SharedEventSeeds {
 }
 
 const MAX_SCOUT_DEPTH = 10;
+const MIN_SCOUT_DEPTH = 3;
+const STAGNANT_SCOUT_DEPTHS = 2;
 const sameSong = (left: SongRef | null, right: SongRef) => left?.songId === right.songId && left.difficulty === right.difficulty;
 const formationKey = (hit: EngineHit) => JSON.stringify([hit.members, hit.snaps]);
+const rosterKey = (hit: EngineHit) => JSON.stringify([...hit.members].sort());
+
+function samePrimary(left: EngineHit | undefined, right: EngineHit): boolean {
+  if (!left) return false;
+  const a = left.rewardRanking?.[0], b = right.rewardRanking?.[0];
+  return a && b
+    ? BigInt(a.numerator) * BigInt(b.denominator) === BigInt(b.numerator) * BigInt(a.denominator)
+    : left.key === right.key;
+}
 
 function fixedSeedRequest(request: EventRequest, hit: EngineHit): EngineRequest | null {
   const { constraints } = request;
@@ -78,6 +89,7 @@ export async function acquireSharedEventSeeds(
   const stats = pendingSong(null).stats;
   const unknown = new Set<string>();
   const replayed = new Set<string>();
+  const jointByRoster = new Map<string, EngineHit>();
   const depthLimit = Math.min(request.k, MAX_SCOUT_DEPTH);
   const waveSize = Math.max(1, workers);
   let hits: EngineHit[] = [];
@@ -101,6 +113,13 @@ export async function acquireSharedEventSeeds(
     const complete = response.overall.filter(hit => hit.song === null && hit.event !== null &&
       hit.aggregate?.songs.length === request.goal.songs.length && hit.aggregate.songs.every((chart, index) => sameSong(chart.song, request.goal.songs[index]!)));
     if (!complete.length) return;
+    if (request.k > 1) {
+      for (const hit of complete) {
+        const key = rosterKey(hit);
+        const known = jointByRoster.get(key);
+        if (!known || compareHits(hit, known) < 0) jointByRoster.set(key, hit);
+      }
+    }
     const next = topDistinct([...hits, ...complete], request.k);
     if (next.length === hits.length && next.every((hit, index) => compareHits(hit, hits[index]!) === 0)) return;
     hits = next;
@@ -130,7 +149,8 @@ export async function acquireSharedEventSeeds(
   };
 
   const scout = async (jobs: readonly ChartJob[]) => {
-    if (!jobs.length || finished()) return;
+    const winners: (EngineHit | undefined)[] = [];
+    if (!jobs.length || finished()) return winners;
     await runBatch(jobs.map(({ chart, constraints }) => ({
       ...scoped, goal: { ...goal, songs: [chart.song] }, constraints,
       k: 1, aggregation: undefined, seeds: undefined, completed: undefined,
@@ -141,18 +161,52 @@ export async function acquireSharedEventSeeds(
       const row = response.results[0];
       const best = row?.hits[0];
       if (!best) return;
+      winners[index] = best;
       offer(best);
       if (row.proven) chart.frontier.push({ constraints, best });
     }, response => { for (const hit of response.overall) offer(hit); });
+    return winners;
+  };
+
+  const childCandidates = (winners: readonly (EngineHit | undefined)[]): EngineHit[] => {
+    const selected = new Map<string, EngineHit>();
+    for (const hit of winners) {
+      const song = hit?.song;
+      if (!hit || !song || replayed.has(formationKey(hit))) continue;
+      const key = rosterKey(hit);
+      if (selected.has(key)) continue;
+      const known = jointByRoster.get(key)?.aggregate?.songs.find(chart => sameSong(chart.song, song));
+      const knownPrimary = rawPrimary ? known?.event?.rewardValues?.points.value
+        : known?.rewardRanking?.[0]?.value ?? known?.key;
+      const primary = hit.rewardRanking?.[0]?.value ?? hit.key;
+      if (knownPrimary === undefined || primary > knownPrimary) selected.set(key, hit);
+    }
+    return [...selected.values()];
   };
 
   await replay(request.seeds ?? []);
   for (let first = 0; first < charts.length && !finished(); first += waveSize) {
     const wave = charts.slice(first, first + waveSize);
-    await scout(wave.map(chart => ({ chart, constraints: request.constraints })));
-    await replay(wave.flatMap(chart => chart.candidates));
+    const nativeWinners = await scout(wave.map(chart => ({ chart, constraints: request.constraints })));
+    if (request.k === 1) {
+      await replay(wave.flatMap(chart => chart.candidates));
+      continue;
+    }
+    const winners = nativeWinners.filter(hit => hit !== undefined);
+    const seen = new Set([...jointByRoster.keys(), ...winners.map(rosterKey)]);
+    const alternates: EngineHit[] = [];
+    for (const chart of wave) {
+      const alternate = chart.candidates.find(hit => !seen.has(rosterKey(hit)) && !replayed.has(formationKey(hit)));
+      if (alternate) {
+        seen.add(rosterKey(alternate));
+        alternates.push(alternate);
+      }
+    }
+    await replay([...winners, ...alternates]);
   }
 
+  let previousFloor = hits[request.k - 1];
+  let stagnantDepths = 0;
   for (let depth = 1; depth < depthLimit && !finished(); depth++) {
     const jobs = charts.flatMap(chart => {
       chart.frontier.sort((a, b) => compareHits(a.best, b.best));
@@ -160,8 +214,15 @@ export async function acquireSharedEventSeeds(
       return parent ? splitEventPartition(parent).map(constraints => ({ chart, constraints })) : [];
     });
     if (!jobs.length) break;
-    await scout(jobs);
-    await replay(charts.flatMap(chart => chart.candidates));
+    await replay(childCandidates(await scout(jobs)));
+    if (hits.length < request.k && depth === 1) {
+      const deferred = childCandidates(charts.flatMap(chart => chart.candidates));
+      await replay(deferred.slice(0, Math.max(waveSize, request.k - hits.length)));
+    }
+    const floor = hits[request.k - 1];
+    stagnantDepths = floor && samePrimary(previousFloor, floor) ? stagnantDepths + 1 : 0;
+    if (depth >= MIN_SCOUT_DEPTH && stagnantDepths >= STAGNANT_SCOUT_DEPTHS) break;
+    previousFloor = floor;
   }
   return result();
 }
