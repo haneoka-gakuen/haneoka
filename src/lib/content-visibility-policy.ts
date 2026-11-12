@@ -34,6 +34,9 @@ export const VISIBILITY_TYPES = [
   "anon-tokyo",
 ] as const;
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
+export function isModelVisibilityType(kind: VisibilityType | undefined): boolean {
+  return kind === "live2d" || kind === "spine";
+}
 export const VISIBILITY_MODES = ["spoiler", "visible"] as const;
 export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
 export const RESTRICTED_CONTENT_DISPLAYS = ["hidden", "unpublished"] as const;

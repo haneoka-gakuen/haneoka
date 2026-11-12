@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: 规范目录、关系／视图定义与目标 release 路径。
-# Output: 分片目录、实体／关系／来源索引和模型公开时间。
+# Output: 分片目录、实体／关系／来源索引存储。
 # Pos: [Map](L2-2.md)；不可变目录读取模型的编译器。
 # Effects/Dependencies: 读写并复制本地资源，依赖共享格式和分片算法；不完成远端发布。
 """Compile canonical catalog documents into immutable, partitioned R2 read models."""
@@ -8,9 +8,6 @@
 from __future__ import annotations
 
 import re
-import math
-from collections import defaultdict
-from datetime import datetime, timezone
 import shutil
 from urllib.parse import urlsplit, unquote
 from dataclasses import dataclass
@@ -291,9 +288,6 @@ STORY_ASSET_VIEWS = (
 
 SPINE_MODEL_PROJECTION = ProjectionSpec(
     include=(
-        "publicStartAt",
-        "__publicationPending",
-        "modelPublicationPrepared",
         "animationCount",
         "animations",
         "bounds",
@@ -863,134 +857,6 @@ def _write_partitions(root: Path, prefix: str, records: dict[str, Any]) -> dict[
         "prefix": normalize_release_path(f"api/v1/catalog/{prefix}") + "/",
         "shards": sorted(partitions),
     }
-
-
-MODEL_TIME_FIELDS = ("publicStartAt", "releasedAt", "publishedAt", "releaseAt", "startAt")
-
-
-def _model_time(value: Any) -> float:
-    if isinstance(value, list):
-        return next((_model_time(item) for item in value if _model_time(item) > 0), 0)
-    try:
-        result = float(value)
-        return result if math.isfinite(result) and result > 0 else 0
-    except (ValueError, TypeError):
-        if not isinstance(value, str):
-            return 0
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).timestamp() * 1000
-        except ValueError:
-            return 0
-
-
-def _model_publication_at(row: dict) -> float:
-    own = _model_time(next((row[key] for key in MODEL_TIME_FIELDS if row.get(key) is not None), None))
-    event = _model_time(row.get("eventPublishedAt"))
-    if row.get("__publicationPending") is True:
-        own = event or math.inf
-    elif event:
-        own = min(own, event)
-    metadata = row.get("catalogMetadata")
-    return max(own, _model_publication_at(metadata)) if isinstance(metadata, dict) else own
-
-
-def _model_source(value: str) -> str:
-    value = unquote(urlsplit(value).path).strip("/")
-    parts = value.split("/", 2)
-    if len(parts) == 3 and parts[0] in {"assets", "runtime", "objects"} and parts[1] in {"jp", "intl"}:
-        value = parts[0] + "/" + parts[2]
-    for prefix in ("runtime/unity/", "assets/", "objects/unity/"):
-        if value.startswith(prefix):
-            value = value[len(prefix):]
-            break
-    value = value.removeprefix("Assets/AddressableResources/")
-    return value.casefold()
-
-
-def model_publications(documents: dict[str, Any]) -> dict[str, dict]:
-    models = {"live2d": documents.get("live2d", {}), "spine": documents.get("spine", {}).get("models", {})}
-    aliases: dict[str, set[str]] = defaultdict(set)
-    costumes: dict[tuple[int, int], set[str]] = defaultdict(set)
-    for kind, entries in models.items():
-        for identity, row in entries.items():
-            key = kind + ":" + identity
-            aliases[kind + ":" + identity.casefold()].add(key)
-            if kind == "live2d":
-                aliases[kind + ":" + identity.removesuffix("_low").casefold()].add(key)
-                character, costume = row.get("characterId"), row.get("costumeId")
-                if character and costume:
-                    costumes[(int(character), int(costume))].add(key)
-            runtime = row.get("runtime", {})
-            sources = [row.get(name) for name in ("sourcePath", "sourcePathKey", "mocSourcePath")]
-            sources += [runtime.get(name) for name in ("model", "moc")]
-            if isinstance(runtime.get("json"), dict):
-                sources.append(runtime["json"].get("url"))
-            for source in sources:
-                if isinstance(source, str) and source:
-                    aliases[_model_source(source)].add(key)
-    starts: dict[str, float] = {}
-
-    def reference(keys: set[str], at: float) -> None:
-        for key in keys:
-            starts[key] = min(starts.get(key, math.inf), at)
-
-    def walk(value: Any, at: float, field: str = "") -> None:
-        if isinstance(value, str):
-            if field not in {"live2dKey", "modelId", "resourceKey", "sourcePath", "sourcePathKey", "mocSourcePath", "skeletonSourcePath", "url", "model", "moc", "json", "skeleton"}:
-                return
-            if field == "live2dKey":
-                reference(aliases.get("live2d:" + value.removesuffix("_low").casefold(), set()), at)
-            elif field in {"modelId", "resourceKey"}:
-                reference(aliases.get("spine:" + value.casefold(), set()), at)
-            source = _model_source(value)
-            reference(aliases.get(source, set()), at)
-            if "_skeletondata.asset/" in source:
-                reference(aliases.get(source.split("_skeletondata.asset/", 1)[0] + "_skeletondata.asset", set()), at)
-            return
-        if isinstance(value, list):
-            for child in value:
-                walk(child, at, field)
-            return
-        if not isinstance(value, dict):
-            return
-        at = max(at, _model_publication_at(value))
-        character = value.get("characterId") or value.get("_characterId") or value.get("_characterID")
-        costume = value.get("costumeId") or value.get("_costumeId") or value.get("_costumeID")
-        if character and costume:
-            reference(costumes.get((int(character), int(costume)), set()), at)
-        for name, child in value.items():
-            if name not in {"catalogMetadata", "models", "unavailableModels"}:
-                walk(child, at, name)
-
-    for kind, document in documents.items():
-        if kind in {"live2d", "spine"} or not isinstance(document, dict):
-            continue
-        if kind == "stories":
-            for group in ("episodes", "homeSpots"):
-                for value in document.get(group, {}).values():
-                    walk(value, 0)
-        elif kind == "anon-tokyo":
-            for recipe in document.get("spine", {}).get("renderRecipes", {}).values():
-                walk(recipe, 0)
-        else:
-            walk(document, 0)
-    # Missing references are not evidence of an unreleased model.
-    return {
-        kind + ":" + identity: (
-            {"__publicationPending": True} if math.isinf(starts[kind + ":" + identity]) else
-            {"publicStartAt": int(starts[kind + ":" + identity])}
-        ) if kind + ":" + identity in starts else {}
-        for kind, entries in models.items() for identity in entries
-    }
-
-
-def apply_model_publications(documents: dict[str, Any]) -> None:
-    for key, publication in model_publications(documents).items():
-        kind, identity = key.split(":", 1)
-        entries = documents[kind] if kind == "live2d" else documents[kind]["models"]
-        entries[identity].update(publication)
-        entries[identity]["modelPublicationPrepared"] = True
 
 
 PUBLICATION_FIELDS = ("publicStartAt", "releasedAt", "publishedAt", "releaseAt", "startAt", "eventPublishedAt", "__publicationPending", "chapterId", "catalogMetadata")

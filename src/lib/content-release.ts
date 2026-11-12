@@ -7,6 +7,7 @@ import { currentContentGroup, currentVisibilityPolicy } from "./content-policy-b
 import {
   DEFAULT_VISIBILITY_RULE,
   inferredVisibilityType,
+  isModelVisibilityType,
   visibilityId,
   visibilityType,
 } from "./content-visibility-policy";
@@ -31,6 +32,7 @@ export function isReleasedContent(value: unknown): boolean {
 export function isContentVisible(resource: string, value: unknown, id?: string): boolean {
   const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const kind = visibilityType(resource);
+  if (isModelVisibilityType(kind)) return true;
   const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
   if (typeof document === "undefined" || !document.documentElement) return prerenderContentVisible(kind, row, id);
   if (released(value, Date.now())) return true;
