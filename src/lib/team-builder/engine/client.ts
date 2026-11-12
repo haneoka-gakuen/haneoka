@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 import type { SampleRequest, PlaySample } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -12,6 +12,9 @@ import type { EngineCall, EngineChart, EngineChartSources, EngineReply, Evaluate
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
 import { aspirationHeld, compareHits, mergeShardResponses } from "./merge";
+import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
+import { canUseSharedEventRosters } from "./shared-event-rosters";
+import { proveSharedEvent } from "./shared-event-search";
 import { chartKey, EngineCharts } from "./charts";
 import engineUrl from "./generated/team-engine.wasm?url";
 
@@ -212,6 +215,7 @@ class EngineWorker {
   get started() {
     return this.ready !== null;
   }
+  hasChart(key: string) { return this.cachedCharts.includes(key); }
   /** Starts the Worker and compiles the release ahead of the first call. */
   warm(): Promise<void> {
     return this.spawn().catch(() => {});
@@ -486,7 +490,9 @@ export class EngineClient {
     let lastShown = -Infinity;
     let publishTimer: ReturnType<typeof setTimeout> | undefined;
     const joint = request.aggregation === "mean" || request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared";
-    const snapshotInterval = joint ? Math.min(1000, Math.max(100, requestChartSongs(request).length * 20)) : 100;
+    const canPartition = !onFinalResult && request.members.length >= PARALLEL_MIN_MEMBERS;
+    const partitioned = canPartition && canPartitionEvent(request);
+    const snapshotInterval = partitioned ? 250 : joint ? Math.min(1000, Math.max(100, requestChartSongs(request).length * 20)) : 100;
     let cpChallenge: EngineHit | undefined;
     const showLatest = () => {
       clearTimeout(publishTimer);
@@ -530,11 +536,12 @@ export class EngineClient {
       showLatest();
     };
     let wakeWork: (() => void) | undefined;
+    let partitionProgress: (() => EngineResponse) | undefined;
     let stop!: (reason: StopReason) => void;
     const interrupted = new Promise<EngineResponse>(resolve => {
       stop = reason => {
         if (stopped) return;
-        publish({ ...latest, stopReason: reason }, true);
+        publish({ ...(partitionProgress?.() ?? latest), stopReason: reason }, true);
         stopped = true;
         wakeWork?.();
         if (pool === this.pool) this.downloads.cancel();
@@ -558,6 +565,97 @@ export class EngineClient {
         cpChallenge = resolved.cpChallenge;
         if (cpChallenge) publish({ ...latest, cpChallenge }, true);
         request = { ...request, goal: { ...request.goal, rewardPlan: resolved.resolvedRewardPlan } };
+      }
+      const separateEvent = canPartition && canPartitionEvent(request) ? request : null;
+      const sharedEvent = canPartition && request.goal.kind === "event" && canUseSharedEventRosters(this.data, request)
+        ? { ...request, goal: request.goal } : null;
+      if (separateEvent || sharedEvent) {
+        const finished = () => stopped || !remaining(deadline);
+        const workers = [...pool].sort((a, b) => Number(b.started) - Number(a.started));
+        const pending: { chart: string | null; run: (worker?: EngineWorker) => Promise<void> }[] = [];
+        const dispatch = () => {
+          if (finished()) {
+            for (const job of pending.splice(0)) void job.run();
+            return;
+          }
+          while (pending.length && workers.length) {
+            let nextJob = 0;
+            let nextWorker = 0;
+            if (sharedEvent) {
+              for (const [index, job] of pending.entries()) {
+                if (job.chart === null) continue;
+                const key = job.chart;
+                const cached = workers.findIndex(worker => worker.hasChart(key));
+                if (cached < 0) continue;
+                nextJob = index;
+                nextWorker = cached;
+                break;
+              }
+            }
+            const [worker] = workers.splice(nextWorker, 1);
+            const [job] = pending.splice(nextJob, 1);
+            void job!.run(worker!).finally(() => {
+              workers.push(worker!);
+              dispatch();
+            });
+          }
+        };
+        wakeWork = dispatch;
+        const runBatch: PartitionBatch = async (jobs, onResult, onProgress) => {
+          const batch = jobs.map((job, index) => new Promise<void>((resolve, reject) => {
+            const charts = sharedEvent ? requestChartSongs(job) : [];
+            pending.push({ chart: charts.length === 1 && charts[0] ? chartKey(charts[0]) : null,
+              run: async worker => {
+                try {
+                  const jobDeadline = Math.min(deadline, job.deadline ?? Infinity);
+                  if (worker && remaining(jobDeadline)) {
+                    const input = { ...job, deadline: jobDeadline };
+                    const response = await worker.send<EngineResponse>({ type: "run", id: 0, request: input }, undefined,
+                      value => { if (!stopped) onProgress(value.response); });
+                    if (!stopped) onResult(index, response);
+                  }
+                  resolve();
+                } catch (error) {
+                  reject(error);
+                }
+              },
+            });
+          }));
+          dispatch();
+          const settled = await Promise.allSettled(batch);
+          const rejected = settled.find(result => result.status === "rejected");
+          if (rejected) throw rejected.reason;
+        };
+        if (sharedEvent) {
+          const result = await proveSharedEvent(this.data, sharedEvent, runBatch, publish, finished, pool.length);
+          if (stopped) return latest;
+          if (result) return result;
+        } else if (separateEvent) {
+          const goal = separateEvent.goal;
+          if (goal.songs.length === 1) return partitionEvent(separateEvent, runBatch, publish, finished);
+
+          const parts = [...latest.results];
+          const unknown = new Set(latest.unknownCards);
+          const response = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknown] });
+          partitionProgress = response;
+          let done = parts.filter(part => part.proven).length;
+          await Promise.all(goal.songs.map(async (song, index) => {
+            if (parts[index]!.proven) return;
+            const part: EngineRequest = { ...separateEvent, goal: { ...goal, songs: [song] }, completed: undefined, seeds: undefined };
+            const update = (value: EngineResponse, final = false) => {
+              if (stopped) return;
+              parts[index] = value.results[0]!;
+              for (const key of value.unknownCards) unknown.add(key);
+              if (final || clock() - lastShown >= snapshotInterval) publish(response(), final);
+            };
+            const result = await partitionEvent(part, runBatch, update, finished);
+            if (!stopped) {
+              update(result, true);
+              progress?.(++done, goal.songs.length);
+            }
+          }));
+          return response();
+        }
       }
       if (request.goal.kind === "gekiso" && request.goal.arena?.objective === "sections") {
         const worker = pool[0]!;

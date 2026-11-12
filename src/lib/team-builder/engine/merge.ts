@@ -8,7 +8,7 @@ const identityOrder = (a: EngineHit, b: EngineHit) =>
   (a.song?.songId ?? 0) - (b.song?.songId ?? 0) ||
   (a.song?.difficulty ?? 0) - (b.song?.difficulty ?? 0) ||
   JSON.stringify([a.members, a.snaps]).localeCompare(JSON.stringify([b.members, b.snaps]));
-export const compareHits = (a: EngineHit, b: EngineHit): number => {
+export const compareHitRank = (a: EngineHit, b: EngineHit): number => {
   if (a.rewardRanking && b.rewardRanking) {
     for (let i = 0; i < a.rewardRanking.length; i++) {
       const x = a.rewardRanking[i]!,
@@ -17,20 +17,20 @@ export const compareHits = (a: EngineHit, b: EngineHit): number => {
         right = BigInt(y.numerator) * BigInt(x.denominator);
       if (left !== right) return left > right ? -1 : 1;
     }
-    return identityOrder(a, b);
+    return 0;
   }
   return (
     b.key - a.key ||
     (b.sectionRanking?.[0] ?? 0) - (a.sectionRanking?.[0] ?? 0) ||
     (b.sectionRanking?.[1] ?? 0) - (a.sectionRanking?.[1] ?? 0) ||
     (b.event?.otherMean ?? 0) - (a.event?.otherMean ?? 0) ||
-    (b.score?.mean ?? 0) - (a.score?.mean ?? 0) ||
-    identityOrder(a, b)
+    (b.score?.mean ?? 0) - (a.score?.mean ?? 0)
   );
 };
+export const compareHits = (a: EngineHit, b: EngineHit): number => compareHitRank(a, b) || identityOrder(a, b);
 const setKey = (hit: EngineHit) => `${songKey(hit)}|${[...hit.members].sort().join(",")}`;
 
-function topDistinct(hits: readonly EngineHit[], k: number): EngineHit[] {
+export function topDistinct(hits: readonly EngineHit[], k: number): EngineHit[] {
   const best = new Map<string, EngineHit>();
   for (const hit of hits) {
     const key = setKey(hit);
