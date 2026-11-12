@@ -70,7 +70,7 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
   const skillType = kind === "snaps" ? snapshotSkillType : skillTypeTitle;
   for (const facet of CARD_SKILL_FACETS) {
     if (!(facet.kinds as readonly string[]).includes(kind === "members" ? "member" : "support")) continue;
-    const selected = f.facets[facet.key];
+    const selected = f.facets[facet.key]?.map(skillType);
     if (selected?.length && !cardSkills(item, facet.role).some((skill) => selected.includes(skillType(skillTypeKey(skill))))) return false;
   }
   if (!matchesSelections([cardArtwork(item) ? "yes" : "no"], f.facets.artwork || [])) return false;
@@ -121,7 +121,7 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
         const value = skillType(skillTypeKey(skill));
         if (value && !options.has(value)) options.set(value, {value,label:skillType(catalog.text(skill.skillName)),image:String(skill.icon || "") || undefined});
       }
-      return group(label(facet.key), f.facets[facet.key] || [], [...options.values()], (values) => facetSet(facet.key, values));
+      return group(label(facet.key), [...new Set((f.facets[facet.key] || []).map(skillType))], [...options.values()], (values) => facetSet(facet.key, values));
     })}
     ${group(label("availableImage"), f.facets.artwork || [], ["yes","no"].map((value) => ({value,label:label(value)})), (values) => facetSet("artwork", values))}
     ${chooserGroup(label("total"), html`<div class="chooser-filter-options">${["minTotal", "maxTotal"].map((key) => html`<md-outlined-text-field type="number" min="0" label=${label(key.startsWith("min") ? "minimum" : "maximum")} .value=${live(f.facets[key]?.[0] || "")} @input=${(event: Event) => {const value = (event.target as HTMLInputElement).value; facetSet(key, value ? [value] : []);}}></md-outlined-text-field>`)}</div>`)}
