@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 可序列化队伍／歌曲／目标请求、Master 与注入的谱面读取器。
-// Output: Engine 输入输出类型、竞技场区间目标及冻结对手统计契约，和 TS 评价／搜索接口。
+// Output: Engine 输入输出类型、奖励评级证书、竞技场区间目标及冻结对手统计契约，和 TS 评价／搜索接口。
 // Pos: [Map](L2-2.md)；引擎 TS 契约和实现，区别于当前 Worker 的 WASM 执行。
 // Effects/Dependencies: 调用注入的谱面加载与搜索逻辑；实际 I/O 取决于读取器和调用环境。
 /** Serializable engine requests and their evaluation. Pure: charts come from an injected loader. */
@@ -251,7 +251,9 @@ export interface EngineRequest {
   rewardLexicographic?: boolean;
   rewardIncumbent?: RewardFloor;
   /** Internal reward proof stage; later stages follow completed global reward proofs. */
-  rewardPhase?: { kind: "primary" } | { kind: "other"; reward: number; floor?: number } | { kind: "score"; reward: number; other: number; floor?: number };
+  rewardPhase?: { kind: "primary"; certifyRanks?: true } | { kind: "other"; reward: number; floor?: number } | { kind: "score"; reward: number; other: number; floor?: number };
+  /** Private reward-prefix proof; score tie-breaks and public results retain full score orders. */
+  certifyRewardRanks?: true;
   /** Known lower bounds on each song's k-th key (`songId:difficulty`), from teams other shards already found. */
   floors?: Record<string, number>;
   /** Other songs' Top-K key. Only a pt-only k=1 request may prove this song strictly below the cutoff. */
@@ -279,6 +281,7 @@ export interface HitScore {
 /** Native settlement may wrap below zero; the denominator stays positive. */
 export interface RewardFraction { numerator: string; denominator: string; value: number }
 export interface EngineHit {
+  pendingScores?: true;
   sectionReference?: boolean;
   sectionRanking?: [number, number];
   sectionPerformance?: SectionPerformance;
@@ -300,6 +303,8 @@ export interface EngineHit {
   score: HitScore | null;
   skipScore: number | null;
   event: {
+    /** Private primary-reward proof; the final ranking still completes all score orders. */
+    rankCertificate?: { ranks: Record<string, number>; orders: number; scoreLow: number; scoreHigh: number };
     rewardPlan?: RewardRankingPlan;
     rewardValues?: Record<RewardMetric, RewardFraction>;
     mean: number; bonusPercent: number; challengePoints: number; perPlayMin: number; perPlayMax: number;

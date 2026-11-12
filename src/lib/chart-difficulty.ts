@@ -5,9 +5,9 @@
 // Effects/Dependencies: Cassiopeia 几何和读谱时间模型；纯计算，缺少有效计数或校准时不生成定数。
 import { nativeJudgementAreaOffsetX, applyLineEase, type ChartDocument, type ChartNote } from "@haneoka/cassiopeia";
 
-/** Full-combo difficulty at 1x, assist 0, from the chart alone: the skill at which every 0.4 s section is
- * cleared with probability 1/2. No player, save or team score input. */
-export const CHART_DIFFICULTY_VERSION = "ournotes-fc-threshold-v6";
+/** Full-combo difficulty at 1x, assist 0: the skill at which clearing all 0.4 s sections succeeds
+ * with probability 1/2. No player, save or team score input. */
+export const CHART_DIFFICULTY_VERSION = "ournotes-fc-threshold-v7";
 export const CHART_DIFFICULTY_PARAMETERS = {
   maxSearchStates: 500000,
   burstReferenceMs: 200,
@@ -35,11 +35,10 @@ export const CHART_DIFFICULTY_PARAMETERS = {
   handJackTolerance: 0.05,
   otherHandShare: 0.5,
   handStrainWeight: 1.5,
-  /** Extra effort of a press while the other hand holds a long note, and of a flick with a set direction. */
+  /** Extra effort of a press while the other hand holds a long note. */
   handHeldFactor: 1,
-  handAimedWeight: 1,
-  handAimedChordWeight: 1,
   sectionSeconds: 0.4,
+  /** Maximum span and travel of one hand's coalesced swipe. */
   swipeSeconds: 0.06,
   swipeLanes: 2,
   /** Spread of the per-section miss probability in log-strain units. */
@@ -154,7 +153,7 @@ interface Operation {
   note: ChartNote;
   base: number;
   starts: number[];
-  /** A flick that continues the previous flick's swipe: no new gesture. */
+  /** A flick reached by the preceding contact's swipe: no new press. */
   chained?: boolean;
 }
 const isFlick = (event: Operation) => FLICKS.has(event.note.operateType) && !event.chained;
@@ -198,10 +197,6 @@ function canonicalOrientation(source: Readonly<ChartDocument>): ChartDocument {
     }
     if (note.easeL !== note.easeR) {
       reflect = (note.easeL ?? 0) > (note.easeR ?? 0);
-      break;
-    }
-    if (note.direction !== 0) {
-      reflect = note.direction === 2;
       break;
     }
   }
@@ -390,24 +385,6 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
     }
   }
   events.sort((a, b) => a.time - b.time || a.note.id - b.note.id);
-  // Flick runs a few milliseconds apart, one lane further each in the same direction, are a single swipe.
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i]!;
-    if (!FLICKS.has(event.note.operateType)) continue;
-    for (let j = i - 1; j >= 0 && event.time - events[j]!.time <= CHART_DIFFICULTY_PARAMETERS.swipeSeconds; j--) {
-      const before = events[j]!;
-      if (
-        before.time < event.time &&
-        FLICKS.has(before.note.operateType) &&
-        before.note.direction === event.note.direction &&
-        Math.abs(before.note.pos - event.note.pos) <= CHART_DIFFICULTY_PARAMETERS.swipeLanes
-      ) {
-        event.chained = true;
-        event.base = 0.15;
-        break;
-      }
-    }
-  }
   quality.operationCount = events.length;
   if (!events.length) {
     warnings.add("no-operation-events");
@@ -451,6 +428,31 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
     handAt = [0, 0],
     handLast: ([number, number, boolean] | null)[] = [null, null],
     handPeaks = new Map<number, number>();
+  const contactGesture = (hand: number, time: number, centre: number, flick: boolean, otherHeld: boolean) => {
+    const P = CHART_DIFFICULTY_PARAMETERS;
+    for (const other of [0, 1]) {
+      handLoad[other] = handLoad[other]! * Math.exp(-(time - handAt[other]!) / P.handDecaySeconds);
+      handAt[other] = time;
+    }
+    const before = handLast[hand];
+    if (before) {
+      const gap = Math.max(time - before[0], 0.04),
+        speed = Math.max(0, P.handReferenceSeconds / gap - 1) ** P.handSpeedPower,
+        jump = Math.abs(centre - before[1]);
+      const effort =
+        P.handSpeedWeight * speed +
+        (P.handJumpWeight * jump) / gap +
+        (flick !== before[2] && gap < P.handSwitchSeconds ? P.handSwitchWeight : 0) +
+        (!flick && jump < P.handJackTolerance ? P.handJackWeight * speed : 0);
+      handLoad[hand] = handLoad[hand]! + effort * (otherHeld ? 1 + P.handHeldFactor : 1);
+    }
+    handLast[hand] = [time, centre, flick];
+    const slot = Math.floor(time / P.sectionSeconds);
+    handPeaks.set(
+      slot,
+      Math.max(handPeaks.get(slot) ?? 0, Math.max(...handLoad) + P.otherHandShare * Math.min(...handLoad)),
+    );
+  };
   let searchStates = 0;
   let handoffCount = 0,
     shortSameHandGestures = 0,
@@ -458,8 +460,18 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
   const position = [...CHART_DIFFICULTY_PARAMETERS.initialContacts],
     last = [-2, -2],
     handStrain = [0, 0],
-    owners = new Map<number, number>(),
-    directions = new Map<number, number>();
+    owners = new Map<number, number>();
+  const swipes: ({ start: number; last: number; pos: number } | null)[] = [null, null];
+  const continuesSwipe = (row: Operation, hand: number, target: number) => {
+    const swipe = swipes[hand];
+    return (
+      FLICKS.has(row.note.operateType) &&
+      swipe != null &&
+      row.time > swipe.last &&
+      row.time - swipe.start <= CHART_DIFFICULTY_PARAMETERS.swipeSeconds + 1e-9 &&
+      Math.abs(target - swipe.pos) <= CHART_DIFFICULTY_PARAMETERS.swipeLanes / 24 + 1e-9
+    );
+  };
   const state = emptyComponents(),
     peaks = new Map<string, Map<number, number>>(["temporal", "rich", ...COMPONENTS].map((key) => [key, new Map()]));
   let globalStrain = 0,
@@ -502,8 +514,8 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
           valid = true;
         for (const hand of [0, 1]) {
           const assigned = rows.filter((_, i) => rowHands[i] === hand);
-          const gestures = assigned.filter((row) => DOWNS.has(row.note.operateType) || isFlick(row));
-          if (gestures.length > 1) {
+          const freshPress = assigned.some((row) => DOWNS.has(row.note.operateType));
+          if (assigned.filter((row) => FLICKS.has(row.note.operateType)).length > 1) {
             valid = false;
             break;
           }
@@ -533,6 +545,15 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
             break;
           }
           const target = clamp(position[hand]!, Math.min(low, high), Math.max(low, high));
+          const gestures = assigned.filter(
+            (row) =>
+              DOWNS.has(row.note.operateType) ||
+              (FLICKS.has(row.note.operateType) && (freshPress || !continuesSwipe(row, hand, target))),
+          );
+          if (gestures.length > 1) {
+            valid = false;
+            break;
+          }
           targets[hand] = target;
           const elapsed = assigned.length ? Math.max(time - last[hand]!, 0.05) : Math.max(dt, 0.05);
           cost += Math.abs(target - position[hand]!) / elapsed;
@@ -554,7 +575,10 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
             .map((line) => ownerHands[active.indexOf(line)]!)
             .filter(
               (hand) =>
-                !rows.some((row, i) => rowHands[i] === hand && (DOWNS.has(row.note.operateType) || isFlick(row))),
+                !rows.some(
+                  (row, i) =>
+                    rowHands[i] === hand && (DOWNS.has(row.note.operateType) || FLICKS.has(row.note.operateType)),
+                ),
             ),
         );
         cost +=
@@ -572,6 +596,14 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
       warnings.add("two-contact-phase-deadend");
       return unavailable();
     }
+    rows.forEach((row, index) => {
+      if (!FLICKS.has(row.note.operateType)) return;
+      const hand = bestRows[index]!;
+      row.chained =
+        continuesSwipe(row, hand, bestTargets[hand]!) &&
+        !rows.some((other, i) => bestRows[i] === hand && DOWNS.has(other.note.operateType));
+      row.base = row.chained ? 0.15 : 1;
+    });
     const handoffs = active.filter((line, i) => owners.has(line.id) && owners.get(line.id) !== bestOwners[i]).length;
     handoffCount += handoffs;
     const occupied = new Set(bestOwners);
@@ -586,7 +618,10 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
         )
         .map((line) => bestOwners[active.indexOf(line)]!)
         .filter(
-          (hand) => !rows.some((row, i) => bestRows[i] === hand && (DOWNS.has(row.note.operateType) || isFlick(row))),
+          (hand) =>
+            !rows.some(
+              (row, i) => bestRows[i] === hand && (DOWNS.has(row.note.operateType) || FLICKS.has(row.note.operateType)),
+            ),
         ),
     );
     quality.strategyContactStarts += newTouches.size;
@@ -594,6 +629,7 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
       extraTouchTimes.push(time);
       globalStrain += CHART_DIFFICULTY_PARAMETERS.newHoldContactCost;
       handStrain[hand] = handStrain[hand]! + CHART_DIFFICULTY_PARAMETERS.newHoldContactCost;
+      swipes[hand] = { start: time, last: time, pos: bestTargets[hand]! };
     }
     let holdSpeed = 0,
       movement = 0,
@@ -606,38 +642,9 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
         const gestures = assigned.filter((row) => DOWNS.has(row.note.operateType) || isFlick(row));
         if (gestures.length) {
           const previous = gestureTimes[hand]!.at(-1);
-          const P = CHART_DIFFICULTY_PARAMETERS,
-            centre = (gestures[0]!.note.pos + gestures[0]!.note.size / 2) / 24,
+          const centre = (gestures[0]!.note.pos + gestures[0]!.note.size / 2) / 24,
             flick = gestures.some((row) => isFlick(row));
-          for (const other of [0, 1]) {
-            handLoad[other] = handLoad[other]! * Math.exp(-(time - handAt[other]!) / P.handDecaySeconds);
-            handAt[other] = time;
-          }
-          const before = handLast[hand];
-          if (before) {
-            const gap = Math.max(time - before[0], 0.04),
-              speed = Math.max(0, P.handReferenceSeconds / gap - 1) ** P.handSpeedPower,
-              jump = Math.abs(centre - before[1]);
-            const effort =
-              P.handSpeedWeight * speed +
-              (P.handJumpWeight * jump) / gap +
-              (flick !== before[2] && gap < P.handSwitchSeconds ? P.handSwitchWeight : 0) +
-              (jump < P.handJackTolerance ? P.handJackWeight * speed : 0);
-            const aimed = gestures.some((row) => isFlick(row) && (row.note.direction ?? 0) !== 0);
-            const aimedChord =
-              aimed && rows.filter((row) => isFlick(row) && (row.note.direction ?? 0) !== 0).length > 1;
-            // A flick with a set direction, more so with both hands at once.
-            handLoad[hand] =
-              handLoad[hand]! + (aimed ? P.handAimedWeight : 0) + (aimedChord ? P.handAimedChordWeight : 0);
-            // A press while the other hand holds a long note: this hand carries the passage alone.
-            handLoad[hand] = handLoad[hand]! + effort * (occupied.has(1 - hand) ? 1 + P.handHeldFactor : 1);
-          }
-          handLast[hand] = [time, centre, flick];
-          const slot = Math.floor(time / P.sectionSeconds);
-          handPeaks.set(
-            slot,
-            Math.max(handPeaks.get(slot) ?? 0, Math.max(...handLoad) + P.otherHandShare * Math.min(...handLoad)),
-          );
+          contactGesture(hand, time, centre, flick, occupied.has(1 - hand));
           repeat += previous === undefined ? 0 : Math.max(0, 0.2 / Math.max(time - previous, 0.05) - 1) * 0.15;
           if (previous !== undefined) {
             const ioiMs = (time - previous) * 1000;
@@ -654,6 +661,7 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
     for (const hand of newTouches) {
       const previous = gestureTimes[hand]!.at(-1);
       if (previous !== time) {
+        contactGesture(hand, time, bestTargets[hand]!, false, previouslyHeld.has(1 - hand));
         if (previous !== undefined) {
           const ioiMs = (time - previous) * 1000;
           minSameHandIoiMs = minSameHandIoiMs === null ? ioiMs : Math.min(minSameHandIoiMs, ioiMs);
@@ -663,6 +671,14 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
         last[hand] = time;
       }
     }
+    rows.forEach((row, index) => {
+      if (!DOWNS.has(row.note.operateType) && !FLICKS.has(row.note.operateType)) return;
+      const hand = bestRows[index]!,
+        previous = swipes[hand];
+      swipes[hand] =
+        row.chained && previous ? { ...previous, last: time } : { start: time, last: time, pos: bestTargets[hand]! };
+      if (row.chained && handLast[hand]) handLast[hand] = [time, bestTargets[hand]!, true];
+    });
     active.forEach((line, i) => owners.set(line.id, bestOwners[i]!));
     state.holdConstraints += dt * (0.2 * occupied.size + 0.15 * holdSpeed);
     state.handMovement += movement / 4 + repeat + handoffs * CHART_DIFFICULTY_PARAMETERS.contactHandoffCost;
@@ -671,14 +687,7 @@ export function chartDifficultyFeatures(input: ChartDifficultyInput): ChartDiffi
       globalStrain += rows.reduce((sum, row) => sum + row.base, 0);
       state.chords += Math.max(0, gestures.length - 1) ** 1.2;
       state.holdConstraints += 0.15 * occupied.size * gestures.length;
-      rows.forEach((row, i) => {
-        const hand = bestRows[i]!;
-        if (isFlick(row)) {
-          state.flick += 1;
-          if (directions.has(hand) && directions.get(hand) !== row.note.direction) state.reading += 0.1;
-          directions.set(hand, row.note.direction);
-        }
-      });
+      state.flick += rows.filter(isFlick).length;
       if (gestures.length) {
         if (previousGroup !== null) {
           const ioi = time - previousGroup;

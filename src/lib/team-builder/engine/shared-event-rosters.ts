@@ -51,7 +51,7 @@ function isSharedRequest(data: TeamBuilderData, request: EngineRequest): request
       goal.gekiso || goal.rewardRoom || goal.eventEffects || goal.weights || goal.cpExchange ||
       request.aggregation !== "mean" || goal.songs.length < 2 || new Set(goal.songs.map(chartKey)).size !== goal.songs.length ||
       request.songRules || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded ||
-      request.rewardPhase || request.rewardLexicographic || request.rewardIncumbent || request.resolveRewardPlan ||
+      request.rewardPhase || request.certifyRewardRanks || request.rewardLexicographic || request.rewardIncumbent || request.resolveRewardPlan ||
       request.floors || request.cutoff || request.rewardCutoff !== undefined || request.completed?.length) return false;
   const plan = goal.rewardPlan;
   const primary = plan?.levels[0];
@@ -217,7 +217,7 @@ function inclusiveFloor(points: number): number {
 }
 
 function pointSum(hit: EngineHit): number | null {
-  if (hit.score?.orders.length !== orders) return null;
+  if (hit.score?.orders.length !== orders && hit.event?.rankCertificate?.orders !== orders) return null;
   const points = Math.round(hit.key * orders);
   const normalized = points / orders;
   return Number.isSafeInteger(points) && points >= 0 &&
@@ -357,7 +357,7 @@ export async function proveSharedEventRosters(
     }
     if (!jobs.length || stopped()) continue;
     const rows = await native(jobs.map(({ domain, chart, target }) => ({
-      ...subrequest, constraints: domain.constraints, rewardPhase: { kind: "primary" },
+      ...subrequest, constraints: domain.constraints, rewardPhase: { kind: "primary", certifyRanks: true },
       floors: target > 0 ? { [chartKey(songs[chart]!)]: inclusiveFloor(target) } : undefined,
       goal: { ...rawGoal, songs: [songs[chart]!] },
     })));

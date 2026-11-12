@@ -40,6 +40,7 @@ let compiled: WebAssembly.Module | null = null;
 let handle = 0;
 /** Charts the engine holds (it keeps the latest few), as `songId:difficulty`. */
 let cached: string[] = [];
+let chartCacheLimit = 4;
 let onProgress: ((value: Doc) => void) | null = null;
 let cooperativeRun = false;
 let pendingFloor: number | null = null;
@@ -120,7 +121,9 @@ async function ready() {
     const suffix = encoder.encode(',"trustedScores":true}');
     const input = new Uint8Array(prefix.length + source.length + suffix.length);
     input.set(prefix); input.set(source, prefix.length); input.set(suffix, prefix.length + source.length);
-    handle = Number((await invoke(input)).handle);
+    const context = await invoke(input);
+    handle = Number(context.handle);
+    chartCacheLimit = Number(context.chartCacheLimit ?? 4);
     cached = [];
   }
 }
@@ -144,7 +147,7 @@ async function charts(songs: SongRef[], loaded: EngineChart[] = [], touch = true
       }
     }
     staged.push(key);
-    if (staged.length > 4) staged.shift();
+    if (staged.length > chartCacheLimit) staged.shift();
   }
   return rows;
 }
@@ -158,7 +161,7 @@ async function execute(call: EngineCall) {
       handle = 0;
       await ready();
       const cooperativeFloor = !!promiseWasm.Suspending && !!promiseWasm.promising && !!engine?.haneoka_search_floor;
-      post({ type: "ready", id: call.id, cooperativeFloor, cooperativeReward: cooperativeFloor && !!engine?.haneoka_search_reward });
+      post({ type: "ready", id: call.id, chartCacheLimit, cooperativeFloor, cooperativeReward: cooperativeFloor && !!engine?.haneoka_search_reward });
       return;
     }
     if (!data) throw new Error("engine-not-ready");

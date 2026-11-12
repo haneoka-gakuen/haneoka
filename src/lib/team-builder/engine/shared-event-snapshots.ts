@@ -143,6 +143,7 @@ async function proveRoster(
   const charts = (scope: EventRequest, indexes: readonly number[], chartPlan: RewardRankingPlan,
     seeds?: readonly (EngineHit | undefined)[]) => Promise.all(indexes.map(index => submit({
     ...scope, aggregation: undefined, seeds: seeds?.[index] ? [seeds[index]!] : undefined,
+    certifyRewardRanks: chartPlan.tieBreak ? undefined : true,
     goal: { ...scope.goal, songs: [songs[index]!], rewardPlan: chartPlan },
   })));
 

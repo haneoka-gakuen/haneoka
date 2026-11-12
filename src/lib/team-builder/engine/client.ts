@@ -50,6 +50,7 @@ class EngineWorker {
   private eventGrowthId: number | null = null;
   private eventGrowthPaused = false;
   private cachedCharts: string[] = [];
+  private chartCacheLimit = 4;
   private preparing: Preparation | null = null;
   private worker: Worker | null = null;
   private ready: Promise<void> | null = null;
@@ -97,6 +98,7 @@ class EngineWorker {
         this.pending.delete(reply.id);
         if (reply.type === "ready") this.cooperativeFloor = reply.cooperativeFloor === true;
         if (reply.type === "ready") this.cooperativeReward = reply.cooperativeReward === true;
+        if (reply.type === "ready") this.chartCacheLimit = reply.chartCacheLimit ?? 4;
         if (reply.id === this.runId) this.runId = null;
         if (reply.id === this.eventGrowthId) this.eventGrowthId = null;
         if (reply.type === "error") pending.reject(new Error(reply.message));
@@ -186,7 +188,7 @@ class EngineWorker {
       if (index >= 0 && message.type === "charts") return false;
       if (index >= 0) staged.splice(index, 1);
       staged.push(key);
-      if (staged.length > 4) staged.shift();
+      if (staged.length > this.chartCacheLimit) staged.shift();
       return index < 0;
     });
     let loading = true;
@@ -238,6 +240,7 @@ class EngineWorker {
   private reset() {
     this.scoredSeeds = [];
     this.cachedCharts = [];
+    this.chartCacheLimit = 4;
     this.preparing = null;
     this.runId = null;
     this.eventGrowthId = null;
@@ -395,7 +398,7 @@ export class EngineClient {
   private completed: { key: string; response: EngineResponse } | null = null;
   private responseKey(request: EngineRequest): string | null {
     if (request.k > 5 || request.members.length > 256 || request.snaps.length > 256 || requestSongs(request).length > 4
-      || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded || request.rewardPhase
+      || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded || request.rewardPhase || request.certifyRewardRanks
       || request.resolveRewardPlan || request.floors || request.rewardIncumbent || request.cutoff || request.rewardCutoff !== undefined || request.completed?.length) return null;
     const { timeLimitMs: _time, deadline: _deadline, requestId: _id, contextKey: _context, ...input } = request;
     return JSON.stringify(["native-window-coverage-v1", input]);
