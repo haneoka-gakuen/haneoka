@@ -4,10 +4,12 @@
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
 import { unpublishedState } from "./ui/unpublished-state";
+import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../packages/api-client/src/chart-assets";
 import { communityVisible } from "../lib/site-community";
 import { createChartOverviewMeta } from "../lib/public-tools/chart-meta";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible, showUnreleasedContent } from "../lib/content-release";
+import { prerenderViewKey } from "../lib/content-prerender";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
 import { visibilityPolicyKey } from "../lib/content-policy-browser";
@@ -34,6 +36,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
+import { cardTile } from "./shared/card-tile";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import {
   serverAvailabilityBadge,
@@ -67,7 +70,7 @@ import { gekisouMission, gekisouMissionIcons } from "../lib/gekisou";
 import type { GekisoTimingSegment, PerfectTiming } from "../lib/team-builder/gekiso-timing";
 import type { SongChartReady } from "./song-skill-points";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
-import { readPageData } from "../lib/page-data";
+import { readPageData, waitForPageData } from "../lib/page-data";
 import type { CatalogCollectionPayload } from "../server/catalog-collection";
 import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
 import type { ProviderEntityPayload } from "../lib/provider-entity-data";
@@ -412,7 +415,7 @@ interface Config {
 }
 /** The document lib/entity-graph.ts emits for one entity. */
 interface EntityPayload {
-  schema: string;
+  schema: "haneoka-entity-payload-v1";
   resource?: string;
   server?: string;
   releaseId?: string;
@@ -1924,6 +1927,7 @@ export class CatalogScreen extends LitElement {
   };
   private contentAccessChanged = () => { void this.load(); };
   connectedCallback() {
+    if (waitForPageData(this, () => this.connectedCallback())) return;
     super.connectedCallback();
     document.addEventListener("visibilitychange", this.onTimeVisibility);
     window.addEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
@@ -2493,6 +2497,25 @@ export class CatalogScreen extends LitElement {
     this.phase = "ready";
     this.ensureBandSelection();
   }
+  async adoptPageData(): Promise<boolean> {
+    this.catalogRequests.cancel();
+    this.unionRequests.cancel();
+    this.nativeReferenceRequests.cancel();
+    const payload = readPageData<EntityPayload | CatalogCollectionPayload | ProviderCollectionPayload | ProviderEntityPayload>(this);
+    if (payload?.schema === "haneoka-collection-payload-v1" && "identity" in payload) this.prepareCollection(payload);
+    else if (payload?.schema === "haneoka-entity-payload-v1" && "item" in payload) {
+      const commit = await this.stageEntity(payload, this.config, true);
+      if (!this.isConnected) return false;
+      commit();
+    }
+    else if (payload?.schema === "haneoka-provider-collection-v1" && "provider" in payload) this.prepareProviderCollection(payload);
+    else if (payload?.schema === "haneoka-provider-entity-v1" && "detail" in payload) await this.prepareProviderEntity(payload);
+    else return false;
+    this.expandedCache = undefined;
+    this.resultCache = undefined;
+    this.requestUpdate();
+    return true;
+  }
   prepareCollection(payload: CatalogCollectionPayload, config: string = this.config): void {
     this.settings = JSON.parse(config || "{}") as Config;
     this.profile = profiles[this.settings.resource] ?? fallbackProfile;
@@ -2640,9 +2663,9 @@ export class CatalogScreen extends LitElement {
       this.cardDetail = cards;
       this.songDetailRewards = rewards;
       this.gameSystemDetail = systems;
-      this.gameSystemDetail?.initializeGameSystemDetail(this, payload.item);
+      if (!preserveInput) this.gameSystemDetail?.initializeGameSystemDetail(this, payload.item);
       if (!preserveInput) this.initializeCardDetailState(payload.item);
-      if (this.profile.presentation === "band-item")
+      if (this.profile.presentation === "band-item" && !preserveInput)
         this.detailLevel = Math.max(
           1,
           ...(Array.isArray(payload.item.levels) ? (payload.item.levels as Item[]) : []).map((row) =>
@@ -2966,6 +2989,7 @@ export class CatalogScreen extends LitElement {
   private results() {
     this.ensureBandSelection();
     const key = [
+      prerenderViewKey(),
       this.items.length,
       this.query,
       this.sort,
@@ -5545,25 +5569,26 @@ export class CatalogScreen extends LitElement {
     const image = this.imageSource(this.first(item, ["images.thumbnail", "thumbnail", "image"]));
     const attribute = this.itemAttributeMark(item);
     const rarity = this.itemRarityMark(item);
+    const relation = this.itemCharacterRelation(item);
+    const attributeLabel = this.fieldValue(item, "cardType");
+    const rarityLabel = this.fieldValue(item, "rarity");
     return {
-      kind,
-      title,
-      titleLanguage: resolved.locale,
-      subtitle: this.tileDescriptionContent(item, kind),
-      adornment: catalogCharacterRelationship(this.itemCharacterIds(item), this.settings.locale, (id) =>
-        this.itemCharacter(item, id),
-      ).adornment,
-      label: title,
-      image,
+      ...cardTile({
+        kind,
+        title,
+        titleLanguage: resolved.locale,
+        subtitle: relation.content,
+        adornment: relation.adornment,
+        label: [title, relation.label, rarityLabel, attributeLabel].filter(Boolean).join(" / "),
+        image,
+        attributeIcon: attribute,
+        attributeLabel,
+        rarityIcon: rarity,
+        rarityLabel,
+      }),
       imageFallback: image,
       aspectRatio: kind === "support" ? "16 / 9" : "3 / 4",
-      placeholder: icon("image", 32),
-      fit: "contain",
       onImageError: this.imageError,
-      marks: [
-        attribute ? { at: "start", image: attribute, label: this.fieldValue(item, "cardType") } : null,
-        rarity ? { at: "end", image: rarity, label: this.fieldValue(item, "rarity") } : null,
-      ],
     };
   }
 
@@ -6013,12 +6038,13 @@ export class CatalogScreen extends LitElement {
     }
     if (Object.keys(this.missionIcons).length || this.missionIconProvision) return;
     const signal = this.missionIconRequests.begin();
-    const pending = fetchJson<unknown>(
-      catalogUrl("sources/Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2", "", server),
+    const pending = fetchJson<import("../../packages/api-client/src/chart-assets").HaneokaChartAssets>(
+      `${catalogUrl("chart-assets", "", server)}?projection=${HANEOKA_CHART_ASSETS_PROJECTION}`,
       { signal },
     )
-      .then((descriptor) => {
+      .then((assets) => {
         if (this.isConnected && this.missionIconRequests.current(signal)) {
+          const descriptor = Object.entries(assets.sources).find(([path]) => path.endsWith("/LiveAtlas.spriteatlasv2"))![1];
           this.missionIcons = gekisouMissionIcons(descriptor, server);
           this.requestUpdate();
         }

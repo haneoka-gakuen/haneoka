@@ -23,6 +23,7 @@ import { PaneFocus } from "./ui/pane";
 import { errorState, loadingState } from "./ui/state";
 import { entityHref, parseEntitySelection, returnStateFromLocation } from "../lib/resource-route";
 import { readReleaseServer } from "../lib/release-server";
+import { compareLive2dModelKeys } from "../lib/model-name";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
@@ -85,6 +86,7 @@ type PackagingProgress = {
 const POSE_STORAGE_KEY = "haneoka.live2d.poses";
 const CAPTURE_PIXEL_BUDGET = 4_000_000;
 let live2dAccordionId = 0;
+const modelCollators = new Map<string, Intl.Collator>();
 export interface Viewer {
   readonly ready: boolean;
   readonly isMotionPlaying: boolean;
@@ -376,6 +378,8 @@ export class Live2DWorkspace extends LitElement {
     const target = viewer ?? this.viewer;
     const ownsObserver = !viewer || this.viewer === viewer;
     if (ownsObserver) {
+      delete this.dataset.modelResourceBase;
+      delete this.dataset.modelRelease;
       this.resizeObserver?.disconnect();
       this.resizeObserver = undefined;
       if (this.viewer === target) this.viewer = undefined;
@@ -692,6 +696,12 @@ export class Live2DWorkspace extends LitElement {
     const source = detail.runtime && typeof detail.runtime === "object" ? (detail.runtime as Value) : detail;
     const modelUrl = String(source.model || "");
     if (!modelUrl) throw new Error(uiText(this.locale, "media.models.labels.modelDescriptorMissing"));
+    const modelSource = new URL(modelUrl, location.href);
+    const release = modelSource.searchParams.get("release");
+    if (release) {
+      this.dataset.modelResourceBase = modelSource.pathname.slice(0, modelSource.pathname.lastIndexOf("/") + 1);
+      this.dataset.modelRelease = release;
+    }
     const motions = Array.isArray(detail.motions) ? (detail.motions as Value[]) : [];
     const defaultMotion = this.defaultMotionName(detail, motions);
     const defaultExpression = String(
@@ -1269,6 +1279,8 @@ export class Live2DWorkspace extends LitElement {
   private filteredModels() {
     const needle = this.query.trim().normalize("NFKC").toLowerCase();
     const direction = this.order === "asc" ? 1 : -1;
+    let collator = modelCollators.get(this.locale);
+    if (!collator) modelCollators.set(this.locale, collator = new Intl.Collator(this.locale, { numeric: true }));
     return this.models
       .filter((model) => isContentListed("live2d", model, this.key(model)))
       .filter((model) =>
@@ -1291,15 +1303,13 @@ export class Live2DWorkspace extends LitElement {
         );
       })
       .sort((left, right) => {
-        let result = String(this.key(left)).localeCompare(String(this.key(right)), "en", { numeric: true });
+        let result = compareLive2dModelKeys(this.key(left), this.key(right));
         if (this.sort === "title")
-          result = this.modelTitle(left).localeCompare(this.modelTitle(right), this.locale, { numeric: true });
+          result = collator.compare(this.modelTitle(left), this.modelTitle(right)) || result;
         if (this.sort === "type")
-          result = String(left.modelType || "").localeCompare(String(right.modelType || ""), this.locale, {
-            numeric: true,
-          });
-        if (this.sort === "character") result = Number(left.characterId || 0) - Number(right.characterId || 0);
-        if (this.sort === "band") result = Number(left.bandId || 0) - Number(right.bandId || 0);
+          result = collator.compare(String(left.modelType || ""), String(right.modelType || "")) || result;
+        if (this.sort === "character") result = Number(left.characterId || 0) - Number(right.characterId || 0) || result;
+        if (this.sort === "band") result = Number(left.bandId || 0) - Number(right.bandId || 0) || result;
         return direction * result;
       });
   }

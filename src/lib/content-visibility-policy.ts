@@ -34,6 +34,9 @@ export const VISIBILITY_TYPES = [
   "anon-tokyo",
 ] as const;
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
+export function isModelVisibilityType(kind: VisibilityType | undefined): boolean {
+  return kind === "live2d" || kind === "spine";
+}
 export const VISIBILITY_MODES = ["spoiler", "visible"] as const;
 export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
 export const RESTRICTED_CONTENT_DISPLAYS = ["hidden", "unpublished"] as const;
@@ -66,7 +69,9 @@ export const DEFAULT_VISIBILITY_POLICY: ContentVisibilityPolicy = { eventChallen
 
 export function visibilityType(value: string): VisibilityType | undefined {
   const kind =
-    value === "member-cards"
+    value === "voices"
+      ? "characters"
+      : value === "member-cards"
       ? "cards"
       : value === "song-meta"
         ? "songs"
@@ -146,6 +151,7 @@ export function visibilityId(kind: VisibilityType, row: Record<string, unknown>)
   return String([...(ID_FIELDS[kind] || []), "id", "_key"].map((key) => row[key]).find((id) => id !== undefined) ?? "");
 }
 export function inferredVisibilityType(row: Record<string, unknown>): VisibilityType | undefined {
+  if (typeof row.voiceKey === "string" && Array.isArray(row.characterIds)) return "characters";
   for (const kind of [
     "cards",
     "support-cards",

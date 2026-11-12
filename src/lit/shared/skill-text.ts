@@ -1,3 +1,10 @@
+// L3 — GEB
+// Input: Localized skill templates, effect rows and reference tables.
+// Output: Shared skill descriptions and condition/effect display data.
+// Pos: [Map](../L2-2.md); browser-safe skill text for entities and card editors.
+// Effects/Dependencies: Pure formatting with reference indexes cached by document identity.
+import { resolveLocalizedText } from "../../lib/localized-text";
+
 type LocalizedValue = unknown;
 type ArchiveLocale = string;
 const LOCALES = ["ja", "en", "zh-TW", "zh-CN", "ko"] as const;
@@ -250,7 +257,11 @@ const renderValue = (
   source: { effects: SkillEffect[] },
   localize: (value: LocalizedValue | null | undefined) => string,
 ): RenderResult => {
-  const sum = expression.trim().match(/^\((effects(?:\[\d+])(?:[.\w]|\[\d+])*)\s*\+\s*(effects(?:\[\d+])(?:[.\w]|\[\d+])*)\)(?:([/*])(\d+(?:\.\d+)?))?(?::F(\d+))?$/);
+  const sum = expression
+    .trim()
+    .match(
+      /^\((effects(?:\[\d+])(?:[.\w]|\[\d+])*)\s*\+\s*(effects(?:\[\d+])(?:[.\w]|\[\d+])*)\)(?:([/*])(\d+(?:\.\d+)?))?(?::F(\d+))?$/,
+    );
   if (sum) {
     const left = valueAtPath(source, sum[1]!);
     const right = valueAtPath(source, sum[2]!);
@@ -333,3 +344,47 @@ export const stripSkillDescriptionMarkup = (value: string): string =>
     .replace(/<[^>]+>/g, "")
     .replace(/\\n/g, "\n")
     .trim();
+
+const displayReferenceIndexes = new WeakMap<SkillEffect, SkillReferenceIndex>();
+/** Resolve each authored skill level once for all supported archive text locales. */
+export function skillDisplay(item: SkillEffect, reference: SkillEffect): SkillEffect[] {
+  let index = displayReferenceIndexes.get(reference);
+  if (!index) {
+    index = buildSkillReferenceIndex(reference);
+    displayReferenceIndexes.set(reference, index);
+  }
+  return Object.entries(asRecord(item.resolvedSkills) || {}).flatMap(([group, value]) =>
+    rowsOf(Array.isArray(value) ? value : [value]).map((skill, slot) => {
+      const effects = rowsOf(skill.effects);
+      const levels = [...new Set(effects.map((effect) => Number(effect.level ?? rawOf(effect)._level)))]
+        .filter((level) => Number.isFinite(level) && level > 0)
+        .sort((a, b) => a - b);
+      return {
+        group,
+        slot,
+        name: skill.skillName ?? skill.name,
+        levels: (levels.length ? levels : [1]).map((level) => {
+          const selected = resolveSkillLevelEffects(effects, index, level).effects;
+          const localized = LOCALES.map((locale) => resolveLocalizedText(skill.description, locale));
+          const rendered = localized.map((source) =>
+            stripSkillDescriptionMarkup(
+              resolveSkillDescription(
+                source.text,
+                selected,
+                (value) => resolveLocalizedText(value, source.locale).text,
+              ),
+            ),
+          );
+          const unresolved = [...new Set(rendered.flatMap(unresolvedSkillDescriptionTokens))];
+          const valid = (text: string) => text.length > 0 && !unresolvedSkillDescriptionTokens(text).length;
+          const fallback = rendered.findIndex(valid);
+          const description = rendered.map((text) => (valid(text) ? text : fallback >= 0 ? rendered[fallback] : ""));
+          const descriptionLocales = rendered.map((text, slot) =>
+            valid(text) ? localized[slot].locale : fallback >= 0 ? localized[fallback].locale : "und",
+          );
+          return { level, description, descriptionLocales, ...(unresolved.length ? { unresolved } : {}) };
+        }),
+      };
+    }),
+  );
+}

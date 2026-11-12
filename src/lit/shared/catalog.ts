@@ -30,6 +30,8 @@ export function uiText(locale: string, key: string): string {
   return clientText(locale, key, key);
 }
 
+const listFormatters = new Map<string, Intl.ListFormat>();
+
 export function formatList(
   values: unknown[],
   locale: string,
@@ -38,7 +40,14 @@ export function formatList(
   const items = values.map((value) => String(value || "").trim()).filter(Boolean);
   if (items.length < 2) return items[0] || "";
   try {
-    return new Intl.ListFormat(locale, { style: "long", type }).format(items);
+    const key = `${locale}:${type}`;
+    let formatter = listFormatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.ListFormat(locale, { style: "long", type });
+      if (listFormatters.size >= 32) listFormatters.delete(listFormatters.keys().next().value!);
+      listFormatters.set(key, formatter);
+    }
+    return formatter.format(items);
   } catch {
     return items.join(", ");
   }

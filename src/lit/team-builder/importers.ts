@@ -137,29 +137,29 @@ export class ImportController {
         if (/^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true && !kept.has(key))
           changes.push({ key, value: false });
     }
-    this.host.write(changes);
+    this.host.write(changes, true);
     this.host.notice = this.host.t("imported", "Imported {count} changes", { count: changes.length });
   }
   /** The Box a review compares against: the current store, owner and inventory. */
   private captureBase(): boolean {
     const context = this.context();
-    if (!context || !this.host.view) return false;
+    if (!context || !this.host.persistentView) return false;
     this.boxContext = context;
     this.boxStore = this.host.store;
     this.boxOwner = this.host.snapshot?.owner;
     this.boxOwnership = JSON.stringify([
-      ...this.host.view.members.keys(),
-      ...[...this.host.view.snaps.keys()].map((id) => `s${id}`),
+      ...this.host.persistentView.members.keys(),
+      ...[...this.host.persistentView.snaps.keys()].map((id) => `s${id}`),
     ]);
-    this.boxBase = viewInventory(this.host, this.host.view);
+    this.boxBase = viewInventory(this.host, this.host.persistentView);
     return true;
   }
   /** The Box changed under an open review, as when sign-in sync finishes after a save handoff: review the same text against it. */
   rebase() {
     const text = this.boxText;
-    if (!this.box || text === null || !this.host.view) return;
+    if (!this.box || text === null || !this.host.persistentView) return;
     if (this.host.store === this.boxStore && this.host.snapshot?.owner === this.boxOwner
-      && JSON.stringify(viewInventory(this.host, this.host.view)) === JSON.stringify(this.boxBase)) return;
+      && JSON.stringify(viewInventory(this.host, this.host.persistentView)) === JSON.stringify(this.boxBase)) return;
     if (!this.captureBase()) return;
     void this.parse({ text });
   }
@@ -474,17 +474,17 @@ export class ImportController {
       const context = this.context();
       if (
         !context ||
-        !this.host.view ||
+        !this.host.persistentView ||
         this.host.store !== this.boxStore ||
         this.host.snapshot?.owner !== this.boxOwner ||
         (state.confirmation.ownership === "replace" &&
           JSON.stringify([
-            ...this.host.view.members.keys(),
-            ...[...this.host.view.snaps.keys()].map((id) => `s${id}`),
+            ...this.host.persistentView.members.keys(),
+            ...[...this.host.persistentView.snaps.keys()].map((id) => `s${id}`),
           ]) !== this.boxOwnership)
       )
         throw new BoxImportError("box_review_changed");
-      const current = viewInventory(this.host, this.host.view);
+      const current = viewInventory(this.host, this.host.persistentView);
       const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
       this.commit(next, this.boxBase, state.confirmation.ownership === "replace");
       const url = new URL(location.href);
@@ -563,7 +563,7 @@ export class ImportController {
 
   openScreenshots() {
     const context = this.context();
-    const view = this.host.view;
+    const view = this.host.persistentView;
     if (!context || !view || !this.host.data) return;
     this.dispose();
     this.screenshotBase = viewInventory(this.host, view);
@@ -690,7 +690,7 @@ export class ImportController {
   }
 
   exportJson() {
-    const view = this.host.view;
+    const view = this.host.persistentView;
     if (!view) return;
     const inventory = viewInventory(this.host, view);
     downloadBlob(
@@ -946,7 +946,7 @@ export class ImportController {
           try {
             if (!host.view || host.store !== this.screenshotStore || host.snapshot?.owner !== this.screenshotOwner)
               throw new RangeError("screenshot-review-stale");
-            const next = session.merge(viewInventory(host, host.view), host.data!, context);
+            const next = session.merge(viewInventory(host, host.persistentView!), host.data!, context);
             this.commit(next, this.screenshotBase);
             this.closeScreenshots();
           } catch (error) {

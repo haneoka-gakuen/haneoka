@@ -2,8 +2,9 @@
 // Input: Release-pinned team data, catalogue visuals, locale and song display preference.
 // Output: Card/song presentation, native game icons and explicit select/button fields.
 // Pos: [Map](../L2-2.md); team workspace presentation helpers.
-// Effects/Dependencies: Caches titles by language and preference; lazily reads the pinned live atlas and aborts on disposal.
+// Effects/Dependencies: Caches titles by language and preference; reads pinned public chart assets for mission icons and aborts on disposal.
 import { CONTENT_SOURCE_IDS } from "../../lib/content-sources";
+import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../../packages/api-client/src/chart-assets";
 import { isReleasedContent } from "../../lib/content-release";
 import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";
@@ -61,11 +62,12 @@ export class Catalog {
     if (!this.missionIconRequest) {
       const controller = this.missionIconRequest = new AbortController();
       const { server, releaseId } = this.data.identity;
-      void fetchJson<unknown>(
-        `/api/v1/servers/${server}/sources/Assets/AddressableResources/Live/Images/Atlas/LiveAtlas.spriteatlasv2?release=${encodeURIComponent(releaseId)}`,
+      void fetchJson<import("../../../packages/api-client/src/chart-assets").HaneokaChartAssets>(
+        `/api/v1/servers/${server}/chart-assets?projection=${HANEOKA_CHART_ASSETS_PROJECTION}&release=${encodeURIComponent(releaseId)}`,
         { signal: controller.signal },
-      ).then((descriptor) => {
+      ).then((assets) => {
         if (controller.signal.aborted || this.host.catalog !== this) return;
+        const descriptor = Object.entries(assets.sources).find(([path]) => path.endsWith("/LiveAtlas.spriteatlasv2"))![1];
         this.missionIcons = Object.fromEntries(Object.entries(gekisouMissionIcons(descriptor, server))
           .map(([key, path]) => [key, `${path}?release=${encodeURIComponent(releaseId)}`]));
         this.host.requestUpdate();
@@ -453,7 +455,10 @@ export class Catalog {
   /** Events with a live point table (searchable event goals). */
   events() {
     return [...this.master.events.values()]
-      .filter((event) => isReleasedContent(this.data.events[String(event.id)]))
+      .filter((event) => {
+        const row=this.data.events[String(event.id)]!;
+        return row.kind==="planner-event"?(row.planner as {active:boolean}).active:isReleasedContent(row);
+      })
       .filter((event) => event.livePoints.size || event.challengePoints.size || event.effects.length)
       .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))
       .map((event) => ({
@@ -469,10 +474,13 @@ export class Catalog {
     return this.master.challengeMusics.filter((row) => eventId === null || row.eventId === eventId);
   }
   normalEventSongIds(eventId: number | null) {
+    const custom=eventId===null?undefined:this.data.events[String(eventId)]?.plannerRules as {normalSongs:number[]}|undefined;
+    if(custom?.normalSongs.length)return custom.normalSongs;
+    const challengeIds=new Set(this.challengeSongs(eventId).map(row=>row.liveMusicId));
     const eventSongId = eventId === null ? undefined : this.master.events.get(eventId)?.musicId;
     return Object.keys(this.data.songs)
       .map(Number)
-      .filter((id) => id !== eventSongId);
+      .filter((id) => id !== eventSongId && !challengeIds.has(id));
   }
 }
 

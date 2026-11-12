@@ -1,9 +1,11 @@
 // L3 — GEB
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
-// Output: 排名卡片、结果／已存队伍共用编队、评分详情、以正方形卡面展示的技能顺序与导出上下文。
+// Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按请求隔离后台时间线缓存；判定时序在展开时单独计算，教程区分所选顺序无收益与提前方案不可用，顺序列表按需挂载，导出沿用原结果的歌曲及成绩。
-import { rankRisk } from "./result-analysis";
+// Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
+import { evaluateResult, rankRisk } from "./result-analysis";
+import { sectionResults } from "./section-results";
+import { justWindowResults } from "./just-window-results";
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
@@ -13,7 +15,7 @@ import { actionMenu } from "../ui/action-menu";
 import { improvementPercent } from "../../lib/team-builder/engine/execution";
 /** Search results: ranked team cards, per-song rankings, plan summary, comparison. */
 import { html, nothing, render, type TemplateResult } from "lit";
-import type { EngineHit, OrderTiming, SongRef, Timeline, TimingWindow } from "../../lib/team-builder/engine/api";
+import type { EngineHit, OrderTiming, SongRef, Timeline, TimingGuide, TimingGuideAction, TimingWindow } from "../../lib/team-builder/engine/api";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 import { downloadBlob } from "../../lib/canvas-capture";
 import { accordion } from "../ui/accordion";
@@ -678,6 +680,7 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number, withTim
   if (request && engine && hit.song && !host.running && !host.manualBusy) {
     timelines.set(key, "loading");
     const current = () => host.isConnected && host.engine === engine;
+    const evaluation = withTiming ? evaluateResult({ hit, input: request }) : undefined;
     void engine
       .explain({
         songRules: request.songRules,
@@ -691,13 +694,14 @@ function orderTimeline(host: TeamBuilder, hit: EngineHit, index: number, withTim
         play: "play" in request.goal ? request.goal.play
           : request.goal.kind === "gekiso" ? { great: request.goal.accuracy.great, good: 0, bad: 0, miss: 0, missEvery: request.goal.accuracy.missEvery }
           : { great: 0, good: 0, bad: 0, miss: 0 },
-        ...(withTiming && (request.goal.kind === "score" || request.goal.kind === "event")
+        ...(evaluation
           ? {
               timing: {
                 player: request.player,
-                play: request.goal.play,
-                challengeEventId:
-                  request.goal.kind === "score" ? request.goal.challengeEventId : request.goal.route === "challenge" ? request.goal.eventId : null,
+                play: evaluation.play,
+                gekiso: evaluation.gekiso,
+                challengeEventId: request.goal.kind === "score" ? request.goal.challengeEventId
+                  : request.goal.kind === "event" && request.goal.route === "challenge" ? request.goal.eventId : null,
               },
             }
           : {}),
@@ -760,102 +764,98 @@ function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, re
 }
 const chartClock = (ms: number) => {
   const seconds = ms / 1000;
-  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+  return `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(3).padStart(6, "0")}`;
 };
-/** One counting window as a strip of its counted notes, the step notes marked, then the step list. */
-function timingWindow(host: TeamBuilder, hit: EngineHit, order: number, window: TimingWindow, guideExpanded = true) {
-  const member = memberFace(host, hit, ORDERS[order]![window.event]!);
-  const span = Math.max(1, window.endMs - window.startMs);
-  const at = (ms: number) => `${(((ms - window.startMs) / span) * 100).toFixed(2)}%`;
-  const marked = new Set(window.steps.map((step) => step.timeMs));
-  const previewKey = `${timelineKey(host, hit)}|timing|${order}|${window.event}`;
-  const expanded = host.expanded.has(previewKey);
-  const catalog = host.catalog!;
-  const song = hit.song!;
-  const difficulty = dataRows(catalog.data.songs[String(song.songId)]!.difficulty).find(row => Number(row.difficulty) === song.difficulty)!;
-  return html`
-    <li class="tb-timing__window" style=${`--member-color:${member.color}`}>
-      <div class="tb-timing__head">
-        <img class="tb-order-card" src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />
-        <span>${member.name}</span>
-        <span class="tabular">${chartClock(window.startMs)} – ${chartClock(window.endMs)}</span>
-      </div>
-      <div class="tb-timing__strip" role="img" aria-label=${window.steps.map((step) => `${host.t("timingStep", "Step {step}", { step: step.step })} ${chartClock(step.timeMs)}`).join(", ")}>
-        ${[...new Set(window.notes)].map((ms) => marked.has(ms) ? nothing : html`<span class="tb-timing__note" style=${`inset-inline-start:${at(ms)}`}></span>`)}
-        ${window.steps.map(
-          (step) => html`
-            <span class="tb-timing__step" data-row=${step.step % 2} style=${`inset-inline-start:${at(step.timeMs)}`}><b>${step.step}</b></span>
-          `,
-        )}
-      </div>
-      ${accordion({
-        id: `tb-timing-${previewKey.replace(/[^a-z0-9]/giu, "-")}`,
-        label: host.t("timingChart", "Chart excerpt"),
-        expanded,
-        onExpandedChange: (open) => {
-          if (open) host.expanded.add(previewKey);
-          else host.expanded.delete(previewKey);
-          host.requestUpdate();
-        },
-        content: html`<timing-chart-preview
-          .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
-          .window=${window} .active=${expanded && guideExpanded} .locale=${host.locale}
-          .label=${window.steps.map(step => `${host.t("timingStep", "Step {step}", { step: step.step })} ${chartClock(step.timeMs)}`).join(", ")}
-          .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}
-        ></timing-chart-preview>`,
-      })}
-      <div class="scroll-x" role="region" tabindex="0" aria-label=${host.t("timingNotes", "Notes to hit early")} data-scroll-region>
-      <table class="tb-timing__steps">
-        <tbody>
-          ${window.steps.map(
-            (step) => html`
-              <tr>
-                <th scope="row"><span class="tb-timing__badge">${step.step}</span>${host.t("timingStep", "Step {step}", { step: step.step })}</th>
-                <td class="tabular">${chartClock(step.timeMs)}</td>
-                <td>${step.notes > 1 ? html`<span class="tb-timing__chord">${host.t("timingChord", "{count} together", { count: step.notes })}</span>` : nothing}</td>
-                <td class="tabular is-numeric">+${format(host, step.gain)}</td>
-              </tr>
-            `,
-          )}
-        </tbody>
-      </table>
-      </div>
-    </li>
-  `;
+function guideActions(timing: OrderTiming | null | undefined): TimingGuideAction[] {
+  if (!timing || timing.guideAvailable === false) return [];
+  return timing.windows.flatMap(window => window.steps.map(step => ({
+    kind: "skill" as const, event: window.event, range: null, timeMs: step.timeMs,
+    noteIndices: step.noteIndices, noteTimesMs: step.noteTimesMs ?? step.noteIndices.map(() => step.timeMs),
+    inputTimesMs: step.inputTimesMs ?? step.noteIndices.map(() => step.timeMs - timing.advanceMs),
+    included: false, gain: step.gain,
+  }))).sort((a, b) => a.timeMs - b.timeMs);
 }
-/** Which notes to hit early: each step's notes, one frame early, per counting window. */
-function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, reserve = false) {
-  if ((!timing || timing.guideAvailable === false || timing.best <= timing.score) && !reserve) return nothing;
-  const windows = timing?.windows.filter((window) => window.steps.length) ?? [];
-  const key = `timing-guide:${timelineKey(host, hit)}:${order}`;
-  return accordion({
-    id: `tb-${key.replace(/[^a-z0-9]/giu, "-")}`,
-    label: host.t("timingGuide", "Timing guide"),
-    disabled: !timing || timing.guideAvailable === false || timing.best <= timing.score,
-    metadata: !timing ? nothing : timing.guideAvailable === false
-      ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
-      : timing.best <= timing.score
-        ? timing.optimal > timing.score
-          ? host.t("timingPlanNoGain", "No gain with this plan")
-          : host.t("timingOrderNoGain", "No extra gain in this order")
-        : nothing,
-    expanded: host.expanded.has(key),
-    onExpandedChange: (open) => {
-      if (open) host.expanded.add(key);
-      else host.expanded.delete(key);
-      host.requestUpdate();
-    },
-    content: html`
-    <section class="tb-timing stack stack--flex stack--tight">
-      <div class="row row--between row--wrap">
-        <strong class="tb-subtitle">${host.t("timingNotes", "Notes to hit early")}</strong>
-        <span class="tb-timing__advance">${icon("fast_rewind", 16)}${host.t("timingAdvance", "About {ms} ms early", { ms: timing?.advanceMs ?? Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)) })}</span>
-      </div>
-      <ol class="tb-timing__windows" role="list">${windows.map((window) => timingWindow(host, hit, order, window, host.expanded.has(key)))}</ol>
-      <small class="tb-timing__hint">${host.t("timingFirstNotes", "Hit the first notes after activation as usual")}</small>
-    </section>
-  `,
+function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: TimingGuideAction, labels: ReadonlyMap<number, number>, chartId: string) {
+  const member = action.event === null ? undefined : memberFace(host, hit, ORDERS[order]![action.event]!);
+  const title = action.kind === "combo-opening" ? host.t("timingComboOpening", "Split the opening chord")
+    : action.kind === "combo-chord" ? host.t("timingComboChord", "Split the chord at the COMBO threshold")
+    : action.kind === "combo-ending" ? host.t("timingComboEnding", "Hit the ending notes early")
+    : host.t("timingSkillStep", "Advance the skill bonus");
+  const source = member?.name ?? host.t("timingComboRange", "COMBO section {section}", { section: (action.range ?? 0) + 1 });
+  const numbers = action.noteIndices.map(note => labels.get(note)!);
+  const focus = () => {
+    const chart = host.querySelector<HTMLElement & { focusNote(number: number): void }>(`#${chartId}`)!;
+    chart.focusNote(numbers[0]!);
+    chart.scrollIntoView({ block: "center" });
+  };
+  return html`<li class="tb-timing__window" data-notes=${numbers.join(" ")} style=${member ? `--member-color:${member.color}` : ""}>
+    <div class="tb-timing__head">
+      <span class="tb-timing__badge tb-timing__badge--group">${numbers.join(", ")}</span>
+      <button class="button button--text button--small tabular tb-timing__jump" type="button" @click=${focus}
+        aria-label=${host.t("timingLocate", "Show {time} on the chart", { time: chartClock(action.timeMs) })}>${chartClock(action.timeMs)}</button>
+      <span>${action.included ? host.t("timingIncluded", "Included in result")
+        : !action.gain ? nothing : html`<span class="tb-delta" data-sign="up">+${format(host, action.gain)}</span>`}</span>
+    </div>
+    <div class="tb-timing__head">
+      ${member ? html`<img class="tb-order-card" src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />` : nothing}
+      <span class="tb-timing__advance" data-kind=${member ? "skill" : "combo"}>${source}</span>
+      <strong>${title}</strong>
+    </div>
+    ${action.comboGain ? html`<strong class="tb-delta" data-sign="up">${host.t("timingComboGain", "Gekiso COMBO +{count}", { count: format(host, action.comboGain, 2) })}</strong>` : nothing}
+    <div class="scroll-x" role="region" tabindex="0" aria-label=${title} data-scroll-region>
+      <table class="tb-timing__steps"><thead><tr>
+        <th scope="col">${host.t("timingInputNote", "Note")}</th>
+        <th scope="col">${host.t("timingInputAction", "Input")}</th>
+        <th scope="col">${host.t("timingInputTime", "Judgement time")}</th>
+      </tr></thead><tbody>${action.noteIndices.map((_, i) => {
+        const target = action.inputTimesMs[i]!, original = action.noteTimesMs[i]!;
+        const offset = target - original;
+        const direction = (action.kind === "combo-opening" || action.kind === "combo-chord") && i === 0 ? host.t("timingOnBeat", "On time")
+          : offset < 0 ? host.t("timingEarlyExact", "{ms} ms early", { ms: -offset })
+          : offset > 0 ? host.t("timingLateExact", "{ms} ms late", { ms: offset }) : host.t("timingOnBeat", "On time");
+        return html`<tr><th scope="row">${host.t("timingNoteNumber", "Note {number}", { number: numbers[i]! })}</th>
+          <td>${direction}</td><td class="tabular">${chartClock(target)}</td></tr>`;
+      })}</tbody></table>
+    </div>
+  </li>`;
+}
+function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing: OrderTiming | null | undefined, guide: TimingGuide | null | undefined, coverage?: Timeline["windowProfile"]) {
+  const actions = guide?.actions ?? guideActions(timing);
+  const unavailable = timing?.guideAvailable === false || timing === null || guide === null;
+  if (!actions.length && !coverage) return html`<div class="row row--between row--wrap"><strong>${host.t("timingGuide", "Timing guide")}</strong>
+    <span>${unavailable ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
+      : timing ? timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
+      : guide ? host.t("timingPlanNoGain", "No gain with this plan") : nothing}</span></div>`;
+  const notes = new Map<number, { timeMs: number; kind: "combo" | "skill" | "both" }>();
+  for (const action of actions) action.noteIndices.forEach((note, index) => {
+    const kind = action.kind === "skill" ? "skill" : "combo";
+    const previous = notes.get(note);
+    notes.set(note, { timeMs: action.noteTimesMs[index]!, kind: previous && previous.kind !== kind ? "both" : kind });
   });
+  const sorted = [...notes].sort((a, b) => a[1].timeMs - b[1].timeMs || a[0] - b[0]);
+  const labels = new Map(sorted.map(([note], index) => [note, index + 1]));
+  const kinds = new Map(sorted.map(([, note], index) => [index + 1, note.kind]));
+  const window: TimingWindow = { event: 0, startMs: 0, endMs: 0, notes: sorted.map(([, note]) => note.timeMs), unit: 1,
+    steps: sorted.map(([note, mark], index) => ({ step: index + 1, timeMs: mark.timeMs, notes: 1, noteIndices: [note], gain: 0 })) };
+  const chartId = `tb-guide-chart-${timelineKey(host, hit).replace(/[^a-z0-9]/giu, "-")}-${order}`;
+  const catalog = host.catalog!, song = hit.song!;
+  const difficulty = dataRows(catalog.data.songs[String(song.songId)]!.difficulty).find(row => Number(row.difficulty) === song.difficulty)!;
+  const present = new Set(kinds.values());
+  return html`<section class="tb-timing stack stack--flex stack--tight" aria-label=${host.t("timingGuide", "Timing guide")}>
+    <div class="row row--between row--wrap"><strong class="tb-subtitle">${host.t("timingGuide", "Timing guide")}</strong>
+      <span class="tb-timing__advance">${guide?.frameRate ?? resultSettings(host, hit).frameRate ?? 60} FPS</span></div>
+    ${coverage ? html`<div class="stack">${justWindowResults(host, coverage.window)}<div class="cluster"><span class="chip">${guide?.actions.some(action => !action.included) ? host.t("justCoverage.plan", "Combined timing plan") : host.t("justCoverage.selected", "Selected skill order")}</span>${coverage.sampled ? html`<span class="chip">${host.t("justCoverage.sampleCurve", "Sample 1 curve")}</span>` : nothing}</div></div>` : nothing}
+    <div class="cluster">${coverage ? html`<span class="chip">${host.t("justCoverage.title", "JUST HIT Zone")}</span>` : nothing}${["combo", "skill", "both"].filter(kind => present.has(kind as "combo" | "skill" | "both")).map(kind => html`
+      <span class="tb-timing__advance" data-kind=${kind}>${kind === "combo" ? host.t("timingLegendCombo", "COMBO inputs")
+        : kind === "skill" ? host.t("timingLegendSkill", "Skill inputs") : host.t("timingLegendBoth", "COMBO and skill inputs")}</span>`)}</div>
+    <timing-chart-preview id=${chartId} .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
+      .window=${window} .kinds=${kinds} .coverage=${coverage} .numberNotes=${true} .whole=${true} .active=${true} .locale=${host.locale}
+      .label=${host.t("timingFullChart", "Annotated full chart")} .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}></timing-chart-preview>
+    <div class="row row--between row--wrap"><strong class="tb-subtitle">${host.t("timingChartOrder", "In chart order")}</strong>
+      <span>${host.t("timingMarkedNotes", "{count} marked notes", { count: notes.size })}</span></div>
+    <small class="tb-timing__hint">${host.t("timingKeepOtherNotes", "Play all other notes as usual")}</small>
+    <ol class="tb-timing__windows" role="list">${actions.map(action => guideAction(host, hit, order, action, labels, chartId))}</ol>
+  </section>`;
 }
 
 function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
@@ -880,14 +880,16 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const value = score.orders[current]!;
   const inputs = resultInputs(host, hit);
   const master = host.master;
-  const reserveTiming = (inputs?.goal.kind === "score" || inputs?.goal.kind === "event") && !!master && hit.snaps.some(key => {
+  const gekisoTiming = inputs?.goal.kind === "gekiso" || (inputs?.goal.kind === "event" && !!inputs.goal.gekiso);
+  const reserveTiming = gekisoTiming || ((inputs?.goal.kind === "score" || inputs?.goal.kind === "event") && !!master && hit.snaps.some(key => {
     const snap = inputs.snaps.find(row => row.key === key);
     return snap && master.snaps.get(snap.cardId)?.supportSkillIds.some(id => master.supportSkills.get(id)?.some(row => row.type === 2001));
-  });
+  }));
   const timingKey = `${key}|timing`;
   const timingOpen = host.expanded.has(timingKey);
   const timingResult = reserveTiming && timingOpen ? orderTimeline(host, hit, current, true) : undefined;
   const timing = typeof timingResult === "object" ? timingResult.timing : undefined;
+  const guide = typeof timingResult === "object" ? timingResult.guide : undefined;
   const rank = score.orders.filter((other) => other > value).length + 1;
   const gap = (other: number) => (other === best.value ? "±0" : `−${format(host, best.value - other)}`);
   const choose = (index: number) => {
@@ -989,9 +991,13 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
         },
         content: html`<div class="stack stack--flex">
           <dl class="spec-list spec-list--split spec-list--numeric">
-            ${timingRow(host, timing, true, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
+            ${gekisoTiming ? guide?.score != null && guide.best != null ? html`
+              <div><dt>${host.t("nominalTimingScore", "Nominal-timing score")}</dt><dd>${format(host, guide.score)}</dd></div>
+              <div><dt>${host.t("timingCombinedScore", "Combined plan score")}</dt><dd>${format(host, guide.best)}
+                <span class="tb-delta" data-sign="up">+${format(host, guide.best - guide.score)}</span></dd></div>` : nothing
+              : timingRow(host, timing, true, value, Math.ceil(1000 / (resultSettings(host, hit).frameRate ?? 60)))}
           </dl>
-          ${timingDetails(host, hit, current, timing, true)}
+          ${timingDetails(host, hit, current, timing, guide, typeof timingResult === "object" ? timingResult.windowProfile : undefined)}
         </div>`,
       }) : nothing}
       <div class="tb-order__timeline" aria-busy=${String(typeof requested !== "object")}>
@@ -1098,8 +1104,10 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
               : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
           </span>` : nothing}
       <div class="cluster">${chips(host, hit)}</div>
+      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference)) : nothing}
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
+      ${hit.justWindow?.coverage ? justWindowResults(host, hit.justWindow) : nothing}
       ${hit.event && hit.score && hit.song ? (() => {
         const rank = host.analysis.targetRank, room = resultRoom(host,hit), rows = host.master?.scoreRanks.get(host.master.songs.get(hit.song!.songId)?.rankGroup ?? 0) ?? [];
         const target = rows.find(row => row.rank === rank), risk = rankRisk(hit,rank);

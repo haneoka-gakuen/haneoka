@@ -14,6 +14,7 @@ import { icon } from "../ui/icon";
 import { wavyProgress } from "../ui/wavy-progress";
 import { trapFocus } from "../../lib/overlay";
 import { preferredLocale, uiText } from "../shared/catalog";
+import { contentRequestUrl } from "../../lib/content-request";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -449,9 +450,10 @@ export class AudioDock extends LitElement {
     if (!track) return;
     const generation = ++this.playbackGeneration;
     const audio = this.audio;
-    if (this.audio.dataset.haneokaSource !== track.url) {
-      this.audio.dataset.haneokaSource = track.url;
-      this.audio.src = track.url;
+    const source = contentRequestUrl(track.url);
+    if (this.audio.dataset.haneokaSource !== source) {
+      this.audio.dataset.haneokaSource = source;
+      this.audio.src = source;
       this.audio.load();
     }
     this.duration = Number.isFinite(audio.duration) ? audio.duration : 0;

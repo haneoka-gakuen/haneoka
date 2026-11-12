@@ -2,9 +2,10 @@
 // Input: 正式 SS／SUS、社区 playback 或编辑器内存投影、音频及 release 身份。
 // Output: 使用网页字体并支持指针／键盘位置查询的分块 2D 概览、按需 3D 观看和完整 PNG／分页 PNG ZIP。
 // Pos: [Map](L2-2.md)；歌曲、社区谱面和编辑器观看预览的共用宿主。
-// Effects/Dependencies: Cassiopeia、素材 HTTP、WebGL 和音频；音频缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
+// Effects/Dependencies: 公开舞台／按需乐队开场清单、Cassiopeia、媒体、WebGL 和音频；缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
 import { LitElement, html, nothing } from "lit";
+import { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets, type HaneokaChartAssetOutput, type HaneokaChartAssetSource } from "../../../packages/api-client/src/chart-assets";
 import { NoColorSpace, TextureLoader, type Texture } from "three";
 import { fetchJson, uiText } from "../shared/catalog";
 import type { CommunityChartPlayback } from "../../lib/chart-creation/community-types";
@@ -118,15 +119,8 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   watch: "common.actions.watch",
 };
 
-type RuntimeOutput = { objectId: string | number; path: string; type: string; serializedFile?: string };
-type RuntimeDescriptor = {
-  sourcePath?: string;
-  serializedFile?: string;
-  runtimeProjectionPolicy?: string;
-  preloadObjectReferences?: Array<{ serializedFile: string; pathId: string }>;
-  outputs?: RuntimeOutput[];
-  runtimeObjects?: Array<{ type: string; path: string }>;
-};
+type RuntimeOutput = HaneokaChartAssetOutput;
+type RuntimeDescriptor = HaneokaChartAssetSource;
 type StageBackground = "auto" | "none" | "0" | "1" | "2" | "3" | "4" | "5";
 type NumericRenderSetting =
   "noteSpeed" | "noteSize" | "longAlpha" | "guideAlpha" | "guidelineOpacity" | "laneOpacity" | "backgroundBrightness";
@@ -405,7 +399,8 @@ export class ChartSimulator extends LitElement {
   };
   private availableNoteSkins: readonly OurNotesNoteSkin[] = OUR_NOTES_NOTE_SKINS;
   private availableNoteEffectSkins: readonly OurNotesNoteEffectSkin[] = ["effect001"];
-  private sourceFilesCache?: { key: string; promise: Promise<Set<string>> };
+  private chartAssetCache = new Map<string, Promise<HaneokaChartAssets>>();
+  private playbackPackCache = new Map<string, Promise<ReadonlyMap<string, unknown> | undefined>>();
   private backgroundLiveAtlas?: { server: string; release: string | undefined; descriptor: RuntimeDescriptor };
   private resumeAfterScrub = false;
   private viewportFullscreen: ViewportFullscreenController;
@@ -562,44 +557,66 @@ export class ChartSimulator extends LitElement {
     return this.playback || this.chartFormat === "community" ? path : this.pinResourceUrl(path);
   }
 
-  private descriptorUrl(source: string) {
-    return this.pinResourceUrl(
-      `/api/v1/servers/${encodeURIComponent(this.server)}/sources/${source
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}`,
+  // The band projection carries every base source, so one response serves the stage and the intro.
+  private chartAssets(signal: AbortSignal) {
+    const url = this.pinResourceUrl(
+      `/api/v1/servers/${encodeURIComponent(this.server)}/chart-assets?projection=${HANEOKA_CHART_ASSETS_PROJECTION}&bandId=${this.bandId}`,
     );
+    const pending = this.chartAssetCache.get(url);
+    if (pending) return pending;
+    const promise = fetchJson<HaneokaChartAssets>(url, { signal }).catch(error => {
+      if (signal.aborted) throw error;
+      const fallback = new URL(url, location.href);
+      fallback.searchParams.delete("bandId");
+      return fetchJson<HaneokaChartAssets>(fallback.pathname + fallback.search, { signal });
+    }).catch(error => {
+      if (this.chartAssetCache.get(url) === promise) this.chartAssetCache.delete(url);
+      throw error;
+    });
+    this.chartAssetCache.set(url, promise);
+    return promise;
   }
-  private async descriptor(source: string, signal: AbortSignal) {
-    return await fetchJson<RuntimeDescriptor>(this.descriptorUrl(source), { signal });
+  private async descriptor(source: string, signal: AbortSignal): Promise<RuntimeDescriptor> {
+    const descriptor = (await this.chartAssets(signal)).sources[source];
+    if (!descriptor) throw new Error(`Native chart descriptor missing: ${source}`);
+    return descriptor;
   }
   private async sourceFiles(signal: AbortSignal) {
-    const server = this.server;
-    const key = `${new URL(this.source, window.location.href).origin}:${server}:${this.sourceRelease() ?? "current"}`;
-    if (this.sourceFilesCache?.key === key) return this.sourceFilesCache.promise;
-    const promise = (async () => {
-      const tree = await fetchJson<Record<string, unknown>>(
-        this.pinResourceUrl(`/api/v1/servers/${encodeURIComponent(server)}/sources/tree`),
-        { signal },
+    return new Set((await this.chartAssets(signal)).files);
+  }
+  /** The intro band the chart-assets band projection resolves; bands without a timeline use band 0. */
+  private introBand(files: Set<string>) {
+    return files.has(`Assets/AddressableResources/Band/${this.bandId}/timeline/live_start_playable_timeline.prefab`)
+      ? this.bandId
+      : 0;
+  }
+  // Chart pages embed the build's per-band pack of intro and HUD runtime records; anything else reads them one by one.
+  private playbackRecords(files: Set<string>, signal: AbortSignal): Promise<ReadonlyMap<string, unknown> | undefined> {
+    const text = document.getElementById("chart-playback-data")?.textContent;
+    const release = this.sourceRelease();
+    if (!text || !release) return Promise.resolve(undefined);
+    const data = JSON.parse(text) as { server: string; releaseId: string; packs: Record<string, { url: string }> };
+    const pack = data.server === this.server && data.releaseId === release ? data.packs[this.introBand(files)] : undefined;
+    if (!pack) return Promise.resolve(undefined);
+    let pending = this.playbackPackCache.get(pack.url);
+    if (!pending) {
+      const promise = fetchJson<{ records: Record<string, unknown> }>(pack.url, { signal }).then(
+        (body) => new Map(Object.entries(body.records)),
+        () => undefined,
       );
-      const files = new Set<string>();
-      const walk = (value: unknown, prefix: string) => {
-        if (typeof value === "number") {
-          files.add(prefix);
-        } else if (value && typeof value === "object" && !Array.isArray(value)) {
-          for (const [part, child] of Object.entries(value)) walk(child, prefix ? `${prefix}/${part}` : part);
-        }
-      };
-      walk(tree, "");
-      return files;
-    })();
-    this.sourceFilesCache = { key, promise };
-    try {
-      return await promise;
-    } catch (error) {
-      if (this.sourceFilesCache?.promise === promise) this.sourceFilesCache = undefined;
-      throw error;
+      this.playbackPackCache.set(pack.url, (pending = promise));
     }
+    return pending;
+  }
+  private runtimeRecord<T>(records: ReadonlyMap<string, unknown> | undefined, path: string, signal: AbortSignal) {
+    const packed = records?.get(path);
+    if (packed !== undefined) return Promise.resolve(packed as T);
+    return fetchJson<T>(
+      this.pinResourceUrl(
+        `/runtime/${encodeURIComponent(this.server)}/${path.slice("runtime/".length).split("/").map(encodeURIComponent).join("/")}`,
+      ),
+      { signal },
+    );
   }
   private sourceWithName(files: Set<string>, name: string) {
     const matches = [...files].filter((path) => path.endsWith(`/${name}`));
@@ -706,6 +723,7 @@ export class ChartSimulator extends LitElement {
     // Optional native three-tier sprites are resolved from the active source pin.
     // Older releases retain their existing combined-digit HUD contract.
     const comboTiers = await (async () => {
+      const packed = this.playbackRecords(files, signal);
       const [normal, fullCombo, allPerfect, fcGlow, apGlow] = await Promise.all([
         this.descriptor(source("LiveComboNAtlas.spriteatlasv2"), signal),
         this.descriptor(source("LiveComboFCAtlas.spriteatlasv2"), signal),
@@ -717,10 +735,7 @@ export class ChartSimulator extends LitElement {
         const candidates = descriptor.runtimeObjects?.filter((entry) => entry.type === type) ?? [];
         if (candidates.length !== 1 || !candidates[0]!.path.startsWith("runtime/unity-json/"))
           throw new Error(`Missing native combo ${type} geometry`);
-        const path = candidates[0]!.path.replace(/^runtime\//u, "");
-        return fetchJson<unknown>(this.pinResourceUrl(`/runtime/${encodeURIComponent(this.server)}/${path}`), {
-          signal,
-        });
+        return this.runtimeRecord<unknown>(await packed, candidates[0]!.path, signal);
       };
       const [normalGeometry, fullComboGeometry, allPerfectGeometry, fcGlowGeometry, apGlowGeometry] = await Promise.all(
         [
@@ -1253,11 +1268,7 @@ export class ChartSimulator extends LitElement {
   }
   private async loadNativeIntro(signal: AbortSignal, renderer: OurNotesRenderer) {
     const files = await this.sourceFiles(signal);
-    const band = files.has(
-      `Assets/AddressableResources/Band/${this.bandId}/timeline/live_start_playable_timeline.prefab`,
-    )
-      ? this.bandId
-      : 0;
+    const band = this.introBand(files);
     const prefix = `Assets/AddressableResources/Band/${band}/timeline/`;
     const names = [
       "live_start_playable_timeline.prefab",
@@ -1325,14 +1336,12 @@ export class ChartSimulator extends LitElement {
     }
     const projections = descriptors.flatMap((d) => d.runtimeObjects ?? []);
     if (!projections.length) throw new Error("Original intro data projections unavailable");
+    const packed = await this.playbackRecords(files, signal);
     const records = await Promise.all(
       projections.map((entry) => {
         if (!entry.path.startsWith("runtime/unity-json/"))
           throw new Error("Intro record is outside original data projection");
-        const url = this.pinResourceUrl(
-          `/runtime/${encodeURIComponent(this.server)}/${entry.path.slice("runtime/".length).split("/").map(encodeURIComponent).join("/")}`,
-        );
-        return fetchJson<NativeIntroObjectRecord>(url, { signal });
+        return this.runtimeRecord<NativeIntroObjectRecord>(packed, entry.path, signal);
       }),
     );
     const unique = new Map<string, NativeIntroObjectRecord>();
@@ -1384,6 +1393,34 @@ export class ChartSimulator extends LitElement {
     renderer.configureNativeIntroTapFade(fadeDuration, fadeEase);
     const loader = new TextureLoader(),
       loaded = new Map<string, Promise<{ texture: Texture; width: number; height: number }>>();
+    const introTexture = (key: string) => {
+      let promise = loaded.get(key);
+      if (!promise) {
+        const output = outputs.get(key);
+        if (!output) throw new Error(`Original intro texture unavailable: ${key}`);
+        const url = output.path.startsWith("assets/")
+          ? `/assets/${encodeURIComponent(this.server)}/${output.path.slice("assets/".length).split("/").map(encodeURIComponent).join("/")}`
+          : `/runtime/${encodeURIComponent(this.server)}/${output.path.slice("runtime/".length).split("/").map(encodeURIComponent).join("/")}`;
+        promise = loader.loadAsync(this.pinResourceUrl(url)).then((texture) => {
+          if (signal.aborted) {
+            texture.dispose();
+            signal.throwIfAborted();
+          }
+          texture.colorSpace = NoColorSpace;
+          this.introTextures.push(texture);
+          const image = texture.image as { width: number; height: number };
+          return { texture, width: image.width, height: image.height };
+        });
+        loaded.set(key, promise);
+      }
+      return promise;
+    };
+    // The assembler awaits textures one component at a time; the band's own sprite textures are known here.
+    for (const descriptor of descriptors)
+      if (descriptor.sourcePath.startsWith(prefix) && descriptor.sourcePath.endsWith(".png"))
+        for (const output of descriptor.outputs)
+          if (output.type === "Texture2D")
+            introTexture(`${output.serializedFile}:${output.objectId}`).catch(() => undefined);
     const role = (name: string): NativeIntroBindingSink => ({
       set: (_target, path, attribute, component, value, type) => {
         let state = this.introRoleValues.get(name);
@@ -1442,29 +1479,7 @@ export class ChartSimulator extends LitElement {
         runtimeTracks,
         nextLifecycleSeed: () => crypto.getRandomValues(new Uint32Array(1))[0]!,
         notifyVoice: () => this.playNativeIntroSound("voice"),
-        texture: (pointer, owner) => {
-          const key = identityIndex.referenceKey(pointer, owner);
-          let promise = loaded.get(key);
-          if (!promise) {
-            const output = outputs.get(key);
-            if (!output) throw new Error(`Original intro texture unavailable: ${key}`);
-            const url = output.path.startsWith("assets/")
-              ? `/assets/${encodeURIComponent(this.server)}/${output.path.slice("assets/".length).split("/").map(encodeURIComponent).join("/")}`
-              : `/runtime/${encodeURIComponent(this.server)}/${output.path.slice("runtime/".length).split("/").map(encodeURIComponent).join("/")}`;
-            promise = loader.loadAsync(this.pinResourceUrl(url)).then((texture) => {
-              if (signal.aborted) {
-                texture.dispose();
-                signal.throwIfAborted();
-              }
-              texture.colorSpace = NoColorSpace;
-              this.introTextures.push(texture);
-              const image = texture.image as { width: number; height: number };
-              return { texture, width: image.width, height: image.height };
-            });
-            loaded.set(key, promise);
-          }
-          return promise;
-        },
+        texture: (pointer, owner) => introTexture(identityIndex.referenceKey(pointer, owner)),
       });
       signal.throwIfAborted();
       this.introScene = scene;
@@ -2435,7 +2450,8 @@ export class ChartSimulator extends LitElement {
     this.noteSoundSwap = undefined;
     this.noteSoundSwapTarget = undefined;
     this.noteSoundStatus = "idle";
-    this.sourceFilesCache = undefined;
+    this.chartAssetCache.clear();
+    this.playbackPackCache.clear();
     this.session?.dispose?.();
     this.session = undefined;
     this.watchSessionFactory = undefined;

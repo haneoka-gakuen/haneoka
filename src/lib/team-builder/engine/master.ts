@@ -148,6 +148,7 @@ export interface GameEvent {
   challengePoints: ReadonlyMap<number, number>;
   liveRewards: readonly RewardRow[];
   challengeRewards: readonly RewardRow[];
+  plannerRules?: import("../planner-data").PlannerEventRules;
 }
 export interface BoostRow {
   consumed: number;
@@ -593,6 +594,7 @@ function dtoEvents(data: TeamBuilderData): GameEvent[] {
       challengePoints: points("MasterChallengeLiveEventPoint", "challengeLiveEventPointGroup"),
       liveRewards: table("MasterLiveEventReward").map(reward),
       challengeRewards: table("MasterChallengeLiveEventReward").map(reward),
+      ...(event.plannerRules?{plannerRules:event.plannerRules as GameEvent["plannerRules"]}:{}),
     };
   });
 }

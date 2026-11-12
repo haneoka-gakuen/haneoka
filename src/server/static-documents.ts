@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: 渲染后 HTML／JSON、路径与构建覆盖。
-// Output: 压缩内容块、分片索引、引用及 publication 元数据。
+// Output: 压缩内容块、分片索引、引用及 publication 元数据；可选公开规范页的就位与清单。
 // Pos: [Map](L2-2.md)；静态文档构建与收尾的存储生产者。
-// Effects/Dependencies: 写内容、索引和覆盖清单；全局收尾原子写入 build.json 的最终输出摘要，locale 部件保留共享输入身份。
+// Effects/Dependencies: 写内容、索引和覆盖清单；可选快照转换在入包前替换已证明公开的图片地址；完整页面打包后用暂存公开页替换（回退壳原地覆盖），带公开标记的页面在合并与重复收尾中保留，其清单摘要进入 publication 根；按 locale 分片的私有页面数据元数据在清理内容根时保留，其摘要与加密载荷校验进入 publication 根；全局收尾原子写入 build.json 的最终输出摘要，locale 部件保留共享输入身份。
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -36,6 +36,85 @@ const contentRoot = path.join(root, "content");
 const log = path.join(root, "documents.jsonl");
 const written = new Map<string, number>();
 const moduleGraph = createModuleGraph(path.join(process.cwd(), ".output", "public"));
+
+export const PUBLIC_STATIC_DOCUMENT_SCHEMA = "haneoka-public-static-documents-v1";
+export const PUBLIC_STATIC_MARKER = "haneoka-public-static";
+export interface PublicStaticListEntry {
+  /** sha256 of the complete packed document the public page derives from. */
+  document: string;
+  sha256: string;
+  bytes: number;
+}
+/** Public canonical files carry their descriptor as the first element of head. */
+export function isPublicStaticDocument(html: string): boolean {
+  const head = /<head\b[^>]*>/iu.exec(html.slice(0, 4096));
+  return !!head && html.startsWith(`<meta name="${PUBLIC_STATIC_MARKER}" content="`, head.index + head[0].length);
+}
+export const publicStaticStagingRoot = (documentsRoot = root): string => path.join(documentsRoot, "public-staging");
+const PRIVATE_PAGE_DATA_LOCALES = new Set(["en", "ja", "ko", "zh-CN", "zh-TW"]);
+/** Private page-data metadata lives under the raw static content prefix, which only unrestricted viewers may read. */
+export const privatePageDataRoot = (outputRoot: string): string =>
+  path.join(outputRoot, STATIC_DOCUMENT_ASSET_ROOT.slice(1));
+/** One file per locale and path shard, so locale parts never write the same asset path. */
+export const privatePageDataFile = (outputRoot: string, locale: string, shard: string): string =>
+  path.join(privatePageDataRoot(outputRoot), locale, "page-data", `${shard}.json`);
+/** Metadata files and the encrypted payloads they name; both enter the publication root. */
+function sealPrivatePageData(outputRoot: string): { files: number; payloads: number; sha256: string } | undefined {
+  const records: [string, string][] = [];
+  const payloads = new Set<string>();
+  for (const locale of [...PRIVATE_PAGE_DATA_LOCALES].sort()) {
+    const directory = path.dirname(privatePageDataFile(outputRoot, locale, "00"));
+    if (!fs.existsSync(directory)) continue;
+    for (const name of fs.readdirSync(directory).sort()) {
+      if (!/^[a-f0-9]{2}\.json$/u.test(name)) throw new Error(`Unexpected private page data file: ${name}`);
+      const body = fs.readFileSync(path.join(directory, name));
+      const shard = JSON.parse(body.toString("utf8")) as {
+        entries: Record<string, { scripts: { url: string }[] }>;
+      };
+      for (const entry of Object.values(shard.entries))
+        for (const script of entry.scripts) {
+          const digest = /^\/entity-data\/v1\/([a-f0-9]{64})\.bin$/u.exec(script.url)?.[1];
+          const file = digest && path.join(outputRoot, script.url.slice(1));
+          if (!file || !fs.existsSync(file) || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== digest)
+            throw new Error(`Private page data payload is missing or differs: ${script.url}`);
+          payloads.add(digest);
+        }
+      records.push([`${locale}/${name}`, createHash("sha256").update(body).digest("hex")]);
+    }
+  }
+  if (!records.length) return;
+  return {
+    files: records.length,
+    payloads: payloads.size,
+    sha256: createHash("sha256").update(JSON.stringify(records)).digest("hex"),
+  };
+}
+const packedFallbacks = new Set<string>();
+export function requirePackedFallbacks(paths: Iterable<string>): void {
+  packedFallbacks.clear();
+  for (const pathname of paths) packedFallbacks.add(pathname);
+}
+const publicStaticListFile = (documentsRoot: string): string => path.join(documentsRoot, "public-documents.json");
+/** The sealed list of public files from the previous finalization, kept outside the asset tree. */
+export function readPublicStaticList(documentsRoot = root): Record<string, PublicStaticListEntry> {
+  const file = publicStaticListFile(documentsRoot);
+  if (!fs.existsSync(file)) return {};
+  const list = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    schema: string;
+    files: Record<string, PublicStaticListEntry>;
+  };
+  if (list.schema !== PUBLIC_STATIC_DOCUMENT_SCHEMA) throw new Error("Invalid public static document list");
+  return list.files;
+}
+function readFileStart(file: string, bytes: number): string {
+  const fd = fs.openSync(file, "r");
+  try {
+    const buffer = Buffer.alloc(bytes);
+    return buffer.toString("utf8", 0, fs.readSync(fd, buffer, 0, bytes, 0));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
 export function registerStaticDocumentCoverage(name: string, expectedPaths: string[], requireJson = true): void {
   if (!/^[a-z][a-z0-9-]*$/u.test(name) || new Set(expectedPaths).size !== expectedPaths.length)
     throw new Error(`Invalid static document coverage: ${name}`);
@@ -123,8 +202,14 @@ function htmlContent(body: Buffer): StaticDocumentRecord {
     throw new Error("Invalid static document underlay boundary");
   return htmlChunks(body, from, to + end.length);
 }
+let documentTransform: ((html: string, pathname: string) => string) | undefined;
+/** Apply a byte-level rewrite (public image locations) to every complete HTML snapshot written afterwards. */
+export function setStaticDocumentTransform(transform?: (html: string, pathname: string) => string): void {
+  documentTransform = transform;
+}
 export async function writeStaticDocument(pathname: string, source: string): Promise<StaticDocumentRecord> {
-  const html = await withModulePreloads(source, moduleGraph);
+  const preloaded = await withModulePreloads(source, moduleGraph);
+  const html = documentTransform ? documentTransform(preloaded, pathname) : preloaded;
   // Astro dev can append a component's module script after the closing root.
   if (!/<\/html\s*>\s*(?:<script\b[^>]*>[\s\S]*?<\/script\s*>\s*)*$/iu.test(html))
     throw new Error(`Incomplete static document: ${pathname}`);
@@ -145,6 +230,7 @@ export async function packCoreStaticDocuments(outputRoot: string, files: readonl
     const { pathname, ...record } = JSON.parse(line) as StaticDocumentRecord & { pathname: string };
     previous.set(pathname, record);
   }
+  const publicFiles = readPublicStaticList();
   let packed = 0;
   for (const file of files) {
     const physicalPath = `/${file.split(path.sep).join("/")}`;
@@ -152,6 +238,14 @@ export async function packCoreStaticDocuments(outputRoot: string, files: readonl
     if (!pathname) continue;
     const core = coreStaticDocumentPath(pathname) === pathname;
     const html = fs.readFileSync(path.join(outputRoot, file), "utf8");
+    // A repeated finalization finds the public page in place of its complete source.
+    if (core && isPublicStaticDocument(html)) {
+      const listed = publicFiles[pathname];
+      if (!listed || previous.get(pathname)?.sha256 !== listed.document)
+        throw new Error(`Public static document has no complete source: ${pathname}`);
+      paths.push(pathname);
+      continue;
+    }
     // Astro emits small redirect documents without an enclosing html element.
     // Keep their original redirect response in the static asset binding.
     if (
@@ -175,6 +269,34 @@ export async function packCoreStaticDocuments(outputRoot: string, files: readonl
   }
   registerStaticDocumentCoverage("core", paths, false);
   return packed;
+}
+const PUBLIC_MEDIA_FILE = /^([a-f0-9]{64})\.(png|jpg|webp|gif)$/u;
+const PUBLIC_MEDIA_MAGIC: Record<string, (head: Buffer) => boolean> = {
+  png: (head) => head.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")),
+  jpg: (head) => head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff,
+  webp: (head) => head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP",
+  gif: (head) => /^GIF8[79]a$/u.test(head.toString("latin1", 0, 6)),
+};
+/** Content-addressed public images: every file must be named by its own digest. */
+function sealPublicMedia(outputRoot: string): { files: number; bytes: number; sha256: string } | undefined {
+  const directory = path.join(outputRoot, "public-media");
+  if (!fs.existsSync(directory)) return;
+  const files: [string, number][] = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const match = PUBLIC_MEDIA_FILE.exec(entry.name);
+    if (!entry.isFile() || !match) throw new Error(`Unexpected public media file: ${entry.name}`);
+    const body = fs.readFileSync(path.join(directory, entry.name));
+    if (createHash("sha256").update(body).digest("hex") !== match[1] || !PUBLIC_MEDIA_MAGIC[match[2]!]!(body))
+      throw new Error(`Public media differs from its name: ${entry.name}`);
+    files.push([entry.name, body.length]);
+  }
+  if (!files.length) return;
+  files.sort(([a], [b]) => a.localeCompare(b, "en"));
+  return {
+    files: files.length,
+    bytes: files.reduce((sum, [, bytes]) => sum + bytes, 0),
+    sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
+  };
 }
 export function finalizeStaticDocuments(outputRoot: string): { documents: number; data: number } {
   if (!fs.existsSync(log)) return { documents: 0, data: 0 };
@@ -227,6 +349,8 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     throw new Error("Static document coverage does not match the producer matrix");
   const shards = new Map<string, Record<string, StaticDocumentRecord>>();
   const referenced = new Map<string, StaticDocumentChunk>();
+  const staging = publicStaticStagingRoot();
+  const publicFiles: Record<string, PublicStaticListEntry> = {};
   for (const [pathname, record] of documents) {
     for (const chunk of staticDocumentChunks(record)) {
       const previous = referenced.get(chunk.sha256);
@@ -237,13 +361,50 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     const shard = staticDocumentShard(pathname);
     if (!shards.has(shard)) shards.set(shard, {});
     shards.get(shard)![pathname] = record;
-    if (!pathname.endsWith(".html") || isCoreFallbackShell(pathname)) continue;
+    if (!pathname.endsWith(".html")) continue;
+    // Fallback shells stay as direct assets; a public copy replaces the complete one in place.
+    const shell = isCoreFallbackShell(pathname);
     const stem = pathname.replace(/^\//u, "").replace(/\.html$/u, "");
-    for (const relative of [pathname.slice(1), `${stem}/index.html`, `${stem}.html/index.html`]) {
-      const file = path.join(outputRoot, relative);
-      if (fs.existsSync(file) && fs.statSync(file).isFile()) fs.unlinkSync(file);
+    const target = path.join(outputRoot, pathname.slice(1));
+    const staged = path.join(staging, pathname.slice(1));
+    const placed = fs.existsSync(staged);
+    // Locale merges and repeated runs receive public pages already in place.
+    const kept =
+      !placed &&
+      fs.existsSync(target) &&
+      fs.statSync(target).isFile() &&
+      isPublicStaticDocument(readFileStart(target, 4096));
+    if (!shell || (packedFallbacks.has(pathname) && !placed && !kept))
+      for (const relative of [pathname.slice(1), `${stem}/index.html`, `${stem}.html/index.html`]) {
+        const file = path.join(outputRoot, relative);
+        if (!(kept && file === target) && fs.existsSync(file) && fs.statSync(file).isFile()) fs.unlinkSync(file);
+      }
+    if (placed) fs.renameSync(staged, target);
+    if (placed || kept) {
+      const body = fs.readFileSync(target);
+      publicFiles[pathname] = {
+        document: record.sha256,
+        sha256: createHash("sha256").update(body).digest("hex"),
+        bytes: body.length,
+      };
     }
   }
+  fs.rmSync(staging, { recursive: true, force: true });
+  const publicEntries = Object.entries(publicFiles).sort(([a], [b]) => a.localeCompare(b, "en"));
+  const publicList = JSON.stringify({
+    schema: PUBLIC_STATIC_DOCUMENT_SCHEMA,
+    files: Object.fromEntries(publicEntries),
+  });
+  const publicDocuments = publicEntries.length
+    ? {
+        schema: PUBLIC_STATIC_DOCUMENT_SCHEMA,
+        files: publicEntries.length,
+        bytes: publicEntries.reduce((sum, [, entry]) => sum + entry.bytes, 0),
+        sha256: createHash("sha256").update(publicList).digest("hex"),
+      }
+    : undefined;
+  if (publicDocuments) fs.writeFileSync(publicStaticListFile(root), publicList);
+  else fs.rmSync(publicStaticListFile(root), { force: true });
   const indexRoot = path.join(outputRoot, STATIC_DOCUMENT_INDEX_ROOT.slice(1));
   fs.mkdirSync(indexRoot, { recursive: true });
   const indexes: { path: string; sha256: string; bytes: number }[] = [];
@@ -304,10 +465,16 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     referenced.set(digest, { sha256: record.sha256, bytes: record.bytes, gzipBytes: record.gzipBytes });
     data++;
   }
+  const publicMedia = sealPublicMedia(outputRoot);
+  const privatePageData = sealPrivatePageData(outputRoot);
   const assetRoot = path.join(outputRoot, STATIC_DOCUMENT_ASSET_ROOT.slice(1));
   const contentIndexRoot = STATIC_DOCUMENT_CONTENT_INDEX_ROOT;
   const contentIndexDirectory = path.join(outputRoot, contentIndexRoot.slice(1));
-  fs.rmSync(assetRoot, { recursive: true, force: true });
+  // Locale directories hold private page-data metadata written before packing.
+  if (fs.existsSync(assetRoot))
+    for (const entry of fs.readdirSync(assetRoot, { withFileTypes: true }))
+      if (!(entry.isDirectory() && PRIVATE_PAGE_DATA_LOCALES.has(entry.name)))
+        fs.rmSync(path.join(assetRoot, entry.name), { recursive: true, force: true });
   fs.rmSync(contentIndexDirectory, { recursive: true, force: true });
   fs.mkdirSync(assetRoot, { recursive: true });
   fs.mkdirSync(contentIndexDirectory, { recursive: true });
@@ -382,6 +549,9 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     data,
     indexes,
     objects,
+    ...(publicDocuments ? { publicDocuments } : {}),
+    ...(publicMedia ? { publicMedia } : {}),
+    ...(privatePageData ? { privatePageData } : {}),
   });
   const referenceSha256 = createHash("sha256").update(references).digest("hex");
   fs.writeFileSync(path.join(root, "references.json"), references);
@@ -422,6 +592,9 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
         referencedContentObjects: referenced.size,
         referencedGzipBytes: objects.reduce((sum, chunk) => sum + chunk.gzipBytes, 0),
         logicalGzipBytes: [...documents.values()].reduce((sum, record) => sum + record.gzipBytes, 0),
+        ...(publicDocuments ? { publicDocuments: { ...publicDocuments, path: "public-documents.json" } } : {}),
+        ...(publicMedia ? { publicMedia } : {}),
+        ...(privatePageData ? { privatePageData } : {}),
       },
       null,
       2,

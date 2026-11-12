@@ -28,7 +28,7 @@
 
 const FRESH_MS = 10_000;
 const STALE_MS = 20_000;
-const KEY_PREFIX = "/__edge-cache/community/v1";
+const KEY_PREFIX = "/__edge-cache/community/v2";
 const GENERATION_PATH = "/__edge-cache/community/generation";
 const STORED_AT = "X-Edge-Stored-At";
 const CACHEABLE_PATH =

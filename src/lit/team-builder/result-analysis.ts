@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Frozen result teams, native score distributions and current release identity.
-// Output: Reward filters, position-specific mistake samples and opponent-placement comparisons.
+// Output: Reward filters, frozen-scenario mistake samples and separate assumed-placement comparisons.
 // Pos: [Map](../L2-2.md); on-demand diagnostics reuse the existing engine queue and chart preview.
 // Effects/Dependencies: Bounded identity-scoped caches; opening controls does no scoring; cancellation releases the workspace task.
 import { html, nothing } from "lit";
@@ -42,7 +42,7 @@ export function evaluateResult(source: Source): EvaluateRequest {
     goal = input.goal;
   const gk =
     goal.kind === "gekiso"
-      ? { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena }
+      ? { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs, justWindow: goal.justWindow }
       : goal.kind === "event" && goal.gekiso
         ? {
             accuracy: { great: 0, just: goal.gekiso.just, missEvery: 0 },
@@ -323,7 +323,7 @@ export class ResultAnalysis {
               songs: base.songs,
               songRules: base.songRules,
               player: base.player,
-              gekiso: { ...base.gekiso!, ranks: scenario, rank: scenario[0], arena: base.gekiso!.arena },
+              gekiso: { ...base.gekiso!, ranks: scenario, rank: scenario[0], arena: base.gekiso!.arena ? { ...base.gekiso!.arena, objective: "score" as const, opponents: undefined } : undefined },
             };
           });
           const values: (TeamEvaluation[] | undefined)[] = requests.map(

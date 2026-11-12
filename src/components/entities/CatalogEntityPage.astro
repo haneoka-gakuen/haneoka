@@ -23,6 +23,7 @@ import { serializePageData } from "../../lib/page-data";
 import { defaultSongTitle, songTitle } from "../../lib/song-display";
 import { eventSongPayload } from "../../server/event-song-release";
 import { eventStoryPayload } from "../../server/story-visibility";
+import { CHART_PLAYBACK_DATA_ELEMENT_ID, type ChartPlaybackData } from "../../server/chart-playback-assets";
 
 interface Props {
   page: SearchableCatalogPage;
@@ -33,9 +34,10 @@ interface Props {
   previous?: EntityLink;
   next?: EntityLink;
   chartPage?: boolean;
+  chartPlayback?: ChartPlaybackData;
   section?: string;
 }
-const { page, locale, server = "intl", canonical = false, returnTo, previous, next, chartPage = false, section } = Astro.props;
+const { page, locale, server = "intl", canonical = false, returnTo, previous, next, chartPage = false, chartPlayback, section } = Astro.props;
 const collectionRoute = findRoute(page.route);
 if (!collectionRoute) throw new Error(`Missing route definition for ${page.route}`);
 const sectionTitle = titleOf(collectionRoute, locale);
@@ -108,6 +110,7 @@ const entity = canonical
     appBar={rendered.appBar}
   >
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
+    {chartPlayback && <script is:inline type="application/json" id={CHART_PLAYBACK_DATA_ELEMENT_ID} set:html={JSON.stringify(chartPlayback)}></script>}
     <catalog-screen config={screenConfig} data-prerendered data-page-data={pageDataId} set:html={body}></catalog-screen>
   </AppShell>
 </Base>

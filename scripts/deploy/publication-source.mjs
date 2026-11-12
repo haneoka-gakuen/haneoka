@@ -75,7 +75,7 @@ export function resolveSealedPublication(repository, runId) {
     throw new Error("Select a repository and completed publication run");
   const run = github(`repos/${repository}/actions/runs/${runId}`);
   if (run.head_branch !== "main" || run.path !== workflowPath || run.status !== "completed" ||
-      !["push", "workflow_dispatch"].includes(run.event) || !["success", "failure"].includes(run.conclusion) ||
+      !["push", "workflow_dispatch"].includes(run.event) || !["success", "failure", "cancelled"].includes(run.conclusion) ||
       !/^[a-f0-9]{40}$/u.test(run.head_sha))
     throw new Error("Recovery requires a completed main deployment run");
   const jobs = pages(`repos/${repository}/actions/runs/${runId}/jobs?filter=all&per_page=100`, "jobs");

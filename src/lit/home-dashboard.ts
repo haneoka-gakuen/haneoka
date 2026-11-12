@@ -1,4 +1,4 @@
-import { pageDataViewCurrent } from "../lib/page-data";
+import { decodePageData, pageDataViewCurrent } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentVisible, isReleasedContent } from "../lib/content-release";
@@ -162,6 +162,7 @@ type Birthday = {
   image: string;
   kind: "character" | "cast";
   name: string;
+  greetingName?: string;
   /** For cast birthdays: the characters this person voices. */
   voiceRoles: Array<{ name: unknown; href?: string; image: string }>;
   nextAt: number;
@@ -243,7 +244,6 @@ export class HomeDashboard extends LitElement {
     communityPhase: { state: true },
     order: { state: true },
     hiddenModules: { state: true },
-    slide: { state: true },
     songLimit: { state: true },
     birthdaySelection: { state: true },
   };
@@ -343,7 +343,7 @@ export class HomeDashboard extends LitElement {
     const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
     if (seed && pageDataViewCurrent(this)) {
       try {
-        this.prepareHome(JSON.parse(seed.textContent || "null"), this.locale);
+        this.prepareHome(decodePageData(JSON.parse(seed.textContent || "null")) as HomeSeed, this.locale);
       } catch {
         /* Keep the independent catalog fallback. */
       }
@@ -405,6 +405,7 @@ export class HomeDashboard extends LitElement {
     this.scheduleBirthdayRefresh();
     if (changed.has("locale")) { this.syncAction(); this.communityReactions.clear(); this.communityMessages = undefined; }
     this.lazyImages.observe(this);
+    this.syncCarousel();
     for (const element of this.fitObserved)
       if (!this.contains(element)) {
         this.fitObserver?.unobserve(element);
@@ -504,6 +505,8 @@ export class HomeDashboard extends LitElement {
     this.applyDocuments(seed.documents);
     this.announcements = seed.announcements;
     this.announcementsPhase = "ready";
+    this.posts = communityRecommendationItems(seed.documents.posts || {});
+    this.communityPhase = seed.documents.posts ? "ready" : "loading";
     this.arena = seed.arena ?? null;
     this.fanInfo = seed.fanInfo || { status: "unavailable", entries: [] };
     this.characterProfiles = seed.profiles.characters;
@@ -635,7 +638,7 @@ export class HomeDashboard extends LitElement {
     const key = birthday ? "birthday" : season?.key;
     const greeting = key
       ? clientText(this.locale, `home.dashboard.greetings.${key}`, undefined, {
-          name: birthday?.name ?? "",
+          name: birthday?.greetingName ?? birthday?.name ?? "",
         })
       : this.text("overview", "haneoka");
     title.dataset.homeGreeting = String(!!key);
@@ -899,7 +902,9 @@ export class HomeDashboard extends LitElement {
   private startAuto() {
     this.stopAuto();
     this.slideTimer = window.setInterval(() => {
-      if (this.banners.length > 1) this.step(1);
+      const bounds = this.querySelector(".home-carousel")?.getBoundingClientRect();
+      if (!document.hidden && bounds && bounds.bottom > 0 && bounds.top < innerHeight && this.banners.length > 1)
+        this.step(1);
     }, 6000);
   }
   private stopAuto() {
@@ -913,6 +918,7 @@ export class HomeDashboard extends LitElement {
     const position = Math.min(Math.max(this.slide, 0), total + 1);
     this.slideAnimated = true;
     this.slide = Math.min(Math.max(position + delta, 0), total + 1);
+    this.syncCarousel();
   }
   /** At the end of a move onto a clone, land on the real slide it copies. */
   private settleCarousel() {
@@ -920,6 +926,23 @@ export class HomeDashboard extends LitElement {
     if (this.slide !== 0 && this.slide !== total + 1) return;
     this.slideAnimated = false;
     this.slide = this.slide === 0 ? total : 1;
+    this.syncCarousel();
+    this.querySelector(".home-carousel__track")?.getBoundingClientRect();
+  }
+  private syncCarousel() {
+    const total = this.banners.length;
+    const position = total > 1 ? Math.min(Math.max(this.slide, 0), total + 1) : 0;
+    const track = this.querySelector<HTMLElement>(".home-carousel__track");
+    if (!track) return;
+    track.classList.toggle("home-carousel__track--snap", !this.slideAnimated);
+    track.style.transition = this.slideAnimated ? "" : "none";
+    track.style.transform = `translateX(${-100 * position}%)`;
+    const selected = total > 1 ? (position - 1 + total) % total : 0;
+    this.querySelectorAll(".home-carousel__dots button").forEach((button, index) =>
+      button.setAttribute("aria-selected", String(index === selected)));
+    track.querySelectorAll<HTMLImageElement>(".home-carousel__slide > img").forEach((image, index) => {
+      image.loading = index === position ? "eager" : "lazy";
+    });
   }
   private swipeFrom?: number;
   private async loadProfiles() {
@@ -1093,6 +1116,7 @@ export class HomeDashboard extends LitElement {
           kind: "character",
           key: `character:${String(profile.id || profile.slug)}`,
           name: names[index] || names[0],
+          greetingName: localizedText(catalog?.nickname, this.locale) || names[index] || names[0],
           voiceRoles: [],
           characterId: catalog ? Number(catalog.characterId) : null,
           bandName: localizedText(band?.bandName || profile.bandName, this.locale),
@@ -1256,8 +1280,10 @@ export class HomeDashboard extends LitElement {
                                   aria-selected=${String(index === slide)}
                                   aria-label=${`${this.text("banners", "Banner")} ${index + 1}`}
                                   @click=${() => {
+                                    if ((this.slide - 1 + banners.length) % banners.length === index) return;
                                     this.slideAnimated = true;
-                                    this.slide = index + 1;
+                                    this.slide = index === 0 && this.slide === banners.length ? banners.length + 1 : index + 1;
+                                    this.syncCarousel();
                                   }}
                                 ></button>
                               `,

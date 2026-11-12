@@ -1,6 +1,9 @@
 name: Render and index complete locale
 on:
   workflow_call:
+    secrets:
+      CONTENT_BUILD_TOKEN:
+        required: false
     inputs:
       locale:
         type: string
@@ -23,6 +26,10 @@ on:
       resource_servers:
         type: string
         default: intl,jp
+env:
+  STATIC_PUBLIC_DOCUMENTS: "1"
+  STATIC_PUBLIC_MEDIA: "1"
+  STATIC_PUBLIC_MEDIA_MAX_BYTES: "536870912"
 jobs:
   render:
     name: Render ${{ inputs.locale }} partition ${{ matrix.partition }}
@@ -83,7 +90,7 @@ jobs:
     name: Render complete ${{ inputs.locale }} frontend
     needs: render
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
     env:

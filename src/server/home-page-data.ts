@@ -67,6 +67,7 @@ export async function homePageData(server: ReleaseServer, locale: Locale): Promi
       pick(entry, [
         "characterId",
         "characterName",
+        "nickname",
         "englishName",
         "slug",
         "bandId",
@@ -139,7 +140,7 @@ export async function homePageData(server: ReleaseServer, locale: Locale): Promi
     return [];
   });
   publicPosts ??= staticBuildJson("home:public-posts", "public-data", () =>
-    fetch(`${origin}/api/v1/community/posts?limit=5&scope=recommended`, {
+    fetch(`${origin}/api/v1/community/posts?limit=5&scope=recommended&kind=post`, {
       signal: AbortSignal.timeout(10000),
     })
       .then(async (response) => (response.ok ? ((await response.json()) as JsonRecord) : undefined))

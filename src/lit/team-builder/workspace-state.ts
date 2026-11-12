@@ -8,7 +8,7 @@ import { dataRows, type TeamBuilderData } from "../../lib/team-builder/data";
 import { MAX_GEKISO_COUNT } from "../../lib/team-builder/constraint-feasibility";
 import { readSongRules } from "../../lib/team-builder/arena";
 import { legacyRewardPlan } from "../../lib/team-builder/reward-plan";
-import type { SongRef } from "../../lib/team-builder/engine/api";
+import type { SongRef, JustWindowPolicy } from "../../lib/team-builder/engine/api";
 import { CUSTOM_ACCURACY, DEFAULT_FARMING, DEFAULT_SETTINGS, type BuildSettings, type FarmingSettings } from "./types";
 
 export const chartKey = (song: SongRef) => `${song.songId}:${song.difficulty}`;
@@ -29,10 +29,11 @@ export function parseOpponents(drafts: readonly string[]) {
 }
 
 export function resolveLuckSamples(settings: Pick<BuildSettings,
-  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples">,
+  "gekisoSamplingMode" | "gekisoSeeds" | "ptSamplingMode" | "ptLuckSamples" | "arena">,
   context: "score" | "rewards" = "score"): number {
   if (context === "rewards") return settings.ptSamplingMode === "manual" ? settings.ptLuckSamples : 32;
-  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds : 0;
+  return settings.gekisoSamplingMode === "manual" ? settings.gekisoSeeds
+    : settings.arena?.objective === "sections" ? 32 : 0;
 }
 
 const baseJustWindows = new WeakMap<TeamBuilderData, number>();
@@ -54,7 +55,6 @@ export function resolveJustWindow(
   data: TeamBuilderData | null,
 ): number {
   if (settings.justWindowUnit === "ms") return settings.justWindowMs;
-  if (settings.justWindowPercent === 0) return 0;
   const base = justBaseWindow(data);
   return base === null ? NaN : base * (1 + settings.justWindowPercent / 100);
 }
@@ -65,15 +65,29 @@ export const validJustWindowInput = (
   return Number.isFinite(value) && value >= 0 && value <= MAX_GEKISO_COUNT;
 };
 
+export function justWindowGoal(settings: Pick<BuildSettings, "justWindowMode" | "justWindowMs" | "justCoveragePercent" | "justDurationSeconds" | "justContinuousSeconds">): { minJustWindowMs?: number; justWindow?: JustWindowPolicy } {
+  if (settings.justWindowMode === "off" || settings.justWindowMs <= 0) return {};
+  return settings.justWindowMode === "steady" ? { minJustWindowMs: settings.justWindowMs }
+    : { justWindow: { minimumMs: settings.justWindowMs, minCoverage: settings.justCoveragePercent / 100,
+      minDurationMs: settings.justDurationSeconds * 1000, minContinuousMs: settings.justContinuousSeconds * 1000 } };
+}
+
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
   settings.skillRoles = readSkillRoleLimits(stored.skillRoles);
   settings.minMissionMembers = stored.minMissionMembers?.length === 3 ? [...stored.minMissionMembers] : [0, 0, 0];
   settings.justWindowUnit = stored.justWindowUnit ?? ((stored.justWindowMs ?? 0) > 0 ? "ms" : "percent");
+  settings.justWindowMode = stored.justWindowMode ?? ((stored.justWindowMs ?? 0) > 0 || (stored.justWindowPercent ?? 0) > 0 ? "steady" : "off");
   settings.gekisoRanks = stored.gekisoRanks ? [...stored.gekisoRanks] : [settings.gekisoRank, settings.gekisoRank, settings.gekisoRank];
   settings.frameRate = [30, 60, 90, 120].includes(settings.frameRate) ? settings.frameRate : 60;
   // Required cards hold for this visit only.
   settings.required = { members: [], snaps: [] };
+  const excludedIds = (value: unknown) => Array.isArray(value)
+    ? [...new Set(value.filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0))] : [];
+  settings.theoreticalExcluded = {
+    members: excludedIds(stored.theoreticalExcluded?.members),
+    snaps: excludedIds(stored.theoreticalExcluded?.snaps),
+  };
   if (!CUSTOM_ACCURACY) settings.playMode = "ap";
   settings.gekisoSamplingMode = stored.gekisoSamplingMode === "manual" && (stored.gekisoSeeds ?? 0) !== 0 ? "manual" : "auto";
   settings.ptSamplingMode = stored.ptSamplingMode === "manual" ? "manual" : "auto";

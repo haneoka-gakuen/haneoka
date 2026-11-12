@@ -19,7 +19,7 @@ export type EvaluateRequest = {
   team: TeamSpec;
   songs: SongRef[];
   play: PlayModel;
-  gekiso?: Pick<Extract<Goal, { kind: "gekiso" }>, "accuracy" | "rank" | "ranks" | "seeds" | "arena" | "minJustWindowMs">;
+  gekiso?: Pick<Extract<Goal, { kind: "gekiso" }>, "accuracy" | "rank" | "ranks" | "seeds" | "arena" | "minJustWindowMs" | "justWindow">;
   challengeEventId: number | null;
   event: { eventId: number; route: "live" | "challenge"; consumption: number; rewardRoom?: import("./api").RewardRoom; eventEffects?: readonly import("./master").EventEffectRow[] } | null;
 };
@@ -36,8 +36,8 @@ export type ExplainRequest = {
   song: SongRef;
   eventOrder: string[];
   play: PlayModel;
-  /** Normal lives: the evaluation context for the order's best judgement timing. */
-  timing?: { player: PlayerInput; play: PlayModel; challengeEventId: number | null };
+  /** Frozen evaluation context for the selected order's input guide. */
+  timing?: { player: PlayerInput; play: PlayModel; challengeEventId: number | null; gekiso?: EvaluateRequest["gekiso"] };
 };
 export type EngineChartSources = Record<string, { identity: TeamBuilderData["identity"]; file: string; apiBase?: string }>;
 export type EngineChart = { song: SongRef; chart: Record<string, unknown> };
