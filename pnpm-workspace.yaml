@@ -94,7 +94,7 @@ catalog:
   "@cloudflare/containers": 0.3.7
   "@lit-labs/ssr": ^4.1.0
   parse5: ^8.0.1
-  pagefind: ^1.5.2
+  pagefind: ^1.6.0
   "@lit-labs/ssr-client": ^1.1.8
   echarts: 6.1.0
   sql.js: ^1.14.2

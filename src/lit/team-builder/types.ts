@@ -70,6 +70,8 @@ export interface BuildSettings {
   bindings: [number, number | null][];
   /** Cards every team of this search includes, besides those locked in the Box. */
   required: { members: number[]; snaps: number[] };
+  /** Individual cards omitted from the full-growth candidate pool. */
+  theoreticalExcluded: { members: number[]; snaps: number[] };
   noSnaps: boolean;
   minBonus: number | null;
   attributes: number[];
@@ -88,6 +90,10 @@ export interface BuildSettings {
   justWindowUnit: "percent" | "ms";
   justWindowPercent: number;
   justWindowMs: number;
+  justWindowMode: "off" | "partial" | "steady";
+  justCoveragePercent: number;
+  justDurationSeconds: number;
+  justContinuousSeconds: number;
   gekisoSamplingMode: LuckSamplingMode;
   /** Manual draft: zero retains nominal expectations; positive counts average seeds 0 through n-1. */
   gekisoSeeds: number;
@@ -158,6 +164,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   leader: null,
   bindings: [],
   required: { members: [], snaps: [] },
+  theoreticalExcluded: { members: [], snaps: [] },
   noSnaps: false,
   minBonus: null,
   attributes: [],
@@ -174,6 +181,10 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   justWindowUnit: "percent",
   justWindowPercent: 0,
   justWindowMs: 0,
+  justWindowMode: "off",
+  justCoveragePercent: 0,
+  justDurationSeconds: 0,
+  justContinuousSeconds: 0,
   gekisoSamplingMode: "auto",
   gekisoSeeds: 0,
   gekisoOpponents: ["", "", ""],

@@ -9,7 +9,7 @@ import { icon } from "../ui/icon";
 import { modal, isBackdropClick, backdropPress } from "../ui/modal";
 import { justBaseWindow } from "./workspace-state";
 
-type Topic = "members" | "combo" | "just" | "luck" | "placements";
+type Topic = "members" | "combo" | "just" | "luck" | "placements" | "sections" | "accuracy";
 const topics = new WeakMap<TeamBuilder, Topic>();
 export function gekisoHelpButton(host: TeamBuilder, topic: Topic) {
   return html`

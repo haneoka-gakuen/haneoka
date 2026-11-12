@@ -21,6 +21,8 @@ export const compareHits = (a: EngineHit, b: EngineHit): number => {
   }
   return (
     b.key - a.key ||
+    (b.sectionRanking?.[0] ?? 0) - (a.sectionRanking?.[0] ?? 0) ||
+    (b.sectionRanking?.[1] ?? 0) - (a.sectionRanking?.[1] ?? 0) ||
     (b.event?.otherMean ?? 0) - (a.event?.otherMean ?? 0) ||
     (b.score?.mean ?? 0) - (a.score?.mean ?? 0) ||
     identityOrder(a, b)

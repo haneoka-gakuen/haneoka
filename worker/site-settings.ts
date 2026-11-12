@@ -9,11 +9,13 @@ import {
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { requestContentView } from "./content-view";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { decodePageData, serializePageData } from "../src/lib/page-data-codec";
+import { decodePageData } from "../src/lib/page-data-codec";
+import { unrestricted } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
+import { isAssetBrowserDocument } from "../src/lib/asset-static-routing";
 
 export function requestedResourceServers(request: Request): string[] {
   const url = new URL(request.url);
@@ -43,6 +45,7 @@ export const restrictedResourceRequest = (request: Request): boolean =>
 
 export interface DocumentContentContext {
   epoch?: string;
+  freshUntil?: number;
   publication?: Record<string, unknown>;
   publications?: Record<string, Record<string, unknown>>;
   unavailable?: boolean;
@@ -63,6 +66,8 @@ export async function applySiteSettings(
   let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+  headers.set("X-Haneoka-Content-View", view.key);
+  if (context.freshUntil) headers.set("X-Haneoka-Content-Until", String(context.freshUntil));
   const vary = new Set(
     (headers.get("Vary") || "")
       .split(",")
@@ -79,6 +84,8 @@ export async function applySiteSettings(
   const provider = providerEntityFromUrl(new URL(request.url));
   const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
   const spoilers = view.override || view.spoilers;
+  const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
+  const completeView = sourceBrowser || unrestricted(view);
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -107,6 +114,7 @@ export async function applySiteSettings(
     return new Response(null, { status: output.status, headers });
   }
   return new HTMLRewriter()
+    .on("style[data-community-visibility]", { element(element) { element.remove(); } })
     .on('meta[name="haneoka-content-route"]', {
       element(element) {
         if (!resource?.id) {
@@ -175,6 +183,7 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
+        if (completeView || jsonId === "team-builder-page") return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();
@@ -183,7 +192,9 @@ export async function applySiteSettings(
         const input = decodePageData(JSON.parse(jsonText));
         const filtered = filterContentData(input, view, resource?.kind, true, context.publications);
         if (filtered.changed) usePublicView = true;
-        chunk.replace(serializePageData(filtered.value), { html: true });
+        chunk.replace(filtered.changed
+          ? JSON.stringify(filtered.value).replace(/</gu, "\\u003c").replace(/\u2028/gu, "\\u2028").replace(/\u2029/gu, "\\u2029")
+          : jsonText, { html: true });
         jsonText = "";
       },
     })
@@ -215,9 +226,9 @@ export async function applySiteSettings(
         element.setAttribute("data-content-response-key", view.key);
       },
     })
-    .on("img[src], audio[src], video[src], source[src], video[poster], a[href]", {
+    .on("img[src], audio[src], video[src], source[src], video[poster], a[href], link[href]", {
       element(element) {
-        const attribute = element.tagName === "a" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
+        const attribute = element.tagName === "a" || element.tagName === "link" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
         const source = element.getAttribute(attribute);
         if (!source) return;
         const target = new URL(source, request.url);
@@ -233,6 +244,11 @@ export async function applySiteSettings(
         target.searchParams.set("__content", "1");
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
+        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname)) {
+          if (hideIdentity() && element.tagName === "link") { element.remove(); return; }
+          target.searchParams.set("asset", "1");
+          for (const key of ["cv", "spoiler", "__content"]) target.searchParams.delete(key);
+        }
         element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },
     })

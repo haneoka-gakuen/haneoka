@@ -238,7 +238,31 @@ function configFor({ compiled = false, keepAssets = false, containerImages, buil
     if (config.unsafe.bindings.some((binding) => binding.name === name)) throw new Error("Duplicate assets binding");
     config.unsafe.bindings.push({ name, type: "assets" });
     config.unsafe.metadata = { ...config.unsafe.metadata, keep_assets: true };
-  } else config.assets.directory = path.resolve(root, original.assets.directory);
+  } else {
+    config.assets.directory = path.resolve(root, original.assets.directory);
+    if (!original.assets.run_worker_first.includes("/jp/*") && fs.existsSync(path.join(config.assets.directory, "build.json"))) {
+      const references = JSON.parse(fs.readFileSync(path.join(root, ".output/static-documents/references.json"), "utf8"));
+      assert.ok(references.publicDocuments?.files > 0, "Direct document routing requires verified public static pages");
+      const patterns = original.assets.run_worker_first.map((pattern) => new RegExp("^" + pattern.split("*")
+        .map((part) => part.replace(/[.+?^${}()|[\]\\]/gu, "\\$&")).join(".*") + "$"));
+      for (const entry of fs.readdirSync(config.assets.directory, { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith(".html")) continue;
+        const file = path.join(entry.parentPath, entry.name);
+        const relative = path.relative(config.assets.directory, file).split(path.sep).join("/");
+        if (!/^(?:(?:jp|intl)\/)?(?:ja|en|ko|zh-CN|zh-TW)\//u.test(relative)) continue;
+        const canonical = `/${relative.replace(/index\.html$/u, "")}`;
+        if (patterns.some((pattern) => pattern.test(canonical))) continue;
+        const descriptor = fs.openSync(file, "r");
+        const buffer = Buffer.alloc(4096);
+        let head;
+        try { head = buffer.subarray(0, fs.readSync(descriptor, buffer, 0, buffer.length, 0)).toString("utf8"); }
+        finally { fs.closeSync(descriptor); }
+        const redirect = fs.statSync(file).size < 8192 && /<meta\b[^>]*http-equiv=["']?refresh\b/iu.test(head);
+        assert.ok(head.includes('name="haneoka-public-static"') || redirect,
+          `Unfiltered static document requires Worker routing: ${relative}`);
+      }
+    }
+  }
   return config;
 }
 function writeConfig(name, config) {

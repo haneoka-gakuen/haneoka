@@ -1,9 +1,11 @@
 // L3 — GEB
 // Input: 公共 API 客户端选项、资源和请求参数。
-// Output: HaneokaClient 与目录资源访问适配。
+// Output: HaneokaClient、目录资源及公开原生舞台清单访问契约。
 // Pos: [Map](../../L2.md)；Haneoka 公共 API 的包级适配。
 // Effects/Dependencies: 复用 ApiClient，调用方法可能联网；不直接读取站点私有数据库。
 import { createApiClient, type ApiClientOptions, type ApiQuery } from "./index.js";
+import { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets } from "./chart-assets.js";
+export { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets, type HaneokaChartAssetSource, type HaneokaChartAssetOutput } from "./chart-assets.js";
 
 export type HaneokaLocale = "ja" | "en" | "zh-TW" | "zh-CN" | "ko";
 export type HaneokaJson = null | boolean | number | string | HaneokaJson[] | { [key: string]: HaneokaJson };
@@ -14,6 +16,7 @@ export interface HaneokaReleaseIdentity {
   readonly releaseId: string;
   readonly sourceId: string;
 }
+export interface HaneokaChartAssetOptions extends HaneokaScope { readonly bandId?: number }
 
 export interface HaneokaClientOptions extends Omit<ApiClientOptions, "baseUrl"> {
   readonly baseUrl?: string;
@@ -89,6 +92,7 @@ const reserved = new Set([
   "servers",
   "sources",
   "ui-marks",
+  "chart-assets",
 ]);
 
 function segment(value: string, pattern: RegExp, label: string): string {
@@ -150,6 +154,7 @@ function resourcePath(resource: string, options: HaneokaReadOptions<unknown>): s
 
 export interface HaneokaClient {
   servers(scope?: Pick<HaneokaScope, "signal">): Promise<readonly HaneokaServer[]>;
+  chartAssets(scope?: HaneokaChartAssetOptions): Promise<HaneokaChartAssets>;
   index<T = HaneokaJson>(resource: string, options?: HaneokaReadOptions<T>): Promise<T>;
   entity<T = HaneokaJson>(resource: string, id: string, options?: HaneokaReadOptions<T>): Promise<T>;
   batch<T = HaneokaJson>(
@@ -194,6 +199,8 @@ export function createHaneokaClient(options: HaneokaClientOptions = {}): Haneoka
     });
   const decoder = <T>(options: HaneokaReadOptions<T>) => options.decode ?? (json as (value: unknown) => T);
   return {
+    chartAssets: (scope = {}) => read(`servers/${segment(scope.server ?? "intl", serverPattern, "server")}/chart-assets`, scope,
+      value => value as HaneokaChartAssets, { projection: HANEOKA_CHART_ASSETS_PROJECTION, bandId: scope.bandId }),
     servers: (scope = {}) =>
       api.get("releases", {
         ...scope,

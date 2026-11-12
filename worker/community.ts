@@ -2,7 +2,7 @@
 // Input: 社区请求、会话、论坛／实体上下文和 Env。
 // Output: 社区读写响应及实体评论后端接口。
 // Pos: [Map](L2.md)；社区内容与读取／写入策略枢纽。
-// Effects/Dependencies: D1 查询／更新、限流、媒体与审核等协作；读写权限按路由检查。
+// Effects/Dependencies: D1 查询／更新、限流、媒体与审核等协作；读写权限按路由检查，评论层级只在当前请求复用。
 import type { UserRole } from "../src/lib/user-roles";
 import { measureCommunityRead } from "./community-read-timing";
 import { communitySearchCondition, communitySearchScore } from "./community-search-query";
@@ -604,6 +604,51 @@ const parseAttachmentIds = (value: JsonValue | undefined): string[] | null => {
   }
   return [...ids];
 };
+
+type CommentMember = Pick<CommentRow, "id" | "parentId" | "createdAt" | "likeCount">;
+interface CommentTree {
+  members: Map<string, CommentMember>;
+  rootIds: Map<string, string>;
+  roots: CommentMember[];
+  replies: Map<string, CommentMember[]>;
+  replyPositions: Map<string, number>;
+}
+const commentTrees = new WeakMap<Request, Map<string, Promise<CommentTree>>>();
+const commentChronology = (left: CommentMember, right: CommentMember): number =>
+  left.createdAt - right.createdAt || (left.id === right.id ? 0 : left.id < right.id ? -1 : 1);
+function buildCommentTree(rows: CommentMember[]): CommentTree {
+  const members = new Map(rows.map((row) => [row.id, row]));
+  const rootIds = new Map<string, string>();
+  for (const member of rows) {
+    const path: string[] = [];
+    let node = member;
+    while (!rootIds.has(node.id)) {
+      path.push(node.id);
+      const parent = node.parentId ? members.get(node.parentId) : undefined;
+      if (!parent) {
+        rootIds.set(node.id, node.id);
+        break;
+      }
+      node = parent;
+    }
+    const root = rootIds.get(node.id)!;
+    for (const id of path) rootIds.set(id, root);
+  }
+  const replies = new Map<string, CommentMember[]>(),
+    replyPositions = new Map<string, number>();
+  for (const member of rows) {
+    const root = rootIds.get(member.id)!;
+    if (root === member.id) continue;
+    let group = replies.get(root);
+    if (!group) {
+      group = [];
+      replies.set(root, group);
+    }
+    group.push(member);
+    replyPositions.set(member.id, group.length);
+  }
+  return { members, rootIds, roots: rows.filter((row) => rootIds.get(row.id) === row.id), replies, replyPositions };
+}
 
 const encodeCursor = (row: Cursor): string =>
   btoa(
@@ -1694,7 +1739,9 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
 };
 
 const getPost = async (request: Request, env: Env, id: string, url: URL, focusedOnly = false): Promise<Response> => {
-  const threadCheck = url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`) ? entityThreadForPost(env,id) : Promise.resolve(false);
+  const threadCheck = url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`)
+    ? entityThreadForPost(env, id)
+    : Promise.resolve(false);
   threadCheck.catch(() => undefined);
   const session = await requireSession(request, env);
   const userId = session?.user.id ?? null;
@@ -1717,29 +1764,34 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     threadCheck,
     measureCommunityRead("post", () => findAccessiblePostRow(env, id, userId)),
   ]);
-  if (entityThread) return error(request,404,"post_not_found","Open the catalogue discussion through its entity target");
+  if (entityThread)
+    return error(request, 404, "post_not_found", "Open the catalogue discussion through its entity target");
   if (!postRow) return error(request, 404, "post_not_found", "Post not found");
   // Metadata, capabilities and viewer flags read while the comments query
   // below runs: each is a separate D1 round trip, so serial reads added up.
   const detailReads = Promise.all([
-    commentsOnly ? Promise.resolve(null) : measureCommunityRead("metadata", async () => (await attachPostMetadata(env, [postRow], userId))[0] ?? null),
+    commentsOnly
+      ? Promise.resolve(null)
+      : measureCommunityRead("metadata", async () => (await attachPostMetadata(env, [postRow], userId))[0] ?? null),
     Promise.all([
-    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"reply"),
-    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"post"),
-    !commentsOnly && userId !== null && canAccessPostForum(env,id,userId,"manage"),
-  ]),
-    userId && !commentsOnly ? env.DB.batch<ViewerFlagRow>([
-      env.DB.prepare(
-        "SELECT 1 AS active FROM community_reaction WHERE post_id = ? AND user_id = ? AND kind = 'like' LIMIT 1",
-      ).bind(id, userId),
-      env.DB.prepare("SELECT 1 AS active FROM community_bookmark WHERE post_id = ? AND user_id = ? LIMIT 1").bind(
-        id,
-        userId,
-      ),
-      env.DB.prepare(
-        "SELECT 1 AS active FROM community_user_follow WHERE follower_user_id = ? AND followed_user_id = ? LIMIT 1",
-      ).bind(userId, postRow.authorId),
-    ]) : Promise.resolve<D1Result<ViewerFlagRow>[]>([]),
+      !commentsOnly && userId !== null && canAccessPostForum(env, id, userId, "reply"),
+      !commentsOnly && userId !== null && canAccessPostForum(env, id, userId, "post"),
+      !commentsOnly && userId !== null && canAccessPostForum(env, id, userId, "manage"),
+    ]),
+    userId && !commentsOnly
+      ? env.DB.batch<ViewerFlagRow>([
+          env.DB.prepare(
+            "SELECT 1 AS active FROM community_reaction WHERE post_id = ? AND user_id = ? AND kind = 'like' LIMIT 1",
+          ).bind(id, userId),
+          env.DB.prepare("SELECT 1 AS active FROM community_bookmark WHERE post_id = ? AND user_id = ? LIMIT 1").bind(
+            id,
+            userId,
+          ),
+          env.DB.prepare(
+            "SELECT 1 AS active FROM community_user_follow WHERE follower_user_id = ? AND followed_user_id = ? LIMIT 1",
+          ).bind(userId, postRow.authorId),
+        ])
+      : Promise.resolve<D1Result<ViewerFlagRow>[]>([]),
   ]);
   // Early validation returns must not leave a rejected read unobserved.
   detailReads.catch(() => undefined);
@@ -1750,7 +1802,10 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     const [postWithTags, capabilities, flags] = await detailReads;
     const [forumCanReply, forumCanPost, forumCanManage] = capabilities;
     return {
-      postWithTags, forumCanReply, forumCanPost, forumCanManage,
+      postWithTags,
+      forumCanReply,
+      forumCanPost,
+      forumCanManage,
       liked: Boolean(flags[0]?.results[0]),
       bookmarked: Boolean(flags[1]?.results[0]),
       following: Boolean(flags[2]?.results[0]),
@@ -1758,7 +1813,8 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
   };
 
   if (includeCommentsValue === "false") {
-    const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } = await readDetail();
+    const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } =
+      await readDetail();
     if (!postWithTags) return error(request, 500, "post_metadata_unavailable", "Post metadata is unavailable");
     return json(request, {
       post: publicAuthoredContent(postWithTags),
@@ -1769,11 +1825,25 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
         liked,
         bookmarked,
         following,
-        canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
-        canPin: forumCanManage && post.deletedAt===null && post.archivedAt===null && post.status==="published" && post.moderationStatus==="allow", canLock: forumCanManage && post.deletedAt===null, canMove: forumCanManage,
-        canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
+        canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt === null),
+        canPin:
+          forumCanManage &&
+          post.deletedAt === null &&
+          post.archivedAt === null &&
+          post.status === "published" &&
+          post.moderationStatus === "allow",
+        canLock: forumCanManage && post.deletedAt === null,
+        canMove: forumCanManage,
+        canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt === null),
         canComment: Boolean(
-          userId && forumCanReply && post.status==="published" && post.deletedAt===null && post.authorPublicNameReady === 1 && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
+          userId &&
+          forumCanReply &&
+          post.status === "published" &&
+          post.deletedAt === null &&
+          post.authorPublicNameReady === 1 &&
+          post.moderationStatus === "allow" &&
+          post.archivedAt === null &&
+          post.commentsLockedAt === null,
         ),
       },
     });
@@ -1830,9 +1900,10 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     "comment.deleted_at IS NULL",
     "comment.hidden_at IS NULL",
     commentModerationSql,
-    userId ? "(author_profile.display_name IS NOT NULL OR comment.author_id=?)" : "author_profile.display_name IS NOT NULL",
+    userId
+      ? "(author_profile.display_name IS NOT NULL OR comment.author_id=?)"
+      : "author_profile.display_name IS NOT NULL",
   ];
-  const commentBindings: BindValue[] = [...(userId ? [userId] : []), id, ...commentModerationValues, ...(userId ? [userId] : [])];
   if (userId) {
     commentWhere.push(`NOT EXISTS (
       SELECT 1 FROM community_user_block AS comment_block
@@ -1843,42 +1914,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       SELECT 1 FROM community_user_mute AS comment_mute
       WHERE comment_mute.muter_user_id = ? AND comment_mute.muted_user_id = comment.author_id
     )`);
-    commentBindings.push(userId, userId, userId);
   }
-  const rootOrder =
-    commentsSort === "hot"
-      ? "root_comments.likeCount DESC, root_comments.createdAt DESC, root_comments.id DESC"
-      : "root_comments.createdAt DESC, root_comments.id DESC";
-  const rootCursorWhere = cursor
-    ? commentsSort === "hot"
-      ? `WHERE root_comments.likeCount < ?
-           OR (root_comments.likeCount = ? AND (
-             root_comments.createdAt < ? OR (root_comments.createdAt = ? AND root_comments.id < ?)
-           ))`
-      : `WHERE root_comments.createdAt < ?
-           OR (root_comments.createdAt = ? AND root_comments.id < ?)`
-    : "";
-  const rootCursorBindings: BindValue[] = cursor
-    ? commentsSort === "hot"
-      ? [cursor.rankScore ?? 0, cursor.rankScore ?? 0, cursor.createdAt, cursor.createdAt, cursor.id]
-      : [cursor.createdAt, cursor.createdAt, cursor.id]
-    : [];
-  const replyCursorWhere = cursor
-    ? `WHERE reply_candidates.createdAt > ?
-         OR (reply_candidates.createdAt = ? AND reply_candidates.id > ?)`
-    : "";
-  const replyCursorBindings: BindValue[] = cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : [];
   const visibleMembershipBindings: BindValue[] = [id, ...commentModerationValues, ...(userId ? [userId] : [])];
   if (userId) visibleMembershipBindings.push(userId, userId, userId);
-  const effectiveParentIdSelect = `CASE
-    WHEN comment.parent_id IS NULL THEN NULL
-    WHEN EXISTS (
-      SELECT 1
-      FROM visible_members AS visible_parent
-      WHERE visible_parent.id = comment.parent_id
-    ) THEN comment.parent_id
-    ELSE NULL
-  END`;
   const visibleMembershipSelect = `SELECT
        comment.id,
        comment.parent_id AS parentId,
@@ -1892,7 +1930,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       AND author_profile.status <> 'deleted'
 
      WHERE ${commentWhere.join(" AND ")}`;
-  const commentSelect = `SELECT
+  const commentColumns = `
        comment.id,
        comment.body,
        comment.version,
@@ -1903,8 +1941,8 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
        comment.browser_family AS browserFamily,
        comment.os_family AS osFamily,
        comment.moderation_status AS moderationStatus,
-       ${effectiveParentIdSelect} AS parentId,
-       commentFloors.floor AS floor,
+       comment.parent_id AS parentId,
+       comment.floor_number AS floor,
        comment.created_at AS createdAt,
        comment.updated_at AS updatedAt,
        ${COMMENT_LAST_EDITED_AT_SELECT} AS lastEditedAt,
@@ -1912,196 +1950,117 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
        author.id AS authorId,
        author_identity.uid AS authorUid,
        COALESCE(author_profile.display_name,author.name) AS authorName,
-       ${avatarUrlSelect("author")} AS authorImage
-     FROM community_comment AS comment
-     JOIN comment_floors AS commentFloors ON commentFloors.id = comment.id
+       ${avatarUrlSelect("author")} AS authorImage`;
+  const commentFrom = `FROM community_comment AS comment
      JOIN "user" AS author ON author.id = comment.author_id
      JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
      JOIN community_profile AS author_profile
        ON author_profile.user_id = comment.author_id
       AND author_profile.status <> 'deleted'
 `;
-  const commentsResult = await measureCommunityRead("comments", async () =>
-    commentsRootId !== null
-      ? await env.DB.prepare(
-          `WITH RECURSIVE comment_floors AS (
-             SELECT id, floor_number AS floor
-             FROM community_comment
-             WHERE post_id = ?
-           ), visible_members AS MATERIALIZED (
-             ${visibleMembershipSelect}
-           ), comment_roots(id, rootId) AS (
-             SELECT member.id, member.id
-             FROM visible_members AS member
-             WHERE member.parentId IS NULL
-                OR NOT EXISTS (
-                  SELECT 1 FROM visible_members AS visible_parent
-                  WHERE visible_parent.id = member.parentId
-                )
-             UNION ALL
-             SELECT child.id, parent.rootId
-             FROM comment_roots AS parent
-             JOIN community_comment AS child_row ON child_row.parent_id = parent.id
-             JOIN visible_members AS child ON child.id = child_row.id
-           ), reply_counts AS (
-             SELECT rootId, COUNT(*) - 1 AS replyCount
-             FROM comment_roots
-             GROUP BY rootId
-           ), reply_target AS (
-             SELECT rootId
-             FROM comment_roots
-             WHERE id = ? AND id = rootId
-           ), reply_candidates AS (
-             SELECT comment_roots.id, comment_roots.rootId, visible_members.createdAt
-             FROM comment_roots
-             JOIN visible_members ON visible_members.id = comment_roots.id
-             JOIN reply_target ON reply_target.rootId = comment_roots.rootId
-             WHERE comment_roots.id <> comment_roots.rootId
-           ), reply_page AS (
-             SELECT reply_candidates.*,
-                    ROW_NUMBER() OVER (ORDER BY reply_candidates.createdAt ASC, reply_candidates.id ASC) AS pagePosition
-             FROM reply_candidates
-             ${replyCursorWhere}
-             ORDER BY reply_candidates.createdAt ASC, reply_candidates.id ASC
-             LIMIT ?
-           ), hydrated_comments AS (
-             ${commentSelect}
-             WHERE comment.id IN (
-               SELECT id FROM reply_page WHERE pagePosition <= ${COMMENT_REPLY_PAGE_SIZE}
-             ) AND ${commentWhere.join(" AND ")}
-           )
-           SELECT hydrated_comments.*,
-                  comment_roots.rootId,
-                  reply_counts.replyCount AS rootReplyCount,
-                  reply_page.pagePosition AS replyPagePosition,
-                  EXISTS (
-                    SELECT 1 FROM reply_page
-                    WHERE pagePosition > ${COMMENT_REPLY_PAGE_SIZE}
-                  ) AS hasMoreReplies
-           FROM hydrated_comments
-           JOIN comment_roots ON comment_roots.id = hydrated_comments.id
-           JOIN reply_page ON reply_page.id = hydrated_comments.id
-           JOIN reply_counts ON reply_counts.rootId = comment_roots.rootId
-           ORDER BY reply_page.pagePosition ASC`,
-        )
-          .bind(
-            id,
-            ...visibleMembershipBindings,
-            commentsRootId,
-            ...replyCursorBindings,
-            COMMENT_REPLY_PAGE_SIZE + 1,
-            ...commentBindings,
-          )
-          .all<CommentRow>()
-      : await env.DB.prepare(
-          `WITH RECURSIVE comment_floors AS (
-             SELECT id, floor_number AS floor
-             FROM community_comment
-             WHERE post_id = ?
-           ), visible_members AS MATERIALIZED (
-             ${visibleMembershipSelect}
-           ), comment_roots(id, rootId) AS (
-             SELECT member.id, member.id
-             FROM visible_members AS member
-             WHERE member.parentId IS NULL
-                OR NOT EXISTS (
-                  SELECT 1 FROM visible_members AS visible_parent
-                  WHERE visible_parent.id = member.parentId
-                )
-             UNION ALL
-             SELECT child.id, parent.rootId
-             FROM comment_roots AS parent
-             JOIN community_comment AS child_row ON child_row.parent_id = parent.id
-             JOIN visible_members AS child ON child.id = child_row.id
-           ), root_comments AS (
-             SELECT member.id, member.likeCount, member.createdAt
-             FROM visible_members AS member
-             JOIN comment_roots ON comment_roots.id = member.id
-             WHERE member.id = comment_roots.rootId
-           ), reply_counts AS (
-             SELECT rootId, COUNT(*) - 1 AS replyCount
-             FROM comment_roots
-             GROUP BY rootId
-           ), selected_roots AS (
-             SELECT root_comments.id, root_comments.likeCount, root_comments.createdAt,
-                    ROW_NUMBER() OVER (ORDER BY ${rootOrder}) AS pagePosition
-             FROM root_comments
-             ${rootCursorWhere}
-             ORDER BY ${rootOrder}
-             LIMIT ?
-           ), page_roots AS (
-             SELECT * FROM selected_roots
-             WHERE pagePosition <= ${COMMENT_PAGE_SIZE}
-           ), focused_chain(id) AS (
-             SELECT id
-             FROM visible_members
-             WHERE id = ?
-             UNION ALL
-             SELECT parent.id
-             FROM focused_chain AS chain
-             JOIN visible_members AS child ON child.id = chain.id
-             JOIN visible_members AS parent ON parent.id = child.parentId
-           ), focused_root_ids AS (
-             SELECT DISTINCT comment_roots.rootId
-             FROM focused_chain
-             JOIN comment_roots ON comment_roots.id = focused_chain.id
-           ), preview_roots AS (
-             SELECT id FROM page_roots
-             UNION
-             SELECT rootId FROM focused_root_ids
-           ), reply_previews AS (
-             SELECT descendants.id, descendants.rootId, descendant_member.createdAt,
-                    ROW_NUMBER() OVER (
-                      PARTITION BY descendants.rootId
-                      ORDER BY descendant_member.createdAt ASC, descendants.id ASC
-                    ) AS previewPosition
-             FROM comment_roots AS descendants
-             JOIN visible_members AS descendant_member ON descendant_member.id = descendants.id
-             JOIN preview_roots ON preview_roots.id = descendants.rootId
-             WHERE descendants.id <> descendants.rootId
-           ), selected_ids(id) AS (
-             SELECT id FROM page_roots
-             UNION
-             SELECT id FROM reply_previews
-             WHERE previewPosition <= ${COMMENT_REPLY_PREVIEW_SIZE}
-             UNION
-             SELECT id FROM focused_chain
-           ), hydrated_comments AS (
-             ${commentSelect}
-             WHERE comment.id IN (SELECT id FROM selected_ids)
-               AND ${commentWhere.join(" AND ")}
-           )
-           SELECT hydrated_comments.*,
-                  comment_roots.rootId,
-                  page_roots.pagePosition AS rootPagePosition,
-                  reply_counts.replyCount AS rootReplyCount,
-                  reply_previews.previewPosition,
-                  EXISTS (
-                    SELECT 1 FROM selected_roots
-                    WHERE pagePosition > ${COMMENT_PAGE_SIZE}
-                  ) AS hasMoreRoots
-           FROM hydrated_comments
-           JOIN comment_roots ON comment_roots.id = hydrated_comments.id
-           LEFT JOIN page_roots ON page_roots.id = comment_roots.rootId
-           JOIN reply_counts ON reply_counts.rootId = comment_roots.rootId
-           LEFT JOIN reply_previews ON reply_previews.id = comment_roots.id
-           ORDER BY
-             CASE WHEN EXISTS (SELECT 1 FROM focused_root_ids WHERE rootId=comment_roots.rootId) THEN 0 ELSE 1 END ASC,
-             CASE WHEN page_roots.pagePosition IS NULL THEN 1 ELSE 0 END ASC,
-             page_roots.pagePosition ASC,
-             hydrated_comments.createdAt ASC,
-             hydrated_comments.id ASC`,
-        )
-          .bind(
-            id,
-            ...visibleMembershipBindings,
-            ...rootCursorBindings,
-            focusedOnly ? 0 : COMMENT_PAGE_SIZE + 1,
-            focusedCommentId,
-            ...commentBindings,
-          )
-          .all<CommentRow>(),
-  );
+  const commentsResult = await (async () => {
+    let trees = commentTrees.get(request);
+    if (!trees) {
+      trees = new Map();
+      commentTrees.set(request, trees);
+    }
+    const treeKey = JSON.stringify([id, userId]);
+    let pending = trees.get(treeKey);
+    if (!pending) {
+      pending = measureCommunityRead("comments", () =>
+        env.DB.prepare(`${visibleMembershipSelect} ORDER BY comment.created_at ASC, comment.id ASC`)
+          .bind(...visibleMembershipBindings)
+          .all<CommentMember>(),
+      ).then((result) => buildCommentTree(result.results));
+      trees.set(treeKey, pending);
+    }
+    const tree = await pending;
+    const selected = new Map<string, Partial<CommentRow>>();
+    let focusedRoot: string | undefined;
+    if (commentsRootId !== null) {
+      const replies =
+        tree.rootIds.get(commentsRootId) === commentsRootId ? (tree.replies.get(commentsRootId) ?? []) : [];
+      const page = replies.filter(
+        (member) =>
+          !cursor ||
+          member.createdAt > cursor.createdAt ||
+          (member.createdAt === cursor.createdAt && member.id > cursor.id),
+      );
+      page.slice(0, COMMENT_REPLY_PAGE_SIZE).forEach((member, index) =>
+        selected.set(member.id, {
+          rootId: commentsRootId,
+          rootReplyCount: replies.length,
+          replyPagePosition: index + 1,
+          hasMoreReplies: Number(page.length > COMMENT_REPLY_PAGE_SIZE),
+        }),
+      );
+    } else {
+      const roots = focusedOnly
+        ? []
+        : tree.roots
+            .filter((member) => {
+              if (!cursor) return true;
+              const older =
+                member.createdAt < cursor.createdAt || (member.createdAt === cursor.createdAt && member.id < cursor.id);
+              return commentsSort === "hot"
+                ? member.likeCount < (cursor.rankScore ?? 0) || (member.likeCount === cursor.rankScore && older)
+                : older;
+            })
+            .sort(
+              (left, right) =>
+                (commentsSort === "hot" ? right.likeCount - left.likeCount : 0) || commentChronology(right, left),
+            );
+      const positions = new Map(roots.slice(0, COMMENT_PAGE_SIZE).map((member, index) => [member.id, index + 1]));
+      const wantedRoots = new Set(positions.keys());
+      const ids = new Set<string>();
+      let focus = focusedCommentId ? tree.members.get(focusedCommentId) : undefined;
+      if (focus) {
+        focusedRoot = tree.rootIds.get(focus.id);
+        wantedRoots.add(focusedRoot!);
+      }
+      while (focus) {
+        ids.add(focus.id);
+        focus = focus.parentId ? tree.members.get(focus.parentId) : undefined;
+      }
+      for (const root of wantedRoots) {
+        ids.add(root);
+        for (const reply of (tree.replies.get(root) ?? []).slice(0, COMMENT_REPLY_PREVIEW_SIZE)) ids.add(reply.id);
+      }
+      for (const memberId of ids) {
+        const rootId = tree.rootIds.get(memberId)!;
+        const previewPosition = tree.replyPositions.get(memberId);
+        selected.set(memberId, {
+          rootId,
+          rootReplyCount: tree.replies.get(rootId)?.length ?? 0,
+          rootPagePosition: positions.get(rootId) ?? null,
+          ...(previewPosition === undefined ? {} : { previewPosition }),
+          hasMoreRoots: Number(roots.length > COMMENT_PAGE_SIZE),
+        });
+      }
+    }
+    if (!selected.size) return { results: [] as CommentRow[] };
+    const result = await measureCommunityRead("comments", () =>
+      env.DB.prepare(
+        `SELECT ${commentColumns} ${commentFrom}
+      WHERE comment.id IN (SELECT value FROM json_each(?)) AND ${commentWhere.join(" AND ")}`,
+      )
+        .bind(...(userId ? [userId] : []), JSON.stringify([...selected.keys()]), ...visibleMembershipBindings)
+        .all<CommentRow>(),
+    );
+    const rows = result.results.map((row) => {
+      const parent = tree.members.get(row.id)!.parentId;
+      return { ...row, ...selected.get(row.id)!, parentId: parent && tree.members.has(parent) ? parent : null };
+    });
+    rows.sort((left, right) =>
+      commentsRootId !== null
+        ? left.replyPagePosition! - right.replyPagePosition!
+        : Number(right.rootId === focusedRoot) - Number(left.rootId === focusedRoot) ||
+          Number(left.rootPagePosition === null) - Number(right.rootPagePosition === null) ||
+          (left.rootPagePosition ?? 0) - (right.rootPagePosition ?? 0) ||
+          commentChronology(left, right),
+    );
+    return { ...result, results: rows };
+  })();
 
   if (commentsRootId !== null) {
     const replyRows = commentsResult.results;
@@ -2166,7 +2125,8 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     commentsSort,
   };
   if (commentsOnly) return json(request, commentResponse);
-  const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } = await readDetail();
+  const { postWithTags, forumCanReply, forumCanPost, forumCanManage, liked, bookmarked, following } =
+    await readDetail();
   if (!postWithTags) return error(request, 500, "post_metadata_unavailable", "Post metadata is unavailable");
   return json(request, {
     post: publicAuthoredContent(postWithTags),
@@ -2175,11 +2135,25 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       liked,
       bookmarked,
       following,
-      canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
-        canPin: forumCanManage && post.deletedAt===null && post.archivedAt===null && post.status==="published" && post.moderationStatus==="allow", canLock: forumCanManage && post.deletedAt===null, canMove: forumCanManage,
-      canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt===null),
+      canEdit: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt === null),
+      canPin:
+        forumCanManage &&
+        post.deletedAt === null &&
+        post.archivedAt === null &&
+        post.status === "published" &&
+        post.moderationStatus === "allow",
+      canLock: forumCanManage && post.deletedAt === null,
+      canMove: forumCanManage,
+      canDelete: Boolean(userId && userId === post.authorId && forumCanPost && post.deletedAt === null),
       canComment: Boolean(
-        userId && forumCanReply && post.status==="published" && post.deletedAt===null && post.authorPublicNameReady === 1 && post.moderationStatus === "allow" && post.archivedAt === null && post.commentsLockedAt === null,
+        userId &&
+        forumCanReply &&
+        post.status === "published" &&
+        post.deletedAt === null &&
+        post.authorPublicNameReady === 1 &&
+        post.moderationStatus === "allow" &&
+        post.archivedAt === null &&
+        post.commentsLockedAt === null,
       ),
     },
   });

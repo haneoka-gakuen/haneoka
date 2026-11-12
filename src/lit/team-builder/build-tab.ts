@@ -40,21 +40,23 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
   const mode = context === "rewards" ? draft.ptSamplingMode : draft.gekisoSamplingMode;
   const samples = context === "rewards" ? draft.ptLuckSamples : draft.gekisoSeeds;
-  const expected = context === "score" && mode === "auto";
+  const sections = context === "score" && host.searchSettings.arena?.objective === "sections";
+  const expected = context === "score" && mode === "auto" && !sections;
+  const title = sections ? host.t("arena.sections.sampling", "Random sampling") : host.t("pt.luckSampling", "LUCK calculation");
   return html`
     <div class="stack">
       <div class="row row--between">
-        <span class="tb-field__label">${host.t("pt.luckSampling", "LUCK calculation")}</span>
-        ${gekisoHelpButton(host, "luck")}
+        <span class="tb-field__label">${title}</span>
+        ${gekisoHelpButton(host, sections ? "sections" : "luck")}
       </div>
       ${segmented({
-      label: host.t("pt.luckSampling", "LUCK calculation"),
-      value: context === "score" ? (expected ? "auto" : "manual") : mode,
+      label: title,
+      value: mode,
       options: [
         {
           value: "auto",
           label:
-            context === "score"
+            context === "score" && !sections
               ? host.t("luckExpectation", "Probability expectation")
               : host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }),
         },
@@ -136,6 +138,10 @@ export function missionMembersControl(host: TeamBuilder): TemplateResult {
 
 export function gekisoSamplingAdvanced(host: TeamBuilder): TemplateResult | typeof nothing {
   const s = host.searchSettings;
+  if (s.arena?.objective === "sections") return accordion({ id: "tb-section-sampling", label: host.t("arena.sections.sampling", "Random sampling"),
+    expanded: host.expanded.has("section-sampling"), onExpandedChange: expanded => { if (expanded) host.expanded.add("section-sampling"); else host.expanded.delete("section-sampling"); host.requestUpdate(); },
+    metadata: s.gekisoSamplingMode === "auto" ? host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }) : String(s.gekisoSeeds),
+    content: gekisoSamplesControl(host) });
   return s.gekisoSamplingMode === "manual" || host.hasMission("Luck", s.songs) ? gekisoSamplesControl(host) : nothing;
 }
 
@@ -175,12 +181,23 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
   const limit = host.constraintLimits()?.justMs;
   const base = justBaseWindow(host.data);
   const upper = limit == null ? "—" : percent && base ? `+${Math.floor((limit / base - 1) * 100)}%` : `±${limit} ms`;
+  const t = (key: string, fallback: string) => host.t(`justCoverage.${key}`, fallback);
+  const issue = () => host.submitted && host.inputIssues().some(issue => issue.field === "tb-just-coverage");
+  const duration = (key: "justDurationSeconds" | "justContinuousSeconds", label: string) => html`<md-outlined-text-field
+    type="number" min="0" step="0.1" suffix-text="s" label=${label}
+    .value=${live(s[key] ? String(s[key]) : "")} placeholder=${host.t("unlimitedCombo", "No minimum")}
+    ?error=${issue()} @change=${(event: Event) => host.updateSettings({ [key]: Number((event.target as HTMLInputElement).value) })}></md-outlined-text-field>`;
   return html`
     <div class="stack">
       <div class="row row--between">
-        <span class="tb-field__label">${host.t("justWindowTarget", "JUST window minimum")}</span>
+        <span class="tb-field__label">${t("title", "JUST window coverage")}</span>
         ${gekisoHelpButton(host, "just")}
       </div>
+      ${segmented({ label: t("title", "JUST window coverage"), value: s.justWindowMode,
+        options: [{ value: "off", label: t("off", "Unrestricted") }, { value: "partial", label: t("partial", "Partial coverage") }, { value: "steady", label: t("steady", "Sustained window") }],
+        onSelect: mode => host.updateSettings({ justWindowMode: mode,
+          ...(mode !== "off" && !value ? percent ? { justWindowPercent: 100 } : base ? { justWindowMs: base * 2 } : {} : {}) }) })}
+      ${s.justWindowMode === "off" ? nothing : html`
       ${segmented({
       label: host.t("justWindowUnit", "JUST window unit"),
       value: s.justWindowUnit,
@@ -222,6 +239,15 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
             : { justWindowMs: Number((event.target as HTMLInputElement).value) },
         )}
       ></md-outlined-text-field>
+      ${s.justWindowMode === "partial" ? html`<div class="stack" id="tb-just-coverage" data-tb-field tabindex="-1">
+        <md-outlined-text-field type="number" min="0" max="100" step="1" suffix-text="%"
+          label=${t("minimumCoverage", "Minimum note coverage")} .value=${live(s.justCoveragePercent ? String(s.justCoveragePercent) : "")}
+          placeholder=${t("oneNote", "At least one note")} ?error=${issue()}
+          @change=${(event: Event) => host.updateSettings({ justCoveragePercent: Number((event.target as HTMLInputElement).value) })}></md-outlined-text-field>
+        ${accordion({id: "tb-just-duration", label: t("duration", "Coverage duration"), expanded: host.expanded.has("just-duration"),
+          onExpandedChange: expanded => { if (expanded) host.expanded.add("just-duration"); else host.expanded.delete("just-duration"); host.requestUpdate(); },
+          content: html`<div class="stack">${duration("justDurationSeconds", t("minimumDuration", "Minimum total duration"))}${duration("justContinuousSeconds", t("minimumContinuous", "Minimum continuous duration"))}</div>` })}
+      </div>` : nothing}`}
     </div>
   `;
 }
@@ -378,10 +404,6 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
   const manualAllowed = host.tab === "pt" && s.goal !== "plan";
   const manual = manualAllowed && s.manualEventEnabled;
-  if (!events.length && !manualAllowed)
-    return html`
-      <p class="inline-message">${icon("info", 18)}${host.t("noEvents", "This server's data has no event yet.")}</p>
-    `;
   const eventId = host.settings.eventId ?? events[0]?.id ?? null;
   if (host.settings.eventId === null && eventId !== null && !manual) queueMicrotask(() => set({ eventId }));
   const challengeSongs = catalog.challengeSongs(eventId);
@@ -391,7 +413,7 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
       id="tb-event"
       data-tb-field
       label=${host.t("event", "Event")}
-      .value=${manual ? "manual" : String(eventId ?? "")}
+      .value=${live(manual ? "manual" : String(eventId ?? ""))}
       @change=${(e: Event) => {
         const value = (e.target as HTMLInputElement).value;
         if (value === "manual") enableManualEvent(host);
@@ -422,6 +444,14 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
         `,
       )}
     </md-outlined-select>
+    <div class="cluster">
+      <button class="button button--tonal" type="button" @click=${()=>host.planner.editEvent()}>${icon("add",18)}${host.t("planner.newEvent","New custom event")}</button>
+      <button class="button button--text" type="button" @click=${()=>host.planner.open("events")}>${host.t("planner.manageEvents","Manage events")}</button>
+    </div>
+    ${eventId!==null&&!manual?html`<div class="cluster">
+      ${host.planner.events.some(event=>event.id===eventId)?html`<button class="button button--text" type="button" @click=${()=>host.planner.editEvent(eventId)}>${host.t("planner.edit","Edit")}</button>`:nothing}
+      <button class="button button--text" type="button" @click=${()=>host.planner.editEvent(undefined,eventId)}>${host.t("planner.copyEvent","Copy as custom event")}</button>
+    </div>`:nothing}
     ${manual ? renderManualEvent(host) : nothing}
     ${
       !manual && challenge && challengeSongs.length
@@ -431,11 +461,9 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
                 class="button button--text button--small"
                 type="button"
                 @click=${() => {
-                  const songs = challengeSongs
-                    .filter((row) =>
-                      catalog.difficultyRows(row.liveMusicId).some((difficulty) => Number(difficulty.difficulty) === 3),
-                    )
-                    .map((row) => ({ songId: row.liveMusicId, difficulty: 3 }));
+                  const songs = challengeSongs.flatMap(row=>catalog.difficultyRows(row.liveMusicId)
+                    .filter(difficulty=>host.songDifficulties.includes(Number(difficulty.difficulty)))
+                    .map(difficulty=>({songId:row.liveMusicId,difficulty:Number(difficulty.difficulty)})));
                   set(
                     s.goal === "plan"
                       ? { planChallengeSongs: songs }
@@ -541,10 +569,10 @@ export function playSection(
                 host.hasMission("JustCount", s.songs)
                   ? html`
                       <div class="tb-field">
-                        <span class="tb-field__label">
+                        <div class="row row--between"><span class="tb-field__label">
                           JUST
                           <output>${s.just}%</output>
-                        </span>
+                        </span>${gekisoHelpButton(host, "accuracy")}</div>
                         <md-slider
                           class="md3-slider"
                           labeled
@@ -601,14 +629,25 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
     ]),
   ];
   const required = fixedMembers.length + fixedSnaps.length;
-  const addRequired = (kind: "members" | "snaps") => html`
+  const addRequired = (kind: "members" | "snaps", excluded = false) => html`
     <div class="tb-field">
-      <span class="tb-field__label">${host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps")}</span>
+      <span class="tb-field__label">${excluded
+        ? host.t(kind === "members" ? "excludedMembers" : "excludedSnaps", kind === "members" ? "Excluded members" : "Excluded Snapshots")
+        : host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps")}</span>
       <div class="cluster">
-        <button class="button button--text button--small" type="button" @click=${() => { host.requiredPicker = kind; host.requestUpdate(); }}>
+        <button class="button button--text button--small" type="button" @click=${() => {
+          host.requiredPicker = excluded ? null : kind;
+          host.excludedPicker = excluded ? kind : null;
+          host.requestUpdate();
+        }}>
           ${icon("add", 18)}${host.t("add", "Add card")}
         </button>
+        ${excluded && s.theoreticalExcluded[kind].length ? html`<button class="button button--text button--small" type="button"
+          @click=${() => set({ theoreticalExcluded: { ...s.theoreticalExcluded, [kind]: [] } })}>${host.t("clearAll", "Clear")}</button>` : nothing}
       </div>
+      ${excluded ? html`<div class="cluster">${s.theoreticalExcluded[kind].map(id => inputChip(catalog.cardName(kind, id),
+        host.common("common.actions.remove", "Remove"), () => set({ theoreticalExcluded: { ...s.theoreticalExcluded,
+          [kind]: s.theoreticalExcluded[kind].filter(card => card !== id) } })))}</div>` : nothing}
     </div>
   `;
   const fixedChip = (kind: "members" | "snaps", id: number) =>
@@ -654,27 +693,20 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         })}
       </div>
       ${addRequired("members")}${s.noSnaps ? nothing : addRequired("snaps")}
-      <md-outlined-select
-        label=${host.t("leader", "Leader")}
-        .value=${s.leader === null ? "" : String(s.leader)}
-        @change=${(e: Event) => {
-          const value = (e.target as HTMLInputElement).value;
-          set({ leader: value ? Number(value) : null });
-        }}
-      >
-        <md-select-option value="">
-          <div slot="headline">${host.t("leaderAuto", "Best leader (automatic)")}</div>
-        </md-select-option>
-        ${ownedMembers.map(
-          (id) => html`
-            <md-select-option value=${String(id)}>
-              <div slot="headline">
-                ${catalog.cardName("members", id)} / ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}
-              </div>
-            </md-select-option>
-          `,
-        )}
-      </md-outlined-select>
+      ${s.scope === "theoretical" ? html`${addRequired("members", true)}${s.noSnaps ? nothing : addRequired("snaps", true)}` : nothing}
+      ${choiceField({
+        type: "select",
+        label: host.t("leader", "Leader"),
+        value: s.leader === null ? "auto" : String(s.leader),
+        options: [
+          { value: "auto", label: host.t("leaderAuto", "Best leader (automatic)") },
+          ...ownedMembers.map(id => ({
+            value: String(id),
+            label: `${catalog.cardName("members", id)} / ${catalog.characterName(catalog.member(id)?.characterId ?? 0)}`,
+          })),
+        ],
+        onSelect: value => set({ leader: value === "auto" ? null : Number(value) }),
+      })}
       <label class="tb-check">
         <md-checkbox
           touch-target="wrapper"
@@ -828,6 +860,8 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         className: "tb-accordion",
         leading: icon("tune", 20),
         label: host.t("candidates", "Cards and limits"),
+        metadata: s.scope === "theoretical" && (s.theoreticalExcluded.members.length || s.theoreticalExcluded.snaps.length)
+          ? host.t("excludedCount", "{count} excluded", { count: s.theoreticalExcluded.members.length + s.theoreticalExcluded.snaps.length }) : undefined,
         content: activity ? ptField(host, "constraints", content) : content,
         expanded: host.expanded.has("candidates"),
         onExpandedChange: (expanded) => {
@@ -843,12 +877,14 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
 
 /** Adds and removes this search's required cards; the pane stays open for several. */
 function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
-  const kind = host.requiredPicker;
+  const excluded = host.excludedPicker !== null;
+  const kind = host.excludedPicker ?? host.requiredPicker;
   if (!kind) return nothing;
   const catalog = host.catalog!;
   const s = host.searchSettings;
   const close = () => {
     host.requiredPicker = null;
+    host.excludedPicker = null;
     host.slotFilters = { ...host.slotFilters, query: "", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
     host.slotFiltersOpen = false;
     host.requestUpdate();
@@ -863,8 +899,9 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     .filter((id) => matchesCardFilters(host, kind, id, filters))
     .sort((a, b) => b - a);
   return selectionPane({
-    id: "tb-required-picker",
-    title: host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
+    id: excluded ? "tb-excluded-picker" : "tb-required-picker",
+    title: excluded ? host.t(kind === "members" ? "excludedMembers" : "excludedSnaps", kind === "members" ? "Excluded members" : "Excluded Snapshots")
+      : host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
     closeLabel: host.common("common.actions.close", "Close"),
     close,
     searchLabel: host.common("common.actions.search", "Search"),
@@ -881,12 +918,27 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     kind: kind === "members" ? "member" : "support",
     items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
     selected: "",
-    selectedValues: new Set(s.required[kind].map(String)),
+    selectedValues: new Set((excluded ? s.theoreticalExcluded : s.required)[kind].map(String)),
     select: (value) => {
       const id = Number(value);
-      const required = host.searchSettings.required;
-      const list = required[kind].includes(id) ? required[kind].filter((item) => item !== id) : [...required[kind], id];
-      host.updateSettings({ required: { ...required, [kind]: list } });
+      const current = host.searchSettings;
+      if (excluded) {
+        const adding = !current.theoreticalExcluded[kind].includes(id);
+        const list = adding ? [...current.theoreticalExcluded[kind], id] : current.theoreticalExcluded[kind].filter(card => card !== id);
+        const required = { ...current.required, [kind]: adding ? current.required[kind].filter(card => card !== id) : current.required[kind] };
+        if (adding && kind === "snaps") required.members = [...new Set([...required.members,
+          ...current.bindings.filter(([, snap]) => snap === id).map(([member]) => member)])];
+        host.updateSettings({ theoreticalExcluded: { ...current.theoreticalExcluded, [kind]: list }, required,
+          ...(adding ? { leader: kind === "members" && current.leader === id ? null : current.leader,
+            bindings: current.bindings.filter(([member, snap]) => kind === "members" ? member !== id : snap !== id) } : {}),
+        });
+      } else {
+        const adding = !current.required[kind].includes(id);
+        const list = adding ? [...current.required[kind], id] : current.required[kind].filter(card => card !== id);
+        host.updateSettings({ required: { ...current.required, [kind]: list },
+          ...(adding ? { theoreticalExcluded: { ...current.theoreticalExcluded, [kind]: current.theoreticalExcluded[kind].filter(card => card !== id) } } : {}),
+        });
+      }
     },
     countLabel: host.t("cardCount", "{count} cards", { count: ids.length }),
     emptyLabel: host.t("noMatches", "No cards match"),
@@ -1004,23 +1056,31 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                       `
                     : nothing
                 }
-                ${
-                  s.goal === "score" || s.goal === "power"
-                    ? html`
-                        <label class="tb-check">
-                          <md-checkbox
-                            touch-target="wrapper"
-                            .checked=${live(s.challengeRules)}
-                            @change=${(e: Event) => set({ challengeRules: (e.target as HTMLInputElement).checked })}
-                          ></md-checkbox>
-                          <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
-                        </label>
-                        ${s.challengeRules ? eventSection(host) : nothing}
-                      `
-                    : nothing
-                }
                 ${s.goal === "score" || s.goal === "gekiso" ? playConditions(host, s) : nothing}
                 ${s.goal === "gekiso" ? gekisoSamplingAdvanced(host) : nothing}
+              </section>
+            `
+          : nothing
+      }
+      ${
+        host.tab === "build" && s.goal !== "plan"
+          ? html`
+              <section class="surface stack">
+                ${sectionHeading({ icon: "event", label: host.t("event", "Event") })}
+                ${eventSection(host)}
+                ${s.goal === "score" || s.goal === "power" ? html`
+                  <label class="tb-check">
+                    <md-checkbox
+                      touch-target="wrapper"
+                      .checked=${live(s.challengeRules)}
+                      @change=${(event: Event) => set({ challengeRules: (event.target as HTMLInputElement).checked })}
+                    ></md-checkbox>
+                    <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
+                  </label>
+                ` : nothing}
+                <button class="button button--text" type="button" @click=${() => host.setTab("pt")}>
+                  ${icon("emoji_events", 18)}${host.t("pt.tab", "Event rewards")}
+                </button>
               </section>
             `
           : nothing
@@ -1051,7 +1111,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                     @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                   ></md-outlined-text-field>
                 </div>
-                ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: [200, 400, 800, 1600].map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
+                ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: host.settlementMaster!.challengeBoosts.map(row=>row.consumed).filter(cp=>cp>0).map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
                 <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                 ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }), false, challengeSongs, "tb-challenge-songs")}
               </section>

@@ -252,7 +252,7 @@ export class LazyImages {
       syncMediaFrame(image);
       if (frame && frame !== image.closest(".media-loading")) syncMediaFrame(image, frame);
     };
-    const request: PendingImage = { owner: this, inputSource: source, source: candidates[0], finish: settle };
+    const request: PendingImage = { owner: this, inputSource: source, source: contentRequestUrl(candidates[0]), finish: settle };
     pendingImageFinishes.set(image, request);
     this.pending.add(image);
     delete image.dataset.cancelled;
@@ -267,7 +267,7 @@ export class LazyImages {
     );
     image.dataset.candidates = JSON.stringify(candidates);
     image.dataset.candidateIndex = "0";
-    image.src = contentRequestUrl(candidates[0]);
+    image.src = request.source;
     image.removeAttribute("data-src");
     syncMediaFrame(image);
   }
@@ -324,8 +324,9 @@ export function nextImageCandidate(event: Event) {
   const next = Number(image.dataset.candidateIndex || 0) + 1;
   if (candidates[next]) {
     image.dataset.candidateIndex = String(next);
-    if (request) request.source = candidates[next];
-    image.src = contentRequestUrl(candidates[next]!);
+    const source = contentRequestUrl(candidates[next]!);
+    if (request) request.source = source;
+    image.src = source;
     return;
   }
   finishImage(image, "error");

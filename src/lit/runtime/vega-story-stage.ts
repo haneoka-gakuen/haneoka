@@ -7,6 +7,7 @@ import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { LitElement, html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { resolveStoryRuntimeAssets, storySourceUrl } from "../../lib/story-assets";
+import { contentRequestUrl } from "../../lib/content-request";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { beginLoading, prepareMaterialProgress, type LoadingMetrics } from "../../lib/loading-progress";
 import { clientText } from "../../i18n/client";
@@ -129,6 +130,7 @@ export class VegaStoryStage extends LitElement {
     server: { type: String },
     locale: { type: String },
     providerBase: { type: String, attribute: "provider-base" },
+    releaseId: { type: String, attribute: "release-id", reflect: true },
     phase: { state: true },
     issue: { state: true },
     transportIssue: { state: true },
@@ -146,6 +148,7 @@ export class VegaStoryStage extends LitElement {
   declare server: string;
   declare locale: string;
   declare providerBase: string;
+  declare releaseId: string;
   declare phase: "loading" | "booting" | "ready" | "error";
   declare issue: string;
   declare transportIssue: string;
@@ -189,6 +192,7 @@ export class VegaStoryStage extends LitElement {
     this.server = "intl";
     this.locale = "ja";
     this.providerBase = "";
+    this.releaseId = "";
     this.phase = "loading";
     this.issue = "";
     this.transportIssue = "";
@@ -245,7 +249,7 @@ export class VegaStoryStage extends LitElement {
     // The story/runtime and Live2D resource URLs do not vary by UI locale.
     // Keep one player alive when only the shell language changes; the resolver
     // below reads `this.locale` at call time for the core's locale fallback.
-    const key = JSON.stringify([this.server, this.story.storyId, this.providerBase]);
+    const key = JSON.stringify([this.server, this.story.storyId, this.providerBase, this.releaseId]);
     if (key !== this.loadedKey) {
       this.loadedKey = key;
       void this.load();
@@ -271,8 +275,9 @@ export class VegaStoryStage extends LitElement {
     const server = this.server;
     const providerBase = this.providerBase;
     const active = () => !signal.aborted && this.isConnected && this.loadController === controller;
-    const url = (resource: string, id = "") =>
-      `/api/v1/servers/${encodeURIComponent(server)}/${resource}${id ? `/${encodeURIComponent(id)}` : ""}`;
+    const url = (resource: string, id = "") => contentRequestUrl(
+      `/api/v1/servers/${encodeURIComponent(server)}/${resource}${id ? `/${encodeURIComponent(id)}` : ""}?asset=1${this.releaseId ? `&release=${encodeURIComponent(this.releaseId)}` : ""}`,
+    );
     let loadingReporter = beginLoading(uiText(this.locale, "common.states.loading"), { signal });
     let hadCountedProgress = false;
     loadingReporter.update({ stageLabel: this.ui("resources") });
@@ -387,7 +392,7 @@ export class VegaStoryStage extends LitElement {
           },
           additionalPlugins: [
             createHaneokaThemeAssetsPlugin({
-              resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? storySourceUrl(path, server) : ""),
+              resolveSourceAsset: (path) => (/^(?:Assets|Packages)\//u.test(path) ? contentRequestUrl(storySourceUrl(path, server)) : ""),
             }),
             createHaneokaThemeHostPlugin(this.themeHostAdapter()),
             createHaneokaStorySequencePlugin({

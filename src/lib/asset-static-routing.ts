@@ -71,6 +71,9 @@ export function assetStaticDocumentFromUrl(url: URL): string | undefined {
     return;
   }
 }
+export function isAssetBrowserDocument(url: URL): boolean {
+  return Boolean(assetStaticDocumentFromUrl(url) || assetStaticLookupPath(url.pathname));
+}
 export function assetPublicDocumentUrl(location: AssetStaticLocation): string {
   const pathname = `/${location.server}/${location.locale}/assets/${location.path.map(encodeURIComponent).join("/")}${location.path.length ? "/" : ""}`;
   return pathname + (location.selected ? `?${new URLSearchParams({ file: location.selected })}` : "");

@@ -1,7 +1,13 @@
+// L3 — GEB
+// Input: Chart theme, skin settings and the host's release-pinned resource loader.
+// Output: Native rendering manifest from the public chart-assets projection.
+// Pos: [Map](../../L2.md); Haneoka's public native-stage resource adapter.
+// Effects/Dependencies: Reads one public metadata payload; resolves media using exact atlas/font outputs without source browsing.
 import type { ChartThemeContext } from "./types.js";
+import { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets } from "@haneoka/api-client/haneoka";
 
 interface Descriptor {
-  outputs?: Array<{ type: string; path: string }>;
+  outputs?: readonly { readonly type: string; readonly path: string }[];
 }
 export async function createNativeTheme(
   context: ChartThemeContext & { apiBase: URL; publicBase: URL; server: string },
@@ -11,14 +17,10 @@ export async function createNativeTheme(
   const server = encodeURIComponent(context.server);
   const read = async (url: URL): Promise<unknown> =>
     JSON.parse(new TextDecoder().decode(await context.loader.resourceBytes(url.href, { signal: context.signal })));
-  const tree = await read(new URL(`servers/${server}/sources/tree`, context.apiBase));
-  const files: string[] = [];
-  const walk = (value: unknown, path: string) => {
-    if (typeof value === "number") files.push(path);
-    else if (value && typeof value === "object" && !Array.isArray(value))
-      for (const [key, child] of Object.entries(value)) walk(child, path ? `${path}/${key}` : key);
-  };
-  walk(tree, "");
+  const assetUrl = new URL(`servers/${server}/chart-assets`, context.apiBase);
+  assetUrl.searchParams.set("projection", String(HANEOKA_CHART_ASSETS_PROJECTION));
+  const projection = await read(assetUrl) as HaneokaChartAssets;
+  const files = projection.files;
   const find = (suffix: string, scope = "") => {
     const matches = files.filter((path) => path.endsWith(`/${suffix}`) && path.includes(scope));
     if (matches.length !== 1) throw new Error(`Expected one source for ${suffix}, found ${matches.length}`);
@@ -26,15 +28,12 @@ export async function createNativeTheme(
   };
   const encodePath = (path: string) => path.split("/").map(encodeURIComponent).join("/");
   // source descriptors provide exact runtime output identities for atlas sprites and fonts.
-  const descriptor = async (source: string): Promise<Descriptor> =>
-    (await read(new URL(`servers/${server}/sources/${encodePath(source)}`, context.apiBase))) as Descriptor;
+  const descriptor = (source: string): Descriptor => projection.sources[source]!;
   const runtime = (path: string) =>
     new URL(`/runtime/${server}/${encodePath(path.replace(/^runtime\//u, ""))}`, context.publicBase).href;
   const asset = (path: string) => new URL(`/assets/${server}/${encodePath(path)}`, context.publicBase).href;
-  const [live, font] = await Promise.all([
-    descriptor(find("LiveAtlas.spriteatlasv2")),
-    descriptor(find("VibeMOPro-Medium SDF.asset")),
-  ]);
+  const live = descriptor(find("LiveAtlas.spriteatlasv2"));
+  const font = descriptor(find("VibeMOPro-Medium SDF.asset"));
   const output = (data: Descriptor, type: string, name?: string) => {
     const matches = (data.outputs ?? []).filter(
       (entry) => entry.type === type && (!name || entry.path.split("/").at(-1)?.startsWith(`${name}--${type}-`)),

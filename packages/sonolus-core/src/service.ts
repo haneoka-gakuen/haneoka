@@ -156,7 +156,7 @@ async function prepareCharts(
 }
 
 function difficultyOrder(difficulty: string): number {
-  return DIFFICULTY_ORDER[difficulty.toLocaleLowerCase("en-US")] ?? Number.MAX_SAFE_INTEGER;
+  return DIFFICULTY_ORDER[difficulty.toLowerCase()] ?? Number.MAX_SAFE_INTEGER;
 }
 
 function featuredLevelForPlaylist(playlist: PlaylistDescriptor): ChartDescriptor | null {
@@ -166,18 +166,20 @@ function featuredLevelForPlaylist(playlist: PlaylistDescriptor): ChartDescriptor
 function randomLevelPool(playlists: readonly PlaylistDescriptor[]): ChartDescriptor[] {
   return playlists.flatMap((playlist) => {
     const chart = playlist.charts.find((candidate) =>
-      RANDOM_DIFFICULTIES.has(candidate.difficulty.toLocaleLowerCase("en-US")),
+      RANDOM_DIFFICULTIES.has(candidate.difficulty.toLowerCase()),
     );
     return chart ? [chart] : [];
   });
 }
+
+const songIdCollator = new Intl.Collator("en", { numeric: true });
 
 function compareNewest(
   left: Pick<ChartDescriptor, "publishedAt" | "songId"> & { difficulty?: string },
   right: Pick<ChartDescriptor, "publishedAt" | "songId"> & { difficulty?: string },
 ): number {
   if (left.publishedAt !== right.publishedAt) return right.publishedAt - left.publishedAt;
-  const songId = right.songId.localeCompare(left.songId, "en", { numeric: true });
+  const songId = songIdCollator.compare(right.songId, left.songId);
   if (songId) return songId;
   return difficultyOrder(left.difficulty ?? "") - difficultyOrder(right.difficulty ?? "");
 }

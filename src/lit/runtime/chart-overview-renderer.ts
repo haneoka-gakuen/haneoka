@@ -143,8 +143,8 @@ function firstAtTime(notes: readonly { timeMs: number }[], timeMs: number, inclu
   return low;
 }
 
-export function chartOverviewLayout(durationMs: number, viewportHeight: number) {
-  const presentation = chartCanvasOverviewPresentation();
+export function chartOverviewLayout(durationMs: number, viewportHeight: number, chartZoom = 1) {
+  const presentation = chartCanvasOverviewPresentation(chartZoom);
   const height = Math.max(360, viewportHeight);
   const panelDuration = (height / presentation.heightPerSecond) * 1000;
   const panelWidth = presentation.laneWidth * 13;
@@ -168,16 +168,19 @@ export function drawDetailedChartOverview(
   excerpt?: {
     startMs: number;
     endMs: number;
-    highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[] }[];
+    highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[]; color?: string; selected?: boolean }[];
+    labelEachTarget?: boolean;
+    bands?: readonly { startMs: number; endMs: number; label: string; color: string; active: boolean }[];
+    zoom?: number;
     color: string;
   },
   panelRange?: { first: number; count: number },
   fontFamily = chartCanvasFontFamily(),
 ): void {
-  const presentation = chartCanvasOverviewPresentation();
+  const presentation = chartCanvasOverviewPresentation(excerpt?.zoom);
   const startMs = excerpt?.startMs ?? 0;
   const endMs = excerpt?.endMs ?? chart.durationMs;
-  const { height, panelDuration, panelWidth, panelCount } = chartOverviewLayout(endMs - startMs, viewportHeight);
+  const { height, panelDuration, panelWidth, panelCount } = chartOverviewLayout(endMs - startMs, viewportHeight, excerpt?.zoom);
   const firstPanel = panelRange?.first ?? 0;
   const lastPanel = Math.min(panelCount, firstPanel + (panelRange?.count ?? panelCount));
   const width = (lastPanel - firstPanel) * panelWidth;
@@ -289,6 +292,19 @@ export function drawDetailedChartOverview(
       context.fillText(`#${event.index + 1}`, right + 14, y);
     });
 
+    for (const band of excerpt?.bands ?? []) {
+      const first = Math.max(panelStart, band.startMs), last = Math.min(panelEnd, band.endMs);
+      if (first >= last) continue;
+      const top = yAt(last, panel), bottom = yAt(first, panel);
+      context.save();
+      context.fillStyle = band.color;
+      if (band.active) { context.globalAlpha = 0.15; context.fillRect(left, top, right - left, bottom - top); }
+      context.globalAlpha = 1;
+      context.fillRect(left - 8, top, band.active ? 4 : 1, bottom - top);
+      if (bottom - top >= 14) { context.textAlign = "left"; context.fillText(band.label, left + 3, Math.max(12, top + 12)); }
+      context.restore();
+    }
+
     context.save();
     context.beginPath();
     context.rect(left, 0, right - left, height);
@@ -359,6 +375,9 @@ export function drawDetailedChartOverview(
       context.font = `700 ${presentation.laneWidth}px ${fontFamily}`;
       context.textAlign = "center";
       for (const highlight of excerpt.highlights) {
+        context.strokeStyle = highlight.color ?? excerpt.color;
+        context.fillStyle = highlight.color ?? excerpt.color;
+        context.lineWidth = highlight.selected ? 4 : 2;
         const marked = highlight.targets.filter(note => note.timeMs >= panelStart && note.timeMs < panelEnd);
         for (const note of marked) {
           const box = bounds(note);
@@ -368,8 +387,10 @@ export function drawDetailedChartOverview(
           context.strokeRect(box.left - 4, y - presentation.laneWidth / 2 - 4,
             box.right - box.left + 8, presentation.laneWidth + 8);
           context.restore();
+          if (excerpt.labelEachTarget) context.fillText(String(highlight.step), (box.left + box.right) / 2,
+            y < presentation.laneWidth * 2 ? y + presentation.laneWidth * 1.5 : y - presentation.laneWidth);
         }
-        if (marked.length) context.fillText(String(highlight.step), right + 18, yAt(highlight.timeMs, panel));
+        if (marked.length && !excerpt.labelEachTarget) context.fillText(String(highlight.step), right + 18, yAt(highlight.timeMs, panel));
       }
     }
     context.restore();

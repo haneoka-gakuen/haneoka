@@ -96,6 +96,8 @@ export function createOurNotesSonolusItemLabels(
   return Object.freeze(itemLabels);
 }
 
+const parsedLocales = new Map<string, SonolusLocalization | undefined>();
+
 function sonolusLocaleFor(value: string): SonolusLocalization | undefined {
   const normalized = value.trim().toLowerCase();
   switch (normalized) {
@@ -106,7 +108,16 @@ function sonolusLocaleFor(value: string): SonolusLocalization | undefined {
     case "zht":
       return normalized;
   }
+  if (parsedLocales.has(value)) return parsedLocales.get(value);
+  const parsed = parseSonolusLocale(value);
+  if (value.length <= 128) {
+    parsedLocales.set(value, parsed);
+    if (parsedLocales.size > 64) parsedLocales.delete(parsedLocales.keys().next().value!);
+  }
+  return parsed;
+}
 
+function parseSonolusLocale(value: string): SonolusLocalization | undefined {
   let locale: Intl.Locale;
   try {
     locale = new Intl.Locale(value);

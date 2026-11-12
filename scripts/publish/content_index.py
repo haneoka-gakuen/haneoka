@@ -2,32 +2,33 @@
 # Input: Complete immutable resource releases in the configured R2 bucket.
 # Output: Release-bound content ownership records for request authorization.
 # Pos: [Map](L2-2.md); offline production of resource visibility metadata.
-# Effects/Dependencies: Reads verified CAS objects and writes only content-index/v2; preserves releases and current pointers.
+# Effects/Dependencies: Reads verified CAS objects and writes content-index/v3-v4; preserves releases and current pointers.
 """Publish compact resource ownership metadata without changing a release."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from types import SimpleNamespace
 
 from build.catalog_storage import _content_access_index
-from core.config import load_server_config
 from core.storage import cas_key, fnv1a32_shard
 from publish.r2 import R2Store, IMMUTABLE_CACHE, _validate_release_manifest_for_gc
 
 KINDS = {
     "cards", "support-cards", "songs", "characters", "bands", "stories", "events", "arena", "gacha", "comics",
     "stamps", "stickers", "backgrounds", "chat-customizations", "band-items", "items", "missions", "shop", "exchange",
-    "login-campaigns", "passes", "challenge", "circle", "real-lives", "live2d", "spine", "help", "help-tips", "tgw-card", "skills", "anon-tokyo",
+    "login-campaigns", "passes", "challenge", "circle", "real-lives", "live2d", "spine", "help", "help-tips", "tgw-card", "skills", "anon-tokyo", "voices",
 }
 
 
-def publish_index(server: str, store=None) -> dict:
-    store = store or R2Store(load_server_config(server), concurrency=6)
+def _publish_ownership_index(server: str, store) -> dict:
     pointer = store.get_json(f"servers/{server}/current.json")
     release_id = pointer["releaseId"]
-    target = f"content-index/v2/{server}/{release_id}.json"
+    target = f"content-index/v3/{server}/{release_id}.json"
     if store.head(target):
         return {"server": server, "releaseId": release_id, "reused": True}
     manifest_key = f"servers/{server}/releases/{release_id}/release.json"
@@ -50,6 +51,7 @@ def publish_index(server: str, store=None) -> dict:
         for name, resource in catalog["resources"].items():
             if name not in KINDS:
                 continue
+            category = "characters" if name == "voices" else name
             access_path = resource.get("access")
             if access_path and access_path in entries:
                 access = read(access_path)
@@ -61,12 +63,17 @@ def publish_index(server: str, store=None) -> dict:
                     paths = [descriptor["prefix"] + shard + ".json" for shard in descriptor["shards"]]
                     for shard in pool.map(read, paths):
                         entities.update(shard)
-                access = _content_access_index(name, index, entities)
+                access = _content_access_index(category, index, entities)
             for key, reference in access["records"].items():
+                if reference["kind"] == "voices":
+                    reference = {**reference, "kind": "characters"}
                 result["records"][name + ":" + key] = reference
-                if reference["kind"] == name:
-                    result["publications"].setdefault(name + ":" + reference["id"], reference["publication"])
-            result["publications"].update(access.get("publications", {}))
+                if reference["kind"] == category:
+                    result["publications"].setdefault(category + ":" + reference["id"], reference["publication"])
+            result["publications"].update({
+                ("characters:" + key[len("voices:"):] if key.startswith("voices:") else key): value
+                for key, value in access.get("publications", {}).items()
+            })
             for path, owners in access["assets"].items():
                 result["assets"].setdefault(path, []).extend([[name + ":" + owner for owner in chain] for chain in owners])
             result["previewAssets"].extend(access["previewAssets"])
@@ -91,7 +98,7 @@ def publish_index(server: str, store=None) -> dict:
     count = len(result["assets"])
     previews = set(result["previewAssets"])
     shards: dict[str, dict] = {}
-    prefix = f"content-index/v2/{server}/{release_id}/assets/"
+    prefix = f"content-index/v3/{server}/{release_id}/assets/"
     for path, owners in result.pop("assets").items():
         shard = shards.setdefault(fnv1a32_shard(path, 64), {"assets": {}, "previewAssets": []})
         shard["assets"][path] = owners
@@ -114,13 +121,80 @@ def publish_index(server: str, store=None) -> dict:
     return {"server": server, "releaseId": release_id, "records": len(result["records"]), "assets": count, "assetShards": len(shards), "reused": False}
 
 
+def publish_index(server: str, store) -> dict:
+    ownership = _publish_ownership_index(server, store)
+    release_id = ownership["releaseId"]
+    target = f"content-index/v4/{server}/{release_id}.json"
+    times_target = f"content-index/v4/{server}/{release_id}/song-release-times.json"
+    prepared_exists = store.head(target) is not None
+    times_exist = store.head(times_target) is not None
+    if prepared_exists and times_exist:
+        return {**ownership, "prepared": True, "reused": True}
+    manifest_key = f"servers/{server}/releases/{release_id}/release.json"
+    manifest = store.get_json(manifest_key)
+    entries = {entry["path"]: entry for entry in _validate_release_manifest_for_gc(manifest, manifest_key, server, release_id)}
+    index = store.get_json(f"content-index/v3/{server}/{release_id}.json")
+    if (index.get("schema") != "haneoka-content-index-v1" or index.get("server") != server
+            or index.get("releaseId") != release_id or index.get("sourceId") != manifest["sourceId"]):
+        raise ValueError("content ownership identity differs")
+
+    def read(path: str):
+        entry = entries.get(path)
+        if entry is None:
+            return None
+        if entry["bytes"] > 16 * 1024 * 1024:
+            raise ValueError(f"event metadata exceeds byte budget: {path}")
+        body = store.get_bytes(cas_key(entry["sha256"]))
+        if body is None or len(body) != entry["bytes"] or hashlib.sha256(body).hexdigest() != entry["sha256"]:
+            raise ValueError(f"event metadata identity differs: {path}")
+        return json.loads(body)
+
+    root = Path(__file__).resolve().parents[2]
+    program = (
+        f'import {{ eventSongReleases }} from {json.dumps((root / "src/lib/event-song-release.ts").as_uri())};'
+        f'import {{ contentPublished }} from {json.dumps((root / "src/lib/content-publication.ts").as_uri())};'
+        """
+        let input = "";
+        for await (const part of process.stdin) input += part;
+        const { index, events, challenges } = JSON.parse(input);
+        const starts = eventSongReleases(events, challenges);
+        for (const reference of Object.values(index.records)) if (reference.kind === "songs" && starts[reference.id]) {
+          const raw = index.publications?.[`songs:${reference.id}`]?.publishedAt;
+          const base = Number(Array.isArray(raw) ? raw.find(at => Number(at) > 0) : raw);
+          if (!base || contentPublished(reference.publication, base)) reference.publication.eventPublishedAt = starts[reference.id];
+        }
+        for (const [song, start] of Object.entries(starts))
+          if (index.publications?.[`songs:${song}`]) index.publications[`songs:${song}`].eventPublishedAt = start;
+        index.eventSongReleasesPrepared = true;
+        process.stdout.write(JSON.stringify({ index, releases: starts }));
+        """
+    )
+    completed = subprocess.run(["node", "--input-type=module", "--eval", program],
+                               input=json.dumps({"index": index, "events": read("objects/master/MasterEvent.json"),
+                                                 "challenges": read("objects/master/MasterChallengeMusic.json")}),
+                               text=True, capture_output=True, check=True)
+    compiled = json.loads(completed.stdout)
+    values = ([] if prepared_exists else [(target, compiled["index"])]) + ([] if times_exist else [
+        (times_target, {"identity": {"server": server, "releaseId": release_id, "sourceId": manifest["sourceId"]},
+                        "releases": compiled["releases"]})])
+    for key, value in values:
+        try:
+            store.put_json(key, value, IMMUTABLE_CACHE, if_absent=True)
+        except Exception:
+            if store.get_json(key) != value:
+                raise
+    return {**ownership, "prepared": True, "reused": False}
+
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", choices=["jp", "intl"], action="append")
+    parser.add_argument("--bucket", default="hotdori-assets")
     args = parser.parse_args()
+    store = R2Store(SimpleNamespace(r2_bucket=args.bucket), concurrency=6)
     for server in args.server or ["jp", "intl"]:
-        print(json.dumps(publish_index(server)))
+        print(json.dumps(publish_index(server, store)))
 
 
 if __name__ == "__main__":

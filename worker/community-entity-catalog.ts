@@ -3,6 +3,7 @@ import { publishedCommunityStory } from "./community-stories";
 import { communitySonolusRows } from "./community-charts";
 import { communityStoryPath } from "../src/lib/community-story-route";
 import { communityChartPath } from "../src/lib/community-chart-route";
+import { publicationFields } from "../src/lib/content-publication";
 
 type Server = "jp" | "intl";
 type Locale = "ja" | "en" | "zh-TW" | "zh-CN" | "ko";
@@ -30,6 +31,13 @@ interface PinnedMatchCache {
   entries: Map<string, { match: Match; bytes: number }>;
   bytes: number;
 }
+function publicationFacts(row: Row): Row {
+  const fields = publicationFields(row);
+  if (object(fields.catalogMetadata)) fields.catalogMetadata = publicationFacts(fields.catalogMetadata);
+  for (const key of ["_publicStartAt", "_publishedAt", "_releaseAt", "_startAt"])
+    if (row[key] !== undefined) fields[key] = row[key];
+  return fields;
+}
 const pinnedMatches = new WeakMap<R2Bucket, PinnedMatchCache>();
 const TITLE_FIELDS = ["prefix", "musicTitle", "characterName", "title", "name", "live2dName"] as const;
 function matchCache(env: Env): PinnedMatchCache | undefined {
@@ -43,9 +51,9 @@ function matchCache(env: Env): PinnedMatchCache | undefined {
 }
 function rememberMatch(cache: PinnedMatchCache | undefined, key: string, match: Match) {
   if (!cache || match.status === "unknown" || match.ambiguous) return;
-  const row =
-    match.row &&
-    Object.fromEntries(
+  const row = match.row && {
+    ...publicationFacts(match.row),
+    ...Object.fromEntries(
       TITLE_FIELDS.map((field) => {
         const value = match.row![field];
         return [
@@ -57,7 +65,8 @@ function rememberMatch(cache: PinnedMatchCache | undefined, key: string, match: 
               : undefined,
         ];
       }),
-    );
+    ),
+  };
   const value: Match = {
     status: match.status,
     ...(match.routeId ? { routeId: match.routeId } : {}),
@@ -150,7 +159,10 @@ const hasTable = (row: Row, table: string) =>
 /** Instantiate once per incoming API request. The reader must be the existing
  * trusted catalog dispatcher, not a client URL, client row or remote fetcher.
  */
-export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalogReader) {
+export function createCommunityEntityResolver(
+  readCatalog: CommunityEntityCatalogReader,
+  canRead?: (env: Env, pin: Pin, target: CommunityEntityTarget, match: Match) => Promise<boolean>,
+) {
   const pins = new Map<Server, Promise<Pin | null>>();
   const indexes = new Map<string, Promise<unknown>>();
   const matches = new Map<string, Promise<Match>>();
@@ -292,8 +304,7 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
   };
   const locate = (env: Env, pin: Pin, target: CommunityEntityTarget) => {
     const key = `${pin.server}:${pin.releaseId}:${pin.sourceId}:${target.entityType}:${target.originalId}`;
-    // Only completed, immutable public catalogue summaries survive a request.
-    // Current release pins are still read above, and unknown/error results are never retained.
+    // Cache immutable facts; each request applies visibility after lookup.
     const cache = matchCache(env);
     const cached = cache?.entries.get(key);
     if (cached) {
@@ -386,7 +397,10 @@ export function createCommunityEntityResolver(readCatalog: CommunityEntityCatalo
     const values = await Promise.all(
       SERVERS.map(async (name) => {
         const pin = await current(env, name);
-        return [name, pin ? await locate(env, pin, target) : ({ status: "unknown" } as Match)] as const;
+        const match = pin ? await locate(env, pin, target) : ({ status: "unknown" } as Match);
+        if (pin && match.status === "present" && canRead && !await canRead(env, pin, target, match))
+          return [name, { status: "absent" } as Match] as const;
+        return [name, match] as const;
       }),
     );
     if (values.some(([, value]) => value.ambiguous) || !values.some(([, value]) => value.status === "present"))

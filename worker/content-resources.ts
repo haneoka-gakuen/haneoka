@@ -3,9 +3,19 @@
 // Output: Authorized media or a filtered, versioned JSON representation.
 // Pos: [Map](L2.md); shared public-resource response boundary.
 // Effects/Dependencies: Uses internal edge caches after resolving current permissions; source objects remain immutable.
+import {
+  criSourceShard,
+  projectCriSources,
+  type CriSourceEntry,
+  type CriSourceIndex,
+  type CriSourceProjection,
+} from "../src/lib/asset-page-data";
+
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, visibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { UI_MARK_NAMES } from "../src/lib/ui-marks";
+import { publicChartAsset } from "./chart-assets";
 import {
   requestContentView,
   inheritContentView,
@@ -24,6 +34,7 @@ export interface ContentResourceIndex {
   previewAssets?: string[];
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
+  eventSongReleasesPrepared?: true;
 }
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
@@ -41,7 +52,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
       if (value.catalogMetadata && typeof value.catalogMetadata === "object")
         collect(value.catalogMetadata as Record<string, unknown>);
     };
-    Object.values(index.records).forEach((reference) => collect(reference.publication));
+    Object.values(index.records).forEach((reference) => { if (!isModelVisibilityType(reference.kind)) collect(reference.publication); });
     timeline = [...times].sort((a, b) => a - b);
     publicationTimelines.set(index, timeline);
   }
@@ -52,15 +63,32 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
     if (timeline[middle]! <= now) low = middle + 1;
     else high = middle;
   }
-  return `${index.releaseId ?? "legacy"}-${timeline[low - 1] ?? 0}`;
+  return `${index.releaseId ?? "legacy"}-models-public-v1-${timeline[low - 1] ?? 0}`;
+}
+export function nextContentPublication(
+  index: ContentResourceIndex | null | undefined,
+  now: number,
+): number | undefined {
+  if (!index) return undefined;
+  contentCacheEpoch(index, now);
+  const timeline = publicationTimelines.get(index)!;
+  let low = 0,
+    high = timeline.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (timeline[middle]! <= now) low = middle + 1;
+    else high = middle;
+  }
+  return timeline[low];
 }
 export type ContentIndexReader = (
   server: string,
   release?: string,
   assetPath?: string,
 ) => Promise<ContentResourceIndex | null>;
-export const unrestricted = (view: RequestContentView): boolean =>
-  VISIBILITY_TYPES.every((kind) => {
+export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
+  kinds.every((kind) => {
+    if (isModelVisibilityType(kind)) return true;
     const rule = view.policy.types[kind];
     return (
       contentVisible(view, kind, { __publicationPending: true }) &&
@@ -87,13 +115,58 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
     ]
   );
 }
+function functionalDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    if (page.origin !== new URL(request.url).origin) return false;
+    return /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)\/(?:team-builder|chart-editor|story-editor|studio|assets)(?:\/|$)/u.test(page.pathname) ||
+      /\/(?:songs|charts)\/[^/]+\/chart\/?$/u.test(page.pathname) ||
+      /\/(?:live2d|spine)\/[^/]+\/?$/u.test(page.pathname) ||
+      /\/community\/(?:stories|charts)\/[^/]+\/(?:read|chart)\/?$/u.test(page.pathname) ||
+      (/\/stories\/[^/]+\/?$/u.test(page.pathname) && page.searchParams.get("playback") === "play");
+  } catch {
+    return false;
+  }
+}
+function siteDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    return page.origin === new URL(request.url).origin &&
+      /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)(?:\/|$)/u.test(page.pathname);
+  } catch {
+    return false;
+  }
+}
+function publicInterfaceAsset(path: string): boolean {
+  if (publicChartAsset(path)) return true;
+  if (/^(?:objects\/|runtime\/unity-json\/)/u.test(path)) return true;
+  if (/^assets\/Assets\/AddressableResources\/Adv\/(?:Transition\/adv_transition_0001\/texture\.png|PostEffect\/)/u.test(path))
+    return true;
+  if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
+    return true;
+  const sprite =
+    /^runtime\/unity\/Assets\/AddressableResources\/(UI\/Atlas\/FixUiSpriteAtlas|Live\/Images\/Atlas\/LiveAtlas)\.spriteatlasv2\/([^/]+)--Sprite--?\d+\.png$/u.exec(
+      path,
+    );
+  return Boolean(
+    sprite &&
+    (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
+      ? UI_MARK_NAMES.test(`${sprite[2]}.png`) || /^(?:WhiteRect|NormalButtonFrame_H96(?:_Blue)?|sp_adv_next|sp_adv_text_alt_edge|sp_adv_line|IconTapNext(?:Glow)?)$/u.test(sprite[2]!)
+      : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)),
+  );
+}
 function mayReadAsset(
   index: ContentResourceIndex,
   path: string,
   view: RequestContentView,
 ): { allowed: boolean; public: boolean } {
   const owners = assetOwners(index, path);
-  if (!owners) return { allowed: unrestricted(view), public: false };
+  if (!owners?.length || owners.some((chain) => chain.some((id) => !index.records[id])))
+    return { allowed: true, public: true };
   const publicAsset = owners.some((chain) =>
     chain.every((id) => {
       const ref = index.records[id];
@@ -149,12 +222,43 @@ export async function contentResourceBoundary(
   const imageEntity = /^\/api\/v1\/(live2d|spine)\/([^/]+)\/image\.png$/u.exec(url.pathname);
   if (!["GET", "HEAD"].includes(request.method) && !imageEntity) return serve(request);
   const api = /^\/api\/v1\/(?:servers|team-builder|meta-reference)\/(jp|intl)(?:\/(.*))?$/u.exec(url.pathname);
+  const sourceBrowser =
+    /^\/api\/v1\/servers\/(?:jp|intl)\/sources\//u.test(url.pathname) ||
+    /^\/asset-static\/(?:jp|intl)\/.*\.json$/u.test(url.pathname);
   const media = /^\/(assets|runtime|objects)\/(jp|intl)\/(.+)$/u.exec(url.pathname);
   const bulk = /^\/(?:game-client|artifacts)\/(jp|intl)\//u.exec(url.pathname);
+  const packed = url.pathname.startsWith("/provider-static/content/");
   const staticJson = /^\/(?:static-views|provider-static|asset-static|playlist-static)\/.*\.json$/u.test(url.pathname);
   const search = url.pathname === "/api/v1/search";
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
-  if (!api && !media && !bulk && !staticJson && !chartImage && !search && !imageEntity) return serve(request);
+  if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
+    return serve(request);
+  if (sourceBrowser || (media && (url.searchParams.get("asset") === "1" || siteDocument(request)))) return serve(request);
+  const tail = api?.[2] ?? "";
+  if (imageEntity || (api && isModelVisibilityType(visibilityType(tail.split("/")[0]!)))) return serve(request);
+  const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
+  const serveFunctional = async () => {
+    const response = await serve(request);
+    if (!api || !url.searchParams.get("release") || (!response.ok && response.status !== 304)) return response;
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    return new Response(response.body, {
+      status: response.status, statusText: response.statusText, headers,
+      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+    });
+  };
+  if ((media || componentData) && functionalDocument(request)) return serveFunctional();
+  const functional = api && (
+    ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "song-meta", "options"].includes(tail) ||
+    (tail === "release" && url.searchParams.get("projection") === "identity") ||
+    (url.searchParams.get("asset") === "1" && componentData)
+  );
+  if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serveFunctional();
+  if (api && (
+    /^\/api\/v1\/(?:team-builder|meta-reference)\//u.test(url.pathname) ||
+    (!visibilityType(tail.split("/")[0]!) && !/^(?:catalog|release)(?:\/|$)/u.test(tail))
+  )) return serve(request);
+  if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
     response.headers.set("Cache-Control", "private, no-store");
@@ -171,25 +275,33 @@ export async function contentResourceBoundary(
       server,
       url.searchParams.get("release") ?? undefined,
       `${media[1]}/${decodeURIComponent(media[3]!)}`,
-    );
+    ).catch(() => null);
+    if (!mediaIndex) return serve(request);
     if (mediaIndex) {
       const owners = assetOwners(mediaIndex, `${media[1]}/${decodeURIComponent(media[3]!)}`);
+      if (!owners?.length || owners.some((chain) => chain.some((id) => !mediaIndex!.records[id])))
+        return serve(request);
       if (
         owners?.some((chain) =>
-          chain.every((id) => mediaIndex!.records[id] && contentPublished(mediaIndex!.records[id]!.publication)),
+          chain.every((id) => {
+            const reference = mediaIndex!.records[id];
+            return reference && (isModelVisibilityType(reference.kind) || contentPublished(reference.publication));
+          }),
         )
       )
         return serve(request);
     }
   }
-  const tail = api?.[2] ?? "";
   const offlineAuthorization =
     api && tail === "stories" && url.searchParams.get("projection") === "offline-authorization";
   const offlineIndex =
     offlineAuthorization && server ? await readIndex(server, url.searchParams.get("release") ?? undefined) : null;
   const offlinePublications =
     offlineIndex &&
-    Object.entries(offlineIndex.publications ?? {}).filter(([key]) => /^(stories|characters|bands):/u.test(key));
+    Object.entries(offlineIndex.publications ?? {}).filter(
+      ([key]) =>
+        /^(stories|characters|bands):/u.test(key) && `${key.slice(0, key.indexOf(":"))}:${key}` in offlineIndex.records,
+    );
   const authorizationResponse = (publicContent: boolean) =>
     new Response(null, {
       status: 204,
@@ -221,12 +333,14 @@ export async function contentResourceBoundary(
     api &&
     ((tail === "release" && url.searchParams.get("projection") === "identity") ||
       tail === "song-release-times" ||
+      tail === "chart-assets" ||
       tail === "ui-marks");
   const pageData = api && tail === "release" && url.searchParams.get("projection") === "page-data";
   const raw = Boolean(
-    bulk || (api && (tail.startsWith("sources/") || (tail === "release" && !identityOnly && !pageData))),
+    packed || bulk || (api && (tail.startsWith("sources/") || (tail === "release" && !identityOnly && !pageData))),
   );
   if (raw && !unrestricted(view)) return notPublic();
+  if (packed) return privateContentResponse(await serve(request));
   if (imageEntity) {
     const kind = visibilityType(imageEntity[1]!)!,
       id = decodeURIComponent(imageEntity[2]!);
@@ -253,14 +367,23 @@ export async function contentResourceBoundary(
       if (refs.length && !refs.some((ref) => contentVisible(view, kind, ref.publication, id))) return notPublic();
     }
   }
+  if (api && /^live2d\/[^/]+$/u.test(tail) && unrestricted(view, ["live2d", "characters", "bands"]))
+    return privateContentResponse(await serve(request));
   if (media && server) {
     const index = mediaIndex;
-    if (!index)
-      return new Response("Resource metadata unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
+    if (!index) return serve(request);
     const access = mayReadAsset(index, `${media[1]}/${decodeURIComponent(media[3]!)}`, view);
     if (!access.allowed) return notPublic();
     const response = await serve(request);
-    return access.public ? response : privateContentResponse(response);
+    if (access.public) return response;
+    const result = privateContentResponse(response);
+    if (response.ok || response.status === 304) {
+      result.headers.set("Cache-Control", "private, max-age=21600");
+      result.headers.set("Date", new Date().toUTCString());
+      result.headers.delete("Age");
+      if (url.searchParams.get("cv") === view.key) result.headers.set("Vary", "Accept-Encoding");
+    }
+    return result;
   }
   if (identityOnly) return serve(request);
   // JSON source caches are shared internally. Conditional validation applies to
@@ -276,6 +399,7 @@ export async function contentResourceBoundary(
   const cacheUrl = new URL(url);
   cacheUrl.searchParams.delete("spoiler");
   cacheUrl.searchParams.delete("__content");
+  cacheUrl.searchParams.delete("cv");
   cacheUrl.searchParams.sort();
   cacheUrl.searchParams.set("__content-view", `${view.key}:${epoch}`);
   const key = new Request(cacheUrl, { method: "GET" });
@@ -326,4 +450,88 @@ export async function contentResourceBoundary(
     });
   }
   return result;
+}
+
+const CACHE_ORIGIN = "https://cri-sources.haneoka.internal/v1/";
+const CACHE_TTL = 86_400;
+const PART_LIMIT = 12;
+const parts = new Map<string, Promise<unknown>>();
+const projections = new Map<string, Promise<CriSourceProjection>>();
+
+export interface CriSourceRelease {
+  server: string;
+  releaseId: string;
+}
+export type CriManifestLoader = () => Promise<unknown>;
+
+const partUrl = (release: CriSourceRelease, name: string) =>
+  `${CACHE_ORIGIN}${encodeURIComponent(release.server)}/${release.releaseId}/${name}.json`;
+
+function project(
+  release: CriSourceRelease,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceProjection> {
+  let pending = projections.get(release.releaseId);
+  if (!pending) {
+    pending = load().then((manifest) => {
+      const projection = projectCriSources(manifest);
+      const values: [string, unknown][] = [["index", projection.index], ...Object.entries(projection.shards)];
+      ctx.waitUntil(
+        Promise.all(
+          values.map(([name, value]) =>
+            caches.default.put(
+              partUrl(release, name),
+              new Response(JSON.stringify(value), {
+                headers: { "Cache-Control": `public, max-age=${CACHE_TTL}`, "Content-Type": "application/json" },
+              }),
+            ),
+          ),
+        ).catch(() => undefined),
+      );
+      return projection;
+    });
+    projections.set(release.releaseId, pending);
+    pending.finally(() => projections.delete(release.releaseId)).catch(() => undefined);
+  }
+  return pending;
+}
+
+function part<T>(
+  release: CriSourceRelease,
+  name: string,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+  pick: (projection: CriSourceProjection) => T,
+): Promise<T> {
+  const url = partUrl(release, name);
+  let pending = parts.get(url) as Promise<T> | undefined;
+  if (!pending) {
+    pending = (async () => {
+      const hit = await caches.default.match(url);
+      return hit ? ((await hit.json()) as T) : pick(await project(release, load, ctx));
+    })();
+    parts.set(url, pending);
+    pending.catch(() => parts.delete(url));
+    while (parts.size > PART_LIMIT) parts.delete(parts.keys().next().value!);
+  }
+  return pending;
+}
+
+export function criSourceIndex(
+  release: CriSourceRelease,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceIndex> {
+  return part(release, "index", load, ctx, (projection) => projection.index);
+}
+
+export async function criSourceEntry(
+  release: CriSourceRelease,
+  key: string,
+  load: CriManifestLoader,
+  ctx: ExecutionContext,
+): Promise<CriSourceEntry | undefined> {
+  const shard = criSourceShard(key);
+  return (await part(release, shard, load, ctx, (projection) => projection.shards[shard]!))[key];
 }

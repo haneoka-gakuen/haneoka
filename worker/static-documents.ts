@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 文档请求、规范路径、Env 与 ExecutionContext。
-// Output: 文档重定向、压缩／组合内容流或未命中。
+// Output: 文档重定向、压缩／组合内容流、私有页面数据元数据（不含密钥）或未命中。
 // Pos: [Map](L2.md)；静态文档分片在边缘的读取与还原。
 // Effects/Dependencies: ASSETS 最终引用摘要隔离可变索引；旧格式不共享索引，SHA 内容缓存复用；读取 ASSET_BUCKET。
 import { publishedWebBuildId } from "../src/lib/web-build-id";
@@ -9,6 +9,7 @@ import {
   STATIC_DOCUMENT_SCHEMA,
   STATIC_DOCUMENT_INDEX_ROOT,
   STATIC_DOCUMENT_CONTENT_ROOT,
+  STATIC_DOCUMENT_ASSET_ROOT,
   STATIC_DOCUMENT_CONTENT_INDEX_ROOT,
   STATIC_DOCUMENT_CONTENT_INDEX_SCHEMA,
   STATIC_DOCUMENT_PACK_BYTES,
@@ -25,16 +26,25 @@ import {
 } from "../src/lib/static-documents";
 
 type DocumentIndex = { schema: string; entries: Record<string, StaticDocumentRecord> };
+type PublicationContext = { webBuildId: string; publicationId: string | null };
+const publications = new WeakMap<object, Promise<PublicationContext>>();
 
 /** Input identity labels the browser; the final reference seal partitions mutable indices. */
 export async function staticPublicationContext(
   request: Request,
   env: Env,
-): Promise<{ webBuildId: string; publicationId: string | null }> {
-  const response = await env.ASSETS.fetch(new URL("/build.json", request.url));
-  if (!response.ok) throw new Error(`Static publication identity returned ${response.status}`);
-  const build = await response.json<{ id?: unknown; web?: unknown; publication?: unknown }>();
-  return { webBuildId: publishedWebBuildId(build), publicationId: staticPublicationOutputIdentity(build.publication) };
+): Promise<PublicationContext> {
+  let pending = publications.get(env.ASSETS);
+  if (!pending) {
+    pending = (async () => {
+      const response = await env.ASSETS.fetch(new URL("/build.json", request.url));
+      if (!response.ok) throw new Error(`Static publication identity returned ${response.status}`);
+      const build = await response.json<{ id?: unknown; web?: unknown; publication?: unknown }>();
+      return { webBuildId: publishedWebBuildId(build), publicationId: staticPublicationOutputIdentity(build.publication) };
+    })().catch((error: unknown) => { publications.delete(env.ASSETS); throw error; });
+    publications.set(env.ASSETS, pending);
+  }
+  return pending;
 }
 
 const indices = new Map<string, DocumentIndex>();
@@ -218,6 +228,56 @@ async function documentRecord(
   return isStaticDocumentRecord(record) ? record : null;
 }
 
+export interface PrivatePageDataScript {
+  id: string;
+  sha256: string;
+  iv: string;
+  bytes: number;
+  url: string;
+}
+export interface PrivatePageDataEntry {
+  build: string;
+  kid: string;
+  types: string[];
+  scripts: PrivatePageDataScript[];
+}
+type PrivatePageDataShard = { schema: string; entries: Record<string, PrivatePageDataEntry> };
+const privateShards = new Map<string, PrivatePageDataShard | null>();
+const PRIVATE_LOCALES = /^(?:en|ja|ko|zh-CN|zh-TW)$/u;
+
+/**
+ * Build metadata of a page's encrypted complete page data: payload locations,
+ * IVs and the omitted visibility types. It never holds key material.
+ */
+export async function readPrivatePageData(
+  request: Request,
+  env: Env,
+  pathname: string,
+  publicationId: string | null,
+): Promise<PrivatePageDataEntry | null> {
+  const parts = pathname.split("/").filter(Boolean);
+  const locale = parts[0] === "jp" || parts[0] === "intl" ? parts[1] : parts[0];
+  if (!locale || !PRIVATE_LOCALES.test(locale)) return null;
+  const url = new URL(`${STATIC_DOCUMENT_ASSET_ROOT}/${locale}/page-data/${staticDocumentShard(pathname)}.json`, request.url);
+  const key = publicationId === null ? null : `${publicationId}:${url.href}`;
+  let shard = key === null ? undefined : privateShards.get(key);
+  if (shard === undefined) {
+    const response = await env.ASSETS.fetch(new Request(url));
+    if (response.ok) {
+      shard = await response.json<PrivatePageDataShard>();
+      if (shard.schema !== "haneoka-private-page-data-v1" || !shard.entries) shard = null;
+    } else {
+      await response.body?.cancel();
+      shard = null;
+    }
+    if (key !== null) {
+      privateShards.set(key, shard);
+      if (privateShards.size > 16) privateShards.delete(privateShards.keys().next().value!);
+    }
+  }
+  return shard?.entries[pathname] ?? null;
+}
+
 /** Preserve the static asset server's trailing-slash redirect after packing. */
 export async function staticDocumentRedirect(request: Request, env: Env, publicationId: string | null): Promise<Response | null> {
   const url = new URL(request.url);
@@ -297,4 +357,23 @@ export async function serveStaticDocument(
     joinStaticDocumentStreams(complete.map((object) => object.body.pipeThrough(new DecompressionStream("gzip")))),
     { headers },
   );
+}
+
+/**
+ * The complete prerendered HTML of a canonical page, read from the packed
+ * snapshot even when a public physical file shadows the same address.
+ */
+export async function readStaticDocumentSnapshot(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  pathname: string,
+  publicationId: string | null,
+): Promise<Response | null> {
+  const lookup = coreStaticDocumentPath(pathname);
+  if (!lookup?.endsWith("/index.html")) return null;
+  const response = await serveStaticDocument(new Request(new URL(pathname, request.url)), env, ctx, lookup, publicationId);
+  if (!response || response.headers.get("Content-Type")?.startsWith("text/html")) return response;
+  await response.body?.cancel();
+  return null;
 }
