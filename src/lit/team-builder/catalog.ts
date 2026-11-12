@@ -455,7 +455,10 @@ export class Catalog {
   /** Events with a live point table (searchable event goals). */
   events() {
     return [...this.master.events.values()]
-      .filter((event) => isReleasedContent(this.data.events[String(event.id)]))
+      .filter((event) => {
+        const row=this.data.events[String(event.id)]!;
+        return row.kind==="planner-event"?(row.planner as {active:boolean}).active:isReleasedContent(row);
+      })
       .filter((event) => event.livePoints.size || event.challengePoints.size || event.effects.length)
       .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))
       .map((event) => ({
@@ -471,10 +474,13 @@ export class Catalog {
     return this.master.challengeMusics.filter((row) => eventId === null || row.eventId === eventId);
   }
   normalEventSongIds(eventId: number | null) {
+    const custom=eventId===null?undefined:this.data.events[String(eventId)]?.plannerRules as {normalSongs:number[]}|undefined;
+    if(custom?.normalSongs.length)return custom.normalSongs;
+    const challengeIds=new Set(this.challengeSongs(eventId).map(row=>row.liveMusicId));
     const eventSongId = eventId === null ? undefined : this.master.events.get(eventId)?.musicId;
     return Object.keys(this.data.songs)
       .map(Number)
-      .filter((id) => id !== eventSongId);
+      .filter((id) => id !== eventSongId && !challengeIds.has(id));
   }
 }
 

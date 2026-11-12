@@ -2,7 +2,7 @@
 # Input: Complete immutable resource releases in the configured R2 bucket.
 # Output: Release-bound content ownership records for request authorization.
 # Pos: [Map](L2-2.md); offline production of resource visibility metadata.
-# Effects/Dependencies: Reads verified CAS objects and writes content-index/v3-v5; preserves releases and current pointers.
+# Effects/Dependencies: Reads verified CAS objects and writes content-index/v3-v4; preserves releases and current pointers.
 """Publish compact resource ownership metadata without changing a release."""
 from __future__ import annotations
 
@@ -14,8 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from build.catalog_storage import _content_access_index, model_publications
-from core.master_values import _timestamp
+from build.catalog_storage import _content_access_index
 from core.storage import cas_key, fnv1a32_shard
 from publish.r2 import R2Store, IMMUTABLE_CACHE, _validate_release_manifest_for_gc
 
@@ -122,7 +121,7 @@ def _publish_ownership_index(server: str, store) -> dict:
     return {"server": server, "releaseId": release_id, "records": len(result["records"]), "assets": count, "assetShards": len(shards), "reused": False}
 
 
-def _publish_event_index(server: str, store) -> dict:
+def publish_index(server: str, store) -> dict:
     ownership = _publish_ownership_index(server, store)
     release_id = ownership["releaseId"]
     target = f"content-index/v4/{server}/{release_id}.json"
@@ -187,107 +186,15 @@ def _publish_event_index(server: str, store) -> dict:
     return {**ownership, "prepared": True, "reused": False}
 
 
-def publish_index(server: str, store, model_outputs: dict | None = None) -> dict:
-    result = _publish_event_index(server, store)
-    release_id = result["releaseId"]
-    target = f"content-index/v5/{server}/{release_id}.json"
-    models_target = f"content-index/v5/{server}/{release_id}/model-publications.json"
-    if store.head(target) and store.head(models_target):
-        if model_outputs is not None:
-            model_outputs[server] = store.get_json(models_target)
-        return {**result, "modelsPrepared": True}
-    index, models = compile_model_index(server, store, release_id)
-    for key, value in ((models_target, models), (target, index)):
-        try:
-            store.put_json(key, value, IMMUTABLE_CACHE, if_absent=True)
-        except Exception:
-            if store.get_json(key) != value:
-                raise
-    if model_outputs is not None:
-        model_outputs[server] = models
-    return {**result, "modelsPrepared": True, "models": len(models["publications"]), "reused": False}
-
-
-def compile_model_index(server: str, store, release_id: str) -> tuple[dict, dict]:
-    manifest_key = f"servers/{server}/releases/{release_id}/release.json"
-    manifest = store.get_json(manifest_key)
-    entries = {entry["path"]: entry for entry in _validate_release_manifest_for_gc(manifest, manifest_key, server, release_id)}
-
-    def read(path: str):
-        entry = entries.get(path)
-        if entry is None:
-            return None
-        if entry["bytes"] > 16 * 1024 * 1024:
-            raise ValueError(f"model reference metadata exceeds byte budget: {path}")
-        body = store.get_bytes(cas_key(entry["sha256"]))
-        if body is None or len(body) != entry["bytes"] or hashlib.sha256(body).hexdigest() != entry["sha256"]:
-            raise ValueError(f"model reference metadata identity differs: {path}")
-        return json.loads(body)
-
-    catalog = read("api/v1/catalog/manifest.json")
-    documents = {}
-    prepared_models = None
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        for name in ("live2d", "spine", "stories", "cards", "support-cards", "characters", "voices", "anon-tokyo"):
-            if name == "stories":
-                models = {"live2d": documents.get("live2d", {}), "spine": documents.get("spine", {}).get("models", {})}
-                if all(row.get("modelPublicationPrepared") for entries in models.values() for row in entries.values()):
-                    prepared_models = {kind + ":" + key: {field: row[field] for field in ("publicStartAt", "__publicationPending") if field in row}
-                                       for kind, entries in models.items() for key, row in entries.items()}
-                    break
-            spec = catalog["resources"].get(name)
-            if not spec:
-                continue
-            document = read(spec["index"])
-            descriptor = spec.get("entities")
-            if descriptor and name not in {"live2d", "spine"}:
-                paths = [descriptor["prefix"] + shard + ".json" for shard in descriptor["shards"]]
-                entities = {}
-                for shard in pool.map(read, paths):
-                    entities.update(shard)
-                if name == "stories":
-                    document["episodes"] = entities
-                elif name == "voices":
-                    document["entries"] = entities
-                else:
-                    document = entities
-            documents[name] = document
-    # Older catalogs omitted the Home Spot's opening date from its scene data.
-    spots = documents.get("stories", {}).get("homeSpots", {})
-    if any("startAt" not in spot for spot in spots.values()):
-        master = read("objects/master/MasterHomeSpot.json") or {}
-        rows = master if isinstance(master, list) else master.get("_allData", [])
-        for row in rows:
-            spot = spots.get(str(row["_id"]))
-            if spot is not None:
-                spot["startAt"] = _timestamp(row.get("_startAt"))
-    publications = prepared_models if prepared_models is not None else model_publications(documents)
-    index = store.get_json(f"content-index/v4/{server}/{release_id}.json")
-    for reference in index["records"].values():
-        key = reference["kind"] + ":" + reference["id"]
-        if key in publications:
-            reference["publication"] = publications[key]
-    index["publications"].update(publications)
-    index["modelPublicationsPrepared"] = True
-    models = {"identity": {"server": server, "releaseId": release_id, "sourceId": manifest["sourceId"]},
-              "publications": publications}
-    return index, models
-
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", choices=["jp", "intl"], action="append")
     parser.add_argument("--bucket", default="hotdori-assets")
-    parser.add_argument("--model-publications-output", type=Path)
     args = parser.parse_args()
     store = R2Store(SimpleNamespace(r2_bucket=args.bucket), concurrency=6)
-    model_outputs = {} if args.model_publications_output else None
     for server in args.server or ["jp", "intl"]:
-        print(json.dumps(publish_index(server, store, model_outputs)))
-    if args.model_publications_output:
-        args.model_publications_output.parent.mkdir(parents=True, exist_ok=True)
-        args.model_publications_output.write_text(json.dumps(model_outputs))
+        print(json.dumps(publish_index(server, store)))
 
 
 if __name__ == "__main__":

@@ -2125,8 +2125,7 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   }
   if (!pending) {
     pending = (async () => {
-      const compiled = await cachedR2Text(env, `content-index/v5/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL) ??
-        await cachedR2Text(env, `content-index/v4/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
+      const compiled = await cachedR2Text(env, `content-index/v4/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
       const prepared = compiled === null
         ? await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL)
         : JSON.parse(compiled) as JsonValue;

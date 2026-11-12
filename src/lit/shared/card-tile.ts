@@ -51,7 +51,9 @@ export function cardTile(options: {
           : null,
       options.rarityIcon
         ? { at: "end", image: options.rarityIcon, label: options.rarityLabel }
-        : null,
+        : options.rarityLabel
+          ? { at: "end", text: options.rarityLabel, label: options.rarityLabel }
+          : null,
     ],
   };
 }

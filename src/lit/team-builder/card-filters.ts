@@ -11,6 +11,7 @@ import { cardRarityName } from "../shared/rarity-icon";
 import type { TeamBuilder } from "../team-builder";
 import type { BoxFilters } from "./types";
 import { isContentVisible } from "../../lib/content-release";
+import { plannerMetadata } from "../../lib/team-builder/planner-data";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -58,7 +59,9 @@ function cardQuery(host: TeamBuilder, query: string): CatalogQuery {
 export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps", id: number, f: BoxFilters): boolean {
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
-  if (!card || !isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(id))) return false;
+  if (!card) return false;
+  const planning=plannerMetadata(card);
+  if (planning.active===false || planning.active!==true && !isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(id))) return false;
   if (!matchesSelections(catalog.bandIds(kind, id).map(String), f.bands.map(String)) ||
       !matchesSelections(catalog.characterIds(kind, id).map(String), f.characters.map(String)) ||
       !matchesSelections([String(card.attribute)], f.attributes.map(String)) ||

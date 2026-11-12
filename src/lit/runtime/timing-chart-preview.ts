@@ -5,7 +5,7 @@
 // Effects/Dependencies: Loads the pinned chart and bundled native note atlas on expansion, without stage/HUD source discovery; abort releases the atlas.
 import { LitElement, html, nothing } from "lit";
 import type { ChartDocument } from "@haneoka/cassiopeia";
-import type { TimingWindow } from "../../lib/team-builder/engine/api";
+import type { TimingWindow, JustWindowProfile } from "../../lib/team-builder/engine/api";
 import type { EngineChartSources } from "../../lib/team-builder/engine/protocol";
 import type { ChartCanvasSkin } from "@haneoka/cassiopeia-ui-vue/overview";
 import { uiText } from "../shared/catalog";
@@ -21,6 +21,7 @@ class TimingChartPreview extends LitElement {
     locale: {}, label: {}, errorLabel: {}, phase: { state: true },
     numberNotes: { type: Boolean }, whole: { type: Boolean }, kinds: { attribute: false },
     currentNote: { state: true },
+    coverage: { attribute: false },
   };
   declare source: EngineChartSources[string];
   declare window: TimingWindow;
@@ -31,6 +32,7 @@ class TimingChartPreview extends LitElement {
   declare numberNotes: boolean;
   declare whole: boolean;
   declare kinds: ReadonlyMap<number, TimingMarkerKind>;
+  declare coverage?: JustWindowProfile;
   declare private currentNote: number;
   declare private phase: "idle" | "loading" | "ready" | "error";
   private sourceKey = "";
@@ -72,7 +74,7 @@ class TimingChartPreview extends LitElement {
     super.disconnectedCallback();
   }
   protected willUpdate() {
-    const marksKey = JSON.stringify(this.window.steps.map(step => [step.step, step.timeMs, step.noteIndices]));
+    const marksKey = JSON.stringify([this.window.steps.map(step => [step.step, step.timeMs, step.noteIndices]), this.coverage]);
     if (marksKey !== this.marksKey) {
       this.marksKey = marksKey;
       this.currentNote = 0;
@@ -177,6 +179,9 @@ class TimingChartPreview extends LitElement {
       })),
       color: colors.combo,
       labelEachTarget: this.numberNotes,
+      bands: this.coverage?.segments.map(segment => ({ startMs: segment.startMs, endMs: segment.endMs,
+        label: segment.beforeMs === segment.afterMs ? `±${segment.beforeMs} ms` : `−${segment.beforeMs} / +${segment.afterMs} ms`,
+        color: colors.combo, active: Math.min(segment.beforeMs, segment.afterMs) >= this.coverage!.window.coverage!.targetMs })),
       zoom,
     }, { first, count });
   }

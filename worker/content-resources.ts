@@ -13,7 +13,7 @@ import {
 
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, visibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import { publicChartAsset } from "./chart-assets";
 import {
@@ -35,7 +35,6 @@ export interface ContentResourceIndex {
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
   eventSongReleasesPrepared?: true;
-  modelPublicationsPrepared?: true;
 }
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
@@ -53,7 +52,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
       if (value.catalogMetadata && typeof value.catalogMetadata === "object")
         collect(value.catalogMetadata as Record<string, unknown>);
     };
-    Object.values(index.records).forEach((reference) => collect(reference.publication));
+    Object.values(index.records).forEach((reference) => { if (!isModelVisibilityType(reference.kind)) collect(reference.publication); });
     timeline = [...times].sort((a, b) => a - b);
     publicationTimelines.set(index, timeline);
   }
@@ -64,7 +63,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
     if (timeline[middle]! <= now) low = middle + 1;
     else high = middle;
   }
-  return `${index.releaseId ?? "legacy"}-${index.modelPublicationsPrepared ? "models-v1-" : ""}${timeline[low - 1] ?? 0}`;
+  return `${index.releaseId ?? "legacy"}-models-public-v1-${timeline[low - 1] ?? 0}`;
 }
 export function nextContentPublication(
   index: ContentResourceIndex | null | undefined,
@@ -89,6 +88,7 @@ export type ContentIndexReader = (
 ) => Promise<ContentResourceIndex | null>;
 export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
   kinds.every((kind) => {
+    if (isModelVisibilityType(kind)) return true;
     const rule = view.policy.types[kind];
     return (
       contentVisible(view, kind, { __publicationPending: true }) &&
@@ -235,6 +235,7 @@ export async function contentResourceBoundary(
     return serve(request);
   if (sourceBrowser || (media && (url.searchParams.get("asset") === "1" || siteDocument(request)))) return serve(request);
   const tail = api?.[2] ?? "";
+  if (imageEntity || (api && isModelVisibilityType(visibilityType(tail.split("/")[0]!)))) return serve(request);
   const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
   const serveFunctional = async () => {
     const response = await serve(request);
@@ -282,7 +283,10 @@ export async function contentResourceBoundary(
         return serve(request);
       if (
         owners?.some((chain) =>
-          chain.every((id) => mediaIndex!.records[id] && contentPublished(mediaIndex!.records[id]!.publication)),
+          chain.every((id) => {
+            const reference = mediaIndex!.records[id];
+            return reference && (isModelVisibilityType(reference.kind) || contentPublished(reference.publication));
+          }),
         )
       )
         return serve(request);

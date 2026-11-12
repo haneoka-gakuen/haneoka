@@ -4,6 +4,7 @@ import { eventItems, eventPoints, type EventRoute } from "./objectives";
 import { exchangedReward, type CpExchange } from "./pt-value";
 
 export interface GekisoRewardOptions {
+  justWindow?: import("./api").JustWindowPolicy;
   /** Player's baseline fraction on eligible JUST notes; skills subsequently convert individual notes. */
   just: number;
   /** Fixed native RNG draws, shared by all teams. Never the payout of the expected score. */

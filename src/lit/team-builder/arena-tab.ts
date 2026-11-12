@@ -64,6 +64,8 @@ export class ArenaController {
   opponents: { id: string; name: string; input: ArenaOpponent }[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
   private scheduleKey = "";
+  private scheduleData: TeamBuilder["data"] = null;
+  private scheduleInput = "";
   private physicsKey = "";
   constructor(private readonly host: TeamBuilder) {}
   restore(required: BuildSettings["required"] = { members: [], snaps: [] }) {
@@ -181,6 +183,10 @@ export class ArenaController {
     }
     const period = this.period;
     const data = this.host.data;
+    const input = JSON.stringify([this.host.server, this.catalog?.identity, this.draft.leagueId, period.regulation?.id, period.nextAt]);
+    if (this.scheduleKey && this.scheduleData === data && this.scheduleInput === input) return;
+    this.scheduleData = data;
+    this.scheduleInput = input;
     const publications = data
       ? [
           ...Object.values(data.members)

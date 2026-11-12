@@ -7,6 +7,9 @@ import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
 import { TemporaryCards, type TemporaryCardKind } from "./team-builder/temporary-cards";
+import { Planner } from "./team-builder/planner";
+import { renderPlanner } from "./team-builder/planner-view";
+import { projectPlannerData, plannerMetadata, plannerMaster, PLANNER_ID_START } from "../lib/team-builder/planner-data";
 import { renderSkillRoleEditor, type SkillRoleEdit } from "./team-builder/skill-role-controls";
 import { ResultAnalysis } from "./team-builder/result-analysis";
 import { hasSkillRoleLimits } from "../lib/team-builder/skill-roles";
@@ -63,7 +66,7 @@ import {
   type FarmingSettings,
   type Tab,
 } from "./team-builder/types";
-import { farmingConditions, farmingSettings, parseOpponents, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
+import { farmingConditions, farmingSettings, parseOpponents, justWindowGoal, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
 import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
 import { snackbar } from "../lib/snackbar";
@@ -111,12 +114,14 @@ export class TeamBuilder extends LitElement {
   declare server: string;
 
   data: TeamBuilderData | null = null;
+  publicData: TeamBuilderData | null = null;
   master: EngineMaster | null = null;
   catalog: Catalog | null = null;
   snapshot: BoxSnapshot | null = null;
   view: BoxView | null = null;
   private persistentBoxView: BoxView | null = null;
   readonly temporary = new TemporaryCards();
+  readonly planner = new Planner(this);
   temporaryPicker: TemporaryCardKind | null = null;
   temporaryDraft: { kind: TemporaryCardKind; cardId: number } | null = null;
   get persistentView() { return this.persistentBoxView ?? this.view; }
@@ -364,7 +369,7 @@ export class TeamBuilder extends LitElement {
   /** Training priorities for the searched goal: each owned card raised to full growth on its own. */
   growth: { context: string; done: number; total: number; result: GrowthResult | null } | null = null;
   manualBusy = false;
-  slotPicker: { growth: true; kind: "members" | "snaps" } | { slot: number; kind: "members" | "snaps" } | { target: "manual-event"; kind: "members" | "snaps"; ids: number[] } | null = null;
+  slotPicker: { growth: true; kind: "members" | "snaps" } | { slot: number; kind: "members" | "snaps" } | { target: "manual-event"; kind: "members" | "snaps"; ids: number[] } | {target:"selection";kind:"members"|"snaps";ids:number[];change:(ids:number[])=>void} | null = null;
   slotFilters: BoxFilters = {
     kind: "members",
     query: "",
@@ -453,6 +458,9 @@ export class TeamBuilder extends LitElement {
     sources.sort((a, b) => Number(b.identity.server === server) - Number(a.identity.server === server));
     if (sources[0]?.identity.server !== server) throw new Error("Static team source unavailable");
     this.data = mergeTeamBuilderData(sources, payload.unavailableServers);
+    this.publicData = this.data;
+    if (this.planner.hasDefinitions && this.snapshot)
+      this.data = projectPlannerData(this.publicData,this.planner.document,id=>this.catalog?.characterFace(id)??"");
     this.master = compileFromTeamData(this.data);
     this.catalog = new Catalog(this, this.data, this.master);
     const visuals = payload.visuals[server]!;
@@ -496,6 +504,7 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    this.planner.dispose();
     this.disposeVisibility?.();
     this.temporary.clear();
     this.temporaryDraft = null;
@@ -508,6 +517,7 @@ export class TeamBuilder extends LitElement {
     super.disconnectedCallback();
     clearAppBarActions(SYNC_OWNER);
     clearAppBarActions("team-builder-quick-entry");
+    clearAppBarActions("team-builder-planner");
     this.releaseSearch?.();
     this.releaseSearch = undefined;
     this.dataController?.abort();
@@ -717,9 +727,11 @@ export class TeamBuilder extends LitElement {
       }
       const seeded = this.data?.identity.server === server && this.pageData?.sources.every((source) => source.arena !== undefined) &&
         this.catalog?.visuals;
-      const data = seeded ? this.data! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
+      const data = seeded ? this.publicData! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
+      const working = seeded ? this.data! : data;
       if (loadController.signal.aborted) return;
-      this.data = data;
+      this.data = working;
+      this.publicData = data;
       if (!seeded) {
         const matches = (identity: TeamBuilderData["identity"]) =>
           identity.server === data.identity.server && identity.releaseId === data.identity.releaseId && identity.sourceId === data.identity.sourceId;
@@ -734,7 +746,7 @@ export class TeamBuilder extends LitElement {
       await this.updateComplete;
       if (!this.isConnected || loadController.signal.aborted) return;
       this.engine?.dispose();
-      this.engine = new EngineClient(data, () => this.requestUpdate());
+      this.engine = new EngineClient(working, () => this.requestUpdate());
       this.engine.prefetch(this.searchSettings.songs);
       const engine = this.engine;
       const warm = () => {
@@ -792,10 +804,12 @@ export class TeamBuilder extends LitElement {
     }
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
+    if (ownerChanged) this.planner.restore(snapshot.owner);
+    if(this.planner.cards.some(card=>!this.temporary.has(card.kind,card.id)))this.planner.restoreCards();
     if (versionChanged || ownerChanged) {
       const required = this.settings.required;
       this.persistentBoxView = readBox(snapshot.entries);
-      this.view = this.temporary.size ? readBox(this.temporary.merge(snapshot.entries)) : this.persistentBoxView;
+      this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
       const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
       this.settings = restoreBuildSettings(
         stored && typeof stored === "object" ? (stored as Partial<BuildSettings>) : {},
@@ -819,10 +833,29 @@ export class TeamBuilder extends LitElement {
     if (!this.store) return false;
     if (!changes.length) return true;
     try {
-      const local = permanent ? [] : changes.filter(change => this.temporary.ownsKey(change.key));
-      const stored = permanent ? changes : changes.filter(change => !this.temporary.ownsKey(change.key));
+      const fictional=changes.flatMap(change=>{
+        const match=/^([ms])\.(\d+)\./u.exec(change.key),id=Number(match?.[2]);
+        return match&&id>=PLANNER_ID_START?[{...change,id,kind:match[1]==="m"?"members" as const:"snaps" as const}]:[];
+      });
+      const removed=fictional.filter(change=>change.key.endsWith(".own")&&change.value!==true).map(change=>change.id);
+      if(removed.length&&!this.planner.disableCards(removed))return false;
+      if(removed.length)changes=changes.filter(change=>!fictional.some(row=>removed.includes(row.id)&&row.key===change.key));
+      for(const row of fictional.filter(row=>!removed.includes(row.id))){
+        const card=this.planner.cardById(row.id);
+        if(!card)throw new Error("planner-card-missing");
+        if(!this.temporary.has(row.kind,row.id))this.planner.restoreCards([card]);
+      }
+      const planning = changes.filter(change=>this.planner.owns(change.key,change.value));
+      if (!this.planner.write(planning)) return false;
+      const rest = changes.filter(change=>!planning.includes(change));
+      const isLocal = (key: string)=>this.temporary.ownsKey(key) && (!permanent || Number(key.split(".")[1])>=PLANNER_ID_START);
+      const local = rest.filter(change=>isLocal(change.key));
+      const stored = rest.filter(change=>!isLocal(change.key));
       if (stored.length) this.store.set(stored);
-      if (this.temporary.apply(local)) this.refreshTemporaryView();
+      if (this.temporary.apply(local)) {
+        for (const card of this.planner.cards) if (local.some(change=>change.key.startsWith(`${card.kind==="members"?"m":"s"}.${card.id}.`))) this.planner.saveGrowth(card.kind,card.id);
+      }
+      if (local.length || planning.length) this.refreshTemporaryView();
       return true;
     } catch {
       this.error = this.t("saveRejected", "That value cannot be saved.");
@@ -831,17 +864,40 @@ export class TeamBuilder extends LitElement {
     }
   }
   refreshTemporaryView() {
-    if (this.snapshot) this.view = this.temporary.size ? readBox(this.temporary.merge(this.snapshot.entries)) : this.persistentBoxView;
+    if (this.snapshot) this.view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
     this.requestUpdate();
   }
   removeTemporary(kind: TemporaryCardKind, id: number) {
+    if (this.planner.cardById(id)?.active) { this.planner.deactivate("card",id); return; }
     if (this.temporary.remove(kind, id)) this.refreshTemporaryView();
   }
   saveTemporary(kind: TemporaryCardKind, id: number) {
+    if (id>=PLANNER_ID_START) return false;
     if (!this.write(this.temporary.changes(kind, id), true)) return false;
     this.removeTemporary(kind, id);
     this.notice = this.t("temporarySaved", "Saved to My cards");
     return true;
+  }
+  applyPlanningData() {
+    if (!this.publicData) return;
+    this.engine?.cancel();
+    const visuals=this.catalog?.visuals;
+    const data=projectPlannerData(this.publicData,this.planner.document,id=>this.catalog?.characterFace(id)??"");
+    if (data===this.data) return;
+    this.catalog?.dispose();
+    this.data=data;
+    this.master=compileFromTeamData(data);
+    this.catalog=new Catalog(this,data,this.master);
+    if(visuals)this.catalog.setVisuals(visuals);
+    this.engine?.dispose();
+    this.engine=new EngineClient(data,()=>this.requestUpdate());
+    this.engine.prefetch(this.searchSettings.songs);
+    this.requestUpdate();
+  }
+  restorePlanningPreferences() {
+    const stored=this.view?.prefs[SETTINGS_KEY.slice(5)];
+    this.settings=restoreBuildSettings(stored&&typeof stored==="object"?stored as Partial<BuildSettings>:{});
+    this.arena.restore();this.songComparison.restore();this.requestUpdate();
   }
   updateSettings(patch: Partial<BuildSettings>) {
     if (this.tab === "arena") {
@@ -968,7 +1024,9 @@ export class TeamBuilder extends LitElement {
     const memberOk = (cardId: number) => {
       const card = master.members.get(cardId);
       if (!card) return false;
-      if (s.scope === "theoretical" && !isContentVisible("cards", this.data!.members[String(cardId)], String(cardId))) return false;
+      const local=plannerMetadata(this.data!.members[String(cardId)]!);
+      if (local.active===false) return false;
+      if (s.scope === "theoretical" && local.active!==true && !isContentVisible("cards", this.data!.members[String(cardId)], String(cardId))) return false;
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) &&
         (!s.bands.length || s.bands.includes(card.bandId)) &&
@@ -978,7 +1036,9 @@ export class TeamBuilder extends LitElement {
     const snapOk = (cardId: number) => {
       const card = master.snaps.get(cardId);
       if (!card) return false;
-      if (s.scope === "theoretical" && !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))) return false;
+      const local=plannerMetadata(this.data!.snapshots[String(cardId)]!);
+      if (local.active===false) return false;
+      if (s.scope === "theoretical" && local.active!==true && !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))) return false;
       return (!s.attributes.length || s.attributes.includes(card.cardType)) && card.rarity >= s.minRarity;
     };
     const fixedMembers = new Set([
@@ -1001,6 +1061,7 @@ export class TeamBuilder extends LitElement {
     return {
       members: base.members.filter((row) =>
           !excludedMembers.has(row.cardId) &&
+          plannerMetadata(this.data!.members[String(row.cardId)]!).active!==false &&
           (this.tab !== "arena" ||
             (master.members.get(row.cardId)?.bandId === this.arena.bandId &&
               availableOnServer(this.data!, "members", row.cardId) &&
@@ -1009,6 +1070,7 @@ export class TeamBuilder extends LitElement {
       ),
       snaps: base.snaps.filter((row) =>
           !excludedSnaps.has(row.cardId) &&
+          plannerMetadata(this.data!.snapshots[String(row.cardId)]!).active!==false &&
           (this.tab !== "arena" ||
             (availableOnServer(this.data!, "snapshots", row.cardId) &&
               arenaReleased(this.data!.snapshots[String(row.cardId)]?.catalogMetadata ?? {}))) &&
@@ -1023,12 +1085,16 @@ export class TeamBuilder extends LitElement {
       const row = owned.members.find((row) => row.cardId === id);
       if (row) return [row];
       const card = id === null ? undefined : this.master?.members.get(id);
+      const planning=id===null?undefined:this.planner.cardById(id);
+      if(card&&planning)return [{key:`m${id}`,cardId:card.id,...maxMemberGrowth(this.master!,card),...planning.growth}];
       return card && theoretical ? [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }] : [];
     });
     const snaps = team.snaps.flatMap((id) => {
       const row = owned.snaps.find((row) => row.cardId === id);
       if (row) return [row];
       const card = id === null ? undefined : this.master?.snaps.get(id);
+      const planning=id===null?undefined:this.planner.cardById(id);
+      if(card&&planning)return [{key:`s${id}`,cardId:card.id,...maxSnapGrowth(this.master!,card),...planning.growth}];
       return card && theoretical ? [{ key: `s${id}`, cardId: card.id, ...maxSnapGrowth(this.master!, card) }] : [];
     });
     return { members, snaps, player: this.view?.player, unknownPolicy: this.settings.unknownPolicy };
@@ -1108,6 +1174,10 @@ export class TeamBuilder extends LitElement {
           : settings.goal;
     return this.compatibleSettings({ ...settings, goal });
   }
+  get settlementMaster() {
+    const s=this.searchSettings;
+    return this.master?plannerMaster(this.master,s.eventId,s.route==="challenge"):null;
+  }
   songRules(goal?: Goal | null) {
     if (this.tab === "arena") return undefined;
     if (this.tab === "song-comparison") return activeSongRules(this.songComparison.settings.songRules, true);
@@ -1177,7 +1247,7 @@ export class TeamBuilder extends LitElement {
       minComboBonus: this.hasComboSongs(songs) ? settings.minComboBonus : 1,
       just: this.hasMission("JustCount", songs) ? settings.just : 100,
       ptJust: this.hasMission("JustCount", songs) ? settings.ptJust : 100,
-      justWindowMs: this.hasMission("JustCount", songs) ? resolveJustWindow(settings, this.data ?? null) : 0,
+      justWindowMs: this.hasMission("JustCount", songs) && settings.justWindowMode !== "off" ? resolveJustWindow(settings, this.data ?? null) : 0,
       songs,
       planChallengeSongs: settings.planChallengeSongs.filter((song) => exists(song) && challengeIds.has(song.songId)),
     };
@@ -1192,6 +1262,7 @@ export class TeamBuilder extends LitElement {
     if (reason === "just-window-input") return this.t("invalidCombo", "Enter a positive integer");
     if (reason === "combo-input" || reason === "luck-samples-input") return this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min: reason === "combo-input" ? 1 : 0, max: MAX_GEKISO_COUNT });
     if (reason === "just-window-timing") return this.t("justWindowTiming", "JUST tap timing data is missing");
+    if (reason === "just-window-coverage-input") return this.t("justCoverageInvalid", "Enter coverage from 0% to 100% and nonnegative durations");
     if (reason === "just-window-random") return this.t("justWindowRandom", "Window targets are unavailable for this random skill");
     return reason;
   }
@@ -1301,8 +1372,10 @@ export class TeamBuilder extends LitElement {
     if (s.goal === "event" && s.rewardPlan && !compileRewardPlan(effectiveRewardPlan(s.rewardPlan, s.route === "challenge"), { songs: s.planChallengeSongs, consumption: s.challengePoints }))
       add("tb-reward-plan", "rewardPlan.invalidRate", "Enter conversion rates and challenge charts");
     const gekiso = s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live");
-    if (gekiso && this.hasMission("JustCount", s.songs) && (!validJustWindowInput(s) || !Number.isFinite(s.justWindowMs)))
+    if (gekiso && s.justWindowMode !== "off" && this.hasMission("JustCount", s.songs) && (!validJustWindowInput(s) || !Number.isFinite(s.justWindowMs) || s.justWindowMs <= 0))
       add("tb-just-window", "justWindowInvalid", "Enter zero or a positive window value", true);
+    if (gekiso && s.justWindowMode === "partial" && (!Number.isFinite(s.justCoveragePercent) || s.justCoveragePercent < 0 || s.justCoveragePercent > 100 || !Number.isFinite(s.justDurationSeconds) || s.justDurationSeconds < 0 || s.justDurationSeconds * 1000 > MAX_GEKISO_COUNT || !Number.isFinite(s.justContinuousSeconds) || s.justContinuousSeconds < 0 || s.justContinuousSeconds * 1000 > MAX_GEKISO_COUNT))
+      add("tb-just-coverage", "justCoverageInvalid", "Enter coverage from 0% to 100% and nonnegative durations", true);
     if (s.goal === "gekiso" && !s.minMissionMembers.every(value => Number.isInteger(value) && value >= 0 && value <= 5))
       add("tb-mission-members", "invalidMissionMembers", "Enter a member count from 0 to 5", true);
     else if (s.goal === "gekiso" && s.minMissionMembers.reduce((sum, count) => sum + count, 0) > 5)
@@ -1455,7 +1528,7 @@ export class TeamBuilder extends LitElement {
       rank: s.gekisoPlacementMode === "opponents" ? 1 : s.gekisoRanks[0],
       ...(s.gekisoPlacementMode === "rank" ? { ranks: [...s.gekisoRanks] as [number, number, number] } : {}),
       minComboBonus: s.minComboBonus,
-      ...(s.justWindowMs > 0 ? { minJustWindowMs: s.justWindowMs } : {}),
+      ...justWindowGoal(s),
       ...(s.gekisoPlacementMode === "opponents" ? { opponents: parseOpponents(s.gekisoOpponents).ranges } : {}),
       seeds: resolveLuckSamples(s),
     };
@@ -1499,7 +1572,7 @@ export class TeamBuilder extends LitElement {
             ranking: s.ptMode === "gekiso" && s.route === "live" ? "pt-only" : "primary",
             route: s.route, eventId: s.eventId, songs: s.route === "skip" ? [] : s.songs,
             consumption: s.route === "challenge" ? s.challengePoints : s.boosts, play,
-            ...(s.ptMode === "gekiso" && s.route === "live" ? { gekiso: { just: s.ptJust / 100, luckSamples: resolveLuckSamples(s, "rewards"), rank: 1 as const, minComboBonus: s.minComboBonus, ...(s.justWindowMs > 0 ? { minJustWindowMs: s.justWindowMs } : {}) } } : {}),
+            ...(s.ptMode === "gekiso" && s.route === "live" ? { gekiso: { just: s.ptJust / 100, luckSamples: resolveLuckSamples(s, "rewards"), rank: 1 as const, minComboBonus: s.minComboBonus, ...justWindowGoal(s) } } : {}),
           };
         }
         return {
@@ -1521,7 +1594,7 @@ export class TeamBuilder extends LitElement {
                 },
               }
             : {}),
-          ...(s.ptMode === "gekiso" && s.route === "live" ? { gekiso: { just: s.ptJust / 100, luckSamples: resolveLuckSamples(s, "rewards"), rank: 1 as const, minComboBonus: s.minComboBonus, ...(s.justWindowMs > 0 ? { minJustWindowMs: s.justWindowMs } : {}) } } : {}),
+          ...(s.ptMode === "gekiso" && s.route === "live" ? { gekiso: { just: s.ptJust / 100, luckSamples: resolveLuckSamples(s, "rewards"), rank: 1 as const, minComboBonus: s.minComboBonus, ...justWindowGoal(s) } } : {}),
           ranking: s.ptMode === "gekiso" && s.route === "live" ? "pt-only" : s.fullRanking ? undefined : "primary",
           route: s.route,
           eventId: s.eventId,
@@ -1609,7 +1682,7 @@ export class TeamBuilder extends LitElement {
     const request = this.request();
     if (request) request.timeLimitMs = null;
     return JSON.stringify([
-      "native-conservative-bounds-v6",
+      "native-window-coverage-v1",
       this.snapshot?.owner,
       this.loadedServer,
       this.data?.identity,
@@ -1819,6 +1892,7 @@ export class TeamBuilder extends LitElement {
   }
   /** Sync status lives in the app bar; the box search uses the app-bar search field. */
   private syncAppBar() {
+    clearAppBarActions("team-builder-planner");
     if (this.tab === "box") setAppBarActions("team-builder-quick-entry", html`
       <button class="button button--tonal" type="button" aria-pressed=${this.boxQuickEntry} data-app-bar-keep
         @click=${() => { this.boxQuickEntry = !this.boxQuickEntry; this.editing = null; this.requestUpdate(); }}>
@@ -1920,7 +1994,7 @@ export class TeamBuilder extends LitElement {
       `;
     }
     if (this.pt.correcting && this.tab !== "pt") this.pt.sync();
-    this.songComparison.sync();
+    if (this.tab === "song-comparison" || this.songComparison.running) this.songComparison.sync();
     this.analysis.sync();
     this.teamGrowth.sync();
     this.arena.sync();
@@ -1954,7 +2028,7 @@ export class TeamBuilder extends LitElement {
           ${panel}
         </section>
         ${renderSkillRoleEditor(this)} ${this.analysis.render()} ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
-        ${this.imports.render()} ${renderGekisoHelp(this)} ${this.renderSnackbar()}
+        ${this.imports.render()} ${renderGekisoHelp(this)} ${renderPlanner(this)} ${this.renderSnackbar()}
       </div>
     `;
   }
