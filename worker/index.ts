@@ -778,6 +778,8 @@ async function requestedRelease(env: Env, server: ResourceServerRoute, releaseId
   const key = `${server.slug}\u0000${server.resourcePrefix}\u0000${releaseId}`;
   const existing = requestedReleaseCache.get(key);
   if (existing) return existing;
+  const current = pointerCache.get(`${server.resourcePrefix}/current.json`);
+  if (current && current.expiresAt > Date.now() && current.value.releaseId === releaseId) return current.value;
   let immutable = false;
   const pending = (async () => {
     const manifestKey = `${server.resourcePrefix}/releases/${releaseId}/release.json`;
@@ -847,6 +849,13 @@ function releaseCacheRequest(request: Request, releaseRevision: string): Request
   url.searchParams.set("__release", releaseRevision);
   url.searchParams.set("__representation", RELEASE_REPRESENTATION_VERSION);
   return new Request(url, request);
+}
+
+function mediaCacheRequest(request: Request, releaseId: string): Request {
+  const key = releaseCacheRequest(request, releaseId);
+  const url = new URL(key.url);
+  url.searchParams.set("__media", "identity-v2");
+  return new Request(url, key);
 }
 
 function normalizeEtag(value: string): string {
@@ -997,50 +1006,11 @@ async function edgeCached(
   cacheControl?: string,
 ): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") return producer();
+  const hit = await readEdgeCache(request, ctx, cacheControl);
+  if (hit) return hit;
   const headers = new Headers(request.headers);
-  if (request.method === "HEAD") headers.delete("Range");
-  const ifRange = headers.get("If-Range");
-  headers.delete("If-Range");
-  const cacheHeaders = new Headers(headers);
-  for (const name of ["Range", "If-None-Match", "If-Modified-Since"]) cacheHeaders.delete(name);
-  const cacheKey = new Request(request.url, { method: "GET", headers: cacheHeaders });
-  if (headers.has("Range") && ifRange) {
-    const whole = await caches.default.match(cacheKey);
-    if (!whole) return producer();
-    if (ifRange.trim() !== whole.headers.get("ETag")) headers.delete("Range");
-    if (whole.body) ctx.waitUntil(whole.body.cancel());
-  }
-  const lookup = new Request(request.url, { method: "GET", headers });
-  const hit = await caches.default.match(lookup);
-  if (hit) {
-    const responseHeaders = new Headers(hit.headers);
-    if (cacheControl) responseHeaders.set("Cache-Control", cacheControl);
-    const etag = hit.headers.get("ETag");
-    if (etag && etagMatches(request.headers.get("If-None-Match"), etag)) {
-      if (hit.body) ctx.waitUntil(hit.body.cancel());
-      return new Response(null, {
-        status: 304,
-        headers: responseHeaders,
-        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
-      });
-    }
-    if (request.method === "HEAD") {
-      if (hit.body) ctx.waitUntil(hit.body.cancel());
-      return new Response(null, {
-        status: hit.status,
-        headers: responseHeaders,
-        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
-      });
-    }
-    return cacheControl
-      ? new Response(hit.body, {
-          status: hit.status,
-          statusText: hit.statusText,
-          headers: responseHeaders,
-          encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
-        })
-      : hit;
-  }
+  for (const name of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(name);
+  const cacheKey = new Request(request.url, { method: "GET", headers });
   const response = await producer();
   if (request.method === "HEAD") return response;
   const range = /^bytes 0-(\d+)\/(\d+)$/.exec(response.headers.get("Content-Range") || "");
@@ -1083,6 +1053,54 @@ async function edgeCached(
     return outgoing;
   }
   return response;
+}
+
+async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheControl?: string): Promise<Response | null> {
+  const headers = new Headers(request.headers);
+  if (request.method === "HEAD") headers.delete("Range");
+  const ifRange = headers.get("If-Range");
+  headers.delete("If-Range");
+  const cacheHeaders = new Headers(headers);
+  for (const name of ["Range", "If-None-Match", "If-Modified-Since"]) cacheHeaders.delete(name);
+  const cacheKey = new Request(request.url, { method: "GET", headers: cacheHeaders });
+  if (headers.has("Range") && ifRange) {
+    const whole = await caches.default.match(cacheKey);
+    if (!whole) return null;
+    if (ifRange.trim() !== whole.headers.get("ETag")) headers.delete("Range");
+    if (whole.body) ctx.waitUntil(whole.body.cancel());
+  }
+  const lookup = new Request(request.url, { method: "GET", headers });
+  const hit = await caches.default.match(lookup);
+  if (hit) {
+    const responseHeaders = new Headers(hit.headers);
+    if (cacheControl) responseHeaders.set("Cache-Control", cacheControl);
+    const etag = hit.headers.get("ETag");
+    if (etag && etagMatches(request.headers.get("If-None-Match"), etag)) {
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
+      return new Response(null, {
+        status: 304,
+        headers: responseHeaders,
+        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+      });
+    }
+    if (request.method === "HEAD") {
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
+      return new Response(null, {
+        status: hit.status,
+        headers: responseHeaders,
+        encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+      });
+    }
+    return cacheControl
+      ? new Response(hit.body, {
+          status: hit.status,
+          statusText: hit.statusText,
+          headers: responseHeaders,
+          encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
+        })
+      : hit;
+  }
+  return null;
 }
 
 const R2_TEXT_CACHE = "https://r2-text.haneoka.internal/";
@@ -3021,6 +3039,14 @@ async function handleReleaseMedia(
     return errorResponse(request, 400, "invalid_release", "Release must be a valid immutable release id");
   }
   let requested = releaseValues[0];
+  if (requested && !stampDiagnostics && !relative.endsWith(".moc3")) {
+    const hit = await readEdgeCache(mediaCacheRequest(request, requested), ctx, PINNED_MEDIA_CACHE_CONTROL);
+    if (hit) {
+      if (hit.headers.get("X-Haneoka-Release-Id") === requested &&
+        SOURCE_ID_PATTERN.test(hit.headers.get("X-Haneoka-Source-Id") || "") && !hit.headers.has("Content-Encoding")) return hit;
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
+    }
+  }
   let release: Release | null;
   try {
     release = requested ? await requestedRelease(env, server, requested) : await currentRelease(env, server);
@@ -3082,7 +3108,7 @@ async function handleReleaseMedia(
     moc &&
     !request.headers.has("Range") &&
     acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
-  let cacheRequest = releaseCacheRequest(request, release.releaseId);
+  let cacheRequest = moc ? releaseCacheRequest(request, release.releaseId) : mediaCacheRequest(request, release.releaseId);
   if (moc) {
     const cacheUrl = new URL(cacheRequest.url);
     cacheUrl.searchParams.set("__moc_encoding", gzip ? "gzip-v1" : "identity-v1");
@@ -3104,7 +3130,7 @@ async function handleReleaseMedia(
       });
       if (response) break;
     }
-    return response || new Response("not found", { status: 404, headers: CORS });
+    return response ? releaseResponseHeaders(response, release) : new Response("not found", { status: 404, headers: CORS });
   };
   // Cache API hits expose decoded streams while retaining Content-Encoding.
   // Keep the precompressed MOC response on the direct R2 path.
@@ -3300,62 +3326,66 @@ function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[], rev
         console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
       },
     });
-    const cacheKey = (dataId: string) => revision === "unversioned" ? undefined :
-      new Request(`https://sonolus-converted.haneoka.internal/v1/${revision}/${encodeURIComponent(dataId)}`);
-    const cached = async (dataId: string) => {
-      const key = cacheKey(dataId);
-      const response = key ? await caches.default.match(key).catch(() => undefined) : undefined;
-      const hash = response?.headers.get("ETag")?.match(/^"([a-f0-9]{40})"$/u)?.[1];
-      if (response && hash) return { response, hash };
-      await response?.body?.cancel().catch(() => undefined);
-      return undefined;
-    };
-    const store = async (dataId: string, hash: string, payload: ChartDataPayload) => {
-      const key = cacheKey(dataId);
-      if (!key) return;
-      await caches.default.put(key, new Response(payload.body, { headers: {
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Content-Type": payload.contentType ?? "application/gzip",
-        ETag: `"${hash}"`,
-      } })).catch(() => undefined);
-    };
-    // Listing metadata remains valid after the bounded gzip body cache evicts a chart.
-    const prepared = new Map<string, PreparedChartData>();
-    return {
-      async prepare(chart) {
-        const known = prepared.get(chart.dataId);
-        if (known) return known;
-        const hit = await cached(chart.dataId);
-        let value: PreparedChartData | null;
-        if (hit) {
-          value = { hash: hit.hash, resource: { hash: hit.hash } };
-          await hit.response.body?.cancel().catch(() => undefined);
-        } else {
-          value = await provider.prepare(chart);
-          if (value) {
-            const payload = await provider.load(chart, value.hash);
-            if (payload) await store(chart.dataId, value.hash, payload);
-          }
-        }
-        if (value) {
-          prepared.set(chart.dataId, value);
-          if (prepared.size > 1024) prepared.delete(prepared.keys().next().value!);
-        }
-        return value;
-      },
-      async load(chart, hash) {
-        const hit = await cached(chart.dataId);
-        if (hit && hit.hash === hash) {
-          const body = await hit.response.arrayBuffer().catch(() => undefined);
-          if (body) return { body, cacheControl: "public, max-age=31536000, immutable",
-            contentType: hit.response.headers.get("Content-Type") ?? "application/gzip", etag: `"${hash}"` };
-        } else await hit?.response.body?.cancel().catch(() => undefined);
-        const payload = await provider.load(chart, hash);
-        if (payload) await store(chart.dataId, hash, payload);
-        return payload;
-      },
-    };
+    return cachedChartDataProvider(provider, revision);
   });
+}
+
+function cachedChartDataProvider(provider: ChartDataProvider, revision: string): ChartDataProvider {
+  const cacheKey = (dataId: string) => revision === "unversioned" ? undefined :
+    new Request(`https://sonolus-converted.haneoka.internal/v1/${encodeURIComponent(revision)}/${encodeURIComponent(dataId)}`);
+  const cached = async (dataId: string) => {
+    const key = cacheKey(dataId);
+    const response = key ? await caches.default.match(key).catch(() => undefined) : undefined;
+    const hash = response?.headers.get("ETag")?.match(/^"([a-f0-9]{40})"$/u)?.[1];
+    if (response && hash) return { response, hash };
+    await response?.body?.cancel().catch(() => undefined);
+    return undefined;
+  };
+  const store = async (dataId: string, hash: string, payload: ChartDataPayload) => {
+    const key = cacheKey(dataId);
+    if (!key) return;
+    await caches.default.put(key, new Response(payload.body, { headers: {
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Type": payload.contentType ?? "application/gzip",
+      ETag: `"${hash}"`,
+    } })).catch(() => undefined);
+  };
+  // Listing metadata remains valid after the bounded gzip body cache evicts a chart.
+  const prepared = new Map<string, PreparedChartData>();
+  return {
+    async prepare(chart) {
+      const known = prepared.get(chart.dataId);
+      if (known) return known;
+      const hit = await cached(chart.dataId);
+      let value: PreparedChartData | null;
+      if (hit) {
+        value = { hash: hit.hash, resource: { hash: hit.hash } };
+        await hit.response.body?.cancel().catch(() => undefined);
+      } else {
+        value = await provider.prepare(chart);
+        if (value) {
+          const payload = await provider.load(chart, value.hash);
+          if (payload) await store(chart.dataId, value.hash, payload);
+        }
+      }
+      if (value) {
+        prepared.set(chart.dataId, value);
+        if (prepared.size > 1024) prepared.delete(prepared.keys().next().value!);
+      }
+      return value;
+    },
+    async load(chart, hash) {
+      const hit = await cached(chart.dataId);
+      if (hit && hit.hash === hash) {
+        const body = await hit.response.arrayBuffer().catch(() => undefined);
+        if (body) return { body, cacheControl: "public, max-age=31536000, immutable",
+          contentType: hit.response.headers.get("Content-Type") ?? "application/gzip", etag: `"${hash}"` };
+      } else await hit?.response.body?.cancel().catch(() => undefined);
+      const payload = await provider.load(chart, hash);
+      if (payload) await store(chart.dataId, hash, payload);
+      return payload;
+    },
+  };
 }
 
 function isBestdoriSonolusCatalogRequest(url: URL): boolean {
@@ -3386,8 +3416,9 @@ function bestdoriSonolusCatalogProvider(upstreamBase: string | undefined, revisi
   };
 }
 
-function bestdoriSonolusDataProvider(upstreamBase: string | undefined): RuntimeChartDataProvider {
-  return new RuntimeChartDataProvider({
+const bestdoriSonolusDataProviders = new RevisionCache<ChartDataProvider>(2);
+function bestdoriSonolusDataProvider(upstreamBase: string | undefined, revision: string): Promise<ChartDataProvider> {
+  return bestdoriSonolusDataProviders.getOrCreate(revision, () => cachedChartDataProvider(new RuntimeChartDataProvider({
     readBytes: async (dataId) => {
       const match = BESTDORI_SONOLUS_DATA_ID.exec(dataId);
       const musicId = Number(match?.[1]);
@@ -3403,7 +3434,7 @@ function bestdoriSonolusDataProvider(upstreamBase: string | undefined): RuntimeC
     onInvalidChart: (chart, error) => {
       console.warn(`Ignoring invalid Bestdori Sonolus chart ${chart.name}`, error);
     },
-  });
+  }), revision));
 }
 
 const sonolusThumbnailCache = new RevisionCache<JsonObject | undefined>(3);
@@ -3623,15 +3654,16 @@ async function handleSonolus(
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
   const baseRevision = `identity-text-v9-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
+  const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog
-    ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
+    ? `${ourNotesRevision}:${bestdoriRevision}`
     : ourNotesRevision;
   const cacheRequest = releaseCacheRequest(request, revision);
-  if (sonolusView && request.method === "GET" && !request.headers.has("Range") && !request.headers.has("If-Range") &&
+  if ((sonolusView || isBestdoriCatalog) && request.method === "GET" && !request.headers.has("Range") && !request.headers.has("If-Range") &&
     assetUrl.searchParams.get("type") !== "random" &&
     (pathname === "/sonolus/info" || /^\/sonolus\/(?:levels|playlists)\/(?!info$)[^/]+$/u.test(pathname))) {
     const hit = await caches.default.match(cacheRequest);
-    if (hit) return privateContentResponse(hit);
+    if (hit) return sonolusView ? privateContentResponse(hit) : hit;
   }
   let fallbackThumbnail: JsonObject | undefined;
   let repositoryPublic = false;
@@ -3661,7 +3693,7 @@ async function handleSonolus(
     const dataProvider =
       communityProviders?.dataProvider ??
       (isBestdoriCatalog
-        ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
+        ? await bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE, payloadRevision === "unversioned" ? "unversioned" : `${payloadRevision}:${bestdoriRevision}`)
         : await ourNotesSonolusDataProvider(env, releases, payloadRevision));
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
