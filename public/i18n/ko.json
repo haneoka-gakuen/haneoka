@@ -351,7 +351,7 @@
     "dashboard": {
       "overview": "홈 개요",
       "greetings": {
-        "birthday": "{name}, 생일 축하해!",
+        "birthday": "{name}쨩, 생일 축하해!",
         "newYear": "새해 복 많이 받으세요!",
         "setsubun": "귀신은 밖으로, 복은 안으로!",
         "lunarNewYear": "즐거운 설날 보내세요!",
