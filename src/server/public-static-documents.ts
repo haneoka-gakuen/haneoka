@@ -80,7 +80,6 @@ export type PublicStaticTarget =
 /** Locale-wide pages that hold per-visitor, authoring or administrative state. */
 const PRIVATE_GLOBAL_SECTIONS = new Set([
   "404",
-  "account",
   "admin",
   "auth",
   "catalog",
@@ -88,9 +87,6 @@ const PRIVATE_GLOBAL_SECTIONS = new Set([
   "community",
   "gacha-history",
   "player-profile",
-  "saves",
-  "settings",
-  "story-editor",
 ]);
 const LOCALES = new Set(["en", "ja", "ko", "zh-CN", "zh-TW"]);
 

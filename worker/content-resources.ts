@@ -34,6 +34,8 @@ export interface ContentResourceIndex {
   previewAssets?: string[];
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
+  eventSongReleasesPrepared?: true;
+  modelPublicationsPrepared?: true;
 }
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
@@ -62,7 +64,7 @@ export function contentCacheEpoch(index: ContentResourceIndex | null | undefined
     if (timeline[middle]! <= now) low = middle + 1;
     else high = middle;
   }
-  return `${index.releaseId ?? "legacy"}-${timeline[low - 1] ?? 0}`;
+  return `${index.releaseId ?? "legacy"}-${index.modelPublicationsPrepared ? "models-v1-" : ""}${timeline[low - 1] ?? 0}`;
 }
 export function nextContentPublication(
   index: ContentResourceIndex | null | undefined,

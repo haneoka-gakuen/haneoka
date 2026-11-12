@@ -11,6 +11,11 @@ export function withRequestWork<T>(context: Pick<ExecutionContext, "waitUntil">,
   return requests.run({ context, scheduled: new Set() }, work);
 }
 
+/** Keep shared reads alive when the initiating client leaves. The reader reports errors. */
+export function retainRequestRead(read: Promise<unknown>): void {
+  requests.getStore()?.context.waitUntil(read.catch(() => undefined));
+}
+
 /** Complete non-authoritative telemetry after the response; retain synchronous behavior outside fetch. */
 export async function backgroundWork(key: string, work: () => Promise<unknown>): Promise<void> {
   const state = requests.getStore();
