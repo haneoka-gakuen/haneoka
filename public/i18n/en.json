@@ -351,7 +351,7 @@
     "dashboard": {
       "overview": "Home overview",
       "greetings": {
-        "birthday": "Happy Birthday, {name}!",
+        "birthday": "Happy Birthday, {name}-chan!",
         "newYear": "Happy New Year!",
         "setsubun": "Fortune in, demons out!",
         "lunarNewYear": "Happy Lunar New Year!",

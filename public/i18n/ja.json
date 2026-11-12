@@ -351,7 +351,7 @@
     "dashboard": {
       "overview": "ホーム概要",
       "greetings": {
-        "birthday": "{name}、お誕生日おめでとう！",
+        "birthday": "{name}ちゃん、お誕生日おめでとう！",
         "newYear": "あけましておめでとう！",
         "setsubun": "鬼は外、福は内！",
         "lunarNewYear": "春節おめでとう！",
