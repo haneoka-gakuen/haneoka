@@ -1,9 +1,10 @@
 // L3 — GEB
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
-// Output: 排名卡片、共用编队、评分详情、卡面技能顺序及按谱面时间合并的技能／COMBO 凹分操作。
+// Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
 import { evaluateResult, rankRisk } from "./result-analysis";
+import { sectionResults } from "./section-results";
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
 import { rewardRankingLabel, rewardLabel } from "./reward-plan-view";
 import { cache } from "lit/directives/cache.js";
@@ -1101,6 +1102,7 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
               : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
           </span>` : nothing}
       <div class="cluster">${chips(host, hit)}</div>
+      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference)) : nothing}
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
       ${hit.event && hit.score && hit.song ? (() => {

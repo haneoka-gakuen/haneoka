@@ -13,7 +13,7 @@ import {
 
 import { contentPublished } from "../src/lib/content-publication";
 import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, visibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import { publicChartAsset } from "./chart-assets";
 import {
@@ -83,10 +83,9 @@ export function nextContentPublication(
 export type ContentIndexReader = (
   server: string,
   release?: string,
-  assetPath?: string,
 ) => Promise<ContentResourceIndex | null>;
-export const unrestricted = (view: RequestContentView): boolean =>
-  VISIBILITY_TYPES.every((kind) => {
+export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
+  kinds.every((kind) => {
     const rule = view.policy.types[kind];
     return (
       contentVisible(view, kind, { __publicationPending: true }) &&
@@ -113,8 +112,25 @@ function assetOwners(index: ContentResourceIndex, path: string): string[][] | un
     ]
   );
 }
+function functionalDocument(request: Request): boolean {
+  const source = request.headers.get("Referer");
+  if (!source) return false;
+  try {
+    const page = new URL(source);
+    if (page.origin !== new URL(request.url).origin) return false;
+    return /^\/(?:jp\/|intl\/)?(?:en|ja|ko|zh-CN|zh-TW)\/(?:team-builder|chart-editor|story-editor|studio|assets)(?:\/|$)/u.test(page.pathname) ||
+      /\/(?:songs|charts)\/[^/]+\/chart\/?$/u.test(page.pathname) ||
+      /\/(?:live2d|spine)\/[^/]+\/?$/u.test(page.pathname) ||
+      /\/community\/(?:stories|charts)\/[^/]+\/(?:read|chart)\/?$/u.test(page.pathname) ||
+      (/\/stories\/[^/]+\/?$/u.test(page.pathname) && page.searchParams.get("playback") === "play");
+  } catch {
+    return false;
+  }
+}
 function publicInterfaceAsset(path: string): boolean {
   if (publicChartAsset(path)) return true;
+  if (/^assets\/Assets\/AddressableResources\/Adv\/(?:Transition\/adv_transition_0001\/texture\.png|PostEffect\/)/u.test(path))
+    return true;
   if (/^assets\/Assets\/AddressableResources\/UI\/Texture\/BandRank\/ImgScorerank_(?:SS|S|A|B|C|D|E)\.png$/u.test(path))
     return true;
   const sprite =
@@ -124,51 +140,29 @@ function publicInterfaceAsset(path: string): boolean {
   return Boolean(
     sprite &&
     (sprite[1] === "UI/Atlas/FixUiSpriteAtlas"
-      ? UI_MARK_NAMES.test(`${sprite[2]}.png`)
+      ? UI_MARK_NAMES.test(`${sprite[2]}.png`) || /^(?:WhiteRect|NormalButtonFrame_H96(?:_Blue)?|sp_adv_next|sp_adv_text_alt_edge|sp_adv_line|IconTapNext(?:Glow)?)$/u.test(sprite[2]!)
       : /^Icon_gekisou_(?:combo|luck|just)$/u.test(sprite[2]!)),
   );
 }
 function mayReadAsset(
   index: ContentResourceIndex,
   path: string,
+  owners: string[][] | undefined,
   view: RequestContentView,
-): { allowed: boolean; public: boolean } {
-  const owners = assetOwners(index, path);
-  if (!owners) return { allowed: unrestricted(view), public: false };
-  const publicAsset = owners.some((chain) =>
-    chain.every((id) => {
+): boolean {
+  if (!owners?.length) return unrestricted(view);
+  const allowed = owners.some((chain) =>
+    chain.length > 0 && chain.every((id) => {
       const ref = index.records[id];
-      return (
-        ref &&
-        contentVisible(
-          {
-            ...view,
-            group: "guest",
-            spoilers: false,
-            override: false,
-            policy: { eventChallengeSongs: true, types: {} },
-          },
-          ref.kind,
-          ref.publication,
-          ref.id,
-        )
-      );
+      return ref && contentVisible(view, ref.kind, ref.publication, ref.id);
     }),
   );
-  const allowed =
-    publicAsset ||
-    owners.some((chain) =>
-      chain.every((id) => {
-        const ref = index.records[id];
-        return ref && contentVisible(view, ref.kind, ref.publication, ref.id);
-      }),
-    );
   const preview =
     !allowed &&
     view.spoilers &&
     index.previewAssets?.includes(path) &&
     owners.some((chain) =>
-      chain.every((id) => {
+      chain.length > 0 && chain.every((id) => {
         const ref = index.records[id];
         return (
           ref &&
@@ -177,7 +171,33 @@ function mayReadAsset(
         );
       }),
     );
-  return { allowed: allowed || Boolean(preview), public: publicAsset };
+  return allowed || Boolean(preview);
+}
+export async function gameMediaBoundary(
+  request: Request,
+  env: Env,
+  path: string,
+  readIndex: (path: string) => Promise<ContentResourceIndex | null>,
+  serve: () => Promise<Response>,
+): Promise<Response> {
+  if (!(await isContentBuildRequest(request, env))) {
+    const index = await readIndex(path);
+    if (!index)
+      return new Response("Resource metadata unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
+    const owners = assetOwners(index, path);
+    const published = owners?.some((chain) =>
+      chain.length > 0 && chain.every((id) => {
+        const ref = index.records[id];
+        return ref && contentPublished(ref.publication);
+      }),
+    );
+    if (published || (!owners?.length && publicInterfaceAsset(path))) return serve();
+    const view = await requestContentView(request, env);
+    if (!mayReadAsset(index, path, owners, view)) return notPublic();
+  }
+  const response = privateContentResponse(await serve());
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 export async function contentResourceBoundary(
   request: Request,
@@ -193,16 +213,37 @@ export async function contentResourceBoundary(
   const sourceBrowser =
     /^\/api\/v1\/servers\/(?:jp|intl)\/sources\//u.test(url.pathname) ||
     /^\/asset-static\/(?:jp|intl)\/.*\.json$/u.test(url.pathname);
-  const media = /^\/(assets|runtime|objects)\/(jp|intl)\/(.+)$/u.exec(url.pathname);
   const bulk = /^\/(?:game-client|artifacts)\/(jp|intl)\//u.exec(url.pathname);
   const packed = url.pathname.startsWith("/provider-static/content/");
   const staticJson = /^\/(?:static-views|provider-static|asset-static|playlist-static)\/.*\.json$/u.test(url.pathname);
   const search = url.pathname === "/api/v1/search";
   const chartImage = /^\/api\/v1\/charts\/.*\/image/u.test(url.pathname);
-  if (!api && !media && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
+  if (!api && !bulk && !packed && !staticJson && !chartImage && !search && !imageEntity)
     return serve(request);
   if (sourceBrowser) return serve(request);
-  if (media && publicInterfaceAsset(`${media[1]}/${decodeURIComponent(media[3]!)}`)) return serve(request);
+  const tail = api?.[2] ?? "";
+  const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
+  const serveFunctional = async () => {
+    const response = await serve(request);
+    if (!api || !url.searchParams.get("release") || (!response.ok && response.status !== 304)) return response;
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    return new Response(response.body, {
+      status: response.status, statusText: response.statusText, headers,
+      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+    });
+  };
+  if (componentData && functionalDocument(request)) return serveFunctional();
+  const functional = api && (
+    ["story-runtime", "chart-assets", "ui-marks", "song-release-times", "song-meta", "options"].includes(tail) ||
+    (tail === "release" && url.searchParams.get("projection") === "identity") ||
+    (url.searchParams.get("asset") === "1" && componentData)
+  );
+  if (functional || (imageEntity && url.searchParams.get("asset") === "1")) return serveFunctional();
+  if (api && (
+    /^\/api\/v1\/(?:team-builder|meta-reference)\//u.test(url.pathname) ||
+    (!visibilityType(tail.split("/")[0]!) && !/^(?:catalog|release)(?:\/|$)/u.test(tail))
+  )) return serve(request);
   if (await isContentBuildRequest(request, env)) {
     const response = privateContentResponse(await serve(request));
     response.headers.set("Cache-Control", "private, no-store");
@@ -210,27 +251,8 @@ export async function contentResourceBoundary(
   }
   const server =
     api?.[1] ??
-    media?.[2] ??
     bulk?.[1] ??
     (search || imageEntity ? (url.searchParams.get("server") ?? "intl") : undefined);
-  let mediaIndex: ContentResourceIndex | null | undefined;
-  if (media && server) {
-    mediaIndex = await readIndex(
-      server,
-      url.searchParams.get("release") ?? undefined,
-      `${media[1]}/${decodeURIComponent(media[3]!)}`,
-    );
-    if (mediaIndex) {
-      const owners = assetOwners(mediaIndex, `${media[1]}/${decodeURIComponent(media[3]!)}`);
-      if (
-        owners?.some((chain) =>
-          chain.every((id) => mediaIndex!.records[id] && contentPublished(mediaIndex!.records[id]!.publication)),
-        )
-      )
-        return serve(request);
-    }
-  }
-  const tail = api?.[2] ?? "";
   const offlineAuthorization =
     api && tail === "stories" && url.searchParams.get("projection") === "offline-authorization";
   const offlineIndex =
@@ -306,18 +328,8 @@ export async function contentResourceBoundary(
       if (refs.length && !refs.some((ref) => contentVisible(view, kind, ref.publication, id))) return notPublic();
     }
   }
-  if (media && server) {
-    const index = mediaIndex;
-    if (!index)
-      return new Response("Resource metadata unavailable", { status: 503, headers: { "Cache-Control": "no-store" } });
-    const access = mayReadAsset(index, `${media[1]}/${decodeURIComponent(media[3]!)}`, view);
-    if (!access.allowed) return notPublic();
-    const response = await serve(request);
-    if (access.public) return response;
-    const result = privateContentResponse(response);
-    result.headers.set("Cache-Control", "private, no-store");
-    return result;
-  }
+  if (api && /^live2d\/[^/]+$/u.test(tail) && unrestricted(view, ["live2d", "characters", "bands"]))
+    return privateContentResponse(await serve(request));
   if (identityOnly) return serve(request);
   // JSON source caches are shared internally. Conditional validation applies to
   // the filtered representation, whose identity includes the display policy.

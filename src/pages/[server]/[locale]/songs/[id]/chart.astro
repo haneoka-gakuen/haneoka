@@ -5,23 +5,25 @@ import { LOCALES, type Locale } from "../../../../../i18n/locales";
 import { staticResourceServers } from "../../../../../lib/entity-graph";
 import { isPublicReleaseServer, type ReleaseServer } from "../../../../../lib/release-server";
 import { searchableCatalogPages, type SearchableCatalogPage } from "../../../../../lib/searchable-catalog";
+import { chartPlaybackData, type ChartPlaybackData } from "../../../../../server/chart-playback-assets";
 
 type RouteProps = {
   server: ReleaseServer;
   locale: Locale;
   page: SearchableCatalogPage;
+  playback: ChartPlaybackData;
 };
 
 export async function getStaticPaths() {
   const output: Array<{ params: Record<string, string>; props: RouteProps }> = [];
   for (const server of staticResourceServers().filter(isPublicReleaseServer)) {
-    const pages = await searchableCatalogPages(server);
+    const [pages, playback] = await Promise.all([searchableCatalogPages(server), chartPlaybackData(server)]);
     for (const page of pages) {
       if (page.collection !== "songs" || page.kind !== "song") continue;
       for (const locale of LOCALES) {
         output.push({
           params: { server, locale, id: page.id },
-          props: { server, locale, page },
+          props: { server, locale, page, playback },
         });
       }
     }
@@ -29,7 +31,7 @@ export async function getStaticPaths() {
   return staticBuildPaths("src/pages/[server]/[locale]/songs/[id]/chart.astro", output);
 }
 
-const { server, locale, page } = Astro.props as RouteProps;
+const { server, locale, page, playback } = Astro.props as RouteProps;
 const rawReturnTo = Astro.url.searchParams.get("return") || "";
 const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : undefined;
 ---
@@ -40,5 +42,6 @@ const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? 
   server={server}
   canonical
   chartPage
+  chartPlayback={playback}
   returnTo={returnTo}
 />

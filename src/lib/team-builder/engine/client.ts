@@ -559,6 +559,17 @@ export class EngineClient {
         if (cpChallenge) publish({ ...latest, cpChallenge }, true);
         request = { ...request, goal: { ...request.goal, rewardPlan: resolved.resolvedRewardPlan } };
       }
+      if (request.goal.kind === "gekiso" && request.goal.arena?.objective === "sections") {
+        const worker = pool[0]!;
+        const loadedCharts = await worker.preload(request.goal.songs);
+        if (stopped) return latest;
+        const time = remaining(deadline);
+        const budget = Number.isFinite(time) ? Math.max(1, time - Math.min(100, time / 10)) : undefined;
+        const result = await worker.send<EngineResponse>({ type: "run", id: 0, loadedCharts, request }, undefined, accept, budget);
+        if (stopped) return latest;
+        publish(result, true);
+        return result;
+      }
       if ((request.aggregation === "mean" && (request.goal.kind === "score" || request.goal.kind === "event" || request.goal.kind === "gekiso")) || (request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared")) {
         const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
         const count = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? 1 : request.goal.kind === "gekiso" ? 6 : 2);

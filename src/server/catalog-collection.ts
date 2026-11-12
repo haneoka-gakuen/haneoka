@@ -12,6 +12,7 @@ import type { Locale } from "../i18n/locales";
 import { collectionDescription } from "../lib/collection-description";
 import type { ChartRateTable } from "../lib/chart-rates";
 import { chartRates } from "./chart-rates";
+import { publicationFields } from "../lib/content-publication";
 
 type Row = Record<string, unknown>;
 export interface CatalogCollectionPayload {
@@ -31,6 +32,31 @@ export interface CatalogCollectionPayload {
 }
 
 const collections = new Map<string, Promise<CatalogCollectionPayload>>();
+function collectionSongMeta(value: unknown, songs: unknown, includeProfiles: boolean): Row {
+  const record = (input: unknown): Row => input && typeof input === "object" && !Array.isArray(input) ? input as Row : {};
+  const scalars = (input: unknown): Row => Object.fromEntries(Object.entries(record(input))
+    .filter(([, field]) => field === null || typeof field !== "object"));
+  const rows = record(songs);
+  return Object.fromEntries(Object.entries(record(value)).map(([id, source]) => {
+    const song: Row = { ...record(source), musicId: Number(id), ...publicationFields(record(rows[id])) };
+    for (const [difficulty, data] of Object.entries(record(source))) {
+      if (!/^\d+$/u.test(difficulty)) continue;
+      const entry = record(data), chart = record(entry.chart), gekisou = record(entry.gekisou);
+      song[difficulty] = {
+        ...entry,
+        chart: {
+          ...scalars(chart),
+          ...(includeProfiles ? { profiles: Object.fromEntries(Object.entries(record(chart.profiles)).map(([key, profile]) => {
+            const row = record(profile);
+            return [key, { score: row.score, eff: row.eff, sr: row.sr }];
+          })) } : {}),
+        },
+        gekisou: { ...scalars(gekisou), ...(Array.isArray(gekisou.segments) ? { segments: gekisou.segments } : {}) },
+      };
+    }
+    return [id, song];
+  }));
+}
 export function catalogCollectionDescription(payload: CatalogCollectionPayload, locale: Locale, title: string): string {
   const resource = payload.resource === "song-meta" ? "songs" : payload.resource;
   const catalog = payload.catalogs?.[resource as CrossCatalogResource];
@@ -76,7 +102,11 @@ async function loadCollection(resource: string, server: ReleaseServer, locale: L
   await Promise.all(Object.values(catalogs?.[collection]?.identities || { [server]: identity }).map(async (pin) => {
     if (!pin) return;
     sourceMarks[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("ui-marks", pin.server, pin) as Record<string, string>;
-    if (collection === "songs") songMeta[pin.server as OfficialCatalogServer] = await fetchStaticCatalog("song-meta", pin.server, pin) as Row;
+    if (collection === "songs") songMeta[pin.server as OfficialCatalogServer] = collectionSongMeta(
+      await fetchStaticCatalog("song-meta", pin.server, pin),
+      catalogs?.songs?.documents[pin.server as OfficialCatalogServer] ?? document,
+      resource === "song-meta",
+    );
     if (resource === "song-meta") chartRateTables[pin.server as OfficialCatalogServer] = await chartRates(pin.server as ReleaseServer);
   }));
   return {

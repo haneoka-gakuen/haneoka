@@ -119,6 +119,7 @@ const publicForumsDataId = "shell-public-forums";
             <li class="nav__destination" data-current={current ? "true" : undefined} data-destination={destination.id} data-open={tree && current ? "" : undefined}>
               <a
                 class="rail-item"
+                data-nav-route={destination.route}
                 href={navigationHref(destination.route)}
                 aria-current={current ? (route === destination.route ? "page" : "location") : undefined}
               >
@@ -178,7 +179,7 @@ const publicForumsDataId = "shell-public-forums";
                             return (
                               <li>
                                 <div class="nav__item-row">
-                                  <a class="nav-item" href={navigationHref(item.route)} aria-current={active ? "page" : undefined}>
+                                  <a class="nav-item" data-nav-route={item.route} href={navigationHref(item.route)} aria-current={active ? "page" : undefined}>
                                     <span class="nav-item__indicator" aria-hidden="true"></span>
                                     <Icon name={item.icon} size={20} filled={active} />
                                     <span class="nav-item__label"><I18nText keyName={item.label} fallback={item.label} locale={locale} /></span>
@@ -196,7 +197,7 @@ const publicForumsDataId = "shell-public-forums";
                                   <ul class="nav__items nav__items--nested" role="list" id={branchId} hidden={!branchOpen}>
                                     {children.map((child) => (
                                       <li>
-                                        <a class="nav-item" href={navigationHref(child.route)} aria-current={itemActive(child.route) ? "page" : undefined}>
+                                        <a class="nav-item" data-nav-route={child.route} href={navigationHref(child.route)} aria-current={itemActive(child.route) ? "page" : undefined}>
 <span class="nav-item__indicator" aria-hidden="true"></span>
                                           <Icon name={child.icon} size={20} filled={itemActive(child.route)} />
                                           <span class="nav-item__label"><I18nText keyName={child.label} fallback={child.label} locale={locale} /></span>
@@ -229,7 +230,7 @@ const publicForumsDataId = "shell-public-forums";
 
     <!-- The music player lives here while it is collapsed (audio-dock.ts
          renders into this slot): a now-playing item in the rail. -->
-    <div class="nav__player" data-nav-player></div>
+    <div class="nav__player" data-nav-player transition:persist="navigation-player"></div>
 
     <ul class="nav__utilities" role="list">
       {utilities.map((item) => {
@@ -238,6 +239,7 @@ const publicForumsDataId = "shell-public-forums";
           <li class="nav__destination" data-current={active ? "true" : undefined}>
             <a
               class="rail-item rail-item--utility"
+              data-nav-route={item.route}
               href={navigationHref(item.route)}
               aria-current={itemActive(item.route) ? "page" : active ? "location" : undefined}
             >
@@ -255,7 +257,7 @@ const publicForumsDataId = "shell-public-forums";
                   <ul class="nav__items" role="list">
                     {informationPages.map((page) => (
                       <li>
-                        <a class="nav-item" href={navigationHref(page.route)} aria-current={itemActive(page.route) ? "page" : undefined}>
+                        <a class="nav-item" data-nav-route={page.route} href={navigationHref(page.route)} aria-current={itemActive(page.route) ? "page" : undefined}>
 <span class="nav-item__indicator" aria-hidden="true"></span>
                           <span class="nav-item__label"><I18nText keyName={page.label} fallback={page.label} locale={locale} /></span>
                         </a>
@@ -383,12 +385,14 @@ const publicForumsDataId = "shell-public-forums";
   import { readSelectedReleaseServer } from "../lib/release-server";
   const EXPANDED_KEY = "haneoka.navigation.expanded.v2";
   const SCROLL_KEY = "haneoka.navigation.scroll.v3";
-  const TREE_KEY = "haneoka.navigation.tree.v1";
+  const OPEN_KEY = "haneoka.navigation.open.v1";
   const persistentQuery = matchMedia("(min-width: 1200px)");
   const root = document.documentElement;
   let releaseNavigationFocus: (() => void) | undefined;
   let releaseActionObservers: (() => void) | undefined;
   const inertTargets = new Set<HTMLElement>();
+  let navigationScroll: number | undefined;
+  let navigationAnchor: { route: string; offset: number } | undefined;
 
   const shell = () => document.querySelector<HTMLElement>("[data-shell]");
   const syncToggles = (expanded: boolean) =>
@@ -435,12 +439,46 @@ const publicForumsDataId = "shell-public-forums";
     } catch {}
     syncToggles(expanded);
   };
+  const readNavigationChoices = (): Record<string, boolean> => {
+    try { return JSON.parse(localStorage.getItem(OPEN_KEY) || "{}") || {}; }
+    catch { return {}; }
+  };
+  const setTreeOpen = (item: HTMLElement, open: boolean) => {
+    item.toggleAttribute("data-open", open);
+    item.querySelector("[data-nav-tree-toggle]")?.setAttribute("aria-expanded", String(open));
+  };
+  const restoreNavigationChoices = (host: ParentNode, opened = readNavigationChoices()) => {
+    host.querySelectorAll<HTMLElement>(".nav__destinations [data-nav-tree-toggle]").forEach((toggle) => {
+      const id = toggle.dataset.navTreeToggle!;
+      if (id in opened) setTreeOpen(toggle.closest<HTMLElement>(".nav__destination")!, opened[id] === true);
+    });
+    host.querySelectorAll<HTMLElement>("[data-nav-section-toggle]").forEach((toggle) => {
+      const id = `section:${toggle.dataset.navSectionToggle}`;
+      const items = host.querySelector<HTMLElement>(`#${CSS.escape(toggle.getAttribute("aria-controls")!)}`)!;
+      if (id in opened && !items.querySelector("[aria-current]")) {
+        toggle.setAttribute("aria-expanded", String(opened[id] === true));
+        items.hidden = opened[id] !== true;
+      }
+    });
+  };
+  const indicatorVisible = (host: ParentNode): boolean => {
+    const indicator = [...host.querySelectorAll<HTMLElement>(".rail-item__indicator, .nav-item__indicator")]
+      .find((item) => getComputedStyle(item).viewTransitionName === "nav-indicator");
+    if (!indicator) return false;
+    const clip = indicator.closest<HTMLElement>("[data-nav-scroll]") ?? indicator.closest<HTMLElement>("[data-nav]")!;
+    const box = clip.getBoundingClientRect(), item = indicator.getBoundingClientRect();
+    return item.top >= box.top && item.bottom <= box.bottom;
+  };
 
   const initializeShell = () => {
     const host = shell();
     if (!host || host.dataset.initialized === "true") return;
     readSelectedReleaseServer();
     host.dataset.initialized = "true";
+    const navigation = host.querySelector<HTMLElement>("[data-nav]")!;
+    navigation.dataset.navRestoring = "true";
+    const opened = readNavigationChoices();
+    restoreNavigationChoices(host, opened);
     syncToggles(persistentQuery.matches && root.dataset.nav !== "collapsed");
     host.querySelectorAll("[data-nav-toggle]").forEach((node) =>
       node.addEventListener("click", () => {
@@ -450,48 +488,50 @@ const publicForumsDataId = "shell-public-forums";
     );
     host.querySelectorAll("[data-nav-close]").forEach((node) => node.addEventListener("click", () => setModal(false)));
 
-    // Keep the rail's scroll position across page swaps so a long tree never
-    // jumps, then bring the current entry on screen if it is not.
     const scroller = host.querySelector<HTMLElement>("[data-nav-scroll]");
+    let savedScroll = navigationScroll;
     try {
-      if (scroller) scroller.scrollTop = Number(sessionStorage.getItem(SCROLL_KEY) || 0);
+      const saved = sessionStorage.getItem(SCROLL_KEY);
+      if (savedScroll === undefined && saved !== null) savedScroll = Number(saved);
     } catch {}
+    navigationScroll = undefined;
+    if (scroller && savedScroll !== undefined) scroller.scrollTop = savedScroll;
+    if (scroller && navigationAnchor) {
+      const anchor = scroller.querySelector<HTMLElement>(`[data-nav-route="${CSS.escape(navigationAnchor.route)}"]`);
+      if (anchor && !anchor.closest("[hidden]") && getComputedStyle(anchor).visibility === "visible")
+        scroller.scrollTop += anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top - navigationAnchor.offset;
+    }
+    navigationAnchor = undefined;
     const currentEntry = scroller?.querySelector<HTMLElement>(".nav-item[aria-current='page']");
-    if (scroller && currentEntry && scroller.clientHeight > 0) {
+    if (savedScroll === undefined && scroller && currentEntry && scroller.clientHeight > 0 &&
+      getComputedStyle(currentEntry).visibility === "visible") {
       const box = scroller.getBoundingClientRect();
       const entry = currentEntry.getBoundingClientRect();
-      if (entry.top < box.top + 8 || entry.bottom > box.bottom - 8)
-        scroller.scrollTop += entry.top - box.top - box.height / 3;
+      if (entry.top < box.top + 8) scroller.scrollTop += entry.top - box.top - 8;
+      else if (entry.bottom > box.bottom - 8) scroller.scrollTop += entry.bottom - box.bottom + 8;
     }
+    navigation.getBoundingClientRect();
+    if (!indicatorVisible(host)) root.setAttribute("data-nav-indicator-static", "");
+    try { if (scroller) sessionStorage.setItem(SCROLL_KEY, String(scroller.scrollTop)); } catch {}
+    requestAnimationFrame(() => {
+      navigation.removeAttribute("data-nav-restoring");
+    });
     scroller?.addEventListener(
       "scroll",
       () => {
+        if (!navigation.isConnected || navigation.hasAttribute("data-nav-restoring")) return;
         try {
           sessionStorage.setItem(SCROLL_KEY, String(scroller.scrollTop));
         } catch {}
       },
       { passive: true },
     );
-    // A destination's tree unfolds when the reader arrives from another
-    // destination; moving within one destination leaves it still.
-    const tree = host.querySelector<HTMLElement>(".nav__destinations [data-current] [data-nav-tree]");
-    // Each destination's tree opens and closes on its own; the reader's choice outlives the page.
-    const OPEN_KEY = "haneoka.navigation.open.v1";
-    let opened: Record<string, boolean> = {};
-    try {
-      opened = JSON.parse(localStorage.getItem(OPEN_KEY) || "{}") || {};
-    } catch {}
-    const setOpen = (item: HTMLElement, open: boolean) => {
-      item.toggleAttribute("data-open", open);
-      item.querySelector("[data-nav-tree-toggle]")?.setAttribute("aria-expanded", String(open));
-    };
     host.querySelectorAll<HTMLElement>(".nav__destinations [data-nav-tree-toggle]").forEach((toggle) => {
       const item = toggle.closest<HTMLElement>(".nav__destination")!;
       const id = toggle.dataset.navTreeToggle!;
-      if (id in opened) setOpen(item, opened[id] === true);
       toggle.addEventListener("click", () => {
         const open = !item.hasAttribute("data-open");
-        setOpen(item, open);
+        setTreeOpen(item, open);
         opened[id] = open;
         try {
           localStorage.setItem(OPEN_KEY, JSON.stringify(opened));
@@ -505,8 +545,6 @@ const publicForumsDataId = "shell-public-forums";
         toggle.setAttribute("aria-expanded", String(open));
         items.hidden = !open;
       };
-      // A section holding the current page stays open whatever was stored.
-      if (id in opened && !items.querySelector("[aria-current]")) set(opened[id] === true);
       toggle.addEventListener("click", () => {
         const open = toggle.getAttribute("aria-expanded") !== "true";
         set(open);
@@ -516,15 +554,6 @@ const publicForumsDataId = "shell-public-forums";
         } catch {}
       });
     });
-    let previousTree: string | null = null;
-    try {
-      previousTree = sessionStorage.getItem(TREE_KEY);
-      sessionStorage.setItem(TREE_KEY, tree?.dataset.navTree ?? "");
-    } catch {}
-    if (tree && previousTree !== null && previousTree !== tree.dataset.navTree) {
-      tree.classList.add("nav__tree--entering");
-      window.setTimeout(() => tree.classList.remove("nav__tree--entering"), 800);
-    }
 
     // Material top app bar: the container switches to the "on scroll" surface once content scrolls under it.
     const bar = host.querySelector<HTMLElement>("[data-top-app-bar]");
@@ -585,8 +614,29 @@ const publicForumsDataId = "shell-public-forums";
   syncEntityNavigation();
   document.addEventListener("astro:page-load", syncEntityNavigation);
   document.addEventListener("astro:page-load", initializeShell);
+  document.addEventListener("astro:after-swap", initializeShell);
   persistentQuery.addEventListener("change", () => setModal(false));
-  document.addEventListener("astro:before-swap", () => {
+  document.addEventListener("astro:before-swap", (event) => {
+    const next = (event as Event & { newDocument: Document }).newDocument;
+    next.documentElement.toggleAttribute("data-nav-indicator-static", !indicatorVisible(document));
+    navigationAnchor = undefined;
+    const scroller = shell()?.querySelector<HTMLElement>("[data-nav-scroll]");
+    if (scroller) {
+      navigationScroll = scroller.scrollTop;
+      try { sessionStorage.setItem(SCROLL_KEY, String(navigationScroll)); } catch {}
+      const nextScroller = next.querySelector<HTMLElement>("[data-nav-scroll]");
+      const destination = nextScroller?.querySelector<HTMLElement>(".nav-item[aria-current='page'][data-nav-route]") ??
+        nextScroller?.querySelector<HTMLElement>(".rail-item[aria-current][data-nav-route]");
+      const target = destination?.dataset.navRoute && scroller.querySelector<HTMLElement>(`[data-nav-route="${CSS.escape(destination.dataset.navRoute)}"]`);
+      const anchor = target || scroller.querySelector<HTMLElement>(".nav-item[aria-current='page'][data-nav-route]");
+      if (anchor && !anchor.closest("[hidden]") && getComputedStyle(anchor).visibility === "visible") {
+        const box = scroller.getBoundingClientRect(), item = anchor.getBoundingClientRect();
+        if (item.bottom > box.top && item.top < box.bottom)
+          navigationAnchor = { route: anchor.dataset.navRoute!, offset: item.top - box.top };
+      }
+    }
+    restoreNavigationChoices(next);
+    next.querySelector<HTMLElement>("[data-nav]")?.setAttribute("data-nav-restoring", "true");
     setModal(false);
     releaseActionObservers?.();
     releaseActionObservers = undefined;

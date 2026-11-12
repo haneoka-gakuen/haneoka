@@ -1,6 +1,14 @@
 @import "./components/selection-pane.css";
 
 @layer pages {
+  .team-builder .tb-card__temporary {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 2;
+  }
   .team-builder timing-chart-preview {
     display: block;
     min-inline-size: 0;

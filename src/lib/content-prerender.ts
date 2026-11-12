@@ -10,6 +10,9 @@ import type { VisibilityType } from "./content-visibility-policy";
 
 let publicView = false;
 let references: Map<string, ContentReference> | undefined;
+export function prerenderViewKey(): string {
+  return references ? (publicView ? "public" : "full") : "runtime";
+}
 export function prerenderContentVisible(
   kind: VisibilityType | undefined,
   value: Record<string, unknown>,

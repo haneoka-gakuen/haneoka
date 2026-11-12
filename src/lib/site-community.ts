@@ -4,8 +4,9 @@
 // Pos: [Map](L2-2.md)；Worker、开发中间件与浏览器共用的社区显示策略。
 // Effects/Dependencies: 浏览器读取 HTML 状态；不改变账号、库存或云同步权限。
 export const COMMUNITY_VISIBILITY_ATTRIBUTE = "data-community-pages";
+export const DEFAULT_COMMUNITY_HIDDEN_HOSTS = "haneoka.com";
 
-export const communityPagesEnabled = (hostname: string, hiddenHosts = ""): boolean =>
+export const communityPagesEnabled = (hostname: string, hiddenHosts = DEFAULT_COMMUNITY_HIDDEN_HOSTS): boolean =>
   !hiddenHosts.split(",").some((host) => host.trim() === hostname);
 
 export function communityVisible(): boolean {

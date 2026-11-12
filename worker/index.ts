@@ -5,8 +5,8 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
 import { CHART_ASSETS_PROJECTION, chartAssets } from "./chart-assets";
-import { contentPublished, eventStoryStarts } from "../src/lib/content-publication";
-import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
+import { contentPublished } from "../src/lib/content-publication";
+import { contentCacheEpoch, nextContentPublication, contentResourceBoundary, gameMediaBoundary,
   type ContentResourceIndex,
 } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
@@ -23,6 +23,7 @@ import { readArenaCatalog } from "../src/lib/arena-catalog";
 import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
 import { handleContentVisibilityRequest } from "./content-visibility";
+import { handlePublicStaticViewRequest } from "./public-static-view";
 import { eventSongReleases } from "../src/lib/event-song-release";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
@@ -115,6 +116,9 @@ import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
   type ChartCatalogSnapshot,
+  type ChartDataPayload,
+  type ChartDataProvider,
+  type PreparedChartData,
   RevisionCache,
   sonolusLevelName,
   sonolusPlaylistName,
@@ -2065,17 +2069,21 @@ async function catalogPage(
 
 const contentOwnershipShards = new Map<string, Promise<Pick<ContentResourceIndex, "assets" | "previewAssets"> | null>>();
 const resourceContentIndexes = new Map<string, Promise<ContentResourceIndex | null>>();
-async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: string, id?: string, assetPath?: string): Promise<ContentResourceIndex | null> {
+async function resourceContentIndex(env: Env, slug: string, id?: string): Promise<ContentResourceIndex | null> {
   const server = await activeResourceServer(env, slug);
   const release = server && (id ? await requestedRelease(env, server, id) : await currentRelease(env, server));
-  if (!release) return null;
+  return release ? releaseContentIndex(env, release) : null;
+}
+async function releaseContentIndex(env: Env, release: Release, assetPath?: string): Promise<ContentResourceIndex | null> {
+  const slug = release.server;
   const identity = `${slug}:${release.releaseId}`;
   let pending = resourceContentIndexes.get(identity);
+  if (pending) {
+    resourceContentIndexes.delete(identity);
+    resourceContentIndexes.set(identity, pending);
+  }
   if (!pending) {
     pending = (async () => {
-      const key = new Request(`https://content-index.haneoka.internal/v3/${identity}`);
-      const hit = await caches.default.match(key);
-      if (hit) return await hit.json<ContentResourceIndex>();
       const prepared = await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
@@ -2090,56 +2098,13 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
         for (const [song, start] of Object.entries(starts)) if (result.publications?.[`songs:${song}`]) result.publications[`songs:${song}`]!.eventPublishedAt = start;
         return result;
       }
-      const storage = await catalogStorageManifest(env, release);
-      if (!storage) return null;
-      const result: ContentResourceIndex = { server: slug, releaseId: release.releaseId, sourceId: release.sourceId, records: {}, assets: {}, previewAssets: [], publications: {} };
-      const storyStarts = new Map<string, number>();
-      const resources = Object.entries(storage.resources).filter(([name]) => visibilityType(name));
-      // New releases carry compact ownership records; an older immutable
-      // release is indexed once from its complete entity partitions.
-      for (const [name, resource] of resources) {
-        const raw = await readReleaseJson(env, release, `api/v1/catalog/${name}/access.json`);
-        let index = raw as unknown as ContentResourceIndex | null;
-        if (!index) index = await legacyContentIndex(env, release, name, resource);
-        if (name === "stories") {
-          const document = await readReleaseJson(env, release, resource.index);
-          for (const [chapter, at] of eventStoryStarts(document)) storyStarts.set(chapter, at);
-        }
-        const prefix = `${name}:`;
-        for (const [record, reference] of Object.entries(index.records)) {
-          const kind = visibilityType(reference.kind) ?? reference.kind;
-          result.records[prefix + record] = { ...reference, kind };
-          if (kind === visibilityType(name) && !result.publications![`${kind}:${reference.id}`])
-            result.publications![`${kind}:${reference.id}`] = reference.publication;
-        }
-        for (const [key, publication] of Object.entries(index.publications ?? {})) {
-          const at = key.indexOf(":"), kind = visibilityType(key.slice(0, at));
-          result.publications![kind ? `${kind}${key.slice(at)}` : key] = publication;
-        }
-        for (const [path, chains] of Object.entries(index.assets)) {
-          const owners = result.assets[path] ??= [];
-          owners.push(...chains.map((chain) => chain.map((record) => prefix + record)));
-        }
-        result.previewAssets!.push(...(index.previewAssets ?? []));
-      }
-      const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
-      const starts = eventSongReleases(events, challenges);
-      for (const reference of Object.values(result.records)) if (reference.kind === "songs" && starts[reference.id]) {
-        const raw = result.publications?.[`songs:${reference.id}`]?.publishedAt;
-        const base = Number(Array.isArray(raw) ? raw.find((at) => Number(at) > 0) : raw);
-        if (!base || contentPublished(reference.publication, base)) reference.publication.eventPublishedAt = starts[reference.id];
-      }
-      for (const reference of Object.values(result.records)) if (reference.kind === "stories") {
-        const at = storyStarts.get(String(reference.publication.chapterId));
-        if (at) reference.publication.eventPublishedAt = at;
-      }
-      ctx.waitUntil(caches.default.put(key, Response.json(result, { headers: { "Cache-Control": "public, max-age=86400" } })).catch(() => undefined));
-      return result;
+      return null;
     })();
-    boundedPromiseCache(resourceContentIndexes, identity, pending, 2);
+    boundedPromiseCache(resourceContentIndexes, identity, pending, 4);
   }
   try {
     const index = await pending;
+    if (!index) resourceContentIndexes.delete(identity);
     if (!index?.assetShards || !assetPath) return index;
     const path = assetPath.replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/").replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "");
     const shard = `${index.assetShards.prefix}${fnv1a32Shard(path, index.assetShards.count)}.json`;
@@ -2152,44 +2117,6 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
     return { ...index, assets: values?.assets ?? {}, previewAssets: values?.previewAssets ?? [] };
   }
   catch (error) { resourceContentIndexes.delete(identity); throw error; }
-}
-async function legacyContentIndex(env: Env, release: Release, name: string, resource: CatalogResourceStorage): Promise<ContentResourceIndex> {
-  const { contentReference, contentFieldType } = await import("../src/lib/content-view");
-  const { inferredVisibilityType, visibilityId } = await import("../src/lib/content-visibility-policy");
-  const result: ContentResourceIndex = { records: {}, assets: {}, previewAssets: [], publications: {} };
-  const rootKind = visibilityType(name)!;
-  const walk = (value: JsonValue, kind = rootKind, owners: string[] = [], field = "") => {
-    if (typeof value === "string") {
-      const path = value.replace(/^\/(assets|runtime|objects)\/(jp|intl)\//u, "$1/").split("?")[0]!;
-      if (/^(assets|runtime|objects)\//u.test(path) && owners.length) {
-        (result.assets[path] ??= []).push(owners);
-        if (["image", "thumbnailImage", "faceImage", "jacketUrl", "jacketThumbUrl"].includes(field)) result.previewAssets!.push(path);
-      }
-    } else if (Array.isArray(value)) value.forEach((entry) => walk(entry, kind, owners, field));
-    else if (isJsonObject(value)) {
-      kind = inferredVisibilityType(value) ?? kind;
-      const identity = visibilityId(kind, value);
-      if (identity || !owners.length) {
-        const ref = `${kind}:${identity}:${Object.keys(result.records).length}`;
-        result.records[ref] = contentReference(kind, value, identity);
-        owners = [...owners, ref];
-      }
-      for (const [key, child] of Object.entries(value)) walk(child, contentFieldType(key) ?? kind, owners, key);
-    }
-  };
-  if (resource.entities) {
-    const shards = [...resource.entities.shards];
-    for (let offset = 0; offset < shards.length; offset += 8) {
-      const values = await Promise.all(shards.slice(offset, offset + 8).map((shard) => readCatalogShardAt(env, release, resource.entities!, shard)));
-      for (const value of values) if (isJsonObject(value)) for (const [id, entity] of Object.entries(value)) {
-        const owner = `${rootKind}:${id}`;
-        result.records[owner] = contentReference(rootKind, isJsonObject(entity) ? entity : {}, id);
-        result.publications![`${rootKind}:${id}`] = result.records[owner]!.publication;
-        walk(entity, rootKind, [owner]);
-      }
-    }
-  } else { const value = await readReleaseJson(env, release, resource.index); if (value) walk(value); }
-  return result;
 }
 
 async function handleCatalogStorageApi(
@@ -2999,6 +2926,7 @@ const LATEST_CATALOG_RESERVED_SEGMENTS = new Set([
   "auth",
   "catalog",
   "community",
+  "content-view",
   "garupa",
   "me",
   "release",
@@ -3039,7 +2967,7 @@ async function handleLatestCatalogApi(
   url.searchParams.delete("server");
   url.pathname = `/api/v1/servers/${encodeURIComponent(server)}/${rawResource}${rawTail ? `/${rawTail}` : ""}`;
   return contentResourceBoundary(new Request(url, request), env, ctx,
-    (source, release, path) => resourceContentIndex(env, ctx, source, release, path),
+    (source, release) => resourceContentIndex(env, source, release),
     (source) => handleCatalogApi(env, ctx, source, new URL(source.url).pathname).then((response) =>
       response ?? errorResponse(source, 404, "resource_not_found", "Catalog resource not found")));
 }
@@ -3156,12 +3084,14 @@ async function handleReleaseMedia(
     }
     return response || new Response("not found", { status: 404, headers: CORS });
   };
-  // Cache API hits expose decoded streams while retaining Content-Encoding.
-  // Keep the precompressed MOC response on the direct R2 path.
-  const response = gzip
-    ? await produce()
-    : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
-  return releaseResponseHeaders(response, release);
+  return gameMediaBoundary(request, env, `${servedTree}/${relative}`, (path) => releaseContentIndex(env, release, path), async () => {
+    // Cache API hits expose decoded streams while retaining Content-Encoding.
+    // Keep the precompressed MOC response on the direct R2 path.
+    const response = gzip
+      ? await produce()
+      : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
+    return releaseResponseHeaders(response, release);
+  });
 }
 
 async function handleArtifact(
@@ -3245,7 +3175,7 @@ async function resolveCommunityChartMedia(
   const release = server ? await requestedRelease(env, server, ref.releaseId) : null;
   if (!release) return null;
   if (viewer) {
-    const index = await resourceContentIndex(env, ctx, ref.server);
+    const index = await resourceContentIndex(env, ref.server);
     const publication = index?.publications?.[`songs:${ref.songId}`];
     const view = await requestContentView(viewer, env);
     if (!publication || !contentVisible(view, "songs", publication, ref.songId)) return null;
@@ -3296,7 +3226,7 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
     async load() {
       const catalogs = await Promise.all(
         releases.map(async (release) => {
-          const [storage, index] = await Promise.all([catalogStorageManifest(env, release), resourceContentIndex(env, ctx, release.server, release.releaseId)]);
+          const [storage, index] = await Promise.all([catalogStorageManifest(env, release), resourceContentIndex(env, release.server, release.releaseId)]);
           const catalog = await new ReleaseChartCatalogProvider({
             mediaBaseUrl: origin,
             onInvalidCharts: (names) => {
@@ -3327,19 +3257,77 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
   };
 }
 
-function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[]): RuntimeChartDataProvider {
-  const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
-  if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
-  return new RuntimeChartDataProvider({
-    readBytes: async (dataId) => {
-      const reference = parseReleaseChartDataId(dataId);
-      if (!reference) return null;
-      const release = releasesByKey.get(sonolusReleaseKey(reference));
-      return release ? readReleaseBytes(env, release, reference.path) : null;
-    },
-    onInvalidChart: (chart, error) => {
-      console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
-    },
+const sonolusDataProviders = new RevisionCache<ChartDataProvider>(2);
+function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[], revision: string): Promise<ChartDataProvider> {
+  return sonolusDataProviders.getOrCreate(`${revision}:${ourNotesSonolusRevision(releases)}`, () => {
+    const releasesByKey = new Map(releases.map((release) => [sonolusReleaseKey(release), release]));
+    if (releasesByKey.size !== releases.length) throw new Error("Duplicate Sonolus release provenance");
+    const provider = new RuntimeChartDataProvider({
+      readBytes: async (dataId) => {
+        const reference = parseReleaseChartDataId(dataId);
+        if (!reference) return null;
+        const release = releasesByKey.get(sonolusReleaseKey(reference));
+        return release ? readReleaseBytes(env, release, reference.path) : null;
+      },
+      onInvalidChart: (chart, error) => {
+        console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
+      },
+    });
+    const cacheKey = (dataId: string) => revision === "unversioned" ? undefined :
+      new Request(`https://sonolus-converted.haneoka.internal/v1/${revision}/${encodeURIComponent(dataId)}`);
+    const cached = async (dataId: string) => {
+      const key = cacheKey(dataId);
+      const response = key ? await caches.default.match(key).catch(() => undefined) : undefined;
+      const hash = response?.headers.get("ETag")?.match(/^"([a-f0-9]{40})"$/u)?.[1];
+      if (response && hash) return { response, hash };
+      await response?.body?.cancel().catch(() => undefined);
+      return undefined;
+    };
+    const store = async (dataId: string, hash: string, payload: ChartDataPayload) => {
+      const key = cacheKey(dataId);
+      if (!key) return;
+      await caches.default.put(key, new Response(payload.body, { headers: {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Type": payload.contentType ?? "application/gzip",
+        ETag: `"${hash}"`,
+      } })).catch(() => undefined);
+    };
+    // Listing metadata remains valid after the bounded gzip body cache evicts a chart.
+    const prepared = new Map<string, PreparedChartData>();
+    return {
+      async prepare(chart) {
+        const known = prepared.get(chart.dataId);
+        if (known) return known;
+        const hit = await cached(chart.dataId);
+        let value: PreparedChartData | null;
+        if (hit) {
+          value = { hash: hit.hash, resource: { hash: hit.hash } };
+          await hit.response.body?.cancel().catch(() => undefined);
+        } else {
+          value = await provider.prepare(chart);
+          if (value) {
+            const payload = await provider.load(chart, value.hash);
+            if (payload) await store(chart.dataId, value.hash, payload);
+          }
+        }
+        if (value) {
+          prepared.set(chart.dataId, value);
+          if (prepared.size > 1024) prepared.delete(prepared.keys().next().value!);
+        }
+        return value;
+      },
+      async load(chart, hash) {
+        const hit = await cached(chart.dataId);
+        if (hit && hit.hash === hash) {
+          const body = await hit.response.arrayBuffer().catch(() => undefined);
+          if (body) return { body, cacheControl: "public, max-age=31536000, immutable",
+            contentType: hit.response.headers.get("Content-Type") ?? "application/gzip", etag: `"${hash}"` };
+        } else await hit?.response.body?.cancel().catch(() => undefined);
+        const payload = await provider.load(chart, hash);
+        if (payload) await store(chart.dataId, hash, payload);
+        return payload;
+      },
+    };
   });
 }
 
@@ -3605,13 +3593,19 @@ async function handleSonolus(
       : "unversioned";
   const origin = siteOrigin(assetUrl);
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(request, env) : undefined;
-  const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
+  const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, release.server, release.releaseId), sonolusView.now))) : [];
   const baseRevision = `identity-text-v9-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   let revision = isBestdoriCatalog
     ? `${ourNotesRevision}:${bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE)}`
     : ourNotesRevision;
   const cacheRequest = releaseCacheRequest(request, revision);
+  if (sonolusView && request.method === "GET" && !request.headers.has("Range") && !request.headers.has("If-Range") &&
+    assetUrl.searchParams.get("type") !== "random" &&
+    (pathname === "/sonolus/info" || /^\/sonolus\/(?:levels|playlists)\/(?!info$)[^/]+$/u.test(pathname))) {
+    const hit = await caches.default.match(cacheRequest);
+    if (hit) return privateContentResponse(hit);
+  }
   let fallbackThumbnail: JsonObject | undefined;
   let repositoryPublic = false;
   try {
@@ -3641,7 +3635,7 @@ async function handleSonolus(
       communityProviders?.dataProvider ??
       (isBestdoriCatalog
         ? bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE)
-        : ourNotesSonolusDataProvider(env, releases));
+        : await ourNotesSonolusDataProvider(env, releases, payloadRevision));
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
     const repositoryHash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(assetUrl.pathname)?.[1];
@@ -3670,7 +3664,7 @@ async function handleSonolus(
         return new Response(JSON.stringify({ message: "Content is not public" }), { status: 403, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "private, no-store" } });
       const hit = await caches.default.match(releaseCacheRequest(request, baseRevision));
       if (hit) {
-        const response = privateContentResponse(hit), matched = etagMatches(request.headers.get("If-None-Match"), response.headers.get("ETag"));
+        const response = privateContentResponse(hit, 21600), matched = etagMatches(request.headers.get("If-None-Match"), response.headers.get("ETag"));
         if (matched || request.method === "HEAD") { await response.body?.cancel(); return new Response(null, { status: matched ? 304 : response.status, headers: response.headers }); }
         return response;
       }
@@ -3765,7 +3759,7 @@ async function handleSonolus(
       const response = projected.cacheControl === "no-store" || projected.status >= 400
         ? await produce()
         : await edgeCached(projectedKey, ctx, API_CACHE_TTL, produce, projected.cacheControl);
-      return sonolusView ? privateContentResponse(response) : response;
+      return sonolusView ? privateContentResponse(response, projected.kind === "data" ? 21600 : 0) : response;
     }
   } catch (error) {
     console.warn("Unable to project the Sonolus chart catalog", error);
@@ -3808,7 +3802,7 @@ async function handleSonolus(
   const extra = repository ? SONOLUS_REPOSITORY_HEADERS : SONOLUS_JSON_HEADERS;
   for (const [key, value] of Object.entries(extra)) if (key !== "Content-Type") headers.set(key, value);
   const outgoing = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-  return sonolusView && !repositoryPublic ? privateContentResponse(outgoing) : outgoing;
+  return sonolusView && !repositoryPublic ? privateContentResponse(outgoing, repository ? 21600 : 0) : outgoing;
 }
 
 function redirectToHttps(url: URL): Response {
@@ -4133,7 +4127,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     }
   }
   let response = await contentResourceBoundary(request, env, ctx,
-    (server, release, path) => resourceContentIndex(env, ctx, server, release, path),
+    (server, release) => resourceContentIndex(env, server, release),
     (source) => handleScopedRequest(source, env, ctx));
   const chartDocument = parseCommunityChartDocument(new URL(request.url).pathname);
   const storyDocument = parseCommunityStoryDocument(new URL(request.url).pathname);
@@ -4305,8 +4299,8 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       const server = url.searchParams.get("server");
       let visibleKeys: string[] | undefined;
       if (server === "jp" || server === "intl") {
-        const [view, index] = await Promise.all([requestContentView(request, env), resourceContentIndex(env, ctx, server)]);
-        visibleKeys = Object.entries(index?.publications ?? {}).flatMap(([key, publication]) => {
+        const [view, index] = await Promise.all([requestContentView(request, env), resourceContentIndex(env, server)]);
+        if (index) visibleKeys = Object.entries(index.publications ?? {}).flatMap(([key, publication]) => {
           const colon = key.indexOf(":"), kind = visibilityType(key.slice(0, colon)), id = key.slice(colon + 1);
           return kind && contentVisible(view, kind, publication, id) ? [`${kind}:${encodeURIComponent(id)}`] : [];
         });
@@ -4320,7 +4314,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
         const kind = visibilityType(target.entityType);
         if (!kind) return true;
         const [view, index] = await Promise.all([
-          requestContentView(request, env), resourceContentIndex(catalogEnv, ctx, pin.server, pin.releaseId),
+          requestContentView(request, env), resourceContentIndex(catalogEnv, pin.server, pin.releaseId),
         ]);
         const id = match.routeId ?? target.originalId;
         return contentVisible(view, kind, { ...match.row, ...index?.publications?.[`${kind}:${id}`] }, id);
@@ -4474,6 +4468,27 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (media) return media;
   const artifact = await handleArtifact(env, ctx, request, url.pathname);
   if (artifact) return artifact;
+  const staticViewResponse = await handlePublicStaticViewRequest(request, env, ctx, async (canonical, view) => {
+    const target = new URL(canonical.url);
+    const regional = /^\/(jp|intl)\//u.exec(target.pathname)?.[1];
+    const indexes = await Promise.all((regional ? [regional] : ["jp", "intl"])
+      .map((server) => resourceContentIndex(env, server)));
+    const index = regional ? indexes[0] : undefined;
+    const route = parseResourceRoute(target.pathname);
+    const kind = route && visibilityType(route.kind);
+    const publication = route?.id && kind ? index?.publications?.[`${kind}:${route.id}`] : undefined;
+    const boundaries = indexes.flatMap((value) => {
+      const next = nextContentPublication(value, view.now);
+      return next === undefined ? [] : [next];
+    });
+    return {
+      epoch: indexes.map((value) => contentCacheEpoch(value, view.now)).join(":"),
+      ...(boundaries.length ? { freshUntil: Math.min(...boundaries) } : {}),
+      ...(publication ? { publication } : {}),
+      ...(index?.publications ? { publications: index.publications } : {}),
+    };
+  });
+  if (staticViewResponse) return staticViewResponse;
   if (url.pathname.startsWith("/api/")) return errorResponse(request, 404, "route_not_found", "API route not found");
   const documentRequest =
     url.pathname.endsWith("/") || url.pathname.endsWith(".html") || !/\.[^/]+$/u.test(url.pathname);
@@ -4493,7 +4508,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const regionalDocument = ["jp", "intl"].includes(segments[0] || "");
   const documentIndexes = await Promise.all(
     (rawAssetDocument ? [] : regionalDocument ? [segments[0]!] : ["jp", "intl"]).map((server) =>
-      resourceContentIndex(env, ctx, server),
+      resourceContentIndex(env, server),
     ),
   );
   const documentIndex = regionalDocument ? documentIndexes[0] : null;
@@ -4660,7 +4675,7 @@ function guestDocumentKey(request: Request, webBuildId: string, publicationId: s
   const cookie = request.headers.get("Cookie") || "";
   if ((request.headers.has("Authorization") || SESSION_COOKIE.test(cookie)) && !/^\/(jp|intl)\/(ja|en|ko|zh-CN|zh-TW)\//u.test(new URL(request.url).pathname)) return null;
   const key = new URL(request.url);
-  key.searchParams.set("__guest-document", `${webBuildId}:${publicationId ?? ""}:${contentKey}`);
+  key.searchParams.set("__guest-document", `${webBuildId}:${publicationId ?? ""}:media-v2:${contentKey}`);
   return new Request(key, { method: "GET" });
 }
 function guestDocument(request: Request, cached: Response): Response {
@@ -4748,7 +4763,7 @@ const worker: ExportedHandler<Env> = {
           let communityVisibility = "";
           if (edgeCacheable(request)) {
             const view = await requestContentView(request, routedEnv);
-            const epochs = await Promise.all(["jp", "intl"].map(async (server) => contentCacheEpoch(await resourceContentIndex(routedEnv, ctx, server), view.now)));
+            const epochs = await Promise.all(["jp", "intl"].map(async (server) => contentCacheEpoch(await resourceContentIndex(routedEnv, server), view.now)));
             communityVisibility = `${view.key}:${epochs.join(",")}`;
           }
           const response = await cachedCommunityRead(request, ctx, () => handleRequest(request, routedEnv, ctx), communityVisibility);

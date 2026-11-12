@@ -296,6 +296,7 @@ export class StoryWorkspace extends LitElement {
   private detailSource = "";
   private readonly appBarOwner = `story-workspace-${++storyWorkspaceOwnerId}`;
   private pageServer = "";
+  private pageReleaseId = "";
   private appBarRegistered = false;
   private homeStage?: HomeSpotStage;
   private homeStageSpot = "";
@@ -421,6 +422,7 @@ export class StoryWorkspace extends LitElement {
     this.entityId = payload.id;
     this.mode = payload.mode as ReleaseMode;
     this.pageServer = payload.server;
+    this.pageReleaseId = payload.releaseId;
     this.chapters = recordValues(payload.chapters);
     this.unionStories = undefined;
     this.unionChapters.clear();
@@ -437,6 +439,7 @@ export class StoryWorkspace extends LitElement {
   }
   public prepareCollection(payload: WorkspaceCollectionPayload, locale: string, mode = "band"): void {
     this.detailSource = "";
+    this.pageReleaseId = "";
     this.locale = locale;
     this.pageServer = payload.server;
     this.mode = mode as ReleaseMode;
@@ -2806,6 +2809,7 @@ export class StoryWorkspace extends LitElement {
                           .communityProject=${this.reader?.project}
                           .providerBase=${this.isProvider() ? this.providerBase() : ""}
                           server=${this.detailServer()}
+                          .releaseId=${this.isProvider() || this.reader ? "" : this.episodeEntry(episode)?.perServer[this.detailServer()]?.identity.releaseId || this.pageReleaseId}
                           .locale=${this.locale}
                           @open-text=${() => this.selectDetailMode("text")}
                           @haneoka-story-finished=${(event: CustomEvent<{ storyId: string }>) => void this.continueStory(event)}

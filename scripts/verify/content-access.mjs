@@ -31,7 +31,7 @@ registerHooks({
   },
 });
 
-const { contentResourceBoundary } = await import("../../worker/content-resources.ts");
+const { gameMediaBoundary } = await import("../../worker/content-resources.ts");
 const { applySiteSettings } = await import("../../worker/site-settings.ts");
 const serviceWorker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
 const origin = "https://haneoka.test";
@@ -65,10 +65,10 @@ function cacheStorage() {
   };
 }
 
-function fixture({ allowOverride = false } = {}) {
+function fixture({ allowOverride = false, guestVisible = false } = {}) {
   let active = true;
   const policy = {
-    policy: JSON.stringify({ eventChallengeSongs: true, types: { cards: { ...rule, allowOverride } } }),
+    policy: JSON.stringify({ eventChallengeSongs: true, types: { cards: { ...rule, allowOverride, ...(guestVisible ? { groups: ["guest"], mode: "visible" } : {}) } } }),
     version: 3,
     updatedAt: 0,
   };
@@ -117,7 +117,11 @@ function fixture({ allowOverride = false } = {}) {
     revoke: () => {
       active = false;
     },
-    media: (request) => contentResourceBoundary(request, env, {}, async () => index, serveMedia),
+    index,
+    media: (request, ownership = index) => {
+      const path = new URL(request.url).pathname.replace(/^\/(assets|runtime|objects)\/(?:jp|intl)\//u, "$1/");
+      return gameMediaBoundary(request, env, path, async () => ownership, () => serveMedia(request));
+    },
   };
 }
 
@@ -264,6 +268,7 @@ test("activation removes legacy page, image, media and persisted-scope caches", 
   });
   const old = [
     "haneoka.pages.v8",
+    "haneoka.pages.v9",
     "haneoka.images.v8",
     "haneoka.media.scoped.v1",
     "haneoka.media.public.v1",
@@ -334,8 +339,61 @@ test("HTML marks only the public view for offline use and scopes conditional res
   assert.equal(guest.status, 200);
   assert.equal(guest.headers.get("X-Haneoka-Offline-Document"), "public");
   assert.equal((await render(page, {})).headers.get("X-Haneoka-Offline-Document"), null);
+  const visibleEnv = fixture({ guestVisible: true }).env;
+  const visible = await applySiteSettings(request(page, { Cookie: "haneoka.spoilers=0" }, "HEAD"), input(), "build", visibleEnv);
+  assert.equal(visible.headers.get("X-Haneoka-Offline-Document"), null);
   assert.equal(
     (await render(page + "?spoiler=1", { Cookie: "haneoka.spoilers=0" })).headers.get("X-Haneoka-Offline-Document"),
     null,
   );
+});
+
+test("same-origin tool and asset browser referrers cannot expose restricted or unclassified media", async () => {
+  const { media, index } = fixture();
+  for (const path of ["/jp/en/assets/", "/jp/en/stories/example/?playback=play", "/jp/en/songs/1/chart/"]) {
+    const response = await media(request(memberFile + "?asset=1", { Referer: origin + path, Range: "bytes=1-2" }));
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  }
+  const shared = "/assets/jp/Assets/AddressableResources/Adv/Transition/adv_transition_0001/texture.png";
+  assert.equal((await media(request(shared))).status, 200);
+  index.assets[shared.replace("/assets/jp/", "assets/")] = [[], ["member"], ["missing"]];
+  assert.equal((await media(request(shared))).status, 403);
+  const unavailable = await media(request(publicFile), null);
+  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable.headers.get("Cache-Control"), "no-store");
+});
+
+test("static public HTML and mirrored media remain available offline", async () => {
+  const html = '<!doctype html><html><head><meta name="haneoka-public-static" content="fixture"></head></html>';
+  const mirror = "/public-media/fixture.wav";
+  const staticPage = "/jp/en/songs/";
+  const unmarked = "/jp/en/stories/";
+  const scoped = "/jp/en/events/";
+  let offline = false;
+  const worker = browserWorker(async (request) => {
+    if (offline) throw new Error("offline");
+    const path = new URL(request.url).pathname;
+    const headers = { "Cache-Control": "public, max-age=31536000, immutable" };
+    if (path === mirror) return new Response("abcdef", { headers: { ...headers, "Content-Length": "6", ETag: '"mirror"' } });
+    headers["Content-Type"] = "text/html";
+    if (path === scoped) headers["X-Haneoka-Content-View"] = memberView;
+    return new Response(path === unmarked ? "<html>unmarked</html>" : html, { headers });
+  });
+  for (const path of [staticPage, unmarked, scoped]) {
+    const event = worker.navigate(path);
+    assert.equal((await event.response).status, 200);
+    await event.done();
+  }
+  assert.equal(await (await worker.load(request(mirror))).text(), "abcdef");
+  offline = true;
+  assert.equal(await (await worker.navigate(staticPage).response).text(), html);
+  assert.equal((await worker.navigate(unmarked).response).type, "error");
+  assert.equal((await worker.navigate(scoped).response).type, "error");
+  const range = await worker.load(request(mirror, { Range: "bytes=-2", "If-Range": '"mirror"' }));
+  assert.equal(range.status, 206);
+  assert.equal(range.headers.get("Content-Range"), "bytes 4-5/6");
+  assert.equal(await range.text(), "ef");
+  assert.equal((await worker.load(request(mirror, { Range: "bytes=8-" }))).status, 416);
+  assert.equal((await worker.load(request(mirror, { Range: "bytes=1-2", "If-Range": '"other"' }))).status, 200);
 });

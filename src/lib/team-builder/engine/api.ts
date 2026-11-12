@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 可序列化队伍／歌曲／目标请求、Master 与注入的谱面读取器。
-// Output: Engine 输入输出类型及 TS 评价／搜索接口。
+// Output: Engine 输入输出类型、竞技场区间目标及冻结对手统计契约，和 TS 评价／搜索接口。
 // Pos: [Map](L2-2.md)；引擎 TS 契约和实现，区别于当前 Worker 的 WASM 执行。
 // Effects/Dependencies: 调用注入的谱面加载与搜索逻辑；实际 I/O 取决于读取器和调用环境。
 /** Serializable engine requests and their evaluation. Pure: charts come from an injected loader. */
@@ -47,6 +47,47 @@ export interface ArenaGoal extends ArenaRule {
   mode: "individual" | "shared";
   server: string;
   regulationId: number | null;
+  objective?: "score" | "sections";
+  maxBaseLoss?: number;
+  opponents?: ArenaOpponent[];
+}
+export interface ArenaOpponent {
+  members: MemberInput[];
+  snaps: SnapInput[];
+  player: PlayerInput;
+  unknownPolicy: UnknownPolicy;
+  team: TeamSpec;
+  accuracy?: Accuracy;
+  ranks?: [number, number, number];
+}
+export interface SectionSummary {
+  sampled: boolean;
+  metrics: number[];
+  minimum: number[];
+  maximum: number[];
+  lowerDecile: number[];
+  rangeScores: number[];
+  baseMean: number;
+  bonusMean: number;
+  totalMean: number;
+  wins: number[] | null;
+  allWin: number | null;
+  samples: number;
+  window?: [number, number] | null;
+}
+export interface SectionPerformance {
+  sampled: boolean;
+  versus: boolean;
+  ranges: number[];
+  baseMean: number;
+  referenceBaseMean: number;
+  bonusMean: number;
+  totalMean: number;
+  maxBaseLoss: number;
+  baseline: SectionSummary[];
+  songs: SectionSummary[];
+  allWin: number | null;
+  reference: EngineHit;
 }
 
 export interface SongRef {
@@ -208,6 +249,10 @@ export interface HitScore {
 /** Native settlement may wrap below zero; the denominator stays positive. */
 export interface RewardFraction { numerator: string; denominator: string; value: number }
 export interface EngineHit {
+  sectionReference?: boolean;
+  sectionRanking?: [number, number];
+  sectionPerformance?: SectionPerformance;
+  sectionSummary?: SectionSummary;
   aggregate?: { kind: "mean"; songs: EngineHit[] };
   /** Reward levels followed by the plan's optional score and power tie-breaks. */
   rewardRanking?: RewardFraction[];
@@ -904,6 +949,7 @@ export interface TeamSpec {
   leader: string;
 }
 export interface TeamEvaluation {
+  sectionSummary?: SectionSummary;
   song: SongRef;
   power: number;
   slotPowers: number[];

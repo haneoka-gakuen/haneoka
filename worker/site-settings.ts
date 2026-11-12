@@ -66,6 +66,7 @@ export async function applySiteSettings(
   let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
+  headers.set("X-Haneoka-Content-View", view.key);
   if (context.freshUntil) headers.set("X-Haneoka-Content-Until", String(context.freshUntil));
   const vary = new Set(
     (headers.get("Vary") || "")
@@ -86,7 +87,11 @@ export async function applySiteSettings(
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
   const completeView = sourceBrowser || unrestricted(view);
   headers.delete("X-Haneoka-Offline-Document");
-  if (group === "guest" && !spoilers && !completeView) headers.set("X-Haneoka-Offline-Document", "public");
+  const guestUnpublished = Object.values(view.policy.types).some(
+    (rule) => rule.groups.includes("guest") && (rule.mode === "visible" || rule.show.length > 0),
+  );
+  if (group === "guest" && !spoilers && !completeView && !guestUnpublished)
+    headers.set("X-Haneoka-Offline-Document", "public");
   let usePublicView = false;
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
@@ -100,7 +105,7 @@ export async function applySiteSettings(
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v1:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v2:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -114,7 +119,13 @@ export async function applySiteSettings(
     await output.body?.cancel();
     return new Response(null, { status: output.status, headers });
   }
-  return new HTMLRewriter()
+  const rewriter = new HTMLRewriter();
+  if (sourceBrowser) {
+    // Existing static asset documents may still contain a build-time text preview.
+    rewriter.on("asset-explorer .asset-preview pre", { element(element) { element.setInnerContent(""); } });
+  }
+  return rewriter
+    .on("style[data-community-visibility]", { element(element) { element.remove(); } })
     .on('meta[name="haneoka-content-route"]', {
       element(element) {
         if (!resource?.id) {
@@ -183,14 +194,23 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
-        if (completeView) return;
+        const assetView = sourceBrowser && jsonId === "asset-view-data";
+        if (!assetView && (completeView || jsonId === "team-builder-page")) return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();
           return;
         }
         const input = decodePageData(JSON.parse(jsonText));
-        const filtered = filterContentData(input, view, resource?.kind, true, context.publications);
+        if (assetView && input && typeof input === "object" && "textPreview" in input) {
+          const { textPreview: _preview, ...metadata } = input;
+          chunk.replace(JSON.stringify(metadata).replace(/</gu, "\\u003c"), { html: true });
+          jsonText = "";
+          return;
+        }
+        const filtered = assetView
+          ? { changed: false, value: input }
+          : filterContentData(input, view, resource?.kind, true, context.publications);
         if (filtered.changed) usePublicView = true;
         chunk.replace(filtered.changed
           ? JSON.stringify(filtered.value).replace(/</gu, "\\u003c").replace(/\u2028/gu, "\\u2028").replace(/\u2029/gu, "\\u2029")
@@ -226,9 +246,9 @@ export async function applySiteSettings(
         element.setAttribute("data-content-response-key", view.key);
       },
     })
-    .on("img[src], audio[src], video[src], source[src], video[poster], a[href]", {
+    .on("img[src], audio[src], video[src], source[src], video[poster], a[href], link[href]", {
       element(element) {
-        const attribute = element.tagName === "a" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
+        const attribute = element.tagName === "a" || element.tagName === "link" ? "href" : element.hasAttribute("poster") ? "poster" : "src";
         const source = element.getAttribute(attribute);
         if (!source) return;
         const target = new URL(source, request.url);
@@ -246,6 +266,10 @@ export async function applySiteSettings(
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
         if (gameMedia) {
+          if (hideIdentity() && element.tagName === "link") {
+            element.remove();
+            return;
+          }
           target.searchParams.delete("asset");
           target.searchParams.delete("cv");
         }

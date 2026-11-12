@@ -2,7 +2,7 @@
 // Input: Scene-specific chart choices, catalogue and browse preferences.
 // Output: Grid chart selection with visible select-all/clear actions and explicit apply/cancel.
 // Pos: [Map](../L2-2.md); shared team workspace chart chooser.
-// Effects/Dependencies: Lit modal, page-local preferences, lazy metadata reads.
+// Effects/Dependencies: Lit modal, page-local browse filters, Box-persisted difficulty selection and lazy metadata reads.
 import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
 import {
   catalogQueryNames,
@@ -61,6 +61,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     state = host.songPicker = {
       ...state,
       ...host.songPickerPreferences.get(context),
+      difficulties: host.songDifficulties,
       initialized: true,
       opener: typeof document === "undefined" ? undefined : (document.activeElement as HTMLElement),
     };
@@ -80,6 +81,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       maxLevel,
       maxSeconds,
     });
+    if (patch.difficulties) host.write([{ key: "pref.song-picker", value: { difficulties: patch.difficulties } }]);
     host.requestUpdate();
   };
   const close = () => {
@@ -317,7 +319,6 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       minLevel: null,
       maxLevel: null,
       maxSeconds: null,
-      difficulties: [state.difficulty],
       query: removeCatalogQueryFacets(state.query, queryContext),
     });
   return selectionPane({

@@ -40,21 +40,23 @@ export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewa
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
   const mode = context === "rewards" ? draft.ptSamplingMode : draft.gekisoSamplingMode;
   const samples = context === "rewards" ? draft.ptLuckSamples : draft.gekisoSeeds;
-  const expected = context === "score" && mode === "auto";
+  const sections = context === "score" && host.searchSettings.arena?.objective === "sections";
+  const expected = context === "score" && mode === "auto" && !sections;
+  const title = sections ? host.t("arena.sections.sampling", "Random sampling") : host.t("pt.luckSampling", "LUCK calculation");
   return html`
     <div class="stack">
       <div class="row row--between">
-        <span class="tb-field__label">${host.t("pt.luckSampling", "LUCK calculation")}</span>
-        ${gekisoHelpButton(host, "luck")}
+        <span class="tb-field__label">${title}</span>
+        ${gekisoHelpButton(host, sections ? "sections" : "luck")}
       </div>
       ${segmented({
-      label: host.t("pt.luckSampling", "LUCK calculation"),
-      value: context === "score" ? (expected ? "auto" : "manual") : mode,
+      label: title,
+      value: mode,
       options: [
         {
           value: "auto",
           label:
-            context === "score"
+            context === "score" && !sections
               ? host.t("luckExpectation", "Probability expectation")
               : host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }),
         },
@@ -136,6 +138,10 @@ export function missionMembersControl(host: TeamBuilder): TemplateResult {
 
 export function gekisoSamplingAdvanced(host: TeamBuilder): TemplateResult | typeof nothing {
   const s = host.searchSettings;
+  if (s.arena?.objective === "sections") return accordion({ id: "tb-section-sampling", label: host.t("arena.sections.sampling", "Random sampling"),
+    expanded: host.expanded.has("section-sampling"), onExpandedChange: expanded => { if (expanded) host.expanded.add("section-sampling"); else host.expanded.delete("section-sampling"); host.requestUpdate(); },
+    metadata: s.gekisoSamplingMode === "auto" ? host.t("luckAutomaticSamples", "Automatic ({count} runs)", { count: 32 }) : String(s.gekisoSeeds),
+    content: gekisoSamplesControl(host) });
   return s.gekisoSamplingMode === "manual" || host.hasMission("Luck", s.songs) ? gekisoSamplesControl(host) : nothing;
 }
 
@@ -541,10 +547,10 @@ export function playSection(
                 host.hasMission("JustCount", s.songs)
                   ? html`
                       <div class="tb-field">
-                        <span class="tb-field__label">
+                        <div class="row row--between"><span class="tb-field__label">
                           JUST
                           <output>${s.just}%</output>
-                        </span>
+                        </span>${gekisoHelpButton(host, "accuracy")}</div>
                         <md-slider
                           class="md3-slider"
                           labeled
@@ -601,14 +607,25 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
     ]),
   ];
   const required = fixedMembers.length + fixedSnaps.length;
-  const addRequired = (kind: "members" | "snaps") => html`
+  const addRequired = (kind: "members" | "snaps", excluded = false) => html`
     <div class="tb-field">
-      <span class="tb-field__label">${host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps")}</span>
+      <span class="tb-field__label">${excluded
+        ? host.t(kind === "members" ? "excludedMembers" : "excludedSnaps", kind === "members" ? "Excluded members" : "Excluded Snapshots")
+        : host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps")}</span>
       <div class="cluster">
-        <button class="button button--text button--small" type="button" @click=${() => { host.requiredPicker = kind; host.requestUpdate(); }}>
+        <button class="button button--text button--small" type="button" @click=${() => {
+          host.requiredPicker = excluded ? null : kind;
+          host.excludedPicker = excluded ? kind : null;
+          host.requestUpdate();
+        }}>
           ${icon("add", 18)}${host.t("add", "Add card")}
         </button>
+        ${excluded && s.theoreticalExcluded[kind].length ? html`<button class="button button--text button--small" type="button"
+          @click=${() => set({ theoreticalExcluded: { ...s.theoreticalExcluded, [kind]: [] } })}>${host.t("clearAll", "Clear")}</button>` : nothing}
       </div>
+      ${excluded ? html`<div class="cluster">${s.theoreticalExcluded[kind].map(id => inputChip(catalog.cardName(kind, id),
+        host.common("common.actions.remove", "Remove"), () => set({ theoreticalExcluded: { ...s.theoreticalExcluded,
+          [kind]: s.theoreticalExcluded[kind].filter(card => card !== id) } })))}</div>` : nothing}
     </div>
   `;
   const fixedChip = (kind: "members" | "snaps", id: number) =>
@@ -654,6 +671,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         })}
       </div>
       ${addRequired("members")}${s.noSnaps ? nothing : addRequired("snaps")}
+      ${s.scope === "theoretical" ? html`${addRequired("members", true)}${s.noSnaps ? nothing : addRequired("snaps", true)}` : nothing}
       ${choiceField({
         type: "select",
         label: host.t("leader", "Leader"),
@@ -820,6 +838,8 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
         className: "tb-accordion",
         leading: icon("tune", 20),
         label: host.t("candidates", "Cards and limits"),
+        metadata: s.scope === "theoretical" && (s.theoreticalExcluded.members.length || s.theoreticalExcluded.snaps.length)
+          ? host.t("excludedCount", "{count} excluded", { count: s.theoreticalExcluded.members.length + s.theoreticalExcluded.snaps.length }) : undefined,
         content: activity ? ptField(host, "constraints", content) : content,
         expanded: host.expanded.has("candidates"),
         onExpandedChange: (expanded) => {
@@ -835,12 +855,14 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
 
 /** Adds and removes this search's required cards; the pane stays open for several. */
 function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
-  const kind = host.requiredPicker;
+  const excluded = host.excludedPicker !== null;
+  const kind = host.excludedPicker ?? host.requiredPicker;
   if (!kind) return nothing;
   const catalog = host.catalog!;
   const s = host.searchSettings;
   const close = () => {
     host.requiredPicker = null;
+    host.excludedPicker = null;
     host.slotFilters = { ...host.slotFilters, query: "", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
     host.slotFiltersOpen = false;
     host.requestUpdate();
@@ -855,8 +877,9 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     .filter((id) => matchesCardFilters(host, kind, id, filters))
     .sort((a, b) => b - a);
   return selectionPane({
-    id: "tb-required-picker",
-    title: host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
+    id: excluded ? "tb-excluded-picker" : "tb-required-picker",
+    title: excluded ? host.t(kind === "members" ? "excludedMembers" : "excludedSnaps", kind === "members" ? "Excluded members" : "Excluded Snapshots")
+      : host.t(kind === "members" ? "requiredMembers" : "requiredSnaps", kind === "members" ? "Required members" : "Required snaps"),
     closeLabel: host.common("common.actions.close", "Close"),
     close,
     searchLabel: host.common("common.actions.search", "Search"),
@@ -873,12 +896,27 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
     kind: kind === "members" ? "member" : "support",
     items: ids.map((id) => ({ ...catalog.cardOptions(kind, id)!, value: String(id) })),
     selected: "",
-    selectedValues: new Set(s.required[kind].map(String)),
+    selectedValues: new Set((excluded ? s.theoreticalExcluded : s.required)[kind].map(String)),
     select: (value) => {
       const id = Number(value);
-      const required = host.searchSettings.required;
-      const list = required[kind].includes(id) ? required[kind].filter((item) => item !== id) : [...required[kind], id];
-      host.updateSettings({ required: { ...required, [kind]: list } });
+      const current = host.searchSettings;
+      if (excluded) {
+        const adding = !current.theoreticalExcluded[kind].includes(id);
+        const list = adding ? [...current.theoreticalExcluded[kind], id] : current.theoreticalExcluded[kind].filter(card => card !== id);
+        const required = { ...current.required, [kind]: adding ? current.required[kind].filter(card => card !== id) : current.required[kind] };
+        if (adding && kind === "snaps") required.members = [...new Set([...required.members,
+          ...current.bindings.filter(([, snap]) => snap === id).map(([member]) => member)])];
+        host.updateSettings({ theoreticalExcluded: { ...current.theoreticalExcluded, [kind]: list }, required,
+          ...(adding ? { leader: kind === "members" && current.leader === id ? null : current.leader,
+            bindings: current.bindings.filter(([member, snap]) => kind === "members" ? member !== id : snap !== id) } : {}),
+        });
+      } else {
+        const adding = !current.required[kind].includes(id);
+        const list = adding ? [...current.required[kind], id] : current.required[kind].filter(card => card !== id);
+        host.updateSettings({ required: { ...current.required, [kind]: list },
+          ...(adding ? { theoreticalExcluded: { ...current.theoreticalExcluded, [kind]: current.theoreticalExcluded[kind].filter(card => card !== id) } } : {}),
+        });
+      }
     },
     countLabel: host.t("cardCount", "{count} cards", { count: ids.length }),
     emptyLabel: host.t("noMatches", "No cards match"),

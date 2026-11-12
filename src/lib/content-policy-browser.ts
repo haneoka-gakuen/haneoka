@@ -11,6 +11,7 @@ import { isUserGroup, type UserGroup } from "./user-roles";
 const requests = new RequestScope();
 let installed = false;
 let activeRefresh: AbortSignal | undefined;
+let refreshPromise: Promise<void> | undefined;
 let parsed = "",
   policy = DEFAULT_VISIBILITY_POLICY;
 export function currentVisibilityPolicy(): ContentVisibilityPolicy {
@@ -34,17 +35,19 @@ export const visibilityPolicyKey = (): string =>
   JSON.stringify([currentContentGroup(), spoilerContentEnabled(), currentVisibilityPolicy()]);
 export function applyVisibilitySettings(settings: ContentVisibilitySettings & { group?: UserGroup }): void {
   const previous = visibilityPolicyKey();
+  const pending = document.documentElement.dataset.contentVisibilityPending === "1";
   document.documentElement.dataset.contentVisibilityPolicy = JSON.stringify(settings.policy);
   document.documentElement.dataset.contentVisibilityVersion = String(settings.version);
   document.documentElement.dataset.contentVisibilityAt = String(Date.now());
+  delete document.documentElement.dataset.contentVisibilityPending;
   if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
-  if (previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
+  if (pending || previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
-function refreshVisibility(): void {
-  if (activeRefresh && !activeRefresh.aborted) return;
+function refreshVisibility(): Promise<void> {
+  if (activeRefresh && !activeRefresh.aborted && refreshPromise) return refreshPromise;
   const signal = requests.begin();
   activeRefresh = signal;
-  void fetch("/api/v1/content-visibility", { credentials: "same-origin", cache: "no-store", signal })
+  refreshPromise = fetch("/api/v1/content-visibility", { credentials: "same-origin", cache: "no-store", signal })
     .then(async (response) => {
       if (response.ok) {
         const settings = (await response.json()) as ContentVisibilitySettings & { group: UserGroup };
@@ -53,11 +56,47 @@ function refreshVisibility(): void {
     })
     .catch(() => undefined)
     .finally(() => { if (activeRefresh === signal) activeRefresh = undefined; });
+  return refreshPromise;
 }
-/** The document response already selects the current display policy. */
+export const ensureContentVisibility = (fresh = false): Promise<void> =>
+  !fresh && document.documentElement.dataset.contentVisibilityPolicy ? Promise.resolve() : refreshVisibility();
+/** Display metadata last returned by the public-static view endpoint. */
+export const PUBLIC_STATIC_METADATA_KEY = "haneoka:content-view-meta:v1";
+type PublicStaticView = typeof import("./public-static-browser");
+let publicStatic: PublicStaticView | undefined;
+let resolvePublicStatic: () => void;
+const publicStaticReady = new Promise<void>((resolve) => { resolvePublicStatic = resolve; });
+export function registerPublicStaticView(view: PublicStaticView): void {
+  publicStatic = view;
+  resolvePublicStatic();
+}
+export async function preparePublicStaticData(): Promise<unknown> {
+  if (!publicStatic) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([publicStaticReady, new Promise<void>((resolve) => { timer = setTimeout(resolve, 1500); })]);
+    clearTimeout(timer);
+  }
+  return publicStatic?.preparePageData();
+}
+/** Served by the static host in its public view, or replaced by the full document of such a page. */
+const publicStaticDocument = (): boolean =>
+  Boolean(
+    document.documentElement.hasAttribute("data-public-static-view") ||
+      document.head?.querySelector('meta[name="haneoka-public-static"]'),
+  );
+function withPublicStatic(run: (view: PublicStaticView) => void): void {
+  const apply = () => { publicStatic!.installPublicStaticView(); run(publicStatic!); };
+  if (publicStatic) apply();
+  else void publicStaticReady.then(apply).catch(() => undefined);
+}
+/** The document response already selects the current display policy; public static pages decide on their own. */
 function refreshDocumentVisibility(): void {
-  const data = document.documentElement.dataset;
-  if (!data.contentVisibilityPolicy) refreshVisibility();
+  if (publicStaticDocument()) withPublicStatic(() => undefined);
+  else if (!document.documentElement.dataset.contentVisibilityPolicy) refreshVisibility();
+}
+function refreshCurrentVisibility(): void {
+  if (!publicStaticDocument()) refreshVisibility();
+  else publicStatic?.refreshPublicStaticView();
 }
 export function installContentVisibility(): void {
   if (installed) return;
@@ -67,10 +106,14 @@ export function installContentVisibility(): void {
   addEventListener("haneoka:session-changed", () => {
     requests.cancel();
     activeRefresh = undefined;
-    refreshVisibility();
+    try {
+      localStorage.removeItem(PUBLIC_STATIC_METADATA_KEY);
+    } catch {}
+    if (publicStaticDocument()) withPublicStatic((view) => view.resetPublicStaticView());
+    else refreshVisibility();
   });
-  addEventListener("focus", refreshVisibility);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVisibility(); });
+  addEventListener("focus", refreshCurrentVisibility);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCurrentVisibility(); });
   document.addEventListener("astro:page-load", refreshDocumentVisibility);
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();

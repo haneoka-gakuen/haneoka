@@ -70,6 +70,8 @@ export interface BuildSettings {
   bindings: [number, number | null][];
   /** Cards every team of this search includes, besides those locked in the Box. */
   required: { members: number[]; snaps: number[] };
+  /** Individual cards omitted from the full-growth candidate pool. */
+  theoreticalExcluded: { members: number[]; snaps: number[] };
   noSnaps: boolean;
   minBonus: number | null;
   attributes: number[];
@@ -158,6 +160,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   leader: null,
   bindings: [],
   required: { members: [], snaps: [] },
+  theoreticalExcluded: { members: [], snaps: [] },
   noSnaps: false,
   minBonus: null,
   attributes: [],

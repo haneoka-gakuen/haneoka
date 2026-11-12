@@ -6,7 +6,8 @@
 // haneoka service worker: repeat visits should not re-pay the network.
 //
 // Strategy per request class:
-// - HTML navigations: network-first with a public-only offline fallback.
+// - HTML navigations: network-first with an offline fallback to public static
+//   documents and Worker-rendered public guest documents.
 // - Hashed build output (/_astro/*): cache-first. URLs are immutable.
 // - Icon sprite: stale-while-revalidate with an HTTP cache validation.
 // - Game media: cache public bytes only. Pinned releases are immutable; current
@@ -16,7 +17,7 @@
 //   with an entry cap.
 // - Everything else (API, auth, worker routes): network only.
 
-const PAGES_CACHE = "haneoka.pages.v9";
+const PAGES_CACHE = "haneoka.pages.v10";
 const ASSETS_CACHE = "haneoka.assets.v7";
 const IMAGES_CACHE = "haneoka.images.v9";
 const DATA_CACHE = "haneoka.data.v8";
@@ -104,10 +105,17 @@ const mediaRange = async (request, response) => {
   return new Response(body, { status: 206, headers });
 };
 
+const explicitlyPublic = (response) => {
+  const directives = response.headers.get("Cache-Control") || "";
+  return /(?:^|,)\s*public\s*(?:,|$)/i.test(directives) && !/(?:^|,)\s*(?:private|no-store)\b/i.test(directives);
+};
+
 const gameMedia = async (event, request, url) => {
   const key = mediaKey(url);
   const { cache, cached } = await readCache(key, PUBLIC_MEDIA_CACHE);
-  if (cached && (url.searchParams.has("release") || fresh(cached, IMAGE_FRESH_MS))) {
+  const pinned = url.searchParams.has("release") || url.pathname.startsWith("/public-media/");
+  const immutable = pinned && /\bimmutable\b/i.test(cached?.headers.get("Cache-Control") || "");
+  if (cached && (immutable || fresh(cached, IMAGE_FRESH_MS))) {
     const response = await mediaRange(request, cached);
     if (response) return response;
   }
@@ -130,8 +138,7 @@ const gameMedia = async (event, request, url) => {
     }
     throw error;
   }
-  const published = /(?:^|,)\s*public(?:\s|,|$)/i.test(response.headers.get("Cache-Control") || "");
-  if (cache && published && response.status === 200 && !response.redirected) {
+  if (cache && response.status === 200 && !response.redirected && explicitlyPublic(response)) {
     const headers = new Headers(response.headers);
     headers.delete("Vary");
     const stored = new Response(response.clone().body, { status: 200, headers });
@@ -209,8 +216,25 @@ const networkFirst = async (event, request) => {
   const until = Number(entry?.headers.get("X-Haneoka-Content-Until"));
   const cached = until > 0 && Date.now() >= until ? undefined : entry;
   const network = fetch(request, { cache: "no-cache" }).then((response) => {
-    if (response.status === 200 && !response.redirected && response.headers.get("X-Haneoka-Offline-Document") === "public")
+    if (!cache || response.status !== 200 || response.redirected) return response;
+    if (response.headers.get("X-Haneoka-Offline-Document") === "public") {
       cacheResponse(event, key, response, cache, PAGES_CACHE, MAX_PAGES);
+    } else if (
+      explicitlyPublic(response) &&
+      !response.headers.has("X-Haneoka-Content-View") &&
+      response.headers.get("Content-Type")?.startsWith("text/html")
+    ) {
+      const copy = response.clone();
+      const html = response.clone();
+      event.waitUntil((async () => {
+        if (!(await html.text()).includes('<meta name="haneoka-public-static"')) {
+          await copy.body?.cancel();
+          return;
+        }
+        await cache.put(key, copy);
+        await trimCache(PAGES_CACHE, MAX_PAGES);
+      })().catch(() => {}));
+    }
     return response;
   });
   if (!cached) return network.catch(() => Response.error());
@@ -235,7 +259,7 @@ self.addEventListener("fetch", (event) => {
   }
   if (isNeverCached(url)) return;
 
-  if (/^\/(?:assets|runtime|objects)\//.test(url.pathname)) {
+  if (/^\/(?:assets|runtime|objects|public-media)\//.test(url.pathname)) {
     event.respondWith(gameMedia(event, request, url));
     return;
   }

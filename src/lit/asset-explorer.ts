@@ -1,6 +1,8 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { contentRequestUrl } from "../lib/content-request";
 import { navigationDocumentUrl } from "../lib/document-url";
+import { RequestScope } from "../lib/request-scope";
+import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -48,6 +50,7 @@ export class AssetExplorer extends LitElement {
   declare textPreview: string;
   declare query: string;
   private rows: SourceSearchRow[] = [];
+  private readonly previewRequest = new RequestScope();
   private releaseSearch?: () => void;
   private sourceServer?: AssetPageData["server"];
   private sourceRelease?: string;
@@ -73,7 +76,6 @@ export class AssetExplorer extends LitElement {
       this.path = [...view.path];
       this.files = view.files;
       this.selected = view.selected;
-      this.textPreview = view.textPreview;
     }
     this.applyTree(page.tree);
   }
@@ -221,12 +223,17 @@ export class AssetExplorer extends LitElement {
     this.sync();
     if (this.selected) void this.prepareSelected(this.selected);
   };
+  private onVisibilityChanged = () => {
+    if (this.kind(this.selected) === "text") void this.prepareSelected(this.selected);
+  };
   connectedCallback() {
     const page = readPageData<AssetPageData>(this);
     const view = readPageData<AssetViewData>(this, "data-view-data");
     if (page?.schema === "haneoka-asset-page-v1") this.preparePage(page, view);
     super.connectedCallback();
     addEventListener("haneoka:locale-ready", this.onLocale);
+    addEventListener("haneoka:session-changed", this.onVisibilityChanged);
+    addEventListener(SPOILER_CONTENT_EVENT, this.onVisibilityChanged);
     this.syncActions();
     void import("@material/web/progress/circular-progress.js");
     const documentUrl = navigationDocumentUrl();
@@ -244,7 +251,7 @@ export class AssetExplorer extends LitElement {
     const query = params.get("q") || "";
     if (prepared && page) {
       this.syncSearch();
-      if (this.selected && this.kind(this.selected) === "model") void import("./runtime/model-preview");
+      if (this.selected) void this.prepareSelected(this.selected);
       if (query)
         void this.updateComplete.then(() => {
           this.query = query;
@@ -274,6 +281,9 @@ export class AssetExplorer extends LitElement {
   }
   disconnectedCallback() {
     removeEventListener("haneoka:locale-ready", this.onLocale);
+    removeEventListener("haneoka:session-changed", this.onVisibilityChanged);
+    removeEventListener(SPOILER_CONTENT_EVENT, this.onVisibilityChanged);
+    this.previewRequest.cancel();
     this.releaseSearch?.();
     clearAppBarIdentity("asset-explorer");
     clearAppBarActions("asset-explorer");
@@ -327,6 +337,8 @@ export class AssetExplorer extends LitElement {
   }
   private sync() {
     const params = new URLSearchParams();
+    const spoiler = navigationDocumentUrl().searchParams.get("spoiler");
+    if (spoiler !== null) params.set("spoiler", spoiler);
     if (this.query.trim()) params.set("q", this.query.trim());
     if (this.selected) params.set("file", this.selected);
     const locale = localeFromPath(location.pathname) || preferredLocale();
@@ -334,6 +346,7 @@ export class AssetExplorer extends LitElement {
     history.replaceState(history.state, "", `${pathname}${params.size ? `?${params}` : ""}`);
   }
   private async choose(parts: string[]) {
+    this.previewRequest.cancel();
     this.path = parts;
     this.files = [];
     this.selected = "";
@@ -376,21 +389,22 @@ export class AssetExplorer extends LitElement {
   }
   private async select(file: string) {
     this.selected = file;
-    this.textPreview = "";
     this.sync();
     await this.prepareSelected(file);
   }
   private async prepareSelected(file: string) {
-    if (this.kind(file) === "text") {
-      try {
-        const response = await fetch(this.url(file));
-        if (!response.ok) throw new Error("Asset preview unavailable");
-        this.textPreview = (await response.text()).slice(0, 200000);
-      } catch {
-        this.textPreview = uiText(preferredLocale(), "common.states.unavailable");
-      }
-    }
+    const signal = this.previewRequest.begin();
+    this.textPreview = "";
     if (this.kind(file) === "model") await import("./runtime/model-preview");
+    if (this.kind(file) !== "text") return;
+    const unavailable = uiText(preferredLocale(), "common.states.unavailable");
+    try {
+      const response = await fetch(this.url(file), { signal });
+      const text = response.ok ? (await response.text()).slice(0, 200000) : unavailable;
+      if (this.previewRequest.current(signal)) this.textPreview = text;
+    } catch {
+      if (this.previewRequest.current(signal)) this.textPreview = unavailable;
+    }
   }
   private fileIcon(file: string) {
     const kind = this.kind(file);
@@ -511,6 +525,7 @@ export class AssetExplorer extends LitElement {
             aria-label=${uiText(preferredLocale(), "common.actions.close")}
             title=${uiText(preferredLocale(), "common.actions.close")}
             @click=${() => {
+              this.previewRequest.cancel();
               this.selected = "";
               this.textPreview = "";
               this.sync();
