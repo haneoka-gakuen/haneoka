@@ -3218,7 +3218,10 @@ function ourNotesSonolusRevision(releases: readonly Release[]): string {
 
 function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, releases: readonly Release[], revision: string, origin: string, view: ContentView) {
   return {
-    async load() {
+    async load(): Promise<ChartCatalogSnapshot> {
+      const cacheKey = `https://sonolus-catalog.haneoka.internal/v1/${encodeURIComponent(revision)}.json`;
+      const cached = await caches.default.match(cacheKey).catch(() => undefined);
+      if (cached) return cached.json<ChartCatalogSnapshot>();
       const catalogs = await Promise.all(
         releases.map(async (release) => {
           const [storage, index] = await Promise.all([catalogStorageManifest(env, release), resourceContentIndex(env, ctx, release.server, release.releaseId)]);
@@ -3247,7 +3250,11 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
           else aliases.push(chart);
         }
       }
-      return { charts: [...charts.values()], aliases, revision: { id: revision } };
+      const snapshot = { charts: [...charts.values()], aliases, revision: { id: revision } };
+      ctx.waitUntil(caches.default.put(cacheKey, Response.json(snapshot, {
+        headers: { "Cache-Control": `public, max-age=${API_CACHE_TTL}` },
+      })).catch(() => undefined));
+      return snapshot;
     },
   };
 }
@@ -3640,7 +3647,7 @@ async function handleSonolus(
       if (!repositoryPublic) {
         const publicView: ContentView = { policy: { eventChallengeSongs: true, types: {} }, group: "guest", spoilers: false, override: false, now: sonolusView.now };
         const publicCatalog = await ourNotesSonolusCatalogProvider(env, ctx, releases, `${baseRevision}:published:${visibilityRevisions.join(",")}`, origin, publicView).load();
-        const keys = new Set([...publicCatalog.charts, ...publicCatalog.aliases].map((chart) => `${chart.songId}:${chart.difficulty.toLowerCase()}`));
+        const keys = new Set([...publicCatalog.charts, ...(publicCatalog.aliases ?? [])].map((chart) => `${chart.songId}:${chart.difficulty.toLowerCase()}`));
         repositoryPublic = [...(ownership.charts.get(repositoryHash) ?? [])].some((key) => keys.has(key));
         if (!repositoryPublic) {
           const visible: ChartCatalogSnapshot = await catalogProvider.load();

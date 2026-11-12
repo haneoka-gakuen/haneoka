@@ -1,4 +1,4 @@
-import { pageDataViewCurrent } from "../lib/page-data";
+import { decodePageData, pageDataViewCurrent } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentVisible, isReleasedContent } from "../lib/content-release";
@@ -343,7 +343,7 @@ export class HomeDashboard extends LitElement {
     const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
     if (seed && pageDataViewCurrent(this)) {
       try {
-        this.prepareHome(JSON.parse(seed.textContent || "null"), this.locale);
+        this.prepareHome(decodePageData(JSON.parse(seed.textContent || "null")) as HomeSeed, this.locale);
       } catch {
         /* Keep the independent catalog fallback. */
       }
@@ -504,6 +504,8 @@ export class HomeDashboard extends LitElement {
     this.applyDocuments(seed.documents);
     this.announcements = seed.announcements;
     this.announcementsPhase = "ready";
+    this.posts = communityRecommendationItems(seed.documents.posts || {});
+    this.communityPhase = seed.documents.posts ? "ready" : "loading";
     this.arena = seed.arena ?? null;
     this.fanInfo = seed.fanInfo || { status: "unavailable", entries: [] };
     this.characterProfiles = seed.profiles.characters;
