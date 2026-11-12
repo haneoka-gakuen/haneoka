@@ -594,7 +594,7 @@ function dtoEvents(data: TeamBuilderData): GameEvent[] {
       challengePoints: points("MasterChallengeLiveEventPoint", "challengeLiveEventPointGroup"),
       liveRewards: table("MasterLiveEventReward").map(reward),
       challengeRewards: table("MasterChallengeLiveEventReward").map(reward),
-      ...(event.plannerRules?{plannerRules:event.plannerRules as GameEvent["plannerRules"]}:{}),
+      ...(event.plannerRules?{plannerRules:event.plannerRules as NonNullable<GameEvent["plannerRules"]>}:{}),
     };
   });
 }
