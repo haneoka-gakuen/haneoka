@@ -67,6 +67,7 @@ export async function homePageData(server: ReleaseServer, locale: Locale): Promi
       pick(entry, [
         "characterId",
         "characterName",
+        "nickname",
         "englishName",
         "slug",
         "bandId",

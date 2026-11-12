@@ -8,6 +8,7 @@ import { contentPublished, publicationFields } from "./content-publication";
 import {
   DEFAULT_VISIBILITY_RULE,
   inferredVisibilityType,
+  isModelVisibilityType,
   visibilityId,
   visibilityType,
   type ContentVisibilityPolicy,
@@ -26,6 +27,7 @@ export interface ContentView {
 export type ContentReference = { kind: VisibilityType; id: string; publication: Record<string, unknown> };
 export { spoilerOverrideEnabled as explicitContentOverride } from "./spoiler-cookie";
 export function contentVisible(view: ContentView, kind: VisibilityType, value: unknown, id = ""): boolean {
+  if (isModelVisibilityType(kind)) return true;
   if (contentPublished(value, view.now)) return true;
   const rule = view.policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
   if (view.override && rule.allowOverride) return true;

@@ -80,7 +80,7 @@ export async function evaluate(host: TeamBuilder) {
       team: teamSpec(host, team),
       songs: goal.songs,
       play: goal.kind === "score" ? goal.play : { great: 0, good: 0, bad: 0, miss: 0 },
-      ...(goal.kind === "gekiso" ? { gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, minJustWindowMs: goal.minJustWindowMs } } : {}),
+      ...(goal.kind === "gekiso" ? { gekiso: { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, minJustWindowMs: goal.minJustWindowMs, justWindow: goal.justWindow } } : {}),
       challengeEventId: goal.kind === "score" ? goal.challengeEventId : null,
       event: null,
     });

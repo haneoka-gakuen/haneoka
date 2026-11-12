@@ -162,6 +162,7 @@ type Birthday = {
   image: string;
   kind: "character" | "cast";
   name: string;
+  greetingName?: string;
   /** For cast birthdays: the characters this person voices. */
   voiceRoles: Array<{ name: unknown; href?: string; image: string }>;
   nextAt: number;
@@ -637,7 +638,7 @@ export class HomeDashboard extends LitElement {
     const key = birthday ? "birthday" : season?.key;
     const greeting = key
       ? clientText(this.locale, `home.dashboard.greetings.${key}`, undefined, {
-          name: birthday?.name ?? "",
+          name: birthday?.greetingName ?? birthday?.name ?? "",
         })
       : this.text("overview", "haneoka");
     title.dataset.homeGreeting = String(!!key);
@@ -1115,6 +1116,7 @@ export class HomeDashboard extends LitElement {
           kind: "character",
           key: `character:${String(profile.id || profile.slug)}`,
           name: names[index] || names[0],
+          greetingName: localizedText(catalog?.nickname, this.locale) || names[index] || names[0],
           voiceRoles: [],
           characterId: catalog ? Number(catalog.characterId) : null,
           bandName: localizedText(band?.bandName || profile.bandName, this.locale),

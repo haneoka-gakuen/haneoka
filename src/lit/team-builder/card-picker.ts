@@ -18,13 +18,14 @@ export function renderCardPicker(host: TeamBuilder): TemplateResult | typeof not
   if (!picker) return nothing;
   const catalog = host.catalog!;
   const kind = picker.kind;
-  const event = "target" in picker;
+  const multi = "target" in picker;
+  const event = multi&&picker.target==="manual-event";
   const growth = "growth" in picker;
   const growthSource = growth ? host.teamGrowth.source! : null;
   const draft = host.settings.manualEvent;
   const template = host.master!.events.get(draft.templateId!);
   const profiles = event && template ? manualEventTemplate(template, host.master!)?.[kind] ?? [] : [];
-  const selected = event ? new Set(picker.ids.map(String)) : undefined;
+  const selected = multi ? new Set(picker.ids.map(String)) : undefined;
   const close = () => {
     host.slotPicker = null;
     host.slotFilters = {
@@ -44,7 +45,7 @@ export function renderCardPicker(host: TeamBuilder): TemplateResult | typeof not
     host.slotFilters = { ...filters, ...patch };
     host.requestUpdate();
   };
-  const theoretical = event || host.tab !== "song-comparison" && host.searchSettings.scope === "theoretical";
+  const theoretical = multi || host.tab !== "song-comparison" && host.searchSettings.scope === "theoretical";
   const owned = kind === "members" ? host.view!.members : host.view!.snaps;
   const ids = sortedCards(host, kind, (
     growthSource
@@ -121,6 +122,7 @@ export function renderCardPicker(host: TeamBuilder): TemplateResult | typeof not
     emptyLabel: host.t("noMatches", "No cards match"),
     preview: "target" in picker
       ? html`<button class="button button--full" @click=${() => {
+          if(picker.target==="selection"){picker.change(picker.ids);close();return;}
           if (!profiles.length) return;
           const cards = picker.ids.map(cardId => draft[kind].find(row => row.cardId === cardId) ?? {cardId, tier: profiles[0]!.key});
           host.updateSettings({manualEvent: {...draft, [kind]: cards}});

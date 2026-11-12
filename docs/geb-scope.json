@@ -84,6 +84,10 @@
     "server/ranking-collector-official/core/account_job.py",
     "src/lib/official-ranking.ts",
     "src/lib/team-builder/pt-checkpoint.ts",
+    "src/lib/team-builder/planner-data.ts",
+    "src/lit/team-builder/planner.ts",
+    "src/lit/team-builder/planner-view.ts",
+    "src/lit/shared/skill-text.ts",
     "src/lib/team-builder/gekiso-timing.ts",
     "worker/official-ranking-api.ts",
     "worker/arena-ranking.ts",
@@ -375,6 +379,7 @@
     "src/lit/team-builder/box-tab.ts",
     "src/lit/team-builder/temporary-cards.ts",
     "src/lit/team-builder/section-results.ts",
+    "src/lit/team-builder/just-window-results.ts",
     "src/lit/team-builder/card-editor-preview.ts",
     "src/lib/arena.ts",
     "src/lib/card-rarity.ts",
@@ -457,7 +462,9 @@
     "src/lib/page-data-codec.ts",
     "worker/content-resources.ts",
     "worker/content-view.ts",
-    "worker/resource-clients.ts"
+    "worker/resource-clients.ts",
+    "src/lit/skills-workspace.ts",
+    "src/server/skill-catalog.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

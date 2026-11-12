@@ -12,6 +12,8 @@ import { accordion } from "../ui/accordion";
 import type { TeamBuilder } from "../team-builder";
 import type { Catalog } from "./catalog";
 import { stripSkillDescriptionMarkup } from "../shared/skill-text";
+import { skillDisplay } from "../shared/skill-text";
+import { resolveLocalizedText } from "../../lib/localized-text";
 
 interface Resource {
   data?: GrowthPageData;
@@ -94,7 +96,8 @@ export function cardEditorPreview(host: TeamBuilder) {
   }
   const before = session.before;
   const state = session;
-  const resource = descriptions(host);
+  const planning=host.planner.cardById(cardId);
+  const resource:Resource = planning?{error:false}:descriptions(host);
   const detail = resource.data?.cards.find(
     (card) => card.id === cardId && card.kind === (kind === "members" ? "member" : "support"),
   );
@@ -175,7 +178,9 @@ export function cardEditorPreview(host: TeamBuilder) {
     if (!id) return nothing;
     const sourceGroup = group === "gekisou" ? "gekiso" : group === "gekisouSupport" ? "gekisoSupport" : group;
     const source = catalog.data.skills[sourceGroup]?.[String(id)];
-    const data = detail?.skills.find((skill) => skill.group === group && skill.slot === slot);
+    if(planning){const definition=planning.skills[kind==="members"?(group==="leader"?0:group==="live"?1:2):(group==="support"?slot:slot+2)];if(definition)host.planner.describeSkill(definition);}
+    const local=planning&&source?skillDisplay({resolvedSkills:{[group]:source}},catalog.data.skillReference)[0]:undefined;
+    const data = detail?.skills.find((skill) => skill.group === group && skill.slot === slot) ?? (local?{name:catalog.text(source?.skillName),levels:(local.levels as {level:number;description:unknown}[]).map(row=>({level:row.level,description:resolveLocalizedText(row.description,host.locale).text}))}:undefined);
     const level = (value: GrowthState) => {
       if (group === "live") return value.live ?? null;
       if (group === "gekisou") return value.gekisou ?? null;
@@ -270,7 +275,8 @@ export function cardEditorPreview(host: TeamBuilder) {
           `,
           expanded: state.expanded.has(key),
           onExpandedChange: (expanded) => {
-            expanded ? state.expanded.add(key) : state.expanded.delete(key);
+            if (expanded) state.expanded.add(key);
+            else state.expanded.delete(key);
             host.requestUpdate();
           },
           content: html`

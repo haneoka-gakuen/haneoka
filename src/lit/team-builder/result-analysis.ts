@@ -42,7 +42,7 @@ export function evaluateResult(source: Source): EvaluateRequest {
     goal = input.goal;
   const gk =
     goal.kind === "gekiso"
-      ? { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs }
+      ? { accuracy: goal.accuracy, rank: goal.rank, ranks: goal.ranks, seeds: goal.seeds, arena: goal.arena, minJustWindowMs: goal.minJustWindowMs, justWindow: goal.justWindow }
       : goal.kind === "event" && goal.gekiso
         ? {
             accuracy: { great: 0, just: goal.gekiso.just, missEvery: 0 },

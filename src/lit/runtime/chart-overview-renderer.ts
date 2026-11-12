@@ -170,6 +170,7 @@ export function drawDetailedChartOverview(
     endMs: number;
     highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[]; color?: string; selected?: boolean }[];
     labelEachTarget?: boolean;
+    bands?: readonly { startMs: number; endMs: number; label: string; color: string; active: boolean }[];
     zoom?: number;
     color: string;
   },
@@ -290,6 +291,19 @@ export function drawDetailedChartOverview(
       const y = yAt(event.timeMs, panel);
       context.fillText(`#${event.index + 1}`, right + 14, y);
     });
+
+    for (const band of excerpt?.bands ?? []) {
+      const first = Math.max(panelStart, band.startMs), last = Math.min(panelEnd, band.endMs);
+      if (first >= last) continue;
+      const top = yAt(last, panel), bottom = yAt(first, panel);
+      context.save();
+      context.fillStyle = band.color;
+      if (band.active) { context.globalAlpha = 0.15; context.fillRect(left, top, right - left, bottom - top); }
+      context.globalAlpha = 1;
+      context.fillRect(left - 8, top, band.active ? 4 : 1, bottom - top);
+      if (bottom - top >= 14) { context.textAlign = "left"; context.fillText(band.label, left + 3, Math.max(12, top + 12)); }
+      context.restore();
+    }
 
     context.save();
     context.beginPath();
