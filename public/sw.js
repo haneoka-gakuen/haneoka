@@ -144,7 +144,7 @@ const gameMedia = async (event, request, url) => {
     if (response) return response;
   }
   let response;
-  try { response = await fetch(request, { cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
+  try { response = await fetch(request, { mode: "same-origin", cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
   catch (error) {
     const cached = shared.cached || scoped.cached;
     if (cached) {
