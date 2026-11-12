@@ -232,7 +232,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
           python -m pip install boto3==1.43.47 py3rijndael==0.3.3
-          python scripts/publish/content_index.py
+          python scripts/publish/content_index.py --model-publications-output data/static-model-publications.json
       - name: Collect all production data and route matrices
         env:
           AFDIAN_USER_ID: ${{ secrets.AFDIAN_USER_ID }}

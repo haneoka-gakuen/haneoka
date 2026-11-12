@@ -851,10 +851,10 @@ function releaseCacheRequest(request: Request, releaseRevision: string): Request
   return new Request(url, request);
 }
 
-function mediaCacheRequest(request: Request, releaseId: string): Request {
+function mediaCacheRequest(request: Request, releaseId: string, gzip = false): Request {
   const key = releaseCacheRequest(request, releaseId);
   const url = new URL(key.url);
-  url.searchParams.set("__media", "identity-v2");
+  url.searchParams.set("__media", gzip ? "gzip-v1" : "identity-v2");
   return new Request(url, key);
 }
 
@@ -1004,9 +1004,10 @@ async function edgeCached(
   ttl: number,
   producer: () => Promise<Response>,
   cacheControl?: string,
+  opaqueGzip = false,
 ): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") return producer();
-  const hit = await readEdgeCache(request, ctx, cacheControl);
+  const hit = await readEdgeCache(request, ctx, cacheControl, opaqueGzip);
   if (hit) return hit;
   const headers = new Headers(request.headers);
   for (const name of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(name);
@@ -1040,6 +1041,11 @@ async function edgeCached(
       cacheControl ? `public, max-age=${ttl}` : cached.headers.get("Cache-Control") || `public, max-age=${ttl}`,
     );
     cacheResponseHeaders.delete("Content-Range");
+    if (opaqueGzip && cacheResponseHeaders.get("Content-Encoding") === "gzip") {
+      cacheResponseHeaders.delete("Content-Encoding");
+      cacheResponseHeaders.set("X-Haneoka-Cache-Encoding", "gzip");
+      cacheResponseHeaders.append("Cache-Control", "no-transform");
+    }
     const stored = new Response(cached.body, {
       status: 200,
       headers: cacheResponseHeaders,
@@ -1055,7 +1061,7 @@ async function edgeCached(
   return response;
 }
 
-async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheControl?: string): Promise<Response | null> {
+async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheControl?: string, opaqueGzip = false): Promise<Response | null> {
   const headers = new Headers(request.headers);
   if (request.method === "HEAD") headers.delete("Range");
   const ifRange = headers.get("If-Range");
@@ -1073,6 +1079,10 @@ async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheContr
   const hit = await caches.default.match(lookup);
   if (hit) {
     const responseHeaders = new Headers(hit.headers);
+    if (opaqueGzip && responseHeaders.get("X-Haneoka-Cache-Encoding") === "gzip") {
+      responseHeaders.set("Content-Encoding", "gzip");
+      responseHeaders.delete("X-Haneoka-Cache-Encoding");
+    }
     if (cacheControl) responseHeaders.set("Cache-Control", cacheControl);
     const etag = hit.headers.get("ETag");
     if (etag && etagMatches(request.headers.get("If-None-Match"), etag)) {
@@ -1091,7 +1101,7 @@ async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheContr
         encodeBody: responseHeaders.has("Content-Encoding") ? "manual" : "automatic",
       });
     }
-    return cacheControl
+    return cacheControl || opaqueGzip
       ? new Response(hit.body, {
           status: hit.status,
           statusText: hit.statusText,
@@ -2115,7 +2125,8 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   }
   if (!pending) {
     pending = (async () => {
-      const compiled = await cachedR2Text(env, `content-index/v4/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
+      const compiled = await cachedR2Text(env, `content-index/v5/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL) ??
+        await cachedR2Text(env, `content-index/v4/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
       const prepared = compiled === null
         ? await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL)
         : JSON.parse(compiled) as JsonValue;
@@ -3039,11 +3050,16 @@ async function handleReleaseMedia(
     return errorResponse(request, 400, "invalid_release", "Release must be a valid immutable release id");
   }
   let requested = releaseValues[0];
-  if (requested && !stampDiagnostics && !relative.endsWith(".moc3")) {
-    const hit = await readEdgeCache(mediaCacheRequest(request, requested), ctx, PINNED_MEDIA_CACHE_CONTROL);
+  const moc = tree === "runtime" && relative.endsWith(".moc3");
+  const clientEncoding = request.cf?.clientAcceptEncoding;
+  const gzip = moc && !request.headers.has("Range") &&
+    acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
+  if (requested && !stampDiagnostics) {
+    const hit = await readEdgeCache(mediaCacheRequest(request, requested, gzip), ctx, PINNED_MEDIA_CACHE_CONTROL, gzip);
     if (hit) {
       if (hit.headers.get("X-Haneoka-Release-Id") === requested &&
-        SOURCE_ID_PATTERN.test(hit.headers.get("X-Haneoka-Source-Id") || "") && !hit.headers.has("Content-Encoding")) return hit;
+        SOURCE_ID_PATTERN.test(hit.headers.get("X-Haneoka-Source-Id") || "") &&
+        (!hit.headers.has("Content-Encoding") || gzip && hit.headers.get("Content-Encoding") === "gzip")) return hit;
       if (hit.body) ctx.waitUntil(hit.body.cancel());
     }
   }
@@ -3102,18 +3118,7 @@ async function handleReleaseMedia(
     : requested
       ? PINNED_MEDIA_CACHE_CONTROL
       : UNPINNED_MEDIA_CACHE_CONTROL;
-  const moc = tree === "runtime" && relative.endsWith(".moc3");
-  const clientEncoding = request.cf?.clientAcceptEncoding;
-  const gzip =
-    moc &&
-    !request.headers.has("Range") &&
-    acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
-  let cacheRequest = moc ? releaseCacheRequest(request, release.releaseId) : mediaCacheRequest(request, release.releaseId);
-  if (moc) {
-    const cacheUrl = new URL(cacheRequest.url);
-    cacheUrl.searchParams.set("__moc_encoding", gzip ? "gzip-v1" : "identity-v1");
-    cacheRequest = new Request(cacheUrl, cacheRequest);
-  }
+  const cacheRequest = mediaCacheRequest(request, release.releaseId, gzip);
   const produce = async () => {
     let response: Response | null = null;
     for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
@@ -3132,11 +3137,8 @@ async function handleReleaseMedia(
     }
     return response ? releaseResponseHeaders(response, release) : new Response("not found", { status: 404, headers: CORS });
   };
-  // Cache API hits expose decoded streams while retaining Content-Encoding.
-  // Keep the precompressed MOC response on the direct R2 path.
-  const response = gzip
-    ? await produce()
-    : await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl);
+  // Store gzip as opaque bytes so Cache API reads cannot decode the MOC body.
+  const response = await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl, gzip);
   return releaseResponseHeaders(response, release);
 }
 

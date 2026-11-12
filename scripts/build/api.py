@@ -53,6 +53,7 @@ from build.voice_catalog import complete_voices, COLLECTION_GROUPS
 from build.tgw_card import build_tgw_card
 from build.live2d_preview import PREVIEW_SCHEMA as LIVE2D_PREVIEW_SCHEMA
 from build.spine_catalog import build_spine_catalog
+from build.catalog_storage import apply_model_publications
 from build.unity_effect import serialize_unity_effect
 
 
@@ -6281,6 +6282,7 @@ def _stories(data: BuildData, live2d: dict[str, dict[str, Any]]) -> dict[str, An
         background_path = str(row.get("_backgroundAssetPath") or "")
         spots[str(identity)] = _present(
             spotId=identity,
+            startAt=_timestamp(row.get("_startAt")),
             bandId=band_id,
             bandName=data.text(bands.get(band_id, {}).get("_nameTextID"), ""),
             name=data.text(row.get("_nameTextId"), str(identity)),
@@ -8880,6 +8882,7 @@ def build_api(
     begin = time.perf_counter()
     RuntimeTextureProjection(data, source_id).apply(documents)
     _enrich_image_variants(data, documents)
+    apply_model_publications(documents)
     timings["image variants"] = round(time.perf_counter() - begin, 3)
     layout.api.mkdir(parents=True, exist_ok=True)
     begin = time.perf_counter()

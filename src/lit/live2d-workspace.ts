@@ -376,6 +376,8 @@ export class Live2DWorkspace extends LitElement {
     const target = viewer ?? this.viewer;
     const ownsObserver = !viewer || this.viewer === viewer;
     if (ownsObserver) {
+      delete this.dataset.modelResourceBase;
+      delete this.dataset.modelRelease;
       this.resizeObserver?.disconnect();
       this.resizeObserver = undefined;
       if (this.viewer === target) this.viewer = undefined;
@@ -692,6 +694,12 @@ export class Live2DWorkspace extends LitElement {
     const source = detail.runtime && typeof detail.runtime === "object" ? (detail.runtime as Value) : detail;
     const modelUrl = String(source.model || "");
     if (!modelUrl) throw new Error(uiText(this.locale, "media.models.labels.modelDescriptorMissing"));
+    const modelSource = new URL(modelUrl, location.href);
+    const release = modelSource.searchParams.get("release");
+    if (release) {
+      this.dataset.modelResourceBase = modelSource.pathname.slice(0, modelSource.pathname.lastIndexOf("/") + 1);
+      this.dataset.modelRelease = release;
+    }
     const motions = Array.isArray(detail.motions) ? (detail.motions as Value[]) : [];
     const defaultMotion = this.defaultMotionName(detail, motions);
     const defaultExpression = String(

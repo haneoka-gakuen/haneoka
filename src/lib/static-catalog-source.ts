@@ -82,6 +82,7 @@ class StaticCatalogHttpError extends Error {
 
 const releasePromises = new Map<string, Promise<StaticCatalogRelease>>();
 const requestPromises = new Map<string, Promise<unknown>>();
+const modelPublicationPromises = new Map<string, Promise<Record<string, RecordValue>>>();
 const localCatalogs = new Map<string, ReleaseCatalog | null>();
 const releaseEntries = new WeakMap<RecordValue, Map<string, RecordValue>>();
 const blobMetrics = { hits: 0, fetches: 0, hitBytes: 0, fetchedBytes: 0 };
@@ -581,8 +582,47 @@ export async function staticCatalogRelease(server = "intl"): Promise<StaticCatal
   }
 }
 
+function staticModelPublications(pinned: StaticCatalogRelease): Promise<Record<string, RecordValue>> {
+  const key = requestKey("models", pinned.server, pinned);
+  let pending = modelPublicationPromises.get(key);
+  if (!pending) {
+    pending = staticBuildJson(`native-model-publications:${key}`, "native-catalog", async () => {
+      const file = nodePath.resolve(process.env.STATIC_MODEL_PUBLICATIONS_FILE || "data/static-model-publications.json");
+      if (!fs.existsSync(file)) return {} as Record<string, RecordValue>;
+      const source = JSON.parse(fs.readFileSync(file, "utf8"))[pinned.server];
+      if (source?.identity?.releaseId !== pinned.releaseId || source?.identity?.sourceId !== pinned.sourceId)
+        throw new StaticCatalogConsistencyError(`Model publications differ from pinned ${pinned.server}/${pinned.releaseId}`);
+      return source.publications as Record<string, RecordValue>;
+    });
+    modelPublicationPromises.set(key, pending);
+  }
+  return pending;
+}
+
 /** Fetches a required API path from the pinned release. Failures abort the build. */
 export async function fetchStaticCatalog(
+  path: string,
+  server = "intl",
+  release?: StaticCatalogRelease,
+): Promise<unknown> {
+  const pinned = release || (await staticCatalogRelease(server));
+  const value = await readStaticCatalog(path, server, pinned);
+  const route = new URL(path, "https://catalog.invalid/");
+  const [resource, id] = route.pathname.slice(1).split("/");
+  if (resource !== "live2d" && resource !== "spine") return value;
+  const publications = await staticModelPublications(pinned);
+  const annotate = (key: string, row: unknown) => asRecord(row) ? { ...asRecord(row), ...publications[`${resource}:${key}`] } : row;
+  const document = asRecord(value);
+  if (!document) return value;
+  if (id) return annotate(decodeURIComponent(id), value);
+  const field = route.searchParams.has("id") ? "items" : resource === "spine" ? "models" : undefined;
+  const entries = field ? asRecord(document[field]) : document;
+  if (!entries) return value;
+  const annotated = Object.fromEntries(Object.entries(entries).map(([key, row]) => [key, annotate(key, row)]));
+  return field ? { ...document, [field]: annotated } : annotated;
+}
+
+async function readStaticCatalog(
   path: string,
   server = "intl",
   release?: StaticCatalogRelease,
