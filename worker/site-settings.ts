@@ -87,8 +87,9 @@ export async function applySiteSettings(
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
   const completeView = sourceBrowser || unrestricted(view);
   headers.delete("X-Haneoka-Offline-Document");
-  const guestUnpublished = Object.values(view.policy.types).some(
-    (rule) => rule.groups.includes("guest") && (rule.mode === "visible" || rule.show.length > 0),
+  const guestUnpublished = Object.entries(view.policy.types).some(
+    ([kind, rule]) => !["live2d", "spine"].includes(kind) && rule.groups.includes("guest") &&
+      (rule.mode === "visible" || rule.show.length > 0),
   );
   if (group === "guest" && !spoilers && !completeView && !guestUnpublished)
     headers.set("X-Haneoka-Offline-Document", "public");
@@ -119,12 +120,7 @@ export async function applySiteSettings(
     await output.body?.cancel();
     return new Response(null, { status: output.status, headers });
   }
-  const rewriter = new HTMLRewriter();
-  if (sourceBrowser) {
-    // Existing static asset documents may still contain a build-time text preview.
-    rewriter.on("asset-explorer .asset-preview pre", { element(element) { element.setInnerContent(""); } });
-  }
-  return rewriter
+  return new HTMLRewriter()
     .on("style[data-community-visibility]", { element(element) { element.remove(); } })
     .on('meta[name="haneoka-content-route"]', {
       element(element) {
@@ -194,23 +190,14 @@ export async function applySiteSettings(
           chunk.remove();
           return;
         }
-        const assetView = sourceBrowser && jsonId === "asset-view-data";
-        if (!assetView && (completeView || jsonId === "team-builder-page")) return;
+        if (completeView || jsonId === "team-builder-page") return;
         jsonText += chunk.text;
         if (!chunk.lastInTextNode) {
           chunk.remove();
           return;
         }
         const input = decodePageData(JSON.parse(jsonText));
-        if (assetView && input && typeof input === "object" && "textPreview" in input) {
-          const { textPreview: _preview, ...metadata } = input;
-          chunk.replace(JSON.stringify(metadata).replace(/</gu, "\\u003c"), { html: true });
-          jsonText = "";
-          return;
-        }
-        const filtered = assetView
-          ? { changed: false, value: input }
-          : filterContentData(input, view, resource?.kind, true, context.publications);
+        const filtered = filterContentData(input, view, resource?.kind, true, context.publications);
         if (filtered.changed) usePublicView = true;
         chunk.replace(filtered.changed
           ? JSON.stringify(filtered.value).replace(/</gu, "\\u003c").replace(/\u2028/gu, "\\u2028").replace(/\u2029/gu, "\\u2029")
@@ -261,17 +248,13 @@ export async function applySiteSettings(
           !(kind && visibilityType(kind))
         )
           return;
-        const gameMedia = /^\/(?:assets|runtime|objects)\//u.test(target.pathname);
-        target.searchParams.set("__content", gameMedia ? "2" : "1");
+        target.searchParams.set("__content", "1");
         if (view.override && !target.searchParams.has("spoiler"))
           target.searchParams.set("spoiler", new URL(request.url).searchParams.get("spoiler")!);
-        if (gameMedia) {
-          if (hideIdentity() && element.tagName === "link") {
-            element.remove();
-            return;
-          }
-          target.searchParams.delete("asset");
-          target.searchParams.delete("cv");
+        if (/^\/(?:assets|runtime|objects)\//u.test(target.pathname)) {
+          if (hideIdentity() && element.tagName === "link") { element.remove(); return; }
+          target.searchParams.set("asset", "1");
+          for (const key of ["cv", "spoiler", "__content"]) target.searchParams.delete(key);
         }
         element.setAttribute(attribute, target.pathname + target.search + target.hash);
       },

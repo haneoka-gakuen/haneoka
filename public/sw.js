@@ -1,17 +1,17 @@
 // L3 — GEB
-// Input: 同源 GET 请求、服务端缓存标记、导航／资源类别和浏览器缓存状态。
-// Output: 按请求类别选择的网络／缓存响应及公开文档离线回退。
+// Input: 同源 GET 请求、显示范围、导航／资源类别和浏览器缓存状态。
+// Output: 按请求类别与显示范围选择的网络／缓存响应及离线导航回退。
 // Pos: [Map](L2.md)；站点 Service Worker 缓存与版本生命周期。
 // Effects/Dependencies: 注册 install／activate／fetch 事件、访问网络与 CacheStorage、淘汰旧缓存；缓存写入由 waitUntil 后台完成，读写失败不阻断请求；API／认证等路径不进入通用缓存。
 // haneoka service worker: repeat visits should not re-pay the network.
 //
 // Strategy per request class:
-// - HTML navigations: network-first with an offline fallback to public static
-//   documents and Worker-rendered public guest documents.
+// - HTML navigations: network-first with a public offline fallback.
 // - Hashed build output (/_astro/*): cache-first. URLs are immutable.
 // - Icon sprite: stale-while-revalidate with an HTTP cache validation.
-// - Game media: cache public bytes only. Pinned releases are immutable; current
-//   media lasts six hours. Cached full responses also satisfy byte ranges.
+// - Game media: public bytes are shared, restricted bytes use the current
+//   display scope. Pinned releases are immutable; current media lasts six hours.
+//   Complete audio responses also satisfy subsequent byte-range requests.
 // - Other images: cache-first with an entry cap, evicting the oldest first.
 // - Build-time entity payloads (/entity-data/v1/*): content-addressed, cache-first
 //   with an entry cap.
@@ -22,7 +22,19 @@ const ASSETS_CACHE = "haneoka.assets.v7";
 const IMAGES_CACHE = "haneoka.images.v9";
 const DATA_CACHE = "haneoka.data.v8";
 const PUBLIC_MEDIA_CACHE = "haneoka.media.public.v2";
-const ACTIVE_CACHES = [PAGES_CACHE, ASSETS_CACHE, IMAGES_CACHE, DATA_CACHE, PUBLIC_MEDIA_CACHE];
+const SCOPED_MEDIA_CACHE = "haneoka.media.scoped.v2";
+const ACTIVE_CACHES = [PAGES_CACHE, ASSETS_CACHE, IMAGES_CACHE, DATA_CACHE, PUBLIC_MEDIA_CACHE, SCOPED_MEDIA_CACHE];
+const clientScopes = new Map();
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "haneoka:content-view-reset") {
+    clientScopes.clear();
+  }
+  else if (event.data?.type === "haneoka:content-view" && event.source?.id && typeof event.data.scope === "string")
+    {
+      clientScopes.set(event.source.id, event.data.scope);
+      if (clientScopes.size > 128) clientScopes.delete(clientScopes.keys().next().value);
+    }
+});
 
 const MAX_PAGES = 30;
 const MAX_IMAGES = 2000;
@@ -55,11 +67,18 @@ self.addEventListener("activate", (event) => {
 const isNeverCached = (url) => NEVER_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix)) ||
   /^\/(?:ja|en|ko|zh-CN|zh-TW)\/(?:account|admin|auth|community)(?:\/|$)/.test(url.pathname);
 
-const mediaKey = (url) => {
+const mediaKey = (url, scope) => {
   const key = new URL(url);
-  for (const field of ["__content", "asset", "spoiler", "cv"]) key.searchParams.delete(field);
+  for (const field of ["__content", "spoiler", "cv"]) key.searchParams.delete(field);
+  if (scope) key.searchParams.set("cv", scope);
   key.searchParams.sort();
   return new Request(key);
+};
+
+const requestedScope = (url, scope) => {
+  if (!scope || !url.searchParams.has("spoiler")) return scope;
+  const value = Number(url.searchParams.get("spoiler"));
+  return scope.replace(/-[01]$/, `-${Number(Number.isFinite(value) && value !== 0)}`);
 };
 
 const mediaRange = async (request, response) => {
@@ -111,12 +130,17 @@ const explicitlyPublic = (response) => {
 };
 
 const gameMedia = async (event, request, url) => {
-  const key = mediaKey(url);
-  const { cache, cached } = await readCache(key, PUBLIC_MEDIA_CACHE);
-  const pinned = url.searchParams.has("release") || url.pathname.startsWith("/public-media/");
-  const immutable = pinned && /\bimmutable\b/i.test(cached?.headers.get("Cache-Control") || "");
-  if (cached && (immutable || fresh(cached, IMAGE_FRESH_MS))) {
-    const response = await mediaRange(request, cached);
+  const scope = requestedScope(url, clientScopes.get(event.clientId));
+  const publicKey = mediaKey(url);
+  const privateKey = scope ? mediaKey(url, scope) : null;
+  const shared = await readCache(publicKey, PUBLIC_MEDIA_CACHE);
+  if (shared.cached && (url.searchParams.has("release") || fresh(shared.cached, IMAGE_FRESH_MS))) {
+    const response = await mediaRange(request, shared.cached);
+    if (response) return response;
+  }
+  const scoped = privateKey ? await readCache(privateKey, SCOPED_MEDIA_CACHE) : {};
+  if (scoped.cached && (url.searchParams.has("release") || fresh(scoped.cached, IMAGE_FRESH_MS))) {
+    const response = await mediaRange(request, scoped.cached);
     if (response) return response;
   }
   const range = request.headers.get("Range");
@@ -128,21 +152,26 @@ const gameMedia = async (event, request, url) => {
     source = new Request(request, { headers, referrer: request.referrer, referrerPolicy: request.referrerPolicy });
   }
   let response;
-  try {
-    // Skip HTTP entries written before restricted media became non-cacheable.
-    response = await fetch(source, { cache: "no-store", referrer: source.referrer, referrerPolicy: source.referrerPolicy });
-  } catch (error) {
+  try { response = await fetch(source, { cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
+  catch (error) {
+    const cached = shared.cached || scoped.cached;
     if (cached) {
       const fallback = await mediaRange(request, cached);
       if (fallback) return fallback;
     }
     throw error;
   }
-  if (cache && response.status === 200 && !response.redirected && explicitlyPublic(response)) {
-    const headers = new Headers(response.headers);
-    headers.delete("Vary");
-    const stored = new Response(response.clone().body, { status: 200, headers });
-    event.waitUntil(cache.put(key, stored).then(() => trimCache(PUBLIC_MEDIA_CACHE, MAX_IMAGES)).catch(() => {}));
+  if (response.status === 200 && !response.redirected && !/\bno-store\b/i.test(response.headers.get("Cache-Control") || "")) {
+    const published = explicitlyPublic(response);
+    const key = published ? publicKey : privateKey;
+    const cache = published ? shared.cache : scoped.cache;
+    if (key && cache) {
+      const headers = new Headers(response.headers);
+      headers.delete("Vary");
+      const stored = new Response(response.clone().body, { status: 200, headers });
+      const name = published ? PUBLIC_MEDIA_CACHE : SCOPED_MEDIA_CACHE;
+      event.waitUntil(cache.put(key, stored).then(() => trimCache(name, MAX_IMAGES)).catch(() => {}));
+    }
   }
   return fullMedia && response.status === 200 ? (await mediaRange(request, response)) || response : response;
 };
@@ -259,10 +288,6 @@ self.addEventListener("fetch", (event) => {
   }
   if (isNeverCached(url)) return;
 
-  if (/^\/(?:assets|runtime|objects|public-media)\//.test(url.pathname)) {
-    event.respondWith(gameMedia(event, request, url));
-    return;
-  }
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(event, request));
     return;
@@ -277,6 +302,10 @@ self.addEventListener("fetch", (event) => {
   }
   if (url.pathname.startsWith("/entity-data/v1/")) {
     event.respondWith(cacheFirst(event, request, DATA_CACHE, MAX_DATA));
+    return;
+  }
+  if (/^\/(?:assets|runtime|objects|public-media)\//.test(url.pathname)) {
+    event.respondWith(gameMedia(event, request, url));
     return;
   }
   if (request.destination === "image") {

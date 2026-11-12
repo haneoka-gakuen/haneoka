@@ -7,6 +7,7 @@ import {
 import { SPOILER_CONTENT_EVENT, spoilerContentEnabled } from "./spoiler-content";
 import { RequestScope } from "./request-scope";
 import { isUserGroup, type UserGroup } from "./user-roles";
+import { publishContentCacheScope } from "./content-request";
 
 const requests = new RequestScope();
 let installed = false;
@@ -41,6 +42,7 @@ export function applyVisibilitySettings(settings: ContentVisibilitySettings & { 
   document.documentElement.dataset.contentVisibilityAt = String(Date.now());
   delete document.documentElement.dataset.contentVisibilityPending;
   if (settings.group) document.documentElement.dataset.contentGroup = settings.group;
+  publishContentCacheScope();
   if (pending || previous !== visibilityPolicyKey()) dispatchEvent(new Event(SPOILER_CONTENT_EVENT));
 }
 function refreshVisibility(): Promise<void> {
@@ -101,11 +103,15 @@ function refreshCurrentVisibility(): void {
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
+  publishContentCacheScope();
+  navigator.serviceWorker?.addEventListener("controllerchange", publishContentCacheScope);
+  addEventListener(SPOILER_CONTENT_EVENT, publishContentCacheScope);
   addEventListener(SPOILER_CONTENT_EVENT, () => { if (document.querySelector("[data-content-unavailable]")) location.reload(); });
   refreshDocumentVisibility();
   addEventListener("haneoka:session-changed", () => {
     requests.cancel();
     activeRefresh = undefined;
+    navigator.serviceWorker?.controller?.postMessage({ type: "haneoka:content-view-reset" });
     try {
       localStorage.removeItem(PUBLIC_STATIC_METADATA_KEY);
     } catch {}
@@ -114,7 +120,7 @@ export function installContentVisibility(): void {
   });
   addEventListener("focus", refreshCurrentVisibility);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCurrentVisibility(); });
-  document.addEventListener("astro:page-load", refreshDocumentVisibility);
+  document.addEventListener("astro:page-load", () => { publishContentCacheScope(); refreshDocumentVisibility(); });
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();
     activeRefresh = undefined;

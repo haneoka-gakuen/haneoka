@@ -2,7 +2,6 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { contentRequestUrl } from "../lib/content-request";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { RequestScope } from "../lib/request-scope";
-import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -223,17 +222,12 @@ export class AssetExplorer extends LitElement {
     this.sync();
     if (this.selected) void this.prepareSelected(this.selected);
   };
-  private onVisibilityChanged = () => {
-    if (this.kind(this.selected) === "text") void this.prepareSelected(this.selected);
-  };
   connectedCallback() {
     const page = readPageData<AssetPageData>(this);
     const view = readPageData<AssetViewData>(this, "data-view-data");
     if (page?.schema === "haneoka-asset-page-v1") this.preparePage(page, view);
     super.connectedCallback();
     addEventListener("haneoka:locale-ready", this.onLocale);
-    addEventListener("haneoka:session-changed", this.onVisibilityChanged);
-    addEventListener(SPOILER_CONTENT_EVENT, this.onVisibilityChanged);
     this.syncActions();
     void import("@material/web/progress/circular-progress.js");
     const documentUrl = navigationDocumentUrl();
@@ -281,8 +275,6 @@ export class AssetExplorer extends LitElement {
   }
   disconnectedCallback() {
     removeEventListener("haneoka:locale-ready", this.onLocale);
-    removeEventListener("haneoka:session-changed", this.onVisibilityChanged);
-    removeEventListener(SPOILER_CONTENT_EVENT, this.onVisibilityChanged);
     this.previewRequest.cancel();
     this.releaseSearch?.();
     clearAppBarIdentity("asset-explorer");
@@ -379,7 +371,7 @@ export class AssetExplorer extends LitElement {
     const [root, ...parts] = this.localized(file).split("/").filter(Boolean);
     if (!["assets", "runtime", "objects"].includes(root || "")) return "";
     const path = `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}`;
-    return contentRequestUrl(this.sourceRelease ? `${path}?release=${encodeURIComponent(this.sourceRelease)}` : path);
+    return contentRequestUrl(`${path}?asset=1${this.sourceRelease ? `&release=${encodeURIComponent(this.sourceRelease)}` : ""}`);
   }
   private server() {
     return this.sourceServer || currentReleaseServer();

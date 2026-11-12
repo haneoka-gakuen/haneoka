@@ -251,9 +251,8 @@ const sitePath = (value: string): { path: string; origin: string } | undefined =
 export function functionalMediaUrl(value: string): string | undefined {
   if (!/^\/(?:assets|runtime|objects)\/(?:jp|intl)\//u.test(value)) return;
   const url = new URL(value, "https://media.invalid");
-  url.searchParams.set("__content", "2");
-  url.searchParams.delete("asset");
-  url.searchParams.delete("cv");
+  url.searchParams.set("asset", "1");
+  for (const key of ["cv", "spoiler", "__content"]) url.searchParams.delete(key);
   const next = url.pathname + url.search + url.hash;
   return next === value ? undefined : next;
 }

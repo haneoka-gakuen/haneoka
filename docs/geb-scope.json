@@ -283,7 +283,6 @@
     "scripts/build/catalog-page-store.mjs",
     "scripts/build/publish-page-computed.mjs",
     "scripts/verify/catalog-page-snapshot.mjs",
-    "scripts/verify/content-access.mjs",
     "src/lib/catalog-page-contract.ts",
     "src/lib/catalog-page-reader.ts",
     "src/lib/catalog-page-refresh.ts",
