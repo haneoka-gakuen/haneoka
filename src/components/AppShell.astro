@@ -1,7 +1,7 @@
 ---
 import Icon from "./Icon.astro";
 import I18nText from "./I18nText.astro";
-import { NAV_SECTIONS, PRIMARY_DESTINATIONS, UTILITY_DESTINATIONS, INFORMATION_DESTINATIONS, isDestinationActive, isRouteActive } from "../config/navigation";
+import { NAV_SECTIONS, PRIMARY_DESTINATIONS, UTILITY_DESTINATIONS, isDestinationActive, isRouteActive } from "../config/navigation";
 import { localePath, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { resourceCollectionHref } from "../lib/resource-route";
@@ -47,10 +47,8 @@ const navigation = PRIMARY_DESTINATIONS.map((destination) => ({
   })).filter((section) => section.items.length > 0),
 }));
 const utilities = UTILITY_DESTINATIONS;
-const informationPages = INFORMATION_DESTINATIONS;
 const hasSearch = Astro.slots.has("search");
 const searchIndexable = !["/account", "/admin", "/settings", "/search", "/community"].some(prefix => route === prefix || route.startsWith(`${prefix}/`));
-const inInformation = route === "/about" || informationPages.some((item) => itemActive(item.route));
 const publicForums = await publicForumNavigation(locale, route);
 const publicForumsDataId = "shell-public-forums";
 ---
@@ -79,8 +77,7 @@ const publicForumsDataId = "shell-public-forums";
     label below) and the horizontal item (56dp full-width pill, label beside
     the icon); the icon keeps its x so the morph reads as one object. The current
     destination's tree is listed below it with collapsible branches, and
-    account, settings and about are
-    pinned at the bottom.
+    account and settings are pinned at the bottom.
   -->
   <nav
     class="nav"
@@ -234,7 +231,7 @@ const publicForumsDataId = "shell-public-forums";
 
     <ul class="nav__utilities" role="list">
       {utilities.map((item) => {
-        const active = itemActive(item.route) || (item.route === "/about" && inInformation);
+        const active = itemActive(item.route);
         return (
           <li class="nav__destination" data-current={active ? "true" : undefined}>
             <a
@@ -251,22 +248,6 @@ const publicForumsDataId = "shell-public-forums";
                 <I18nText keyName={item.label} fallback={item.label} locale={locale} />
               </span>
             </a>
-            {item.route === "/about" && inInformation && (
-              <div class="nav__tree">
-                <div class="nav__tree-inner">
-                  <ul class="nav__items" role="list">
-                    {informationPages.map((page) => (
-                      <li>
-                        <a class="nav-item" data-nav-route={page.route} href={navigationHref(page.route)} aria-current={itemActive(page.route) ? "page" : undefined}>
-<span class="nav-item__indicator" aria-hidden="true"></span>
-                          <span class="nav-item__label"><I18nText keyName={page.label} fallback={page.label} locale={locale} /></span>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
           </li>
         );
       })}

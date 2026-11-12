@@ -14,6 +14,7 @@ import type {
 import { loadingIndicator } from "../ui/loading-indicator";
 import { cardGrowth } from "./card-growth";
 import { cardGrowthIcons } from "../../lib/ui-marks";
+import { defaultProfileCardUrl } from "../../lib/profile-card-default";
 type RankingEntry = SongRankingRowDto;
 export interface RankingRowView {
   rank: number;
@@ -185,6 +186,9 @@ export abstract class GameRecordsCardsElement extends LitElement {
     const favorite = this.cardArtwork(row.favoriteMemberCardId, false);
     const profileCard = row.profileCard;
     const image = profileCard?.thumbnailUrls[0] || "";
+    const defaultImage = this.cardCatalogs.intl?.defaultProfileCardImages?.[this.locale as Locale]
+      || this.sourceCatalog()?.defaultProfileCardImages?.[this.locale as Locale]
+      || defaultProfileCardUrl(this.locale as Locale);
     const cardTitle = [
       profileCard?.name,
       profileCard?.slot != null ? this.label("profileCardSlot", "Slot {slot}").replace("{slot}", String(profileCard.slot)) : "",
@@ -212,7 +216,9 @@ export abstract class GameRecordsCardsElement extends LitElement {
                     </a>
                   `
                 : html`
-                    <span class="song-ranking__namecard song-ranking__namecard--empty" aria-label=${this.label("noProfileCard", "No profile card")}>${icon("badge", 24)}</span>
+                    <span class="song-ranking__namecard" aria-label=${this.label("noProfileCard", "No profile card")}>
+                      ${this.profileMedia(name, defaultImage, false)}
+                    </span>
                   `
           }
           <span class="song-ranking__avatar">

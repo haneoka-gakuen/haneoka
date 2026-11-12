@@ -72,17 +72,16 @@ const SEKAI_STORY_ICONS: Record<(typeof SEKAI_STORY_SECTIONS)[number], string> =
 export const UTILITY_DESTINATIONS = [
   { route: "/account", icon: "account_circle", label: "navigation.account" },
   { route: "/settings", icon: "settings", label: "navigation.settings" },
-  { route: "/about", icon: "info", label: "navigation.about" },
 ] as const;
 
 export const INFORMATION_DESTINATIONS = [
-  { route: "/license", label: "legal.license.title" },
-  { route: "/terms", label: "legal.terms.title" },
-  { route: "/privacy", label: "legal.privacy.title" },
+  { route: "/license", icon: "copyright", label: "legal.license.title" },
+  { route: "/terms", icon: "description", label: "legal.terms.title" },
+  { route: "/privacy", icon: "privacy_tip", label: "legal.privacy.title" },
 ] as const;
 
 export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
-  { id: "home", route: "/", icon: "home", label: "navigation.home", match: ["/", "/announcements", "/calendar", "/join", "/sponsor", "/download"] },
+  { id: "home", route: "/", icon: "home", label: "navigation.home", match: ["/", "/announcements", "/calendar", "/join", "/sponsor", "/download", "/about", ...INFORMATION_DESTINATIONS.map((page) => page.route)] },
   {
     id: "catalog",
     route: "/catalog",
@@ -140,6 +139,7 @@ const sections: NavSection[] = [
       { route: "/join", icon: "handshake", label: "legal.join.title" },
       { route: "/sponsor", icon: "favorite", label: "legal.sponsor.title" },
       { route: "/download", icon: "download", label: "download.title" },
+      { route: "/about", icon: "info", label: "navigation.about", children: INFORMATION_DESTINATIONS.map((page) => ({ ...page })) },
     ],
   },
   {

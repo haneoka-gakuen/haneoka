@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md); game-record contracts shared by the browser and Worker.
 // Effects/Dependencies: Pure region and freshness calculations; no I/O.
 import type { CardGrowthIcons } from "./ui-marks";
+import type { Locale } from "../i18n/locales";
 
 export type GameRecordsRegion = "jp" | "tw" | "en" | "kr";
 
@@ -241,6 +242,7 @@ export interface RankingCardArtwork {
 
 export interface RankingCardCatalog {
   growthIcons: CardGrowthIcons;
+  defaultProfileCardImages?: Record<Locale, string>;
   member: Record<string, RankingCardArtwork>;
   support: Record<string, RankingCardArtwork>;
   playerLevels: Array<{ level: number; exp: number }>;

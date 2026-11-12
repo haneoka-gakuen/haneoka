@@ -1,0 +1,7 @@
+---
+import Icon from "./Icon.astro";
+interface Props { class?: string }
+const { class: className } = Astro.props;
+const email = "contact@haneoka.org";
+---
+<a class={className} href={`mailto:${email}`}><Icon name="mail" size={18} /><span>{email}</span></a>

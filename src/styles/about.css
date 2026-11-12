@@ -326,7 +326,7 @@
   }
   .about-footer__links a {
     display: inline-flex;
-    min-height: 40px;
+    min-height: 48px;
     align-items: center;
     gap: 6px;
     color: var(--md-sys-color-on-surface-variant);

@@ -74,7 +74,7 @@ const views = new Map<string, FullView>();
 /** Public documents as first served, for turning private content off without the network. */
 const publicDocuments = new Map<string, string>();
 const checkedBodies = new WeakSet<HTMLElement>();
-let pending: Document | undefined;
+let pending: { document: Document | undefined; fragment: string } | undefined;
 let swapping = false;
 let scroll: [number, number] | undefined;
 let controller: AbortController | undefined;
@@ -475,7 +475,7 @@ async function hydrated(): Promise<void> {
       : [],
   );
   await Promise.race([Promise.allSettled(updates), limit]);
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  await Promise.race([new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))), limit]);
 }
 async function finish(current: Hold): Promise<void> {
   await hydrated();
@@ -526,13 +526,27 @@ async function swap(next: Document | undefined): Promise<void> {
     } catch {}
     current.focus = { element: active, identity: identify(active), value: text ? active.value : undefined, start, end };
   }
-  pending = next;
+  const previousBody = document.body;
+  const staged = { document: next, fragment: location.hash };
+  pending = staged;
   swapping = true;
   scroll = [scrollX, scrollY];
-  navigate(location.pathname + location.search + location.hash, { history: "replace", info: SWAP }).catch(() => {
-    swapping = false;
-    release(true);
-  });
+  // A fragment-only navigation skips the router's document preparation and swap.
+  void navigate(location.pathname + location.search, { history: "replace", info: SWAP })
+    .then(() => {
+      if (hold !== current || document.body !== previousBody) return;
+      if (pending === staged) pending = undefined;
+      swapping = false;
+      scroll = undefined;
+      release(true);
+    })
+    .catch(() => {
+      if (hold !== current) return;
+      if (pending === staged) pending = undefined;
+      swapping = false;
+      scroll = undefined;
+      release(true);
+    });
 }
 async function retainPublic(path: string): Promise<string | undefined> {
   const known = publicDocuments.get(path);
@@ -826,9 +840,13 @@ export function installPublicStaticView(): void {
     const preparation = event as TransitionBeforePreparationEvent;
     if (preparation.formData) return;
     if (preparation.info === SWAP) {
-      const next = pending;
+      const staged = pending;
       pending = undefined;
-      if (next) preparation.loader = async () => void (preparation.newDocument = next);
+      if (staged) {
+        preparation.to.hash = staged.fragment;
+        const next = staged.document;
+        if (next) preparation.loader = async () => void (preparation.newDocument = next);
+      }
       return;
     }
     controller?.abort();

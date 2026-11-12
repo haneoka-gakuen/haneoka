@@ -143,16 +143,8 @@ const gameMedia = async (event, request, url) => {
     const response = await mediaRange(request, scoped.cached);
     if (response) return response;
   }
-  const range = request.headers.get("Range");
-  const fullMedia = ["audio", "video"].includes(request.destination) && /^bytes=\d*-\d*$/.test(range || "");
-  let source = request;
-  if (fullMedia) {
-    const headers = new Headers(request.headers);
-    for (const field of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(field);
-    source = new Request(request, { headers, referrer: request.referrer, referrerPolicy: request.referrerPolicy });
-  }
   let response;
-  try { response = await fetch(source, { cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
+  try { response = await fetch(request, { cache: url.searchParams.get("asset") === "1" || url.pathname.startsWith("/public-media/") ? "default" : "no-cache" }); }
   catch (error) {
     const cached = shared.cached || scoped.cached;
     if (cached) {
@@ -161,7 +153,7 @@ const gameMedia = async (event, request, url) => {
     }
     throw error;
   }
-  if (response.status === 200 && !response.redirected && !/\bno-store\b/i.test(response.headers.get("Cache-Control") || "")) {
+  if (request.destination !== "video" && response.status === 200 && !response.redirected && !/\bno-store\b/i.test(response.headers.get("Cache-Control") || "")) {
     const published = explicitlyPublic(response);
     const key = published ? publicKey : privateKey;
     const cache = published ? shared.cache : scoped.cache;
@@ -173,7 +165,7 @@ const gameMedia = async (event, request, url) => {
       event.waitUntil(cache.put(key, stored).then(() => trimCache(name, MAX_IMAGES)).catch(() => {}));
     }
   }
-  return fullMedia && response.status === 200 ? (await mediaRange(request, response)) || response : response;
+  return response;
 };
 
 const trimCache = async (cacheName, limit) => {

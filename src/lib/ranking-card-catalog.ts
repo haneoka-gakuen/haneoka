@@ -1,5 +1,7 @@
 import { entityGraph } from "./entity-graph";
-import { asRecord, fetchStaticCatalog } from "./static-catalog-source";
+import { asRecord, fetchStaticCatalog, staticCatalogRelease } from "./static-catalog-source";
+import { LOCALES, type Locale } from "../i18n/locales";
+import { defaultProfileCardUrl } from "./profile-card-default";
 import type { ReleaseServer } from "./release-server";
 import type { RankingCardArtwork, RankingCardCatalog } from "./game-records";
 import { cardGrowthIcons, projectUiMarks } from "./ui-marks";
@@ -9,6 +11,7 @@ import { cardRarityName } from "./card-rarity";
 export async function rankingCardCatalog(server: ReleaseServer): Promise<RankingCardCatalog> {
   const source = server === "jp" || server === "jp-cbt" ? "jp" : "intl";
   const graph = await entityGraph(source);
+  const intlRelease = source === "intl" ? graph.release : await staticCatalogRelease("intl");
   let marks = graph.marks;
   if (!marks["CardRank5.png"] || !marks["snaplimit_5.png"] || !marks["SpecialTraining.png"]) {
     const atlas = await fetchStaticCatalog("sources/Assets/AddressableResources/UI/Atlas/FixUiSpriteAtlas.spriteatlasv2", source, graph.release);
@@ -51,6 +54,9 @@ export async function rankingCardCatalog(server: ReleaseServer): Promise<Ranking
   };
   return {
     growthIcons: cardGrowthIcons(mark),
+    defaultProfileCardImages: Object.fromEntries(
+      LOCALES.map((locale) => [locale, defaultProfileCardUrl(locale, intlRelease.releaseId)]),
+    ) as Record<Locale, string>,
     member: cards(false),
     support: cards(true),
     levels: { member: levels(false), support: levels(true) },

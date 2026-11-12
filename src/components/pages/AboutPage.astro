@@ -1,5 +1,6 @@
 ---
 import Icon from "../Icon.astro";
+import ContactEmail from "../ContactEmail.astro";
 import I18nText from "../I18nText.astro";
 import { group } from "../../i18n/messages";
 import { localeTag, type Locale } from "../../i18n/locales";
@@ -307,6 +308,7 @@ const docsHref = locale === "zh-CN" ? "https://docs.haneoka.org/zh-cn/" : "https
       <a href={contactHref} target="_blank" rel="noreferrer">
         <I18nText keyName="legal.about.contactLink" fallback={copy.contactLink} locale={locale} />
       </a>
+      <ContactEmail />
     </nav>
   </footer>
 </article>
