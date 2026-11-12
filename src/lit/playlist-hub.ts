@@ -12,6 +12,7 @@
  * slot, the playlist's title as the heading once its hero scrolls away, and
  * the view's actions in the trailing row.
  */
+import { formatDocumentTitle } from "../lib/document-title";
 import { signedInHint } from "../lib/community-viewer";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { readPageData } from "../lib/page-data";
@@ -377,7 +378,7 @@ export class PlaylistHub extends LitElement {
     else if (this.view === "detail" && this.current && this.heroHidden) text = this.titleOf(this.current);
     if (heading.textContent !== text) heading.textContent = text;
     const siteTitle = clientText(this.locale, "common.seo.siteTitle");
-    document.title = `${this.view === "detail" && this.current ? this.titleOf(this.current) : text} / haneoka - ${siteTitle}`;
+    document.title = formatDocumentTitle(this.view === "detail" && this.current ? this.titleOf(this.current) : text, siteTitle);
   }
 
   private renderBarActions() {

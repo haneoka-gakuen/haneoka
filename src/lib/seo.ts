@@ -2,6 +2,7 @@ import { LOCALES, localePath, localeTag, type Locale } from "../i18n/locales";
 import { CATALOG_HUB, PRIMARY_DESTINATIONS, isDestinationActive } from "../config/navigation";
 import { t } from "../i18n/messages";
 import { serverText } from "../i18n/server";
+import { formatDocumentTitle, withoutSiteSuffix } from "./document-title";
 import {
   isReleaseServer,
   parseResourceRoute,
@@ -47,14 +48,9 @@ export function shouldNoindex(route: string): boolean {
   );
 }
 
-const withoutSiteSuffix = (title: string): string =>
-  title.replace(/\s*[·/]\s*haneoka(?:\s*-\s*BanG Dream! Our Notes.*)?$/u, "").trim();
-
 export function pageTitle(locale: Locale, route: string, title: string): string {
-  if (route === "/") return `${serverText(locale, "common.seo.homeTitle", undefined, title)} | haneoka`;
-  const name = withoutSiteSuffix(title);
-  const site = serverText(locale, "common.seo.siteTitle", undefined, "BanG Dream! Our Notes Archive");
-  return `${name && name !== "haneoka" ? `${name} / ` : ""}haneoka - ${site}`;
+  const site = serverText(locale, "common.seo.siteTitle", undefined, "BanG Dream! Our Notes Database");
+  return formatDocumentTitle(route === "/" ? "" : title, site);
 }
 
 /** Small, page-specific vocabulary for clients that consume keyword metadata. */

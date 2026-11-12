@@ -1,3 +1,4 @@
+import { formatDocumentTitle } from "../lib/document-title";
 import { preferredDeviceLocale } from "../i18n/negotiation";
 import { clientText } from "../i18n/client";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -121,8 +122,8 @@ export class AnnouncementDetail extends LitElement {
       else alternate.href = alternate.href.replace("/announcements/detail/", `/announcements/${this.route.id}/`);
     }
     const displayTitle = this.entry?.title || announcementText(this.locale, "title", "Announcements");
-    const siteTitle = clientText(this.locale, "common.seo.siteTitle", "BanG Dream! Our Notes Archive");
-    const title = `${displayTitle} / haneoka - ${siteTitle}`;
+    const siteTitle = clientText(this.locale, "common.seo.siteTitle", "BanG Dream! Our Notes Database");
+    const title = formatDocumentTitle(displayTitle, siteTitle);
     document.title = title;
     for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])
       document.querySelector(selector)?.setAttribute("content", title);

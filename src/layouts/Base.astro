@@ -83,7 +83,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
         document.documentElement.dataset.communityPages = communityHiddenHosts.split(",").some((host) => host.trim() === location.hostname) ? "0" : "1";
     </script>
     <meta name="haneoka-content-route" content={publicRoute} />
-    <meta name="haneoka-content-placeholder" content={JSON.stringify(renderUnavailableContent(locale))} data-title={JSON.stringify(t(locale, "common.states.unpublished"))} />
+    <meta name="haneoka-content-placeholder" content={JSON.stringify(renderUnavailableContent(locale))} data-title={JSON.stringify(t(locale, "common.states.unpublished"))} data-site-title={t(locale, "common.seo.siteTitle")} />
     <script is:inline data-astro-rerun>
       try {
         let stored = null;

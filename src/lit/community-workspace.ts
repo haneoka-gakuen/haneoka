@@ -3,6 +3,7 @@
 // Output: 社区浏览、编辑与相关操作的 Lit 界面；推荐动态保留 /community/feeds/ 规范地址。
 // Pos: [Map](L2-2.md)；社区交互和状态生命周期的协调枢纽。
 // Effects/Dependencies: 认证 HTTP、上传与持久操作由 API 执行；本文件管理 DOM、异步请求和界面状态。
+import { formatDocumentTitle } from "../lib/document-title";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { readPageData } from "../lib/page-data";
@@ -1007,7 +1008,7 @@ export class CommunityWorkspace extends LitElement {
   private setDocumentTitle(value: string) {
     if (!value) return;
     const siteTitle = uiText(this.locale, "common.seo.siteTitle");
-    document.title = `${value} / haneoka - ${siteTitle}`;
+    document.title = formatDocumentTitle(value, siteTitle);
     if (this.routeKind !== "collection") {
       const heading = document.querySelector<HTMLElement>(
         "[data-top-app-bar] h1",

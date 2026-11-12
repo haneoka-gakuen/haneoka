@@ -16,6 +16,7 @@ import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
 import { isAssetBrowserDocument } from "../src/lib/asset-static-routing";
+import { formatDocumentTitle } from "../src/lib/document-title";
 
 export function requestedResourceServers(request: Request): string[] {
   const url = new URL(request.url);
@@ -97,6 +98,8 @@ export async function applySiteSettings(
   let detailPublication: Record<string, unknown> = currentPublication ?? {};
   let placeholder = "",
     unavailableTitle = "";
+  let siteTitle = "",
+    originalTitle = "";
   let blockedJson = false;
   let jsonText = "";
   let jsonId = "";
@@ -106,7 +109,7 @@ export async function applySiteSettings(
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v2:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v3:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
   );
   if (etag) {
     headers.set("ETag", etag);
@@ -135,6 +138,7 @@ export async function applySiteSettings(
       element(element) {
         placeholder = parseHtmlJson<string>(element.getAttribute("content") || '""');
         unavailableTitle = parseHtmlJson<string>(element.getAttribute("data-title") || '""');
+        siteTitle = element.getAttribute("data-site-title") || "";
         element.remove();
       },
     })
@@ -292,8 +296,16 @@ export async function applySiteSettings(
       },
     })
     .on("title", {
-      element(element) {
-        if (hideIdentity()) element.setInnerContent(`${unavailableTitle} / haneoka`);
+      text(chunk) {
+        if (!hideIdentity()) return;
+        originalTitle += chunk.text;
+        if (!chunk.lastInTextNode) {
+          chunk.remove();
+          return;
+        }
+        const site = siteTitle || /haneoka\s*-\s*(BanG Dream! Our Notes.*)$/u.exec(originalTitle)?.[1] || "BanG Dream! Our Notes Database";
+        chunk.replace(formatDocumentTitle(unavailableTitle, site));
+        originalTitle = "";
       },
     })
     .on("story-workspace[data-provider-entity-shell]", {

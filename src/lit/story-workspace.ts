@@ -3,6 +3,7 @@
 // Output: 故事集合链接、独立阅读页、共享文本与 Vega 播放控制。
 // Pos: [Map](L2-2.md)；各来源故事阅读与播放的统一宿主。
 // Effects/Dependencies: 按需请求资源与播放器，接管实体应用栏，离开释放媒体和请求。
+import { formatDocumentTitle } from "../lib/document-title";
 import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
 import { storyCreationPath } from "../lib/community-story-route";
@@ -987,7 +988,7 @@ export class StoryWorkspace extends LitElement {
     if (!value?.text) return;
     updateEntityHeading(this, value.text, value.locale);
     const siteTitle = uiText(this.locale, "common.seo.siteTitle");
-    document.title = `${value.text} / haneoka - ${siteTitle}`;
+    document.title = formatDocumentTitle(value.text, siteTitle);
     if (episode && this.detailCard) {
       const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
       if (back) {
