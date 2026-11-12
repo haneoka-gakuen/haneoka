@@ -37,7 +37,7 @@ import type { SourceNode } from "../src/lib/source-tree-search";
 import { criSourceEntry, criSourceIndex } from "./content-resources";
 import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ranking";
 import { handleCommunityBootstrap } from "./community-bootstrap";
-import { withRequestWork } from "./request-work";
+import { retainRequestRead, withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
 export { CommunityMediaContainer } from "./community-media-container";
 import { sonolusShareRedirectTarget } from "./sonolus-share";
@@ -1086,6 +1086,7 @@ async function edgeCached(
 }
 
 const R2_TEXT_CACHE = "https://r2-text.haneoka.internal/";
+const pendingR2Texts = new WeakMap<object, Map<string, Promise<string | null>>>();
 
 /**
  * A small asset-bucket document, shared by every isolate in the colo for
@@ -1095,15 +1096,30 @@ const R2_TEXT_CACHE = "https://r2-text.haneoka.internal/";
 async function cachedR2Text(env: Env, key: string, ttl: number, variant?: string): Promise<string | null> {
   const cache = ttl > 0 && typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = new Request(R2_TEXT_CACHE + encodeURIComponent(key) + (variant ? `?revision=${encodeURIComponent(variant)}` : ""));
-  const hit = await cache?.match(cacheKey).catch(() => undefined);
-  if (hit) return hit.status === 404 ? null : hit.text();
-  const object = await env.ASSET_BUCKET.get(key);
-  const text = object?.body ? await new Response(object.body).text() : null;
-  await cache?.put(cacheKey, new Response(text ?? "", {
-    status: text === null ? 404 : 200,
-    headers: { "Cache-Control": `public, max-age=${text === null ? Math.min(ttl, 30) : ttl}` },
-  })).catch(() => undefined);
-  return text;
+  let pending = pendingR2Texts.get(env.ASSET_BUCKET);
+  if (!pending) pendingR2Texts.set(env.ASSET_BUCKET, (pending = new Map()));
+  const identity = `${ttl}:${cacheKey.url}`;
+  const existing = pending.get(identity);
+  if (existing) return existing;
+  const read = (async () => {
+    const hit = await cache?.match(cacheKey).catch(() => undefined);
+    if (hit) return hit.status === 404 ? null : hit.text();
+    const object = await env.ASSET_BUCKET.get(key);
+    const text = object?.body ? await new Response(object.body).text() : null;
+    await cache?.put(cacheKey, new Response(text ?? "", {
+      status: text === null ? 404 : 200,
+      headers: { "Cache-Control": `public, max-age=${text === null ? Math.min(ttl, 30) : ttl}` },
+    })).catch(() => undefined);
+    return text;
+  })();
+  try {
+    if (pending.size < 128) {
+      pending.set(identity, read);
+      retainRequestRead(read);
+    }
+    return await read;
+  }
+  finally { if (pending.get(identity) === read) pending.delete(identity); }
 }
 
 const IMMUTABLE_R2_TTL = 86_400;
@@ -2081,9 +2097,13 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   }
   if (!pending) {
     pending = (async () => {
-      const prepared = await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
+      const compiled = await cachedR2Text(env, `content-index/v4/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL);
+      const prepared = compiled === null
+        ? await readR2Json(env, `content-index/v3/${slug}/${release.releaseId}.json`, IMMUTABLE_R2_TTL)
+        : JSON.parse(compiled) as JsonValue;
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
+        if (result.eventSongReleasesPrepared) return result;
         const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
         const starts = eventSongReleases(events, challenges);
         for (const reference of Object.values(result.records)) if (reference.kind === "songs" && starts[reference.id]) {
@@ -2448,6 +2468,11 @@ async function handleCatalogApiRequest(
   if (!tail) return errorResponse(request, 404, "route_not_found", "API route not found");
   if (tail === "song-release-times") {
     const response = await edgeCached(releaseCacheRequest(request, release.releaseId), ctx, API_CACHE_TTL, async () => {
+      const prepared = await readR2Json(env, `content-index/v4/${release.server}/${release.releaseId}/song-release-times.json`, IMMUTABLE_R2_TTL);
+      if (isJsonObject(prepared) && isJsonObject(prepared.identity) && isJsonObject(prepared.releases) &&
+        prepared.identity.server === release.server && prepared.identity.releaseId === release.releaseId && prepared.identity.sourceId === release.sourceId)
+        return jsonResponse(request, { identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },
+          releases: prepared.releases }, CATALOG_API_CACHE_CONTROL);
       const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) =>
         readReleaseJson(env, release, `objects/master/${table}.json`)));
       return jsonResponse(request, { identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },

@@ -34,6 +34,7 @@ export interface ContentResourceIndex {
   previewAssets?: string[];
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
+  eventSongReleasesPrepared?: true;
 }
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
