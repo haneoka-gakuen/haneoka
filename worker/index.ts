@@ -819,6 +819,7 @@ async function requestedRelease(env: Env, server: ResourceServerRoute, releaseId
       sourceId: value.sourceId,
     };
   })();
+  retainRequestRead(pending);
   requestedReleaseCache.set(key, pending);
   while (requestedReleaseCache.size > POINTER_CACHE_LIMIT) {
     const oldestKey = requestedReleaseCache.keys().next().value;
@@ -1186,6 +1187,7 @@ async function releaseIndex(env: Env, release: Release, shard: string): Promise<
       }
       return value.entries;
     });
+    retainRequestRead(pending);
     releaseIndexCache.set(key, pending);
     while (releaseIndexCache.size > RELEASE_INDEX_CACHE_LIMIT) {
       const oldestKey = releaseIndexCache.keys().next().value;
@@ -1267,6 +1269,7 @@ function localizedReleasePaths(releasePath: string): readonly string[] {
 }
 
 function boundedPromiseCache<T>(cache: Map<string, Promise<T>>, key: string, value: Promise<T>, limit: number): void {
+  retainRequestRead(value);
   cache.set(key, value);
   while (cache.size > limit) {
     const oldestKey = cache.keys().next().value;
