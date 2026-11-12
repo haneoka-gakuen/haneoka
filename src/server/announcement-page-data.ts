@@ -14,20 +14,20 @@ const origin = process.env.STATIC_OPERATION_ORIGIN || process.env.STATIC_CATALOG
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 class OperationUnavailable extends Error {}
 async function operationJson(path: string) {
-  let response: Response;
   try {
-    response = await fetch(new URL(path, origin), {
+    const response = await fetch(new URL(path, origin), {
       headers: {
         accept: "application/json",
         ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
       },
       signal: AbortSignal.timeout(30_000),
     });
+    if (!response.ok) throw new OperationUnavailable(`Announcement HTTP ${response.status}`);
+    return { value: await response.json(), fetchedAt: response.headers.get("x-haneoka-announcement-fetched-at") };
   } catch (error) {
+    if (error instanceof SyntaxError || error instanceof OperationUnavailable) throw error;
     throw new OperationUnavailable(String(error));
   }
-  if (!response.ok) throw new OperationUnavailable(`Announcement HTTP ${response.status}`);
-  return { value: await response.json(), fetchedAt: response.headers.get("x-haneoka-announcement-fetched-at") };
 }
 export function announcementPageData(server: ReleaseServer, locale: Locale): Promise<AnnouncementPageData> {
   const key = `${server}:${locale}`;
