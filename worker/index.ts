@@ -4171,6 +4171,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     .split("/").map((part) => encodeURIComponent(part)).join("/");
   if (canonicalUrl.pathname !== currentPath)
     return new Response(null, { status: 307, headers: { Location: canonicalUrl.pathname + canonicalUrl.search, "Cache-Control": "no-store" } });
+  if (/^\/(?:(?:(?:jp|intl)\/)?(?:ja|en|ko|zh-CN|zh-TW)\/)?player-profile(?:\/|\.html$|$)/u.test(canonicalUrl.pathname))
+    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } });
   if (rejectedResourceClient(request)) return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store", Vary: "User-Agent" } });
   const communityUrl = new URL(request.url);
   if (!communityPagesEnabled(communityUrl.hostname, env.COMMUNITY_HIDDEN_HOSTS)

@@ -47,6 +47,8 @@
       "/*/chart-editor/*",
       "/*/gacha-history/*",
       "/*/player-profile/*",
+      "/*/player-profile",
+      "/*/player-profile.html",
       "/*/404/*",
       "/*/charts/*",
       "/*/community-stories/*",
