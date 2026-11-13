@@ -8,7 +8,7 @@ import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
 import { storyCreationPath } from "../lib/community-story-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
 import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
 import { story as jaRelationships } from "../../public/i18n/ja.json";
@@ -1750,7 +1750,7 @@ export class StoryWorkspace extends LitElement {
       this.isProvider() && this.detailCard && !this.detailEpisode && id.startsWith("card.")
         ? `${url.pathname}${url.search}`
         : this.entityId
-          ? url.searchParams.get("return") || undefined
+          ? entityReturnHref()
           : returnStateFromLocation(collectionPath, url.search, "stories");
     if (this.isProvider()) {
       const href = providerEntityRoute({
@@ -1760,7 +1760,7 @@ export class StoryWorkspace extends LitElement {
         section: this.mode,
         id,
       });
-      return href + (returnTo ? `?${new URLSearchParams({ return: returnTo })}` : "");
+      return returnLink(href, returnTo);
     }
     const server = this.episodeEntry(episode)?.displayServer || this.dataServer();
     return isPublicReleaseServer(server)
@@ -1790,7 +1790,7 @@ export class StoryWorkspace extends LitElement {
           id,
           query: { mode: this.mode },
           returnTo: this.entityId
-            ? new URLSearchParams(location.search).get("return") || undefined
+            ? entityReturnHref()
             : returnStateFromLocation(location.pathname, location.search, "stories"),
         }),
       );
@@ -1984,7 +1984,7 @@ export class StoryWorkspace extends LitElement {
           kind: "stories",
           id,
           query: { mode: this.mode, playback: "play" },
-          returnTo: new URLSearchParams(location.search).get("return") || undefined,
+          returnTo: entityReturnHref(),
         }),
       );
       return;

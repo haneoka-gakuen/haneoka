@@ -134,6 +134,13 @@ export class EventTracker extends LitElement {
     for (const [server, source] of Object.entries(pageData.songPerformers ?? {}))
       this.songPerformers.set(server, createPerformerRegistry({ game: "our-notes", server, ...source }));
   }
+  adoptPageData(): boolean {
+    const page = readPageData<TrackerPageData>(this);
+    if (!page) return false;
+    this.applyPageCatalogs(page);
+    this.requestUpdate();
+    return true;
+  }
   private shownId() {
     return this.eventId || this.data?.event?.id || "";
   }
@@ -247,7 +254,7 @@ export class EventTracker extends LitElement {
       void this.loadShownCatalog();
     } catch {
       if (!this.isConnected || this.region !== region || !this.requests.current(signal)) return;
-      this.phase = "error";
+      if (!this.data) this.phase = "error";
     } finally {
       if (this.requests.current(signal)) {
         this.refreshing = false;
@@ -370,9 +377,10 @@ export class EventTracker extends LitElement {
     const region = this.region;
     await this.load();
     await this.updateComplete;
-    if (this.isConnected && this.region === region)
+    if (this.isConnected && this.region === region) {
       this.querySelectorAll<SongRanking>("song-ranking").forEach((ranking) => ranking.refreshRanking());
       this.querySelectorAll<ArenaRanking>("arena-ranking").forEach((ranking) => ranking.refresh());
+    }
   }
   private eventTitle() {
     return (

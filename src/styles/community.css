@@ -1974,7 +1974,6 @@
       border-radius: var(--md-sys-shape-corner-large);
       background: var(--md-sys-color-primary-container);
       box-shadow: var(--md-sys-elevation-level3);
-      animation: motion-rise var(--motion-spatial) backwards;
     }
     .top-app-bar .community-compose .material-icon {
       --icon-size: 24px;

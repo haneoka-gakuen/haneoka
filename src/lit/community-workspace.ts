@@ -59,7 +59,7 @@ import {
   setAppBarSearch,
   clearAppBarSearch,
 } from "../lib/app-bar";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink, rememberedReturn, rememberReturnLink } from "../lib/document-url";
 import { RequestScope } from "../lib/request-scope";
 import { beginLoading } from "../lib/loading-progress";
 import { communityMarkup, communityExcerpt } from "../lib/community-markup";
@@ -1075,7 +1075,7 @@ export class CommunityWorkspace extends LitElement {
       if (!this.isConnected) return;
       this.session = session && session.user ? session : null;
       if (!this.session) {
-        location.replace(`${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`);
+        location.replace(rememberReturnLink(this.path("/account"), `${location.pathname}${location.search}`));
         return;
       }
     }
@@ -1102,7 +1102,7 @@ export class CommunityWorkspace extends LitElement {
   private requireSession() {
     if (this.session) return true;
     location.assign(
-      `${this.path("/account")}?next=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
+      rememberReturnLink(this.path("/account"), `${location.pathname}${location.search}`),
     );
     return false;
   }
@@ -1569,7 +1569,7 @@ export class CommunityWorkspace extends LitElement {
     return `/${this.locale}/${clean}/`;
   }
   private detailHref(route: string) {
-    return `${this.path(route)}?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
+    return returnLink(this.path(route), `${location.pathname}${location.search}`);
   }
   private label(path: string, fallback: string, params?: MessageParams) {
     const value = path
@@ -3208,7 +3208,7 @@ export class CommunityWorkspace extends LitElement {
     };
   }
   private editorReturnHref() {
-    const value = new URLSearchParams(location.search).get("return");
+    const value = rememberedReturn();
     if (value?.startsWith("/")) {
       const target = new URL(value, location.origin);
       if (
@@ -3225,7 +3225,7 @@ export class CommunityWorkspace extends LitElement {
   private leaveEditor() {
     const target =
       this.routeKind === "post-edit"
-        ? `${this.path(`/community/posts/${encodeURIComponent(this.entityId)}`)}?return=${encodeURIComponent(this.editorReturnHref())}`
+        ? returnLink(this.path(`/community/posts/${encodeURIComponent(this.entityId)}`), this.editorReturnHref())
         : this.editorReturnHref();
     void this.discardUploads().finally(() => location.assign(target));
   }
@@ -3299,7 +3299,7 @@ export class CommunityWorkspace extends LitElement {
       if (editing && String(current.visibility || "public") !== String(data.get("visibility") || "public"))
         window.dispatchEvent(new CustomEvent("haneoka:community-posts-changed", {detail:{postId:id}}));
       void navigateDetailPage(
-        `${this.path(`/community/posts/${encodeURIComponent(id)}`)}?return=${encodeURIComponent(this.editorReturnHref())}`,
+        returnLink(this.path(`/community/posts/${encodeURIComponent(id)}`), this.editorReturnHref()),
       );
     } catch (error) {
       if (currentOperation()) this.error = error instanceof Error ? error.message : String(error);
@@ -3799,7 +3799,7 @@ export class CommunityWorkspace extends LitElement {
       this.cancelEditor();
       return;
     }
-    const value = new URLSearchParams(location.search).get("return");
+    const value = rememberedReturn();
     if (value?.startsWith("/")) {
       const target = new URL(value, location.origin);
       if (
@@ -5385,11 +5385,9 @@ export class CommunityWorkspace extends LitElement {
     return this.path(`/community/forums/${encodeURIComponent(forum.slug)}`);
   }
   private composeHref() {
-    const query = new URLSearchParams({
-      return: `${location.pathname}${location.search}`,
-    });
+    const query = new URLSearchParams();
     if (this.currentForum) query.set("forumId", this.currentForum.id);
-    return `${this.path("/community/posts/new")}?${query}`;
+    return returnLink(`${this.path("/community/posts/new")}${query.size ? `?${query}` : ""}`, `${location.pathname}${location.search}`);
   }
   private selectDefaultForum() {
     if (this.forumExplicit) return;
@@ -6332,7 +6330,7 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderTopicRow(post: Value) {
-    const href = `${this.path(`/community/posts/${post.id}`)}?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
+    const href = returnLink(this.path(`/community/posts/${post.id}`), `${location.pathname}${location.search}`);
     const media = communityPostMedia(post).find((item) =>
       communityMediaThumbnail(item),
     );
@@ -6689,7 +6687,7 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderPin(post: Value) {
-    const href = `${this.path(`/community/posts/${post.id}`)}?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`;
+    const href = returnLink(this.path(`/community/posts/${post.id}`), `${location.pathname}${location.search}`);
     const viewer = (post.viewer as Value | undefined) || {};
     const images = communityPostMedia(post);
     const excerpt = communityExcerpt(String(post.excerpt || post.body || ""));

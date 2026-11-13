@@ -8,8 +8,7 @@
        so a dense grid never reflows under the pointer;
      · selection: selected toggles and segments trade a round corner for a
        square one, chips and tabs slide their indicator on a spatial spring;
-     · arrival: standalone page surfaces rise and fade in; collection items
-       appear immediately without per-item entrance motion;
+     · arrival: page content appears in place without entrance motion;
      · overlays: menus unfold from their anchor, dialogs grow from 90%.
 
    Reduced motion drops every distance to zero (tokens.css) and shell.css
@@ -146,27 +145,11 @@
   }
 }
 
-/* ---------- Arrival ----------
-   Keep standalone page and transient-surface motion. Collection containers
-   and their cards/rows do not receive entrance animations or stagger. */
-@keyframes motion-rise {
-  from {
-    opacity: 0;
-    transform: translateY(var(--motion-enter-distance));
-  }
-}
+/* ---------- Transient regions ---------- */
 @keyframes motion-fade {
   from {
     opacity: 0;
   }
-}
-:where(.page-stage) :where(.surface, .card):not(
-  :is(.collection, .collection-list, .list, .hub-grid, .card-grid),
-  :is(.collection, .collection-list, .list, .hub-grid, .card-grid) *
-) {
-  animation:
-    motion-rise var(--motion-spring-spatial-default-duration) var(--motion-spring-spatial-default) backwards,
-    motion-fade var(--motion-spring-effects-slow-duration) var(--motion-spring-effects-slow) backwards;
 }
 /* Content swapped into a region after a request (results, filtered sets). */
 [aria-busy="false"] > :where(.results, .async-region__content) {
@@ -216,7 +199,7 @@
 }
 .snackbar,
 .toast {
-  animation: motion-rise var(--motion-spatial) backwards;
+  animation: motion-fade var(--motion-effects) backwards;
 }
 
 /* ---------- Disclosure ---------- */

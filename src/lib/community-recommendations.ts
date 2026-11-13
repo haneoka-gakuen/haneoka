@@ -1,3 +1,4 @@
+import { navigationReturnHref } from "./resource-route";
 import type { EntityComment, EntityDescriptor } from "./entity-comments";
 
 type RecordValue = Record<string, unknown>;
@@ -38,8 +39,7 @@ export function entityCommentRecommendationHref(entry: EntityCommentRecommendati
   const commentId = entry.focusedCommentId || String(entry.comment.id || "");
   url.searchParams.set("commentId", commentId);
   if (reply) url.searchParams.set("replyTo", String(entry.comment.id));
-  if (returnTo) url.searchParams.set("return", returnTo);
   if (descriptor.type === "stories") url.searchParams.set("playback", "text");
   url.hash = "entity-comments";
-  return url.pathname + url.search + url.hash;
+  return navigationReturnHref(url.pathname + url.search + url.hash, returnTo);
 }

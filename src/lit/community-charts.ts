@@ -296,7 +296,6 @@ export class CommunityCharts extends LitElement {
   private openChart(row: CommunityChartItem) {
     const target = new URL(communityChartPlayerPath(this.server, this.locale, row.id), location.href);
     target.searchParams.set("revision", String(row.revision));
-    target.searchParams.set("return", `${location.pathname}${location.search}`);
     return navigateDetailPage(target.href);
   }
   private downloadChart(row: CommunityChartItem) {

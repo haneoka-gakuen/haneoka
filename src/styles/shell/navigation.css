@@ -572,9 +572,7 @@
   rotate: 180deg;
 }
 .nav__forums .nav__branch:not([hidden]) {
-  animation:
-    motion-rise var(--motion-spatial) backwards,
-    motion-fade var(--motion-effects) backwards;
+  animation: motion-fade var(--motion-effects) backwards;
 }
 .nav__forums .nav__branch .nav-item {
   margin-inline-start: calc(var(--nav-rail-inset) + 48px);

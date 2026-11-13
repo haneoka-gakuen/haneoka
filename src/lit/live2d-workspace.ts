@@ -28,7 +28,7 @@ import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark, catalogServerBadge } from "./shared/server-availability";
-import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
+import { openDetailLocation, updateEntityHeading, entityReturnHref } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { viewerBufferSize } from "./runtime/viewer-resolution";
 import { segmented } from "./ui/controls";
@@ -626,7 +626,7 @@ export class Live2DWorkspace extends LitElement {
           kind: "live2d",
           id: key,
           returnTo: this.entityId
-            ? new URLSearchParams(location.search).get("return") || undefined
+            ? entityReturnHref()
             : returnStateFromLocation(location.pathname, location.search, "live2d"),
         }),
       );

@@ -10,7 +10,7 @@ import { communityCommentName, communityCommentLocation } from "../lib/community
 import { RequestScope } from "../lib/request-scope";
 import { readCommunityViewer, CommunityRealmChanged, type CommunityViewer } from "../lib/community-viewer";
 import { CommunityReactions } from "../lib/community-reaction";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink, rememberReturnLink } from "../lib/document-url";
 import { entityThreadEndpoint, type EntityComment, type EntityCommentsResponse } from "../lib/entity-comments";
 import { entityCommentsPresentation } from "../lib/entity-comments-presentation";
 import type {
@@ -422,7 +422,7 @@ export class EntityComments extends LitElement {
     this.rememberDraft();
     const url = navigationDocumentUrl();
     location.assign(
-      "/" + this.uiLocale() + "/account/?next=" + encodeURIComponent(url.pathname + url.search + url.hash),
+      rememberReturnLink("/" + this.uiLocale() + "/account/", url.pathname + url.search + url.hash),
     );
   }
   private async mutate(key: string, work: (current: () => boolean) => Promise<void>) {
@@ -821,8 +821,7 @@ export class EntityComments extends LitElement {
       ipLocation: (comment) => communityCommentLocation(comment.ipLocation, this.uiLocale()),
       authorHref: (comment) => {
         const page = navigationDocumentUrl();
-        const query = new URLSearchParams({ return: page.pathname + page.search + page.hash });
-        return "/" + this.uiLocale() + "/community/users/" + encodeURIComponent(comment.authorUid) + "/?" + query;
+        return returnLink("/" + this.uiLocale() + "/community/users/" + encodeURIComponent(comment.authorUid) + "/", page.pathname + page.search + page.hash);
       },
     };
     return view(props, this.actions);

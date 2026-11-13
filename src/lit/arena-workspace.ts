@@ -144,6 +144,19 @@ export class ArenaWorkspace extends LitElement {
     this.region = defaultGameRecordsRegion(payload.server, locale);
     this.phase = "ready";
   }
+  async adoptPageData(): Promise<boolean> {
+    const payload = readPageData<CatalogSystemPayload>(this);
+    if (payload?.kind !== "arena" || !payload.arena) return false;
+    this.sourceRequest?.abort();
+    this.cards = payload.rankingCards || {};
+    this.sources.clear();
+    this.sources.set(payload.server, { catalog: payload.arena, marks: payload.marks || {} });
+    await this.showRegion(true);
+    this.now = Date.now();
+    this.schedule();
+    this.requestUpdate();
+    return true;
+  }
   private disposeSongDisplay?: () => void;
   connectedCallback() {
     super.connectedCallback();
@@ -211,32 +224,36 @@ export class ArenaWorkspace extends LitElement {
     return this.server === "jp" || this.server === "jp-cbt" ? this.server : "jp";
   }
   /** Shows the selected region's own Arena seasons, loading that release once when it differs from the page's. */
-  private async showRegion() {
+  private async showRegion(refresh = false) {
     const server = this.regionServer(this.region);
-    if (server === this.dataServer && this.catalog) return;
+    if (!refresh && server === this.dataServer && this.catalog) return;
     let source = this.sources.get(server);
     if (!source) {
       this.sourceRequest?.abort();
       const request = (this.sourceRequest = new AbortController());
-      this.phase = "loading";
+      if (!refresh || !this.catalog) this.phase = "loading";
       try {
         source = await this.fetchSource(server, request.signal);
       } catch {
-        if (!request.signal.aborted) this.phase = "error";
+        if (!request.signal.aborted && (!refresh || !this.catalog)) this.phase = "error";
         return;
       }
       if (request.signal.aborted) return;
       this.sources.set(server, source);
     }
     if (this.regionServer(this.region) !== server) return;
+    const changedSource = this.dataServer !== server;
     this.catalog = source.catalog;
     this.marks = source.marks;
     this.dataServer = server;
-    this.ranking = null;
-    this.population = null;
-    if (!this.seasons().some((season) => season.id === this.selectedSeasonId)) this.selectedSeasonId = "";
+    if (changedSource) {
+      this.ranking = null;
+      this.population = null;
+    }
+    const missingSeason = this.selectedSeasonId && !this.seasons().some((season) => season.id === this.selectedSeasonId);
+    if (missingSeason) this.selectedSeasonId = "";
     this.phase = "ready";
-    this.writeState();
+    if (!refresh || missingSeason) this.writeState();
     this.schedule();
   }
   private schedule() {

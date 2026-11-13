@@ -196,6 +196,13 @@ export class SongRanking extends GameRecordsCardsElement {
     this.region = defaultRegion(this.server, this.locale);
     this.phase = "loading";
   }
+  adoptPageData(): boolean {
+    const cards = readPageData<typeof this.cardCatalogs>(this);
+    if (!cards) return false;
+    this.cardCatalogs = cards;
+    this.requestUpdate();
+    return true;
+  }
   protected update(changed: PropertyValues) {
     if (this.hasAttribute("data-prerendered")) {
       hydrateWorkspace(this.render(), this, this.renderOptions);

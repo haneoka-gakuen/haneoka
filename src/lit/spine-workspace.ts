@@ -27,7 +27,7 @@ import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
 import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark, catalogServerBadge } from "./shared/server-availability";
-import { openDetailLocation, updateEntityHeading } from "../lib/detail-navigation";
+import { openDetailLocation, updateEntityHeading, entityReturnHref } from "../lib/detail-navigation";
 import type { Locale } from "@haneoka/i18n";
 import { loadingIndicator } from "./ui/loading-indicator";
 import { StageFullscreen, StageGestures } from "./ui/stage-fullscreen";
@@ -383,7 +383,7 @@ export class SpineWorkspace extends LitElement {
           kind: "spine",
           id,
           returnTo: this.entityId
-            ? new URLSearchParams(location.search).get("return") || undefined
+            ? entityReturnHref()
             : returnStateFromLocation(location.pathname, location.search, "spine"),
         }),
       );

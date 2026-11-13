@@ -45,6 +45,7 @@ const title = t(locale, titleKey, "Sign in to the app");
   </AppShell>
 </Base>
 <script>
+  import { rememberReturnLink } from "../../../lib/document-url";
   // The mobile app's scheme, or a desktop build's loopback listener (RFC 8252).
   const requested = new URLSearchParams(location.search).get("redirect") || "";
   const CALLBACK = /^http:\/\/(?:localhost|127\.0\.0\.1):\d{4,5}\/auth$/u.test(requested) ? requested : "haneoka://auth";
@@ -68,7 +69,7 @@ const title = t(locale, titleKey, "Sign in to the app");
   };
   const signIn = () => {
     const locale = page?.dataset.locale || "en";
-    location.assign(`/${locale}/account/?${new URLSearchParams({ next: location.pathname + location.search })}`);
+    location.assign(rememberReturnLink(`/${locale}/account/`, location.pathname + location.search));
   };
 
   const start = async () => {

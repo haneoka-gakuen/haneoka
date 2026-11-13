@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { assertPublicStaticDocumentPath, withSearchMetadata } from "./search-metadata.mjs";
+import {
+  assertPublicStaticDocumentPath,
+  markdownDocument,
+  markdownPath,
+  withSearchMetadata,
+} from "./search-metadata.mjs";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -118,18 +123,22 @@ async function loadPublicStatic() {
       const references = new Map();
       const functional = target.scope === "global" && /\/team-builder\/$/u.test(target.path);
       const published =
-        !isPublicStaticDocument(content) && module.materializePublicStaticDocument(content, target, {
+        !isPublicStaticDocument(content) &&
+        module.materializePublicStaticDocument(content, target, {
           ...options,
-          ...(media && { rewriteUrl(value, site) {
-            if (!(functional && "script" in site)) references.set(value, (references.get(value) || 0) + 1);
-            return undefined;
-          } }),
+          ...(media && {
+            rewriteUrl(value, site) {
+              if (!(functional && "script" in site)) references.set(value, (references.get(value) || 0) + 1);
+              return undefined;
+            },
+          }),
         });
       if (!published) continue;
       for (const [value, count] of references) mediaReferences.set(value, (mediaReferences.get(value) || 0) + count);
       module.stagePublicStaticDocument(documentsRoot, sourcePath, published.html);
       staged.push(sourcePath);
-      if (published.privateData) privatePages.set(sourcePath, { path: target.path, build: options.build, ...published.privateData });
+      if (published.privateData)
+        privatePages.set(sourcePath, { path: target.path, build: options.build, ...published.privateData });
     }
     console.log(`staged ${staged.length} public canonical pages`);
   }
@@ -192,7 +201,8 @@ function sealPrivatePageData(module, pages, token, rewriteFor) {
       if (!existsSync(directory)) continue;
       for (const name of readdirSync(directory)) {
         const shard = JSON.parse(readFileSync(path.join(directory, name), "utf8"));
-        if (shard.schema !== module.PRIVATE_PAGE_DATA_SCHEMA) throw new Error(`Invalid private page data shard: ${name}`);
+        if (shard.schema !== module.PRIVATE_PAGE_DATA_SCHEMA)
+          throw new Error(`Invalid private page data shard: ${name}`);
         for (const [pathname, entry] of Object.entries(shard.entries)) {
           const file = path.join(output, pathname.slice(1), "index.html");
           if (existsSync(file) && isPublicStaticDocument(readFileSync(file, "utf8").slice(0, 4096)))
@@ -247,6 +257,8 @@ for (const sourcePath of files) assertPublicStaticDocumentPath(sourcePath);
 // level (one round trip) at a time.
 console.log(`added module preloads to ${await addModulePreloads(output, files)} documents`);
 const publicStatic = await loadPublicStatic();
+const markdownIndexes = new Map();
+let markdownCount = 0;
 let index;
 try {
   const created = await pagefind.createIndex({
@@ -280,6 +292,38 @@ try {
             publicStatic.rewriteFor(localeOf(sourcePath)),
           );
         if (!indexable(content)) continue;
+        // Only a proven public document may produce a directly accessible Markdown counterpart.
+        if ((staged || isPublicStaticDocument(content)) && !/^static-views\//u.test(sourcePath)) {
+          const markdown = markdownDocument(content, sourcePath, (url) => {
+            if (!/^\/entity-data\/v1\/[a-f0-9]{64}\.json$/u.test(url)) return;
+            return readFileSync(path.join(output, url.slice(1)), "utf8");
+          });
+          if (markdown) {
+            const pathname = markdownPath(new URL(markdown.canonical).pathname);
+            const file = path.join(output, pathname.slice(1));
+            mkdirSync(path.dirname(file), { recursive: true });
+            writeFileSync(file, markdown.markdown);
+            const prefix = sourcePath
+              .split("/")
+              .slice(0, /^(?:jp|intl)\//u.test(sourcePath) ? 2 : 1)
+              .join("/");
+            if (!markdownIndexes.has(prefix)) markdownIndexes.set(prefix, []);
+            const relative = sourcePath.slice(prefix.length + 1).split("/");
+            markdownIndexes
+              .get(prefix)
+              .push({
+                pathname,
+                title: markdown.title,
+                section: relative[0] === "index.html" ? "overview" : relative[0],
+              });
+            const alternate = `<link rel="alternate" type="text/markdown" href="${pathname}">`;
+            if (!content.includes(alternate)) {
+              content = content.replace("</head>", `${alternate}</head>`);
+              writeFileSync(path.join(staged ? publicStaticStagingRoot(documentsRoot) : output, sourcePath), content);
+            }
+            markdownCount++;
+          }
+        }
         const result = await index.addHTMLFile({ sourcePath, content: withServerFilter(content, sourcePath) });
         if (result.errors.length)
           throw new Error(`Search indexing failed for ${sourcePath}: ${result.errors.join("; ")}`);
@@ -305,6 +349,33 @@ try {
     await pagefind.close();
   }
 }
+for (const [prefix, entries] of markdownIndexes) {
+  entries.sort((a, b) => a.pathname.localeCompare(b.pathname, "en"));
+  const groups = Map.groupBy(entries, (entry) => entry.section);
+  const body =
+    `# haneoka - ${prefix}\n\n> Public BanG Dream! Our Notes database documents in Markdown. Each document links to its canonical web page and related resources. Entity documents include structured records with stable IDs and release identities.\n\n` +
+    [...groups]
+      .map(
+        ([section, documents]) =>
+          `## ${section}\n\n${documents
+            .map(
+              ({ pathname, title }) =>
+                `- [${title.replace(/[\[\]\\]/gu, "\\$&").replace(/\s+/gu, " ") || pathname}](https://haneoka.org${pathname})`,
+            )
+            .join("\n")}\n`,
+      )
+      .join("\n");
+  writeFileSync(path.join(output, prefix, "llms.txt"), body);
+}
+const markdownLocales = ["en", "ja", "ko", "zh-CN", "zh-TW"];
+const markdownRoots = ["jp", "intl"]
+  .flatMap((server) => markdownLocales.map((locale) => `${server}/${locale}`))
+  .concat(markdownLocales);
+writeFileSync(
+  path.join(output, "llms.txt"),
+  `# haneoka\n\n> Unofficial BanG Dream! Our Notes database, resource archive and browser tools.\n\nMarkdown documents are static snapshots of publicly displayed content. Follow the language and source indexes below for collections and complete entity documents. Each document includes a canonical web URL. Game data sources are jp and intl; language does not change the data source.\n\n## Document indexes\n\n${markdownRoots.map((prefix) => `- [${prefix}](https://haneoka.org/${prefix}/llms.txt)`).join("\n")}\n\n## Machine interfaces\n\n- [OpenAPI](https://haneoka.org/api/v1/openapi.json): API schemas and request contracts.\n- [Browser tools](https://haneoka.org/tools/manifest.json): local computation and rendering modules.\n- [Sitemap](https://haneoka.org/sitemap.xml): canonical web routes.\n`,
+);
+console.log(`generated ${markdownCount} public Markdown documents and ${markdownIndexes.size} indexes`);
 console.log(`packed ${await packCoreStaticDocuments(output, files)} complete Astro pages`);
 if (process.env.STATIC_BUILD_LOCALE) {
   if (process.env.STATIC_BUILD_INPUT_MODE !== "frozen") throw new Error("Locale finalization requires frozen inputs");

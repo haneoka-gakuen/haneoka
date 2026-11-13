@@ -425,25 +425,11 @@
 .app-shell__main {
   view-transition-name: page;
 }
-::view-transition-group(page) {
-  animation-duration: 300ms;
-}
-::view-transition-old(page) {
-  animation: md-fade-out 90ms var(--md-sys-motion-easing-standard-accelerate) both;
-}
+::view-transition-group(page),
+::view-transition-old(page),
 ::view-transition-new(page) {
-  animation: md-fade-through-in 260ms var(--motion-spring-spatial-default) 60ms both;
-}
-@keyframes md-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-@keyframes md-fade-through-in {
-  from {
-    opacity: 0;
-    transform: translateY(var(--motion-enter-distance)) scale(0.985);
-  }
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 @media (prefers-reduced-motion: reduce) {

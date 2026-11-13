@@ -557,9 +557,7 @@
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: 4px;
-  animation:
-    motion-rise var(--motion-spatial) backwards,
-    motion-fade var(--motion-effects) backwards;
+  animation: motion-fade var(--motion-effects) backwards;
 }
 .now-playing__expand {
   display: grid;

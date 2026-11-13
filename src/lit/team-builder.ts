@@ -26,7 +26,7 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData, waitForPageData } from "../lib/page-data";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink } from "../lib/document-url";
 import type { TeamBuilderPageData } from "../server/tool-page-data";
 import "@material/web/checkbox/checkbox.js";
 import "@material/web/select/outlined-select.js";
@@ -1922,7 +1922,7 @@ export class TeamBuilder extends LitElement {
               ? html`
                   <a
                     class="button button--tonal"
-                    href=${`/${this.locale}/account/?next=${encodeURIComponent(`/${this.locale}/team-builder/`)}`}
+                    href=${returnLink(`/${this.locale}/account/`, `/${this.locale}/team-builder/`)}
                     title=${label}
                     aria-label=${this.t("syncSignIn", "Sign in to sync")}
                   >

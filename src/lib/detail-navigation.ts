@@ -1,6 +1,18 @@
-import { navigationDocumentUrl } from "./document-url";
+import {
+  captureLegacyReturn,
+  navigationDocumentUrl,
+  rememberedReturn,
+  rememberReturn,
+  returnLink,
+} from "./document-url";
 import { clientText } from "../i18n/client";
-import { parseEntitySelection, resourceCollectionHref, resourcePath, type EntityLink } from "./resource-route";
+import {
+  parseEntitySelection,
+  resourceCollectionHref,
+  resourcePath,
+  setEntityReturnLink,
+  type EntityLink,
+} from "./resource-route";
 
 type Listener = { path: string; owner?: Element; update: () => void };
 const listeners = new Set<Listener>();
@@ -76,6 +88,8 @@ export function closeDetailLocation(url: string): void {
 export async function navigateDetailPage(href: string, historyMode: "push" | "replace" = "push"): Promise<void> {
   const target = new URL(href, location.href);
   if (target.origin !== location.origin) return;
+  rememberArrival(target);
+  target.href = new URL(returnLink(target.href), target).href;
   try {
     const { navigate } = await import("astro:transitions/client");
     await navigate(target.href, { history: historyMode });
@@ -86,18 +100,45 @@ export async function navigateDetailPage(href: string, historyMode: "push" | "re
 }
 
 export function entityReturnHref(): string | undefined {
-  const value = navigationDocumentUrl().searchParams.get("return");
-  if (value?.startsWith("/")) {
-    try {
-      const target = new URL(value, location.origin);
-      if (target.origin === location.origin) return `${target.pathname}${target.search}${target.hash}`;
-    } catch {}
-  }
-  return document.querySelector<HTMLAnchorElement>("[data-entity-back]")?.dataset.entityFallbackHref;
+  return (
+    rememberedReturn() || document.querySelector<HTMLAnchorElement>("[data-entity-back]")?.dataset.entityFallbackHref
+  );
+}
+
+function rememberArrival(target: URL, from = new URL(location.href)): void {
+  const previous = rememberedReturn(from);
+  if (previous && new URL(previous, from).pathname === target.pathname) return;
+  const source = parseEntitySelection(from.pathname)?.route;
+  const destination = parseEntitySelection(target.pathname)?.route;
+  const sibling = source && destination && source.kind === destination.kind && source.view === destination.view;
+  rememberReturn(target, from, sibling ? previous : undefined);
+}
+let returnNavigationInstalled = false;
+function installReturnNavigation(): void {
+  if (returnNavigationInstalled) return;
+  returnNavigationInstalled = true;
+  setEntityReturnLink(returnLink);
+  document.addEventListener(
+    "click",
+    (event) => {
+      const link = (event.target as Element)?.closest<HTMLAnchorElement>("a[href]");
+      if (!link || link.hasAttribute("download") || link.hasAttribute("data-entity-back")) return;
+      rememberArrival(new URL(link.href));
+    },
+    { capture: true },
+  );
+  document.addEventListener("astro:before-preparation", (event) => {
+    const navigation = event as Event & { to: URL; from: URL; navigationType: string; sourceElement?: Element };
+    if (navigation.navigationType !== "traverse" && !navigation.sourceElement?.closest("[data-entity-back]"))
+      rememberArrival(navigation.to, navigation.from);
+    navigation.to = new URL(returnLink(navigation.to.href), navigation.to);
+  });
 }
 
 /** Apply runtime return state to static app-bar links on every kind of detail page. */
 export function syncEntityNavigation(): void {
+  installReturnNavigation();
+  captureLegacyReturn();
   let back = document.querySelector<HTMLAnchorElement>("[data-entity-back]");
   const documentUrl = navigationDocumentUrl();
   const selection = parseEntitySelection(documentUrl.pathname);
@@ -136,8 +177,7 @@ export function syncEntityNavigation(): void {
   for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-entity-navigation]")) {
     const target = new URL(link.dataset.entityBaseHref || link.href, documentUrl);
     if (target.origin !== location.origin) continue;
-    target.searchParams.set("return", returnTo);
-    link.href = target.href;
+    link.href = returnLink(target.href, returnTo);
   }
 }
 

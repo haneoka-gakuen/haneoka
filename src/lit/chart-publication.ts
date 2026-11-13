@@ -8,6 +8,7 @@ import { live } from "lit/directives/live.js";
 import { clientText } from "../i18n/client";
 import { modal } from "./ui/modal";
 import { icon } from "./ui/icon";
+import { returnLink } from "../lib/document-url";
 import { snackbar } from "../lib/snackbar";
 import { communityChartPath, type ChartMediaRef, type CommunityChartItem } from "../lib/chart-creation/community-types";
 import {
@@ -423,7 +424,7 @@ export class ChartPublication extends LitElement {
                         ? html`
                             <a
                               class="button"
-                              href=${`/${this.locale}/account/?return=${encodeURIComponent(location.pathname + location.search)}`}
+                              href=${returnLink(`/${this.locale}/account/`, location.pathname + location.search)}
                             >
                               ${this.t("signIn")}
                             </a>

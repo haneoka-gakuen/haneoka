@@ -1,3 +1,4 @@
+import { navigationReturnHref } from "./resource-route";
 import { isLocale, localeFromPath, localePath } from "../i18n/locales";
 
 export function audioTrackDetailPath(
@@ -9,9 +10,9 @@ export function audioTrackDetailPath(
     const localized = localePath(track.detailPath, locale);
     const url = new URL(localized, "https://route.invalid");
     const returnTo = url.searchParams.get("return");
-    if (!returnTo || !/^\/(?![/\\])/u.test(returnTo) || !localeFromPath(returnTo)) return localized;
-    url.searchParams.set("return", localePath(returnTo, locale));
-    return `${url.pathname}${url.search}${url.hash}`;
+    const parent = returnTo && localeFromPath(returnTo) ? localePath(returnTo, locale) : returnTo;
+    url.searchParams.delete("return");
+    return navigationReturnHref(`${url.pathname}${url.search}${url.hash}`, parent || undefined);
   }
 
   // Older saved queues have game identity but no catalogue detail path.

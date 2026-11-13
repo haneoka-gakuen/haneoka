@@ -419,6 +419,14 @@ export function legacyCollectionRedirectTarget(pathname: string, search = ""): s
   return kind && parts.length === 3 ? `${resourcePath({ server, locale, kind })}${suffix()}` : undefined;
 }
 
+let entityReturnLink: ((href: string, returnTo?: string) => string) | undefined;
+/** The browser installs tab-local return memory; server renderers emit plain links. */
+export function setEntityReturnLink(handler: (href: string, returnTo?: string) => string): void {
+  entityReturnLink = handler;
+}
+export function navigationReturnHref(href: string, returnTo?: string): string {
+  return entityReturnLink ? entityReturnLink(href, returnTo) : href;
+}
 export function entityHref(options: {
   server: ReleaseServer;
   locale: Locale;
@@ -428,7 +436,6 @@ export function entityHref(options: {
   query?: string | URLSearchParams | Readonly<Record<string, string>>;
 }): string {
   const target = new URL(resourcePath(options), "https://route.invalid");
-  if (options.returnTo) target.searchParams.set("return", options.returnTo);
   if (options.query) {
     const query =
       typeof options.query === "string"
@@ -438,7 +445,8 @@ export function entityHref(options: {
           : new URLSearchParams(Object.entries(options.query));
     for (const [key, value] of query) target.searchParams.append(key, value);
   }
-  return `${target.pathname}${target.search}`;
+  const href = `${target.pathname}${target.search}`;
+  return navigationReturnHref(href, options.returnTo);
 }
 
 export function parseEntitySelection(pathname: string, search = ""): EntitySelection | undefined {

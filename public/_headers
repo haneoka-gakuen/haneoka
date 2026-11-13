@@ -9,6 +9,15 @@
 /build.json
   Cache-Control: no-store
 
+/*.md
+  Content-Type: text/markdown; charset=utf-8
+  Cache-Control: public, max-age=300, stale-while-revalidate=3600
+  X-Content-Type-Options: nosniff
+
+/*llms.txt
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300, stale-while-revalidate=3600
+
 /images/*
   Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
 

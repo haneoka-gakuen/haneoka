@@ -76,7 +76,7 @@ import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPa
 import type { ProviderEntityPayload } from "../lib/provider-entity-data";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
 import "../styles/model-tile.css";
 import "../styles/character-voices.css";
@@ -2014,12 +2014,11 @@ export class CatalogScreen extends LitElement {
         if (href) {
           const target = new URL(href, documentUrl);
           const inheritedReturn = entityReturnHref();
-          if (inheritedReturn) target.searchParams.set("return", inheritedReturn);
           for (const key of new Set(params.keys()))
             if (key !== "song" && key !== "return") target.searchParams.delete(key);
           for (const [key, value] of params)
             if (key !== "song" && key !== "return") target.searchParams.append(key, value);
-          void navigateDetailPage(`${target.pathname}${target.search}`, "replace");
+          void navigateDetailPage(returnLink(`${target.pathname}${target.search}`, inheritedReturn), "replace");
           return;
         }
       }
@@ -2324,9 +2323,9 @@ export class CatalogScreen extends LitElement {
       const returnTo = this.settings.entityContext
         ? entityReturnHref() || collection
         : this.isConnected ? returnStateFromLocation(location.pathname, location.search, kind) : collection;
-      const query = new URLSearchParams({ song: id, return: returnTo, chartDifficulty: this.selectedSongDifficulty });
+      const query = new URLSearchParams({ song: id, chartDifficulty: this.selectedSongDifficulty });
       if (difficulty !== undefined) query.set("difficulty", String(difficulty));
-      return `${collection}detail/?${query}`;
+      return returnLink(`${collection}detail/?${query}`, returnTo);
     }
     const returnTo = this.isConnected
       ? returnStateFromLocation(location.pathname, location.search, kind)
@@ -6099,12 +6098,8 @@ export class CatalogScreen extends LitElement {
       location.href,
     );
     if (this.isProvider()) target.searchParams.set("chart", "1");
-    // The child returns to this complete canonical song URL. Its own return
-    // query therefore remains intact and takes the user back to the filtered
-    // catalogue with the captured scroll snapshot.
-    target.searchParams.set("return", `${location.pathname}${location.search}`);
     target.searchParams.set("difficulty", String(this.detailDifficulty));
-    return `${target.pathname}${target.search}`;
+    return returnLink(`${target.pathname}${target.search}`, `${location.pathname}${location.search}`);
   }
   private rankingPageHref(item: Item) {
     const target = new URL(
@@ -6115,8 +6110,7 @@ export class CatalogScreen extends LitElement {
       }),
       location.href,
     );
-    target.searchParams.set("return", `${location.pathname}${location.search}`);
-    return `${target.pathname}${target.search}`;
+    return returnLink(`${target.pathname}${target.search}`, `${location.pathname}${location.search}`);
   }
   private async openChart() {
     if (this.settings.entityContext && !this.settings.chartPage) {

@@ -509,6 +509,8 @@ async function adopt(next: Document, path: string | undefined): Promise<boolean>
 
 /** Replaces the document through the router once the current gesture has ended. */
 async function swap(next: Document | undefined): Promise<void> {
+  if (document.querySelector("arena-workspace[data-page-data], event-tracker[data-page-data], song-ranking[data-page-data]"))
+    return release(true);
   // Without the router a navigation would reload the page and evaluate again.
   if (!document.querySelector('[name="astro-view-transitions-enabled"]')) return release(true);
   const current = startHold();

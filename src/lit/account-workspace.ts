@@ -1,4 +1,5 @@
 import { clientText } from "../i18n/client";
+import { rememberedReturn } from "../lib/document-url";
 import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
 import { modal } from "./ui/modal";
@@ -233,7 +234,7 @@ export class AccountWorkspace extends LitElement {
     this.phase = "ready";
   }
   private nextPath() {
-    const value = new URLSearchParams(location.search).get("next") || "";
+    const value = rememberedReturn() || "";
     return value.startsWith("/") && !value.startsWith("//") ? value : "/account";
   }
   private date(value: unknown) {

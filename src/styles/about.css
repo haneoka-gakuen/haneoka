@@ -105,10 +105,6 @@
   .about-cast__member {
     position: absolute;
     display: block;
-    animation:
-      motion-rise var(--motion-spring-spatial-slow-duration) var(--motion-spring-spatial-slow) backwards,
-      about-float 7s ease-in-out infinite alternate;
-    animation-delay: calc(var(--i) * 70ms), calc(var(--i) * -1.4s);
   }
   .about-cast__member img {
     display: block;
@@ -125,10 +121,6 @@
   .about-cast__member--4 { inset: 50% auto auto 62%; width: 38%; }
   .about-cast__member--5 { inset: 66% auto auto 22%; width: 34%; }
   .about-cast__member--1 img { background: var(--md-sys-color-secondary-container); }
-  @keyframes about-float {
-    from { translate: 0 -6px; }
-    to { translate: 0 6px; }
-  }
 
   /* ---- Numbers ---- */
   .about-stats {
@@ -203,24 +195,6 @@
   }
   .about-feature:hover .about-feature__shape {
     rotate: 15deg;
-  }
-
-  /* Scroll-linked arrival where the browser supports view timelines. */
-  @supports (animation-timeline: view()) {
-    .about-feature__media,
-    .about-feature__copy,
-    .about-stats li,
-    .about-suite {
-      animation: about-reveal linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 28%;
-    }
-    @keyframes about-reveal {
-      from {
-        opacity: 0;
-        translate: 0 calc(var(--motion-enter-distance) * 3);
-      }
-    }
   }
 
   /* ---- Open source suites ---- */

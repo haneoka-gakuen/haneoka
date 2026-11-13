@@ -1,3 +1,4 @@
+import { returnLink, rememberReturnLink } from "../lib/document-url";
 import { decodePageData, pageDataViewCurrent } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
@@ -2539,7 +2540,7 @@ export class HomeDashboard extends LitElement {
   private likeRecommendedComment(entry: JsonRecord) {
     if (!isEntityCommentRecommendation(entry)) return;
     if (!this.communityViewer?.userId) {
-      location.assign("/" + this.locale + "/account/?next=" + encodeURIComponent(location.pathname + location.search + location.hash));
+      location.assign(rememberReturnLink("/" + this.locale + "/account/", location.pathname + location.search + location.hash));
       return;
     }
     const id = entry.comment.id, realm = this.communityViewer.realm, locale = this.locale, server = this.sourceServer(), lifetime = this.communityLifetime;
@@ -2583,7 +2584,7 @@ export class HomeDashboard extends LitElement {
         record: entry.comment,
         locale: this.locale,
         label: (key, fallback, params?: MessageParams) => this.communityLabel(key, fallback, params),
-        authorHref: `/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`,
+        authorHref: returnLink(`/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}`, location.pathname + location.search + location.hash),
         canReply: Boolean(href),
         allowStickers: true,
         preview: true,
