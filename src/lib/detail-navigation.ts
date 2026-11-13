@@ -100,6 +100,7 @@ export async function navigateDetailPage(href: string, historyMode: "push" | "re
 }
 
 export function entityReturnHref(): string | undefined {
+  if (typeof window === "undefined") return;
   return (
     rememberedReturn() || document.querySelector<HTMLAnchorElement>("[data-entity-back]")?.dataset.entityFallbackHref
   );
