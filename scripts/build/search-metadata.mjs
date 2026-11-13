@@ -239,13 +239,23 @@ export function markdownDocument(html, sourcePath, readSeed) {
       : match[0].slice(opening.length, match[0].lastIndexOf("</script"));
     if (!raw) continue;
     const payload = decodePageData(JSON.parse(raw));
+    const episode = payload?.schema === "haneoka-story-payload-v1" ? payload.episodes?.[payload.id] : undefined;
     const item =
       payload?.schema === "haneoka-entity-payload-v1"
         ? payload.item
-        : payload?.schema === "haneoka-story-payload-v1"
-          ? payload.episodes?.[payload.id]
+        : episode
+          ? Object.fromEntries(Object.entries(episode).filter(([key]) => key !== "commands" && key !== "assets"))
           : undefined;
-    if (item) records.push({ id: payload.id, server: payload.server, releaseId: payload.releaseId, item });
+    if (item)
+      records.push({
+        id: payload.id,
+        server: payload.server,
+        releaseId: payload.releaseId,
+        ...(episode && {
+          source: `https://haneoka.org/api/v1/servers/${payload.server}/catalog/stories/${encodeURIComponent(payload.id)}?release=${encodeURIComponent(payload.releaseId)}`,
+        }),
+        item,
+      });
   }
   const data = records.length
     ? `\n## Structured data\n\n\`\`\`json\n${JSON.stringify(records.length === 1 ? records[0] : records, null, 2)}\n\`\`\`\n`
