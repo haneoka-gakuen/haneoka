@@ -44,6 +44,7 @@ const TRIM_EVERY = 64;
 const writes = new Map();
 const MAX_DATA = 200;
 const NEVER_CACHE_PREFIXES = ["/api/", "/auth/", "/account/", "/admin/", "/sonolus/", "/game-client/"];
+const isPlayerProfilePage = (pathname) => /^\/(?:(?:(?:jp|intl)\/)?(?:ja|en|ko|zh-CN|zh-TW)\/)?player-profile(?:\/|\.html$|$)/.test(pathname);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -60,6 +61,10 @@ self.addEventListener("activate", (event) => {
         }
       } catch {}
       await self.clients.claim();
+      const pages = await caches.open(PAGES_CACHE);
+      for (const key of await pages.keys()) {
+        if (isPlayerProfilePage(new URL(key.url).pathname)) await pages.delete(key);
+      }
     })(),
   );
 });
@@ -271,6 +276,10 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (isPlayerProfilePage(url.pathname)) {
+    event.respondWith(new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } }));
+    return;
+  }
 
   // Revalidate current catalog URLs even if an earlier deployment gave the
   // browser a fresh response. Explicit release pins keep their cache policy.

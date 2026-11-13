@@ -6,8 +6,8 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
-import { playerProfileHref, validPlayerProfileId } from "../lib/player-profile-route";
-import { navigateDetailPage } from "../lib/detail-navigation";
+// import { playerProfileHref, validPlayerProfileId } from "../lib/player-profile-route";
+// import { navigateDetailPage } from "../lib/detail-navigation";
 import "@material/web/progress/linear-progress.js";
 import { clientText } from "../i18n/client";
 import { html, nothing, type PropertyValues } from "lit";
@@ -160,6 +160,7 @@ export class SongRanking extends GameRecordsCardsElement {
       this.region = REGIONS.some((option) => option.value === requested)
         ? (requested as Region)
         : defaultRegion(this.server, this.locale);
+    /*
     const oldProfileId = navigationDocumentUrl().searchParams.get("profileId");
     if (!this.embedded && oldProfileId && validPlayerProfileId(this.region, oldProfileId)) {
       void navigateDetailPage(
@@ -174,6 +175,7 @@ export class SongRanking extends GameRecordsCardsElement {
       );
       return;
     }
+    */
     this.phase = "loading";
     void this.loadRanking(this.region, true);
   }
@@ -349,6 +351,8 @@ export class SongRanking extends GameRecordsCardsElement {
       target: entry.rank === this.target,
       bare: this.limit > 0,
       level: this.levelFromExp(this.sourceCatalog()?.playerLevels, entry.rankExp),
+      href: "",
+      /*
       href: entry.profileId
         ? playerProfileHref(
             this.locale,
@@ -358,6 +362,7 @@ export class SongRanking extends GameRecordsCardsElement {
             navigationDocumentUrl(),
           )
         : "",
+      */
       score,
       scoreLabel: this.points ? this.label("points", "Points") : this.label("score", "Score"),
       ...(this.analysisEvent && entry.totalPower ? { scoreAction: {

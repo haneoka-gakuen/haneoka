@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；前端请求与静态文档的连接点。
 // Effects/Dependencies: 开发读取本地载荷；生产预渲染可写静态文档；调用下游渲染。
 import { defineMiddleware } from "astro:middleware";
+import { isPlayerProfilePagePath } from "./lib/temporary-public-routing";
 import { communityPagesEnabled, communityVisibilityHtml, isCommunityPagePath, isCommunityCommentRequest } from "./lib/site-community";
 import {
   communityStoryShellPath,
@@ -34,6 +35,8 @@ import { providerEntityHtmlPath } from "./lib/provider-entity-data";
 import { withMaterialStylePreloads } from "./server/material-ssr-styles";
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  if (isPlayerProfilePagePath(context.url.pathname))
+    return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } });
   const community = import.meta.env.DEV
     ? communityPagesEnabled(context.url.hostname, process.env.COMMUNITY_HIDDEN_HOSTS)
     : true;

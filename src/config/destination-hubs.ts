@@ -110,7 +110,7 @@ const curated: Record<HubId, HubTile[]> = {
     tile("/story-editor/create", "banners", 6, 3),
     tile("/catalog/live2d", "models", 3, 3, 3),
     tile("/song-progress", "icon", 3, 2),
-    tile("/player-profile", "icon", 3, 2),
+    // tile("/player-profile", "icon", 3, 2),
     tile("/gacha-history", "icon", 3, 2),
     tile("/catalog/spine", "models", 3, 3, 3),
     tile("/catalog/assets", "landscape", 6, 3, 1),

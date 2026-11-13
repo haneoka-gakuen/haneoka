@@ -8,7 +8,7 @@ import type { MessageParams } from "@haneoka/i18n";
 import { icon } from "../ui/icon";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { GAME_RECORDS_REGIONS, gameAccountRegion } from "../shared/game-records";
-import { playerProfileHref } from "../../lib/player-profile-route";
+// import { playerProfileHref } from "../../lib/player-profile-route";
 import { resourcePath } from "../../lib/resource-route";
 import { formatDate } from "../../lib/date-format";
 import type { Locale } from "../../i18n/locales";
@@ -270,9 +270,11 @@ function renderAccount(account: Value, view: GameAccountsView) {
               `
             : nothing}
         </div>
+        ${/* html`
         <a class="button button--tonal community-game-account__lookup" href=${playerProfileHref(locale, region, playerUid)}>
           ${icon("person_search", 18)}${view.label("tools.playerProfile.title", "Player lookup")}
         </a>
+        ` */ nothing}
       </header>
       ${summary
         ? html`

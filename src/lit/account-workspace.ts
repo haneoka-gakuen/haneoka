@@ -1314,6 +1314,7 @@ export class AccountWorkspace extends LitElement {
                     const region = String(account.region);
                     return html`
                       <li class="account-object">
+                        ${/* html`
                         <a class="detail-object" href=${`/${locale}/player-profile/?region=${gameAccountRegion(region, locale, String(account.playerUid))}&profileId=${account.playerUid}`}>
                           <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
                           <span>
@@ -1328,6 +1329,21 @@ export class AccountWorkspace extends LitElement {
                             </small>
                           </span>
                         </a>
+                        ` */ nothing}
+                        <div class="detail-object">
+                          <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
+                          <span>
+                            ${String(account.displayName || account.playerUid)}
+                            <small class="md-body-small">
+                              ${[
+                                GAME_REGION_NAMES[gameAccountRegion(region, locale, String(account.playerUid))],
+                                String(account.playerUid),
+                                typeof summary.rank === "number" ? clientText(locale, "account.page.gameRank", "Rank {value}", { value: number(summary.rank) }) : "",
+                                typeof summary.rating === "number" ? clientText(locale, "account.page.gameRating", "Rating {value}", { value: number(summary.rating) }) : "",
+                              ].filter(Boolean).join(" / ")}
+                            </small>
+                          </span>
+                        </div>
                         <span class="chip chip--static"><span class="chip__label">${account.visibility === "public" ? this.label("visibilityPublic", "Public") : this.label("visibilityPrivate", "Private")}</span></span>
                         <button class="icon-button" type="button" title=${this.label("remove", "Remove")} aria-label=${this.label("remove", "Remove")} ?disabled=${this.busy} @click=${() => (this.removing = account)}>
                           ${icon("delete", 20)}
@@ -1337,7 +1353,7 @@ export class AccountWorkspace extends LitElement {
                   })}
                 </ul>
               `
-            : html`<a class="button button--tonal" href=${`/${locale}/player-profile/`}>${icon("person_search", 18)}${this.label("findPlayer", "Find a player")}</a>`
+            : /* html`<a class="button button--tonal" href=${`/${locale}/player-profile/`}>${icon("person_search", 18)}${this.label("findPlayer", "Find a player")}</a>` */ nothing
         }
       </section>
       ${

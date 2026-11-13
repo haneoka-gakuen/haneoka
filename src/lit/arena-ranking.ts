@@ -8,8 +8,8 @@ import { html, nothing } from "lit";
 import { SongRanking } from "./song-ranking";
 import type { ArenaRank } from "../lib/arena";
 import type { ArenaRankingDto, GameRankingDto, SongRankingRowDto, ArenaRankingRowDto } from "../lib/game-records";
-import { playerProfileHref } from "../lib/player-profile-route";
-import { navigationDocumentUrl } from "../lib/document-url";
+// import { playerProfileHref } from "../lib/player-profile-route";
+// import { navigationDocumentUrl } from "../lib/document-url";
 
 export function arenaTier(ranks: readonly ArenaRank[], point: number, at = Date.now()): ArenaRank | undefined {
   let best: ArenaRank | undefined;
@@ -92,9 +92,12 @@ export class ArenaRanking extends SongRanking {
     return this.renderRankingRow({
       ...row,
       level: this.levelFromExp(this.sourceCatalog()?.playerLevels, row.rankExp),
+      href: "",
+      /*
       href: row.profileId
         ? playerProfileHref(this.locale, this.region, row.profileId, this.rankingUrl(), navigationDocumentUrl())
         : "",
+      */
       score: row.point.toLocaleString(this.locale),
       ...(this.eventId && this.analysisEvent && row.profileId ? { scoreAction: {
         label: clientText(this.locale, "catalog.rankings.analysis.title", "Team analysis"),
