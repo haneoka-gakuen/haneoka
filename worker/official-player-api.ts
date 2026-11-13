@@ -1,13 +1,13 @@
 // L3 — GEB
 // Input: Player profile and song ranking reads, saved pool results and the regional collector.
-// Output: Normalized DTOs, bounded pool demand and refresh=1 reads observed within one minute; missing official data may use Moenotes.
+// Output: Song ranking DTOs and card images; standalone player lookup handling is retained but not exposed.
 // Pos: [Map](L2.md); read side of the on-demand pool lookups beside official-ranking-api.ts.
 // Effects/Dependencies: Reads D1/R2 and queues Durable Object demand; never contacts the game itself.
 import type { GameProfileCardDto, GameRecordsRegion, PlayerProfileDto, SongRankingDto } from "../src/lib/game-records";
-import { PLAYER_PROFILE_FRESH_MS } from "../src/lib/game-records";
-import { moenotesPlayer, moenotesSongRanking, type MoenotesBindings } from "./moenotes-fallback";
+// import { PLAYER_PROFILE_FRESH_MS } from "../src/lib/game-records";
+import { /* moenotesPlayer, */ moenotesSongRanking, type MoenotesBindings } from "./moenotes-fallback";
 import { officialEventRanking } from "./official-ranking-api";
-import { officialCardUrl, readOfficialCardImage, readOfficialPlayer, readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
+import { officialCardUrl, readOfficialCardImage, /* readOfficialPlayer, */ readOfficialSongRanking, type OfficialPlayerRecord, type OfficialRankingStoreBindings } from "./official-ranking-store";
 import { collectorFor } from "./official-host";
 
 export interface OfficialPlayerBindings extends OfficialRankingStoreBindings, MoenotesBindings {
@@ -18,7 +18,7 @@ export interface OfficialPlayerBindings extends OfficialRankingStoreBindings, Mo
 const PREFIX = "/api/v1/game/records";
 const REGIONS: readonly string[] = ["jp", "tw", "en", "kr"];
 const PLAYER_TTL_MS = 6 * 3_600_000;
-const MISSING_TTL_MS = 3_600_000;
+// const MISSING_TTL_MS = 3_600_000;
 const SONG_TTL_MS = 3_600_000;
 
 const object = (value: unknown): Record<string, unknown> =>
@@ -114,6 +114,8 @@ export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionCo
   if (!match || !REGIONS.includes(match[1]!)) return null;
   const region = match[1] as GameRecordsRegion, now = Date.now();
   if (match[2]) {
+    return json(request, { error: { kind: "not_found" } }, 404);
+    /*
     const profileId = match[2];
     const record = await readOfficialPlayer(env, region, profileId);
     const refresh = url.searchParams.get("refresh") === "1";
@@ -126,6 +128,7 @@ export async function handleOfficialPlayerApi(request: Request, ctx: ExecutionCo
     if (refresh && expired) return pending(request);
     if (!record.found) return now - record.observedAtMs < MISSING_TTL_MS ? json(request, { error: { kind: "not_found" } }, 404) : pending(request);
     return json(request, playerProfile(region, profileId, record, now));
+    */
   }
   const musicId = match[3]!;
   const ranking = await readOfficialSongRanking(env, region, musicId);
