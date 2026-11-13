@@ -795,6 +795,29 @@ export class SongRanking extends GameRecordsCardsElement {
     `;
   }
 
+  private renderPagination(scrollToStart = false) {
+    if (!this.windowed || this.limit) return nothing;
+    const maximum = this.cache.get(this.rankingUrl(this.region))?.maxRank;
+    const t = (key: string, fallback: string) => clientText(this.locale, `catalog.arena.ranking.${key}`, fallback);
+    const move = (start: number) => {
+      this.moveWindow(start);
+      if (scrollToStart) this.scrollIntoView({ block: "start" });
+    };
+    return html`
+      <span class="ranking-pagination">
+        <span class="ranking-top">
+          ${iconButton({ icon: "first_page", label: t("top", "Top"), disabled: this.start === 1, onClick: () => move(1) })}
+        </span>
+        ${iconButton({ icon: "chevron_left", label: t("previous", "Previous 100"), disabled: this.start === 1, onClick: () => move(Math.max(1, this.start - 100)) })}
+        <span class="ranking-window md-body-medium">
+          ${this.start.toLocaleString(this.locale)}–${Math.min(this.start + 99, maximum ?? Infinity).toLocaleString(this.locale)}
+          / ${maximum?.toLocaleString(this.locale) ?? "—"}
+        </span>
+        ${iconButton({ icon: "chevron_right", label: t("next", "Next 100"), disabled: maximum != null && this.start + 100 > maximum, onClick: () => move(this.start + 100) })}
+      </span>
+    `;
+  }
+
   private renderControls() {
     if (this.limit)
       return html`
@@ -872,23 +895,7 @@ export class SongRanking extends GameRecordsCardsElement {
           </form>
         </div>
         <div class="ranking-secondary">
-          ${
-            this.windowed
-              ? html`
-                  <span class="ranking-pagination">
-                    <span class="ranking-top">
-                      ${iconButton({ icon: "first_page", label: t("top", "Top"), disabled: this.start === 1, onClick: () => this.moveWindow(1) })}
-                    </span>
-                    ${iconButton({ icon: "chevron_left", label: t("previous", "Previous 100"), disabled: this.start === 1, onClick: () => this.moveWindow(Math.max(1, this.start - 100)) })}
-                    <span class="ranking-window md-body-medium">
-                      ${this.start.toLocaleString(this.locale)}–${Math.min(this.start + 99, maximum ?? Infinity).toLocaleString(this.locale)}
-                      / ${maximum?.toLocaleString(this.locale) ?? "—"}
-                    </span>
-                    ${iconButton({ icon: "chevron_right", label: t("next", "Next 100"), disabled: maximum != null && this.start + 100 > maximum, onClick: () => this.moveWindow(this.start + 100) })}
-                  </span>
-                `
-              : nothing
-          }
+          ${this.renderPagination()}
           <span class="ranking-status">
             ${this.renderTimestamp()}
             ${iconButton({ icon: "refresh", label: this.label("refresh", "Refresh ranking"), disabled: this.phase === "loading" || Date.now() < this.retryAt, onClick: () => this.refresh() })}
@@ -918,7 +925,9 @@ export class SongRanking extends GameRecordsCardsElement {
               : nothing
           }
         </div>
-        ${this.renderControls()} ${this.renderRanking()} ${this.renderMatches()}
+        ${this.renderControls()} ${this.renderRanking()}
+        ${this.windowed && !this.limit ? html`<div class="row row--end">${this.renderPagination(true)}</div>` : nothing}
+        ${this.renderMatches()}
       </section>
     `;
   }
