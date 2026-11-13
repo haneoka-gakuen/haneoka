@@ -2,6 +2,8 @@ import { searchCategory } from "../../src/lib/search-categories.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 import { parse, parseFragment, serialize } from "parse5";
 import { decodePageData } from "../../src/lib/page-data-codec.ts";
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 const plainText = (node) => (node.nodeName === "#text" ? node.value : (node.childNodes || []).map(plainText).join(""));
 const compact = (text) => text.replace(/\s+/gu, " ").trim();
@@ -112,6 +114,76 @@ const descendants = (node, predicate) => {
 };
 export function markdownPath(pathname) {
   return pathname === "/" ? "/index.md" : `${pathname.replace(/\/+$/u, "")}.md`;
+}
+/** Nest an entity beneath the file title without changing code blocks. */
+export function markdownRecord(markdown, anchor) {
+  let fenced = false;
+  const body = markdown
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("```")) fenced = !fenced;
+      return !fenced && /^#{1,5} /u.test(line) ? `#${line}` : line;
+    })
+    .join("\n");
+  return `\n<a id="${anchor}"></a>\n\n${body}`;
+}
+/** Stable bucket anchors survive splitting; detail files stay bounded and directly cacheable. */
+export function writeMarkdownBucket(outputRoot, pathname, records, readRecord) {
+  records.sort((a, b) => a.canonical.localeCompare(b.canonical, "en"));
+  const title = `# haneoka - ${pathname.split("/").slice(2, -1).join("/")}\n\n`;
+  const limit = 256 * 1024;
+  let files = 0,
+    bytes = 0,
+    maxBytes = 0;
+  const publish = (target, body) => {
+    const size = Buffer.byteLength(body);
+    if (size > 25 * 1024 * 1024) throw new Error(`Markdown exceeds the static asset limit: ${target}`);
+    const file = path.join(outputRoot, target.slice(1));
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+    files++;
+    bytes += size;
+    maxBytes = Math.max(maxBytes, size);
+  };
+  const total = Buffer.byteLength(title) + records.reduce((sum, record) => sum + record.bytes, 0);
+  if (total <= limit) {
+    publish(pathname, title + records.map(readRecord).join(""));
+  } else {
+    let part = title,
+      partBytes = Buffer.byteLength(title),
+      first,
+      pending = [];
+    const flush = () => {
+      if (!first) return;
+      const target = pathname.replace(/\.md$/u, `-${first.anchor.slice(7)}.md`);
+      publish(target, part);
+      for (const record of pending) record.detail = `${target}#${record.anchor}`;
+      part = title;
+      partBytes = Buffer.byteLength(title);
+      first = undefined;
+      pending = [];
+    };
+    for (const record of records) {
+      const body = readRecord(record);
+      if (first && partBytes + record.bytes > limit) flush();
+      first ||= record;
+      part += body;
+      partBytes += record.bytes;
+      pending.push(record);
+    }
+    flush();
+    publish(
+      pathname,
+      title +
+        records
+          .map(
+            (record) =>
+              `\n<a id="${record.anchor}"></a>\n\n## ${markdownEscape(record.title)}\n\n[Markdown](https://haneoka.org${record.detail}) · [Web](${record.canonical})\n`,
+          )
+          .join("\n"),
+    );
+  }
+  return { files, bytes, maxBytes };
 }
 /** Render the public semantic document, including tables and collapsed detail sections, without UI or page-data scripts. */
 export function markdownDocument(html, sourcePath, readSeed) {

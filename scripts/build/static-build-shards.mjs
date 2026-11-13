@@ -40,7 +40,7 @@ function localeForPath(pathname) {
   const parts = pathname.split("/").filter(Boolean);
   let candidate;
   if (["jp", "intl", "playlist-static"].includes(parts[0])) candidate = parts[1];
-  else if (["static-views", "asset-static", "provider-static"].includes(parts[0])) candidate = parts[2];
+  else if (["static-views", "asset-static", "provider-static", "markdown"].includes(parts[0])) candidate = parts[2];
   else candidate = parts[0];
   return LOCALES.includes(candidate) ? candidate : undefined;
 }
