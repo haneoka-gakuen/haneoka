@@ -118,6 +118,10 @@ if (!isMainThread) {
         }
         const file = path.join(job.staged ? publicStaticStagingRoot(documentsRoot) : output, job.sourcePath);
         const html = fs.readFileSync(file, "utf8");
+        if (!job.staged && !job.contentsOnly && (isPublicStaticDocument(html) || !/<\/html\s*>/iu.test(html))) {
+          parentPort.postMessage({ value: false });
+          return;
+        }
         const next = module.rewriteStaticDocumentUrls(
           html,
           rewrites.get(job.locale),
@@ -135,7 +139,11 @@ if (!isMainThread) {
               }
             : undefined,
         );
-        if (next !== html) fs.writeFileSync(file, next);
+        if (job.contentsOnly) value = next;
+        else {
+          if (next !== html) fs.writeFileSync(file, next);
+          value = true;
+        }
       } else if (job.kind === "markdown") {
         value = markdownDocument(job.content, job.sourcePath, (url) => {
           if (!/^\/entity-data\/v1\/[a-f0-9]{64}\.json$/u.test(url)) return;

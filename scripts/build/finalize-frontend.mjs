@@ -25,7 +25,7 @@ import {
   publicStaticStagingRoot,
   requirePackedFallbacks,
 } from "../../src/server/static-documents.ts";
-import { staticDocumentShard } from "../../src/lib/static-documents.ts";
+import { staticDocumentShard, staticDocumentLookupPath } from "../../src/lib/static-documents.ts";
 import { restrictShardCoverage } from "./static-build-shards.mjs";
 
 const output = path.resolve(".output/public");
@@ -150,14 +150,20 @@ async function loadPublicStatic() {
         familyImageSize,
       });
     }
+    const rewritten = new Set();
     await Promise.all([
       ...staged.map((sourcePath) =>
         workers.run({ kind: "rewrite", sourcePath, staged: true, locale: localeOf(sourcePath) }),
       ),
-      ...files.map((sourcePath) => workers.run({ kind: "rewrite", sourcePath, locale: localeOf(sourcePath) })),
+      ...files
+        .filter((sourcePath) => staticDocumentLookupPath(`/${sourcePath}`))
+        .map(async (sourcePath) => {
+          if (await workers.run({ kind: "rewrite", sourcePath, locale: localeOf(sourcePath) }))
+            rewritten.add(sourcePath);
+        }),
     ]);
     sealPrivatePageData(module, privatePages, token);
-    return { module, staged: new Set(staged), targets };
+    return { module, staged: new Set(staged), targets, rewritten, rewriteOptions: { media, urlMap } };
   } finally {
     await workers.close();
   }
@@ -241,7 +247,7 @@ rmSync(path.join(output, "markdown"), { recursive: true, force: true });
 let markdownCount = 0;
 let markdownFiles = 0;
 let index;
-const markdownWorkers = new StaticDocumentWorkers({ output, documentsRoot });
+const markdownWorkers = new StaticDocumentWorkers({ output, documentsRoot, ...publicStatic?.rewriteOptions });
 try {
   const created = await pagefind.createIndex({
     excludeSelectors: ["script", "style", "button", "input", "select", "[aria-hidden=true]", ".audio-dock"],
@@ -269,6 +275,13 @@ try {
           "utf8",
         );
         if (!indexable(content)) continue;
+        if (!staged && publicStatic && !publicStatic.rewritten.has(sourcePath))
+          content = await markdownWorkers.run({
+            kind: "rewrite",
+            sourcePath,
+            locale: localeOf(sourcePath),
+            contentsOnly: true,
+          });
         // Only a proven public document may produce a directly accessible Markdown counterpart.
         if ((staged || isPublicStaticDocument(content)) && !/^static-views\//u.test(sourcePath)) {
           const markdown = await markdownWorkers.run({ kind: "markdown", content, sourcePath });
