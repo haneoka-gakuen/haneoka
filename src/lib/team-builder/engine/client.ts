@@ -487,9 +487,9 @@ export class EngineClient {
   private async execute(request: EngineRequest, started: number, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler, responseKey: string | null = null, pool = this.pool): Promise<EngineResponse> {
     const justWindow = request.goal.kind === "gekiso" ? request.goal.justWindow?.minimumMs ?? request.goal.minJustWindowMs
       : request.goal.kind === "event" ? request.goal.gekiso?.justWindow?.minimumMs ?? request.goal.gekiso?.minJustWindowMs : undefined;
-    const sharedScore = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
-      && request.goal.arena.objective !== "sections";
-    if (justWindow && justWindow > 0 && !sharedScore) request = { ...request, noFloor: true };
+    const sharedSteadyWindow = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
+      && request.goal.arena.objective !== "sections" && !request.goal.justWindow;
+    if (justWindow && justWindow > 0 && !sharedSteadyWindow) request = { ...request, noFloor: true };
     const idlest = () => this.idlest(pool);
     const before = pool.map(worker => worker.timing());
     let latest = emptyResponse(request);
@@ -760,13 +760,10 @@ export class EngineClient {
                 score: value.score, justWindow: value.justWindow, event: null, skipScore: value.skipScore, potential: null };
             });
             const average = (value: (hit: EngineHit) => number) => songs.reduce((sum, hit) => sum + value(hit), 0) / songs.length;
-            const windows = evaluated.flatMap(value => value.justWindow ? [value.justWindow] : []);
             sharedSeed = evaluated.every(value => value.justWindow?.meetsTarget !== false) ? { ...team, song: null, key: average(hit => hit.score!.mean), power: average(hit => hit.power),
               slotPowers: team.slotPowers.map((_, index) => average(hit => hit.slotPowers[index]!)),
               score: { mean: average(hit => hit.score!.mean), min: average(hit => hit.score!.min), max: average(hit => hit.score!.max),
                 median: average(hit => hit.score!.median), orders: [], ranks: {}, bestOrder: [], worstOrder: [] },
-              justWindow: windows.length ? { beforeMs: Math.min(...windows.map(w => w.beforeMs)),
-                afterMs: Math.min(...windows.map(w => w.afterMs)), meetsTarget: true } : undefined,
               event: null, skipScore: null, potential: null, aggregate: { kind: "mean", songs } } : undefined;
           }
         }
@@ -788,7 +785,6 @@ export class EngineClient {
         const publishShared = () => {
           const response = merged();
           const hit = response.overall[0];
-          // A shared JUST search can borrow the score of a formation validated on every chart.
           if (request.goal.kind === "gekiso" && request.k === 1 && hit
             && (!justWindow || hit.aggregate?.songs.length === request.goal.songs.length
               && hit.aggregate.songs.every(song => song.justWindow?.meetsTarget !== false)))
