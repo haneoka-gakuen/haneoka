@@ -25,11 +25,15 @@ outside stable maps. Do not move or split source just to fit a map.
 - Several sessions edit the same checkout at once. Stage only your own
   files; never `git add -A` in the main checkout, never commit someone
   else's uncommitted work, and never reset or stash it away.
-- Commit messages describe the change. No `Co-authored-by` trailer for an
-  AI assistant.
+- Use Conventional Commits for every new commit: `type(scope): description`
+  (scope optional), such as `feat(calendar): add event filters`,
+  `fix(puzzle): accept cached covers` or `perf(build): reuse immutable inputs`.
+  Describe the actual change. No `Co-authored-by` trailer for an AI assistant.
 - Verify before pushing: type-check and lint the files you touched, and
-  look at every visible change in a browser at desktop width (1280px) and
+  look at every visible change in a local browser at desktop width (1280px) and
   phone width (360–412px), in light and dark themes.
+- Do not add manual production verification unless the user requests it;
+  retain the deployment workflow's built-in checks.
 - D1 migrations in `worker/database/migrations/` are applied by the deploy
   workflow on every push to `main`. Write them additive and idempotent
   (`IF NOT EXISTS`), and append the same DDL to `worker/database/schema.sql`.
