@@ -143,8 +143,8 @@
     "seo": {
       "homeTitle": "BanG Dream! Our Notes 交織的樂章 資料庫與圖鑑",
       "descriptions": {
-        "home": "haneoka 的 BanG Dream! Our Notes 資料庫收錄樂曲與譜面、團員卡與快照卡、角色、劇情及活動資料。查閱卡片技能與卡圖、樂曲製作資訊、角色檔案及故事對白。",
-        "catalog": "瀏覽 BanG Dream! Our Notes 資料庫與圖鑑，依樂曲、卡片、角色、劇情及活動尋找資料，開啟關聯條目、譜面預覽和 Live2D、Spine 模型工具。",
+        "home": "haneoka 的 BanG Dream! Our Notes 交織的樂章資料庫與百科，收錄樂曲、團員卡、快照、劇情和活動，提供 Live2D、Spine 模型檢視器、譜面播放器和組隊工具。",
+        "catalog": "瀏覽 BanG Dream! Our Notes 資料庫與百科，依樂曲、團員卡、快照、角色、劇情和活動尋找資料，開啟關聯條目、譜面預覽及 Live2D、Spine 模型檢視器。",
         "catalogItem": "查閱{title}的詳細資料、相關內容和關聯條目，透過 haneoka 的 BanG Dream! Our Notes 資料庫瀏覽樂曲、卡片、角色、故事與遊戲系統資訊。",
         "about": "了解 haneoka 的資料瀏覽、劇情與譜面播放器、Live2D 和 Spine 工具、社群及開放介面，認識 Vega、Altair、Deneb 與 Cassiopeia 等元件的分工，以及專案的開源倉庫與技術路線。",
         "community": "瀏覽 BanG Dream! Our Notes 社群的貼文、話題與創作分享，參與留言和回覆，按讚或收藏感興趣的內容，追蹤作者，並透過關聯資料探索樂曲、角色與故事。",
@@ -154,12 +154,13 @@
         "communityStories": "瀏覽 GBP 活動、樂團、主線、區域對話與卡片故事。 瀏覽 BanG Dream! Our Notes 社群的貼文、話題與創作分享，參與留言和回覆，按讚或收藏感興趣的內容，追蹤作者，並透過關聯資料探索樂曲、角色與故事。",
         "terms": "閱讀 haneoka 的網站及社群使用規則，了解帳戶、貼文、上傳內容、檢舉與審核要求，查看資源使用、版權及服務相關條款，參與有序的遊戲社群交流。",
         "privacy": "了解 haneoka 如何處理帳戶資料、Cookie、社群內容、上傳檔案與訪問紀錄，查看資料使用、儲存、安全和使用者權利的說明，以及隱私設定與聯絡管道。",
-        "general": "探索 haneoka 的{title}內容，瀏覽 BanG Dream! Our Notes 遊戲資料、預覽工具和社群分享，透過關聯條目繼續了解樂曲、角色、卡片與故事。",
+        "general": "在 haneoka 的 BanG Dream! Our Notes 資料庫與百科中查看{title}，查閱相關樂曲、角色、卡片和劇情資料，並使用資源檢視器和遊戲工具。",
         "announcements": "查看 BanG Dream! Our Notes 遊戲公告、活動消息、轉蛋通知、維護安排與已知問題，閱讀完整內容、相關圖片和發布時間，依目前語言瀏覽對應伺服器的最新消息。",
         "stampMaker": "使用遊戲表情或自選圖片製作表情，編輯文字、字型、描邊與版面，匯出透明 PNG。",
         "chartEditor": "使用瀏覽器譜面編輯器編輯音符與連接線，預覽節奏遊戲譜面並管理本機專案。",
-        "teamBuilder": "依團員卡、快照、角色等級與樂團道具等級計算隊伍分數，比較普通、激奏與活動報酬配隊。支援卡庫管理與遊戲存檔匯入。",
-        "songPuzzle": "使用 Our Notes 歌曲封面玩華容道，選擇歌曲與棋盤大小、打亂方塊、查看提示，並記錄步數與時間。"
+        "teamBuilder": "使用 Our Notes 組隊工具，依團員卡、快照、角色等級和樂團道具等級計算隊伍分數，比較普通、激奏與活動報酬組隊，管理卡庫並匯入遊戲存檔。",
+        "songPuzzle": "使用 Our Notes 歌曲封面玩華容道，選擇歌曲與棋盤大小、打亂方塊、查看提示，並記錄步數與時間。",
+        "tools": "使用 BanG Dream! Our Notes 的瀏覽器工具進行組隊計算、譜面檢視與編輯、Live2D 和 Spine 模型預覽、劇情播放及表情製作，並匯入本機遊戲存檔。"
       },
       "resources": {
         "songs": "BanG Dream! Our Notes 樂曲的製作名單、譜面難度、音符數與發布資訊。",
@@ -167,27 +168,30 @@
         "member-cards": "團員卡的能力、技能、培養階段與各階段所需素材。",
         "support-cards": "快照卡的能力、技能、等級與培養資訊。",
         "band-items": "樂團道具的效果與各等級強化所需素材。",
-        "live2d": "預覽 Live2D 模型、切換動作與表情、調整參數並匯出圖片。",
-        "spine": "Spine 模型目錄、動畫預覽與透明 PNG 圖片匯出。",
+        "live2d": "使用 BanG Dream! Our Notes 的 Live2D 模型檢視器，切換動作與表情、調整參數和部件，儲存姿勢與截圖，查看相關角色及服裝並下載模型資源。",
+        "spine": "使用 BanG Dream! Our Notes 的 Spine 動畫檢視器，查看角色、場景和裝飾素材，調整預覽狀態、匯出透明 PNG，並探索相關模型與遊戲內容。",
         "stories": "瀏覽 BanG Dream! Our Notes 樂團、活動、羈絆、主頁及演出後故事，透過人物頭像與對白閱讀劇情，展開圖片和影片，或開啟播放器欣賞場景、模型及演出。",
         "events": "查看 BanG Dream! Our Notes 活動時間、玩法、報酬及關聯故事，瀏覽相關轉蛋、UP 卡片與樂曲，透過相連的資料掌握活動內容與遊戲近況。"
       },
       "siteTitle": "BanG Dream! Our Notes 交織的樂章 資料庫",
       "keywords": {
-        "base": "BanG Dream! Our Notes, Our Notes 資料庫, 遊戲圖鑑, 夢想協奏曲, バンドリ！Our Notes",
+        "base": "BanG Dream! Our Notes, 交織的樂章, Our Notes 資料庫, Our Notes Wiki, 遊戲百科, 遊戲圖鑑, バンドリ！アワーノーツ",
         "resources": {
-          "songs": "樂曲資料庫, 樂曲製作資訊, 節奏遊戲譜面, 譜面難度",
+          "songs": "樂曲資料庫, 樂曲製作資訊, 節奏遊戲譜面, 譜面難度, 譜面檢視器, 譜面工具",
           "characters": "角色圖鑑, 角色檔案",
           "member-cards": "團員卡圖鑑, 卡圖, 卡片技能, 培養素材",
           "support-cards": "快照卡圖鑑, 卡圖, 卡片能力, 卡片技能",
           "band-items": "樂團道具, 升級素材",
-          "live2d": "Live2D 模型, 模型預覽",
-          "spine": "Spine 模型, 動畫預覽",
-          "stories": "劇情資料庫, 劇情文本, 故事對白, 劇情播放器",
+          "live2d": "Live2D 模型, Live2D 檢視器, 模型檢視器, Live2D 工具",
+          "spine": "Spine 模型, Spine 檢視器, 動畫檢視器, Spine 工具",
+          "stories": "劇情資料庫, 劇情文本, 故事對白, 劇情播放器, 劇情檢視器",
           "events": "活動資料庫, 活動報酬"
         },
         "stampMaker": "表情製作, 自訂表情, PNG 匯出",
-        "chartEditor": "譜面編輯器, 節奏遊戲譜面, 音符編輯"
+        "chartEditor": "譜面編輯器, 節奏遊戲譜面, 音符編輯",
+        "home": "遊戲資料庫, 遊戲百科, 資源檢視器, 譜面檢視器, 遊戲工具, 組隊工具",
+        "tools": "Our Notes 工具, 瀏覽器工具, 譜面編輯器, 譜面檢視器, 模型檢視器, 表情製作",
+        "teamBuilder": "Our Notes 組隊, 組隊計算, 組隊工具, 卡庫管理, 遊戲存檔匯入"
       }
     },
     "search": {

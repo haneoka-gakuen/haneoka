@@ -143,8 +143,8 @@
     "seo": {
       "homeTitle": "BanG Dream! Our Notes 交织的乐章 数据库与图鉴",
       "descriptions": {
-        "home": "haneoka 的 BanG Dream! Our Notes 数据库收录歌曲与谱面、成员卡与留影卡、角色、剧情和活动资料。查阅卡牌技能与卡图、歌曲制作信息、角色档案和故事对白。",
-        "catalog": "浏览 BanG Dream! Our Notes 数据库与图鉴，按歌曲、卡牌、角色、剧情和活动查找资料，打开关联条目、谱面预览及 Live2D、Spine 模型工具。",
+        "home": "haneoka 的 BanG Dream! Our Notes 交织的乐章数据库与百科，收录乐曲、成员卡、留影、剧情和活动，提供 Live2D、Spine 模型查看器、谱面播放器和配队工具。",
+        "catalog": "浏览 BanG Dream! Our Notes 数据库与百科，按乐曲、成员卡、留影、角色、剧情和活动查找资料，打开关联条目、谱面预览和 Live2D、Spine 模型查看器。",
         "catalogItem": "查阅{title}的详细资料、相关内容和关联条目，通过 haneoka 的 BanG Dream! Our Notes 资料库浏览歌曲、卡牌、角色、故事与游戏系统信息。",
         "about": "了解 haneoka 的资料浏览、剧情与谱面播放器、Live2D 和 Spine 工具、社区与开放接口，认识 Vega、Altair、Deneb 和 Cassiopeia 等组件的分工，以及项目的开源仓库与技术路线。",
         "community": "浏览 BanG Dream! Our Notes 社区的帖子、话题与创作分享，参与评论和回复，点赞或收藏感兴趣的内容，关注作者，并通过关联资料探索歌曲、角色与故事。",
@@ -154,12 +154,13 @@
         "communityStories": "阅读 BanG Dream! Girls Band Party! 的活动、乐队、主线、区域对话、演出后与卡面故事，查看人物头像和对白，浏览完整卡图并在可用语言之间回退。",
         "terms": "阅读 haneoka 的网站和社区使用规则，了解账户、帖子、上传内容、举报与审核的要求，查看资源使用、版权和服务相关条款，参与有序的游戏社区交流。",
         "privacy": "了解 haneoka 如何处理账户资料、Cookie、社区内容、上传文件与访问记录，查看数据使用、存储、安全和用户权利相关说明，以及隐私设置与联系渠道。",
-        "general": "探索 haneoka 的{title}内容，浏览 BanG Dream! Our Notes 游戏资料、预览工具和社区分享，通过相关条目继续了解乐曲、角色、卡牌与故事。",
+        "general": "在 haneoka 的 BanG Dream! Our Notes 数据库与百科中查看{title}，关联乐曲、角色、卡牌和剧情资料，并使用资源查看器和游戏工具。",
         "announcements": "查看 BanG Dream! Our Notes 的游戏公告、活动消息、招募通知、维护安排与已知问题，阅读完整内容、相关图片和发布时间，按当前语言浏览对应服务器的最新消息。",
         "stampMaker": "使用游戏表情或自选图片制作表情，编辑文字、字体、描边和版式，导出透明 PNG。",
         "chartEditor": "使用浏览器谱面编辑器编辑音符与连接线，预览节奏游戏谱面并管理本地项目。",
-        "teamBuilder": "按成员卡、留影、角色评级和乐队道具等级计算队伍得分，比较普通、激奏与活动奖励配队。支持卡库管理和游戏存档导入。",
-        "songPuzzle": "用 Our Notes 歌曲封面玩华容道，选择歌曲和棋盘大小、打乱方块、查看提示，并记录步数与用时。"
+        "teamBuilder": "使用 Our Notes 配队工具，按成员卡、留影、角色评级和乐队道具等级计算队伍得分，比较普通、激奏与活动奖励配队，管理卡库并导入游戏存档。",
+        "songPuzzle": "用 Our Notes 歌曲封面玩华容道，选择歌曲和棋盘大小、打乱方块、查看提示，并记录步数与用时。",
+        "tools": "使用 BanG Dream! Our Notes 的浏览器工具进行配队计算、谱面查看与编辑、Live2D 和 Spine 模型预览、剧情播放及表情制作，并导入本地游戏存档。"
       },
       "resources": {
         "songs": "查阅 BanG Dream! Our Notes 乐曲的作词、作曲、编曲与乐队信息，比较各难度谱面、音符数量和发布资料，打开谱面播放器、谱面图片、排行榜或 Sonolus，探索相关歌曲内容。",
@@ -167,27 +168,30 @@
         "member-cards": "浏览 BanG Dream! Our Notes 成员卡的卡面、属性、稀有度、综合力与演出技能，比较等级和阶级的成长，查看当前培养所需材料以及相关角色与卡面故事。",
         "support-cards": "查阅 BanG Dream! Our Notes 留影卡的卡面、属性、稀有度、能力与技能，查看等级、阶级和培养材料，并通过相关角色和条目了解这张卡的游戏信息。",
         "band-items": "查阅 BanG Dream! Our Notes 乐队道具的效果、解锁条件和等级成长，查看当前升级所需的金币与材料，比较相关乐队、角色和其他道具的配置。",
-        "live2d": "浏览 BanG Dream! Our Notes 的 Live2D 模型，切换动作与表情、调整参数和部件，使用姿势与截图功能，查看对应角色及服装，并下载模型资源。",
-        "spine": "浏览 BanG Dream! Our Notes 的 Spine 模型与动画，查看角色、场景和装饰素材，调整预览状态并导出透明 PNG，探索相关模型与游戏内容。",
+        "live2d": "使用 BanG Dream! Our Notes 的 Live2D 模型查看器，切换动作与表情、调整参数和部件，保存姿势与截图，查看对应角色及服装，并下载模型资源。",
+        "spine": "使用 BanG Dream! Our Notes 的 Spine 动画查看器，查看角色、场景和装饰素材，调整预览状态、导出透明 PNG，并探索相关模型与游戏内容。",
         "stories": "浏览 BanG Dream! Our Notes 的乐队、活动、羁绊、主页和演出后故事，查看人物头像、对白与折叠的图片视频，或使用剧情播放器体验场景、模型和演出。",
         "events": "查看 BanG Dream! Our Notes 活动的时间、玩法、奖励与关联故事，浏览相关招募、UP 卡牌和乐曲，通过关联资料了解活动内容与游戏进展。"
       },
       "siteTitle": "BanG Dream! Our Notes 交织的乐章 数据库",
       "keywords": {
-        "base": "BanG Dream! Our Notes, Our Notes 数据库, 游戏图鉴, 梦想协奏曲, バンドリ！Our Notes",
+        "base": "BanG Dream! Our Notes, 交织的乐章, Our Notes 数据库, Our Notes Wiki, 游戏百科, 游戏图鉴, バンドリ！アワーノーツ",
         "resources": {
-          "songs": "歌曲数据库, 歌曲制作信息, 节奏游戏谱面, 谱面难度",
+          "songs": "歌曲数据库, 歌曲制作信息, 音游谱面, 谱面难度, 谱面查看器, 谱面工具",
           "characters": "角色图鉴, 角色档案",
           "member-cards": "成员卡图鉴, 卡图, 卡牌技能, 培养材料",
           "support-cards": "留影卡图鉴, 卡图, 卡牌能力, 卡牌技能",
           "band-items": "乐队道具, 升级材料",
-          "live2d": "Live2D 模型, 模型预览",
-          "spine": "Spine 模型, 动画预览",
-          "stories": "剧情数据库, 剧情文本, 故事对白, 剧情播放器",
+          "live2d": "Live2D 模型, Live2D 查看器, 模型查看器, Live2D 工具",
+          "spine": "Spine 模型, Spine 查看器, 动画查看器, Spine 工具",
+          "stories": "剧情数据库, 剧情文本, 故事对白, 剧情播放器, 剧情查看器",
           "events": "活动数据库, 活动奖励"
         },
         "stampMaker": "表情制作, 自定义表情, PNG 导出",
-        "chartEditor": "谱面编辑器, 节奏游戏谱面, 音符编辑"
+        "chartEditor": "谱面编辑器, 节奏游戏谱面, 音符编辑",
+        "home": "游戏数据库, 游戏百科, 资源查看器, 谱面查看器, 游戏工具, 配队工具",
+        "tools": "Our Notes 工具, 浏览器工具, 谱面编辑器, 谱面查看器, 模型查看器, 表情制作",
+        "teamBuilder": "Our Notes 配队, 配队计算, 配队工具, 卡库管理, 游戏存档导入"
       }
     },
     "search": {

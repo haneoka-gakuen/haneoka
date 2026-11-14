@@ -143,8 +143,8 @@
     "seo": {
       "homeTitle": "BanG Dream! Our Notes 뱅드림! 아워 노트 데이터베이스 및 뷰어",
       "descriptions": {
-        "home": "haneoka의 BanG Dream! Our Notes 데이터베이스에서 곡과 채보, 멤버 카드와 스냅, 캐릭터, 스토리와 이벤트를 찾아보세요. 카드 스킬과 일러스트, 곡 제작진, 캐릭터 프로필과 대사를 확인할 수 있습니다.",
-        "catalog": "BanG Dream! Our Notes 데이터베이스와 도감에서 곡, 카드, 캐릭터, 스토리와 이벤트 정보를 찾아보세요. 관련 항목, 채보 미리보기와 Live2D·Spine 모델 도구를 열 수 있습니다.",
+        "home": "haneoka는 BanG Dream! Our Notes 데이터베이스와 위키입니다. 곡·채보, 멤버 카드, 스냅, 스토리와 이벤트 정보를 확인하고 Live2D·Spine 뷰어, 채보 플레이어와 편성 도구를 이용하세요.",
+        "catalog": "BanG Dream! Our Notes 데이터베이스와 위키에서 곡, 멤버 카드, 스냅, 캐릭터, 스토리와 이벤트를 찾아보세요. 관련 항목, 채보 미리보기와 Live2D·Spine 뷰어를 열 수 있습니다.",
         "catalogItem": "haneoka에서 {title}의 상세 정보와 관련 항목을 확인하세요. BanG Dream! Our Notes의 곡, 카드, 캐릭터, 스토리와 게임 시스템을 연결하는 자료실입니다.",
         "about": "haneoka의 자료 탐색, 스토리와 채보 플레이어, Live2D와 Spine 도구, 커뮤니티와 공개 API를 알아보세요. Vega, Altair, Deneb, Cassiopeia의 역할과 오픈 소스 저장소, 프로젝트의 기술 구성을 확인할 수 있습니다.",
         "community": "BanG Dream! Our Notes 커뮤니티의 게시물, 토론과 창작물을 찾아보세요. 댓글과 답글, 좋아요, 북마크와 작성자 팔로우를 이용하고 관련 곡, 캐릭터와 스토리도 살펴볼 수 있습니다.",
@@ -154,12 +154,13 @@
         "communityStories": "GBP 이벤트, 밴드, 메인, 에어리어 대화와 카드 스토리를 둘러보세요. BanG Dream! Our Notes 커뮤니티의 게시물, 토론과 창작물을 찾아보세요. 댓글과 답글, 좋아요, 북마크와 작성자 팔로우를 이용하고 관련 곡, 캐릭터와 스토리도 살펴볼 수 있습니다.",
         "terms": "haneoka 사이트와 커뮤니티 이용 규칙을 확인하세요. 계정, 게시물, 업로드, 신고와 검토의 요건 및 자료 이용, 저작권과 서비스에 관한 조건을 안내합니다.",
         "privacy": "haneoka의 계정 정보, 쿠키, 커뮤니티 내용, 업로드 파일과 방문 기록 처리 방식을 확인하세요. 데이터 이용과 보관, 보안, 사용자 권리, 개인정보 설정과 연락 방법을 안내합니다.",
-        "general": "haneoka의 {title}에서 BanG Dream! Our Notes 게임 정보, 미리보기 도구와 커뮤니티 공유 내용을 살펴보세요. 관련 항목을 따라 곡, 캐릭터, 카드와 스토리를 더 알아볼 수 있습니다.",
+        "general": "haneoka의 BanG Dream! Our Notes 데이터베이스와 위키에서 {title} 및 관련 곡, 캐릭터, 카드와 스토리를 확인하고 리소스 뷰어와 게임 도구를 이용하세요.",
         "announcements": "BanG Dream! Our Notes의 공지, 이벤트 소식, 모집 안내, 점검과 알려진 문제를 확인하세요. 전체 본문, 이미지와 게시 시각을 읽고 선택한 서버와 이용 가능한 언어에 맞는 최신 소식을 찾아보세요.",
         "stampMaker": "게임 스탬프나 원하는 이미지로 스탬프를 만드세요. 텍스트, 글꼴, 외곽선, 배치를 편집한 뒤 투명 PNG로 내보낼 수 있습니다.",
         "chartEditor": "브라우저 채보 에디터에서 노트와 연결선을 편집하고 리듬 게임 채보를 미리 볼 수 있습니다. 로컬 프로젝트를 관리하세요.",
-        "teamBuilder": "멤버 카드, 스냅, 캐릭터 랭크와 밴드 아이템 레벨로 Our Notes 편성을 계산합니다. 일반·격주·이벤트 보상 편성을 비교하고 카드 보유 현황을 관리하며 게임 저장 데이터를 불러올 수 있습니다.",
-        "songPuzzle": "Our Notes 곡 재킷으로 슬라이딩 퍼즐을 즐기세요. 곡과 보드 크기를 선택하고 조각 섞기와 힌트를 사용하며 이동 횟수와 시간을 확인할 수 있습니다."
+        "teamBuilder": "Our Notes 편성 도구에서 멤버 카드, 스냅, 캐릭터 랭크와 밴드 아이템 레벨로 팀을 계산하세요. 일반·격주·이벤트 보상 편성을 비교하고 카드 보유 현황을 관리하며 게임 저장 데이터를 불러올 수 있습니다.",
+        "songPuzzle": "Our Notes 곡 재킷으로 슬라이딩 퍼즐을 즐기세요. 곡과 보드 크기를 선택하고 조각 섞기와 힌트를 사용하며 이동 횟수와 시간을 확인할 수 있습니다.",
+        "tools": "BanG Dream! Our Notes 브라우저 도구: 편성 계산, 채보 편집기와 뷰어, Live2D·Spine 뷰어, 스토리 플레이어와 스탬프 제작을 이용하세요."
       },
       "resources": {
         "songs": "BanG Dream! Our Notes 곡의 제작진, 채보 난이도, 노트 수와 공개 정보.",
@@ -167,27 +168,30 @@
         "member-cards": "멤버 카드의 능력치, 스킬, 육성 단계와 단계별 필요 재료.",
         "support-cards": "스냅의 능력치, 스킬, 랭크와 육성 정보.",
         "band-items": "밴드 아이템의 효과와 레벨별 강화 재료.",
-        "live2d": "Live2D 모델 미리보기, 모션과 표정 전환, 파라미터 조정 및 이미지 내보내기.",
-        "spine": "Spine 모델 목록, 애니메이션 미리보기 및 투명 PNG 이미지 내보내기.",
+        "live2d": "BanG Dream! Our Notes Live2D 뷰어에서 모델의 모션과 표정을 바꾸고 파라미터와 파츠를 조정하세요. 포즈와 스크린샷 저장, 모델 리소스 다운로드를 지원합니다.",
+        "spine": "BanG Dream! Our Notes Spine 뷰어에서 캐릭터, 장면과 장식의 애니메이션을 확인하세요. 미리보기를 조정하고 투명 PNG 이미지를 내보내며 관련 모델을 살펴볼 수 있습니다.",
         "stories": "BanG Dream! Our Notes의 밴드, 이벤트, 인연, 홈과 라이브 후 스토리를 살펴보세요. 캐릭터 아이콘과 대사를 읽고 이미지와 영상을 펼치거나 플레이어에서 장면과 모델의 연출을 확인할 수 있습니다.",
         "events": "BanG Dream! Our Notes 이벤트의 일정, 플레이 방식, 보상과 관련 스토리를 확인하세요. 연계된 모집, 픽업 카드와 곡을 살펴보고 이벤트 내용과 게임 소식을 함께 찾아보세요."
       },
       "siteTitle": "BanG Dream! Our Notes 뱅드림! 아워 노트 데이터베이스",
       "keywords": {
-        "base": "BanG Dream! Our Notes, Our Notes 데이터베이스, 게임 도감, 뱅드림, Bandori Our Notes",
+        "base": "BanG Dream! Our Notes, Our Notes 데이터베이스, Our Notes 위키, 게임 도감, 뱅드림, Bandori Our Notes",
         "resources": {
-          "songs": "곡 데이터베이스, 곡 제작진, 리듬 게임 채보, 채보 난이도",
+          "songs": "곡 데이터베이스, 곡 제작진, 리듬 게임 채보, 채보 난이도, 채보 뷰어, 채보 도구",
           "characters": "캐릭터 도감, 프로필",
           "member-cards": "멤버 카드 도감, 카드 일러스트, 카드 스킬, 육성 재료",
           "support-cards": "스냅 도감, 카드 일러스트, 능력치, 스킬",
           "band-items": "밴드 아이템, 강화 재료",
-          "live2d": "Live2D 모델, 모델 뷰어",
-          "spine": "Spine 모델, 애니메이션",
-          "stories": "스토리 데이터베이스, 스토리 본문, 대사, 스토리 플레이어",
+          "live2d": "Live2D 모델, Live2D 뷰어, 모델 뷰어, Live2D 도구",
+          "spine": "Spine 모델, Spine 뷰어, 애니메이션 뷰어, Spine 도구",
+          "stories": "스토리 데이터베이스, 스토리 본문, 대사, 스토리 플레이어, 스토리 뷰어",
           "events": "이벤트 데이터베이스, 보상"
         },
         "stampMaker": "스탬프 만들기, 커스텀 스탬프, PNG 내보내기",
-        "chartEditor": "채보 에디터, 리듬 게임 채보, 노트 편집"
+        "chartEditor": "채보 에디터, 리듬 게임 채보, 노트 편집",
+        "home": "게임 데이터베이스, 위키, Live2D 뷰어, Spine 뷰어, 채보 뷰어, 게임 도구",
+        "tools": "Our Notes 도구, 브라우저 도구, 채보 편집기, 채보 뷰어, 모델 뷰어, 스탬프 제작",
+        "teamBuilder": "Our Notes 편성, 편성 계산, 편성 도구, 카드 보유 현황, 게임 저장 데이터 가져오기"
       }
     },
     "search": {

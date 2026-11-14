@@ -143,8 +143,8 @@
     "seo": {
       "homeTitle": "BanG Dream! Our Notes Database & Viewer",
       "descriptions": {
-        "home": "Explore the BanG Dream! Our Notes database on haneoka: song credits and charts, member and support card artwork and skills, character profiles, story dialogue and event information.",
-        "catalog": "Browse the BanG Dream! Our Notes database by songs, cards, characters, stories and events. Open related entries, chart previews and Live2D or Spine model tools.",
+        "home": "BanG Dream! Our Notes database and wiki with songs, member cards, Snapshots, stories and events, Live2D and Spine viewers, chart players and team-building tools.",
+        "catalog": "Browse the BanG Dream! Our Notes database and wiki for songs, member cards, Snapshots, characters, stories and events, with chart previews and Live2D or Spine viewers.",
         "catalogItem": "Explore detailed information about {title} and its related entries on haneoka, the BanG Dream! Our Notes resource archive for songs, cards, characters, stories and game systems.",
         "about": "Discover haneoka’s game archive, story and chart players, Live2D and Spine tools, community and public APIs. Learn how Vega, Altair, Deneb and Cassiopeia work together, explore the open-source repositories and follow the project’s technology.",
         "community": "Discover BanG Dream! Our Notes community posts, discussions and creative contributions. Comment and reply, like or bookmark interesting posts, follow authors and explore related songs, characters and stories.",
@@ -154,12 +154,13 @@
         "communityStories": "Read BanG Dream! Girls Band Party! event, band, main, area, after-live and card stories. Follow dialogue with character portraits, view complete card artwork and use the available content-language fallback.",
         "terms": "Read the rules for using haneoka and its community. Learn the requirements for accounts, posts, uploads, reports and moderation, and review resource use, copyright and service terms.",
         "privacy": "Learn how haneoka handles account details, cookies, community content, uploaded files and visit records. Read about data use, storage, security, user rights, privacy settings and contact options.",
-        "general": "Explore {title} on haneoka, with BanG Dream! Our Notes game information, preview tools and community contributions. Follow related entries to discover songs, characters, cards and stories.",
+        "general": "Explore {title} on haneoka, the BanG Dream! Our Notes database and wiki. Follow related game information and use resource viewers and browser tools.",
         "announcements": "Read BanG Dream! Our Notes announcements, event news, recruitment notices, maintenance updates and known issues. View full articles, images and publication dates in the available language for your selected server.",
         "stampMaker": "Create stamps with game artwork or your own images. Edit text, fonts, outlines, and layout, then export a transparent PNG.",
         "chartEditor": "Create and edit rhythm-game charts in the browser chart editor. Work with notes and connectors, preview the chart and manage local projects.",
-        "teamBuilder": "Build Our Notes teams using member cards, Snapshots, character ranks, and band-item levels. Compare regular, GEKISO, and event-reward teams, manage your card collection, and import game saves.",
-        "songPuzzle": "Solve sliding puzzles using Our Notes song jackets. Choose a song and board size, shuffle tiles, view hints, and track moves and time."
+        "teamBuilder": "Use the Our Notes team builder tool with member cards, Snapshots, character ranks and band items. Compare regular, GEKISO and event-reward teams, manage your cards and import game saves.",
+        "songPuzzle": "Solve sliding puzzles using Our Notes song jackets. Choose a song and board size, shuffle tiles, view hints, and track moves and time.",
+        "tools": "Browser tools for BanG Dream! Our Notes: team builder and optimizer, chart editor and viewer, Live2D and Spine model viewers, story player and stamp maker."
       },
       "resources": {
         "songs": "Explore BanG Dream! Our Notes song credits, bands and release information. Compare chart difficulties and note counts, open the chart player or chart image, view rankings and access Sonolus levels.",
@@ -167,27 +168,30 @@
         "member-cards": "Browse BanG Dream! Our Notes member card artwork, attributes, rarity, power and performance skills. Compare level and rank progression, review materials for the current upgrade and explore character stories.",
         "support-cards": "Explore BanG Dream! Our Notes support card artwork, attributes, rarity, stats and skills. Review level and rank progression, required upgrade materials, related characters and other connected game information.",
         "band-items": "Compare BanG Dream! Our Notes band item effects, unlock conditions and level progression. Review coins and materials for the current upgrade and explore related bands, characters and items.",
-        "live2d": "Browse BanG Dream! Our Notes Live2D models, switch motions and expressions, and adjust parameters and parts. Use pose and screenshot tools, explore characters and costumes, and download model resources.",
-        "spine": "Explore BanG Dream! Our Notes Spine models and animations for characters, scenes and decorations. Adjust the preview, export transparent PNG images and discover related models and game content.",
+        "live2d": "Use the BanG Dream! Our Notes Live2D viewer to switch motions and expressions, adjust parameters and parts, save poses and screenshots, and download model resources.",
+        "spine": "Use the BanG Dream! Our Notes Spine animation viewer for characters, scenes and decorations. Adjust the preview, export transparent PNG images and explore related models.",
         "stories": "Explore BanG Dream! Our Notes band, event, relationship, home and after-live stories. Read dialogue with character portraits and expandable media, or open the story player for scenes, models and performances.",
         "events": "Explore BanG Dream! Our Notes event schedules, gameplay, rewards and related stories. Browse linked recruitment, featured cards and songs to understand the event and follow game updates."
       },
       "siteTitle": "BanG Dream! Our Notes Database",
       "keywords": {
-        "base": "BanG Dream! Our Notes, Our Notes database, game resource archive, Bandori Our Notes",
+        "base": "BanG Dream! Our Notes, Our Notes database, Our Notes wiki, game resource archive, Bandori Our Notes",
         "resources": {
-          "songs": "song database, song credits, rhythm game charts, chart difficulties",
+          "songs": "song database, song credits, rhythm game charts, chart difficulties, chart viewer, chart tools",
           "characters": "character database, character profiles",
           "member-cards": "member card database, card artwork, card skills, upgrade materials",
           "support-cards": "support card database, card artwork, card stats, card skills",
           "band-items": "band item database, upgrade materials",
-          "live2d": "Live2D models, model viewer",
-          "spine": "Spine models, animation viewer",
-          "stories": "story database, story dialogue, story transcripts, story player",
+          "live2d": "Live2D models, Live2D viewer, model viewer, Live2D tools",
+          "spine": "Spine models, Spine viewer, animation viewer, Spine tools",
+          "stories": "story database, story dialogue, story transcripts, story player, story viewer",
           "events": "event database, event rewards"
         },
         "stampMaker": "stamp maker, custom stamps, PNG export",
-        "chartEditor": "chart editor, rhythm game charts, note editing"
+        "chartEditor": "chart editor, rhythm game charts, note editing",
+        "home": "game database, game wiki, Live2D viewer, Spine viewer, chart viewer, browser tools",
+        "tools": "Our Notes tools, browser tools, chart editor, chart viewer, model viewer, stamp maker",
+        "teamBuilder": "Our Notes team builder, team optimizer, team-building tool, card collection, game save import"
       }
     },
     "search": {

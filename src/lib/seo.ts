@@ -59,11 +59,17 @@ export function pageKeywords(locale: Locale, route: string, title: string): stri
     parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
   const category = kind
     ? serverText(locale, `common.seo.keywords.resources.${kind}`, undefined, "")
-    : route === "/stamp-maker" || route === "/tools/stamp-maker"
-      ? serverText(locale, "common.seo.keywords.stampMaker", undefined, "")
-      : route.startsWith("/chart-editor")
-        ? serverText(locale, "common.seo.keywords.chartEditor", undefined, "")
-        : "";
+    : route === "/"
+      ? serverText(locale, "common.seo.keywords.home", undefined, "")
+      : route === "/tools"
+        ? serverText(locale, "common.seo.keywords.tools", undefined, "")
+        : route === "/team-builder"
+          ? serverText(locale, "common.seo.keywords.teamBuilder", undefined, "")
+          : route === "/stamp-maker" || route === "/tools/stamp-maker"
+            ? serverText(locale, "common.seo.keywords.stampMaker", undefined, "")
+            : route.startsWith("/chart-editor")
+              ? serverText(locale, "common.seo.keywords.chartEditor", undefined, "")
+              : "";
   return [
     ...new Set(
       [withoutSiteSuffix(title), serverText(locale, "common.seo.keywords.base", undefined, ""), category]
@@ -87,6 +93,7 @@ export function pageStructuredData(
   localized = false,
   canonicalRoute = route,
   image?: string,
+  keywords = pageKeywords(locale, route, name),
 ) {
   const serverPrefix = canonicalRoute.split("/")[1];
   const server = isReleaseServer(serverPrefix) ? serverPrefix : undefined;
@@ -106,6 +113,7 @@ export function pageStructuredData(
     name: "haneoka",
     alternateName: "Haneoka",
     inLanguage: LOCALES.map(localeTag),
+    ...(route === "/" ? { description, keywords } : {}),
   };
   const page = {
     "@type": "WebPage",
@@ -113,6 +121,7 @@ export function pageStructuredData(
     url,
     name,
     description,
+    keywords,
     inLanguage: localeTag(locale),
     isPartOf: { "@id": website["@id"] },
     ...(image ? { primaryImageOfPage: { "@type": "ImageObject", url: image } } : {}),
@@ -156,6 +165,7 @@ export function pageStructuredData(
 }
 
 export function pageDescription(locale: Locale, route: string, title: string): string {
+  if (route === "/tools") return serverText(locale, "common.seo.descriptions.tools", { title }, title).trim();
   const kind =
     parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
   const resource = kind ? serverText(locale, `common.seo.resources.${kind}`, undefined, "") : "";

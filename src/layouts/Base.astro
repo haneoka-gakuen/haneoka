@@ -65,7 +65,7 @@ const languageAlternates = isLocalizedRoute
 const entityImage = searchImage?.trim() ? new URL(searchImage.trim(), origin).href : undefined;
 const socialImage = entityImage ?? `${origin}${socialCardPath(publicRoute)}`;
 const structuredData = JSON.stringify(
-  pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage),
+  pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage, keywords),
 ).replaceAll("<", "\\u003c");
 const i18nSeed = serializeI18nSeed(createServerI18nContext(locale, route).seed());
 // Birthday themes read [character, colour, month, day, avatar].
