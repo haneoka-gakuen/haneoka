@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果及当前 Worker 阶段。
+// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存（含调用者预置的固定谱面），允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 import type { SampleRequest, PlaySample } from "./protocol";
@@ -22,8 +22,10 @@ let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const engineModule = () => compiledEngine ??= WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal: AbortSignal.timeout(60_000) }))
   .catch(error => { compiledEngine = null; throw error; });
 
-type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (done: number, total: number) => void;
-  snapshot?: (value: EngineSnapshot) => void; eventGrowth?: (value: EventTeamSearchPage) => void };
+export type ProofProgress = { unit: "charts" | "shards" | "joint"; checkedTeams?: number };
+type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void;
+  progress?: (done: number, total: number, proof?: ProofProgress) => void; snapshot?: (value: EngineSnapshot) => void;
+  eventGrowth?: (value: EventTeamSearchPage) => void; checkedTeams?: (song: SongRef | null, count: number) => void };
 type Preparation = { message: Extract<EngineCall, { type: "run" }>; floor: number; reward?: RewardFloor };
 const rewardFloor = (hit: EngineHit): RewardFloor => [hit.key, hit.event?.otherMean ?? 0, hit.score?.mean ?? 0];
 
@@ -90,6 +92,7 @@ class EngineWorker {
       if (!pending) return;
       if (reply.type === "phase") this.setPhase(reply.phase === "network" ? "networkMs" : "computationMs");
       else if (reply.type === "progress") pending.progress?.(reply.done, reply.total);
+      else if (reply.type === "checkedTeams") pending.checkedTeams?.(reply.song, reply.count);
       else if (reply.type === "snapshot") pending.snapshot?.(reply.snapshot);
       else if (reply.type === "eventGrowth") pending.eventGrowth?.({ ...reply.result, id: reply.id });
       else {
@@ -135,14 +138,15 @@ class EngineWorker {
         ? (!!message.request.rewardPhase || message.request.rewardLexicographic === true) && !!message.request.goal.gekiso
         : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
   }
-  private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"]): Promise<unknown> {
+  private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"],
+    checkedTeams?: Pending["checkedTeams"]): Promise<unknown> {
     const id = this.nextId++;
     const cooperativeFloor = this.cooperativeFloor && this.acceptsFloor(message);
     if (message.type === "run") this.runId = cooperativeFloor ? id : null;
     if (message.type === "eventGrowth" || message.type === "eventGrowthPage") this.eventGrowthId = id;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress, snapshot, eventGrowth });
-      this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor } : {}),
+      this.pending.set(id, { resolve, reject, progress, snapshot, eventGrowth, checkedTeams });
+      this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor, reportRankChecks: !!checkedTeams } : {}),
         ...(message.type === "eventGrowth" || message.type === "eventGrowthPage" ? { paused: this.eventGrowthPaused } : {}) });
     });
   }
@@ -174,7 +178,7 @@ class EngineWorker {
     return true;
   }
   async send<T>(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], searchBudgetMs?: number,
-    eventGrowth?: Pending["eventGrowth"]): Promise<T> {
+    eventGrowth?: Pending["eventGrowth"], checkedTeams?: Pending["checkedTeams"]): Promise<T> {
     const preparation: Preparation | null = message.type === "run" ? { message, floor: -Infinity } : null;
     this.preparing = preparation;
     const ready = this.spawn();
@@ -205,7 +209,7 @@ class EngineWorker {
       if (message.type === "run" || message.type === "evaluate" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
-      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth)) as T;
+      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams)) as T;
     } finally {
       if (this.preparing === preparation) this.preparing = null;
       if (worker === this.worker && this.pending.size === 0) this.setPhase(null);
@@ -571,6 +575,28 @@ export class EngineClient {
         if (cpChallenge) publish({ ...latest, cpChallenge }, true);
         request = { ...request, goal: { ...request.goal, rewardPlan: resolved.resolvedRewardPlan } };
       }
+      const songs = requestSongs(request);
+      const trackRank = !!progress && request.goal.kind === "event" && request.goal.route === "live"
+        && !request.goal.gekiso && request.goal.rewardPlan?.minimumRank !== undefined;
+      const rankUnit = request.aggregation === "mean" ? "joint" : "charts";
+      let checkedTotal: number | undefined, lastRankProgress = -Infinity;
+      const reportRankProof = (rows = latest.results) => {
+        lastRankProgress = clock();
+        progress?.(rows.filter(row => row.proven).length, songs.length, { unit: rankUnit, checkedTeams: checkedTotal });
+      };
+      const rankChecksForCall = (): Pending["checkedTeams"] => {
+        if (!trackRank) return undefined;
+        const checkedByChart = new Map<string, number>();
+        return (song, count) => {
+          if (stopped) return;
+          const key = song === null ? "" : chartKey(song);
+          const previous = checkedByChart.get(key) ?? 0;
+          if (count <= previous) return;
+          checkedByChart.set(key, count);
+          checkedTotal = (checkedTotal ?? 0) + count - previous;
+          if (clock() - lastRankProgress >= 250) reportRankProof();
+        };
+      };
       const separateEvent = canPartition && canPartitionEvent(request) ? request : null;
       const sharedEvent = canPartition && request.goal.kind === "event" && canUseSharedEventRosters(this.data, request)
         ? { ...request, goal: request.goal } : null;
@@ -623,7 +649,7 @@ export class EngineClient {
                     if (active() && remaining(jobDeadline)) {
                       const input = { ...job, deadline: jobDeadline };
                       const response = await worker.send<EngineResponse>({ type: "run", id: 0, request: input, loadedCharts }, undefined,
-                        value => { if (active()) onProgress(value.response); });
+                        value => { if (active()) onProgress(value.response); }, undefined, undefined, rankChecksForCall());
                       if (active()) onResult(index, response);
                     }
                   }
@@ -646,7 +672,12 @@ export class EngineClient {
           if (result) return result;
         } else if (separateEvent) {
           const goal = separateEvent.goal;
-          if (goal.songs.length === 1) return partitionEvent(separateEvent, runBatch, publish, finished);
+          if (trackRank) reportRankProof();
+          if (goal.songs.length === 1) {
+            const result = await partitionEvent(separateEvent, runBatch, publish, finished);
+            if (trackRank && !stopped) reportRankProof(result.results);
+            return result;
+          }
 
           const parts = [...latest.results];
           const unknown = new Set(latest.unknownCards);
@@ -668,7 +699,8 @@ export class EngineClient {
             const result = await partitionEvent(part, runBatch, update, finished, firstPassBudgetMs);
             if (!stopped) {
               update(result, true);
-              progress?.(++done, goal.songs.length);
+              if (trackRank) reportRankProof(parts);
+              else progress?.(++done, goal.songs.length);
             }
           }));
           return response();
@@ -693,7 +725,7 @@ export class EngineClient {
         if (stopped) return latest;
         let sharedSeed: EngineHit | undefined;
         let sharedUnknown: string[] = [];
-        if (count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
+        if (!request.noFloor && count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
           && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
           && !request.goal.justWindow && !(request.goal.minJustWindowMs ?? 0)
           && (request.goal.minComboBonus ?? 1) <= 1
@@ -731,6 +763,11 @@ export class EngineClient {
           }
         }
         const parts = workers.map(() => emptyResponse(request));
+        const reportArenaProof = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
+          ? () => progress?.(parts.filter(completeResponse).length, count, { unit: "shards" })
+          : undefined;
+        reportArenaProof?.();
+        if (trackRank) reportRankProof();
         const merged = () => {
           const response = mergeShardResponses(parts, request.k, clock() - started);
           response.unknownCards = [...new Set([...sharedUnknown, ...response.unknownCards])];
@@ -761,11 +798,17 @@ export class EngineClient {
                 parts[index] = value.response;
                 publishShared();
               },
+              undefined, undefined, rankChecksForCall(),
             );
-            if (!stopped) publishShared();
+            if (!stopped) {
+              publishShared();
+              reportArenaProof?.();
+            }
           }),
         );
-        return merged();
+        const result = merged();
+        if (trackRank && !stopped) reportRankProof(result.results);
+        return result;
       }
       // Plan shards keep their tuple bounds and lottery state throughout the proof.
       if (request.goal.kind === "event" && request.goal.rewardPlan && request.goal.gekiso)
@@ -785,12 +828,15 @@ export class EngineClient {
         && !wholeChallenge && !singleWorkerCombo
         && (!wholeReward || parallelSampledReward)
         && !(request.goal.kind === "gekiso" && request.goal.songs.length === 1 && (request.constraints.leader !== null || request.goal.opponents));
-      if (!parallel) {
-        const response = await idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, opponents ? undefined : accept);
+      const serialRankCharts = trackRank && songs.length > 1 && !onFinalResult;
+      if (!parallel && !serialRankCharts) {
+        if (trackRank) reportRankProof();
+        const response = await idlest().send<EngineResponse>({ type: "run", id: 0, request },
+          trackRank ? undefined : progress, opponents ? undefined : accept, undefined, undefined, rankChecksForCall());
+        if (trackRank && !stopped) reportRankProof(response.results);
         if (!stopped) onFinalResult?.({ requestId: request.requestId!, contextKey: request.contextKey!, response: structuredClone(response) });
         return response;
       }
-      const songs = requestSongs(request);
       if (request.goal.kind === "gekiso" && !request.goal.opponents) {
         const goal = request.goal;
         const deferScores = goal.criterion === "max" && goal.seeds === 0 && request.k > 1;
@@ -987,14 +1033,20 @@ export class EngineClient {
         // share of the time left, so every song has teams when the deadline arrives.
         const same = (song: SongRef) => (hit: { song: SongRef | null }) => hit.song?.songId === song.songId && hit.song?.difficulty === song.difficulty;
         const parts = latest.results.map(result => result);
-        const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], elapsedMs: clock() - started });
+        const unknown = new Set(latest.unknownCards);
+        const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknown], elapsedMs: clock() - started });
+        if (trackRank) reportRankProof(parts);
+        const workers = parallel ? pool : [idlest()];
         let next = 0, done = 0;
         const runSong = async (engine: EngineWorker) => {
           while (!stopped && remaining(deadline) > 0 && next < songs.length) {
             const index = next++;
             const song = songs[index]!;
-            if (parts[index]!.proven) { progress?.(++done / songs.length, 1); continue; }
-            const share = remaining(deadline) * pool.length / (songs.length - index);
+            if (parts[index]!.proven) {
+              if (!trackRank) progress?.(++done / songs.length, 1);
+              continue;
+            }
+            const share = remaining(deadline) * workers.length / (songs.length - index);
             const part: EngineRequest = {
               ...request,
               goal: { ...request.goal, songs: [song] } as EngineRequest["goal"],
@@ -1007,19 +1059,22 @@ export class EngineClient {
               if (stopped || value.contextKey !== request.contextKey || value.requestId !== request.requestId) return;
               parts[index] = value.response.results[0] ?? parts[index]!;
               publish(merged());
-            });
+            }, undefined, undefined, rankChecksForCall());
             if (stopped) return;
             parts[index] = response.results[0] ?? parts[index]!;
+            for (const key of response.unknownCards) unknown.add(key);
             publish(merged());
-            progress?.(++done / songs.length, 1);
+            if (trackRank) reportRankProof(parts);
+            else progress?.(++done / songs.length, 1);
           }
         };
-        await Promise.all(pool.map(runSong));
+        await Promise.all(workers.map(runSong));
         return merged();
       }
       if (request.goal.kind === "gekiso")
         return idlest().send<EngineResponse>({ type: "run", id: 0, request }, progress, accept);
       const rewardScores = new Map<EngineWorker, unknown[]>();
+      if (trackRank) reportRankProof();
       const runShards = async (request: EngineRequest, publish: (response: EngineResponse) => void, stage = -1): Promise<EngineResponse> => {
         const stageProgress: Pending["progress"] = stage < 0 ? progress
           : (done, total) => progress?.((stage + done / total) / 3, 1);
@@ -1046,7 +1101,7 @@ export class EngineClient {
           } : response;
           const message = { type: "run" as const, id: 0, request: request.rewardLexicographic
             ? { ...request, rewardPhase: { kind: "primary" as const } }
-            : { ...request, deadline: Math.min(deadline, clock() + QUICK_MS) } };
+            : request };
           if (request.rewardLexicographic) {
             this.warm();
             let firstSeed!: (response: EngineResponse) => void;
@@ -1066,7 +1121,8 @@ export class EngineClient {
             });
             quick = await Promise.race([quickWork, seeded]);
           } else {
-            quick = await quickWorker.send<EngineResponse>(message, stageProgress, acceptPart);
+            quick = await quickWorker.send<EngineResponse>(message, trackRank ? undefined : stageProgress,
+              acceptPart, QUICK_MS, undefined, rankChecksForCall());
           }
           for (const worker of pool) if (worker.scoredSeeds.length) rewardScores.set(worker, worker.scoredSeeds);
           observeReward(quick);
@@ -1126,7 +1182,7 @@ export class EngineClient {
                       if (!running.retry && worker.raiseReward(rewardBest)) running.floor = Math.max(running.floor, rewardBest.key);
                   } else if (hit) for (const [worker, running] of active)
                     if (!running.retry && valueOf(hit) > running.floor && worker.raiseFloor(valueOf(hit))) running.floor = valueOf(hit);
-                });
+                }, undefined, undefined, rankChecksForCall());
                 rewardScores.set(engine, engine.scoredSeeds);
               } catch (error) {
                 if (job.retry && !stopped) continue;
@@ -1138,7 +1194,7 @@ export class EngineClient {
               observeReward(response);
               responses[index] = response;
               publish(merge());
-              stageProgress?.(++done / count, 1);
+              if (!trackRank) stageProgress?.(++done / count, 1);
               if (rewardBest) {
                 for (const [worker, running] of active)
                   if (!running.retry && worker.raiseReward(rewardBest)) running.floor = Math.max(running.floor, rewardBest.key);
@@ -1157,10 +1213,15 @@ export class EngineClient {
         await Promise.all(workers.map(runShard));
         const merged = merge();
         if (!aspirationHeld(merged, request.k) && !request.noFloor && remaining(deadline))
-          return idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: merged.overall, noFloor: true } }, stageProgress, acceptPart);
+          return idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, seeds: merged.overall, noFloor: true } },
+            trackRank ? undefined : stageProgress, acceptPart, undefined, undefined, rankChecksForCall());
         return merged;
       };
-      if (request.rewardLexicographic || !phasedReward(this.data, request)) return runShards(request, publish);
+      if (request.rewardLexicographic || !phasedReward(this.data, request)) {
+        const response = await runShards(request, publish);
+        if (trackRank && !stopped) reportRankProof(response.results);
+        return response;
+      }
       let seeds = request.seeds ?? [];
       let response = emptyResponse(request);
       for (const kind of ["primary", "other", "score"] as const) {
