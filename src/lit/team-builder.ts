@@ -43,7 +43,7 @@ import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
 import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
-import { EngineClient } from "../lib/team-builder/engine/client";
+import { EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
 import type {
   EngineHit,
   EngineRequest,
@@ -350,7 +350,7 @@ export class TeamBuilder extends LitElement {
       .join(" / ");
   }
   running = false;
-  progress: { done: number; total: number; started: number } | null = null;
+  progress: { done: number; total: number; started: number; proof?: ProofProgress } | null = null;
   error = "";
   loadError = "";
   expanded = new Set<string>();
@@ -1770,9 +1770,9 @@ export class TeamBuilder extends LitElement {
       accept(
         await this.engine.run(
           request,
-          (done, total) => {
+          (done, total, proof) => {
             if (generation !== this.runGeneration || contextKey !== this.calculationContext()) return;
-            this.progress = { ...this.progress!, done, total };
+            this.progress = { ...this.progress!, done, total, proof };
             this.requestUpdate();
           },
           (snapshot) => {

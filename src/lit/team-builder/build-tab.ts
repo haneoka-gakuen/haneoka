@@ -1141,6 +1141,19 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
   const s = host.searchSettings,
     progress = host.progress;
   const resumable = !host.stale && !!host.results && host.results.results.some((result) => !result.proven);
+  const proof = progress?.proof;
+  let status = host.computationStatus();
+  if (proof && progress && (progress.done > 0 || proof.checkedTeams !== undefined)) {
+    const counts = { done: progress.done, total: progress.total };
+    if (proof.unit === "charts")
+      status = host.t("provenChartProgress", "Charts proven {done}/{total}", counts);
+    else if (proof.unit === "shards")
+      status = host.t("provenShardProgress", "Search parts proven {done}/{total}", counts);
+    if (proof.checkedTeams !== undefined)
+      status += " · " + host.t("teamChecks", "{count} team checks", {
+        count: new Intl.NumberFormat(host.locale).format(proof.checkedTeams),
+      });
+  }
   return html`
     <div class="tb-run">
       ${
@@ -1178,10 +1191,10 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
               >
                 ${icon("stop", 18)}${host.common("common.actions.cancel", "Cancel")}
               </button>
-              <span role="status">${host.computationStatus()}</span>
+              <span role="status">${status}</span>
               <md-linear-progress
                 .value=${progress && progress.total ? progress.done / progress.total : 0}
-                ?indeterminate=${!progress || progress.total <= 1}
+                ?indeterminate=${!progress || progress.total <= 1 || !!proof && progress.done === 0}
                 aria-label=${host.t("searching", "Searching teams")}
               ></md-linear-progress>
             `
