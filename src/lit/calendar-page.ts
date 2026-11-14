@@ -103,7 +103,7 @@ const facetLabels: Record<CalendarFacet, string> = {
 };
 let sequence = 0;
 const LANES = 3;
-const BAR_ORDER = ["event", "gacha", "live", "birthday", "other"];
+const BAR_ORDER = ["event", "birthday"];
 const tone = (kind: CalendarKind) =>
   kind === "character" || kind === "cast" ? "birthday" : kind === "live" || kind === "game-live" ? "live" : kind === "gacha" ? "gacha" : kind === "event" ? "event" : "other";
 export interface CalendarPageSeed {
@@ -442,7 +442,7 @@ export class CalendarPage extends LitElement {
                 <span class="calendar-day__league">
                   <img src=${leagues[index]!.image} alt="" width="16" height="16" loading="lazy" />
                   ${arenaMission(context, rule.missions[0]!, 16)}
-                  ${rule.musicType === 99 ? nothing : arenaAttribute(context, rule.musicType, 16)}
+                  ${arenaAttribute(context, rule.musicType, 16)}
                 </span>
               `
             : html`<span class="calendar-day__league"></span>`,
@@ -467,13 +467,13 @@ export class CalendarPage extends LitElement {
   private week(days: readonly CalendarDate[], items: readonly CalendarOccurrence[]) {
     const month = this.selected.slice(0, 7);
     const bars = calendarWeekSegments(
-      items.filter((item) => item.kind !== "arena").sort((left, right) => BAR_ORDER.indexOf(tone(left.kind)) - BAR_ORDER.indexOf(tone(right.kind))),
+      items.filter((item) => item.kind === "event" || item.kind === "character" || item.kind === "cast")
+        .sort((left, right) => BAR_ORDER.indexOf(tone(left.kind)) - BAR_ORDER.indexOf(tone(right.kind))),
       days,
     );
-    const arena = days.some((date) => this.arenaRules(date).length);
     const overflow = days.map((_, column) => bars.filter((bar) => bar.lane >= LANES && column >= bar.column && column < bar.column + bar.span).length);
     return html`
-      <div class=${`calendar-week${arena ? " calendar-week--arena" : ""}`} role="row">
+      <div class="calendar-week" role="row">
         ${days.map((date, column) => {
           const label = [this.dateLabel(date, true), this.arenaDescription(date)].filter(Boolean).join(", ");
           return html`
@@ -492,11 +492,15 @@ export class CalendarPage extends LitElement {
               @keydown=${(event: KeyboardEvent) => this.key(event, date)}
             >
               <span class="calendar-day__number">${Number(date.slice(-2))}</span>
-              ${this.dayArena(date)}
               ${overflow[column] ? html`<span class="calendar-day__more">+${overflow[column]}</span>` : nothing}
             </button>
           `;
         })}
+        ${days.map((date, column) => html`
+          <span class="calendar-day__marks" style=${`grid-column:${column + 1};grid-row:2`} ?data-outside=${!date.startsWith(month)} aria-hidden="true">
+            ${this.dayArena(date)}
+          </span>
+        `)}
         ${bars
           .filter((bar) => bar.lane < LANES)
           .map((bar) => {
@@ -504,7 +508,7 @@ export class CalendarPage extends LitElement {
             return html`
               <span
                 class=${`calendar-bar calendar-bar--${tone(bar.item.kind)}`}
-                style=${`grid-column:${bar.column + 1} / span ${bar.span};grid-row:${bar.lane + 2}`}
+                style=${`grid-column:${bar.column + 1} / span ${bar.span};grid-row:${bar.lane + 3}`}
                 ?data-before=${bar.before}
                 ?data-after=${bar.after}
                 lang=${title.lang}
@@ -565,7 +569,7 @@ export class CalendarPage extends LitElement {
                     <a href=${href}>
                       <img src=${leagues[index]!.image} alt="" width="28" height="28" loading="lazy" />
                       <span>${this.leagueName(leagues[index]!)}</span>
-                      ${rule.musicType === 99 ? nothing : arenaAttribute(context, rule.musicType, 20)}
+                      ${arenaAttribute(context, rule.musicType, 20)}
                       ${arenaMission(context, rule.missions[0]!, 20)}
                       <small>${arenaMissionLabel(this.locale, rule.missions[0]!)}</small>
                     </a>

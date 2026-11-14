@@ -44,7 +44,7 @@ calendar-page {
     position: relative;
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    grid-template-rows: 46px repeat(3, 6px) 6px;
+    grid-template-rows: 36px minmax(10px, auto) repeat(3, 6px) 6px;
     column-gap: var(--calendar-gap);
   }
   .calendar-day {
@@ -75,8 +75,7 @@ calendar-page {
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
   }
-  .calendar-day[data-outside] .calendar-day__arena,
-  .calendar-day[data-outside] .calendar-day__dots {
+  .calendar-day__marks[data-outside] {
     opacity: 0.45;
   }
   .calendar-day[aria-selected="true"] {
@@ -101,6 +100,13 @@ calendar-page {
     inline-size: 100%;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     justify-items: center;
+  }
+  .calendar-day__marks {
+    z-index: 1;
+    align-self: center;
+    min-inline-size: 0;
+    padding: 2px 4px;
+    pointer-events: none;
   }
   .calendar-day__league {
     display: grid;
@@ -371,7 +377,7 @@ calendar-page {
 
   @container calendar (min-inline-size: 720px) {
     .calendar-week {
-      grid-template-rows: 44px repeat(3, 22px) 18px;
+      grid-template-rows: 36px minmax(10px, auto) repeat(3, 22px) 18px;
     }
     .calendar-day {
       align-items: stretch;
@@ -393,9 +399,6 @@ calendar-page {
       font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) / 22px var(--app-font);
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-    .calendar-week--arena {
-      grid-template-rows: 80px repeat(3, 22px) 18px;
     }
     .calendar-day__more {
       display: block;
