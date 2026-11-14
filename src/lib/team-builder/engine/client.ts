@@ -731,7 +731,7 @@ export class EngineClient {
         let sharedUnknown: string[] = [];
         if (!request.noFloor && count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
           && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
-          && !justWindow
+          && !request.goal.justWindow
           && (request.goal.minComboBonus ?? 1) <= 1
           && request.goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3))) {
           const goal = request.goal;
@@ -739,7 +739,7 @@ export class EngineClient {
             request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,
               deadline,
               goal: { ...goal, songs: [goal.songs[0]!], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) } } },
-            undefined, undefined, 80);
+            undefined, undefined, goal.minJustWindowMs ? 800 : 80);
           if (stopped) return latest;
           sharedUnknown = warm.unknownCards;
           const team = warm.overall[0];
@@ -760,10 +760,13 @@ export class EngineClient {
                 score: value.score, justWindow: value.justWindow, event: null, skipScore: value.skipScore, potential: null };
             });
             const average = (value: (hit: EngineHit) => number) => songs.reduce((sum, hit) => sum + value(hit), 0) / songs.length;
+            const windows = evaluated.flatMap(value => value.justWindow ? [value.justWindow] : []);
             sharedSeed = evaluated.every(value => value.justWindow?.meetsTarget !== false) ? { ...team, song: null, key: average(hit => hit.score!.mean), power: average(hit => hit.power),
               slotPowers: team.slotPowers.map((_, index) => average(hit => hit.slotPowers[index]!)),
               score: { mean: average(hit => hit.score!.mean), min: average(hit => hit.score!.min), max: average(hit => hit.score!.max),
                 median: average(hit => hit.score!.median), orders: [], ranks: {}, bestOrder: [], worstOrder: [] },
+              justWindow: windows.length ? { beforeMs: Math.min(...windows.map(w => w.beforeMs)),
+                afterMs: Math.min(...windows.map(w => w.afterMs)), meetsTarget: true } : undefined,
               event: null, skipScore: null, potential: null, aggregate: { kind: "mean", songs } } : undefined;
           }
         }
