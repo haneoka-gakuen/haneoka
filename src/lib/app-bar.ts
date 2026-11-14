@@ -229,7 +229,7 @@ let shortcutInstalled = false;
 
 export function setAppBarSearch(owner: string, options: AppBarSearchOptions): () => void {
   if (staticAppBar) {
-    const bar = staticAppBar, inputId = `app-bar-search-${++searchInputGeneration}`;
+    const bar = staticAppBar, inputId = `app-bar-search-${owner}`;
     const labels = { ...options, closeLabel: options.closeLabel ?? clientText(bar.locale, "common.actions.close", "Close") };
     bar.search.set(owner, { inputId, expanded: options.expanded ?? false,
       content: searchContent(labels, inputId, options.expanded ?? false, () => {}, () => {}) });

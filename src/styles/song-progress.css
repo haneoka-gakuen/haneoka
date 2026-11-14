@@ -12,8 +12,7 @@
     gap: var(--md-sys-spacing-5);
   }
   .song-progress__layout > :first-child {
-    position: sticky;
-    top: 8px;
+    min-width: 0;
   }
   .song-progress__list {
     display: grid;
@@ -111,6 +110,232 @@
     .song-progress__row > .song-progress__status {
       grid-column: 1 / -1;
       justify-content: end;
+    }
+  }
+}
+
+@layer pages {
+  .song-progress__ratings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-sys-spacing-3);
+    min-inline-size: 0;
+  }
+
+  .song-progress__rating {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-sys-spacing-3);
+    padding: var(--md-sys-spacing-4);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    min-inline-size: 0;
+  }
+
+  .song-progress__rating .detail-section-title {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .song-progress__rating-status {
+    min-block-size: 20px;
+    max-block-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .song-progress__rating-rule { grid-column: 1 / -1; }
+  .song-progress__rating-value {
+    margin: 0;
+    font-size: clamp(1.75rem, 4vw, 2.375rem);
+    line-height: 1.08;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-primary);
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__rating-value--roster {
+    color: var(--md-sys-color-tertiary);
+  }
+
+  .song-progress__rating-progress {
+    position: relative;
+    inline-size: 100%;
+    block-size: 6px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-outline-variant);
+    overflow: hidden;
+  }
+
+  .song-progress__rating-progress > span,
+  .song-progress__rating-progress-fill {
+    display: block;
+    block-size: 100%;
+    inline-size: var(--song-progress-ratio, 0%);
+    max-inline-size: 100%;
+    border-radius: inherit;
+    background: var(--md-sys-color-primary);
+  }
+
+  .song-progress__rating-value--roster ~ .song-progress__rating-progress > span,
+  .song-progress__rating-value--roster ~ .song-progress__rating-progress .song-progress__rating-progress-fill,
+  .song-progress__rating--roster .song-progress__rating-progress > span,
+  .song-progress__rating--roster .song-progress__rating-progress-fill {
+    background: var(--md-sys-color-tertiary);
+  }
+
+  .song-progress__rating-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--md-sys-spacing-2) var(--md-sys-spacing-3);
+    margin: 0;
+    min-inline-size: 0;
+  }
+
+  .song-progress__rating-facts > div {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-sys-spacing-1);
+    min-inline-size: 0;
+  }
+
+  .song-progress__rating-facts dt {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.25;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__rating-facts dd {
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.25;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__rating-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md-sys-spacing-2);
+    min-inline-size: 0;
+  }
+
+  .song-progress__rating-actions .button {
+    min-block-size: 48px;
+  }
+
+  .song-progress__profile {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--md-sys-spacing-3);
+    padding: var(--md-sys-spacing-4);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    min-inline-size: 0;
+  }
+
+  .song-progress__profile-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-sys-spacing-1);
+    min-inline-size: 0;
+  }
+
+  .song-progress__profile-label {
+    font-size: 0.75rem;
+    line-height: 1.25;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__profile-value {
+    font-size: 0.9375rem;
+    line-height: 1.3;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__best {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--md-sys-spacing-2);
+    min-inline-size: 0;
+  }
+
+  .song-progress__best-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--md-sys-spacing-3);
+    min-block-size: 48px;
+    padding: var(--md-sys-spacing-2) var(--md-sys-spacing-3);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    min-inline-size: 0;
+  }
+
+  .song-progress__best-rank {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-on-surface-variant);
+    min-inline-size: 2ch;
+  }
+
+  .song-progress__best-title {
+    min-inline-size: 0;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .song-progress__best-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--md-sys-spacing-2);
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--md-sys-color-primary);
+    white-space: nowrap;
+  }
+
+  @media (max-width: 760px) {
+    .song-progress__rating {
+      padding: var(--md-sys-spacing-3);
+    }
+
+    .song-progress__rating-value {
+      font-size: clamp(1.625rem, 6vw, 2rem);
     }
   }
 }

@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存，允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存（含调用者预置的固定谱面），允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 import type { SampleRequest, PlaySample } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -359,7 +359,7 @@ export class EngineClient {
   private readonly pool: EngineWorker[];
   private readonly dataIdentity: string;
   private readonly downloads: EngineCharts;
-  constructor(private readonly data: TeamBuilderData, changed: () => void = () => {}, options: { maxWorkers?: number; apiBase?: string } = {}) {
+  constructor(private readonly data: TeamBuilderData, changed: () => void = () => {}, options: { maxWorkers?: number; apiBase?: string; charts?: readonly EngineChart[] } = {}) {
     this.dataIdentity = JSON.stringify([data.identity, data.crossServer?.identities]);
     const serialized = workerData(data);
     const charts: EngineChartSources = {};
@@ -372,6 +372,7 @@ export class EngineClient {
       }
     }
     this.downloads = new EngineCharts(charts);
+    if (options.charts) this.downloads.prime(options.charts);
     const size = options.maxWorkers ?? poolSize();
     if (!Number.isInteger(size) || size < 1 || size > 8) throw new RangeError("maxWorkers must be between 1 and 8");
     this.pool = Array.from({ length: size }, (_, index) => new EngineWorker(serialized, charts, this.downloads, `team-engine-${index + 1}`, changed));

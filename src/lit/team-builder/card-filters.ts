@@ -60,6 +60,8 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
   if (!card) return false;
+  if (f.facets.hideRequired?.includes("yes") &&
+      ((kind === "members" ? host.view?.members : host.view?.snaps)?.get(id)?.lock || host.searchSettings.required[kind].includes(id))) return false;
   const planning=plannerMetadata(card);
   if (planning.active===false || planning.active!==true && !isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(id))) return false;
   if (!matchesSelections(catalog.bandIds(kind, id).map(String), f.bands.map(String)) ||
@@ -111,6 +113,11 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
   const role = kind === "members" ? "member" : "support";
   const skillType = kind === "snaps" ? snapshotSkillType : skillTypeTitle;
   return html`
+    ${chooserGroup(host.t("required", "Always include"), filterChip({
+      label: host.t("hideRequired", "Hide required cards"),
+      selected: f.facets.hideRequired?.includes("yes") ?? false,
+      onToggle: () => facetSet("hideRequired", f.facets.hideRequired?.includes("yes") ? [] : ["yes"]),
+    }))}
     ${numeric("bands", label("band"), [...new Set(cards.flatMap((card) => catalog.bandIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.bandName(id),image:catalog.bandIcon(id) || undefined})))}
     ${numeric("characters", label("character"), [...new Set(cards.flatMap((card) => catalog.characterIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.characterName(id),image:catalog.characterFace(id) || undefined})))}
     ${numeric("attributes", label("attribute"), [...new Set(cards.map((card) => card.attribute))].filter((id) => id >= 1 && id <= 5).sort().map((id) => ({value:String(id),label:catalog.attributeName(id),image:catalog.attributeIcon(id) || undefined})))}

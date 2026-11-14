@@ -2,7 +2,7 @@
 // Input: 固定 release 的谱面来源。
 // Output: 完整谱面 JSON 及受文本字节数和张数限制的共享下载缓存。
 // Pos: [Map](L2-2.md)；主线程和 Worker 的谱面装载。
-// Effects/Dependencies: 按固定身份共享在途下载，以 AbortController 处理取消及限时重试，身份核对和 gzip 解压。
+// Effects/Dependencies: 按固定身份共享在途下载，以 AbortController 处理取消及限时重试，身份核对和 gzip 解压；可预置离线固定谱面。
 import { RequestScope, throwIfAborted } from "../../request-scope";
 import { pinnedSongAssetUrl } from "../solver/song-loader";
 import type { SongRef } from "./api";
@@ -57,6 +57,23 @@ export class EngineCharts {
   private readonly pending = new Map<string, Promise<EngineChart>>();
   private readonly sizes = new Map<string, number>();
   private bytes = 0;
+  prime(rows: readonly EngineChart[]) {
+    for (const row of rows) {
+      const key = chartKey(row.song);
+      if (this.downloads.has(key)) continue;
+      const size = new TextEncoder().encode(JSON.stringify(row.chart)).byteLength;
+      if (size > CACHE_BYTES) continue;
+      while (this.downloads.size >= CACHE_CHARTS || this.bytes + size > CACHE_BYTES) {
+        const oldest = this.downloads.keys().next().value!;
+        this.bytes -= this.sizes.get(oldest)!;
+        this.sizes.delete(oldest);
+        this.downloads.delete(oldest);
+      }
+      this.downloads.set(key, Promise.resolve(row));
+      this.sizes.set(key, size);
+      this.bytes += size;
+    }
+  }
   private lifetime = new AbortController();
   constructor(private readonly sources: EngineChartSources) {}
   load(song: SongRef): Promise<EngineChart> {
