@@ -1150,7 +1150,7 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
     else if (proof.unit === "shards")
       status = host.t("provenShardProgress", "Search parts proven {done}/{total}", counts);
     if (proof.checkedTeams !== undefined)
-      status += " · " + host.t("teamChecks", "{count} team checks", {
+      status += " / " + host.t("teamChecks", "{count} team checks", {
         count: new Intl.NumberFormat(host.locale).format(proof.checkedTeams),
       });
   }

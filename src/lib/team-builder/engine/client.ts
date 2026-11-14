@@ -487,7 +487,9 @@ export class EngineClient {
   private async execute(request: EngineRequest, started: number, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler, responseKey: string | null = null, pool = this.pool): Promise<EngineResponse> {
     const justWindow = request.goal.kind === "gekiso" ? request.goal.justWindow?.minimumMs ?? request.goal.minJustWindowMs
       : request.goal.kind === "event" ? request.goal.gekiso?.justWindow?.minimumMs ?? request.goal.gekiso?.minJustWindowMs : undefined;
-    if (justWindow && justWindow > 0) request = { ...request, noFloor: true };
+    const sharedSteadyWindow = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
+      && request.goal.arena.objective !== "sections" && !request.goal.justWindow;
+    if (justWindow && justWindow > 0 && !sharedSteadyWindow) request = { ...request, noFloor: true };
     const idlest = () => this.idlest(pool);
     const before = pool.map(worker => worker.timing());
     let latest = emptyResponse(request);
@@ -719,22 +721,25 @@ export class EngineClient {
       }
       if ((request.aggregation === "mean" && (request.goal.kind === "score" || request.goal.kind === "event" || request.goal.kind === "gekiso")) || (request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared")) {
         const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
-        const count = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? 1 : request.goal.kind === "gekiso" ? 6 : 2);
+        const compactArena = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared" && request.goal.songs.length <= 32;
+        const count = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? compactArena ? 2 : 1 : request.goal.kind === "gekiso" ? 6 : 2);
         const workers = pool.slice(0, count);
+        if (count > 1) for (const worker of workers) void worker.warm().catch(() => {});
         const loadedCharts = await workers[0]!.preload(request.goal.songs);
         if (stopped) return latest;
         let sharedSeed: EngineHit | undefined;
         let sharedUnknown: string[] = [];
         if (!request.noFloor && count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
           && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
-          && !request.goal.justWindow && !(request.goal.minJustWindowMs ?? 0)
+          && !request.goal.justWindow
           && (request.goal.minComboBonus ?? 1) <= 1
           && request.goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3))) {
           const goal = request.goal;
           const warm = await workers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
             request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,
-              deadline: Math.min(deadline, clock() + 80),
-              goal: { ...goal, songs: [goal.songs[0]!], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) } } });
+              deadline,
+              goal: { ...goal, songs: [goal.songs[0]!], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) } } },
+            undefined, undefined, goal.minJustWindowMs ? 800 : 80);
           if (stopped) return latest;
           sharedUnknown = warm.unknownCards;
           const team = warm.overall[0];
