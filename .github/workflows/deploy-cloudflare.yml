@@ -307,5 +307,5 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 concurrency:
-  group: cloudflare-production-build-${{ inputs.publication_run_id != '' && 'recovery' || inputs.worker_only && 'worker' || 'frontend' }}
+  group: cloudflare-production-build-${{ inputs.publication_run_id != '' && 'recovery' || inputs.worker_only && 'worker' || format('frontend-{0}', github.run_id) }}
   cancel-in-progress: false

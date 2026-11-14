@@ -1,5 +1,5 @@
 // Input: Complete rendered files, frozen publication metadata and verified media mappings.
-// Output: Public page selections and byte-preserving URL rewrites.
+// Output: Public page selections, byte-preserving URL rewrites and complete Markdown records.
 // Pos: Build-only workers owned by finalize-frontend.mjs.
 import fs from "node:fs";
 import path from "node:path";
@@ -77,6 +77,7 @@ if (!isMainThread) {
   const module = await import("../../src/server/public-static-documents.ts");
   const { publicStaticStagingRoot, isPublicStaticDocument } = await import("../../src/server/static-documents.ts");
   const { publicMediaRewrite } = await import("./public-static-media.mjs");
+  const { markdownDocument } = await import("./search-metadata.mjs");
   const { output, documentsRoot, options, media, urlMap } = workerData;
   let mediaFor;
   const mapped = urlMap && module.publicUrlMapRewrite(urlMap);
@@ -135,6 +136,11 @@ if (!isMainThread) {
             : undefined,
         );
         if (next !== html) fs.writeFileSync(file, next);
+      } else if (job.kind === "markdown") {
+        value = markdownDocument(job.content, job.sourcePath, (url) => {
+          if (!/^\/entity-data\/v1\/[a-f0-9]{64}\.json$/u.test(url)) return;
+          return fs.readFileSync(path.join(output, url.slice(1)), "utf8");
+        });
       } else throw new Error(`Unknown static document operation: ${job.kind}`);
       parentPort.postMessage({ value });
     } catch (error) {

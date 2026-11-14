@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import {
   assertPublicStaticDocumentPath,
-  markdownDocument,
   markdownPath,
   markdownRecord,
   writeMarkdownBucket,
@@ -242,6 +241,7 @@ rmSync(path.join(output, "markdown"), { recursive: true, force: true });
 let markdownCount = 0;
 let markdownFiles = 0;
 let index;
+const markdownWorkers = new StaticDocumentWorkers({ output, documentsRoot });
 try {
   const created = await pagefind.createIndex({
     excludeSelectors: ["script", "style", "button", "input", "select", "[aria-hidden=true]", ".audio-dock"],
@@ -271,10 +271,7 @@ try {
         if (!indexable(content)) continue;
         // Only a proven public document may produce a directly accessible Markdown counterpart.
         if ((staged || isPublicStaticDocument(content)) && !/^static-views\//u.test(sourcePath)) {
-          const markdown = markdownDocument(content, sourcePath, (url) => {
-            if (!/^\/entity-data\/v1\/[a-f0-9]{64}\.json$/u.test(url)) return;
-            return readFileSync(path.join(output, url.slice(1)), "utf8");
-          });
+          const markdown = await markdownWorkers.run({ kind: "markdown", content, sourcePath });
           if (markdown) {
             const entity = publicStatic?.module.publicStaticTarget(sourcePath);
             const canonicalMarkdown = markdownPath(new URL(markdown.canonical).pathname);
@@ -349,7 +346,11 @@ try {
   try {
     await index?.deleteIndex();
   } finally {
-    await pagefind.close();
+    try {
+      await pagefind.close();
+    } finally {
+      await markdownWorkers.close();
+    }
   }
 }
 for (const [pathname, records] of markdownBuckets)

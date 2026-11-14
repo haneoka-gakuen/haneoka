@@ -1,4 +1,7 @@
 name: Build complete static frontend
+concurrency:
+  group: ${{ inputs.verification_only && format('static-frontend-verify-{0}', github.ref) || 'cloudflare-production-build-frontend' }}
+  cancel-in-progress: false
 on:
   workflow_call:
     inputs:
