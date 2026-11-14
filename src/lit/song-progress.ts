@@ -160,6 +160,7 @@ export class SongProgress extends LitElement {
   }
   /** In the app: clear, full combo and all perfect from a game save. */
   private async importSave(given?: Record<string, number>) {
+    let importedProfile: { name: string; uid: string; rank: string } | undefined;
     const marks =
       given ??
       (
@@ -167,14 +168,17 @@ export class SongProgress extends LitElement {
           const key = await chooseAppAccount(this.locale, accounts);
           const account = accounts.find(row => row.key === key);
           if (account) {
-            this.profile = { name: account.name ?? "", uid: account.profileId, rank: account.rank === null ? "" : String(account.rank) };
-            this.saveProfile();
+            importedProfile = { name: account.name ?? "", uid: account.profileId, rank: account.rank === null ? "" : String(account.rank) };
           }
           return key;
         },
         ).catch(() => null)
       )?.marks;
     if (!marks || !this.store) return;
+    if (importedProfile) {
+      this.profile = importedProfile;
+      this.saveProfile();
+    }
     const changes = this.charts
       .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))
       .map((chart) => ({ key: chart.key, value: marks[chart.key] || null }));
