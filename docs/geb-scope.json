@@ -443,6 +443,7 @@
     "src/lib/navigation-prefetch.ts",
     "src/lib/team-builder/skill-roles.ts",
     "src/lit/team-builder/result-analysis.ts",
+    "src/lit/team-builder/luck-comparison.ts",
     "src/lit/team-builder/skill-role-controls.ts",
     "src/lit/team-builder/catalog.ts",
     "src/lit/team-builder/choice-field.ts",

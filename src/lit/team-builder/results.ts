@@ -405,12 +405,12 @@ interface FormationSlot {
   flag?: TemplateResult;
 }
 
-export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0): TemplateResult {
+export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0, interactive = true): TemplateResult {
   const catalog = host.catalog!;
   const order = slots.map((_, index) => index).filter((index) => index !== leader);
   if (leader >= 0) order.splice(Math.min(2, order.length), 0, leader);
   return html`
-    <ol class="tb-formation" aria-label=${host.t("formation", "Formation")}>
+    <ol class=${interactive ? "tb-formation" : "tb-formation tb-formation--readonly"} aria-label=${host.t("formation", "Formation")}>
       ${order.map((index) => {
         const { member, snap, memberGrowth, snapGrowth, title, flag } = slots[index]!;
         const memberOptions = catalog.cardOptions("members", member, memberGrowth);
@@ -424,7 +424,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
             <button
               class="tb-slot__member"
               type="button"
-              aria-label=${`${host.t("editGrowth", "Edit growth")}: ${memberOptions?.label ?? member}`}
+              ?disabled=${!interactive}
+              aria-label=${interactive ? `${host.t("editGrowth", "Edit growth")}: ${memberOptions?.label ?? member}` : memberOptions?.label ?? String(member)}
               @click=${() => {
                 host.editing = { kind: "members", cardId: member };
                 host.requestUpdate();
@@ -435,8 +436,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
             <button
               class="tb-slot__snap"
               type="button"
-              ?disabled=${snap === null}
-              aria-label=${snapOptions ? `${host.t("editGrowth", "Edit growth")}: ${snapOptions.label}` : host.t("noSnap", "No snap")}
+              ?disabled=${!interactive || snap === null}
+              aria-label=${snapOptions ? interactive ? `${host.t("editGrowth", "Edit growth")}: ${snapOptions.label}` : snapOptions.label : host.t("noSnap", "No snap")}
               @click=${() => {
                 if (snap !== null) {
                   host.editing = { kind: "snaps", cardId: snap };

@@ -1037,6 +1037,9 @@
     aspect-ratio: 16 / 9;
     align-items: center;
   }
+  .tb-formation--readonly .tb-slot__snap {
+    min-block-size: 0;
+  }
   .tb-slot.is-leader .tb-slot__member {
     outline: 3px solid var(--md-sys-color-primary);
     outline-offset: -3px;
@@ -2645,10 +2648,10 @@
     inline-size: min(560px, calc(100vw - 32px));
     max-block-size: calc(100dvh - 48px);
   }
-  .team-builder :is(.tb-result-analysis--mistakes, .tb-result-analysis--pressure) {
+  .team-builder :is(.tb-result-analysis--mistakes, .tb-result-analysis--pressure, .tb-result-analysis--luckComparison) {
     inline-size: min(960px, calc(100vw - 32px));
   }
-  .team-builder .tb-result-analysis--pressure {
+  .team-builder :is(.tb-result-analysis--pressure, .tb-result-analysis--luckComparison) {
     inline-size: min(720px, calc(100vw - 32px));
   }
   .team-builder .tb-analysis-header {
@@ -2673,8 +2676,7 @@
       var(--md-sys-typescale-body-medium-line-height) var(--app-font);
   }
   .team-builder .tb-analysis-body {
-    display: flex;
-    flex-direction: column;
+    grid-auto-rows: max-content;
     gap: var(--md-sys-spacing-4);
     padding: var(--md-sys-spacing-4) var(--md-sys-spacing-6) var(--md-sys-spacing-6);
     color: var(--md-sys-color-on-surface);
@@ -2691,6 +2693,19 @@
     align-items: flex-end;
     gap: var(--md-sys-spacing-4) var(--md-sys-spacing-6);
   }
+  .team-builder .tb-luck-state { min-block-size: 1.5em; }
+  .team-builder .tb-luck-plot { margin: 0; }
+  .team-builder .tb-luck-plot svg { display: block; inline-size: 100%; aspect-ratio: 2.5; max-block-size: 240px; }
+  .team-builder .tb-luck-plot text { fill: var(--md-sys-color-on-surface-variant); font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) var(--app-font); }
+  .team-builder .tb-luck-plot figcaption { color: var(--md-sys-color-on-surface-variant); }
+  .team-builder .tb-luck-plot__axes { fill: none; stroke: var(--md-sys-color-outline-variant); }
+  .team-builder .tb-luck-plot__line { fill: none; stroke: currentColor; stroke-width: 2; }
+  .team-builder .tb-luck-plot__threshold { stroke: var(--md-sys-color-outline); stroke-dasharray: 3 3; }
+  .team-builder .tb-luck-series-0 { color: var(--md-sys-color-primary); }
+  .team-builder .tb-luck-series-1 { color: var(--md-sys-color-tertiary); }
+  .team-builder .tb-luck-series-2 { color: var(--md-sys-color-secondary); }
+  .team-builder .tb-luck-plot__line.tb-luck-series-1 { stroke-dasharray: 6 3; }
+  .team-builder .tb-luck-plot__line.tb-luck-series-2 { stroke-dasharray: 2 3; }
   .team-builder .tb-analysis-run {
     min-block-size: 48px;
     margin-inline-start: auto;

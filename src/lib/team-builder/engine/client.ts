@@ -1,9 +1,9 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
+// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存（含调用者预置的固定谱面），允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
-import type { SampleRequest, PlaySample } from "./protocol";
+import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -184,7 +184,7 @@ class EngineWorker {
     const ready = this.spawn();
     const worker = this.worker;
     const songs = message.type === "run" || message.type === "growth" ? requestChartSongs(message.request).filter((song): song is SongRef => song !== null)
-      : message.type === "evaluate" || message.type === "sample" ? message.request.songs : message.type === "explain" ? [message.request.song]
+      : message.type === "evaluate" || message.type === "sample" || message.type === "sectionMetrics" ? message.request.songs : message.type === "explain" ? [message.request.song]
         : message.type === "charts" ? message.songs : [];
     const staged = [...this.cachedCharts];
     const missing = songs.filter(song => {
@@ -206,7 +206,7 @@ class EngineWorker {
       const [, loadedCharts] = await Promise.all([initialized, loaded]);
       if (worker !== this.worker) throw new DOMException("Cancelled", "AbortError");
       if (this.preparing === preparation) this.preparing = null;
-      if (message.type === "run" || message.type === "evaluate" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
+      if (message.type === "run" || message.type === "evaluate" || message.type === "sectionMetrics" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
       return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams)) as T;
@@ -1279,25 +1279,35 @@ export class EngineClient {
   sample(request: SampleRequest) {
     return this.enqueue(() => this.pool[0]!.send<PlaySample>({ type: "sample", id: 0, request }));
   }
-  evaluateBatch(requests: EvaluateRequest[]) {
+  private diagnosticsBatch<T>(type: "evaluate" | "sectionMetrics", requests: EvaluateRequest[]) {
     const generation = this.generation;
     return this.enqueue(async () => {
-      const results: TeamEvaluation[][] = [];
+      const results: T[][][] = requests.map(request => request.songs.map(() => []));
+      const count = Math.max(0, ...requests.map(request => request.songs.length));
+      const jobs = Array.from({ length: count }, (_, songIndex) => requests.flatMap((request, index) => {
+        const song = request.songs[songIndex];
+        return song ? [{ request: { ...request, songs: [song] }, index, songIndex }] : [];
+      })).flat();
       let next = 0;
-      await Promise.all(this.pool.slice(0, Math.min(3, requests.length)).map(async worker => {
-        while (next < requests.length && generation === this.generation) {
-          const index = next++;
-          results[index] = await worker.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request: requests[index]! });
+      await Promise.all(this.pool.slice(0, Math.min(3, jobs.length)).map(async worker => {
+        while (next < jobs.length && generation === this.generation) {
+          const job = jobs[next++]!;
+          results[job.index]![job.songIndex] = await worker.send<T[]>({ type, id: 0, request: job.request });
         }
       }));
-      return results;
+      return results.map(parts => parts.flat());
     }).catch(error => {
       if (generation === this.generation) this.cancel();
       throw error;
     });
   }
+  evaluateBatch(requests: EvaluateRequest[]) { return this.diagnosticsBatch<TeamEvaluation>("evaluate", requests); }
+  sectionMetricsBatch(requests: EvaluateRequest[]) { return this.diagnosticsBatch<SectionMetricDistribution>("sectionMetrics", requests); }
   evaluate(request: EvaluateRequest) {
     return this.enqueue(() => this.pool[0]!.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request }));
+  }
+  sectionMetrics(request: EvaluateRequest) {
+    return this.enqueue(() => this.pool[0]!.send<SectionMetricDistribution[]>({ type: "sectionMetrics", id: 0, request }));
   }
   growth(request: EngineRequest, progress?: Pending["progress"]) {
     return this.enqueue(() => this.pool[0]!.send<GrowthResult>({ type: "growth", id: 0, request }, progress));

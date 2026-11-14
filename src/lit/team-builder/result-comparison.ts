@@ -2,7 +2,7 @@
 // Input: Accepted result sessions with explicit task, scoring and growth sources.
 // Output: Three retained candidates with shared metric rows and a mobile baseline/candidate view.
 // Pos: [Map](../L2-2.md); page-local comparison, never persisted in Box or PtJob.
-// Effects/Dependencies: Native dialog; no engine requests or changes to ranking.
+// Effects/Dependencies: Native dialog; opens shared placement and LUCK diagnostics from frozen entries.
 import { html, nothing } from "lit";
 import type { EngineHit, EngineRequest, SongResult } from "../../lib/team-builder/engine/api";
 import { canonical } from "../../lib/team-builder/pt-recommendation";
@@ -312,6 +312,9 @@ export class ResultComparison {
         <header class="row row--between">
           <strong>${host.t("compareTeams", "Compare teams")}</strong>
           <div class="cluster tb-comparison-tools">
+            ${host.analysis.canCompareLuck(this.items) ? html`<button class="button button--tonal" type="button" aria-haspopup="dialog"
+              @click=${() => { this.open = false; host.analysis.openLuckEntries(this.items); }}
+            >${host.t("analysis.luckComparison", "LUCK pt comparison")}</button>` : nothing}
             ${
               this.items.length >= 2 && this.items.every((item) => item.input.goal.kind === "gekiso")
                 ? html`

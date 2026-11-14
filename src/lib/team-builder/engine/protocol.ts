@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 引擎请求／结果与配队数据类型。
-// Output: EngineCall（含 UTF-8／字符串计算资料、编译模块、固定谱面载荷、私有评分缓存、固定顺序样例、排序下界与活动养成分页控制）、EngineReply（含养成更新、队伍检查计数、协作能力和 Worker 谱面缓存容量和身份）、停止原因及 EngineSnapshot。
+// Output: EngineCall（含 UTF-8／字符串计算资料、编译模块、固定谱面载荷、私有评分缓存、固定顺序样例、区间任务点数分布、排序下界与活动养成分页控制）、EngineReply（含养成更新、队伍检查计数、协作能力和 Worker 谱面缓存容量和身份）、停止原因及 EngineSnapshot。
 // Pos: [Map](L2-2.md)；主线程与当前引擎 Worker 的消息边界。
 // Effects/Dependencies: 类型声明；资源获取与计算由 client／worker 实现。
 import type { TeamBuilderData } from "../data";
@@ -24,6 +24,12 @@ export type EvaluateRequest = {
   event: { eventId: number; route: "live" | "challenge"; consumption: number; rewardRoom?: import("./api").RewardRoom; eventEffects?: readonly import("./master").EventEffectRow[] } | null;
 };
 export type SampleRequest = EvaluateRequest & { order: number; includeNotes?: boolean };
+export interface SectionMetricDistribution {
+  song: SongRef;
+  missions: number[];
+  samples: number;
+  distributions: { points: number; count: number }[][];
+}
 export interface PlaySample { score: number; lowestLife: number; notes: { index: number; timeMs: number; op: number; judgementType: number }[]; judgements: number[] }
 
 export type ExplainRequest = {
@@ -50,6 +56,7 @@ export type EngineCall = (
   | { type: "eventGrowthPage"; id: number; page: number; paused?: boolean }
   | { type: "pauseEventGrowth"; id: number; paused: boolean }
   | { type: "evaluate"; id: number; request: EvaluateRequest }
+  | { type: "sectionMetrics"; id: number; request: EvaluateRequest }
   | { type: "sample"; id: number; request: SampleRequest }
   | { type: "explain"; id: number; request: ExplainRequest }
   | { type: "charts"; id: number; songs: SongRef[] }) & { loadedCharts?: EngineChart[] };

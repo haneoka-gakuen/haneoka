@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // L3 — GEB
 // Input: EngineCall、UTF-8 或字符串序列化的 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
-// Output: EngineReply、评级资格检查计数、候选快照、活动养成分页更新、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
+// Output: EngineReply、评级资格检查计数、候选快照、活动养成分页更新、区间任务点数频数、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
 // Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
@@ -253,6 +253,10 @@ async function execute(call: EngineCall) {
       const rows = await charts(call.request.songs, call.loadedCharts);
       const result = await invoke({ op: "evaluateAll", handle, request: call.request, charts: rows });
       post({ type: "result", id: call.id, result: result.evaluations as TeamEvaluation[], cachedCharts: cached });
+    } else if (call.type === "sectionMetrics") {
+      const rows = await charts(call.request.songs, call.loadedCharts);
+      const result = await invoke({ op: "sectionMetrics", handle, request: call.request, charts: rows });
+      post({ type: "result", id: call.id, result: result.metrics, cachedCharts: cached });
     } else if (call.type === "explain") {
       const request: ExplainRequest = call.request;
       const rows = await charts([request.song], call.loadedCharts);

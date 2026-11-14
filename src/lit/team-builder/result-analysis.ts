@@ -1,13 +1,14 @@
 // L3 — GEB
 // Input: Frozen result teams, native score distributions and current release identity.
-// Output: Reward filters, frozen-scenario mistake samples and separate assumed-placement comparisons.
+// Output: Reward filters, mistake samples, assumed-placement comparisons and LUCK point distributions.
 // Pos: [Map](../L2-2.md); on-demand diagnostics reuse the existing engine queue and chart preview.
 // Effects/Dependencies: Bounded identity-scoped caches; opening controls does no scoring; cancellation releases the workspace task.
 import { html, nothing } from "lit";
 import "@material/web/switch/switch.js";
 import type { TeamBuilder } from "../team-builder";
 import type { EngineHit, EngineRequest, TeamEvaluation, TimingWindow } from "../../lib/team-builder/engine/api";
-import type { EvaluateRequest, PlaySample, SampleRequest } from "../../lib/team-builder/engine/protocol";
+import type { EvaluateRequest, PlaySample, SampleRequest, SectionMetricDistribution } from "../../lib/team-builder/engine/protocol";
+import { luckMass, luckRanges, renderLuckComparison } from "./luck-comparison";
 import { resultRequest } from "./score-goal";
 import { dataRows } from "../../lib/team-builder/data";
 import { modal } from "../ui/modal";
@@ -22,6 +23,7 @@ const RANK_LABELS = ["C", "B", "A", "S", "SS"];
 interface Source {
   hit: EngineHit;
   input: EngineRequest;
+  conditions?: string;
 }
 interface MistakeRow {
   grade: 1 | 4;
@@ -87,7 +89,7 @@ export function rankRisk(hit: EngineHit, rank: number): number | null {
   return total ? rows.reduce((sum, [value, count]) => sum + (Number(value) < rank ? count : 0), 0) / total : null;
 }
 export class ResultAnalysis {
-  mode: "filters" | "mistakes" | "pressure" | null = null;
+  mode: "filters" | "mistakes" | "pressure" | "luckComparison" | null = null;
   targetRank = 7;
   maxRisk = 1;
   onlyHighest = false;
@@ -99,6 +101,12 @@ export class ResultAnalysis {
   baseline?: PlaySample;
   samples: MistakeRow[] = [];
   pressureRows: PressureRow[] = [];
+  luckRows: SectionMetricDistribution[][] = [];
+  private luckRange = 0;
+  private luckThreshold = "0";
+  private luckThresholdAuto = true;
+  private luckSubmitted = false;
+  private luckSamples = 32;
   selected = 0;
   private position = 0;
   private detailed = false;
@@ -106,7 +114,7 @@ export class ResultAnalysis {
   private task: symbol | null = null;
   private generation = 0;
   private identity = "";
-  private cache = new Map<string, PlaySample | TeamEvaluation[]>();
+  private cache = new Map<string, PlaySample | TeamEvaluation[] | SectionMetricDistribution[]>();
   constructor(private readonly host: TeamBuilder) {}
   sync() {
     const identity = JSON.stringify([
@@ -145,7 +153,7 @@ export class ResultAnalysis {
   private number(value: number) {
     return new Intl.NumberFormat(this.host.locale, { maximumFractionDigits: 1 }).format(value);
   }
-  private remember(key: string, result: PlaySample | TeamEvaluation[]) {
+  private remember(key: string, result: PlaySample | TeamEvaluation[] | SectionMetricDistribution[]) {
     this.cache.delete(key);
     this.cache.set(key, result);
     while (this.cache.size > 384) this.cache.delete(this.cache.keys().next().value!);
@@ -166,6 +174,7 @@ export class ResultAnalysis {
     this.baseline = undefined;
     this.samples = [];
     this.pressureRows = [];
+    this.luckRows = [];
   }
   openMistakes(hit: EngineHit) {
     const input = resultRequest(this.host, hit);
@@ -195,6 +204,23 @@ export class ResultAnalysis {
   }
   openPressureEntries(entries: ComparisonEntry[]) {
     this.openPressureSources(entries.map((entry) => ({ hit: entry.hit, input: entry.input })));
+  }
+  canCompareLuck(entries: ComparisonEntry[]) {
+    return entries.length >= 2 && entries.every(({ input: { goal } }) => goal.kind === "gekiso" || goal.kind === "event" && goal.gekiso) && luckRanges(this.host, entries[0]!).length > 0;
+  }
+  openLuckEntries(entries: ComparisonEntry[]) {
+    if (!this.canCompareLuck(entries)) return;
+    this.close();
+    this.sources = structuredClone(entries.map(({ hit, input, conditions }) => ({ hit, input, conditions })));
+    this.mode = "luckComparison";
+    this.luckRange = luckRanges(this.host, this.sources[0]!)[0]!;
+    const seeds = evaluateResult(this.sources[0]!).gekiso!.seeds;
+    this.luckSamples = seeds > 0 ? seeds : 32;
+    this.luckThreshold = "0";
+    this.luckThresholdAuto = true;
+    this.luckSubmitted = false;
+    this.error = false;
+    this.host.requestUpdate();
   }
   private openPressureSources(sources: Source[]) {
     this.close();
@@ -234,6 +260,11 @@ export class ResultAnalysis {
   }
   async run() {
     if (!this.host.engine || this.task) return;
+    if (this.mode === "luckComparison") {
+      this.luckSubmitted = true;
+      const value = Number(this.luckThreshold);
+      if (!this.luckThreshold.trim() || !Number.isInteger(value) || value < 0 || value > 2147483647) { this.host.requestUpdate(); return; }
+    }
     const task = this.host.acquireTask("analysis");
     if (!task) return;
     this.task = task;
@@ -290,6 +321,27 @@ export class ResultAnalysis {
             this.progress++;
             this.host.requestUpdate();
           }
+      } else if (this.mode === "luckComparison") {
+        const base = evaluateResult(this.sources[0]!);
+        this.total = this.sources.length;
+        const requests = this.sources.map(source => ({ ...evaluateResult(source),
+          player: base.player, songs: base.songs, songRules: base.songRules,
+          gekiso: { ...base.gekiso!, seeds: this.luckSamples,
+            arena: base.gekiso?.arena ? { ...base.gekiso.arena, objective: "score" as const, opponents: undefined } : undefined } }));
+        const keys = requests.map(request => JSON.stringify([this.identity, "luck", request]));
+        const values = keys.map(key => this.cache.get(key) as SectionMetricDistribution[] | undefined);
+        const missing = requests.flatMap((request, index) => values[index] ? [] : [{ request, index }]);
+        if (missing.length) {
+          const fresh = await this.host.engine.sectionMetricsBatch(missing.map(row => row.request));
+          if (generation !== this.generation) return;
+          missing.forEach((row, index) => { values[row.index] = fresh[index]!; this.remember(keys[row.index]!, fresh[index]!); });
+        }
+        this.luckRows = values as SectionMetricDistribution[][];
+        this.progress = this.total;
+        if (this.luckThresholdAuto) {
+          let cumulative = 0;
+          this.luckThreshold = String(luckMass(this.luckRows[0]!, this.luckRange).find(([, mass]) => (cumulative += mass!) >= .5 - 1e-12)?.[0] ?? 0);
+        }
       } else if (this.mode === "pressure") {
         this.pressureRows = [];
         const first = this.sources[0];
@@ -373,10 +425,7 @@ export class ResultAnalysis {
     }
   }
   private hasLuck(source: Source) {
-    const song = source.hit.song; if (!song) return false;
-    const goal = source.input.goal, arena = goal.kind === "gekiso" ? goal.arena : undefined;
-    const original = this.host.master?.songs.get(song.songId)?.gekisoMissions ?? [];
-    return [0,1,2].some(index => (arena?.missions[index] || source.input.songRules?.missions[index] || original[index]) === 2);
+    return luckRanges(this.host, source).length > 0;
   }
   private delta(value: number) {
     return new Intl.NumberFormat(this.host.locale, { maximumFractionDigits: 0, signDisplay: "exceptZero" }).format(value);
@@ -750,12 +799,17 @@ export class ResultAnalysis {
           <h2 id="tb-analysis-title">${title}</h2>
           ${iconButton({ icon: "close", label: this.host.common("common.actions.close", "Close"), onClick: () => this.close() })}
         </header>
-        <div class="dialog__body tb-analysis-body">
+        <div class="dialog__body stack tb-analysis-body">
           ${this.mode === "filters"
             ? this.renderFilters()
             : this.mode === "mistakes"
               ? this.renderMistakes()
-              : this.renderPressure()}
+              : this.mode === "luckComparison" ? renderLuckComparison(this.host, {
+                  sources: this.sources, rows: this.luckRows, range: this.luckRange, threshold: this.luckThreshold,
+                  samples: this.luckSamples, action: this.runButton(), error: this.error, submitted: this.luckSubmitted,
+                  onRange: range => { this.luckRange = range; this.host.requestUpdate(); },
+                  onThreshold: threshold => { this.luckThreshold = threshold; this.luckThresholdAuto = false; this.host.requestUpdate(); },
+                }) : this.renderPressure()}
         </div>
       </dialog>
     `;
