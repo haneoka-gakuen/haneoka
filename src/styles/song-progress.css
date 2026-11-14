@@ -241,7 +241,7 @@
 
   .song-progress__profile {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: var(--md-sys-spacing-3);
     padding: var(--md-sys-spacing-4);
     border-radius: var(--md-sys-shape-corner-large);

@@ -163,11 +163,12 @@ function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
   const ellipsisWidth = ctx.measureText(ellipsis).width;
   if (ellipsisWidth >= maxWidth) return "";
 
+  const characters = Array.from(text);
   let low = 0;
-  let high = text.length;
+  let high = characters.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    const candidate = text.slice(0, mid) + ellipsis;
+    const candidate = characters.slice(0, mid).join("") + ellipsis;
     if (ctx.measureText(candidate).width <= maxWidth) {
       low = mid;
     } else {
@@ -175,7 +176,7 @@ function ellipsize(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
     }
   }
 
-  return text.slice(0, low) + ellipsis;
+  return characters.slice(0, low).join("") + ellipsis;
 }
 
 function drawTextFit(
@@ -331,7 +332,7 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
   );
 
   const profileTextX = PAD + 16 + avatarSize + 18;
-  const profileNameMaxW = CONTENT_WIDTH - (profileTextX - PAD) - 220;
+  const profileNameMaxW = CONTENT_WIDTH - (profileTextX - PAD) - 360;
   ctx.fillStyle = theme.onSurface;
   ctx.font = `700 26px ${theme.font}`;
   drawTextFit(ctx, report.profile.name, profileTextX, profileY + 20, profileNameMaxW, "left");
@@ -342,7 +343,7 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
 
   ctx.fillStyle = theme.primary;
   ctx.font = `700 22px ${theme.font}`;
-  drawTextFit(ctx, report.profile.rank, PAD + CONTENT_WIDTH - 20, profileY + 35, 190, "right");
+  drawTextFit(ctx, report.profile.rank, PAD + CONTENT_WIDTH - 20, profileY + 35, 330, "right");
 
   const metricsStartY = 236;
   const metricGap = 16;
