@@ -10,6 +10,7 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
+import { siteLink } from "../lib/site-origin";
 import { isReleasedContent } from "../lib/content-release";
 import { needsEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
@@ -92,6 +93,11 @@ interface Solution {
 const OWNER = "song-puzzle";
 const SPEEDS = ["0.5", "1", "2", "4"] as const;
 const REPLAY_INTERVAL_MS = 550;
+function puzzleCover(row: Record<string, unknown>): string {
+  const source = String(row.jacketUrl || row.jacketThumbUrl || "");
+  const cover = /^https?:\/\//u.test(source) ? siteLink(source) : source;
+  return cover.startsWith("/") && !cover.startsWith("//") && !cover.includes("\\") ? cover : "";
+}
 const ARROW_KEYS: Record<string, [number, number]> = {
   ArrowUp: [0, -1],
   ArrowDown: [0, 1],
@@ -266,8 +272,8 @@ export class SongPuzzle extends LitElement {
         })
       : undefined;
     this.songs = Object.entries(payload.songs).flatMap(([id, value]) => {
-      const cover = String(value.jacketUrl || value.jacketThumbUrl || "");
-      return /^\d+$/u.test(id) && cover.startsWith("/assets/") && !cover.includes("\\")
+      const cover = puzzleCover(value);
+      return /^\d+$/u.test(id) && cover
         ? [
             {
               id,
@@ -623,8 +629,8 @@ export class SongPuzzle extends LitElement {
       if (controller.signal.aborted || !this.isConnected) return;
       this.songs = Object.entries(data).flatMap(([id, value]) => {
         if (!value || typeof value !== "object" || !/^\d+$/.test(id)) return [];
-        const cover = String(value.jacketUrl || value.jacketThumbUrl || "");
-        if (!/^\d+$/.test(id) || !cover.startsWith("/assets/") || cover.includes("\\")) return [];
+        const cover = puzzleCover(value);
+        if (!cover) return [];
         return [
           {
             id,
