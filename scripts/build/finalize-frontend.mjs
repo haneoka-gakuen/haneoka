@@ -16,6 +16,7 @@ import * as pagefind from "pagefind";
 import { parseFragment } from "parse5";
 import { copyCalendarStaticAssets } from "./calendar-static-assets.mjs";
 import { addModulePreloads } from "./module-preload.mjs";
+import { StaticDocumentWorkers } from "./static-document-workers.mjs";
 import {
   finalizeStaticDocuments,
   isPublicStaticDocument,
@@ -24,7 +25,6 @@ import {
   privatePageDataRoot,
   publicStaticStagingRoot,
   requirePackedFallbacks,
-  setStaticDocumentTransform,
 } from "../../src/server/static-documents.ts";
 import { staticDocumentShard } from "../../src/lib/static-documents.ts";
 import { restrictShardCoverage } from "./static-build-shards.mjs";
@@ -100,92 +100,68 @@ async function loadPublicStatic() {
     },
   });
   const module = await import("../../src/server/public-static-documents.ts");
-  const mapped = urlMap ? module.publicUrlMapRewrite(path.resolve(urlMap)) : undefined;
-  let rewriteFor = mapped && (() => mapped);
   const staged = [];
   const targets = new Set();
   const privatePages = new Map();
   const mediaReferences = new Map();
   const token = process.env.STATIC_CATALOG_TOKEN || "";
   const selected = module.publicStaticSelection(value);
-  if (selected) {
-    const now = Date.now();
-    const build = JSON.parse(readFileSync(path.join(output, "build.json"), "utf8"));
-    const options = {
-      now,
-      build: build.web || build.id,
-      publications: module.collectPublicStaticPublications(output, files, now),
-      privateData: Boolean(token),
-    };
-    for (const sourcePath of files) {
-      const target = sourcePath !== "404.html" && module.publicStaticTarget(sourcePath);
-      if (!target || !selected(target)) continue;
-      targets.add(sourcePath);
-      const content = readFileSync(path.join(output, sourcePath), "utf8");
-      const references = new Map();
-      const functional = target.scope === "global" && /\/team-builder\/$/u.test(target.path);
-      const published =
-        !isPublicStaticDocument(content) &&
-        module.materializePublicStaticDocument(content, target, {
-          ...options,
-          ...(media && {
-            rewriteUrl(value, site) {
-              if (!(functional && "script" in site)) references.set(value, (references.get(value) || 0) + 1);
-              return undefined;
-            },
-          }),
-        });
-      if (!published) continue;
-      for (const [value, count] of references) mediaReferences.set(value, (mediaReferences.get(value) || 0) + count);
-      module.stagePublicStaticDocument(documentsRoot, sourcePath, published.html);
-      staged.push(sourcePath);
-      if (published.privateData)
-        privatePages.set(sourcePath, { path: target.path, build: options.build, ...published.privateData });
-    }
-    console.log(`staged ${staged.length} public canonical pages`);
-  }
-  requirePackedFallbacks([...targets].map((file) => `/${file}`));
-  if (media) {
-    const { preparePublicMedia } = await import("./public-static-media.mjs");
-    const { familyImageSize } = await import("../../src/lib/image-dimensions.ts");
-    const mediaFor = await preparePublicMedia({
-      outputRoot: output,
-      documentsRoot,
-      staged,
-      references: mediaReferences,
-      collect: (html, record) => module.rewriteStaticDocumentUrls(html, record),
-      familyImageSize,
-    });
-    rewriteFor = (locale) => {
-      const own = mediaFor(locale);
-      return mapped ? (url, site) => own(url, site) ?? mapped(url, site) : own;
-    };
-  }
-  const mediaRewriteFor = rewriteFor;
-  rewriteFor = (locale) => {
-    const own = mediaRewriteFor?.(locale);
-    return (value, site) => own?.(value, site) ?? module.functionalMediaUrl(value);
+  const now = Date.now();
+  const build = selected && JSON.parse(readFileSync(path.join(output, "build.json"), "utf8"));
+  const options = selected && {
+    now,
+    build: build.web || build.id,
+    publications: module.collectPublicStaticPublications(output, files, now),
+    privateData: Boolean(token),
   };
-  if (rewriteFor) {
-    for (const sourcePath of staged) {
-      const file = path.join(publicStaticStagingRoot(documentsRoot), sourcePath);
-      writeFileSync(
-        file,
-        module.rewriteStaticDocumentUrls(readFileSync(file, "utf8"), rewriteFor(localeOf(sourcePath)), (_id, data) => {
-          const sha256 = createHash("sha256").update(data).digest("hex");
-          const target = path.join(output, "entity-data", "v1", `${sha256}.json`);
-          mkdirSync(path.dirname(target), { recursive: true });
-          if (!existsSync(target)) writeFileSync(target, data);
-          return `/entity-data/v1/${sha256}.json`;
-        }),
+  const workers = new StaticDocumentWorkers({ output, documentsRoot, options, media, urlMap });
+  try {
+    if (selected) {
+      const selections = [];
+      for (const sourcePath of files) {
+        const target = sourcePath !== "404.html" && module.publicStaticTarget(sourcePath);
+        if (!target || !selected(target)) continue;
+        targets.add(sourcePath);
+        selections.push({ sourcePath, target });
+      }
+      const publishedPages = await Promise.all(
+        selections.map((selection) => workers.run({ kind: "materialize", ...selection })),
       );
+      for (const [index, published] of publishedPages.entries()) {
+        if (!published) continue;
+        const { sourcePath, target } = selections[index];
+        for (const [value, count] of published.references)
+          mediaReferences.set(value, (mediaReferences.get(value) || 0) + count);
+        staged.push(sourcePath);
+        if (published.privateData)
+          privatePages.set(sourcePath, { path: target.path, build: options.build, ...published.privateData });
+      }
+      console.log(`staged ${staged.length} public canonical pages`);
     }
-    setStaticDocumentTransform((html, pathname) =>
-      module.rewriteStaticDocumentUrls(html, rewriteFor(localeOf(pathname))),
-    );
+    requirePackedFallbacks([...targets].map((file) => `/${file}`));
+    if (media) {
+      const { preparePublicMedia } = await import("./public-static-media.mjs");
+      const { familyImageSize } = await import("../../src/lib/image-dimensions.ts");
+      await preparePublicMedia({
+        outputRoot: output,
+        documentsRoot,
+        staged,
+        references: mediaReferences,
+        collect: (html, record) => module.rewriteStaticDocumentUrls(html, record),
+        familyImageSize,
+      });
+    }
+    await Promise.all([
+      ...staged.map((sourcePath) =>
+        workers.run({ kind: "rewrite", sourcePath, staged: true, locale: localeOf(sourcePath) }),
+      ),
+      ...files.map((sourcePath) => workers.run({ kind: "rewrite", sourcePath, locale: localeOf(sourcePath) })),
+    ]);
+    sealPrivatePageData(module, privatePages, token);
+    return { module, staged: new Set(staged), targets };
+  } finally {
+    await workers.close();
   }
-  sealPrivatePageData(module, privatePages, token, rewriteFor);
-  return { module, staged: new Set(staged), targets, rewriteFor };
 }
 
 /**
@@ -194,7 +170,7 @@ async function loadPublicStatic() {
  * permission-protected static content prefix. Pages already public from a
  * previous finalization keep their entries.
  */
-function sealPrivatePageData(module, pages, token, rewriteFor) {
+function sealPrivatePageData(module, pages, token) {
   const shards = new Map();
   const root = privatePageDataRoot(output);
   if (existsSync(root))
@@ -217,8 +193,7 @@ function sealPrivatePageData(module, pages, token, rewriteFor) {
   const kid = token ? module.privatePageDataKeyId(token) : "";
   let blobs = 0;
   for (const [sourcePath, page] of pages) {
-    let html = readFileSync(path.join(output, sourcePath), "utf8");
-    if (rewriteFor) html = module.rewriteStaticDocumentUrls(html, rewriteFor(localeOf(sourcePath)));
+    const html = readFileSync(path.join(output, sourcePath), "utf8");
     const scripts = module.pageDataScripts(html, page.ids);
     if (!scripts) throw new Error(`Private page data is missing a seed: ${page.path}`);
     const sealed = [];
@@ -293,11 +268,6 @@ try {
           path.join(staged ? publicStaticStagingRoot(documentsRoot) : output, sourcePath),
           "utf8",
         );
-        if (!staged && publicStatic?.rewriteFor)
-          content = publicStatic.module.rewriteStaticDocumentUrls(
-            content,
-            publicStatic.rewriteFor(localeOf(sourcePath)),
-          );
         if (!indexable(content)) continue;
         // Only a proven public document may produce a directly accessible Markdown counterpart.
         if ((staged || isPublicStaticDocument(content)) && !/^static-views\//u.test(sourcePath)) {
@@ -319,15 +289,13 @@ try {
               mkdirSync(markdownStaging, { recursive: true });
               writeFileSync(file, body);
               if (!markdownBuckets.has(bucketPath)) markdownBuckets.set(bucketPath, []);
-              markdownBuckets
-                .get(bucketPath)
-                .push({
-                  file,
-                  anchor,
-                  title: markdown.title,
-                  canonical: markdown.canonical,
-                  bytes: Buffer.byteLength(body),
-                });
+              markdownBuckets.get(bucketPath).push({
+                file,
+                anchor,
+                title: markdown.title,
+                canonical: markdown.canonical,
+                bytes: Buffer.byteLength(body),
+              });
               pathname = `${bucketPath}#${anchor}`;
               rmSync(path.join(output, canonicalMarkdown.slice(1)), { force: true });
             } else {

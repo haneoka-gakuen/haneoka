@@ -741,6 +741,7 @@ jobs:
       PIPELINE_STAGE_PREFIX: ${{ needs.prepare.outputs.stage_prefix }}
       HANEOKA_MODEL_PREVIEW_POLICY: optional
       HANEOKA_MODEL_PREVIEW_WORKERS: "4"
+      HANEOKA_CARD_VIDEO_CACHE_ROOT: .cache/card-videos
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1065,6 +1066,18 @@ jobs:
         run: >-
           python scripts/core/stamp_ci_inputs.py --server "$RESOURCE_SERVER"
           --output "$RUNNER_TEMP/stamp-reviewed"
+      - name: Resolve card video encoder identity
+        id: card-video-encoder
+        run: |
+          ffmpeg -version > "$RUNNER_TEMP/card-video-encoder.txt"
+          echo "key=$(sha256sum "$RUNNER_TEMP/card-video-encoder.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Restore verified card video derivations
+        id: card-video-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .cache/card-videos/${{ inputs.server }}
+          key: card-video-v1-${{ runner.os }}-${{ inputs.server }}-${{ steps.card-video-encoder.outputs.key }}-${{ hashFiles('scripts/build/card_videos.py') }}-${{ needs.prepare.outputs.source_id }}
+          restore-keys: card-video-v1-${{ runner.os }}-${{ inputs.server }}-${{ steps.card-video-encoder.outputs.key }}-${{ hashFiles('scripts/build/card_videos.py') }}-
       - name: Assemble release
         run: |
           SOURCE_ID="${{ needs.prepare.outputs.source_id }}"
@@ -1085,6 +1098,12 @@ jobs:
               --source "$SOURCE_ID" --build "$BUILD_ID" --reuse-current "${extra[@]}" "${stamp_extra[@]}"
           fi
           python scripts/pipeline.py --server "$RESOURCE_SERVER" build-release --source "$SOURCE_ID" --build "$BUILD_ID" "${extra[@]}" > "$RUNNER_TEMP/release.json"
+      - name: Cache verified card video derivations
+        if: steps.card-video-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .cache/card-videos/${{ inputs.server }}
+          key: ${{ steps.card-video-cache.outputs.cache-primary-key }}
       - name: Publish CAS delta and switch current release
         id: publish_release
         run: |

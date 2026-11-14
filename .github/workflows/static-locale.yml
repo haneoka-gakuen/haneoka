@@ -133,6 +133,16 @@ jobs:
         with:
           pattern: static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-*
           path: .output/static-render-archives
+      - name: Resolve pinned public media cache
+        id: media-identity
+        run: >-
+          echo "key=$(node --input-type=module -e 'import { publicMediaCacheKey } from "./scripts/build/public-static-media.mjs"; console.log(publicMediaCacheKey())')" >> "$GITHUB_OUTPUT"
+      - name: Reuse verified public image bytes
+        uses: actions/cache@v6
+        with:
+          path: data/static-catalog/blobs/v1
+          key: static-public-media-v1-${{ runner.os }}-${{ steps.media-identity.outputs.key }}-${{ hashFiles('scripts/build/public-static-media.mjs') }}
+          restore-keys: static-public-media-v1-${{ runner.os }}-
       - name: Merge every rendered page, then index and pack once
         run: |
           for partition in 0 1 2 3; do
@@ -147,10 +157,11 @@ jobs:
           rm -rf -- .output/static-render-merged
           pnpm finalize:frontend
           node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
+          tar --use-compress-program="zstd -T2 -3" -cf .output/static-part.tar.zst -C .output/static-part .
       - uses: actions/upload-artifact@v7
         with:
           name: static-part-${{ inputs.inputs_sha }}-${{ inputs.locale }}
-          path: .output/static-part
+          path: .output/static-part.tar.zst
           include-hidden-files: true
           compression-level: 0
           retention-days: 7

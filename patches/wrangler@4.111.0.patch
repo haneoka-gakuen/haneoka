@@ -1,0 +1,21 @@
+--- a/wrangler-dist/cli.js
++++ b/wrangler-dist/cli.js
+@@ -154203,13 +154203,14 @@
+       logger.info(
+         `\u{1F300} Found ${numberFilesToUpload} new or modified static asset${numberFilesToUpload > 1 ? "s" : ""} to upload. Proceeding with upload...`
+       );
+-      const manifestLookup = Object.entries(manifest);
++      const manifestLookup = new Map();
++      for (const entry of Object.entries(manifest)) {
++        if (!manifestLookup.has(entry[1].hash)) manifestLookup.set(entry[1].hash, entry);
++      }
+       let assetLogCount = 0;
+       const assetBuckets = initializeAssetsResponse.buckets.map((bucket) => {
+         return bucket.map((fileHash) => {
+-          const manifestEntry = manifestLookup.find(
+-            (file5) => file5[1].hash === fileHash
+-          );
++          const manifestEntry = manifestLookup.get(fileHash);
+           if (manifestEntry === void 0) {
+             throw new FatalError(
+               `A file was requested that does not appear to exist.`,

@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
 
 from core.hashes import sha256_bytes, sha256_file
 from core.manifests import read_json, stable_json, write_json
@@ -113,9 +115,14 @@ def build_card_videos(data) -> dict[str, dict[str, Any]]:
         _file(data, MANIFEST)
     previous = read_json(file) if file.is_file() else {}
     prior_cards = previous.get("cards", {}) if previous.get("schema") == SCHEMA else {}
+    cache_root = os.environ.get("HANEOKA_CARD_VIDEO_CACHE_ROOT")
+    cache = Path(cache_root).resolve() / data.server if cache_root else None
+    cached = read_json(cache / MANIFEST) if cache and (cache / MANIFEST).is_file() else {}
+    cached_cards = cached.get("cards", {}) if cached.get("schema") == SCHEMA and cached.get("server") == data.server else {}
     recipe = None
     cards: dict[str, dict[str, Any]] = {}
     generated = reused = 0
+    pending = []
     for row in data.rows("MasterMemberCard"):
         card = int(row["_id"])
         movies = data.card_movies(card)
@@ -140,20 +147,55 @@ def build_card_videos(data) -> dict[str, dict[str, Any]]:
             digest = sha256_bytes(stable_json({"recipe": recipe, "inputs": inputs}))
             relative = f"runtime/card-videos/{card}/{key}-{digest[:20]}.mp4"
             old = prior_cards.get(str(card), {}).get(key, {})
+            if old.get("inputSha256") != digest:
+                old = cached_cards.get(str(card), {}).get(key, {})
+            if (cache and old.get("inputSha256") == digest and old.get("path") == relative
+                    and not data.output_integrity(relative, old["sha256"], old["bytes"])):
+                cached_file = cache / relative
+                if (cached_file.is_file() and cached_file.stat().st_size == old["bytes"]
+                        and sha256_file(cached_file) == old["sha256"]):
+                    target = data.root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(cached_file, target)
             if (old.get("inputSha256") == digest and old.get("path") == relative
                     and data.output_integrity(relative, old["sha256"], old["bytes"])):
                 output = old
                 reused += 1
             else:
-                output = {
-                    **_encode(_file(data, source), _file(data, background) if background else None, data.root / relative),
-                    "path": relative, "inputSha256": digest,
-                }
+                output = {"path": relative, "inputSha256": digest}
+                pending.append((output, _file(data, source), _file(data, background) if background else None))
                 generated += 1
             outputs[key] = output
-            if (data.root / relative).is_file():
-                data.runtime_path_set.add(PurePosixPath(relative).relative_to("runtime").as_posix())
         cards[str(card)] = outputs
+    def encode(job):
+        output, source, background = job
+        output.update(_encode(source, background, data.root / output["path"]))
+
+    with ThreadPoolExecutor(max_workers=min(2, max(1, (os.cpu_count() or 2) // 2))) as executor:
+        for _ in executor.map(encode, pending):
+            pass
+    kept = set()
+    for outputs in cards.values():
+        for output in outputs.values():
+            relative = output["path"]
+            source = data.root / relative
+            if source.is_file():
+                data.runtime_path_set.add(PurePosixPath(relative).relative_to("runtime").as_posix())
+                if cache:
+                    target = cache / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not target.is_file() or target.stat().st_size != output["bytes"] or sha256_file(target) != output["sha256"]:
+                        shutil.copyfile(source, target)
+                    kept.add(target)
+            elif cache:
+                target = cache / relative
+                if target.is_file() and target.stat().st_size == output["bytes"] and sha256_file(target) == output["sha256"]:
+                    kept.add(target)
+    if cache:
+        for target in (cache / "runtime/card-videos").rglob("*.mp4"):
+            if target not in kept:
+                target.unlink()
+        write_json(cache / MANIFEST, {"schema": SCHEMA, "server": data.server, "cards": cards})
     write_json(file, {"schema": SCHEMA, "server": data.server, "cards": cards})
     print(f"card videos: {generated} generated, {reused} reused", file=sys.stderr)
     return cards

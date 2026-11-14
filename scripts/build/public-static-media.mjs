@@ -100,6 +100,11 @@ function capturedReleases() {
   }
   return releases;
 }
+export function publicMediaCacheKey() {
+  const releases = capturedReleases();
+  if (!releases?.size) throw new Error("Public media cache requires frozen release identities");
+  return digest(JSON.stringify([...releases].map(([server, { pin }]) => [server, pin.releaseId]).sort()));
+}
 const catalogOrigin = () => (process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org").replace(/\/+$/u, "");
 const catalogHeaders = () =>
   process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {};

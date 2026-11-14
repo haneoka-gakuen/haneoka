@@ -381,6 +381,8 @@ jobs:
         run: |
           for locale in en ja ko zh-CN zh-TW; do
             mv ".output/static-parts/static-part-${{ needs.prepare.outputs.inputs_sha }}-${locale}" ".output/static-parts/${locale}"
+            tar --zstd -xf ".output/static-parts/${locale}/static-part.tar.zst" -C ".output/static-parts/${locale}"
+            rm -- ".output/static-parts/${locale}/static-part.tar.zst"
           done
           node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-merged --consume-parts
           rm -rf .output/public .output/static-documents

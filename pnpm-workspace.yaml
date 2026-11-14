@@ -117,6 +117,7 @@ allowBuilds:
 verifyDepsBeforeRun: false
 
 patchedDependencies:
+  "wrangler@4.111.0": "patches/wrangler@4.111.0.patch"
   "@sonolus/sonolus.js-compiler@1.8.4": ".dependencies/sonolus-our-notes/patches/sonolus.js-compiler@1.8.4.patch"
 
 overrides:
