@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { staticBuildSourceIdentity as sourceIdentity } from "../../src/server/static-build-identity.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
+import { staticBuildJson } from "../../src/server/static-input-store.ts";
 
 export const INPUT_SCHEMA = "haneoka-static-build-inputs-v1";
 export const sha256 = (body) => createHash("sha256").update(body).digest("hex");
@@ -53,7 +54,14 @@ export function copyOnce(source, destination) {
 export async function catalogCacheKey() {
   const origin = process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org";
   const servers = [
-    ...new Set(["jp", "intl", ...(process.env.STATIC_RESOURCE_SERVERS || "").split(",").map((server) => server.trim()).filter(Boolean)]),
+    ...new Set([
+      "jp",
+      "intl",
+      ...(process.env.STATIC_RESOURCE_SERVERS || "")
+        .split(",")
+        .map((server) => server.trim())
+        .filter(Boolean),
+    ]),
   ].sort();
   assert(servers.every(isPublicReleaseServer), "Static catalogs require public release servers");
   const pins = await Promise.all(
@@ -75,7 +83,52 @@ export async function catalogCacheKey() {
       return { server, releaseId, sourceId };
     }),
   );
-  return sha256(JSON.stringify(pins));
+  return sha256(JSON.stringify(await captureCatalogPins(pins)));
+}
+async function captureCatalogPins(pins) {
+  if (process.env.STATIC_BUILD_INPUT_MODE !== "capture") return pins;
+  const captured = await Promise.all(
+    pins.map((pin) => staticBuildJson(`native-pin:${pin.server}`, "native-pin", async () => pin)),
+  );
+  fs.mkdirSync(".output", { recursive: true });
+  fs.writeFileSync(".output/static-native-pins.json", JSON.stringify(captured));
+  return captured;
+}
+export async function pinCatalogInputs() {
+  assert.equal(process.env.STATIC_BUILD_INPUT_MODE, "capture", "Catalog pinning requires capture mode");
+  const servers = ["intl", "jp"];
+  const pins = await Promise.all(
+    servers.map((server) =>
+      staticBuildJson(`native-pin:${server}`, "native-pin", async () => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const response = await fetch(
+              new URL(
+                `/api/v1/servers/${server}/release?projection=identity`,
+                process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org",
+              ),
+              {
+                method: "HEAD",
+                signal: AbortSignal.timeout(15000),
+                headers: process.env.STATIC_CATALOG_TOKEN
+                  ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN }
+                  : {},
+              },
+            );
+            const releaseId = response.headers.get("x-haneoka-release-id");
+            const sourceId = response.headers.get("x-haneoka-source-id");
+            if (!response.ok || !/^r-[a-f0-9]{20}$/u.test(releaseId || "") || !sourceId)
+              throw new Error(`Catalog input identity is unavailable: ${server}`);
+            return { server, releaseId, sourceId };
+          } catch (error) {
+            if (attempt >= 5) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+          }
+        }
+      }),
+    ),
+  );
+  return captureCatalogPins(pins);
 }
 export function compactCatalogCache(root, capture) {
   const base = path.resolve(root, capture);
@@ -432,7 +485,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     },
   });
   const mode = positionals[0];
-  if (mode === "catalog-cache-key") {
+  if (mode === "pin-catalogs") {
+    console.log(JSON.stringify(await pinCatalogInputs()));
+  } else if (mode === "catalog-cache-key") {
     try {
       console.log(await catalogCacheKey());
     } catch (error) {

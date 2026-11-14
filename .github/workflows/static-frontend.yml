@@ -224,7 +224,8 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
           python -m pip install boto3==1.43.47 py3rijndael==0.3.3
-          python scripts/build/arena_inputs.py
+          node scripts/build/static-build-inputs.mjs pin-catalogs
+          python scripts/build/arena_inputs.py --pins .output/static-native-pins.json
       - name: Prepare resource visibility metadata
         if: ${{ !inputs.verification_only }}
         env:
