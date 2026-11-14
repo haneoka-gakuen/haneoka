@@ -1227,6 +1227,13 @@
       }
     },
     "shop": {
+      "paidStars": "付費星石",
+      "freeStars": "購買時免費星石",
+      "passStars": "月卡星石",
+      "totalStars": "星石合計",
+      "starsPer100": "星石 / 100",
+      "starsPerAmount": "每{amount}星石",
+      "passTerm": "{stars} / {days}天",
       "price": "價格",
       "inAppPurchase": "應用程式內購買",
       "limit": "次数限制",

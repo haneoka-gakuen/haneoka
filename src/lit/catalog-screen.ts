@@ -85,7 +85,7 @@ import { sortControl } from "./ui/sort-control";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { shopPaymentPrices, shopPriceLine } from "../lib/shop-currency";
+import { shopPaymentPrices, shopPriceLine, type ShopStarRewards } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
 import { catalogQueryNames, intersectCatalogFacets, parseCatalogQuery, type CatalogQueryAlias, type CatalogQueryFacets } from "../lib/catalog-query";
@@ -1103,9 +1103,16 @@ export class CatalogScreen extends LitElement {
     };
     return pin(row) as Item;
   }
+  private shopStarSummaries = new Map<string, ShopStarRewards>();
   private unionPrimaryRow(entry: CrossCatalogEntry, itemEntries = this.unionItems): Item {
     const variant = entry.perServer[entry.displayServer]!;
     const row = crossServerDisplayRow(entry);
+    if (entry.resource === "shop") {
+      for (const source of Object.values(entry.perServer))
+        if (source?.row.starRewards) this.shopStarSummaries.set(JSON.stringify([source.identity.server, source.identity.releaseId, source.identity.sourceId, source.id]), source.row.starRewards as ShopStarRewards);
+      const key = JSON.stringify([variant.identity.server, variant.identity.releaseId, variant.identity.sourceId, variant.id]);
+      if (!row.starRewards && this.shopStarSummaries.has(key)) row.starRewards = this.shopStarSummaries.get(key);
+    }
     // Shared text may supplement this presentation; primary artwork remains on its own source.
     for (const supplement of entry.content.supplements)
       if (supplement.classification === "source-asset") {
@@ -1120,6 +1127,8 @@ export class CatalogScreen extends LitElement {
   private unionDetailRow(detail: ReturnType<typeof crossServerDetail>): Item {
     const own = detail.perServer[detail.activeServer]!;
     const row = { ...detail.row };
+    if (this.settings.resource === "shop" && !row.starRewards)
+      row.starRewards = this.shopStarSummaries.get(JSON.stringify([own.identity.server, own.identity.releaseId, own.identity.sourceId, own.id]));
     for (const supplement of detail.content.supplements)
       if (supplement.classification === "source-asset") {
         const field = supplement.field.split(".")[0];
@@ -2031,6 +2040,7 @@ export class CatalogScreen extends LitElement {
     document.addEventListener("visibilitychange", this.refreshVisiblePage);
   }
   disconnectedCallback() {
+    this.shopStarSummaries.clear();
     this.pageRefresh.cancel();
     clearInterval(this.pageRefreshTimer);
     document.removeEventListener("visibilitychange", this.refreshVisiblePage);
@@ -3094,7 +3104,7 @@ export class CatalogScreen extends LitElement {
     const now = Date.now();
     const numeric = (this.profile.presentation === "song" &&
       ["level", "time", "nativeScore", "score", "eff", "bpm", "n", "nps", "sr", "justable", "justableRate", "luck", ...DECK_METRICS].includes(this.sort)) ||
-      (this.profile.presentation === "system" && ["startAt", "endAt"].includes(this.sort));
+      (this.profile.presentation === "system" && (["startAt", "endAt"].includes(this.sort) || this.sort.startsWith("starRewards.")));
     items.sort((a, b) => {
       if (this.sort === "availability") {
         const left = this.availabilityRank(a, now);
@@ -5431,6 +5441,12 @@ export class CatalogScreen extends LitElement {
     const rows = this.settings.resource === "chat-customizations"
       ? [["id", "id", "ID"], ["title", "title", "Title"], ["kind", "type", "Type"]]
       : [...options[presentation]];
+    if (this.settings.resource === "shop") rows.push(
+      ["starRewards.paid", "catalog.shop.paidStars", "Paid Stars"],
+      ["starRewards.free", "catalog.shop.freeStars", "Free Stars at purchase"],
+      ["starRewards.pass", "catalog.shop.passStars", "Pass Stars"],
+      ["starRewards.total", "catalog.shop.totalStars", "Total Stars"],
+    );
     return rows.map(([value, key, fallback]) => ({
       value,
       label: this.label(key, fallback),

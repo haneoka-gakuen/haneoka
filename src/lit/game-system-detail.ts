@@ -26,6 +26,8 @@ import {
   localeShopCurrency,
   moneyName,
   shopPriceEntries,
+  shopStarsPer100,
+  type ShopStarRewards,
 } from "../lib/shop-currency";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { collectionTable } from "./ui/collection-view";
@@ -810,6 +812,24 @@ function renderShopFacts(c: Controller, item: Item) {
           ),
         });
     }
+  }
+  const stars = item.starRewards as ShopStarRewards | undefined;
+  if (stars?.total) {
+    const number = (value: number) => value.toLocaleString(c.settings.locale, { maximumFractionDigits: 1 });
+    rows.push(
+      { label: c.label("catalog.shop.paidStars", "Paid Stars"), value: number(stars.paid) },
+      { label: c.label("catalog.shop.freeStars", "Free Stars at purchase"), value: number(stars.free) },
+    );
+    if (stars.days) rows.push({
+      label: c.label("catalog.shop.passStars", "Pass Stars"),
+      value: c.label("catalog.shop.passTerm", "{stars} / {days} days")
+        .replace("{stars}", number(stars.pass)).replace("{days}", number(stars.days)),
+    });
+    rows.push({ label: c.label("catalog.shop.totalStars", "Total Stars"), value: number(stars.total) });
+    for (const { code, stars: amount } of shopStarsPer100(stars, prices)) rows.push({
+      label: c.label("catalog.shop.starsPerAmount", "Stars / {amount}").replace("{amount}", formatMoney(100, code, c.settings.locale)),
+      value: number(amount),
+    });
   }
   if (Number(item.limit || 0))
     rows.push({ label: c.detailLabel("limit"), value: Number(item.limit).toLocaleString(c.settings.locale) });

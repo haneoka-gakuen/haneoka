@@ -1227,6 +1227,13 @@
       }
     },
     "shop": {
+      "paidStars": "有償スター",
+      "freeStars": "購入時の無償スター",
+      "passStars": "パスのスター",
+      "totalStars": "スター合計",
+      "starsPer100": "スター / 100",
+      "starsPerAmount": "{amount}あたりのスター",
+      "passTerm": "{stars} / {days}日間",
       "price": "価格",
       "inAppPurchase": "アプリ内購入",
       "limit": "回数制限",

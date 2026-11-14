@@ -6,6 +6,7 @@ import { LitElement, html, nothing } from "lit";
 import { difficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
 import { icon } from "./ui/icon";
 import { gekisoTimingView } from "./shared/gekiso-timing";
+import { formatMoney, shopPaymentPrices, shopStarsPer100, type ShopStarRewards } from "../lib/shop-currency";
 
 /**
  * Catalogue table view.
@@ -214,6 +215,17 @@ const COLUMNS: Record<string, Column[]> = {
     column("category", "text"),
     column("release", "text", "release"),
   ],
+  shop: [
+    column("title", "entity", "title", true),
+    column("status"),
+    column("price", "numeric"),
+    column("paidStars", "numeric", "starRewards.paid"),
+    column("freeStars", "numeric", "starRewards.free"),
+    column("passStars", "numeric", "starRewards.pass"),
+    column("totalStars", "numeric", "starRewards.total"),
+    column("starsPer100", "numeric"),
+    column("release", "text", "release"),
+  ],
 };
 
 /** Ceilings, so a long composer credit wraps instead of widening the table. */
@@ -269,7 +281,7 @@ export class CatalogTable extends LitElement {
           ? this.meta?.mode === "gekisou"
             ? "song-meta-gekisou"
             : "song-meta"
-          : c.settings.resource === "chat-customizations" ? "chat-customizations" : c.profile.presentation
+          : ["chat-customizations", "shop"].includes(c.settings.resource) ? c.settings.resource : c.profile.presentation
       ] || COLUMNS.item;
     const visibleColumns = columns.filter((entry) =>
       (!entry.key.startsWith("gekisouPhase") || c.settings.origin !== "bestdori") &&
@@ -291,7 +303,9 @@ export class CatalogTable extends LitElement {
       eventItemsHour: ["catalog.analysis.fields.metaEventItemsHour", "Event items per hour"],
     };
     const rankLabel = (key: string) => c.label("catalog.analysis.fields.metaRankScore", "{rank} score").replace("{rank}", key.slice(4));
-    const label = (key: string) => /^rank(?:C|B|A|S|SS)$/u.test(key) ? rankLabel(key) : (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
+    const label = (key: string) => c.settings.resource === "shop" && ["paidStars", "freeStars", "passStars", "totalStars", "starsPer100"].includes(key)
+      ? c.label(`catalog.shop.${key}`, key)
+      : /^rank(?:C|B|A|S|SS)$/u.test(key) ? rankLabel(key) : (c.profile.presentation === "song" || c.profile.perDifficulty) && metricLabels[key] ? c.label(...metricLabels[key]) : key === "nativeScore" ? c.label("metaNativeScore", "Score") : key === "score" ? c.label("metaScoreFactor", c.label("metaScore", "Factor")) : c.detailLabel(key);
     return html`
       <div class="table-scroll" role="region" tabindex="0" aria-label=${c.label("table", "Table")} data-scroll-region>
         <table class="data-table">
@@ -380,6 +394,19 @@ export class CatalogTable extends LitElement {
     const wrap = (value: unknown) => html`
       <td class=${classes || nothing} style=${CELL_MAX[key] ? `--cell-max:${CELL_MAX[key]}` : nothing}>${value}</td>
     `;
+    if (c.settings.resource === "shop") {
+      const rewards = item.starRewards as ShopStarRewards | undefined;
+      const number = (value: number) => value.toLocaleString(this.locale, { maximumFractionDigits: 1 });
+      if (key === "price") return wrap(c.shopPriceLabel(item));
+      const field = { paidStars: "paid", freeStars: "free", passStars: "pass", totalStars: "total" }[key] as keyof ShopStarRewards | undefined;
+      if (field) return wrap(rewards ? key === "passStars" && rewards.days
+        ? c.label("catalog.shop.passTerm", "{stars} / {days} days").replace("{stars}", number(rewards.pass)).replace("{days}", number(rewards.days))
+        : number(rewards[field]) : "—");
+      if (key === "starsPer100") {
+        const values = rewards ? shopStarsPer100(rewards, shopPaymentPrices(item.payment, c.itemSourceServer(item))) : [];
+        return wrap(values.length ? values.map(({ code, stars }) => html`<p class="detail-copy">${number(stars)} / ${formatMoney(100, code, this.locale)}</p>`) : "—");
+      }
+    }
     const characterIds: number[] = c.itemCharacterIds(item);
     const characterId = characterIds[0] || Number(item.characterId || 0);
     const character = c.itemCharacter(item, characterId);
@@ -403,7 +430,7 @@ export class CatalogTable extends LitElement {
             <span class="table-entity__copy">
               <span class="table-entity__name" lang=${c.itemTitleLanguage(item)}>${c.itemTitle(item)} ${c.itemExclusive(item)}</span>
               ${
-                c.tileDescription(item)
+                c.settings.resource !== "shop" && c.tileDescription(item)
                   ? html`
                       <span class="table-entity__sub">${c.tileDescription(item)}</span>
                     `

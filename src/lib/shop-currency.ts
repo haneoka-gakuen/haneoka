@@ -93,6 +93,45 @@ export function shopPaymentPrices(payment: unknown, server: string): unknown {
   return amount === undefined ? source.prices : { jpy: amount };
 }
 
+export interface ShopStarRewards {
+  paid: number;
+  free: number;
+  pass: number;
+  days: number;
+  total: number;
+}
+
+/** Star entitlements from the native grants, including every monthly-pass day. */
+export function shopStarRewards(
+  rewards: readonly Record<string, unknown>[],
+  passes: ReadonlyMap<string, Record<string, unknown>>,
+): ShopStarRewards {
+  const result: ShopStarRewards = { paid: 0, free: 0, pass: 0, days: 0, total: 0 };
+  for (const reward of rewards) {
+    if (reward.resourceType === 1) {
+      if (reward.resourceId === 2) result.paid += Number(reward.count);
+      if (reward.resourceId === 1) result.free += Number(reward.count);
+    } else if (reward.resourceType === 6) {
+      const id = `monthly-${reward.resourceId}`;
+      const pass = passes.get(id);
+      if (!pass) throw new Error(`Missing monthly pass: ${id}`);
+      result.days = Math.max(result.days, Number(pass.durationDays));
+      for (const day of pass.rewards as Array<{ reward: Record<string, unknown> }>) {
+        if (day.reward.resourceType === 1 && [1, 2].includes(Number(day.reward.resourceId)))
+          result.pass += Number(day.reward.count) * Number(reward.count);
+      }
+    }
+  }
+  result.total = result.paid + result.free + result.pass;
+  return result;
+}
+
+export function shopStarsPer100(rewards: ShopStarRewards, prices: unknown): Array<{ code: string; stars: number }> {
+  return rewards.total > 0
+    ? shopPriceEntries(prices).map(({ code, amount }) => ({ code, stars: rewards.total * 100 / amount }))
+    : [];
+}
+
 /**
  * Fixed cross-region symbols rather than per-locale CLDR ones: CLDR writes
  * TWD as a bare "$" in zh-TW (and USD as "$" in ja/en), which inside one

@@ -39,6 +39,7 @@ export async function loadCrossServerDetail(
         variant.row = {
           ...structuredClone(value),
           ...(variant.row.eventPublishedAt !== undefined ? { eventPublishedAt: variant.row.eventPublishedAt } : {}),
+          ...(entry.resource === "shop" && variant.row.starRewards ? { starRewards: variant.row.starRewards } : {}),
         };
         const images = value.images;
         if (images !== undefined) variant.assets.images = structuredClone(images);

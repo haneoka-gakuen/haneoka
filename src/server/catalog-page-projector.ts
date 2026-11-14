@@ -51,6 +51,7 @@ export async function catalogPageData(
       )
         throw new Error("Core entity association is incomplete");
       if (entry && own?.identity.releaseId === pin.releaseId && own.identity.sourceId === pin.sourceId) {
+        if (resource === "shop") payload.item = { ...payload.item, starRewards: own.row.starRewards };
         const detail = await loadCrossServerDetail(entry, server as OfficialCatalogServer, {
           readEntity: (resource, identity, id) =>
             fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, identity.server, identity),

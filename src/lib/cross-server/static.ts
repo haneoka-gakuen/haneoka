@@ -3,9 +3,17 @@ import { loadCrossServerCatalog } from "./load";
 import { loadCrossServerCatalogs } from "./bundle";
 import type { CrossCatalogResource, OfficialCatalogServer } from "./catalog";
 import { crossCatalogApi, crossCatalogDefinition, crossCatalogRows } from "./definitions";
+import { shopStarRewards } from "../shop-currency";
 
 const songCollections = new Map<string, Promise<unknown>>();
+const shopCollections = new Map<string, Promise<unknown>>();
 const entryBatches = new Map<string, Promise<void>>();
+async function completeRows(resource: CrossCatalogResource, ids: readonly string[], identity: StaticCatalogRelease) {
+  await primeStaticCatalogBatch(resource, ids, identity.server, identity);
+  return new Map(await Promise.all(ids.map(async (id) => [id,
+    await fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, identity.server, identity) as Record<string, unknown>,
+  ] as const)));
+}
 function prepareEntryBatch(resource: CrossCatalogResource, identity: StaticCatalogRelease, document: unknown): Promise<void> {
   if (process.env.STATIC_BUILD_INPUT_MODE === "frozen") return Promise.resolve();
   const key = JSON.stringify([identity.server, identity.releaseId, identity.sourceId, resource]);
@@ -17,7 +25,27 @@ function prepareEntryBatch(resource: CrossCatalogResource, identity: StaticCatal
   }
   return pending;
 }
-function collectionWithMissionFields(resource: CrossCatalogResource, identity: StaticCatalogRelease): Promise<unknown> {
+function collectionWithDerivedFields(resource: CrossCatalogResource, identity: StaticCatalogRelease): Promise<unknown> {
+  if (resource === "shop") {
+    const key = JSON.stringify(identity);
+    let pending = shopCollections.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const document = await fetchStaticCatalog("shop", identity.server, identity) as Record<string, unknown>;
+        const rows = crossCatalogRows("shop", document);
+        const details = await completeRows("shop", Object.keys(rows), identity);
+        const passIds = [...new Set([...details.values()].flatMap((item) =>
+          (item.rewards as Array<Record<string, unknown>>).filter((reward) => reward.resourceType === 6)
+            .map((reward) => `monthly-${reward.resourceId}`)))];
+        const passes = await completeRows("passes", passIds, identity);
+        return { ...document, entries: Object.fromEntries(Object.entries(rows).map(([id, row]) => [id, {
+          ...row, starRewards: shopStarRewards(details.get(id)!.rewards as Array<Record<string, unknown>>, passes),
+        }])) };
+      })();
+      shopCollections.set(key, pending);
+    }
+    return pending;
+  }
   if (resource !== "songs") return fetchStaticCatalog(crossCatalogApi(resource), identity.server, identity);
   const key = JSON.stringify(identity);
   let pending = songCollections.get(key);
@@ -41,7 +69,7 @@ export function loadStaticCrossServerCatalogs(resources: readonly CrossCatalogRe
     selectedServer, locale, servers: ["jp", "intl"],
     reader: {
       async readIdentity(server) { return { ...await staticCatalogRelease(server), server }; },
-      readCollection: (name, identity) => collectionWithMissionFields(name, identity),
+      readCollection: (name, identity) => collectionWithDerivedFields(name, identity),
       readEntity: (name, identity, id) => fetchStaticCatalog(`${crossCatalogApi(name)}/${encodeURIComponent(id)}`, identity.server, identity),
     },
   });
@@ -58,7 +86,8 @@ export function loadStaticCrossServerCatalog(resource: CrossCatalogResource, sel
         const identity = await staticCatalogRelease(server);
         return { ...identity, server };
       },
-      readCollection: (name, identity) => fetchStaticCatalog(crossCatalogApi(name), identity.server, identity),
+      readCollection: (name, identity) => name === "shop" ? collectionWithDerivedFields(name, identity)
+        : fetchStaticCatalog(crossCatalogApi(name), identity.server, identity),
       readEntity: (name, identity, id) => fetchStaticCatalog(`${crossCatalogApi(name)}/${encodeURIComponent(id)}`, identity.server, identity),
     },
   });
@@ -72,7 +101,8 @@ export function loadStaticCrossServerEntry(resource: CrossCatalogResource, selec
     reader: {
       async readIdentity(server) { return { ...await staticCatalogRelease(server), server }; },
       async readCollection(name, identity) {
-        const document = await fetchStaticCatalog(crossCatalogApi(name), identity.server, identity);
+        const document = name === "shop" ? await collectionWithDerivedFields(name, identity)
+          : await fetchStaticCatalog(crossCatalogApi(name), identity.server, identity);
         await prepareEntryBatch(name, identity, document);
         const rows = crossCatalogRows(name, document, id), key = crossCatalogDefinition(name).rows;
         return key ? { [key]: rows } : rows;

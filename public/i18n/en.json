@@ -1227,6 +1227,13 @@
       }
     },
     "shop": {
+      "paidStars": "Paid Stars",
+      "freeStars": "Free Stars at purchase",
+      "passStars": "Pass Stars",
+      "totalStars": "Total Stars",
+      "starsPer100": "Stars / 100",
+      "starsPerAmount": "Stars / {amount}",
+      "passTerm": "{stars} / {days} days",
       "price": "Price",
       "inAppPurchase": "In-app purchase",
       "limit": "Purchase limit",

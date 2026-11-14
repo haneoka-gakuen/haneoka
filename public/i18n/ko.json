@@ -1227,6 +1227,13 @@
       }
     },
     "shop": {
+      "paidStars": "유료 스타",
+      "freeStars": "구매 시 무료 스타",
+      "passStars": "패스 스타",
+      "totalStars": "스타 합계",
+      "starsPer100": "스타 / 100",
+      "starsPerAmount": "{amount}당 스타",
+      "passTerm": "{stars} / {days}일",
       "price": "가격",
       "inAppPurchase": "인앱 구매",
       "limit": "횟수 제한",
