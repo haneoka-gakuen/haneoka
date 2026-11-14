@@ -487,9 +487,9 @@ export class EngineClient {
   private async execute(request: EngineRequest, started: number, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler, responseKey: string | null = null, pool = this.pool): Promise<EngineResponse> {
     const justWindow = request.goal.kind === "gekiso" ? request.goal.justWindow?.minimumMs ?? request.goal.minJustWindowMs
       : request.goal.kind === "event" ? request.goal.gekiso?.justWindow?.minimumMs ?? request.goal.gekiso?.minJustWindowMs : undefined;
-    const sharedSteadyWindow = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
-      && request.goal.arena.objective !== "sections" && !request.goal.justWindow;
-    if (justWindow && justWindow > 0 && !sharedSteadyWindow) request = { ...request, noFloor: true };
+    const sharedScore = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
+      && request.goal.arena.objective !== "sections";
+    if (justWindow && justWindow > 0 && !sharedScore) request = { ...request, noFloor: true };
     const idlest = () => this.idlest(pool);
     const before = pool.map(worker => worker.timing());
     let latest = emptyResponse(request);
@@ -731,7 +731,7 @@ export class EngineClient {
         let sharedUnknown: string[] = [];
         if (!request.noFloor && count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
           && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
-          && !request.goal.justWindow
+          && !justWindow
           && (request.goal.minComboBonus ?? 1) <= 1
           && request.goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3))) {
           const goal = request.goal;
@@ -739,7 +739,7 @@ export class EngineClient {
             request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,
               deadline,
               goal: { ...goal, songs: [goal.songs[0]!], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) } } },
-            undefined, undefined, goal.minJustWindowMs ? 800 : 80);
+            undefined, undefined, 80);
           if (stopped) return latest;
           sharedUnknown = warm.unknownCards;
           const team = warm.overall[0];
@@ -785,7 +785,10 @@ export class EngineClient {
         const publishShared = () => {
           const response = merged();
           const hit = response.overall[0];
-          if (request.goal.kind === "gekiso" && request.k === 1 && hit)
+          // A shared JUST search can borrow the score of a formation validated on every chart.
+          if (request.goal.kind === "gekiso" && request.k === 1 && hit
+            && (!justWindow || hit.aggregate?.songs.length === request.goal.songs.length
+              && hit.aggregate.songs.every(song => song.justWindow?.meetsTarget !== false)))
             for (const worker of workers) worker.raiseFloor(hit.key);
           publish(response);
         };
