@@ -3,7 +3,7 @@ import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { live } from "lit/directives/live.js";
 import { modal } from "./ui/modal";
 import { contentPublished } from "../lib/content-publication";
-import { skillRating } from "../lib/song-progress-rating";
+import { skillRating, type SkillBest } from "../lib/song-progress-rating";
 import type { SongProgressRoster, RosterRatings } from "../lib/song-progress-roster";
 import type { SongProgressImageReport } from "../lib/song-progress-image";
 import { formatDate } from "../lib/date-format";
@@ -47,6 +47,7 @@ interface Chart {
 }
 const OWNER = "song-progress";
 const DIFFICULTIES = ["easy", "normal", "hard", "expert", "special"] as const;
+const DIFFICULTY_TAGS = ["E", "N", "H", "EX", "SP"] as const;
 const STATUS_KEYS = ["notCleared", "cleared", "fullCombo", "allPerfect"] as const;
 type Filter = "all" | "0" | "1" | "2" | "3";
 
@@ -307,18 +308,29 @@ export class SongProgress extends LitElement {
       const { SongProgressRoster } = await import("../lib/song-progress-roster");
       if (generation !== this.ratingGeneration) return;
       this.roster ??= new SongProgressRoster();
+      let lastProgress = -Infinity;
       const result = await this.roster.calculate(snapshot, this.server, (done,total) => {
         if (generation !== this.ratingGeneration) return;
+        const now = performance.now();
+        if (done < total && now - lastProgress < 100) return;
+        lastProgress = now;
         this.ratingProgress = `${done} / ${total}`;
         this.requestUpdate();
       });
-      if (generation === this.ratingGeneration) this.rosterRatings = result;
+      if (generation === this.ratingGeneration) {
+        this.rosterRatings = result;
+        this.ratingError = result.pending ? this.text("calculationFailed", "Calculation incomplete") : "";
+      }
     } catch (error) {
       if (generation === this.ratingGeneration && !(error instanceof DOMException && error.name === "AbortError"))
         this.ratingError = this.text("calculationFailed", "Calculation incomplete");
     } finally {
       if (generation === this.ratingGeneration) { this.calculating = false; this.requestUpdate(); }
     }
+  }
+  private bestResult(row: SkillBest<Chart>) {
+    const difficulty = DIFFICULTY_TAGS[row.chart.difficulty === 5 ? 4 : row.chart.difficulty];
+    return `${difficulty} ${row.chart.levelText} / ${row.status === 3 ? "AP" : "FC"} ${this.number(row.value)}`;
   }
   private ratings() {
     const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
@@ -330,14 +342,12 @@ export class SongProgress extends LitElement {
           <div><dt>${this.text("highestAp", "Highest AP")}</dt><dd>${this.number(skill.ap)}</dd></div>
           <div><dt>${this.text("highestFc", "Highest FC")}</dt><dd>${this.number(skill.fc)}</dd></div>
           <div><dt>Best 20</dt><dd>${skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20)}</dd></div>
-          <div class="song-progress__rating-rule"><dt>${this.text("ratingRule", "Rule")}</dt><dd>R1 · AP = Lv. · FC = Lv. − 1</dd></div>
         </dl>
         ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
           onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
           content:html`<ol class="song-progress__best">${skill.best.map((row,index) => html`<li class="song-progress__best-row">
             <span class="song-progress__best-rank">${index+1}</span>
-            <a class="song-progress__best-title" href=${resourcePath({server:this.server,locale:this.locale as Locale,kind:"songs",id:String(row.chart.songId)})}>${row.chart.title}</a>
-            <span class="song-progress__best-meta">${row.status === 3 ? "AP" : "FC"} ${this.number(row.value)}</span>
+            <a class="song-progress__best-title song-progress__copy" href=${resourcePath({server:this.server,locale:this.locale as Locale,kind:"songs",id:String(row.chart.songId)})}><span lang=${row.chart.titleLanguage}>${row.chart.title}</span><small>${this.bestResult(row)}</small></a>
           </li>`)}</ol>`,
         })}
       </section>
@@ -381,12 +391,9 @@ export class SongProgress extends LitElement {
     this.exporting = true;
     const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
     const roster = this.rosterRatings;
-    const witness = (roster?.current ?? roster?.potential)?.witness;
-    const catalog = this.roster?.catalog;
-    const team = witness && catalog ? [
-      ...witness.members.map(key => catalog.members[key.slice(1)]),
-      ...witness.snaps.map(key => key ? catalog.snapshots[key.slice(1)] : undefined),
-    ].map(row => ({ label: row ? localizedText(row.name,this.locale) || String(row.id) : "—", ...(row?.image ? { image: String(row.image) } : {}) })) : [];
+    const team = ((roster?.current ?? roster?.potential)?.team ?? []).map(row => ({
+      label: row ? localizedText(row.name,this.locale) || String(row.id) : "—", ...(row?.image ? {image:row.image} : {}),
+    }));
     const report: SongProgressImageReport = {
       title: this.text("title", "Song progress"), generated: formatDate(this.locale, Date.now(), { year:"always" }),
       version: `${roster?.potential?.referenceId ?? "R1"} · ${this.pageData?.variants[this.server]?.identity.releaseId ?? this.server}`,
@@ -403,7 +410,7 @@ export class SongProgress extends LitElement {
         const charts = this.eligibleCharts().filter(chart => chart.difficulty === (index === 4 ? 5 : index));
         return { label: name.toUpperCase(), clear: charts.filter(chart => this.status(chart) >= 1).length, fc: charts.filter(chart => this.status(chart) >= 2).length, ap: charts.filter(chart => this.status(chart) >= 3).length };
       }), countHeaders: ["CLEAR", "FC", "AP"],
-      songs: skill.best.map(row => ({ title:row.chart.title, level:`${DIFFICULTIES[row.chart.difficulty === 5 ? 4 : row.chart.difficulty]!.toUpperCase()} Lv.${row.chart.levelText} · ${this.number(row.value)}`, status:row.status === 3 ? "AP" : "FC", image:row.chart.jacket })),
+      songs: skill.best.map(row => ({ title:row.chart.title, level:this.bestResult(row), status:"", image:row.chart.jacket })),
       team, teamLabel: this.text("benchmarkTeam","Benchmark team"), bestTitle: "Best 20",
     };
     try {

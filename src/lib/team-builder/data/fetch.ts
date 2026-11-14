@@ -40,6 +40,7 @@ export async function fetchTeamBuilderData(
   server: string,
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
+  identity?: CurrentTeamBuilderIdentity,
 ): Promise<TeamBuilderData> {
   validServer(server);
   const prefix = `/api/v1/servers/${encodeURIComponent(server)}/`;
@@ -47,7 +48,7 @@ export async function fetchTeamBuilderData(
   // The DTO of a release never changes: ask which release is current, then
   // fetch the release-pinned URL, which the Worker marks immutable, so a repeat
   // visit is served from the browser cache.
-  const current = await fetchCurrentTeamBuilderIdentity(server, signal, fetcher).catch(() => null);
+  const current = identity ?? await fetchCurrentTeamBuilderIdentity(server, signal, fetcher).catch(() => null);
   const compact = await fetcher(
     `/api/v1/team-builder/${encodeURIComponent(server)}${current ? `?release=${encodeURIComponent(current.releaseId)}&v=4` : "?v=4"}`,
     current ? { signal } : { cache: "no-store", signal },
@@ -75,7 +76,7 @@ export async function fetchTeamBuilderData(
     return data;
   }
   if (compact.status !== 404) throw new Error(`Team data DTO unavailable: ${compact.status}`);
-  const { releaseId, sourceId } = await fetchCurrentTeamBuilderIdentity(server, signal, fetcher);
+  const { releaseId, sourceId } = identity ?? await fetchCurrentTeamBuilderIdentity(server, signal, fetcher);
   const resources = [
     "cards",
     "support-cards",

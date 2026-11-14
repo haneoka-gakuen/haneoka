@@ -1323,7 +1323,6 @@
       "potentialRating": "Potential",
       "highestAp": "Highest AP",
       "highestFc": "Highest FC",
-      "ratingRule": "Rule",
       "calculateRating": "Calculate",
       "calculationFailed": "Calculation incomplete",
       "growthIncomplete": "Card growth incomplete",

@@ -145,7 +145,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .song-progress__rating-rule { grid-column: 1 / -1; }
   .song-progress__rating-value {
     margin: 0;
     font-size: clamp(1.75rem, 4vw, 2.375rem);
@@ -289,7 +288,7 @@
 
   .song-progress__best-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: var(--md-sys-spacing-3);
     min-block-size: 48px;
@@ -318,16 +317,7 @@
     white-space: nowrap;
   }
 
-  .song-progress__best-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--md-sys-spacing-2);
-    font-size: 0.875rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--md-sys-color-primary);
-    white-space: nowrap;
-  }
+
 
   @media (max-width: 760px) {
     .song-progress__rating {
