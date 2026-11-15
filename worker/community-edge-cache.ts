@@ -25,6 +25,7 @@
  * mark, so entries stored before it are ignored here at once; other colos
  * converge within the TTL.
  */
+import { RELEASE_SERVER_COOKIE } from "../src/lib/resource-route";
 
 const FRESH_MS = 10_000;
 const STALE_MS = 20_000;
@@ -34,7 +35,7 @@ const STORED_AT = "X-Edge-Stored-At";
 const CACHEABLE_PATH =
   /^\/api\/v1\/community\/(?:bootstrap|posts(?:\/[0-9a-f-]{36})?|forums(?:\/by-slug\/[^/]{1,128})?|tags|users\/[1-9]\d{0,15}|entity-threads\/[a-z][a-z0-9-]{0,63}\/[^/]{1,256})$/iu;
 /** Cookies that never select an identity or a different response. */
-const NEUTRAL_COOKIES = new Set(["haneoka.locale", "haneoka.spoilers", "__cf_bm", "cf_clearance", "_cfuvid", "__cflb"]);
+const NEUTRAL_COOKIES = new Set(["haneoka.locale", "haneoka.spoilers", RELEASE_SERVER_COOKIE, "__cf_bm", "cf_clearance", "_cfuvid", "__cflb"]);
 
 function cookieNames(header: string | null): string[] {
   return (header || "").split(";").map((part) => part.split("=")[0]!.trim()).filter(Boolean);

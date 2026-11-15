@@ -44,6 +44,8 @@ export function sonolusShareRedirectTarget(pathname: string, search: string, add
     return undefined;
   }
   if (!SONOLUS_SHARE_NAME.test(name)) return undefined;
+  // Numeric background IDs belong to the website catalogue.
+  if (type === "backgrounds" && /^[1-9]\d*$/u.test(name)) return undefined;
   const root = `https://open.sonolus.com/${address}/${type}`;
   if (name === "info") return `${root}/info`;
   if (name === "list") return `${root}/list${search.startsWith("?") && search.length > 1 ? search : ""}`;

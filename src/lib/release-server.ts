@@ -1,11 +1,26 @@
 import { DEFAULT_LOCALE, isLocale } from "@haneoka/i18n";
 import { navigationDocumentUrl } from "./document-url";
-import { homePath, isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
+import { homePath, isReleaseServer, releaseServerFromPath, releaseServerFromCookie, RELEASE_SERVER_COOKIE, type ReleaseServer } from "./resource-route";
 import { PUBLIC_RELEASE_SERVERS } from "./temporary-public-routing";
 export { isReleaseServer, releaseServerFromPath, type ReleaseServer } from "./resource-route";
 export { isPublicReleaseServer } from "./temporary-public-routing";
 export const RELEASE_SERVERS: readonly ReleaseServer[] = PUBLIC_RELEASE_SERVERS;
-const KEY = "haneoka.release-server";
+const KEY = RELEASE_SERVER_COOKIE;
+let synchronizedServer: ReleaseServer | undefined;
+
+function savedServerCookie(): ReleaseServer | undefined {
+  try { return import.meta.env?.SSR || typeof document === "undefined" ? undefined : releaseServerFromCookie(document.cookie); }
+  catch { return undefined; }
+}
+
+function syncServerCookie(server: ReleaseServer): void {
+  if (import.meta.env?.SSR || typeof document === "undefined" || synchronizedServer === server) return;
+  try {
+    if (releaseServerFromCookie(document.cookie) !== server)
+      document.cookie = `${RELEASE_SERVER_COOKIE}=${server}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
+    synchronizedServer = server;
+  } catch {}
+}
 
 export function normalizeReleaseServer(value: unknown): ReleaseServer {
   return value === "jp" ? "jp" : "intl";
@@ -23,11 +38,14 @@ export function readSelectedReleaseServer(): ReleaseServer {
   } catch {}
   try {
     const stored = localStorage.getItem(KEY);
-    const current = normalizeReleaseServer(stored);
+    const current = normalizeReleaseServer(stored ?? synchronizedServer ?? savedServerCookie());
     if (stored && stored !== current) localStorage.setItem(KEY, current);
+    syncServerCookie(current);
     return current;
   } catch {
-    return "intl";
+    const current = synchronizedServer ?? savedServerCookie() ?? "intl";
+    syncServerCookie(current);
+    return current;
   }
 }
 
@@ -41,6 +59,7 @@ export function writeReleaseServer(value: unknown): ReleaseServer {
   try {
     localStorage.setItem(KEY, server);
   } catch {}
+  syncServerCookie(server);
   return server;
 }
 

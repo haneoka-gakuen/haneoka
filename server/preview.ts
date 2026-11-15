@@ -60,12 +60,16 @@ import {
   legacyEntityRedirectTarget,
   legacyCollectionRedirectTarget,
   legacyHomeRedirectTarget,
+  documentPrefixRedirectTarget,
+  documentPrefixResponse,
+  releaseServerFromCookie,
   parseResourceRoute,
   resourcePath,
   storyCollectionPath,
   type ResourceKind,
   type ResourceRoute,
 } from "../src/lib/resource-route.ts";
+import { negotiateRequestLocale } from "../src/i18n/negotiation.ts";
 
 const OUR_NOTES_SONOLUS_ITEM_LABELS = createOurNotesSonolusItemLabels({
   noteSkins: OUR_NOTES_NOTE_SKIN_NAMES,
@@ -1624,6 +1628,18 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     res.writeHead(302, { Location: "/sonolus/info", "Cache-Control": "no-store" });
     res.end();
     return;
+  }
+  if ((req.method ?? "GET") === "GET" || req.method === "HEAD") {
+    let savedServer: ReturnType<typeof releaseServerFromCookie>;
+    const prefix = documentPrefixRedirectTarget(url.pathname, url.search,
+      () => negotiateRequestLocale(req.headers.cookie ?? "", req.headers["accept-language"] ?? ""),
+      () => savedServer = releaseServerFromCookie(req.headers.cookie ?? ""));
+    if (prefix && !sonolusShareRedirectTarget(url.pathname, url.search, "haneoka.org")) {
+      const response = documentPrefixResponse(prefix, savedServer, (req.method ?? "GET") === "GET" && req.headers.accept?.includes("text/html") === true);
+      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.end(req.method === "HEAD" ? undefined : await response.text());
+      return;
+    }
   }
   const legacyEntityTarget =
     legacyCommunityStoryRedirectTarget(url.pathname, url.search) ??

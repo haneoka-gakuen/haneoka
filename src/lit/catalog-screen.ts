@@ -2982,7 +2982,7 @@ export class CatalogScreen extends LitElement {
       params.delete(key);
       for (const value of this.facets[key] || []) params.append(key, value);
     }
-    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+    history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
     this.locationStateUrl = `${location.pathname}${location.search}`;
   }
   /**
@@ -4884,7 +4884,7 @@ export class CatalogScreen extends LitElement {
     if (documentUrl.pathname !== location.pathname || documentUrl.search !== location.search) return;
     const params = documentUrl.searchParams;
     Object.entries(values).forEach(([key, value]) => params.set(key, String(value)));
-    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+    history.replaceState(history.state, "", `${location.pathname}?${params}${location.hash}`);
     this.locationStateUrl = `${location.pathname}${location.search}`;
   }
   private restoreDetailQuery(reset = false) {
@@ -5943,7 +5943,7 @@ export class CatalogScreen extends LitElement {
         params.set("difficulty", String(index));
       }
     }
-    history.replaceState(history.state, "", `${location.pathname}?${params}`);
+    history.replaceState(history.state, "", `${location.pathname}?${params}${location.hash}`);
     this.locationStateUrl = `${location.pathname}${location.search}`;
   }
   private syncBestdoriChartPage(params: URLSearchParams) {

@@ -1,12 +1,12 @@
 // L3 — GEB
 // Input: 服务器、语言、资源类型、实体 ID 与 URL 状态。
-// Output: 规范资源地址、解析结果和旧地址实体选择。
+// Output: 规范资源地址、缺失前缀补全、解析结果和旧地址实体选择。
 // Pos: [Map](L2-2.md)；站点与服务共享的资源路由契约。
 // Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
 import { CONTENT_SOURCE_IDS, isContentSourceId } from "./content-sources.ts";
-import { communityStoryPath } from "./community-story-route.ts";
-import { communityChartPath } from "./community-chart-route.ts";
+import { communityStoryPath, legacyCommunityStoryRedirectTarget } from "./community-story-route.ts";
+import { communityChartPath, legacyCommunityChartRedirectTarget } from "./community-chart-route.ts";
 
 export const RELEASE_SERVERS = ["jp", "intl"] as const;
 export type ReleaseServer = string;
@@ -14,6 +14,18 @@ export const isReleaseServer = (
   value: unknown,
   sources: readonly string[] = CONTENT_SOURCE_IDS,
 ): value is ReleaseServer => isContentSourceId(value) && sources.includes(value);
+
+export const RELEASE_SERVER_COOKIE = "haneoka.release-server";
+export function releaseServerFromCookie(cookie: string): ReleaseServer | undefined {
+  const encoded = /(?:^|;\s*)haneoka\.release-server=([^;]*)/u.exec(cookie)?.[1];
+  if (!encoded) return undefined;
+  try {
+    const value = decodeURIComponent(encoded);
+    return isReleaseServer(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function releaseServerFromPath(
   pathname: string,
@@ -417,6 +429,90 @@ export function legacyCollectionRedirectTarget(pathname: string, search = ""): s
 
   const kind = resourceKindForCollection(collection);
   return kind && parts.length === 3 ? `${resourcePath({ server, locale, kind })}${suffix()}` : undefined;
+}
+
+const SERVER_DOCUMENT_ROOTS = new Set<string>([
+  ...RESOURCE_KINDS,
+  "cards", "catalog", "assets", "song-meta", "studio", "announcements", "calendar", "anon-tokyo",
+  "player-ranks", "friendship-ranks", "band-rating", "high-score-rating",
+]);
+const LOCALE_DOCUMENT_ROOTS = new Set([
+  "account", "settings", "tools", "games", "community", "search", "team-builder", "saves", "song-progress",
+  "gacha-history", "song-puzzle", "song-guess", "stamp-maker", "chart-editor", "story-editor", "story-creation",
+  "admin", "download", "about", "join", "sponsor", "license", "terms", "privacy", "sonolus",
+]);
+
+/** Complete page prefixes without reading a catalogue or changing asset/API addresses. */
+export function documentPrefixRedirectTarget(
+  pathname: string,
+  search: string,
+  preferredLocale: () => Locale,
+  preferredServer: () => ReleaseServer | undefined,
+): { href: string; negotiated: boolean; serverPreference: boolean } | undefined {
+  const parts = pathname.split("/").filter(Boolean);
+  let server = isReleaseServer(parts[0]) ? parts.shift() : undefined;
+  const locale = isLocale(parts[0]) ? parts.shift() as Locale : undefined;
+  if (server && locale && parts[0] !== "catalog" && parts[0] !== "cards" && !LOCALE_DOCUMENT_ROOTS.has(parts[0] || ""))
+    return undefined;
+  if (!server && locale && isReleaseServer(parts[0])) server = parts.shift();
+  const root = parts[0] || "";
+  const native = !root || SERVER_DOCUMENT_ROOTS.has(root);
+  if (!native && !LOCALE_DOCUMENT_ROOTS.has(root)) return undefined;
+  if (!server && locale && !native) return undefined;
+  if (!server && !locale && ((root === "assets" && parts.length > 1) || root === "sonolus")) return undefined;
+  if (!native && parts.at(-1)?.includes(".")) return undefined;
+
+  const language = locale ?? preferredLocale();
+  const query = new URLSearchParams(search);
+  const hadServer = query.has("server");
+  const queryServer = query.get("server");
+  const serverPreference = native && !server && !isReleaseServer(queryServer);
+  let target: string;
+  let suffix = search;
+  if (native) {
+    const selected = server ?? (isReleaseServer(queryServer) ? queryServer : preferredServer() ?? "intl");
+    if (root === "catalog") {
+      query.set("server", selected);
+      target = `/${language}/${parts.join("/")}/`;
+    } else {
+      if (root === "cards") parts[0] = "member-cards";
+      target = `/${selected}/${language}/${parts.length ? `${parts.join("/")}/` : ""}`;
+      query.delete("server");
+    }
+    if (root === "catalog" || hadServer)
+      suffix = query.size ? `?${query}` : "";
+  } else {
+    target = `/${language}/${parts.join("/")}/`;
+    if (server) {
+      query.set("server", server);
+      suffix = `?${query}`;
+    }
+  }
+  const href = legacyCommunityStoryRedirectTarget(target, suffix) ?? legacyCommunityChartRedirectTarget(target, suffix)
+    ?? legacyEntityRedirectTarget(target, suffix) ?? legacyCollectionRedirectTarget(target, suffix)
+    ?? legacyHomeRedirectTarget(target, suffix) ?? `${target}${suffix}`;
+  const needsServerPreference = serverPreference && !!releaseServerFromPath(href);
+  return href === `${pathname}${search}` ? undefined : {
+    href, negotiated: !locale || needsServerPreference,
+    serverPreference: needsServerPreference,
+  };
+}
+
+/** A first visit migrates the existing browser preference before selecting a server. */
+export function documentPrefixResponse(
+  target: NonNullable<ReturnType<typeof documentPrefixRedirectTarget>>,
+  savedServer: ReleaseServer | undefined,
+  htmlNavigation: boolean,
+): Response {
+  const headers = { "Cache-Control": target.negotiated ? "no-store" : "public, max-age=86400",
+    ...(target.negotiated ? { Vary: "Cookie, Accept-Language" } : {}) };
+  if (target.serverPreference && !savedServer && htmlNavigation) {
+    const href = JSON.stringify(target.href).replaceAll("<", "\\u003c");
+    const fallback = target.href.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
+    const body = `<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex"><script>let s;try{s=localStorage.getItem("${RELEASE_SERVER_COOKIE}")}catch{}s=s==="jp"?"jp":"intl";try{document.cookie="${RELEASE_SERVER_COOKIE}="+s+";Path=/;Max-Age=31536000;SameSite=Lax"+(location.protocol==="https:"?";Secure":"")}catch{}const u=new URL(${href},location.href);u.pathname=u.pathname.replace(/^\\/(?:jp|intl)\\//,"/"+s+"/");u.hash=location.hash;location.replace(u.href);</script><noscript><meta http-equiv="refresh" content="0;url=${fallback}"></noscript>`;
+    return new Response(body, { headers: { ...headers, "Content-Type": "text/html; charset=utf-8", "X-Robots-Tag": "noindex" } });
+  }
+  return new Response(null, { status: target.negotiated ? 302 : 308, headers: { ...headers, Location: target.href } });
 }
 
 let entityReturnLink: ((href: string, returnTo?: string) => string) | undefined;

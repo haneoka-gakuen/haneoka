@@ -136,6 +136,9 @@ import {
   legacyEntityRedirectTarget,
   legacyCollectionRedirectTarget,
   legacyHomeRedirectTarget,
+  documentPrefixRedirectTarget,
+  documentPrefixResponse,
+  releaseServerFromCookie,
   parseResourceRoute,
   resourcePath,
   storyCollectionPath,
@@ -4181,6 +4184,13 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   const restricted = restrictedResourceRequest(request);
   if (restricted)
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  if (request.method === "GET" || request.method === "HEAD") {
+    let savedServer: ReturnType<typeof releaseServerFromCookie>;
+    const prefix = documentPrefixRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, () => negotiateLocale(request),
+      () => savedServer = releaseServerFromCookie(request.headers.get("cookie") || ""));
+    if (prefix && !sonolusShareRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, new URL(siteOrigin(canonicalUrl)).host))
+      return documentPrefixResponse(prefix, savedServer, request.method === "GET" && request.headers.get("accept")?.includes("text/html") === true);
+  }
   const latestAlias = /^\/api\/v1\/([^/]+)(?:\/(.*))?$/u.exec(communityUrl.pathname);
   if (latestAlias && visibilityType(latestAlias[1]!) && !(["live2d", "spine"].includes(latestAlias[1]!) && communityUrl.pathname.endsWith("/image.png")) && ["GET", "HEAD"].includes(request.method)) {
     const server = communityUrl.searchParams.get("server") || "intl";
