@@ -49,6 +49,7 @@ import type {
   EngineRequest,
   EngineResponse,
   Goal,
+  SongRef,
   TeamEvaluation,
   GrowthResult,
 } from "../lib/team-builder/engine/api";
@@ -188,6 +189,7 @@ export class TeamBuilder extends LitElement {
     this.resultInputs = null;
     this.resultSettings = null;
     this.resultsFor = "";
+    this.songPicker?.recommendationRequest?.abort();
     this.songPicker = null;
     this.slotPicker = null;
     this.songPickerPreferences.clear();
@@ -504,6 +506,7 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    this.songPicker?.recommendationRequest?.abort();
     this.planner.dispose();
     this.disposeVisibility?.();
     this.temporary.clear();
@@ -1533,8 +1536,7 @@ export class TeamBuilder extends LitElement {
       seeds: resolveLuckSamples(s),
     };
   }
-  goal(): Goal | null {
-    const s = this.searchSettings;
+  goal(s = this.searchSettings): Goal | null {
     const play = { frameRate: s.frameRate, ...(
       s.playMode === "ap"
         ? { great: 0, good: 0, bad: 0, miss: 0 }
@@ -1619,15 +1621,24 @@ export class TeamBuilder extends LitElement {
         };
     }
   }
-  request(goal = this.goal()): EngineRequest | null {
+  get canRecommendCharts(): boolean {
+    const s = this.settings;
+    return this.tab === "build" && this.buildMode === "automatic" && s.goal === "score" &&
+      s.aggregation !== "mean" && s.criterion === "mean" && s.scoreTarget === "none" && !s.challengeRules;
+  }
+  chartRecommendationRequest(songs: SongRef[]): EngineRequest | null {
+    if (!this.canRecommendCharts) return null;
+    const settings = this.compatibleSettings({ ...this.settings, songs });
+    return this.request(this.goal(settings), settings);
+  }
+  request(goal = this.goal(), s = this.searchSettings): EngineRequest | null {
     if (
       !goal ||
       !this.view ||
-      (this.tab === "pt" && this.searchSettings.rewardMode === "event" && !this.searchSettings.rewardPlan && this.searchSettings.ptCycle)
+      (this.tab === "pt" && s.rewardMode === "event" && !s.rewardPlan && s.ptCycle)
     )
       return null;
     const cards = this.engineCards();
-    const s = this.searchSettings;
     if (goal.kind === "event" && s.manualEventEnabled) {
       const resolved = resolveManualEvent(this.master!, s.manualEvent);
       if (!resolved.effects || goal.route === "challenge" || s.ptCycle) return null;

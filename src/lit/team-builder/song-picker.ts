@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: Scene-specific chart choices, catalogue and browse preferences.
-// Output: Grid chart selection with visible select-all/clear actions and explicit apply/cancel.
+// Output: Grid chart selection, ordinary Live recommendations and explicit apply/cancel.
 // Pos: [Map](../L2-2.md); shared team workspace chart chooser.
-// Effects/Dependencies: Lit modal, page-local browse filters, Box-persisted difficulty selection and lazy metadata reads.
+// Effects/Dependencies: Lit modal, Box-persisted difficulty selection and lazy reads of release-pinned metadata and rates.
 import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
 import {
   catalogQueryNames,
@@ -11,7 +11,8 @@ import {
   type CatalogQueryContext,
 } from "../../lib/catalog-query";
 import { html, nothing, type TemplateResult } from "lit";
-import type { SongRef } from "../../lib/team-builder/engine/api";
+import { CHART_RATE_SCHEMA, type ChartRateTable } from "../../lib/chart-rates";
+import type { EngineRequest, SongRef } from "../../lib/team-builder/engine/api";
 import { arenaSongView, type ArenaRule } from "../../lib/team-builder/arena";
 import { chooserFacet, chooserGroup } from "../ui/chooser-filters";
 import { filterChip, inputChip, segmented } from "../ui/controls";
@@ -27,6 +28,10 @@ import { renderResourceSort, sortedCharts, songMetricSort } from "./catalog-sort
 export interface SongPickerState {
   songs: SongRef[];
   single: boolean;
+  recommend?: boolean;
+  recommendation?: { input: string; charts: SongRef[]; count: number; adopted: boolean };
+  recommendationRequest?: AbortController;
+  recommendationError?: "data" | "team";
   query: string;
   filtersOpen: boolean;
   bands: (number | string)[];
@@ -45,11 +50,39 @@ export interface SongPickerState {
   title?: string;
   context?: string;
   initialized?: boolean;
-  view?: "all" | "outside" | "unavailable";
+  view?: "all" | "outside" | "unavailable" | "recommended";
   undo?: SongRef[];
   opener?: HTMLElement;
   change: (songs: SongRef[]) => void;
 }
+type PickerCatalog = NonNullable<TeamBuilder["catalog"]>;
+type PublishedRates = ChartRateTable & { schema: string; sourceId: string };
+const rateTables = new WeakMap<PickerCatalog, Map<string, ChartRateTable>>();
+const rateKey = (identity: ReturnType<PickerCatalog["songIdentity"]>) =>
+  `${identity.server}:${identity.releaseId}:${identity.sourceId}`;
+
+async function pickerRates(catalog: PickerCatalog, charts: readonly SongRef[], signal: AbortSignal) {
+  let tables = rateTables.get(catalog);
+  if (!tables) rateTables.set(catalog, (tables = new Map()));
+  const identities = new Map(charts.map(({ songId }) => {
+    const identity = catalog.songIdentity(songId);
+    return [rateKey(identity), identity] as const;
+  }));
+  await Promise.all([...identities].map(async ([key, identity]) => {
+    if (tables.has(key) || !identity.sourceId || (identity.server !== "intl" && identity.server !== "jp")) return;
+    const response = await fetch(`/data/chart-rates/${identity.server}.json`, { signal });
+    if (!response.ok) return;
+    const table = (await response.json()) as PublishedRates | null;
+    if (!signal.aborted && table?.schema === CHART_RATE_SCHEMA && table.releaseId === identity.releaseId &&
+        table.sourceId === identity.sourceId && table.charts && typeof table.charts === "object") tables.set(key, table);
+  }));
+  return (song: SongRef) => tables.get(rateKey(catalog.songIdentity(song.songId)));
+}
+
+const DEFAULT_RECOMMENDATIONS = 5;
+const MAX_RECOMMENDATIONS = 10;
+const FILTER_KEYS = ["query", "bands", "categories", "attributes", "gekisouTypes", "gekisouMatch",
+  "difficulties", "minLevel", "maxLevel", "maxSeconds"] as const;
 const DIFFICULTIES = ["EASY", "NORMAL", "HARD", "EXPERT", "SPECIAL"];
 export function renderSongPicker(host: TeamBuilder): TemplateResult {
   let state = host.songPicker!;
@@ -67,7 +100,19 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     };
   }
   const update = (patch: Partial<SongPickerState>) => {
-    const next = (host.songPicker = { ...host.songPicker!, ...patch });
+    const current = host.songPicker!;
+    const changesFilters = FILTER_KEYS.some((key) => key in patch);
+    if (changesFilters) current.recommendationRequest?.abort();
+    const next = (host.songPicker = {
+      ...current,
+      ...(changesFilters ? {
+        recommendation: undefined,
+        recommendationRequest: undefined,
+        recommendationError: undefined,
+        ...(current.view === "recommended" ? { view: "all" as const } : {}),
+      } : {}),
+      ...patch,
+    });
     const { query, bands, categories, attributes, gekisouTypes, gekisouMatch, difficulties, minLevel, maxLevel, maxSeconds } = next;
     host.songPickerPreferences.set(context, {
       query,
@@ -85,6 +130,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     host.requestUpdate();
   };
   const close = () => {
+    host.songPicker?.recommendationRequest?.abort();
     host.songPicker = null;
     host.requestUpdate();
     void host.updateComplete.then(() => state.opener?.isConnected && state.opener.focus());
@@ -200,17 +246,81 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const validSelected = state.songs.filter(legal);
   const unavailable = state.songs.filter((song) => !legal(song));
   const outside = validSelected.filter((song) => !visibleKeys.has(chartKey(song)));
-  const shown = sortedCharts(host, state.view === "outside" ? outside : state.view === "unavailable" ? unavailable : visible, songView);
+  const offersRecommendations = state.recommend && host.canRecommendCharts;
+  const signature = (request: EngineRequest | null) => request && JSON.stringify([host.snapshot?.owner, request]);
+  const cachedRecommendation = state.recommendation;
+  const recommendation = offersRecommendations && cachedRecommendation &&
+    cachedRecommendation.input === signature(host.chartRecommendationRequest(visible))
+    ? cachedRecommendation : undefined;
+  const showingRecommendations = recommendation && state.view === "recommended";
+  const shown = showingRecommendations
+    ? recommendation.charts.slice(0, recommendation.count)
+    : sortedCharts(host, state.view === "outside" ? outside : state.view === "unavailable" ? unavailable : visible, songView);
   const selected = new Set(state.songs.map(chartKey));
   const shownKeys = new Set(shown.map(chartKey));
   const selectableShown = shown.filter(legal);
-  const replace = (songs: SongRef[]) => {
-    update({ songs: uniqueCharts(songs), undo: state.songs });
+  const replace = (songs: SongRef[], patch?: Partial<SongPickerState>) => {
+    const current = host.songPicker!;
+    current.recommendationRequest?.abort();
+    update({ songs: uniqueCharts(songs), undo: current.songs, recommendationRequest: undefined, recommendationError: undefined, ...patch });
     snackbar(host.t("selectionUpdated", "Selection updated"));
+  };
+  const recommend = async () => {
+    const request = host.chartRecommendationRequest(visible);
+    const master = host.master;
+    if (!master || !request || request.goal.kind !== "score" || request.members.length < 5) {
+      update({ recommendationError: "team" });
+      return;
+    }
+    const input = signature(request)!;
+    const controller = new AbortController();
+    host.songPicker?.recommendationRequest?.abort();
+    const samePicker = () => host.catalog === catalog && host.songPicker?.recommendationRequest === controller;
+    const current = () => samePicker() && !controller.signal.aborted && host.isConnected &&
+      signature(host.chartRecommendationRequest(visible)) === input;
+    update({ recommendationRequest: controller, recommendationError: undefined });
+    try {
+      const [{ rankPickerCharts }, tableFor] = await Promise.all([
+        import("../../lib/team-builder/chart-recommendation"),
+        pickerRates(catalog, request.goal.songs, controller.signal),
+      ]);
+      if (!current()) return;
+      const ranked = await rankPickerCharts(master, request, tableFor, controller.signal);
+      if (!current()) return;
+      if (!ranked?.length) {
+        update({ recommendationError: ranked ? "team" : "data" });
+        return;
+      }
+      const adopted = !host.songPicker!.songs.length;
+      const next = { input, charts: ranked.slice(0, MAX_RECOMMENDATIONS), count: DEFAULT_RECOMMENDATIONS, adopted };
+      const patch = { view: "recommended" as const, recommendation: next };
+      if (adopted) replace(next.charts.slice(0, next.count), patch);
+      else update(patch);
+    } catch {
+      if (current()) update({ recommendationError: "data" });
+    } finally {
+      if (samePicker()) update({ recommendationRequest: undefined });
+    }
+  };
+  const adoptRecommendation = () => {
+    if (!recommendation || signature(host.chartRecommendationRequest(visible)) !== recommendation.input) return;
+    replace(recommendation.charts.slice(0, recommendation.count), { recommendation: { ...recommendation, adopted: true } });
+  };
+  const expandRecommendation = () => {
+    if (!recommendation || signature(host.chartRecommendationRequest(visible)) !== recommendation.input) return;
+    const next = { ...recommendation, count: MAX_RECOMMENDATIONS };
+    if (recommendation.adopted) {
+      replace([...host.songPicker!.songs, ...next.charts.slice(recommendation.count)], { recommendation: next });
+    } else {
+      update({ recommendation: next });
+    }
   };
   const toggle = (key: string) => {
     const song = shown.find((song) => chartKey(song) === key)!;
+    host.songPicker?.recommendationRequest?.abort();
     update({
+      recommendationRequest: undefined,
+      recommendationError: undefined,
       songs: selected.has(key)
         ? state.songs.filter((song) => chartKey(song) !== key)
         : state.single
@@ -350,6 +460,11 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
                 }),
             }),
           )}
+          ${!state.single ? filterChip({
+            label: host.t("allChartDifficulties", "All difficulties"),
+            selected: DIFFICULTIES.every((_, value) => difficulties.includes(value)),
+            onToggle: () => update({ difficulties: DIFFICULTIES.map((_, value) => value) }),
+          }) : nothing}
         </div>
         <div class="cluster tb-picker-applied">
           ${applied.map((item) => inputChip(item.label, host.common("common.actions.remove", "Remove"), item.clear))}
@@ -363,6 +478,28 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
               : nothing
           }
         </div>
+        ${offersRecommendations ? html`
+          <div class="row row--wrap" aria-busy=${String(!!state.recommendationRequest)}>
+            <button class="button button--tonal" type="button"
+              ?disabled=${!recommendation && (incomplete || !visible.length || !!state.recommendationRequest)}
+              @click=${() => recommendation ? update({ view: showingRecommendations ? "all" : "recommended" }) : void recommend()}>
+              ${showingRecommendations ? host.t("browseCharts", "Browse charts")
+                : recommendation ? host.t("recommendedCharts", "Recommended charts")
+                : state.recommendationRequest ? host.t("chartRecommendationLoading", "Finding charts…")
+                : host.t("recommendChartCount", "Recommend {count} charts", { count: DEFAULT_RECOMMENDATIONS })}
+            </button>
+            ${showingRecommendations && recommendation.charts.length > recommendation.count ? html`
+              <button class="button button--text" type="button" @click=${expandRecommendation}>
+                ${host.t("expandChartRecommendations", "Expand to {count}", { count: recommendation.charts.length })}
+              </button>
+            ` : nothing}
+            ${showingRecommendations && !recommendation.adopted ? html`
+              <button class="button button--text" type="button" @click=${adoptRecommendation}>
+                ${host.t("applyChartRecommendations", "Replace with recommendations")}
+              </button>
+            ` : nothing}
+          </div>
+        ` : nothing}
       </div>
     `,
     filters: html`
@@ -374,14 +511,14 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
           change: (value) => update({ categories: value ? [Number(value)] : [] }),
         })}
         ${chooserFacet({
-          label: host.common("catalog.fields.band", "Band"),
+          label: host.t("songBandFilter", "Song band"),
           value: state.bands[0] == null ? "" : String(state.bands[0]),
           allLabel: all,
           options: [...bandOptions.values()].filter(option => option.label),
           change: (value) => update({ bands: value ? [value.startsWith("credit:") ? value : Number(value)] : [] }),
         })}
         ${chooserFacet({
-          label: host.common("catalog.fields.attribute", "Attribute"),
+          label: host.t("songAttributeFilter", "Song attribute"),
           value: state.attributes[0] == null ? "" : String(state.attributes[0]),
           allLabel: all,
           options: (state.songRules ? [1, 2, 3, 4, 5, 99] : [1, 2, 3, 4, 5]).map((id) => ({ value: String(id), label: catalog.attributeName(id),
@@ -423,7 +560,11 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     selected: "",
     selectedValues: selected,
     select: toggle,
-    countLabel: host.t("chartCount", "{count} charts", { count: shown.length }),
+    countLabel: state.recommendationError === "data"
+      ? host.t("chartRecommendationMissing", "Chart recommendation data unavailable")
+      : state.recommendationError === "team"
+        ? host.t("chartRecommendationUnavailable", "Check cards and calculation settings")
+        : host.t("chartCount", "{count} charts", { count: shown.length }),
     emptyLabel: incomplete ? "" : host.t("noSongs", "No songs match"),
     status: durationError
       ? asyncRegion({
@@ -496,7 +637,11 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
               items: [{
                 label: host.t("replaceSelection", "Use only filtered charts"),
                 disabled: incomplete,
-                run: () => replace(visible),
+                run: () => replace(visible, { view: "all", recommendation: undefined }),
+              }, {
+                label: host.t("selectFullChartPool", "Select full chart pool"),
+                disabled: !allCharts.length,
+                run: () => replace(allCharts, { view: "all", recommendation: undefined }),
               }, {
                 label: host.t("clearAllCharts", "Clear all selections"),
                 disabled: !state.songs.length,
@@ -504,7 +649,13 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
               }],
             }) : nothing}
             <button class="button button--text" type="button" ?disabled=${!state.undo}
-              @click=${() => state.undo && update({ songs: state.undo, undo: undefined })}>
+              @click=${() => {
+                host.songPicker?.recommendationRequest?.abort();
+                if (state.undo) update({
+                  songs: state.undo, undo: undefined, view: "all",
+                  recommendation: undefined, recommendationRequest: undefined, recommendationError: undefined,
+                });
+              }}>
               ${host.t("undoSelection", "Undo")}
             </button>
           </div>

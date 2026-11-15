@@ -351,6 +351,7 @@ export function songList(
               songs: songs.map((song) => ({ ...song })),
               context: `${host.tab}:${host.searchSettings.goal}:${single ? "single" : allowedSongIds ? "restricted" : "songs"}${host.tab === "arena" ? `:${host.arena.draft.leagueId}` : ""}`,
               single,
+                recommend: !single && fieldId === "tb-songs",
               query: "",
               filtersOpen: false,
               bands: [],

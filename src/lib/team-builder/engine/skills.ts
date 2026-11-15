@@ -13,6 +13,7 @@ export interface LiveEffect {
   gate: LifeGate;
   /** 2004 only: simulate judgements whose factor it raises (5 Perfect, 6 Just, 4 Great). */
   judgements: readonly number[];
+  releaseJudgements?: readonly number[];
 }
 export interface SlotSkill {
   effects: readonly LiveEffect[];
@@ -20,8 +21,8 @@ export interface SlotSkill {
   extensionMs: number;
   /** 3001 life recovery on the member's activation. */
   recovery: number;
-  /** 12006: judgements converted to Perfect inside the member's window, and the per-activation limit. */
-  convert: { judgements: readonly number[]; limit: number } | null;
+  /** 12006: allowed judgments and per-activation limit. Native timing includes the target grade and trigger. */
+  convert: { judgements: readonly number[]; limit: number; to?: number; seconds?: number; atStart?: boolean } | null;
 }
 
 export const scoreDelta = (value: number) => Math.floor(f(f(f(value) / f(10000)) * f(100000)));
@@ -71,9 +72,18 @@ function groupHolds(master: EngineMaster, group: number, context: Context): { ho
   }
   return { holds: any, life };
 }
-const judgementsOf = (master: EngineMaster, ids: readonly number[]) =>
-  ids.map((id) => master.targets.get(id)?.judgement ?? -1).filter((value) => value >= 3 && value <= 6);
+const judgementsOf = (master: EngineMaster, ids: readonly number[], minimum = 3) =>
+  ids.map((id) => master.targets.get(id)?.judgement ?? -1).filter((value) => value >= minimum && value <= 6);
 const atLevel = (rows: readonly SkillEffectRow[] | undefined, level: number) => (rows ?? []).filter((row) => row.level === level);
+
+function releaseJudgements(master: EngineMaster, group: number) {
+  const sets = master.conditionSets.get(group);
+  const ids = sets?.[0];
+  const row = ids?.length === 1 && sets?.length === 1 ? master.conditions.get(ids[0]!) : undefined;
+  if (row?.type !== 1020 || !row.positive) return undefined;
+  const max = Math.max(0, ...judgementsOf(master, row.targetIds, 1));
+  return Array.from({ length: max }, (_, index) => index + 1);
+}
 
 export interface SkillIssues {
   unsupported: string[];
@@ -83,6 +93,7 @@ export function resolveSlotSkill(
   member: MemberState,
   snap: SnapState | null,
   issues?: SkillIssues,
+  nativeTiming = false,
 ): SlotSkill {
   const context = { member };
   const effects: LiveEffect[] = [];
@@ -107,7 +118,8 @@ export function resolveSlotSkill(
       delta: row.type === 2000 ? scoreDelta(row.value) : judgementDelta(row.value),
       seconds: f(row.seconds),
       gate,
-      judgements: row.type === 2004 ? judgementsOf(master, row.targetIds) : [],
+      judgements: row.type === 2004 ? judgementsOf(master, row.targetIds, nativeTiming ? 1 : 3) : [],
+      ...(nativeTiming && row.releaseGroup > 0 ? { releaseJudgements: releaseJudgements(master, row.releaseGroup) } : {}),
     });
   }
   let extensionMs = f(0);
@@ -123,10 +135,24 @@ export function resolveSlotSkill(
           issues?.unsupported.push(`support-condition:${skillId}`);
           continue;
         }
-        if (!enabled.holds) continue;
+        if (!enabled.holds || (nativeTiming && !trigger.holds)) continue;
         if (row.type === 15000) extensionMs = f(extensionMs + f(row.value));
         else if (row.type === 3001) recovery += row.value;
-        else if (row.type === 12006) convert = { judgements: judgementsOf(master, row.targetIds), limit: row.limitCount || Infinity };
+        else if (row.type === 12006) {
+          if (nativeTiming && (row.value < 1 || row.value > 6)) continue;
+          convert = {
+            judgements: judgementsOf(master, row.targetIds, nativeTiming ? 1 : 3),
+            limit: row.limitCount || Infinity,
+            ...(nativeTiming ? {
+              to: row.value,
+              seconds: f(row.seconds),
+              atStart: !(master.conditionSets.get(row.triggerGroup) ?? []).some((set) => set.some((id) => {
+                const type = master.conditions.get(id)?.type;
+                return type === 4010 || type === 5020;
+              })),
+            } : {}),
+          };
+        }
         else if (row.type !== 3003) issues?.unsupported.push(`support:${skillId}:${row.type}`);
       }
     });

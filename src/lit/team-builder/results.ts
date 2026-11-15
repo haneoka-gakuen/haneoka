@@ -1505,6 +1505,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
       : results.results;
   const proven = groups.length > 0 && groups.every((result) => result.proven);
   const gap = proven ? null : improvementPercent(groups);
+  const goal = resultRequest(host)?.goal;
   return html`
     <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
@@ -1512,6 +1513,9 @@ export function renderResults(host: TeamBuilder): TemplateResult {
         <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
           ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}
         </span>
+        ${goal?.kind === "score" ? html`
+          <span class="tb-results__meta">${host.t("calculationChartCount", "{count} charts in this search", { count: goal.songs.length })}</span>
+        ` : nothing}
         ${
           gap === null
             ? nothing
