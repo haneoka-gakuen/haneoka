@@ -15,6 +15,7 @@ import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
 import { canUseSharedEventRosters } from "./shared-event-rosters";
 import { proveSharedEvent } from "./shared-event-search";
+import { canScoutSharedEventSs, scoutSharedEventSs } from "./shared-event-seeds";
 import { chartKey, EngineCharts } from "./charts";
 import engineUrl from "./generated/team-engine.wasm?url";
 
@@ -793,7 +794,7 @@ export class EngineClient {
         };
         if (sharedSeed) publishShared();
         if (stopped) return latest;
-        await Promise.all(
+        const proof = Promise.all(
           workers.map(async (worker, index) => {
             const part = { ...request, ...(count > 1 ? { shard: { index, count } } : {}),
               ...(sharedSeed ? { seeded: true, seeds: [sharedSeed], floors: { [chartKey(request.goal.kind === "gekiso" ? request.goal.songs[0]! : requestChartSongs(request)[0]!)]: sharedSeed.key } } : {}) };
@@ -813,6 +814,38 @@ export class EngineClient {
             }
           }),
         );
+        const scoutWorkers = pool.slice(count, count + 3);
+        let stopScout: (() => void) | undefined;
+        if (memory > 4 && snapshot && !onFinalResult && scoutWorkers.length && canScoutSharedEventSs(request)) {
+          const budget = Math.min(1800, remaining(deadline) / 5);
+          let scouting = true;
+          const finish = () => {
+            if (!scouting) return;
+            scouting = false;
+            clearTimeout(timer);
+            for (const worker of scoutWorkers) if (worker.load) worker.cancel();
+          };
+          const timer = setTimeout(finish, budget);
+          stopScout = finish;
+          void scoutSharedEventSs(
+            { ...request, deadline: clock() + budget },
+            scoutWorkers.length,
+            (worker, request) => scoutWorkers[worker]!.send<EngineResponse>({ type: "run", id: 0, request, loadedCharts }),
+            hit => {
+              const response = merged();
+              if (completeResponse(response)) return;
+              response.results[0]!.hits.push(hit);
+              publish(response);
+              finish();
+            },
+            () => stopped || !scouting,
+          ).then(finish, finish);
+        }
+        try {
+          await proof;
+        } finally {
+          stopScout?.();
+        }
         const result = merged();
         if (trackRank && !stopped) reportRankProof(result.results);
         return result;
