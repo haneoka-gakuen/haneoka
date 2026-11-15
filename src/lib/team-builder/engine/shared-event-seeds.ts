@@ -1,7 +1,7 @@
-// Input: Resolved ordinary-live mean reward request, Worker batch callback and cancellation state.
+// Input: Resolved ordinary-live mean reward request, Worker callbacks and cancellation state.
 // Output: Fully scored legal joint candidates, distinct by member set, plus native work statistics.
 // Pos: [Map](L2-2.md); incumbent candidates for ordinary-live multi-chart reward proof.
-// Effects/Dependencies: Scouts chart winners in disjoint member partitions and replays fixed formations with the original reward plan.
+// Effects/Dependencies: Scouts chart winners and replays fixed formations with the original reward plan.
 import type { ConstraintInput, EngineHit, EngineRequest, EngineResponse, Goal, SongRef, SongResult } from "./api";
 import { splitEventPartition, type PartitionBatch } from "./event-partitions";
 import { clock, deadlineOf, pendingSong } from "./execution";
@@ -58,6 +58,60 @@ function fixedSeedRequest(request: EventRequest, hit: EngineHit): EngineRequest 
       bindings: hit.members.map((member, slot) => [member, hit.snaps[slot] ?? null]),
     },
   };
+}
+
+export function canScoutSharedEventSs(request: EngineRequest): request is EventRequest {
+  const { goal } = request;
+  return request.aggregation === "mean" && goal.kind === "event" && goal.route === "live"
+    && !goal.gekiso && goal.ranking !== "pt-only" && goal.rewardPlan?.minimumRank === 7
+    && goal.songs.length > 1 && !request.shard && !request.noFloor && !request.seedOnly && !request.seedVariant && !request.seeded
+    && !request.resolveRewardPlan && !request.rewardPhase && !request.certifyRewardRanks && !request.rewardLexicographic
+    && !request.floors && !request.rewardIncumbent && !request.cutoff && request.rewardCutoff === undefined
+    && !request.seeds?.length && !request.completed?.length;
+}
+
+const SS_SCOUT_CANDIDATES = 3;
+const SS_SCOUT_CHART_MS = 850;
+
+export async function scoutSharedEventSs(
+  request: EventRequest,
+  workers: number,
+  run: (worker: number, request: EngineRequest) => Promise<EngineResponse>,
+  offer: (hit: EngineHit) => void,
+  stopped: () => boolean,
+) {
+  const { songs } = request.goal;
+  const deadline = deadlineOf(request);
+  const finished = () => stopped() || clock() >= deadline;
+  const replayed = new Set<string>();
+  let next = 0;
+
+  await Promise.all(Array.from({ length: workers }, async (_, worker) => {
+    while (!finished() && next < songs.length) {
+      const song = songs[next++]!;
+      const result = await run(worker, {
+        ...request, aggregation: undefined, goal: { ...request.goal, songs: [song] }, k: SS_SCOUT_CANDIDATES,
+        deadline: Math.min(clock() + SS_SCOUT_CHART_MS, deadline),
+      });
+      for (const hit of result.overall) {
+        if (finished()) return;
+        const key = formationKey(hit);
+        if (replayed.has(key)) continue;
+        replayed.add(key);
+        const fixed = fixedSeedRequest(request, hit);
+        if (!fixed) continue;
+        const checked = await run(worker, fixed);
+        if (finished()) return;
+        const joint = checked.overall[0];
+        if (joint?.song === null && joint.rewardRanking && joint.aggregate?.songs.length === songs.length
+          && joint.aggregate.songs.every((part, index) => sameSong(part.song, songs[index]!)
+            && part.score?.orders.length === 120 && part.score.ranks["7"] === 120)) {
+          offer(joint);
+          return;
+        }
+      }
+    }
+  }));
 }
 
 export async function acquireSharedEventSeeds(
