@@ -7,10 +7,10 @@ type _SlotFields = AssertCompared<
   Exclude<keyof SlotSkill, "effects" | "extensionMs" | "recovery" | "convert"> extends never ? true : false
 >;
 type _EffectFields = AssertCompared<
-  Exclude<keyof LiveEffect, "type" | "delta" | "seconds" | "gate" | "judgements"> extends never ? true : false
+  Exclude<keyof LiveEffect, "type" | "delta" | "seconds" | "gate" | "judgements" | "releaseJudgements"> extends never ? true : false
 >;
 type _ConvertFields = AssertCompared<
-  Exclude<keyof NonNullable<SlotSkill["convert"]>, "judgements" | "limit"> extends never ? true : false
+  Exclude<keyof NonNullable<SlotSkill["convert"]>, "judgements" | "limit" | "to" | "seconds" | "atStart"> extends never ? true : false
 >;
 type _GateKinds = AssertCompared<
   Exclude<LifeGate["kind"], "always" | "never" | "life-at-least"> extends never ? true : false
@@ -73,7 +73,8 @@ function equalEffect(a: LiveEffect, b: LiveEffect): boolean {
         (b.gate.kind === "life-at-least" &&
           Object.is(a.gate.value, b.gate.value) &&
           a.gate.positive === b.gate.positive)) &&
-      equalNumbers(a.judgements, b.judgements))
+      equalNumbers(a.judgements, b.judgements) &&
+      equalNumbers(a.releaseJudgements ?? [], b.releaseJudgements ?? []))
   );
 }
 
@@ -86,6 +87,9 @@ function equalSkill(a: SlotSkill | undefined, b: SlotSkill | undefined): boolean
       !a.convert ||
       !b.convert ||
       !Object.is(a.convert.limit, b.convert.limit) ||
+      !Object.is(a.convert.to, b.convert.to) ||
+      !Object.is(a.convert.seconds, b.convert.seconds) ||
+      a.convert.atStart !== b.convert.atStart ||
       !equalNumbers(a.convert.judgements, b.convert.judgements)
     )
       return false;

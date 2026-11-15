@@ -107,7 +107,10 @@ async function loadCollection(resource: string, server: ReleaseServer, locale: L
       catalogs?.songs?.documents[pin.server as OfficialCatalogServer] ?? document,
       resource === "song-meta",
     );
-    if (resource === "song-meta") chartRateTables[pin.server as OfficialCatalogServer] = await chartRates(pin.server as ReleaseServer);
+    if (resource === "song-meta") {
+      const { scoreTimelines: _scoreTimelines, ...rates } = await chartRates(pin.server as ReleaseServer);
+      chartRateTables[pin.server as OfficialCatalogServer] = rates;
+    }
   }));
   return {
     schema: "haneoka-collection-payload-v1", resource, identity, document, characters, bands, gameItems,

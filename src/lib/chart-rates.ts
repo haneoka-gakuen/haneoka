@@ -74,6 +74,24 @@ export function gekisouRate(rates: GekisouRates, ranks: readonly number[], just:
   }
   return total * general;
 }
+export interface LegacyChartScoreTimeline {
+  /** Live skill activation times in event order, in milliseconds. */
+  skillTimes: number[];
+  /** v10: Base64 of uint16 millisecond deltas followed by operation and judgment type bytes. */
+  notes: string;
+}
+export interface PackedChartScoreTimelines {
+  format: "gzip-delta-v1";
+  noteTypes: [operation: number, judgment: number][];
+  index: [key: string, byteLength: number, skillTimes: number[]][];
+  /** Gzipped Base64. Each note stores the millisecond delta and noteTypes index. Integers ≥255 use a 255 marker and base-128 encoding of the excess. */
+  data: string;
+}
+export type ChartScoreTimelines = Record<string, LegacyChartScoreTimeline> | PackedChartScoreTimelines;
+export const CHART_RATE_SCHEMA = "haneoka-chart-rates-v11";
+export function isPackedChartScoreTimelines(timelines: ChartScoreTimelines): timelines is PackedChartScoreTimelines {
+  return timelines.format === "gzip-delta-v1";
+}
 export interface ChartRateTable {
   releaseId: string;
   /** A Great note's score over a Perfect note's. */
@@ -92,6 +110,8 @@ export interface ChartRateTable {
   }[];
   /** `songId:difficulty` → its rates. */
   charts: Record<string, ChartRates>;
+  /** Ordinary Live judgment timeline for the same charts, when present in the static table. */
+  scoreTimelines?: ChartScoreTimelines;
 }
 export const SKILL_ORDERS: number[][] = (() => {
   const out: number[][] = [];
