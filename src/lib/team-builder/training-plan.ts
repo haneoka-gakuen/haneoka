@@ -5,7 +5,7 @@
 // Effects/Dependencies: Scores temporary requests through the caller; never writes save or Box data.
 import { summarizeCatalogCosts, type CatalogCost } from "../catalog-cost-summary";
 import { growthCap, type GrowthCatalogCard, type GrowthPageData } from "../growth-catalog";
-import type { GrowthState } from "../growth-comparison";
+import type { GrowthAction, GrowthState } from "../growth-comparison";
 import type { SaveSnapshot } from "../save-workspace/snapshot";
 import { dataRows } from "./data";
 import type { EngineHit, EngineRequest } from "./engine/api";
@@ -134,6 +134,12 @@ export interface TrainingPlan {
   incomplete: boolean;
 }
 
+interface AffordableUpgrade extends Omit<TrainingStep, "gain"> {
+  key: string;
+  request: EngineRequest;
+  nextExp: bigint | undefined;
+}
+
 export async function planTraining(
   master: EngineMaster,
   prepared: ReturnType<typeof prepareTraining>,
@@ -152,8 +158,75 @@ export async function planTraining(
   const steps: TrainingStep[] = [];
   let incomplete = false;
 
+  const affordableUpgrade = (
+    card: GrowthCatalogCard,
+    kind: Kind,
+    key: string,
+    actions: GrowthAction[],
+    prefix?: AffordableUpgrade,
+  ): AffordableUpgrade | null => {
+    const change = teamGrowthChange(master, prefix?.request ?? input, { kind, key, actions, target: "next" });
+    if (change.status === "at-cap") return null;
+    if (!change.request) {
+      incomplete = true;
+      return null;
+    }
+    if (change.steps.length !== actions.length) return null;
+    const costs = new Map(prefix?.costs.map((item) => [item.identity, item]));
+    let nextExp = prefix?.nextExp ?? expByCard.get(key);
+    for (const step of change.steps) {
+      if (step.action === "level") {
+        const material = catalog.experienceItems?.[card.kind];
+        const target = levelExp(card, step.to);
+        if (
+          !material ||
+          nextExp === undefined ||
+          target === undefined ||
+          target - nextExp > BigInt(Number.MAX_SAFE_INTEGER)
+        ) {
+          incomplete = true;
+          return null;
+        }
+        if (target > nextExp) {
+          const count = Number(target - nextExp) + (costs.get(material.identity)?.count ?? 0);
+          costs.set(material.identity, { ...material, count });
+          nextExp = target;
+        }
+      } else {
+        const cost = summarizeCatalogCosts(card.tracks[step.action]?.costs ?? [], step.from!, step.to);
+        if (!cost.complete) {
+          incomplete = true;
+          return null;
+        }
+        for (const item of cost.items)
+          costs.set(item.identity, { ...item, count: item.count + (costs.get(item.identity)?.count ?? 0) });
+      }
+    }
+    const items = [...costs.values()];
+    if (items.some((item) => !remaining.has(item.identity))) {
+      incomplete = true;
+      return null;
+    }
+    if (items.some((item) => item.count > remaining.get(item.identity)!)) return null;
+    const changes = prefix
+      ? [...prefix.changes.slice(0, -1), { ...prefix.changes.at(-1)!, to: change.steps[0]!.to }]
+      : change.steps;
+    return { kind, key, cardId: card.id, request: change.request, changes, costs: items, nextExp };
+  };
+
+  const bestImprovement = async (candidates: AffordableUpgrade[], previous: number) => {
+    let best: { candidate: AffordableUpgrade; hit: EngineHit; gain: number } | null = null;
+    const hits = await evaluate(candidates.map((candidate) => candidate.request));
+    for (const [index, hit] of hits.entries()) {
+      if (!hit) continue;
+      const gain = metric(hit) - previous;
+      if (gain > (best?.gain ?? 1e-9)) best = { candidate: candidates[index]!, hit, gain };
+    }
+    return best;
+  };
+
   while (true) {
-    const candidates = [];
+    let candidates: AffordableUpgrade[] = [];
     for (const kind of cardKinds) {
       const actions = teamGrowthActions(kind).filter(
         (action) => input.goal.kind !== "power" || (action !== "live" && action !== "gekisou"),
@@ -169,82 +242,30 @@ export async function planTraining(
         if (row.level === growthCap(card, { training: "awake" in row ? row.awake : null, break: row.rank }))
           bundles.push([capAction, "level"]);
         for (const actions of bundles) {
-          const change = teamGrowthChange(master, input, { kind, key: row.key, actions, target: "next" });
-          if (change.status === "at-cap") continue;
-          if (!change.request) {
-            incomplete = true;
-            continue;
-          }
-          if (change.steps.length !== actions.length) continue;
-          const costs = new Map<string, CatalogCost>();
-          let nextExp = expByCard.get(row.key);
-          let complete = true;
-          for (const step of change.steps) {
-            let items: CatalogCost[];
-            if (step.action === "level") {
-              const material = catalog.experienceItems?.[card.kind];
-              const target = levelExp(card, step.to);
-              if (!material || nextExp === undefined || target === undefined) {
-                complete = false;
-                break;
-              }
-              const cost = target > nextExp ? target - nextExp : 0n;
-              if (cost > BigInt(Number.MAX_SAFE_INTEGER)) {
-                complete = false;
-                break;
-              }
-              items = cost ? [{ ...material, count: Number(cost) }] : [];
-              if (target > nextExp) nextExp = target;
-            } else {
-              const track = card.tracks[step.action];
-              const cost = summarizeCatalogCosts(track?.costs ?? [], step.from!, step.to);
-              if (!cost.complete) {
-                complete = false;
-                break;
-              }
-              items = cost.items;
-            }
-            for (const item of items)
-              costs.set(item.identity, { ...item, count: item.count + (costs.get(item.identity)?.count ?? 0) });
-          }
-          const items = [...costs.values()];
-          if (!complete || items.some((item) => !remaining.has(item.identity))) {
-            incomplete = true;
-            continue;
-          }
-          if (items.some((item) => item.count > remaining.get(item.identity)!)) continue;
-          candidates.push({
-            kind,
-            cardId: row.cardId,
-            key: row.key,
-            request: change.request,
-            changes: change.steps,
-            costs: items,
-            nextExp,
-          });
+          const candidate = affordableUpgrade(card, kind, row.key, actions);
+          if (candidate) candidates.push(candidate);
         }
       }
     }
-    if (!candidates.length) break;
-    const hits = await evaluate(candidates.map((candidate) => candidate.request));
     const previous = metric(current);
-    let best = -1;
-    let gain = 1e-9;
-    for (const [index, hit] of hits.entries()) {
-      if (!hit) continue;
-      const delta = metric(hit) - previous;
-      if (delta > gain) {
-        best = index;
-        gain = delta;
-      }
+    let best = null;
+    while (candidates.length) {
+      best = await bestImprovement(candidates, previous);
+      if (best) break;
+      // Discrete score and reward thresholds can require several levels of the same upgrade.
+      candidates = candidates.flatMap((prefix) => {
+        const actions = [prefix.changes.at(-1)!.action];
+        const next = affordableUpgrade(prepared.cards.get(prefix.key)!, prefix.kind, prefix.key, actions, prefix);
+        return next ? [next] : [];
+      });
     }
-    if (best === -1) break;
-    const { request, nextExp, kind, key, cardId, changes, costs } = candidates[best]!;
+    if (!best) break;
+    const { request, nextExp, kind, key, cardId, changes, costs } = best.candidate;
     for (const item of costs) remaining.set(item.identity, remaining.get(item.identity)! - item.count);
     if (nextExp !== undefined) expByCard.set(key, nextExp);
-    current = hits[best]!;
+    current = best.hit;
     input = request;
-    steps.push({ kind, cardId, changes, costs, gain });
+    steps.push({ kind, cardId, changes, costs, gain: best.gain });
     onProgress({ baseline, final: current, steps: [...steps], remaining: new Map(remaining), incomplete });
   }
   return { baseline, final: current, steps, remaining, incomplete };

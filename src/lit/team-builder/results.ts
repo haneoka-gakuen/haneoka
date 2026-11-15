@@ -1423,8 +1423,7 @@ export function renderHit(
   `;
 }
 
-/** Which single card, raised to full growth, improves the best team most. */
-function growthSection(host: TeamBuilder): TemplateResult {
+function growthSection(host: TeamBuilder, hit: EngineHit): TemplateResult {
   const catalog = host.catalog!;
   const growth = host.growth?.context === host.calculationContext() ? host.growth : null;
   const upgrades = growth?.result?.upgrades.filter((row) => row.gain > 1e-9).slice(0, 8) ?? [];
@@ -1432,8 +1431,7 @@ function growthSection(host: TeamBuilder): TemplateResult {
   return html`
     <section class="surface stack tb-growth">
       ${sectionHeading({ icon: "trending_up", label: host.t("growthTitle", "Training priorities") })}
-      <button class="button" type="button" ?disabled=${host.running || !host.results?.overall[0]}
-        @click=${() => { const hit = host.results?.overall[0]; if (hit) host.teamGrowth.openTraining(hit); }}>
+      <button class="button" type="button" ?disabled=${host.running} @click=${() => host.teamGrowth.openTraining(hit)}>
         ${host.t("trainingPlan.title", "Plan with materials")}
       </button>
       ${
@@ -1638,7 +1636,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
               </div>
             `
       }
-      ${shown.length && resultSettings(host).goal !== "plan" && resultSettings(host).scope !== "theoretical" && !stale ? growthSection(host) : nothing}
+      ${shown.length && resultSettings(host).goal !== "plan" && resultSettings(host).scope !== "theoretical" && !stale ? growthSection(host, shown[0]!) : nothing}
     </section>
   `;
 }

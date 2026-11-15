@@ -3459,7 +3459,7 @@
         "running": "Planning upgrades…",
         "stopped": "Plan incomplete",
         "partial": "Some material counts or card details are missing",
-        "empty": "No affordable upgrade improves this result",
+        "empty": "No improvement found within this budget",
         "failed": "Could not calculate the plan",
         "retry": "Retry",
         "run": "Plan upgrades",
