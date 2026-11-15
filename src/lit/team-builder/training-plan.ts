@@ -244,7 +244,7 @@ export class TeamTrainingPlan {
                     : nothing
                 }
               </div>
-              <span role="status" class="supporting-text tb-training-plan__status">
+              <span role="status" class="supporting-text tb-team-growth__status">
                 ${status ? t(status) : nothing}
               </span>
               ${
@@ -344,7 +344,7 @@ export class TeamTrainingPlan {
                 </select>
               </span>
             </label>
-            <span class="supporting-text tb-training-plan__status" role="status">
+            <span class="supporting-text tb-team-growth__status" role="status">
               ${
                 this.saveError
                   ? t("saveFailed")
