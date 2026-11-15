@@ -988,6 +988,8 @@ export class TeamBuilder extends LitElement {
   }
   setTab(tab: Tab) {
     if (this.tab === tab) return;
+    this.songPicker?.recommendationRequest?.abort();
+    this.songPicker = null;
     if (this.running && (this.tab === "arena" || tab === "arena")) this.cancel();
     this.slotPicker = null;
     this.saveScroll();
