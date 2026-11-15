@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md); approximate ranking before native team search.
 // Effects/Dependencies: Lazily decodes shared timelines and yields between charts.
 
-import { slotOrderRates, type ChartRateTable, type ChartRates } from "../chart-rates";
+import { SKILL_WINDOWS, slotOrderRates, type ChartRateTable, type ChartRates } from "../chart-rates";
 import { prepareChartRecommendationPlay } from "./chart-recommendation-play";
 import { loadChartScoreTimelines } from "./chart-score-timeline";
 import { musicView, playerState, type EngineRequest, type Goal, type SongRef } from "./engine/api";
@@ -14,10 +14,19 @@ import type { PlayModel } from "./engine/live";
 import type { EngineMaster } from "./engine/master";
 import { leaderPercentBound, leaderPoints, leaderProfile, slotBase, snapPoints, teamPower, type MemberState, type SnapState } from "./engine/power";
 import { maxAssignment } from "./engine/search";
-import { effectPercent, resolveSlotSkill, type SlotSkill } from "./engine/skills";
+import { effectPercent, resolveSlotSkill, windowMs, type SlotSkill } from "./engine/skills";
 
 type ScoreRequest = EngineRequest & { goal: Extract<Goal, { kind: "score" }> };
 const average = (values: readonly number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+const minRateWindow = SKILL_WINDOWS[0]!;
+const maxRateWindow = SKILL_WINDOWS.at(-1)!;
+
+function outsideRateWindows({ effects, extensionMs }: SlotSkill) {
+  return effects.some(({ seconds }) => {
+    const duration = windowMs(seconds, extensionMs);
+    return duration < minRateWindow || duration > maxRateWindow;
+  });
+}
 
 function estimateLineups(master: EngineMaster, request: ScoreRequest, replay: boolean) {
   const { constraints, goal } = request;
@@ -162,7 +171,14 @@ function estimateLineups(master: EngineMaster, request: ScoreRequest, replay: bo
       const leaders = constraints.leader ? [team.findIndex((member) => member.key === constraints.leader)] : [0, 1, 2, 3, 4];
       const power = Math.max(...leaders.map((leader) => teamPower(master, player, team, support, leader, music).total));
       const programs = team.map((member, i) => pairedSkill(member, support[i] ?? null));
-      return [{ power, programs }];
+      const useTimeline = replay || programs.some(outsideRateWindows);
+      return [{
+        power,
+        useTimeline,
+        programs: useTimeline && !replay
+          ? team.map((member, i) => resolveSlotSkill(master, member, support[i] ?? null, undefined, true))
+          : programs,
+      }];
     });
   }
 
@@ -183,7 +199,7 @@ function apScore(rates: ChartRates, power: number, programs: SlotSkill[]) {
   const skills = programs.map((slot) => ({
     score: effectPercent(slot, 2000),
     perfect: effectPercent(slot, 2004),
-    extensionMs: Math.max(0, ...slot.effects.map((effect) => effect.seconds * 1000 + slot.extensionMs - 5000)),
+    extensionMs: Math.max(0, ...slot.effects.map((effect) => effect.seconds * 1000 + slot.extensionMs - minRateWindow)),
   }));
   return average(slotOrderRates({ base: rates.base, general: rates.windows, perfect: rates.windows }, skills)
     .map((rate) => rate * power));
@@ -221,11 +237,21 @@ export async function rankPickerCharts(
   for (const { song, table, key, rates } of candidates) {
     const teams = lineups(song.songId);
     if (!teams.length) return [];
-    const timeline = tables.get(table!)?.get(key);
-    const level = master.songs.get(song.songId)!.difficulties.find((row) => row.difficulty === song.difficulty)!;
-    const prepared = timeline && prepareChartRecommendationPlay(master, level.playLevel, rates!.notes, timeline, goal.play);
-    const score = Math.max(...teams.map(({ power, programs }) =>
-      prepared ? average(prepared.scores(power, programs)) : apScore(rates!, power, programs),
+    let prepared: ReturnType<typeof prepareChartRecommendationPlay> | undefined;
+    if (teams.some(({ useTimeline }) => useTimeline)) {
+      let timelines = tables.get(table!);
+      if (!timelines) {
+        timelines = await loadChartScoreTimelines(table!);
+        signal.throwIfAborted();
+        tables.set(table!, timelines);
+      }
+      const timeline = timelines.get(key);
+      if (!timeline) return null;
+      const level = master.songs.get(song.songId)!.difficulties.find((row) => row.difficulty === song.difficulty)!;
+      prepared = prepareChartRecommendationPlay(master, level.playLevel, rates!.notes, timeline, goal.play);
+    }
+    const score = Math.max(...teams.map(({ power, programs, useTimeline }) =>
+      useTimeline ? average(prepared!.scores(power, programs)) : apScore(rates!, power, programs),
     ));
     output.push({ song, score });
     if (performance.now() >= until) {
