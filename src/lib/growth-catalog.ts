@@ -2,6 +2,7 @@ import type { GrowthAction, GrowthCard, GrowthState } from "./growth-comparison"
 import type { EventBonusRule } from "./team-builder/data/events";
 import type { OwnedMember, OwnedSnap } from "./team-builder/sync/box-view";
 import type { CatalogCost } from "./catalog-cost-summary";
+import { RequestScope } from "./request-scope";
 
 export interface GrowthSkill {
   group: string;
@@ -42,28 +43,33 @@ export async function loadGrowthCatalog(
   locale: string,
   signal?: AbortSignal,
 ): Promise<GrowthPageData> {
-  const response = await fetch(`/${identity.server}/${locale}/growth-data.json`, {
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
-  });
-  if (!response.ok) throw new Error("growth-data-unavailable");
-  const data: GrowthPageData = await response.json();
-  if (
-    data.schema !== "haneoka-growth-page-v1" ||
-    data.identity.server !== identity.server ||
-    data.identity.sourceId !== identity.sourceId ||
-    data.identity.releaseId !== identity.releaseId ||
-    data.locale !== locale
-  )
-    throw new Error("growth-data-release");
-  return data;
+  const scope = new RequestScope();
+  const requestSignal = scope.begin(signal);
+  const timeout = setTimeout(() => scope.cancel(), 30000);
+  try {
+    const response = await fetch(`/${identity.server}/${locale}/growth-data.json`, { signal: requestSignal });
+    if (!response.ok) throw new Error("growth-data-unavailable");
+    const data: GrowthPageData = await response.json();
+    if (
+      data.schema !== "haneoka-growth-page-v1" ||
+      data.identity.server !== identity.server ||
+      data.identity.sourceId !== identity.sourceId ||
+      data.identity.releaseId !== identity.releaseId ||
+      data.locale !== locale
+    )
+      throw new Error("growth-data-release");
+    return data;
+  } finally {
+    clearTimeout(timeout);
+    scope.cancel();
+  }
 }
 export const growthActions = (kind: GrowthCard["kind"]): GrowthAction[] =>
   kind === "member" ? ["level", "training", "awakening", "live", "gekisou"] : ["level", "break"];
 export const growthField = (action: GrowthAction) =>
   ({ level: "lvl", training: "awk", awakening: "rnk", live: "sk", gekisou: "gsk", break: "rnk" })[action];
 /** Training and awakening read 1–5 as in the game; limit break counts breaks from 0. */
-export const stageDisplay = (action: GrowthAction, value: number): number =>
-  action === "break" ? value - 1 : value;
+export const stageDisplay = (action: GrowthAction, value: number): number => (action === "break" ? value - 1 : value);
 export function ownedGrowth(card: GrowthCatalogCard, owned: OwnedMember | OwnedSnap): GrowthState {
   return card.kind === "support"
     ? { level: owned.level, break: owned.rank }

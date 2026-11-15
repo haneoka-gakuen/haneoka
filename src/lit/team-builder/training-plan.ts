@@ -270,10 +270,16 @@ export class TeamTrainingPlan {
                                 <strong class="list-item__headline">
                                   ${index + 1}. ${host.catalog!.cardName(step.kind, step.cardId)}
                                 </strong>
-                                <span class="list-item__supporting">${changes.join(" · ")}</span>
-                                <span class="list-item__supporting">
-                                  ${step.costs.map((item) => `${item.name} ×${number(item.count)}`).join(" · ")}
-                                </span>
+                                ${changes.map(
+                                  (change) => html`
+                                    <span class="list-item__supporting">${change}</span>
+                                  `,
+                                )}
+                                ${step.costs.map(
+                                  (item) => html`
+                                    <span class="list-item__supporting">${item.name} ×${number(item.count)}</span>
+                                  `,
+                                )}
                               </span>
                               <strong class="list-item__trailing tabular">
                                 +${number(step.gain, Math.max(metric.digits, 2))}
@@ -328,7 +334,7 @@ export class TeamTrainingPlan {
                         ${record.label}
                         ${
                           this.records.length > 1 && record.snapshot.savedAt
-                            ? ` · ${formatDate(host.locale, record.snapshot.savedAt, { time: true })}`
+                            ? ` ${formatDate(host.locale, record.snapshot.savedAt, { time: true })}`
                             : nothing
                         }
                       </option>
@@ -338,34 +344,20 @@ export class TeamTrainingPlan {
                 </select>
               </span>
             </label>
-            ${
-              selectedSave
-                ? html`
-                    <span class="supporting-text">
-                      ${
-                        selectedSave.savedAt
-                          ? formatDate(host.locale, selectedSave.savedAt, { time: true })
-                          : t("unknownDate")
-                      }
-                    </span>
-                  `
-                : nothing
-            }
+            <span class="supporting-text tb-training-plan__status" role="status">
+              ${
+                this.saveError
+                  ? t("saveFailed")
+                  : selectedSave
+                    ? selectedSave.savedAt
+                      ? formatDate(host.locale, selectedSave.savedAt, { time: true })
+                      : t("unknownDate")
+                    : selection === "manual"
+                      ? t("manualExp")
+                      : nothing
+              }
+            </span>
             <a class="button button--text" href=${`/${host.locale}/saves/`}>${t("saves")}</a>
-            ${
-              this.saveError
-                ? html`
-                    <span class="supporting-text" role="status">${t("saveFailed")}</span>
-                  `
-                : nothing
-            }
-            ${
-              selection === "manual"
-                ? html`
-                    <span class="supporting-text">${t("manualExp")}</span>
-                  `
-                : nothing
-            }
             ${
               selection === "manual" && materials.length
                 ? accordion({
