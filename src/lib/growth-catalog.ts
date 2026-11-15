@@ -1,6 +1,7 @@
 import type { GrowthAction, GrowthCard, GrowthState } from "./growth-comparison";
 import type { EventBonusRule } from "./team-builder/data/events";
 import type { OwnedMember, OwnedSnap } from "./team-builder/sync/box-view";
+import type { CatalogCost } from "./catalog-cost-summary";
 
 export interface GrowthSkill {
   group: string;
@@ -31,9 +32,30 @@ export interface GrowthPageData {
   locale: string;
   identity: { server: string; sourceId: string; releaseId: string };
   cards: GrowthCatalogCard[];
+  experienceItems?: Partial<Record<GrowthCard["kind"], CatalogCost>>;
   bands: { value: string; label: string }[];
   characters: { value: string; label: string }[];
   events: GrowthEvent[];
+}
+export async function loadGrowthCatalog(
+  identity: { server: string; releaseId: string; sourceId?: string },
+  locale: string,
+  signal?: AbortSignal,
+): Promise<GrowthPageData> {
+  const response = await fetch(`/${identity.server}/${locale}/growth-data.json`, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new Error("growth-data-unavailable");
+  const data: GrowthPageData = await response.json();
+  if (
+    data.schema !== "haneoka-growth-page-v1" ||
+    data.identity.server !== identity.server ||
+    data.identity.sourceId !== identity.sourceId ||
+    data.identity.releaseId !== identity.releaseId ||
+    data.locale !== locale
+  )
+    throw new Error("growth-data-release");
+  return data;
 }
 export const growthActions = (kind: GrowthCard["kind"]): GrowthAction[] =>
   kind === "member" ? ["level", "training", "awakening", "live", "gekisou"] : ["level", "break"];

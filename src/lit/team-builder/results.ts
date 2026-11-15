@@ -1432,6 +1432,10 @@ function growthSection(host: TeamBuilder): TemplateResult {
   return html`
     <section class="surface stack tb-growth">
       ${sectionHeading({ icon: "trending_up", label: host.t("growthTitle", "Training priorities") })}
+      <button class="button" type="button" ?disabled=${host.running || !host.results?.overall[0]}
+        @click=${() => { const hit = host.results?.overall[0]; if (hit) host.teamGrowth.openTraining(hit); }}>
+        ${host.t("trainingPlan.title", "Plan with materials")}
+      </button>
       ${
         growth?.result
           ? upgrades.length

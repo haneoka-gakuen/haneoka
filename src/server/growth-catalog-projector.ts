@@ -48,6 +48,7 @@ export function projectGrowthCard(
   const stages = (source: unknown, key: string, effects: readonly string[] = []): GrowthStage[] =>
     rows(source).map((row) => ({
       value: Number(value(row, key)),
+      ...(key === "level" && /^\d+$/u.test(String(value(row, "exp"))) ? { exp: String(value(row, "exp")) } : {}),
       rates: rates(row),
       cap: number(value(row, "limitLevel")),
       effects: Object.fromEntries(

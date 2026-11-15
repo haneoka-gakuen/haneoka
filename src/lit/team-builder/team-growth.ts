@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: A selected result or manual team, frozen card inputs and the growth items chosen for one card.
-// Output: Shared training priorities and same-team / rebuilt-team scenario details.
+// Output: Shared training priorities, budgeted plans and same-team / rebuilt-team scenario details.
 // Pos: [Map](../L2-2.md); in-workspace growth comparison controller and dialog.
 // Effects/Dependencies: Native searches, cached responses and release-bound material JSON; no Box writes.
 import { icon } from "../ui/icon";
@@ -21,7 +21,7 @@ import type { GrowthPageData } from "../../lib/growth-catalog";
 import { summarizeCatalogCosts } from "../../lib/catalog-cost-summary";
 import { memberStat, snapshotPercent } from "../../lib/card-growth";
 import { upgradeCost } from "../ui/upgrade-cost";
-import { stageDisplay, growthSkillLevel } from "../../lib/growth-catalog";
+import { stageDisplay, growthSkillLevel, loadGrowthCatalog } from "../../lib/growth-catalog";
 import { iconButton, segmented } from "../ui/controls";
 import { modal } from "../ui/modal";
 import { tileMedia } from "../ui/tile";
@@ -30,6 +30,7 @@ import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { resultRequest, resultSettings, usesPtResults } from "./score-goal";
 import { resultMetric } from "./result-metric";
+import { TeamTrainingPlan } from "./training-plan";
 
 interface Source {
   input: EngineRequest;
@@ -86,16 +87,22 @@ export class TeamGrowthComparison {
   private stopped = false;
   private expanded = new Set(["new"]);
   private settingsOpen = true;
-  constructor(private readonly host: TeamBuilder) {}
+  private readonly training: TeamTrainingPlan;
+  constructor(private readonly host: TeamBuilder) {
+    this.training = new TeamTrainingPlan(host);
+  }
   private identity() {
     return JSON.stringify([
+      this.host.server,
       this.host.snapshot?.owner,
       this.host.data?.identity,
       this.host.data?.crossServer?.identities,
     ]);
   }
   sync() {
-    if (this.source && this.source.identity !== this.identity()) {
+    const identity = this.identity();
+    this.training.sync(identity);
+    if (this.source && this.source.identity !== identity) {
       this.close();
       this.cache.clear();
     }
@@ -108,12 +115,28 @@ export class TeamGrowthComparison {
     this.host.requestUpdate();
   }
   stop() {
+    this.training.stop();
     if (this.task && this.host.ownsTask(this.task)) {
       this.stopped = true;
       this.host.engine?.cancel();
     }
   }
   openResult(hit: EngineHit, upgrade?: { kind: "members" | "snaps"; key: string }) {
+    const source = this.resultSource(hit);
+    if (source) this.show(source, upgrade);
+  }
+  openTraining(hit: EngineHit) {
+    const source = this.resultSource(hit);
+    if (source) this.showTraining(source);
+  }
+  private showTraining(source: Source) {
+    const input = fixedGrowthRequest(source.input, source.hit);
+    if (input.goal.kind === "event" && source.hit.event?.rewardPlan)
+      input.goal.rewardPlan = structuredClone(source.hit.event.rewardPlan);
+    this.close();
+    this.training.open({ ...source, input });
+  }
+  private resultSource(hit: EngineHit): Source | undefined {
     const host = this.host;
     const input = resultRequest(host, hit);
     if (!input || host.running) return;
@@ -137,19 +160,13 @@ export class TeamGrowthComparison {
       }
     }
 
-    this.show(
-      {
-        input: request,
-        hit: structuredClone(hit),
-        settings,
-        identity: this.identity(),
-        cycle:
-          usesPtResults(host) && settings.route === "live"
-            ? structuredClone(host.pt.job?.cycle ?? undefined)
-            : undefined,
-      },
-      upgrade,
-    );
+    return {
+      input: request,
+      hit: structuredClone(hit),
+      settings,
+      identity: this.identity(),
+      cycle: usesPtResults(host) && settings.route === "live" ? structuredClone(host.pt.job?.cycle ?? undefined) : undefined,
+    };
   }
   openManual(row: TeamEvaluation) {
     const host = this.host;
@@ -246,10 +263,7 @@ export class TeamGrowthComparison {
     if (this.catalogData && matches(this.catalogData)) return;
     this.catalogData = undefined;
     try {
-      const response = await fetch(`/${server}/${this.host.locale}/growth-data.json`);
-      if (!response.ok) throw new Error(String(response.status));
-      const data: GrowthPageData = await response.json();
-      if (data.schema !== "haneoka-growth-page-v1" || !matches(data)) throw new Error("growth-data-release");
+      const data = await loadGrowthCatalog(identity, this.host.locale);
       if (this.source === source && selection === `${this.choice.kind}:${this.choice.key}`) this.catalogData = data;
     } catch {
       if (this.source === source && selection === `${this.choice.kind}:${this.choice.key}`) this.catalogError = true;
@@ -543,7 +557,7 @@ export class TeamGrowthComparison {
   }
   render() {
     const source = this.source;
-    if (!source) return nothing;
+    if (!source) return this.training.render();
     const host = this.host,
       catalog = host.catalog!,
       choice = this.choice,
@@ -849,6 +863,9 @@ export class TeamGrowthComparison {
                     </button>
                   `
             }
+            <button class="button button--tonal" ?disabled=${host.running} @click=${() => this.showTraining(source)}>
+              ${host.t("trainingPlan.title", "Plan with materials")}
+            </button>
             ${accordion({
               id: "tb-growth-materials",
               label: t("materials"),

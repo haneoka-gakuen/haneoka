@@ -9,6 +9,7 @@ export type GrowthAction = "level" | "training" | "awakening" | "live" | "gekiso
 export type GrowthStat = readonly [number, number, number];
 export interface GrowthStage {
   value: number;
+  exp?: string;
   rates?: GrowthStat;
   cap?: number;
   effects: Readonly<Record<string, number>>;
