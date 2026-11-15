@@ -64,6 +64,23 @@ export async function growthPageData(server: ReleaseServer, locale: string): Pro
   };
   const characters = asRecord(documents.characters) || {};
   const text = (value: unknown) => resolveLocalizedText(value, locale).text;
+  const experienceItems = Object.fromEntries(
+    (
+      [
+        ["member", "MemberExp"],
+        ["support", "SnapExp"],
+      ] as const
+    ).flatMap(([kind, type]) => {
+      const matching = Object.entries(items).filter(([, value]) => asRecord(value)?.itemTypeName === type);
+      if (matching.length !== 1) return [];
+      const [id, value] = matching[0]!;
+      const item = asRecord(value)!;
+      if (Number(item.value) !== 1) return [];
+      return [
+        [kind, { identity: `items:${id}`, name: text(item.name), count: 1, href: `/${server}/${locale}/items/${id}/` }],
+      ];
+    }),
+  );
   const project = (details: Map<string, RecordValue>, summary: RecordValue, support: boolean) =>
     Object.keys(summary).map((id) => {
       const detail = details.get(id);
@@ -92,6 +109,7 @@ export async function growthPageData(server: ReleaseServer, locale: string): Pro
     identity,
     locale,
     cards: [...project(members, memberSummary, false), ...project(supports, supportSummary, true)],
+    experienceItems,
     bands: Object.entries(asRecord(documents.bands) || {}).map(([id, row]) => ({
       value: id,
       label: text(asRecord(row)?.bandName),

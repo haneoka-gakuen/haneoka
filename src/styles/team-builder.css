@@ -67,6 +67,10 @@
   .team-builder .tb-growth-options { gap: var(--md-sys-spacing-2); }
   .team-builder .tb-team-growth__status { min-height: 3em; overflow-wrap: anywhere; }
   .team-builder .tb-team-growth .spec-list dd { overflow-wrap: anywhere; }
+  .team-builder .tb-training-plan__steps .list-item__body { min-width: 0; overflow-wrap: anywhere; }
+  .team-builder .tb-training-plan__steps .list-item__supporting { white-space: normal; }
+  .team-builder .tb-training-plan__status { min-block-size: 1.5em; overflow-wrap: anywhere; }
+  .team-builder .tb-training-plan .field :is(input, select) { min-width: 0; min-height: 48px; width: 100%; }
   @media (max-width: 850px) {
     .team-builder .tb-team-growth { width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
     .team-builder .tb-team-growth__body { grid-template-columns: minmax(0, 1fr); }
