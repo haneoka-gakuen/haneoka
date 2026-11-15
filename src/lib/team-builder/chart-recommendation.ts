@@ -21,10 +21,11 @@ const average = (values: readonly number[]) => values.reduce((sum, value) => sum
 const minRateWindow = SKILL_WINDOWS[0]!;
 const maxRateWindow = SKILL_WINDOWS.at(-1)!;
 
-function outsideRateWindows({ effects, extensionMs }: SlotSkill) {
+function needsTimeline({ effects, extensionMs }: SlotSkill) {
+  const first = effects[0] && windowMs(effects[0].seconds, extensionMs);
   return effects.some(({ seconds }) => {
     const duration = windowMs(seconds, extensionMs);
-    return duration < minRateWindow || duration > maxRateWindow;
+    return duration !== first || duration < minRateWindow || duration > maxRateWindow;
   });
 }
 
@@ -171,7 +172,7 @@ function estimateLineups(master: EngineMaster, request: ScoreRequest, replay: bo
       const leaders = constraints.leader ? [team.findIndex((member) => member.key === constraints.leader)] : [0, 1, 2, 3, 4];
       const power = Math.max(...leaders.map((leader) => teamPower(master, player, team, support, leader, music).total));
       const programs = team.map((member, i) => pairedSkill(member, support[i] ?? null));
-      const useTimeline = replay || programs.some(outsideRateWindows);
+      const useTimeline = replay || programs.some(needsTimeline);
       return [{
         power,
         useTimeline,
