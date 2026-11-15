@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
@@ -82,7 +82,7 @@ import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { availableOnServer } from "../lib/team-builder/song-comparison";
-import { activeSongRules } from "../lib/team-builder/arena";
+import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
 import { inApp } from "../lib/app-bridge";
 
@@ -907,12 +907,27 @@ export class TeamBuilder extends LitElement {
       this.arena.updateBuild(patch);
       return;
     }
+    const challengeChanged = (["challengeRules", "eventId", "goal", "route", "rewardMode"] as const)
+      .some(key => patch[key] !== undefined && patch[key] !== this.settings[key])
+      || patch.farming?.play !== undefined && patch.farming.play !== this.settings.farming.play;
+    const previous = challengeChanged ? this.searchSettings : null;
     const scopeChanged =
       this.tab === "pt" &&
       patch.rewardMode !== undefined &&
       (patch.rewardMode === "plan") !== (this.settings.rewardMode === "plan");
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
+    if (previous && patch.songRules === undefined) {
+      const current = this.searchSettings;
+      const challenge = (s: BuildSettings) => s.goal === "event" ? s.route === "challenge"
+        : (s.goal === "score" || s.goal === "power") && s.challengeRules;
+      if (challenge(current) && (!challenge(previous) || current.eventId !== previous.eventId)
+          && current.eventId !== null) {
+        const attributes = new Set(this.catalog?.challengeSongs(current.eventId).map(song => song.musicType));
+        if (attributes.size) this.settings = { ...this.settings,
+          songRules: { ...(this.settings.songRules ?? ORIGINAL_SONG_RULES), musicType: attributes.size === 1 ? [...attributes][0]! : 0 } };
+      }
+    }
     this.engine?.prefetch(this.searchSettings.songs);
     if (Object.keys(patch).some((key) => key !== "required")) {
       const { required: _required, ...stored } = this.settings;
