@@ -10,7 +10,7 @@ import { loadChartScoreTimelines } from "./chart-score-timeline";
 import { musicView, playerState, type EngineRequest, type Goal, type SongRef } from "./engine/api";
 import { resolveBox } from "./engine/box";
 import { chartKey } from "./engine/charts";
-import type { PlayModel } from "./engine/live";
+import { isAllPerfect, type PlayModel } from "./engine/live";
 import type { EngineMaster } from "./engine/master";
 import { leaderPercentBound, leaderPoints, leaderProfile, slotBase, snapPoints, teamPower, type MemberState, type SnapState } from "./engine/power";
 import { maxAssignment } from "./engine/search";
@@ -193,8 +193,7 @@ function estimateLineups(master: EngineMaster, request: ScoreRequest, replay: bo
   };
 }
 
-const hasJudgements = (play: PlayModel) =>
-  play.great > 0 || play.good > 0 || play.bad > 0 || play.miss > 0 || (play.missEvery ?? 0) > 0;
+const hasJudgements = (play: PlayModel) => !isAllPerfect(play);
 
 function apScore(rates: ChartRates, power: number, programs: SlotSkill[]) {
   const skills = programs.map((slot) => ({

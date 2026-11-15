@@ -250,7 +250,7 @@ export function prepareChartRecommendationPlay(
                   releaseFrame = due;
                 }
               }
-              if (release < last) end = bound(times, times[release]!);
+              if (release < last) end = Math.min(last, bound(times, releaseFrame));
             }
             if (end <= first) continue;
             let weight = 0;

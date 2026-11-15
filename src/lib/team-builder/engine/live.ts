@@ -23,7 +23,8 @@ export interface PlayModel {
   missEvery?: number;
 }
 export const AP: PlayModel = { great: 0, good: 0, bad: 0, miss: 0 };
-export const isAllPerfect = (play: PlayModel) => !play.great && !play.good && !play.bad && !play.miss && !(play.missEvery! > 0);
+export const isAllPerfect = (play: PlayModel) => play.mistakes ? !play.mistakes.indices.length
+  : !play.great && !play.good && !play.bad && !play.miss && !(play.missEvery! > 0);
 
 /** Picks `count` of `n` positions evenly (the native accuracy builder's spread). */
 function chooseEvenly(n: number, count: number, select: (i: number) => void) {
@@ -44,6 +45,12 @@ export function nativeJudgement(kind: number, grade: number): number {
 /** Distribute judgement shares in canonical order over the native grade-eligible notes. */
 export function playJudgements(count: number, play: PlayModel, judgementTypes?: ArrayLike<number>): Int8Array {
   const out = new Int8Array(count).fill(5);
+  if (play.mistakes) {
+    for (const index of play.mistakes.indices)
+      if (Number.isInteger(index) && index >= 0 && index < count)
+        out[index] = judgementTypes ? nativeJudgement(judgementTypes[index]!, play.mistakes.judgement) : play.mistakes.judgement;
+    return out;
+  }
   const clamp = (x: number) => Math.max(0, Math.min(1, x));
   for (const [judgement, fraction] of [
     [4, play.great],
