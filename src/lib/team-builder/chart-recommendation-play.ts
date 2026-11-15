@@ -1,7 +1,7 @@
 // L3 — GEB
 // Input: One published ordinary Live timeline, play settings and resolved candidate skills.
 // Output: Per-order scores for ranking charts before native search.
-// Pos: [Map](L2-2.md); ordinary non-AP branch of chart recommendation.
+// Pos: [Map](L2-2.md); timeline branch of ordinary chart recommendation.
 // Effects/Dependencies: Decodes static data and reuses native judgment allocation and skill order symmetry. No I/O.
 
 import { decodeChartScoreNotes, type ChartScoreTimeline } from "./chart-score-timeline";
