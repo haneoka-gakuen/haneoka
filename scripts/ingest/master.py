@@ -8,6 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from ingest.api_egress import run_api_curl
 from ingest.version_api import EMPTY_GRPC_FRAME, GRPC_USER_AGENT, _public_https, proxy_curl_flags
 
 
@@ -85,7 +86,7 @@ def discover_master_version(
         with tempfile.TemporaryDirectory(prefix="haneoka-master-version-") as directory:
             body = Path(directory) / "response.bin"
             try:
-                response = subprocess.run(
+                response = run_api_curl(
                     [
                         "curl", "--silent", "--show-error", "--http2", "--max-time", "30",
                         *proxy_curl_flags(proxy),
@@ -95,6 +96,7 @@ def discover_master_version(
                         "-A", GRPC_USER_AGENT,
                         "--data-binary", "@-", endpoint,
                     ],
+                    proxy=proxy,
                     input=EMPTY_GRPC_FRAME,
                     capture_output=True,
                     timeout=40,

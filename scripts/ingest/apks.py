@@ -31,6 +31,7 @@ from core.manifests import read_json, stable_json, write_json
 from core.paths import source_layout
 from core.zip_io import open_validated_zip
 from ingest.addressables import downloadable_locations
+from ingest.api_egress import next_cdn_opener
 from ingest.reuse import REUSABLE_ROLES, ReuseEntry, restore_reusable
 from ingest.unity import index_unity_dependencies
 from ingest.master import discover_master_version
@@ -509,6 +510,7 @@ def _download_one(
     )
     failure: Exception | None = None
     opener = urllib.request.build_opener(_TrustedRedirectHandler(config))
+    egress_nodes: set[str] = set()
     for attempt in range(5):
         try:
             with opener.open(_request(url, config, unity_version, authorization), timeout=120) as response, temporary.open(
@@ -562,6 +564,13 @@ def _download_one(
                 break
         except urllib.error.HTTPError as error:
             failure = error
+            if error.code in {403, 407, 502, 503, 504} and attempt < 4:
+                temporary.unlink(missing_ok=True)
+                alternate = next_cdn_opener(url, egress_nodes, _TrustedRedirectHandler(config))
+                if alternate is not None:
+                    opener = alternate
+                    temporary.unlink(missing_ok=True)
+                    continue
             if (error.code in {403, 404} or (error.code == 400 and quiet)) and missing_ok:
                 # Some CDNs answer absent objects with 400 (malformed-version
                 # gate), 403, or 404; only an exploratory catalog probe treats
@@ -584,6 +593,11 @@ def _download_one(
             http.client.IncompleteRead, gzip.BadGzipFile, zlib.error, EOFError, _DownloadIntegrityError,
         ) as error:
             failure = error
+            if isinstance(error, (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead)) and attempt < 4:
+                temporary.unlink(missing_ok=True)
+                alternate = next_cdn_opener(url, egress_nodes, _TrustedRedirectHandler(config))
+                if alternate is not None:
+                    opener = alternate
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise

@@ -15,6 +15,7 @@ import socket
 import subprocess
 import urllib.parse
 from dataclasses import dataclass
+from ingest.api_egress import RETRYABLE_CURL_CODES, run_api_curl
 
 GRPC_USER_AGENT = "grpc-dotnet/2.66.0"
 EMPTY_GRPC_FRAME = b"\x00\x00\x00\x00\x00"
@@ -23,7 +24,6 @@ CDN_ROOT_HEADER = "x-sirius-env"
 CDN_PASSWORD_HEADER = "x-sirius-cred"
 HEX_32 = re.compile(r"^[0-9a-f]{32}$")
 VERSION_PARTS = re.compile(r"^\d+(?:\.\d+)*$")
-RETRYABLE_CURL_CODES = frozenset({5, 6, 7, 18, 28, 35, 52, 55, 56, 92})
 RETRYABLE_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
@@ -195,7 +195,7 @@ def discover_asset_version(
         if delay:
             time.sleep(delay)
         try:
-            result = subprocess.run(command, input=EMPTY_GRPC_FRAME, capture_output=True, timeout=timeout + 10)
+            result = run_api_curl(command, proxy=proxy, input=EMPTY_GRPC_FRAME, capture_output=True, timeout=timeout + 10)
         except subprocess.TimeoutExpired:
             failure = DiscoveryUnavailable("timeout", "asset version request timed out")
             continue
