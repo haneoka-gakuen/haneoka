@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 引擎请求／结果与配队数据类型。
-// Output: EngineCall（含 UTF-8／字符串计算资料、编译模块、固定谱面载荷、私有评分缓存、固定顺序样例、区间任务点数分布、排序下界与活动养成分页控制）、EngineReply（含养成更新、队伍检查计数、协作能力和 Worker 谱面缓存容量和身份）、停止原因及 EngineSnapshot。
+// Output: EngineCall、EngineReply（含准备就绪、执行应答、实例故障和请求结果）、停止原因及 EngineSnapshot。
 // Pos: [Map](L2-2.md)；主线程与当前引擎 Worker 的消息边界。
 // Effects/Dependencies: 类型声明；资源获取与计算由 client／worker 实现。
 import type { TeamBuilderData } from "../data";
@@ -61,6 +61,8 @@ export type EngineCall = (
   | { type: "explain"; id: number; request: ExplainRequest }
   | { type: "charts"; id: number; songs: SongRef[] }) & { loadedCharts?: EngineChart[] };
 export type EngineReply =
+  | { type: "started"; id: number }
+  | { type: "fatal"; message: string }
   | { type: "phase"; id: number; phase: "network" | "computation" }
   | { type: "snapshot"; id: number; snapshot: EngineSnapshot }
   | { type: "eventGrowth"; id: number; result: EventTeamSearchResult }

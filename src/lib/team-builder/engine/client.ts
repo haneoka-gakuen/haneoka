@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存（含调用者预置的固定谱面），允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -10,6 +10,7 @@ import { teamBuilderSourceIdentity } from "../data/source";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
+import { throwIfAborted } from "../../request-scope";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
 import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "./merge";
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
@@ -20,13 +21,31 @@ import { chartKey, EngineCharts } from "./charts";
 import engineUrl from "./generated/team-engine.wasm?url";
 
 let compiledEngine: Promise<WebAssembly.Module> | null = null;
-const engineModule = () => compiledEngine ??= WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal: AbortSignal.timeout(60_000) }))
-  .catch(error => { compiledEngine = null; throw error; });
+const WORKER_ACK_TIMEOUT_MS = 60_000;
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    void work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+function engineModule() {
+  if (compiledEngine) return compiledEngine;
+  const signal = AbortSignal.timeout(60_000);
+  return compiledEngine = untilAborted(WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal })), signal)
+    .catch(error => {
+      compiledEngine = null;
+      if (signal.aborted) throw new Error("engine-init-timeout", { cause: error });
+      throw error;
+    });
+}
 
 export const ENGINE_MODEL_VERSION = "native-frame-origins-v1";
 
 export type ProofProgress = { unit: "charts" | "shards" | "joint"; checkedTeams?: number };
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void;
+  init: boolean; timer: ReturnType<typeof setTimeout>;
   progress?: (done: number, total: number, proof?: ProofProgress) => void; snapshot?: (value: EngineSnapshot) => void;
   eventGrowth?: (value: EventTeamSearchPage) => void; checkedTeams?: (song: SongRef | null, count: number) => void };
 type Preparation = { message: Extract<EngineCall, { type: "run" }>; floor: number; reward?: RewardFloor };
@@ -58,6 +77,7 @@ class EngineWorker {
   private chartCacheLimit = 4;
   private preparing: Preparation | null = null;
   private worker: Worker | null = null;
+  private lifetime: AbortController | null = null;
   private ready: Promise<void> | null = null;
   private nextId = 1;
   private phase: "initializationMs" | "networkMs" | "computationMs" | null = null;
@@ -86,19 +106,41 @@ class EngineWorker {
   ) {}
   private spawn(): Promise<void> {
     if (this.ready) return this.ready;
-    this.setPhase("initializationMs");
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module", name: this.name });
+    const lifetime = new AbortController();
+    this.lifetime = lifetime;
     this.worker = worker;
+    this.setPhase("initializationMs");
+    const fail = (error: Error) => { if (this.worker === worker) this.reset(error); };
     worker.onmessage = (event: MessageEvent<EngineReply>) => {
+      if (this.worker !== worker) return;
       const reply = event.data;
+      if (!reply || typeof reply.type !== "string") {
+        fail(new Error("engine-invalid-reply"));
+        return;
+      }
+      if (reply.type === "fatal") {
+        fail(new Error(reply.message));
+        return;
+      }
+      if (!Number.isSafeInteger(reply.id)) {
+        fail(new Error("engine-invalid-reply"));
+        return;
+      }
       const pending = this.pending.get(reply.id);
       if (!pending) return;
+      if (reply.type !== "error" && pending.init !== (reply.type === "ready")) {
+        fail(new Error("engine-invalid-reply"));
+        return;
+      }
+      clearTimeout(pending.timer);
+      if (reply.type === "started") return;
       if (reply.type === "phase") this.setPhase(reply.phase === "network" ? "networkMs" : "computationMs");
       else if (reply.type === "progress") pending.progress?.(reply.done, reply.total);
       else if (reply.type === "checkedTeams") pending.checkedTeams?.(reply.song, reply.count);
       else if (reply.type === "snapshot") pending.snapshot?.(reply.snapshot);
       else if (reply.type === "eventGrowth") pending.eventGrowth?.({ ...reply.result, id: reply.id });
-      else {
+      else if (reply.type === "error" || reply.type === "ready" || reply.type === "result") {
         const eventGrowth = reply.id === this.eventGrowthId;
         this.setPhase(null);
         this.pending.delete(reply.id);
@@ -117,20 +159,17 @@ class EngineWorker {
             pending.resolve(result);
           } else pending.resolve(reply.type === "result" ? reply.result : undefined);
         }
-      }
+      } else fail(new Error("engine-invalid-reply"));
     };
-    worker.onerror = (event) => {
-      if (this.worker !== worker) return;
-      for (const pending of this.pending.values()) pending.reject(new Error(event.message || "engine-crashed"));
-      this.pending.clear();
-      this.reset();
+    worker.onerror = event => {
+      fail(new Error(event.message || "engine-crashed"));
     };
-    this.ready = engineModule().then(module => {
-      if (this.worker !== worker) throw new DOMException("Cancelled", "AbortError");
+    worker.addEventListener("messageerror", () => fail(new Error("engine-message-error")));
+    this.ready = untilAborted(engineModule(), lifetime.signal).then(module => {
+      throwIfAborted(lifetime.signal);
       return this.call({ type: "init", id: 0, data: this.data, charts: this.charts, module }) as Promise<void>;
     }).catch((error) => {
-      // A failed release compile must not pin the Worker to its rejected ready promise.
-      if (this.worker === worker) this.reset();
+      fail(error);
       throw error;
     });
     return this.ready;
@@ -147,16 +186,30 @@ class EngineWorker {
     const cooperativeFloor = this.cooperativeFloor && this.acceptsFloor(message);
     if (message.type === "run") this.runId = cooperativeFloor ? id : null;
     if (message.type === "eventGrowth" || message.type === "eventGrowthPage") this.eventGrowthId = id;
+    const worker = this.worker!;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, progress, snapshot, eventGrowth, checkedTeams });
-      this.worker!.postMessage({ ...message, id, ...(message.type === "run" ? { cooperativeFloor, reportRankChecks: !!checkedTeams } : {}),
+      const init = message.type === "init";
+      const timer = setTimeout(() => {
+        if (this.worker === worker) this.reset(new Error(init ? "engine-init-timeout" : "engine-start-timeout"));
+      }, WORKER_ACK_TIMEOUT_MS);
+      this.pending.set(id, { resolve, reject, init, timer, progress, snapshot, eventGrowth, checkedTeams });
+      this.post({ ...message, id, ...(message.type === "run" ? { cooperativeFloor, reportRankChecks: !!checkedTeams } : {}),
         ...(message.type === "eventGrowth" || message.type === "eventGrowthPage" ? { paused: this.eventGrowthPaused } : {}) });
     });
+  }
+  private post(message: EngineCall) {
+    try {
+      this.worker!.postMessage(message);
+      return true;
+    } catch (error) {
+      this.reset(new Error("engine-message-error", { cause: error }));
+      return false;
+    }
   }
   pauseEventGrowth(paused: boolean) {
     this.eventGrowthPaused = paused;
     if (this.eventGrowthId !== null)
-      this.worker!.postMessage({ type: "pauseEventGrowth", id: this.eventGrowthId, paused } satisfies EngineCall);
+      this.post({ type: "pauseEventGrowth", id: this.eventGrowthId, paused });
   }
   raiseFloor(value: number) {
     if (!Number.isFinite(value)) return false;
@@ -165,8 +218,7 @@ class EngineWorker {
       this.preparing.floor = Math.max(this.preparing.floor, value);
       return true;
     }
-    this.worker!.postMessage({ type: "floor", id: this.runId, value } satisfies EngineCall);
-    return true;
+    return this.post({ type: "floor", id: this.runId, value });
   }
   raiseReward(hit: EngineHit) {
     if (!this.cooperativeReward) return this.raiseFloor(hit.key);
@@ -177,45 +229,47 @@ class EngineWorker {
       this.preparing.reward = reward;
       return true;
     }
-    this.worker!.postMessage({ type: "floor", id: this.runId, value: hit.key, reward } satisfies EngineCall);
-    return true;
+    return this.post({ type: "floor", id: this.runId, value: hit.key, reward });
   }
   async send<T>(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], searchBudgetMs?: number,
     eventGrowth?: Pending["eventGrowth"], checkedTeams?: Pending["checkedTeams"]): Promise<T> {
     const preparation: Preparation | null = message.type === "run" ? { message, floor: -Infinity } : null;
     this.preparing = preparation;
-    const ready = this.spawn();
-    const worker = this.worker;
-    const songs = message.type === "run" || message.type === "growth" ? requestChartSongs(message.request).filter((song): song is SongRef => song !== null)
-      : message.type === "evaluate" || message.type === "sample" || message.type === "sectionMetrics" ? message.request.songs : message.type === "explain" ? [message.request.song]
-        : message.type === "charts" ? message.songs : [];
-    const staged = [...this.cachedCharts];
-    const missing = songs.filter(song => {
-      const key = chartKey(song), index = staged.indexOf(key);
-      if (index >= 0 && message.type === "charts") return false;
-      if (index >= 0) staged.splice(index, 1);
-      staged.push(key);
-      if (staged.length > this.chartCacheLimit) staged.shift();
-      return index < 0;
-    });
-    let loading = true;
-    const requestedCharts = new Set(songs.map(chartKey));
-    const loaded = (
-      message.loadedCharts
-        ? Promise.resolve(message.loadedCharts.filter(row => requestedCharts.has(chartKey(row.song))))
-        : songs.length <= 4 ? Promise.all(missing.map(song => this.downloads.load(song))) : Promise.resolve(undefined)).finally(() => { loading = false; });
-    const initialized = ready.then(() => { if (loading) this.setPhase("networkMs"); });
+    let worker: Worker | null = null;
     try {
-      const [, loadedCharts] = await Promise.all([initialized, loaded]);
-      if (worker !== this.worker) throw new DOMException("Cancelled", "AbortError");
+      const ready = this.spawn();
+      worker = this.worker;
+      const signal = this.lifetime!.signal;
+      const songs = message.type === "run" || message.type === "growth" ? requestChartSongs(message.request).filter((song): song is SongRef => song !== null)
+        : message.type === "evaluate" || message.type === "sample" || message.type === "sectionMetrics" ? message.request.songs : message.type === "explain" ? [message.request.song]
+          : message.type === "charts" ? message.songs : [];
+      const staged = [...this.cachedCharts];
+      const missing = songs.filter(song => {
+        const key = chartKey(song), index = staged.indexOf(key);
+        if (index >= 0 && message.type === "charts") return false;
+        if (index >= 0) staged.splice(index, 1);
+        staged.push(key);
+        if (staged.length > this.chartCacheLimit) staged.shift();
+        return index < 0;
+      });
+      let loading = true;
+      const requestedCharts = new Set(songs.map(chartKey));
+      const loaded = (
+        message.loadedCharts
+          ? Promise.resolve(message.loadedCharts.filter(row => requestedCharts.has(chartKey(row.song))))
+          : songs.length <= 4 ? Promise.all(missing.map(song => this.downloads.load(song))) : Promise.resolve(undefined)).finally(() => { loading = false; });
+      const initialized = ready.then(() => { if (loading && !signal.aborted) this.setPhase("networkMs"); });
+      const [, loadedCharts] = await untilAborted(Promise.all([initialized, loaded]), signal);
+      throwIfAborted(signal);
       if (this.preparing === preparation) this.preparing = null;
-      if (message.type === "run" || message.type === "evaluate" || message.type === "sectionMetrics" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
+      if (message.type === "run") this.setPhase("initializationMs");
+      else if (message.type === "evaluate" || message.type === "sectionMetrics" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
       return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams)) as T;
     } finally {
       if (this.preparing === preparation) this.preparing = null;
-      if (worker === this.worker && this.pending.size === 0) this.setPhase(null);
+      if (worker && worker === this.worker && this.pending.size === 0) this.setPhase(null);
     }
   }
   /** Calls in flight; 0 when idle. */
@@ -227,24 +281,37 @@ class EngineWorker {
   }
   hasChart(key: string) { return this.cachedCharts.includes(key); }
   /** Starts the Worker and compiles the release ahead of the first call. */
-  warm(): Promise<void> {
-    return this.spawn().catch(() => {});
+  async warm(): Promise<void> {
+    try { await this.spawn(); } catch { /* The actual request can retry preparation. */ }
   }
   async preload(songs: readonly SongRef[]): Promise<EngineChart[]> {
-    await this.spawn();
+    const ready = this.spawn();
+    const signal = this.lifetime!.signal;
+    await ready;
+    throwIfAborted(signal);
     this.setPhase("networkMs");
     try {
-      return await this.downloads.loadMany(songs);
+      return await untilAborted(this.downloads.loadMany(songs), signal);
     } finally {
-      this.setPhase(null);
+      if (!signal.aborted) this.setPhase(null);
     }
   }
   cancel() {
-    for (const pending of this.pending.values()) pending.reject(new DOMException("Cancelled", "AbortError"));
-    this.pending.clear();
-    this.reset();
+    this.reset(new DOMException("Cancelled", "AbortError"));
   }
-  private reset() {
+  private reset(error: Error) {
+    const worker = this.worker;
+    const lifetime = this.lifetime;
+    this.worker = null;
+    this.lifetime = null;
+    this.ready = null;
+    lifetime?.abort(error);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+    worker?.terminate();
     this.scoredSeeds = [];
     this.cachedCharts = [];
     this.chartCacheLimit = 4;
@@ -254,9 +321,6 @@ class EngineWorker {
     this.cooperativeFloor = false;
     this.cooperativeReward = false;
     this.setPhase(null);
-    this.worker?.terminate();
-    this.worker = null;
-    this.ready = null;
   }
 }
 
@@ -264,6 +328,16 @@ type DeferredHit = EngineHit & { pendingScores?: true };
 const pendingScores = (hit: EngineHit) => (hit as DeferredHit).pendingScores === true;
 const memberSet = (hit: EngineHit) => memberSetKey(hit.members);
 const exactTeam = (hit: EngineHit) => JSON.stringify([hit.song?.songId, hit.song?.difficulty, hit.members, hit.snaps, hit.power, hit.key]);
+function initialSearchResponse(request: EngineRequest): EngineResponse {
+  const response = emptyResponse(request);
+  response.results = response.results.map(result => ({
+    ...result,
+    hits: result.proven || result.exclusion || !request.seeds?.length ? result.hits : request.seeds
+      .filter(hit => hit.song?.songId === result.song?.songId && hit.song?.difficulty === result.song?.difficulty).slice(0, request.k),
+  }));
+  response.overall = response.results.flatMap(result => result.hits).sort(compareHits).slice(0, request.k);
+  return response;
+}
 /** Keep every variant tied at the distinct-member primary boundary until its mean is known. */
 function completionCandidates(hits: readonly EngineHit[], k: number): EngineHit[] {
   const primary = new Map<string, number>();
@@ -366,7 +440,7 @@ export class EngineClient {
   private readonly pool: EngineWorker[];
   private readonly dataIdentity: string;
   private readonly downloads: EngineCharts;
-  constructor(private readonly data: TeamBuilderData, changed: () => void = () => {}, options: { maxWorkers?: number; apiBase?: string; charts?: readonly EngineChart[] } = {}) {
+  constructor(private readonly data: TeamBuilderData, private readonly changed: () => void = () => {}, options: { maxWorkers?: number; apiBase?: string; charts?: readonly EngineChart[] } = {}) {
     this.dataIdentity = JSON.stringify([data.identity, data.crossServer?.identities]);
     const serialized = workerData(data);
     const charts: EngineChartSources = {};
@@ -401,9 +475,12 @@ export class EngineClient {
     return [...pool].sort((a, b) => a.load - b.load || Number(b.started) - Number(a.started))[0]!;
   }
   private queue: Promise<unknown> = Promise.resolve();
+  private queueDepth = 0;
+  private readonly queuedSearches = new Map<(reason: "budget" | "cancelled") => void, boolean>();
   private readonly activeStops = new Set<(reason: StopReason) => void>();
   private generation = 0;
   private completed: { key: string; response: EngineResponse } | null = null;
+  get searchQueued() { return [...this.queuedSearches.values()].some(Boolean); }
   private responseKey(request: EngineRequest): string | null {
     if (request.k > 5 || request.members.length > 256 || request.snaps.length > 256 || requestSongs(request).length > 4
       || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded || request.rewardPhase || request.certifyRewardRanks
@@ -417,19 +494,31 @@ export class EngineClient {
     const started = clock();
     const generation = this.generation;
     const task = { ...request, timeLimitMs: null, deadline: deadlineOf(request), requestId: request.requestId ?? crypto.randomUUID(), contextKey: request.contextKey ?? JSON.stringify([this.dataIdentity, request]) };
-    let expired = false;
+    let stoppedBeforeStart: EngineResponse | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const waiting = new Promise<EngineResponse>(resolve => {
-      if (Number.isFinite(task.deadline)) timer = setTimeout(() => {
-        expired = true;
-        const response = { ...emptyResponse(task), stopReason: "budget" as const, elapsedMs: clock() - started };
-        snapshot?.({ requestId: task.requestId, contextKey: task.contextKey, response, stopReason: "budget", coverage: { completed: 0, total: response.results.length } });
-        resolve(response);
-      }, remaining(task.deadline));
-    });
-    const queued = this.queue.then(() => {
+    const blocked = this.queueDepth > 0;
+    let stopWaiting!: (reason: "budget" | "cancelled") => void;
+    const leaveQueue = () => {
       clearTimeout(timer);
-      if (expired || generation !== this.generation) return { ...emptyResponse(task), stopReason: expired ? "budget" as const : "cancelled" as const };
+      if (this.queuedSearches.delete(stopWaiting) && blocked) this.changed();
+    };
+    const waiting = new Promise<EngineResponse>(resolve => {
+      stopWaiting = reason => {
+        leaveQueue();
+        const response = { ...initialSearchResponse(task), stopReason: reason, elapsedMs: clock() - started };
+        stoppedBeforeStart = response;
+        resolve(response);
+        snapshot?.({ requestId: task.requestId, contextKey: task.contextKey, response, stopReason: reason,
+          coverage: { completed: response.results.filter(result => result.proven || result.exclusion).length, total: response.results.length } });
+      };
+    });
+    this.queuedSearches.set(stopWaiting, blocked);
+    if (blocked) this.changed();
+    if (Number.isFinite(task.deadline)) timer = setTimeout(() => stopWaiting("budget"), remaining(task.deadline));
+    const queued = this.queueWork(() => {
+      leaveQueue();
+      if (stoppedBeforeStart) return stoppedBeforeStart;
+      if (generation !== this.generation) return { ...initialSearchResponse(task), stopReason: "cancelled" as const };
       const key = onFinalResult ? null : this.responseKey(task);
       if (key !== null && key === this.completed?.key && remaining(task.deadline) > 0) {
         const response = structuredClone(this.completed.response);
@@ -442,8 +531,7 @@ export class EngineClient {
       }
       return this.execute(task, started, progress, snapshot, onFinalResult, key);
     });
-    this.queue = queued.catch(() => {});
-    return Promise.race([queued, waiting]).finally(() => clearTimeout(timer));
+    return Promise.race([queued, waiting]);
   }
 
   /** Independent complete scenarios share the existing Worker pool and the normal request pipeline. */
@@ -495,11 +583,7 @@ export class EngineClient {
     if (justWindow && justWindow > 0 && !sharedSteadyWindow) request = { ...request, noFloor: true };
     const idlest = () => this.idlest(pool);
     const before = pool.map(worker => worker.timing());
-    let latest = emptyResponse(request);
-    if (request.seeds?.length) {
-      for (const result of latest.results) result.hits = request.seeds.filter(hit => hit.song?.songId === result.song?.songId && hit.song?.difficulty === result.song?.difficulty).slice(0, request.k);
-      latest.overall = latest.results.flatMap(result => result.hits).sort(compareHits).slice(0, request.k);
-    }
+    let latest = initialSearchResponse(request);
     let stopped = false;
     let lastShown = -Infinity;
     let publishTimer: ReturnType<typeof setTimeout> | undefined;
@@ -521,17 +605,18 @@ export class EngineClient {
       if (response.cpChallenge) cpChallenge = response.cpChallenge;
       if (cpChallenge) response.cpChallenge = cpChallenge;
       const hadCandidate = latest.overall.length > 0;
-      for (const result of response.results) {
+      response.results = response.results.map(result => {
         const previous = latest.results.find(part => part.song?.songId === result.song?.songId && part.song?.difficulty === result.song?.difficulty);
-        if (previous && !result.proven) {
-          const seen = new Set<string>();
-          result.hits = [...result.hits, ...previous.hits].sort(compareHits).filter(hit => {
-            const key = memberSet(hit);
-            if (seen.has(key)) return false;
-            seen.add(key); return true;
-          }).slice(0, request.k);
-        }
-      }
+        if (!previous || result.proven || result.exclusion) return result;
+        if (previous.proven || previous.exclusion) return previous;
+        const seen = new Set<string>();
+        result.hits = [...result.hits, ...previous.hits].sort(compareHits).filter(hit => {
+          const key = memberSet(hit);
+          if (seen.has(key)) return false;
+          seen.add(key); return true;
+        }).slice(0, request.k);
+        return result;
+      });
       response.overall = response.results.flatMap(result => result.hits).sort(compareHits).slice(0, request.k);
       latest = response;
       latest.timing = pool.reduce((total, worker, index) => {
@@ -555,7 +640,7 @@ export class EngineClient {
     const interrupted = new Promise<EngineResponse>(resolve => {
       stop = reason => {
         if (stopped) return;
-        publish({ ...(partitionProgress?.() ?? latest), stopReason: reason }, true);
+        publish({ ...(partitionProgress?.() ?? latest), error: latest.error, stopReason: reason }, true);
         stopped = true;
         wakeWork?.();
         if (pool === this.pool) this.downloads.cancel();
@@ -606,7 +691,8 @@ export class EngineClient {
       const sharedEvent = canPartition && request.goal.kind === "event" && canUseSharedEventRosters(this.data, request)
         ? { ...request, goal: request.goal } : null;
       if (separateEvent || sharedEvent) {
-        const finished = () => stopped || !remaining(deadline);
+        let partitionFailed = false;
+        const finished = () => stopped || partitionFailed || !remaining(deadline);
         const workers = [...pool].sort((a, b) => Number(b.started) - Number(a.started));
         let sharedCharts: Promise<EngineChart[]> | undefined;
         const pending: { chart: string | null; run: (worker?: EngineWorker) => Promise<void> }[] = [];
@@ -639,8 +725,7 @@ export class EngineClient {
         };
         wakeWork = dispatch;
         const runBatch: PartitionBatch = async (jobs, onResult, onProgress, options) => {
-          let failed = false;
-          const active = () => !stopped && !failed && !options?.stopped?.();
+          const active = () => !stopped && !partitionFailed && !options?.stopped?.();
           const batch = jobs.map((job, index) => new Promise<void>((resolve, reject) => {
             const charts = sharedEvent ? requestChartSongs(job) : [];
             pending.push({ chart: charts.length === 1 && charts[0] ? chartKey(charts[0]) : null,
@@ -660,16 +745,14 @@ export class EngineClient {
                   }
                   resolve();
                 } catch (error) {
-                  failed = true;
+                  partitionFailed = true;
                   reject(error);
                 }
               },
             });
           }));
           dispatch();
-          const settled = await Promise.allSettled(batch);
-          const rejected = settled.find(result => result.status === "rejected");
-          if (rejected) throw rejected.reason;
+          await Promise.all(batch);
         };
         if (sharedEvent) {
           const result = await proveSharedEvent(this.data, sharedEvent, runBatch, publish, finished, pool.length);
@@ -702,7 +785,7 @@ export class EngineClient {
               if (final || clock() - lastShown >= snapshotInterval) publish(response(), final);
             };
             const result = await partitionEvent(part, runBatch, update, finished, firstPassBudgetMs);
-            if (!stopped) {
+            if (!stopped && !partitionFailed) {
               update(result, true);
               if (trackRank) reportRankProof(parts);
               else progress?.(++done, goal.songs.length);
@@ -1302,14 +1385,18 @@ export class EngineClient {
       this.activeStops.delete(stop);
     }
   }
+  private queueWork<T>(work: () => T | Promise<T>): Promise<T> {
+    this.queueDepth++;
+    const queued = this.queue.then(work).finally(() => { this.queueDepth--; });
+    this.queue = queued.catch(() => {});
+    return queued;
+  }
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const generation = this.generation;
-    const queued = this.queue.then(() => {
+    return this.queueWork(() => {
       if (generation !== this.generation) throw new DOMException("Cancelled", "AbortError");
       return work();
     });
-    this.queue = queued.catch(() => {});
-    return queued;
   }
   sample(request: SampleRequest) {
     return this.enqueue(() => this.pool[0]!.send<PlaySample>({ type: "sample", id: 0, request }));
@@ -1364,6 +1451,7 @@ export class EngineClient {
   /** Stops everything in flight; the next call starts fresh Workers. */
   cancel() {
     this.generation++;
+    for (const stop of [...this.queuedSearches.keys()]) stop("cancelled");
     for (const stop of this.activeStops) stop("cancelled");
     this.downloads.cancel();
     for (const worker of this.pool) worker.cancel();
