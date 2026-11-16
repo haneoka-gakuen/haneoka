@@ -15,6 +15,8 @@ jobs:
   frontend:
     name: Verify complete frontend
     uses: ./.github/workflows/static-frontend.yml
+    secrets:
+      CONTENT_BUILD_TOKEN: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.CONTENT_BUILD_TOKEN || '' }}
     with:
       verification_only: true
   build:
