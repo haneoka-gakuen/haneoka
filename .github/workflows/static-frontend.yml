@@ -7,6 +7,20 @@ on:
     secrets:
       CONTENT_BUILD_TOKEN:
         required: false
+      AFDIAN_TOKEN:
+        required: false
+      AFDIAN_USER_ID:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      PATREON_CREATOR_TOKEN:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
     inputs:
       page_groups:
         type: string
@@ -92,8 +106,8 @@ jobs:
           path: |
             data/static-catalog/v1
             data/static-catalog/blobs/v1
-          key: static-catalog-current-v2-${{ runner.os }}-${{ steps.catalog-identity.outputs.key }}
-          restore-keys: static-catalog-current-v2-${{ runner.os }}-
+          key: static-catalog-${{ env.STATIC_CATALOG_TOKEN != '' && 'build' || 'public' }}-v3-${{ runner.os }}-${{ steps.catalog-identity.outputs.key }}
+          restore-keys: static-catalog-${{ env.STATIC_CATALOG_TOKEN != '' && 'build' || 'public' }}-v3-${{ runner.os }}-
       - uses: actions/cache/restore@v6
         id: embed-cache
         with:
