@@ -183,6 +183,7 @@
     "src/lib/team-builder/engine/worker.ts",
     "src/lib/team-builder/engine/protocol.ts",
     "src/lib/team-builder/engine/api.ts",
+    "src/lib/team-builder/engine/runtime-chart.ts",
     "src/lib/team-builder/solver/worker.ts",
     "src/lib/team-builder/solver/evaluate.ts",
     "src/lib/team-builder/sync/box-doc.ts",

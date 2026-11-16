@@ -1087,6 +1087,8 @@ export interface TimingGuideAction {
   noteIndices: number[];
   noteTimesMs: number[];
   inputTimesMs: number[];
+  inputKinds?: ("hit" | "hold" | "release" | "flick" | "miss")[];
+  deliveryTimesMs?: number[];
   included: boolean;
   gain: number | null;
   comboGain?: number | null;
@@ -1097,24 +1099,25 @@ export interface TimingGuide {
   best: number | null;
   actions: TimingGuideAction[];
 }
-/** Counted notes and legal early inputs; noteIndices address the canonical judged-note stream. */
+/** Counted notes and input actions; noteIndices address the canonical judged-note stream. */
 export interface TimingWindow {
   event: number;
   startMs: number;
   endMs: number;
   unit: number;
   notes: number[];
-  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; noteTimesMs?: number[]; inputTimesMs?: number[]; gain: number }[];
+  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; noteTimesMs?: number[]; inputTimesMs?: number[]; inputKinds?: TimingGuideAction["inputKinds"]; deliveryTimesMs?: number[]; gain: number }[];
 }
-/** Selected order's nominal score, legal timing extrema and attainable 17 ms input guide. */
+/** Selected order's nominal score, legal timing extrema and verified optimal input plan. */
 export interface OrderTiming {
   score: number;
   /** Nominal score at the render origin used by this plan. */
   planBaseScore?: number;
   frameOriginMs?: number;
   best: number;
-  /** Whether the fixed early-input plan has a native input witness. */
+  /** Whether the displayed plan has a native input witness. */
   guideAvailable?: boolean;
+  planIsOptimal?: boolean;
   /** Full base-judgement windows, with automatic inputs fixed. */
   worst: number;
   optimal: number;

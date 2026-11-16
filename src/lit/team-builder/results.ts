@@ -747,7 +747,7 @@ function orderFaces(host: TeamBuilder, hit: EngineHit, index: number, firing: re
   `;
 }
 
-/** The order's score with the timed notes hit early. */
+/** The order's timing extrema and verified plan. */
 function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, reserve = false, fallback?: number, advanceMs = 17) {
   if (!timing && !reserve) return nothing;
   const plain = timing === null ? fallback : undefined;
@@ -760,7 +760,8 @@ function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, re
     <div><dt>${host.t("timingFrameOrigin", "Plan frame origin")}</dt><dd>${timing ? `${format(host, timing.frameOriginMs ?? 0, 2)} ms` : "—"}</dd></div>
     <div><dt>${host.t("timingPlanBaseScore", "Plan baseline score")}</dt><dd>${text(timing?.planBaseScore ?? timing?.score ?? plain)}</dd></div>
     <div>
-      <dt>${host.t("timingFramePlanScore", "{ms} ms plan", { ms: timing?.advanceMs ?? advanceMs })}</dt>
+      <dt>${!timing || timing.planIsOptimal ? host.t("timingOptimalPlanScore", "Optimal timing plan")
+        : host.t("timingFramePlanScore", "{ms} ms plan", { ms: timing?.advanceMs ?? advanceMs })}</dt>
       <dd>${text(timing?.guideAvailable === false ? undefined : timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>
     </div>
   `;
@@ -775,15 +776,25 @@ function guideActions(timing: OrderTiming | null | undefined): TimingGuideAction
     kind: "skill" as const, event: window.event, range: null, timeMs: step.timeMs,
     noteIndices: step.noteIndices, noteTimesMs: step.noteTimesMs ?? step.noteIndices.map(() => step.timeMs),
     inputTimesMs: step.inputTimesMs ?? step.noteIndices.map(() => step.timeMs - timing.advanceMs),
+    inputKinds: step.inputKinds, deliveryTimesMs: step.deliveryTimesMs,
     included: false, gain: step.gain,
   }))).sort((a, b) => a.timeMs - b.timeMs);
+}
+function timingInputLabel(host: TeamBuilder, target: number, original: number, kind?: NonNullable<TimingGuideAction["inputKinds"]>[number], onBeat = false) {
+  const offset = target - original;
+  const direction = onBeat || offset === 0 ? host.t("timingOnBeat", "On time")
+    : offset < 0 ? host.t("timingEarlyExact", "{ms} ms early", { ms: -offset })
+    : host.t("timingLateExact", "{ms} ms late", { ms: offset });
+  const operation = kind === "hold" ? host.t("timingInputHold", "Hold") : kind === "release" ? host.t("timingInputRelease", "Release")
+    : kind === "flick" ? host.t("timingInputFlick", "Flick") : kind === "miss" ? host.t("timingInputMiss", "Do not hit") : "";
+  return [operation, kind === "miss" ? "" : direction].filter(Boolean).join(" ");
 }
 function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: TimingGuideAction, labels: ReadonlyMap<number, number>, chartId: string) {
   const member = action.event === null ? undefined : memberFace(host, hit, ORDERS[order]![action.event]!);
   const title = action.kind === "combo-opening" ? host.t("timingComboOpening", "Split the opening chord")
     : action.kind === "combo-chord" ? host.t("timingComboChord", "Split the chord at the COMBO threshold")
     : action.kind === "combo-ending" ? host.t("timingComboEnding", "Hit the ending notes early")
-    : host.t("timingSkillStep", "Advance the skill bonus");
+    : action.inputKinds ? host.t("timingOptimalInputs", "Adjust note timing") : host.t("timingSkillStep", "Advance the skill bonus");
   const source = member?.name ?? host.t("timingComboRange", "COMBO section {section}", { section: (action.range ?? 0) + 1 });
   const numbers = action.noteIndices.map(note => labels.get(note)!);
   const focus = () => {
@@ -809,15 +820,14 @@ function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: T
       <table class="tb-timing__steps"><thead><tr>
         <th scope="col">${host.t("timingInputNote", "Note")}</th>
         <th scope="col">${host.t("timingInputAction", "Input")}</th>
-        <th scope="col">${host.t("timingInputTime", "Judgement time")}</th>
+        <th scope="col">${action.inputKinds ? host.t("timingActualInputTime", "Input time") : host.t("timingInputTime", "Judgement time")}</th>
+        ${action.deliveryTimesMs ? html`<th scope="col">${host.t("timingDeliveryTime", "Delivery time")}</th>` : nothing}
       </tr></thead><tbody>${action.noteIndices.map((_, i) => {
         const target = action.inputTimesMs[i]!, original = action.noteTimesMs[i]!;
-        const offset = target - original;
-        const direction = (action.kind === "combo-opening" || action.kind === "combo-chord") && i === 0 ? host.t("timingOnBeat", "On time")
-          : offset < 0 ? host.t("timingEarlyExact", "{ms} ms early", { ms: -offset })
-          : offset > 0 ? host.t("timingLateExact", "{ms} ms late", { ms: offset }) : host.t("timingOnBeat", "On time");
+        const instruction = timingInputLabel(host, target, original, action.inputKinds?.[i], (action.kind === "combo-opening" || action.kind === "combo-chord") && i === 0);
         return html`<tr><th scope="row">${host.t("timingNoteNumber", "Note {number}", { number: numbers[i]! })}</th>
-          <td>${direction}</td><td class="tabular">${chartClock(target)}</td></tr>`;
+          <td>${instruction}</td><td class="tabular">${chartClock(target)}</td>
+          ${action.deliveryTimesMs ? html`<td class="tabular">${chartClock(action.deliveryTimesMs[i]!)}</td>` : nothing}</tr>`;
       })}</tbody></table>
     </div>
   </li>`;
@@ -827,17 +837,20 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
   const unavailable = timing?.guideAvailable === false || timing === null || guide === null;
   if (!actions.length && !coverage) return html`<div class="row row--between row--wrap"><strong>${host.t("timingGuide", "Timing guide")}</strong>
     <span>${unavailable ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
-      : timing ? timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
+      : timing ? timing.planIsOptimal ? host.t("timingOnBeat", "On time") : timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
       : guide ? host.t("timingPlanNoGain", "No gain with this plan") : nothing}</span></div>`;
-  const notes = new Map<number, { timeMs: number; kind: "combo" | "skill" | "both" }>();
+  const notes = new Map<number, { timeMs: number; kind: "combo" | "skill" | "both"; instruction: string }>();
   for (const action of actions) action.noteIndices.forEach((note, index) => {
     const kind = action.kind === "skill" ? "skill" : "combo";
     const previous = notes.get(note);
-    notes.set(note, { timeMs: action.noteTimesMs[index]!, kind: previous && previous.kind !== kind ? "both" : kind });
+    const timeMs = action.noteTimesMs[index]!;
+    notes.set(note, { timeMs, kind: previous && previous.kind !== kind ? "both" : kind,
+      instruction: timingInputLabel(host, action.inputTimesMs[index]!, timeMs, action.inputKinds?.[index], (action.kind === "combo-opening" || action.kind === "combo-chord") && index === 0) });
   });
   const sorted = [...notes].sort((a, b) => a[1].timeMs - b[1].timeMs || a[0] - b[0]);
   const labels = new Map(sorted.map(([note], index) => [note, index + 1]));
   const kinds = new Map(sorted.map(([, note], index) => [index + 1, note.kind]));
+  const annotations = new Map(sorted.map(([, note], index) => [index + 1, note.instruction]));
   const window: TimingWindow = { event: 0, startMs: 0, endMs: 0, notes: sorted.map(([, note]) => note.timeMs), unit: 1,
     steps: sorted.map(([note, mark], index) => ({ step: index + 1, timeMs: mark.timeMs, notes: 1, noteIndices: [note], gain: 0 })) };
   const chartId = `tb-guide-chart-${timelineKey(host, hit).replace(/[^a-z0-9]/giu, "-")}-${order}`;
@@ -852,7 +865,7 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
       <span class="tb-timing__advance" data-kind=${kind}>${kind === "combo" ? host.t("timingLegendCombo", "COMBO inputs")
         : kind === "skill" ? host.t("timingLegendSkill", "Skill inputs") : host.t("timingLegendBoth", "COMBO and skill inputs")}</span>`)}</div>
     <timing-chart-preview id=${chartId} .source=${{ identity: catalog.songIdentity(song.songId), file: difficulty.file as string }}
-      .window=${window} .kinds=${kinds} .coverage=${coverage} .numberNotes=${true} .whole=${true} .active=${true} .locale=${host.locale}
+      .window=${window} .kinds=${kinds} .annotations=${annotations} .coverage=${coverage} .numberNotes=${true} .whole=${true} .active=${true} .locale=${host.locale}
       .label=${host.t("timingFullChart", "Annotated full chart")} .errorLabel=${host.t("timingChartFailed", "Chart could not be loaded")}></timing-chart-preview>
     <div class="row row--between row--wrap"><strong class="tb-subtitle">${host.t("timingChartOrder", "In chart order")}</strong>
       <span>${host.t("timingMarkedNotes", "{count} marked notes", { count: notes.size })}</span></div>

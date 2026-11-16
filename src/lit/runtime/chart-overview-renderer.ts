@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Immutable chart, native canvas skin, website fonts, viewport and optional highlighted time range.
-// Output: Lane-clipped flat-chart panels, pointer timing/count data or a numbered timing excerpt.
+// Output: Lane-clipped chart panels, pointer timing/count data and numbered timing callouts.
 // Pos: [Map](L2-2.md); shared flat rendering for the player and team-builder timing guide.
 // Effects/Dependencies: Caches geometry by chart identity and draws the supplied canvas with Cassiopeia primitives.
 import {
@@ -168,7 +168,7 @@ export function drawDetailedChartOverview(
   excerpt?: {
     startMs: number;
     endMs: number;
-    highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[]; color?: string; selected?: boolean }[];
+    highlights: readonly { timeMs: number; step: number; targets: readonly { timeMs: number; pos: number; size: number }[]; color?: string; selected?: boolean; label?: string }[];
     labelEachTarget?: boolean;
     bands?: readonly { startMs: number; endMs: number; label: string; color: string; active: boolean }[];
     zoom?: number;
@@ -374,6 +374,7 @@ export function drawDetailedChartOverview(
       context.lineWidth = 2;
       context.font = `700 ${presentation.laneWidth}px ${fontFamily}`;
       context.textAlign = "center";
+      const labels: { text: string; x: number; y: number; pointX: number; pointY: number; width: number; height: number; color: string }[] = [];
       for (const highlight of excerpt.highlights) {
         context.strokeStyle = highlight.color ?? excerpt.color;
         context.fillStyle = highlight.color ?? excerpt.color;
@@ -387,10 +388,51 @@ export function drawDetailedChartOverview(
           context.strokeRect(box.left - 4, y - presentation.laneWidth / 2 - 4,
             box.right - box.left + 8, presentation.laneWidth + 8);
           context.restore();
-          if (excerpt.labelEachTarget) context.fillText(String(highlight.step), (box.left + box.right) / 2,
-            y < presentation.laneWidth * 2 ? y + presentation.laneWidth * 1.5 : y - presentation.laneWidth);
+          if (excerpt.labelEachTarget) {
+            if (highlight.label) {
+              context.save();
+              const size = Math.max(12, presentation.laneWidth * 0.8);
+              context.font = `700 ${size}px ${fontFamily}`;
+              const text = `${highlight.step} ${highlight.label}`;
+              const width = Math.min(panelWidth - 8, context.measureText(text).width + 10), labelHeight = size + 8;
+              const center = (box.left + box.right) / 2;
+              const preferred = Math.max(4, Math.min(panelWidth - width - 4, center - width / 2));
+              let chosen: { x: number; y: number; overlap: number } | undefined;
+              for (let row = 0; row < Math.ceil(height / labelHeight); row++) {
+                for (const direction of [-1, 1]) {
+                  const top = direction < 0 ? y - presentation.laneWidth / 2 - 4 - (row + 1) * labelHeight
+                    : y + presentation.laneWidth / 2 + 4 + row * labelHeight;
+                  if (top < 2 || top + labelHeight > height - 2) continue;
+                  for (const x of [preferred, 4, panelWidth - width - 4]) {
+                    const overlap = labels.reduce((total, label) => total + Math.max(0, Math.min(x + width + 2, label.x + label.width + 2) - Math.max(x - 2, label.x - 2))
+                      * Math.max(0, Math.min(top + labelHeight + 2, label.y + label.height + 2) - Math.max(top - 2, label.y - 2)), 0);
+                    if (!chosen || overlap < chosen.overlap) chosen = { x, y: top, overlap };
+                    if (overlap === 0) break;
+                  }
+                  if (chosen?.overlap === 0) break;
+                }
+                if (chosen?.overlap === 0) break;
+              }
+              if (chosen) labels.push({ text, x: chosen.x, y: chosen.y, pointX: center, pointY: y, width, height: labelHeight,
+                color: highlight.color ?? excerpt.color });
+              context.restore();
+            } else context.fillText(String(highlight.step), (box.left + box.right) / 2,
+              y < presentation.laneWidth * 2 ? y + presentation.laneWidth * 1.5 : y - presentation.laneWidth);
+          }
         }
         if (marked.length && !excerpt.labelEachTarget) context.fillText(String(highlight.step), right + 18, yAt(highlight.timeMs, panel));
+      }
+      for (const label of labels) {
+        context.strokeStyle = label.color;
+        context.lineWidth = 1;
+        context.beginPath(); context.moveTo(label.pointX, label.pointY);
+        context.lineTo(label.x + label.width / 2, label.y + (label.y < label.pointY ? label.height : 0)); context.stroke();
+        context.fillStyle = "rgba(0,0,0,.85)";
+        context.fillRect(label.x, label.y, label.width, label.height);
+        context.strokeRect(label.x, label.y, label.width, label.height);
+        context.fillStyle = label.color;
+        context.font = `700 ${label.height - 8}px ${fontFamily}`;
+        context.fillText(label.text, label.x + label.width / 2, label.y + label.height / 2, label.width - 8);
       }
     }
     context.restore();

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Frozen chart source and the selected order's marked input window.
-// Output: A lazy excerpt or one full annotated chart with viewport-sized canvas rendering.
+// Output: A lazy excerpt or full chart with per-note timing labels and viewport-sized canvas rendering.
 // Pos: [Map](L2-2.md); team-builder timing details reuse the chart overview renderer.
 // Effects/Dependencies: Loads the pinned chart and bundled native note atlas on expansion, without stage/HUD source discovery; abort releases the atlas.
 import { LitElement, html, nothing } from "lit";
@@ -22,6 +22,7 @@ class TimingChartPreview extends LitElement {
     numberNotes: { type: Boolean }, whole: { type: Boolean }, kinds: { attribute: false },
     currentNote: { state: true },
     coverage: { attribute: false },
+    annotations: { attribute: false },
   };
   declare source: EngineChartSources[string];
   declare window: TimingWindow;
@@ -32,6 +33,7 @@ class TimingChartPreview extends LitElement {
   declare numberNotes: boolean;
   declare whole: boolean;
   declare kinds: ReadonlyMap<number, TimingMarkerKind>;
+  declare annotations: ReadonlyMap<number, string>;
   declare coverage?: JustWindowProfile;
   declare private currentNote: number;
   declare private phase: "idle" | "loading" | "ready" | "error";
@@ -56,6 +58,7 @@ class TimingChartPreview extends LitElement {
     this.numberNotes = false;
     this.whole = false;
     this.kinds = new Map();
+    this.annotations = new Map();
     this.currentNote = 0;
   }
   createRenderRoot() { return this; }
@@ -74,7 +77,7 @@ class TimingChartPreview extends LitElement {
     super.disconnectedCallback();
   }
   protected willUpdate() {
-    const marksKey = JSON.stringify([this.window.steps.map(step => [step.step, step.timeMs, step.noteIndices]), this.coverage]);
+    const marksKey = JSON.stringify([this.window.steps.map(step => [step.step, step.timeMs, step.noteIndices]), [...this.annotations], this.coverage]);
     if (marksKey !== this.marksKey) {
       this.marksKey = marksKey;
       this.currentNote = 0;
@@ -109,7 +112,7 @@ class TimingChartPreview extends LitElement {
       const [raw, skin] = await Promise.all([
         downloadChart(source, signal),
         skinTask,
-        renderer.loadChartCanvasFonts(this.locale),
+        renderer.loadChartCanvasFonts(this.locale, [...this.annotations.values()].join(" ")),
       ]);
       signal.throwIfAborted();
       const score = parseScore(raw);
@@ -176,6 +179,7 @@ class TimingChartPreview extends LitElement {
         ...step, targets: step.noteIndices.map(index => this.geometry![index]!),
         color: colors[this.kinds.get(step.step) ?? "combo"],
         selected: this.whole && step.step === this.window.steps[this.currentNote]?.step,
+        label: this.annotations.get(step.step),
       })),
       color: colors.combo,
       labelEachTarget: this.numberNotes,

@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Native score JSON and optional geometry selection.
+// Output: Canonical judgement notes and complete timing-guide geometry, including generated hold points.
+// Pos: [Map](L2-2.md); pure native chart conversion shared by score consumers and timing previews.
+// Effects/Dependencies: Pure conversion; no I/O.
 /** The client's chart conversion (SsMusicScoreConverter → MusicScoreNoteCreator), reduced to what
  * scoring reads: every runtime note's operate type, judgement type and time, in enumeration order,
  * plus skill events and fevers. Ported from nnnotes `score.py`, which reproduces the client's notes
@@ -363,7 +368,7 @@ interface RuntimeNote {
   pos: Pos;
   op: number;
   crit: boolean;
-  geometry?: { pos: number; size: number };
+  geometry?: { pos: number; size: number; ease: number; easeR: number };
   slideAlong: boolean;
   lineIds: number[];
   viewNotes: RuntimeNote[];
@@ -394,7 +399,7 @@ function* eighths(segStart: Pos, segEnd: Pos, bpmEvents: [number, Pos][], barEve
 
 export function runtimeChart(root: unknown, includeGeometry = false): ChartSource & {
   enumeration: { op: number; timeMs: number; judgementType: number }[];
-  geometry?: ({ timeMs: number; pos: number; size: number } | null)[];
+  geometry?: { timeMs: number; pos: number; size: number }[];
 } {
   const score = (root as { score?: Record<string, unknown> })?.score;
   if (!score || typeof score !== "object") throw new Error("ss score");
@@ -425,13 +430,27 @@ export function runtimeChart(root: unknown, includeGeometry = false): ChartSourc
     pos,
     op,
     crit: info.crit,
-    ...(includeGeometry ? { geometry: { pos: info.lane, size: info.width } } : {}),
+    ...(includeGeometry ? { geometry: { pos: info.lane, size: info.width, ease: info.ease, easeR: info.easeR } } : {}),
     slideAlong: info.slideAlong,
     lineIds,
     viewNotes: [],
     comboNotes: [],
     endCombo: [],
   });
+  const lineShape = (begin: RuntimeNote, points: RuntimeNote[], at: Pos) => {
+    let previous = begin;
+    for (const next of points) {
+      if (keyOf(next.pos) < keyOf(at)) { previous = next; continue; }
+      const a = previous.geometry!, b = next.geometry!;
+      const span = f(keyOf(next.pos) - keyOf(previous.pos));
+      const t = span > 0 ? f(f(keyOf(at) - keyOf(previous.pos)) / span) : 0;
+      const pos = f(a.pos + f(ease(t, a.ease) * f(b.pos - a.pos)));
+      const rightA = f(a.pos + a.size), rightB = f(b.pos + b.size);
+      const right = f(rightA + f(ease(t, a.easeR) * f(rightB - rightA)));
+      return { pos, size: f(right - pos), ease: 0, easeR: 0 };
+    }
+    return previous.geometry!;
+  };
   const endLine = (end: RuntimeNote) => {
     const begins: RuntimeNote[] = [];
     let ok = true;
@@ -461,6 +480,7 @@ export function runtimeChart(root: unknown, includeGeometry = false): ChartSourc
           pos: beat,
           op: skip ? 121 : 120,
           crit: false,
+          ...(includeGeometry ? { geometry: lineShape(begin, lineNotes, beat) } : {}),
           slideAlong: false,
           lineIds: [lineId],
           viewNotes: [],
@@ -570,7 +590,7 @@ export function runtimeChart(root: unknown, includeGeometry = false): ChartSourc
     durationMs: Math.max(0, ...positional.map((note) => note.pos.ms)) + 1000,
     notes: ordered,
     ...(includeGeometry ? { geometry: chronological.filter(note => isJudgementNote(note.op)).map(note =>
-      note.geometry ? { timeMs: note.pos.ms, ...note.geometry } : null) } : {}),
+      ({ timeMs: note.pos.ms, pos: note.geometry!.pos, size: note.geometry!.size })) } : {}),
     skillTimesMs: skill.map((tick) => makePosition(tick, tc).ms),
     feverMs: fevers.map(([start, end]) => [start.ms, end.ms] as const),
     enumeration: enumeration.map((note) => ({ op: note.op, timeMs: note.pos.ms, judgementType: note.op === 123 ? 0 : judgementTypeOf(note.op, note.crit) })),
