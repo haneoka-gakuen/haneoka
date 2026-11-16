@@ -46,11 +46,11 @@
   padding-inline: 4px;
   overflow: hidden;
   border-radius: var(--md-sys-shape-corner-extra-small);
-  color: #fff;
+  color: var(--window-on-color, var(--md-sys-color-on-primary));
   background: var(--window-color, var(--md-sys-color-primary));
   box-shadow: 0 0 0 1px var(--md-sys-color-surface-container-low);
   font: 700 12px / 1 var(--app-font);
-  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+  text-shadow: var(--window-text-shadow, none);
 }
 .skill-timeline__axis {
   position: relative;
@@ -99,10 +99,10 @@
   height: 22px;
   place-items: center;
   border-radius: var(--md-sys-shape-corner-extra-small);
-  color: #fff;
+  color: var(--window-on-color, var(--md-sys-color-on-primary));
   background: var(--window-color, var(--md-sys-color-primary));
   font: 700 12px / 1 var(--app-font);
-  text-shadow: 0 0 2px rgb(0 0 0 / 0.6);
+  text-shadow: var(--window-text-shadow, none);
 }
 .skill-timeline__label {
   display: -webkit-box;

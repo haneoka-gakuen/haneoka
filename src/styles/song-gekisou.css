@@ -13,13 +13,16 @@
     gap: 12px;
     min-width: 0;
   }
+  .song-gekisou-stages .icon-button {
+    flex: 0 0 48px;
+  }
   .song-gekisou-stages li > span:last-child {
     display: grid;
     gap: 4px;
     min-width: 0;
   }
   .song-gekisou-stages .game-glyph {
-    margin-block-start: 4px;
+    --game-glyph-size: 24px;
   }
   .song-gekisou-stages small {
     color: var(--md-sys-color-on-surface-variant);
@@ -29,10 +32,6 @@
   .song-gekisou-stages strong {
     font: var(--md-sys-typescale-title-small-weight)
       var(--md-sys-typescale-title-small-size)/var(--md-sys-typescale-title-small-line-height) var(--app-font);
-  }
-  .song-gekisou-stages .song-gekisou-timing-slot {
-    display: block;
-    block-size: 48px;
   }
   .song-gekisou-stages .song-gekisou-timing {
     display: flex;
@@ -47,10 +46,15 @@
     }
     .song-gekisou-stages li {
       gap: 6px;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .song-gekisou-stages li > span:last-child {
+      justify-items: center;
     }
     .song-gekisou-stages .game-glyph {
       --game-glyph-size: 24px;
-      margin-block-start: 8px;
     }
   }
 }

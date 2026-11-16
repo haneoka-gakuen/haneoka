@@ -482,6 +482,7 @@
       "description": "설명"
     },
     "songs": {
+      "stageTimeline": "격주 구간 및 스킬 발동 위치",
       "fields": {
         "live": "라이브",
         "musicType": "곡 타입",
@@ -525,6 +526,8 @@
       },
       "skillPoints": "스킬 발동 위치",
       "analysis": {
+        "cycleStage": "구간 {stage} 변경: {mission}",
+        "failed": "계산 실패",
         "composition": "노트 구성",
         "tap": "탭",
         "flick": "플릭",

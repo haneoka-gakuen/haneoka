@@ -10,6 +10,10 @@ import { clientText } from "../i18n/client";
 import { gekisouRate, isSongScoreRank, roomRequiredScore, type ChartRates } from "../lib/chart-rates";
 import { scoreRankIcon } from "./shared/score-rank";
 import type { ChartSource } from "../lib/team-builder/engine/chart";
+import { segmented, numberField } from "./ui/controls";
+import { renderLevelSwitch } from "./ui/level-switch";
+import { collectionTable } from "./ui/collection-view";
+import "@material/web/textfield/outlined-text-field.js";
 
 const KINDS = ["tap", "flick", "long", "trace", "node"] as const;
 type Kind = (typeof KINDS)[number];
@@ -18,7 +22,7 @@ const kindOf = (op: number): Kind =>
   op >= 120 ? "node" : op >= 60 && op < 80 ? "trace" : op >= 40 && op < 60 ? "flick" : op >= 20 && op < 40 ? "long" : "tap";
 // The time between lives that per-minute values count.
 const MIN_EXTRA_SECONDS = 30;
-const MISSION_KEYS: Record<number, string> = { 1: "gekisouMissionCombo", 2: "gekisouMissionLuck", 3: "gekisouMissionJustCount", 4: "gekisouMissionAll" };
+const PERCENTS = Array.from({ length: 101 }, (_, index) => index);
 
 export class SongChartAnalysis extends LitElement {
   static properties = {
@@ -35,6 +39,7 @@ export class SongChartAnalysis extends LitElement {
     just: { state: true },
     room: { state: true },
     power: { state: true },
+    pending: { type: Boolean },
   };
   declare chart: ChartSource | null;
   declare rates: ChartRates | null;
@@ -49,6 +54,7 @@ export class SongChartAnalysis extends LitElement {
   declare just: number;
   declare room: number;
   declare power: number;
+  declare pending: boolean;
   constructor() {
     super();
     this.chart = null;
@@ -64,6 +70,7 @@ export class SongChartAnalysis extends LitElement {
     this.just = 1;
     this.room = 5;
     this.power = 300000;
+    this.pending = false;
   }
   createRenderRoot() {
     return this;
@@ -72,6 +79,7 @@ export class SongChartAnalysis extends LitElement {
     return clientText(this.locale, `catalog.songs.analysis.${key}`, fallback);
   }
   private number(value: number, digits = 0) {
+    if (this.pending) return "—";
     return value.toLocaleString(this.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
   private composition(notes: ChartSource["notes"]) {
@@ -87,49 +95,19 @@ export class SongChartAnalysis extends LitElement {
           ${KINDS.filter((kind) => counts.get(kind)).map((kind) => html`
             <div>
               <dt><i class=${`song-analysis__bar-${kind}`}></i>${this.text(kind, kind)}</dt>
-              <dd>${this.number(counts.get(kind)!)}<small>${Math.round((counts.get(kind)! / notes.length) * 100)}%</small></dd>
+              <dd>${counts.get(kind)!.toLocaleString(this.locale)}<small>${Math.round((counts.get(kind)! / notes.length) * 100)}%</small></dd>
             </div>
           `)}
         </dl>
       </section>
     `;
   }
-  private sections(notes: ChartSource["notes"], fever: ChartSource["feverMs"]) {
-    if (!fever.length) return nothing;
-    const gekisou = this.rates?.gekisou;
-    return html`
-      <section class="song-analysis__block">
-        ${renderDetailSectionHeading(this.text("sections", "GEKISO sections"), "effects")}
-        <div class="table-scroll"><table class="data-table">
-          <thead><tr>
-            <th>${this.text("section", "Section")}</th>
-            <th>${this.text("metric", "Ranked by")}</th><th>${this.text("sectionNotes", "Notes")}</th>
-            ${gekisou ? html`<th>${this.text("maxJust", "Max Just")}</th>` : nothing}
-            <th>${this.text("startCombo", "Starting combo")}</th><th>${this.text("seconds", "Length")}</th>
-          </tr></thead>
-          <tbody>${fever.map(([start, end], index) => html`<tr>
-            <td>${index + 1}</td>
-            <td>${gekisou ? clientText(this.locale, `catalog.songs.gekisou.${MISSION_KEYS[gekisou.missions[index]!] ?? "gekisouMissionNone"}`, "") : "—"}</td>
-            <td>${this.number(gekisou?.notes[index] ?? notes.filter((note) => note.timeMs >= start && note.timeMs < end).length)}</td>
-            ${gekisou ? html`<td>${this.number(gekisou.just[index] ?? 0)}</td>` : nothing}
-            <td>${this.number(notes.filter((note) => note.timeMs < start).length)}</td>
-            <td>${this.number((end - start) / 1000, 1)}s</td>
-          </tr>`)}</tbody>
-        </table></div>
-      </section>
-    `;
-  }
-  private segmented(values: readonly number[], current: number, pick: (value: number) => void, label: (value: number) => string = String) {
-    return html`<div class="segmented">${values.map((value) => html`
-      <button type="button" aria-pressed=${value === current} @click=${() => pick(value)}>${label(value)}</button>`)}</div>`;
+  private choice(label: string, values: readonly number[], current: number, pick: (value: number) => void, format: (value: number) => string = String) {
+    return segmented({ label, value: String(current), options: values.map(value => ({ value: String(value), label: format(value) })),
+      onSelect: value => pick(Number(value)) });
   }
   private slider(label: string, value: number, pick: (value: number) => void) {
-    return html`<label class="song-analysis__great">
-      <span>${label}</span>
-      <input type="range" min="0" max="100" step="1" .value=${String(Math.round(value * 100))}
-        @input=${(event: Event) => pick(Number((event.target as HTMLInputElement).value) / 100)} />
-      <output>${Math.round(value * 100)}%</output>
-    </label>`;
+    return renderLevelSwitch(label, PERCENTS, Math.round(value * 100), next => pick(next / 100), next => `${next}%`, { context: this.chart });
   }
   private scenario(rates: ChartRates, durationMs: number) {
     const general = 1 - this.great * (1 - this.greatFactor);
@@ -149,31 +127,26 @@ export class SongChartAnalysis extends LitElement {
     return html`
       <section class="song-analysis__block">
         ${renderDetailSectionHeading(this.text("scenario", "Score scenario"), "rewards")}
-        <div class="song-analysis__controls">
-          ${rates.gekisou ? this.segmented([1, 0], this.gekisou ? 1 : 0, (value) => (this.gekisou = value === 1),
+        <div class="stack stack--tight">
+          ${rates.gekisou ? this.choice(this.text("scenario", "Score scenario"), [1, 0], this.gekisou ? 1 : 0, (value) => (this.gekisou = value === 1),
             (value) => (value ? this.text("gekisouLive", "GEKISO Live") : this.text("freeLive", "Free Live"))) : nothing}
           ${gekisou ? html`<div class="song-analysis__ranks">${this.ranks.map((rank, index) => html`
             <div><span>${this.text("section", "Section")} ${index + 1} / ${this.text("placement", "Place")}</span>
-            ${this.segmented([1, 2, 3, 4, 5], rank, (value) => {
+            ${this.choice(`${this.text("section", "Section")} ${index + 1} / ${this.text("placement", "Place")}`, [1, 2, 3, 4, 5], rank, (value) => {
               const next = [...this.ranks];
               next[index] = value;
               this.ranks = next;
             })}</div>`)}</div>
             ${this.slider(this.text("justShare", "Just share"), this.just, (value) => (this.just = value))}` : nothing}
           ${this.slider(this.text("greatShare", "Great share"), this.great, (value) => (this.great = value))}
-          <div class="song-analysis__skills">
-            ${this.skills.map((value, index) => html`
-              <label><span>${this.text("skill", "Skill")} ${index + 1}</span>
-                <input class="song-analysis__skill" type="number" min="0" max="400" step="5" inputmode="numeric" .value=${String(value)}
-                  @input=${(event: Event) => {
-                    const next = [...this.skills];
-                    next[index] = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
-                    this.skills = next;
-                  }} /><i>%</i></label>
-            `)}
+          <div class="filter-range filter-range--five">
+            ${this.skills.map((value, index) => numberField({
+              label: `${this.text("skill", "Skill")} ${index + 1}`, value, min: 0, max: 400, step: 5, suffix: "%",
+              onInput: next => { this.skills = this.skills.map((previous, at) => at === index ? next : previous); },
+            }))}
           </div>
         </div>
-        <dl class="song-analysis__stats">
+        <dl class="spec-list spec-list--split spec-list--numeric">
           <div><dt>${this.text("perPower", "Score / power")}</dt><dd>${this.number(perPower, 3)}</dd></div>
           ${gekisou ? html`<div><dt>${this.text("recordPerPower", "Song record / power")}</dt><dd>${this.number(free, 3)}</dd></div>` : nothing}
           <div><dt>${this.text("perMinute", "Score / power / minute")}</dt><dd>${this.number(perPower / minutes, 3)}</dd></div>
@@ -184,32 +157,23 @@ export class SongChartAnalysis extends LitElement {
         <ol class="song-analysis__slots">
           ${weights.map((value, index) => html`<li>
             <span>#${index + 1}</span>
-            <i class="song-analysis__slot-track"><i style=${`width:${(Math.max(0, value) / total) * 100}%`}></i></i>
-            <b>${this.number(value, 3)}</b><small>${Math.round((value / total) * 100)}%</small>
+            <i class="song-analysis__slot-track"><i style=${`width:${this.pending ? 0 : (Math.max(0, value) / total) * 100}%`}></i></i>
+            <b>${this.number(value, 3)}</b><small>${this.pending ? "—" : `${Math.round((value / total) * 100)}%`}</small>
           </li>`)}
         </ol>
         <h4 class="song-analysis__subhead">${this.text("thresholds", "Rank thresholds")}</h4>
-        <div class="song-analysis__controls">
+        <div class="stack stack--tight">
           ${gekisou ? html`<div class="song-analysis__ranks"><div><span>${this.text("roomSize", "Room size")}</span>
-            ${this.segmented([1, 2, 3, 4, 5], this.room, (value) => (this.room = value))}</div></div>` : nothing}
-          <label class="song-analysis__power"><span>${this.text("power", "Power")}</span>
-            <input class="song-analysis__skill" type="number" min="0" step="1000" inputmode="numeric" .value=${String(this.power)}
-              @input=${(event: Event) => (this.power = Math.max(0, Number((event.target as HTMLInputElement).value) || 0))} /></label>
+            ${this.choice(this.text("roomSize", "Room size"), [1, 2, 3, 4, 5], this.room, (value) => (this.room = value))}</div></div>` : nothing}
+          ${numberField({ label: this.text("power", "Power"), value: this.power, min: 0, step: 1000,
+            onInput: value => { this.power = value; } })}
         </div>
-        <div class="table-scroll"><table class="data-table">
-          <thead><tr>
-            <th>${this.text("rank", "Rank")}</th>
-            <th>${gekisou ? this.text("scorePerPlayer", "Score per player") : this.text("score", "Score")}</th>
-            <th>${this.text("powerNeeded", "Power needed")}</th>
-            <th>${this.text("reached", "Reached")}</th>
-          </tr></thead>
-          <tbody>${thresholds.map((row) => html`<tr>
-            <td>${scoreRankIcon(this.server, row.rank)}</td>
-            <td>${this.number(row.score)}</td>
-            <td>${this.number(row.power)}</td>
-            <td>${Math.min(100, Math.max(0, Math.floor(((this.power * perPower - rates.notes) / Math.max(1, row.score)) * 100)))}%</td>
-          </tr>`)}</tbody>
-        </table></div>
+        ${collectionTable(this.text("thresholds", "Rank thresholds"), [
+          this.text("rank", "Rank"), gekisou ? this.text("scorePerPlayer", "Score per player") : this.text("score", "Score"),
+          this.text("powerNeeded", "Power needed"), this.text("reached", "Reached"),
+        ], thresholds.map(row => [scoreRankIcon(this.server, row.rank), this.number(row.score), this.number(row.power),
+          this.pending ? "—" : `${Math.min(100, Math.max(0, Math.floor(((this.power * perPower - rates.notes) / Math.max(1, row.score)) * 100)))}%`,
+        ]), { numeric: true })}
       </section>
     `;
   }
@@ -220,7 +184,6 @@ export class SongChartAnalysis extends LitElement {
     if (!notes.length) return nothing;
     return html`
       ${this.composition(notes)}
-      ${this.sections(notes, chart.feverMs)}
       ${this.rates ? this.scenario(this.rates, chart.durationMs) : nothing}
       ${this.chartId ? html`<p class="song-analysis__id">${this.text("chartId", "Chart ID")} ${this.chartId}</p>` : nothing}
     `;

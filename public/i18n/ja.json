@@ -482,6 +482,7 @@
       "description": "説明"
     },
     "songs": {
+      "stageTimeline": "撃奏区間とスキル発動位置",
       "fields": {
         "live": "ライブ",
         "musicType": "楽曲タイプ",
@@ -525,6 +526,8 @@
       },
       "skillPoints": "スキル発動位置",
       "analysis": {
+        "cycleStage": "区間{stage}を変更：{mission}",
+        "failed": "計算に失敗しました",
         "composition": "ノーツ構成",
         "tap": "タップ",
         "flick": "フリック",

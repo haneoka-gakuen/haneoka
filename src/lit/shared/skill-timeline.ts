@@ -40,6 +40,8 @@ export function skillTimeline(options: SkillTimelineOptions): TemplateResult {
   const at = (ms: number) => `${Math.min(100, Math.max(0, (ms / duration) * 100)).toFixed(3)}%`;
   const bucket = options.bucketMs ?? 500;
   const peak = Math.max(1, ...options.density);
+  const tone = (window: SkillTimelineWindow) => window.color
+    ? `--window-color:${window.color};--window-on-color:#fff;--window-text-shadow:0 0 2px rgb(0 0 0 / 0.6)` : "";
   const points = options.density.map((count, index) => `${((index * bucket) / duration) * 1000},${40 - (count / peak) * 40}`).join(" ");
   const windows = [...options.windows].sort((a, b) => a.startMs - b.startMs);
   const lanes: number[] = [];
@@ -67,7 +69,7 @@ export function skillTimeline(options: SkillTimelineOptions): TemplateResult {
             ({ window, lane }, index) => html`
               <span
                 class="skill-timeline__window"
-                style=${`inset-inline-start:${at(window.startMs)};width:max(14px, calc(${at(window.endMs)} - ${at(window.startMs)}));--lane:${lane};${window.color ? `--window-color:${window.color}` : ""}`}
+                style=${`inset-inline-start:${at(window.startMs)};width:max(14px, calc(${at(window.endMs)} - ${at(window.startMs)}));--lane:${lane};${tone(window)}`}
                 title=${`${index + 1} / ${skillSeconds(window.startMs)}–${skillSeconds(window.endMs)}`}
               >${index + 1}</span>
             `,
@@ -80,7 +82,7 @@ export function skillTimeline(options: SkillTimelineOptions): TemplateResult {
       <ol class="skill-timeline__events" role="list">
         ${windows.map(
           (window, index) => html`
-            <li style=${window.color ? `--window-color:${window.color}` : ""}>
+            <li style=${tone(window)}>
               <span class="skill-timeline__index">${index + 1}</span>
               ${window.image ? html`<img src=${window.image} alt="" width="28" height="28" loading="lazy" decoding="async" />` : nothing}
               <span class="skill-timeline__label">${window.label}</span>

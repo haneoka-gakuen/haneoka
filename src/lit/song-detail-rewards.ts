@@ -4,13 +4,10 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { html, nothing } from "lit";
 import { difficultyEstimatesEnabled } from "../lib/difficulty-display";
 import "../styles/song-gekisou.css";
-import { gekisouMission } from "../lib/gekisou";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
-import { icon, gameGlyph } from "./ui/icon";
+import { icon } from "./ui/icon";
 import "./song-skill-points";
 import type { SongChartReady } from "./song-skill-points";
-import type { GekisoTimingSegment } from "../lib/team-builder/gekiso-timing";
-import { gekisoTimingView } from "./shared/gekiso-timing";
 import { byScoreRank, isSongScoreRank, roomRequiredScore, scoreRankName } from "../lib/chart-rates";
 import { clientText } from "../i18n/client";
 import { scoreRankIcon } from "./shared/score-rank";
@@ -51,6 +48,7 @@ export interface SongSummaryRenderOptions {
   detailLabel(key: string): string;
   fieldValue(item: Item, key: string): string;
   selectDifficulty(index: number): void;
+  identity?: import("../lib/cross-server/catalog").CrossCatalogIdentity | undefined;
   onChartReady?(detail: SongChartReady): void;
 }
 
@@ -193,13 +191,16 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
         lang: resolveLocalizedText(item[key], locale).locale,
       })),
     })}
-    ${renderGekisouStages({ item, gekisou, label, locale })}
     ${
       scoring
         ? html`
             <song-skill-points
               source=${String(difficulty[selectedDifficulty]?.file || "")}
               locale=${locale}
+              musicId=${String(item.musicId ?? "")}
+              level=${Number(difficulty[selectedDifficulty]?.playLevel ?? 0)}
+              .identity=${options.identity}
+              .gekisou=${gekisou}
               .rates=${options.chartRates?.charts[String(difficulty[selectedDifficulty]?.difficulty ?? "")] ?? null}
               .greatFactor=${options.chartRates?.greatFactor ?? 0.8}
               chartId=${String(difficulty[selectedDifficulty]?.scoreId ?? difficulty[selectedDifficulty]?.id ?? "")}
@@ -209,61 +210,6 @@ export function renderSongSummary(options: SongSummaryRenderOptions) {
         : nothing
     }
   `;
-}
-
-/** The song-level Gekisou stage pattern, shown after the chart figures. */
-export function renderGekisouStages({
-  item,
-  gekisou,
-  label,
-  locale,
-}: {
-  item: Item;
-  gekisou?: Item;
-  label(key: string, fallback: string): string;
-  locale: string;
-}) {
-  const itemGekisou = (item.gekisou as Item | undefined) || {};
-  const gekisouData = gekisou || {};
-  const missionPattern = Array.isArray(gekisouData.missionPattern)
-    ? gekisouData.missionPattern
-    : Array.isArray(itemGekisou.missionPattern)
-      ? itemGekisou.missionPattern
-      : [];
-  const missionTypes = Array.isArray(gekisouData.missionTypes)
-    ? gekisouData.missionTypes
-    : Array.isArray(itemGekisou.missionTypes)
-      ? itemGekisou.missionTypes
-      : missionPattern;
-  const missionIcons = (gekisouData.icons || itemGekisou.icons || {}) as Record<string, string>;
-  const segments = Array.isArray(gekisouData.segments) ? (gekisouData.segments as Item[]) : [];
-  const stageCount = Math.max(missionTypes.length, missionPattern.length, segments.length);
-  const stageTypes = Array.from({ length: stageCount }, (_, index) => missionTypes[index] ?? missionPattern[index]);
-  const cells = stageTypes.flatMap((type, index) => {
-    const mission = gekisouMission(type);
-    if (!mission) return [];
-    const image = missionIcons[mission.icon];
-    return html`
-      <li>
-        ${image ? gameGlyph(image) : nothing}
-        <span>
-          <small><span aria-hidden="true">${index + 1}</span><span class="sr-only">${label("gekisouSegment", "GEKISO stage")} ${index + 1}</span></small>
-          <strong>${label(mission.key, mission.fallback)}</strong>
-          ${mission.icon === "combo" ? html`<span class="song-gekisou-timing-slot">${gekisoTimingView(segments[index]?.timing as GekisoTimingSegment | undefined, locale, label)}</span>` : nothing}
-        </span>
-      </li>
-    `;
-  });
-  return cells.length
-    ? html`
-        <section class="detail-section song-detail-section song-gekisou-section">
-          ${renderDetailSectionHeading(label("gekisouStages", "GEKISO stages"), "effects")}
-          <ol class="song-gekisou-stages">
-            ${cells}
-          </ol>
-        </section>
-      `
-    : nothing;
 }
 
 export function renderSongRewards({

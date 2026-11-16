@@ -14,6 +14,9 @@ import { DEFAULT_DECK, rememberDeck, rememberedDeck, type Deck } from "../lib/de
 import { accordion } from "./ui/accordion";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { scoreRankIcon } from "./shared/score-rank";
+import { numberField } from "./ui/controls";
+import { collectionTable } from "./ui/collection-view";
+import "@material/web/textfield/outlined-text-field.js";
 
 /** The selected chart's score ranks in a Live: the score each needs and the power a deck needs for it. */
 export class SongScoreTargets extends LitElement {
@@ -25,6 +28,7 @@ export class SongScoreTargets extends LitElement {
     href: { type: String },
     deck: { state: true },
     deckOpen: { state: true },
+    deckMounted: { state: true },
   };
   declare rates: ChartRates | null;
   declare greatFactor: number;
@@ -35,6 +39,7 @@ export class SongScoreTargets extends LitElement {
   declare href: string;
   declare deck: Deck;
   declare deckOpen: boolean;
+  declare deckMounted: boolean;
   constructor() {
     super();
     this.rates = null;
@@ -44,6 +49,7 @@ export class SongScoreTargets extends LitElement {
     this.href = "";
     this.deck = DEFAULT_DECK;
     this.deckOpen = false;
+    this.deckMounted = false;
   }
   createRenderRoot() {
     return this;
@@ -61,23 +67,8 @@ export class SongScoreTargets extends LitElement {
     rememberDeck(this.deck);
   }
   private number(value: number, label: string, max: number, step: string, apply: (value: number) => void) {
-    return html`
-      <label>
-        ${label}
-        <input
-          type="number"
-          min="0"
-          max=${max}
-          step=${step}
-          inputmode="decimal"
-          .value=${String(Math.round(value * 100) / 100)}
-          @change=${(event: Event) => {
-            const parsed = Number((event.target as HTMLInputElement).value);
-            if (Number.isFinite(parsed) && parsed >= 0 && parsed <= max) apply(parsed);
-          }}
-        />
-      </label>
-    `;
+    return numberField({ label, value: Math.round(value * 100) / 100, min: 0, max,
+      step: step === "any" ? "any" : Number(step), commitOnChange: true, onInput: apply });
   }
   render() {
     const rates = this.rates;
@@ -119,47 +110,25 @@ export class SongScoreTargets extends LitElement {
     `;
     return html`
       ${renderDetailSectionHeading(heading, "stats")}
-      <div class="table-scroll" role="region" tabindex="0" aria-label=${heading} data-scroll-region>
-        <table class="data-table song-rank-table">
-          <thead>
-            <tr>
-              <th scope="col">${this.text("deckRank", "Target rank")}</th>
-              <th scope="col" class="is-numeric">${this.text("rankScore", "Score")}</th>
-              <th scope="col" class="is-numeric">${this.text("averageOrder", "Average of the orders")}</th>
-              <th scope="col" class="is-numeric">${this.text("everyOrder", "Every order")}</th>
-              <th scope="col" class="is-numeric">${this.text("bestOrder", "Best order")}</th>
-              <th scope="col" class="is-numeric">${this.text("metaDeckReach", "Reach rate")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${ranks.map(([rank, required]) => {
-              const need = slotPowerNeeded(required, orders, rates.notes);
-              return html`
-                <tr>
-                  <th scope="row">${scoreRankIcon(this.server, rank)}</th>
-                  <td class="is-numeric tabular">${number.format(required)}</td>
-                  <td class="is-numeric tabular">${number.format(need.mean)}</td>
-                  <td class="is-numeric tabular">${number.format(need.every)}</td>
-                  <td class="is-numeric tabular">${number.format(need.best)}</td>
-                  <td class="is-numeric tabular">
-                    ${percent.format(slotReach(required, deck.power, orders, rates.notes))}
-                  </td>
-                </tr>
-              `;
-            })}
-          </tbody>
-        </table>
-      </div>
+      ${collectionTable(heading, [this.text("deckRank", "Target rank"), this.text("rankScore", "Score"),
+        this.text("averageOrder", "Average of the orders"), this.text("everyOrder", "Every order"),
+        this.text("bestOrder", "Best order"), this.text("metaDeckReach", "Reach rate")],
+        ranks.map(([rank, required]) => {
+          const need = slotPowerNeeded(required, orders, rates.notes);
+          return [scoreRankIcon(this.server, rank), number.format(required), number.format(need.mean), number.format(need.every),
+            number.format(need.best), percent.format(slotReach(required, deck.power, orders, rates.notes))];
+        }), { numeric: true })}
       ${accordion({
         id: "song-score-deck",
         label: this.text("deck", "Deck"),
         expanded: this.deckOpen,
         onExpandedChange: (expanded) => {
           this.deckOpen = expanded;
+          if (expanded) this.deckMounted = true;
         },
         headingLevel: 3,
         className: "detail-fold song-deck",
-        content: deckFields,
+        content: this.deckMounted ? deckFields : nothing,
       })}
       ${
         this.href

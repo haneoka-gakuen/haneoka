@@ -482,6 +482,7 @@
       "description": "Description"
     },
     "songs": {
+      "stageTimeline": "GEKISO stages and skill points",
       "fields": {
         "live": "Live",
         "musicType": "Music type",
@@ -525,6 +526,8 @@
       },
       "skillPoints": "Skill points",
       "analysis": {
+        "cycleStage": "Change section {stage}: {mission}",
+        "failed": "Calculation failed",
         "composition": "Note composition",
         "tap": "Tap",
         "flick": "Flick",

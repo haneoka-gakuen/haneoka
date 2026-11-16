@@ -482,6 +482,7 @@
       "description": "說明"
     },
     "songs": {
+      "stageTimeline": "激奏段與技能點位",
       "fields": {
         "live": "演出",
         "musicType": "樂曲類型",
@@ -525,6 +526,8 @@
       },
       "skillPoints": "技能點位",
       "analysis": {
+        "cycleStage": "切換第 {stage} 段：{mission}",
+        "failed": "計算失敗",
         "composition": "音符構成",
         "tap": "點擊",
         "flick": "滑鍵",

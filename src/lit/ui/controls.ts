@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { icon } from "./icon";
 import { rarityIcon } from "../shared/rarity-icon";
+import { focusedValue } from "./focused-value";
 
 /**
  * Control renderers.
@@ -23,6 +24,7 @@ export interface IconButtonOptions {
   size?: number;
   badge?: number;
   className?: string;
+  content?: TemplateResult;
 }
 
 export function iconButton(options: IconButtonOptions): TemplateResult {
@@ -44,7 +46,7 @@ export function iconButton(options: IconButtonOptions): TemplateResult {
       ?disabled=${options.disabled}
       @click=${options.onClick}
     >
-      ${icon(options.icon, options.size ?? 24)}
+      ${options.content ?? icon(options.icon, options.size ?? 24)}
     </button>
   `;
   // A badge must not be a sibling in a flex row — it belongs on the control.
@@ -56,6 +58,45 @@ export function iconButton(options: IconButtonOptions): TemplateResult {
         </span>
       `
     : button;
+}
+
+type NumberFieldOptions = {
+  label: string;
+  ariaLabel?: string;
+  min?: number;
+  max?: number;
+  step?: number | "any";
+  suffix?: string;
+  disabled?: boolean;
+  commitOnChange?: boolean;
+} & ({ value: number; nullable?: false; onInput(value: number): void } |
+  { value: number | null; nullable: true; onInput(value: number | null): void });
+
+/** Material numeric input with a focus-local draft and optional empty value. */
+export function numberField(options: NumberFieldOptions): TemplateResult {
+  const update = (event: Event, commit: boolean) => {
+    const control = event.currentTarget as HTMLElement & { value: string };
+    if (!commit && options.commitOnChange) return;
+    if (!control.value.trim()) {
+      if (options.nullable) options.onInput(null);
+      else if (commit) control.value = String(options.value);
+      return;
+    }
+    const parsed = Number(control.value);
+    if (!Number.isFinite(parsed)) return;
+    const value = Math.min(options.max ?? Infinity, Math.max(options.min ?? -Infinity, parsed));
+    options.onInput(value);
+    if (commit || value !== parsed) control.value = String(value);
+  };
+  return html`
+    <md-outlined-text-field class="number-field" type="number" label=${options.label} aria-label=${options.ariaLabel ?? options.label}
+      min=${options.min ?? nothing} max=${options.max ?? nothing} step=${options.step ?? 1}
+      suffix-text=${options.suffix ?? nothing} inputmode=${options.step === 1 || options.step === undefined ? "numeric" : "decimal"}
+      .value=${focusedValue(options.value === null ? "" : String(options.value))}
+      ?disabled=${options.disabled}
+      @input=${(event: Event) => update(event, false)} @change=${(event: Event) => update(event, true)}>
+    </md-outlined-text-field>
+  `;
 }
 
 export interface SegmentOption<T extends string> {

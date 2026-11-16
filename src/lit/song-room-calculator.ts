@@ -2,6 +2,8 @@ import { LitElement, html, type TemplateResult } from "lit";
 import { clientText } from "../i18n/client";
 import { roomRank } from "../lib/chart-rates";
 import { scoreRankIcon } from "./shared/score-rank";
+import { numberField } from "./ui/controls";
+import "@material/web/textfield/outlined-text-field.js";
 
 /** A Gekisou room: each player's score, the room total and the rank it reaches. */
 export class SongRoomCalculator extends LitElement {
@@ -57,25 +59,9 @@ export class SongRoomCalculator extends LitElement {
       <h4 class="song-detail-subheading">${this.text("roomScores", "Players' scores")}</h4>
       <div class="filter-range filter-range--scores">
         ${this.scores.map(
-          (score, index) => html`
-            <label>
-              ${index + 1}
-              <input
-                type="number"
-                min="0"
-                step="1"
-                inputmode="numeric"
-                .value=${score === null ? "" : String(score)}
-                @input=${(event: Event) => {
-                  const raw = (event.target as HTMLInputElement).value;
-                  const value = Math.round(Number(raw));
-                  this.scores = this.scores.map((entry, slot) =>
-                    slot === index ? (raw === "" || !Number.isFinite(value) || value < 0 ? null : value) : entry,
-                  );
-                }}
-              />
-            </label>
-          `,
+          (score, index) => numberField({ label: String(index + 1), ariaLabel: `${this.text("roomScores", "Players' scores")} ${index + 1}`,
+            value: score, nullable: true, min: 0, step: 1,
+            onInput: value => { this.scores = this.scores.map((entry, slot) => slot === index ? value === null ? null : Math.round(value) : entry); } }),
         )}
       </div>
       <dl class="song-data-grid">

@@ -8,18 +8,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { teamSource } from "./tool-page-data";
-import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
+import { compileFromTeamData } from "../lib/team-builder/engine/master";
 import { convertChartBytes, type ChartSource } from "../lib/team-builder/engine/chart";
-import { gekisoChart, gekisoContext, scoreOrdersGekiso } from "../lib/team-builder/engine/gekiso";
-import { ORDERS } from "../lib/team-builder/engine/order-equivalence";
-import { missionPattern, rankingFactors } from "../lib/team-builder/engine/full/gekisou";
-import type { SlotSkill } from "../lib/team-builder/engine/skills";
+import { chartGekisoRates as gekisouRates } from "../lib/team-builder/engine/gekiso";
+export { gekisouRates };
 import { dataRows } from "../lib/team-builder/data";
 import type { ReleaseServer } from "../lib/release-server";
 import { fetchStaticReleaseBytes, staticCatalogRelease } from "../lib/static-catalog-source";
 import { staticBuildJson } from "./static-input-store";
 import {
-  CHART_RATE_SCHEMA, isPackedChartScoreTimelines, SKILL_WINDOWS, type ChartRateTable, type GekisouRates,
+  CHART_RATE_SCHEMA, isPackedChartScoreTimelines, SKILL_WINDOWS, type ChartRateTable,
   type LegacyChartScoreTimeline, type PackedChartScoreTimelines,
 } from "../lib/chart-rates";
 
@@ -183,68 +181,6 @@ function packChartScoreTimelines(timelines: readonly BuildScoreTimeline[]): Pack
   return { format: "gzip-delta-v1", noteTypes, index, data: gzipSync(Buffer.concat(buffers), { level: 9 }).toString("base64") };
 }
 
-const PROBE_POWER = 1_000_003;
-const BLANK = {
-  liveSkill: null,
-  supportSkills: [],
-  bandId: 0,
-  characterId: 0,
-  cardType: 0,
-  tagIds: [],
-  liveSkillCategories: [],
-  gekisouSkillCategories: [],
-  gekisouMissionType: 0,
-  gekisouSkill: null,
-  gekisouSupportSkills: [],
-};
-const PLAIN: SlotSkill = {
-  effects: [{ type: 2000, delta: 100_000, seconds: 5, gate: { kind: "always" }, judgements: [] }],
-  extensionMs: 0,
-  recovery: 0,
-  convert: null,
-};
-
-/** A Gekisou live's per-power score split by range, before rank bonuses, so any ranks, Just share and skills combine
- * linearly: one run without skills, and one with a +100 % five-second skill in slot 0, whose 120 orders put it on
- * each skill event. */
-export function gekisouRates(master: EngineMaster, source: Parameters<typeof gekisoChart>[1], level: number, missions: readonly number[]): GekisouRates | undefined {
-  if (source.feverMs.length < 3 || missions.length < 3 || missions.some((mission) => !mission)) return undefined;
-  const deck = Array(5).fill(BLANK);
-  const runs = [0, 1].map((just) => {
-    const chart = gekisoChart(master, source, level, missions, { great: 0, just }, 1);
-    const context = gekisoContext(master, chart, deck, []);
-    const parts = (slots: SlotSkill[]) => {
-      const out = ORDERS.map(() => [0, 0, 0, 0]);
-      scoreOrdersGekiso(master, chart, context, PROBE_POWER, slots, (order, note, score) => {
-        out[order]![chart.rangeOf[note]! + 1]! += score;
-      });
-      return out;
-    };
-    const base = parts([])[0]!;
-    const skilled = parts([PLAIN]);
-    const events = [0, 1, 2, 3, 4].map((event) => {
-      const order = ORDERS.findIndex((row) => row[event] === 0);
-      return skilled[order]!.map((value, part) => (value - base[part]!) / PROBE_POWER);
-    });
-    const ranges = [0, 1, 2];
-    return {
-      base: base.map((value) => value / PROBE_POWER),
-      events,
-      notes: ranges.map((range) => chart.rangeOf.filter((value) => value === range).length),
-      just: ranges.map((range) =>
-        chart.rangeOf.filter((value, note) => value === range && master.live.justTypes.has(chart.notes[note]!.judgementType)).length,
-      ),
-    };
-  });
-  return {
-    missions: missions.slice(0, 3),
-    percents: rankingFactors(master.live.gekiso, missionPattern(missions[0]!, missions[1]!, missions[2]!)),
-    base: [rounded(runs[0]!.base), rounded(runs[1]!.base)],
-    events: [runs[0]!.events.map(rounded), runs[1]!.events.map(rounded)],
-    notes: runs[1]!.notes,
-    just: runs[1]!.just,
-  };
-}
 
 async function compute(server: ReleaseServer, engineCommit: string): Promise<ReusableRates> {
   const release = await staticCatalogRelease(server);

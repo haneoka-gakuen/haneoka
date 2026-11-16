@@ -23,6 +23,10 @@ md-outlined-select {
   --md-menu-container-color: var(--md-sys-color-surface-container);
   --md-menu-container-shape: var(--md-sys-shape-corner-large);
 }
+md-outlined-text-field.number-field {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
 /* Before its definition loads, a Material Web host is an unknown element
  * that lays out its light-DOM children (option labels, slotted icons) as
  * plain text — a different height from the upgraded control. Each one holds

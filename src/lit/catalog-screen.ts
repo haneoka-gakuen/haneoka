@@ -2041,6 +2041,7 @@ export class CatalogScreen extends LitElement {
   }
   disconnectedCallback() {
     this.shopStarSummaries.clear();
+    this.songRateSnapshots.clear();
     this.pageRefresh.cancel();
     clearInterval(this.pageRefreshTimer);
     document.removeEventListener("visibilitychange", this.refreshVisiblePage);
@@ -2601,6 +2602,11 @@ export class CatalogScreen extends LitElement {
   }
   async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false): Promise<() => void> {
     const identity = nativeMetaIdentity(payload), relatedSongs = payload.aux?.songs as Record<string, Item> | undefined;
+    const frozenRates = payload.aux?.chartRates;
+    if (payload.resource === "songs" && identity && frozenRates) {
+      this.songRateSnapshots.set(this.songRateKey(identity, payload.id), frozenRates as NonNullable<import("./song-detail-rewards").SongSummaryRenderOptions["chartRates"]>);
+      while (this.songRateSnapshots.size > 12) this.songRateSnapshots.delete(this.songRateSnapshots.keys().next().value!);
+    }
     if (this.isConnected && identity && payload.resource === "events" && payload.item.story) {
       const stories = await crossServerPublicCache().readCollection("stories",identity).catch(() => ({}));
       payload = {...payload,item:withEventStoryVisibility(payload.item,stories,identity.server)};
@@ -5999,6 +6005,15 @@ export class CatalogScreen extends LitElement {
     return gekisou;
   }
   private detailSongTimings = new Map<string, GekisoTimingSegment[]>();
+  private songRateSnapshots = new Map<string, NonNullable<import("./song-detail-rewards").SongSummaryRenderOptions["chartRates"]>>();
+  private songRateKey(identity: CrossCatalogIdentity, id: string) {
+    return JSON.stringify([identity.server, identity.releaseId, identity.sourceId, id]);
+  }
+  private detailSongRates(item: Item) {
+    const rates = this.detailAux.chartRates as import("./song-detail-rewards").SongSummaryRenderOptions["chartRates"];
+    const identity = this.songTimingIdentity(item);
+    return rates ?? (identity ? this.songRateSnapshots.get(this.songRateKey(identity, this.itemId(item))) : undefined);
+  }
   private songTimingIdentity(item: Item) {
     const entry = this.unionEntry(item);
     return entry?.perServer[entry.displayServer]?.identity ?? this.nativeCatalogPin;
@@ -7055,8 +7070,9 @@ export class CatalogScreen extends LitElement {
                         ) ?? null)
                       : undefined,
                     gekisou: songGekisou,
+                    identity: this.songTimingIdentity(item),
                     metaView: this.metaView,
-                    chartRates: this.detailAux.chartRates as import("./song-detail-rewards").SongSummaryRenderOptions["chartRates"],
+                    chartRates: this.detailSongRates(item),
                     scoring: this.settings.origin !== "sekai",
                     difficulty,
                     selectedDifficulty: this.detailDifficulty,
@@ -7321,7 +7337,7 @@ export class CatalogScreen extends LitElement {
         label: (key, fallback) => this.label(key, fallback),
         localized: (value) => this.localized(value),
         locale: this.settings.locale,
-        chartRates: this.detailAux.chartRates as import("./song-detail-rewards").SongRewardRenderOptions["chartRates"],
+        chartRates: this.detailSongRates(item),
         analysisHref: resourceCollectionHref("catalog/song-meta", this.dataServer(), this.settings.locale as Locale),
       }) ?? nothing
     );
