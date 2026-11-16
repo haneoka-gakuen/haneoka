@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md)；主线程和 Worker 的谱面装载。
 // Effects/Dependencies: 按固定身份共享在途下载，以 AbortController 处理取消及限时重试，身份核对和 gzip 解压；可预置离线固定谱面。
 import { RequestScope, throwIfAborted } from "../../request-scope";
-import { pinnedSongAssetUrl } from "../solver/song-loader";
+import { pinnedSongAssetUrl } from "../data/source";
 import type { SongRef } from "./api";
 import type { EngineChart, EngineChartSources } from "./protocol";
 

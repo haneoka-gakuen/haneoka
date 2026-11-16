@@ -3,7 +3,7 @@
 // Input: EngineCall、UTF-8 或字符串序列化的 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
 // Output: EngineReply、评级资格检查计数、候选快照、活动养成分页更新、区间任务点数频数、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
-// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
+// Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；普通计时沿用同步导入，协作分片通过零指针进度回调按需让出；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
  * serves searches and evaluations. */
 import { chartKey, downloadChart } from "./charts";
@@ -19,11 +19,12 @@ interface Exports {
   haneoka_string_free(pointer: number): void;
   haneoka_context_json(input: number): number;
   haneoka_context_stream_wasm(input: number): number;
+  haneoka_cooperative_clock?: (enabled: number) => void;
   haneoka_search_floor?: (value: number) => void;
   haneoka_search_reward?: (primary: number, other: number, mean: number) => void;
 }
 type PromiseWasm = {
-  Suspending?: new (callback: () => number | Promise<number>) => WebAssembly.ImportValue;
+  Suspending?: new (callback: (...args: number[]) => unknown) => WebAssembly.ImportValue;
   promising?: (callback: (pointer: number) => number) => (pointer: number) => Promise<number>;
 };
 const promiseWasm = WebAssembly as typeof WebAssembly & PromiseWasm;
@@ -59,9 +60,9 @@ continuation.port1.onmessage = () => {
 const yieldTask = () => new Promise<number>(resolve => { resume = resolve; continuation.port2.postMessage(null); });
 const cooperativeClock = () => {
   const now = milliseconds();
-  if (!cooperativeRun || now < nextYield) return now;
+  if (!cooperativeRun || now < nextYield) return;
   nextYield = now + 16;
-  return yieldTask();
+  return yieldTask().then(() => undefined);
 };
 async function waitEventGrowth(id: number) {
   while (eventGrowthPaused.get(id)) await new Promise<void>(resolve => eventGrowthResumes.set(id, resolve));
@@ -76,8 +77,10 @@ const readString = (pointer: number) => {
 async function instantiate() {
   const imports = {
     env: {
-      haneoka_now_ms: promiseWasm.Suspending && promiseWasm.promising ? new promiseWasm.Suspending(cooperativeClock) : milliseconds,
-      haneoka_progress: (pointer: number) => onProgress?.(JSON.parse(readString(pointer)) as Doc),
+      haneoka_now_ms: milliseconds,
+      haneoka_progress: promiseWasm.Suspending && promiseWasm.promising ? new promiseWasm.Suspending((pointer: number) =>
+        pointer === 0 ? cooperativeClock() : onProgress?.(JSON.parse(readString(pointer)) as Doc))
+        : (pointer: number) => { if (pointer) onProgress?.(JSON.parse(readString(pointer)) as Doc); },
     },
   };
   const instance = await WebAssembly.instantiate(compiled!, imports);
@@ -94,6 +97,7 @@ async function invoke(input: Doc | string | Uint8Array, stream = false): Promise
   let result = 0;
   try {
     const operation = stream ? e.haneoka_context_stream_wasm : e.haneoka_context_json;
+    e.haneoka_cooperative_clock?.(cooperativeRun ? 1 : 0);
     result = promiseWasm.Suspending && promiseWasm.promising
       ? await promiseWasm.promising(operation)(pointer) : operation(pointer);
     const output = JSON.parse(readString(result)) as Doc;
@@ -160,7 +164,7 @@ async function execute(call: EngineCall) {
       compiled = call.module;
       handle = 0;
       await ready();
-      const cooperativeFloor = !!promiseWasm.Suspending && !!promiseWasm.promising && !!engine?.haneoka_search_floor;
+      const cooperativeFloor = !!promiseWasm.Suspending && !!promiseWasm.promising && !!engine?.haneoka_search_floor && !!engine?.haneoka_cooperative_clock;
       post({ type: "ready", id: call.id, chartCacheLimit, cooperativeFloor, cooperativeReward: cooperativeFloor && !!engine?.haneoka_search_reward });
       return;
     }

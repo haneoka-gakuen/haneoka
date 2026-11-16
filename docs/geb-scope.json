@@ -171,6 +171,7 @@
     "src/lib/team-builder/data.ts",
     "src/lib/team-builder/arena.ts",
     "src/lib/team-builder/data/load.ts",
+    "src/lib/team-builder/data/source.ts",
     "src/lib/team-builder/data/workspace-storage.ts",
     "src/lib/team-builder/model.ts",
     "src/lib/team-builder/contracts.ts",
