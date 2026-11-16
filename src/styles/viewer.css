@@ -259,8 +259,8 @@
     border-top: 1px solid var(--md-sys-color-outline-variant);
   }
   .viewer-parameter-toolbar {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     padding-bottom: 10px;
@@ -271,13 +271,12 @@
     font-weight: 500;
   }
   .viewer-parameter-toolbar .segmented {
-    width: auto;
-    flex: 1 1 0;
-    max-width: 100%;
-    margin-inline-start: auto;
+    width: 100%;
   }
   .viewer-parameter-toolbar .segmented button {
     min-width: 0;
+    min-height: 48px;
+    padding-inline: 12px;
   }
   .viewer-parameter-actions {
     display: flex;
@@ -286,8 +285,11 @@
     gap: 6px;
   }
   .viewer-parameter-actions .button {
-    min-height: 36px;
-    flex: 1;
+    min-height: 48px;
+    min-width: 0;
+    flex: 1 1 auto;
+    white-space: normal;
+    text-wrap: balance;
   }
   .viewer-parameter-actions input {
     position: absolute;
@@ -348,12 +350,6 @@
   }
   .viewer-pose-name {
     min-width: 0;
-    min-height: 40px;
-    padding: 0 12px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-surface-container);
-    color: var(--md-sys-color-on-surface);
   }
   .viewer-part-editor .viewer-part-toolbar {
     display: flex;
@@ -376,13 +372,29 @@
     gap: 12px;
   }
   .viewer-background-color input[type="color"] {
-    width: 44px;
-    height: 32px;
-    padding: 2px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-surface-container);
+    appearance: none;
+    width: 48px;
+    height: 48px;
+    padding: 10px;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
     cursor: pointer;
+  }
+  .viewer-background-color input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .viewer-background-color input[type="color"]::-webkit-color-swatch {
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+  .viewer-background-color input[type="color"]::-moz-color-swatch {
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+  }
+  .viewer-background-color input[type="color"]:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
   }
   .viewer-behavior-controls md-slider {
     min-width: 0;
@@ -605,7 +617,6 @@
     min-height: 44px;
   }
   .viewer-panel-button,
-  .viewer-parameter-actions .button,
   .viewer-part-toolbar .button {
     min-height: 44px;
   }

@@ -32,6 +32,7 @@ import { openDetailLocation, updateEntityHeading, entityReturnHref } from "../li
 import type { Locale } from "@haneoka/i18n";
 import { viewerBufferSize } from "./runtime/viewer-resolution";
 import { segmented } from "./ui/controls";
+import { focusedValue } from "./ui/focused-value";
 import { CUBISM_CORE_URLS, loadCubismWebRuntime } from "../lib/cubism-runtime";
 import type { CubismTextureVariant } from "@haneoka/vega-plugin-cubism";
 import { loadingIndicator } from "./ui/loading-indicator";
@@ -2094,10 +2095,18 @@ export class Live2DWorkspace extends LitElement {
                       <div class="viewer-parameter-content">
                         <div class="viewer-parameter-toolbar">
                           <span>${uiText(this.locale, "media.models.labels.parameterMode")}</span>
+                          ${segmented({
+                            label: uiText(this.locale, "media.models.labels.parameterMode"),
+                            value: this.parameterMode,
+                            options: (["none", "capture", "pose"] as const).map((value) => ({
+                              value,
+                              label: uiText(this.locale, uiLabelPaths[value] ?? value),
+                            })),
+                            onSelect: (mode) => this.setParameterMode(mode),
+                          })}
                           <span class="viewer-parameter-actions">
                             <button
                               class="button button--tonal"
-                              style="flex: 1 1 max-content"
                               @click=${() => this.querySelector<HTMLInputElement>("[data-pose-import]")?.click()}
                             >
                               ${uiText(this.locale, "media.models.labels.importPose")}
@@ -2111,28 +2120,17 @@ export class Live2DWorkspace extends LitElement {
                             />
                             <button
                               class="button button--tonal"
-                              style="flex: 1 1 max-content"
                               @click=${this.exportParameters}
                             >
                               ${uiText(this.locale, "media.models.labels.exportPose")}
                             </button>
                             <button
                               class="button button--text"
-                              style="flex: 1 1 max-content"
                               @click=${this.resetParameters}
                             >
                               ${uiText(this.locale, "common.actions.reset")}
                             </button>
                           </span>
-                          ${segmented({
-                            label: uiText(this.locale, "media.models.labels.parameterMode"),
-                            value: this.parameterMode,
-                            options: (["none", "capture", "pose"] as const).map((value) => ({
-                              value,
-                              label: uiText(this.locale, uiLabelPaths[value] ?? value),
-                            })),
-                            onSelect: (mode) => this.setParameterMode(mode),
-                          })}
                         </div>
                         <div class="viewer-pose-toolbar">
                           <span>${uiText(this.locale, "media.models.labels.customPoses")}</span>
@@ -2140,13 +2138,13 @@ export class Live2DWorkspace extends LitElement {
                             ${
                               this.renamingPose
                                 ? html`
-                                    <input
+                                    <md-outlined-text-field
                                       class="viewer-pose-name"
-                                      type="text"
-                                      .value=${this.poseNameDraft}
+                                      label=${uiText(this.locale, "media.models.labels.customPoses")}
+                                      .value=${focusedValue(this.poseNameDraft)}
                                       placeholder=${this.poseId ? this.poses[this.poseId]?.name || "" : ""}
                                       @input=${(event: Event) => {
-                                        this.poseNameDraft = String((event.target as HTMLInputElement).value || "");
+                                        this.poseNameDraft = String((event.target as HTMLElement & { value: string }).value || "");
                                       }}
                                       @keydown=${(event: KeyboardEvent) => {
                                         if (event.key === "Enter") this.commitPoseName();
@@ -2155,7 +2153,7 @@ export class Live2DWorkspace extends LitElement {
                                           this.poseNameDraft = "";
                                         }
                                       }}
-                                    />
+                                    ></md-outlined-text-field>
                                     <button
                                       class="button button--tonal viewer-panel-button"
                                       @click=${this.commitPoseName}

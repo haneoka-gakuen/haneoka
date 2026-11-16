@@ -4,6 +4,9 @@
 // Pos: [Map](L2-2.md)；播放器设置中的共享画面控件。
 // Effects/Dependencies: 订阅本地偏好，加载消息并即时保存选择。
 import { LitElement, html, nothing, type PropertyValues } from "lit";
+import "@material/web/select/outlined-select.js";
+import "@material/web/select/select-option.js";
+import "@material/web/slider/slider.js";
 import { initializeI18nClient } from "../../i18n/client";
 import { isLocale } from "../../i18n/locales";
 import type { Catalog } from "@haneoka/i18n";
@@ -85,56 +88,52 @@ export class RenderQualitySettings extends LitElement {
       <section class="render-quality-settings">
         <h4>${this.text("title")}</h4>
         ${this.story ? html`
-          <label class="render-quality-settings__row">
-            <span>${this.text("frameRateLimit")}</span>
-            <select
-              aria-label=${this.text("frameRateLimit")}
+            <md-outlined-select
+              label=${this.text("frameRateLimit")}
               .value=${String(this.settings.storyFrameRateLimit)}
               @change=${(event: Event) => writeRenderQuality({
                 ...this.settings,
-                storyFrameRateLimit: Number((event.currentTarget as HTMLSelectElement).value),
+                storyFrameRateLimit: Number((event.currentTarget as HTMLElement & { value: string }).value),
               })}
             >
               ${STORY_FRAME_RATE_LIMITS.map((limit) => html`
-                <option value=${String(limit)} ?selected=${limit === this.settings.storyFrameRateLimit}>
-                  ${limit === 0 ? this.text("unlimited") : `${limit} FPS`}
-                </option>
+                <md-select-option value=${String(limit)} ?selected=${limit === this.settings.storyFrameRateLimit}>
+                  <div slot="headline">${limit === 0 ? this.text("unlimited") : `${limit} FPS`}</div>
+                </md-select-option>
               `)}
-            </select>
-          </label>
+            </md-outlined-select>
         ` : nothing}
-        <label class="render-quality-settings__row">
-          <span>${this.text("resolution")}</span>
-          <select
-            aria-label=${this.text("resolution")}
+          <md-outlined-select
+            label=${this.text("resolution")}
+            .value=${String(this.settings.factor)}
             @change=${(event: Event) =>
               writeRenderQuality({
                 ...this.settings,
-                factor: Number((event.currentTarget as HTMLSelectElement).value) as RenderQuality["factor"],
+                factor: Number((event.currentTarget as HTMLElement & { value: string }).value) as RenderQuality["factor"],
               })}
           >
-            <option value="1" ?selected=${this.settings.factor === 1}>${this.text("native")}</option>
-            <option value="1.3" ?selected=${this.settings.factor === 1.3}>${this.text("quality")} (1.3×)</option>
-            <option value="1.5" ?selected=${this.settings.factor === 1.5}>${this.text("balanced")} (1.5×)</option>
-          </select>
-        </label>
+            <md-select-option value="1" ?selected=${this.settings.factor === 1}><div slot="headline">${this.text("native")}</div></md-select-option>
+            <md-select-option value="1.3" ?selected=${this.settings.factor === 1.3}><div slot="headline">${this.text("quality")} (1.3×)</div></md-select-option>
+            <md-select-option value="1.5" ?selected=${this.settings.factor === 1.5}><div slot="headline">${this.text("balanced")} (1.5×)</div></md-select-option>
+          </md-outlined-select>
         <label class="render-quality-settings__row render-quality-settings__row--slider">
           <span>${this.text("sharpness")}</span>
           <output>${Math.round(this.settings.sharpness * 100)}%</output>
-          <input
-            type="range"
+          <md-slider
             min="0"
             max="1"
             step="0.01"
+            labeled
             aria-label=${this.text("sharpness")}
-            .value=${String(this.settings.sharpness)}
+            .value=${this.settings.sharpness}
+            .valueLabel=${`${Math.round(this.settings.sharpness * 100)}%`}
             ?disabled=${this.settings.factor === 1}
             @input=${(event: Event) =>
               writeRenderQuality({
                 ...this.settings,
-                sharpness: Number((event.currentTarget as HTMLInputElement).value),
+                sharpness: Number((event.currentTarget as HTMLElement & { value: number }).value),
               })}
-          />
+          ></md-slider>
         </label>
       </section>
     `;
