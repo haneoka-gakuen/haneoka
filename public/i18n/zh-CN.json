@@ -3126,6 +3126,8 @@
       "bestTimingScore": "最佳时序分数",
       "worstTimingScore": "最差时序分数",
       "nominalTimingScore": "名义时序分数",
+      "timingFrameOrigin": "方案帧起点",
+      "timingPlanBaseScore": "方案基准分",
       "timingFramePlanScore": "提前 {ms} ms 方案",
       "timingAnalysis": "判定时序",
       "timingFailed": "无法计算判定时序",

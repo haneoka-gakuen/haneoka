@@ -3126,6 +3126,8 @@
       "bestTimingScore": "最良タイミングのスコア",
       "worstTimingScore": "最悪タイミングのスコア",
       "nominalTimingScore": "基準タイミングのスコア",
+      "timingFrameOrigin": "プランのフレーム開始位置",
+      "timingPlanBaseScore": "プランの基準スコア",
       "timingFramePlanScore": "{ms} ms 前倒し",
       "timingAnalysis": "判定タイミング",
       "timingFailed": "タイミングを計算できませんでした",

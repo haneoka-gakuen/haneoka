@@ -3126,6 +3126,8 @@
       "bestTimingScore": "Best-timing score",
       "worstTimingScore": "Worst-timing score",
       "nominalTimingScore": "Nominal-timing score",
+      "timingFrameOrigin": "Plan frame origin",
+      "timingPlanBaseScore": "Plan baseline score",
       "timingFramePlanScore": "{ms} ms plan",
       "timingAnalysis": "Judgement timing",
       "timingFailed": "Timing could not be calculated",

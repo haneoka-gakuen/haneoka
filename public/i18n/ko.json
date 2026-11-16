@@ -3126,6 +3126,8 @@
       "bestTimingScore": "최선 타이밍 점수",
       "worstTimingScore": "최악 타이밍 점수",
       "nominalTimingScore": "기준 타이밍 점수",
+      "timingFrameOrigin": "계획 프레임 시작점",
+      "timingPlanBaseScore": "계획 기준 점수",
       "timingFramePlanScore": "{ms} ms 앞당기기",
       "timingAnalysis": "판정 타이밍",
       "timingFailed": "타이밍을 계산할 수 없습니다",

@@ -752,11 +752,13 @@ function timingRow(host: TeamBuilder, timing: OrderTiming | null | undefined, re
   if (!timing && !reserve) return nothing;
   const plain = timing === null ? fallback : undefined;
   const text = (value: number | undefined) => value === undefined ? "—" : format(host, value);
-  const gain = timing && timing.guideAvailable !== false ? timing.best - timing.score : timing === null ? 0 : undefined;
+  const gain = timing && timing.guideAvailable !== false ? timing.best - (timing.planBaseScore ?? timing.score) : timing === null ? 0 : undefined;
   return html`
     <div><dt>${host.t("worstTimingScore", "Worst-timing score")}</dt><dd>${text(timing?.worst ?? plain)}</dd></div>
     <div><dt>${host.t("nominalTimingScore", "Nominal-timing score")}</dt><dd>${text(timing?.score ?? plain)}</dd></div>
     <div><dt>${host.t("bestTimingScore", "Best-timing score")}</dt><dd>${text(timing?.optimal ?? plain)}</dd></div>
+    <div><dt>${host.t("timingFrameOrigin", "Plan frame origin")}</dt><dd>${timing ? `${format(host, timing.frameOriginMs ?? 0, 2)} ms` : "—"}</dd></div>
+    <div><dt>${host.t("timingPlanBaseScore", "Plan baseline score")}</dt><dd>${text(timing?.planBaseScore ?? timing?.score ?? plain)}</dd></div>
     <div>
       <dt>${host.t("timingFramePlanScore", "{ms} ms plan", { ms: timing?.advanceMs ?? advanceMs })}</dt>
       <dd>${text(timing?.guideAvailable === false ? undefined : timing?.best ?? plain)} <span class="tb-delta" data-sign=${gain === undefined ? "" : gain >= 0 ? "up" : "down"}>${gain === undefined ? " " : `${gain >= 0 ? "+" : ""}${format(host, gain)}`}</span></dd>

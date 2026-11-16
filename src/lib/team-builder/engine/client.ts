@@ -10,7 +10,7 @@ import { teamBuilderSourceIdentity } from "../data/source";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
-import { throwIfAborted } from "../../request-scope";
+import { RequestScope, throwIfAborted } from "../../request-scope";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
 import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "./merge";
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
@@ -24,7 +24,7 @@ let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const WORKER_ACK_TIMEOUT_MS = 60_000;
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason);
+    const abort = () => reject(signal.reason ?? new DOMException("Cancelled", "AbortError"));
     if (signal.aborted) abort();
     else signal.addEventListener("abort", abort, { once: true });
     void work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
@@ -32,13 +32,15 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 function engineModule() {
   if (compiledEngine) return compiledEngine;
-  const signal = AbortSignal.timeout(60_000);
+  const request = new RequestScope();
+  const signal = request.begin();
+  const timer = setTimeout(() => request.cancel(), 60_000);
   return compiledEngine = untilAborted(WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal })), signal)
     .catch(error => {
       compiledEngine = null;
       if (signal.aborted) throw new Error("engine-init-timeout", { cause: error });
       throw error;
-    });
+    }).finally(() => { clearTimeout(timer); request.cancel(); });
 }
 
 export const ENGINE_MODEL_VERSION = "native-frame-origins-v1";

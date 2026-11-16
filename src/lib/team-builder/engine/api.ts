@@ -1109,6 +1109,9 @@ export interface TimingWindow {
 /** Selected order's nominal score, legal timing extrema and attainable 17 ms input guide. */
 export interface OrderTiming {
   score: number;
+  /** Nominal score at the render origin used by this plan. */
+  planBaseScore?: number;
+  frameOriginMs?: number;
   best: number;
   /** Whether the fixed early-input plan has a native input witness. */
   guideAvailable?: boolean;
