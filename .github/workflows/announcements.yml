@@ -116,6 +116,7 @@ jobs:
         uses: ./.github/actions/setup-jp-api-egress
         with:
           subscription_url: ${{ env.RESOURCE_API_EGRESS_SUBSCRIPTION || env.JP_VERSION_SUBSCRIPTION }}
+          verify_jp_api: ${{ startsWith(inputs.server, 'jp') }}
       - name: Refresh announcement snapshot
         run: |
           if [[ "${{ inputs.restore_archive }}" != "true" && "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then

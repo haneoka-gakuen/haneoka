@@ -23,6 +23,7 @@ from PIL import Image
 from core.config import PROJECT_ROOT, AnnouncementRegion, ServerConfig, load_server_config
 from core.manifests import read_json, write_json
 from core.paths import build_layout, source_layout
+from ingest.api_egress import run_api_curl
 from ingest.version_api import (
     DiscoveryUnavailable,
     RETRYABLE_HTTP_STATUS,
@@ -334,7 +335,7 @@ def _grpc_body(
             header_file = Path(directory) / "headers"
             body_file = Path(directory) / "body"
             try:
-                result = subprocess.run(
+                result = run_api_curl(
                     [
                         *command_prefix,
                         "--dump-header",
@@ -345,6 +346,7 @@ def _grpc_body(
                         "@-",
                         url,
                     ],
+                    proxy=proxy,
                     input=frame,
                     capture_output=True,
                     timeout=35,

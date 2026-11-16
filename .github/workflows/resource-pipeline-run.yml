@@ -156,6 +156,7 @@ jobs:
         uses: ./.github/actions/setup-jp-api-egress
         with:
           subscription_url: ${{ env.RESOURCE_API_EGRESS_SUBSCRIPTION || env.JP_VERSION_SUBSCRIPTION }}
+          verify_jp_api: ${{ startsWith(inputs.server, 'jp') }}
       - name: Materialize source input
         id: source_input
         run: |

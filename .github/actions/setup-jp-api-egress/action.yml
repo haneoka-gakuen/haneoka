@@ -1,17 +1,22 @@
 name: JP API egress
-description: Start the selected Japanese exit for JP API requests
+description: Start Japanese exits with request-driven API failover
 inputs:
   subscription_url:
     description: Japanese proxy subscription URL
     required: true
+  verify_jp_api:
+    description: Check the production JP version service before source processing
+    default: "true"
 runs:
   using: composite
   steps:
     - shell: bash
       env:
         SUBSCRIPTION_URL: ${{ inputs.subscription_url }}
+        VERIFY_JP_API: ${{ inputs.verify_jp_api }}
       run: |
         set -euo pipefail
+        umask 077
         dir="$RUNNER_TEMP/jp-proxy"
         mkdir -p "$dir/providers"
         curl --fail --location --retry 3 --max-time 60 \
@@ -20,6 +25,9 @@ runs:
           "$SUBSCRIPTION_URL"
         cat > "$dir/config.yaml" <<'YAML'
         mixed-port: 7899
+        bind-address: 127.0.0.1
+        allow-lan: false
+        external-controller: 127.0.0.1:7900
         mode: rule
         log-level: warning
         ipv6: false
@@ -33,11 +41,17 @@ runs:
           - name: JP-EGRESS
             type: select
             use: [sub]
-            filter: "JP-M1"
+            filter: "(?i)JP-"
             exclude-filter: "(?i)\\[v6\\]"
         rules:
           - MATCH,JP-EGRESS
         YAML
+        export JP_VERSION_PROXY=http://127.0.0.1:7899
+        export JP_VERSION_PROXY_CONTROLLER=http://127.0.0.1:7900
+        export JP_VERSION_PROXY_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+        export JP_VERSION_PROXY_LOCK="$dir/failover.lock"
+        echo "::add-mask::$JP_VERSION_PROXY_SECRET"
+        printf 'secret: "%s"\n' "$JP_VERSION_PROXY_SECRET" >> "$dir/config.yaml"
         curl --fail --location --retry 3 --max-time 180 \
           -o "$RUNNER_TEMP/mihomo.gz" \
           "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.31/mihomo-linux-amd64-v1-v1.19.31.gz"
@@ -45,15 +59,37 @@ runs:
         gunzip -c "$RUNNER_TEMP/mihomo.gz" > "$RUNNER_TEMP/mihomo"
         chmod +x "$RUNNER_TEMP/mihomo"
         nohup "$RUNNER_TEMP/mihomo" -d "$dir" > "$dir/mihomo.log" 2>&1 &
+        ready=false
         for attempt in $(seq 1 30); do
-          if curl -sS --max-time 5 -x http://127.0.0.1:7899 -o /dev/null \
-              "https://www.gstatic.com/generate_204"; then
-            echo "JP API egress proxy ready (attempt $attempt)"
-            echo "JP_VERSION_PROXY=http://127.0.0.1:7899" >> "$GITHUB_ENV"
-            exit 0
+          if curl --fail -sS --max-time 2 --noproxy '*' \
+              -H "Authorization: Bearer $JP_VERSION_PROXY_SECRET" \
+              -o /dev/null "$JP_VERSION_PROXY_CONTROLLER/version"; then
+            ready=true
+            break
           fi
-          sleep 2
+          sleep 1
         done
-        echo "JP API egress proxy failed to become ready" >&2
-        cat "$dir/mihomo.log" >&2 || true
-        exit 1
+        if [[ "$ready" != true ]]; then
+          echo "JP API egress controller failed to become ready" >&2
+          exit 1
+        fi
+        PYTHONPATH=scripts python - <<'PY'
+        import os
+        from ingest.api_egress import select_preferred_exit
+        from ingest.version_api import DiscoveryUnavailable, discover_asset_version
+        select_preferred_exit()
+        if os.environ["VERIFY_JP_API"] == "true":
+            try:
+                discover_asset_version(
+                    "https://api.bang-dream-on.jp/app.masterdata.MasterdataService/Version",
+                    "Android", proxy=os.environ["JP_VERSION_PROXY"], skip_resolution_check=True,
+                )
+            except DiscoveryUnavailable as error:
+                if error.reason not in {"maintenance", "service"}:
+                    raise
+                print(f"JP API source unavailable ({error.reason}); retaining source discovery handling")
+        print("JP API egress ready")
+        PY
+        for name in JP_VERSION_PROXY JP_VERSION_PROXY_CONTROLLER JP_VERSION_PROXY_SECRET JP_VERSION_PROXY_LOCK; do
+          printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_ENV"
+        done
