@@ -340,6 +340,8 @@ export class TeamBuilder extends LitElement {
       : !!this.results;
   }
   computationStatus() {
+    if (this.taskKind === "build" && this.engine?.searchQueued)
+      return this.t("searchQueued", "Queued");
     const phases = this.engine?.phases ?? [];
     return (phases.length ? phases : ["initializationMs"])
       .map((phase) =>
@@ -1274,6 +1276,10 @@ export class TeamBuilder extends LitElement {
   }
   errorReason(error: unknown): string {
     const reason = error instanceof Error ? error.message : String(error);
+    if (reason === "engine-init-timeout") return this.t("engineInitTimeout", "Engine preparation timed out");
+    if (reason === "engine-start-timeout") return this.t("engineStartTimeout", "Engine start timed out");
+    if (reason === "engine-message-error" || reason === "engine-invalid-reply")
+      return this.t("engineMessageError", "Engine communication failed");
     if (reason.startsWith("native input word search budget exceeded") || reason === "native timing search budget exceeded") return this.t("timingIncomplete", "Timing calculation did not finish");
     if (reason.startsWith("unreachable native judgement") || reason === "unreachable native input sequence") return this.t("timingUnreachable", "The judgement pattern cannot be reached");
     if (reason.startsWith("missing native")) return this.t("timingDataMissing", "Timing data is missing");

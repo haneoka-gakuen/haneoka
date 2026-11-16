@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // L3 — GEB
 // Input: EngineCall、UTF-8 或字符串序列化的 release、谱面固定来源索引／共享载荷及编译后的 WASM 模块。
-// Output: EngineReply、评级资格检查计数、候选快照、活动养成分页更新、区间任务点数频数、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
+// Output: EngineReply（含执行应答及实例故障）、评级资格检查计数、候选快照、活动养成分页更新、区间任务点数频数、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
 // Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；普通计时沿用同步导入，协作分片通过零指针进度回调按需让出；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
 /** Team engine Worker: the ournotes-team-builder engine (WebAssembly) holds the release and the charts it was sent, and
@@ -171,6 +171,7 @@ async function execute(call: EngineCall) {
     if (!data) throw new Error("engine-not-ready");
     await ready();
     activeId = call.id;
+    post({ type: "started", id: call.id });
     if (call.type === "run") {
       let request: EngineRequest = call.request;
       pendingFloor = call.initialFloor ?? -Infinity;
@@ -199,6 +200,7 @@ async function execute(call: EngineCall) {
       try {
         cooperativeRun = call.cooperativeFloor === true && !!promiseWasm.Suspending && !!promiseWasm.promising && !!engine?.haneoka_search_floor;
         nextYield = milliseconds() + 16;
+        post({ type: "phase", id: call.id, phase: "computation" });
         const output = await invoke({ op: "run", handle, request: { ...request, ...(call.deferScores ? { deferScores: true } : {}), ...(pendingReward ? { rewardIncumbent: pendingReward } : {}), cooperativeFloor: cooperativeRun },
           charts: rows, scoredSeeds: call.scoredSeeds, reportRankChecks: call.reportRankChecks,
           exportScores: request.goal.kind === "gekiso" || (request.goal.kind === "event" && !!request.goal.gekiso) }, true);
@@ -290,6 +292,7 @@ async function execute(call: EngineCall) {
   }
 }
 let operations = Promise.resolve();
+self.addEventListener("messageerror", () => post({ type: "fatal", message: "engine-message-error" }));
 self.onmessage = (event: MessageEvent<EngineCall>) => {
   const call = event.data;
   if (call.type === "pauseEventGrowth") {
