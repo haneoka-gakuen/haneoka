@@ -52,7 +52,7 @@ export interface TextlessStampManifest {
 export function stampAssetUrl(value: unknown): string | undefined {
   if (
     typeof value !== "string" ||
-    !(value.startsWith("/assets/") || value.startsWith("/tools/stamp-maker/assets/")) ||
+    !(value.startsWith("/assets/") || value.startsWith("/public-media/") || value.startsWith("/tools/stamp-maker/assets/")) ||
     value.includes("\\")
   )
     return;
@@ -68,7 +68,9 @@ export function stampChoices(catalog: JsonRecord, locale: string, imageLanguage 
       if (!value || typeof value !== "object") return [];
       const stamp = value as JsonRecord;
       const image = String(stamp.image || "");
-      const variants = (stamp.imageVariants as Record<string, Record<string, string>> | undefined)?.[image] || {};
+      const imageVariants = stamp.imageVariants as Record<string, Record<string, string>> | undefined;
+      const variants = imageVariants?.[image] ?? imageVariants?.[image.split(/[?#]/u)[0]!]
+        ?? (imageVariants && Object.keys(imageVariants).length === 1 ? Object.values(imageVariants)[0] : undefined) ?? {};
       const original = stampAssetUrl(image);
       const versions = Object.entries(variants).flatMap(([language, value]) => {
         const url = stampAssetUrl(value);
@@ -110,7 +112,9 @@ export function stampChoicesFromCrossCatalog(
   }
   return dto.entries.flatMap(entry => {
     const preferred = activeSources[entry.key];
-    const server = preferred && entry.perServer[preferred] ? preferred : entry.displayServer;
+    const multilingual = (imageLanguage || locale) !== "ja" && entry.perServer[STAMP_SOURCE_SERVER]
+      ? STAMP_SOURCE_SERVER : entry.displayServer;
+    const server = preferred && entry.perServer[preferred] ? preferred : multilingual;
     const variant = entry.perServer[server];
     if (!variant) return [];
     const choice = stampChoices({ [variant.id]: pinCrossCatalogValue(variant.row, variant.identity) }, locale, imageLanguage)[0];
