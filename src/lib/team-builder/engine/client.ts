@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
-// Output: EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
+// Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享编译后的 WASM 模块、一次编码的 UTF-8 计算资料和有界固定谱面载荷缓存（含调用者预置的固定谱面），允许预取已选谱面并与 Worker 初始化并行，按请求数量预热 Worker；普通 AP 挑战奖励的显式同分排序沿用单 Worker，复用预热上下文；创建和替换独立 Worker，独立场景在现有池中各占单个 Worker 并沿用完整请求流程；交换完整评分候选及排序下界，独立保留合法候选，合并全部分片证明，取消与重试替换对应实例。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
@@ -22,6 +22,8 @@ import engineUrl from "./generated/team-engine.wasm?url";
 let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const engineModule = () => compiledEngine ??= WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal: AbortSignal.timeout(60_000) }))
   .catch(error => { compiledEngine = null; throw error; });
+
+export const ENGINE_MODEL_VERSION = "native-window-coverage-v2";
 
 export type ProofProgress = { unit: "charts" | "shards" | "joint"; checkedTeams?: number };
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void;
@@ -407,7 +409,7 @@ export class EngineClient {
       || request.shard || request.noFloor || request.seedOnly || request.seedVariant || request.seeded || request.rewardPhase || request.certifyRewardRanks
       || request.resolveRewardPlan || request.floors || request.rewardIncumbent || request.cutoff || request.rewardCutoff !== undefined || request.completed?.length) return null;
     const { timeLimitMs: _time, deadline: _deadline, requestId: _id, contextKey: _context, ...input } = request;
-    return JSON.stringify(["native-window-coverage-v1", input]);
+    return JSON.stringify([ENGINE_MODEL_VERSION, input]);
   }
 
   run(request: EngineRequest, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler): Promise<EngineResponse> {

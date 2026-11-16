@@ -43,7 +43,7 @@ import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
 import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
-import { EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
+import { ENGINE_MODEL_VERSION, EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
 import type {
   EngineHit,
   EngineRequest,
@@ -1710,7 +1710,7 @@ export class TeamBuilder extends LitElement {
     const request = this.request();
     if (request) request.timeLimitMs = null;
     return JSON.stringify([
-      "native-window-coverage-v1",
+      ENGINE_MODEL_VERSION,
       this.snapshot?.owner,
       this.loadedServer,
       this.data?.identity,
