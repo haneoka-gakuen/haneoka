@@ -691,8 +691,8 @@ export class EngineClient {
       const sharedEvent = canPartition && request.goal.kind === "event" && canUseSharedEventRosters(this.data, request)
         ? { ...request, goal: request.goal } : null;
       if (separateEvent || sharedEvent) {
-        let partitionFailed = false;
-        const finished = () => stopped || partitionFailed || !remaining(deadline);
+        let partitionFailure: { error: unknown } | undefined;
+        const finished = () => stopped || !!partitionFailure || !remaining(deadline);
         const workers = [...pool].sort((a, b) => Number(b.started) - Number(a.started));
         let sharedCharts: Promise<EngineChart[]> | undefined;
         const pending: { chart: string | null; run: (worker?: EngineWorker) => Promise<void> }[] = [];
@@ -725,7 +725,7 @@ export class EngineClient {
         };
         wakeWork = dispatch;
         const runBatch: PartitionBatch = async (jobs, onResult, onProgress, options) => {
-          const active = () => !stopped && !partitionFailed && !options?.stopped?.();
+          const active = () => !stopped && !partitionFailure && !options?.stopped?.();
           const batch = jobs.map((job, index) => new Promise<void>((resolve, reject) => {
             const charts = sharedEvent ? requestChartSongs(job) : [];
             pending.push({ chart: charts.length === 1 && charts[0] ? chartKey(charts[0]) : null,
@@ -745,7 +745,7 @@ export class EngineClient {
                   }
                   resolve();
                 } catch (error) {
-                  partitionFailed = true;
+                  partitionFailure ??= { error };
                   reject(error);
                 }
               },
@@ -757,6 +757,7 @@ export class EngineClient {
         if (sharedEvent) {
           const result = await proveSharedEvent(this.data, sharedEvent, runBatch, publish, finished, pool.length);
           if (stopped) return latest;
+          if (partitionFailure) throw partitionFailure.error;
           if (result) return result;
         } else if (separateEvent) {
           const goal = separateEvent.goal;
@@ -785,7 +786,7 @@ export class EngineClient {
               if (final || clock() - lastShown >= snapshotInterval) publish(response(), final);
             };
             const result = await partitionEvent(part, runBatch, update, finished, firstPassBudgetMs);
-            if (!stopped && !partitionFailed) {
+            if (!stopped && !partitionFailure) {
               update(result, true);
               if (trackRank) reportRankProof(parts);
               else progress?.(++done, goal.songs.length);
