@@ -23,7 +23,7 @@ let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const engineModule = () => compiledEngine ??= WebAssembly.compileStreaming(fetch(new URL(engineUrl, import.meta.url), { signal: AbortSignal.timeout(60_000) }))
   .catch(error => { compiledEngine = null; throw error; });
 
-export const ENGINE_MODEL_VERSION = "native-window-coverage-v2";
+export const ENGINE_MODEL_VERSION = "native-frame-origins-v1";
 
 export type ProofProgress = { unit: "charts" | "shards" | "joint"; checkedTeams?: number };
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void;
