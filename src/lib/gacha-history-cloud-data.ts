@@ -5,11 +5,11 @@
 // Effects/Dependencies: 纯格式与合并；不读取凭据，不发 HTTP。
 import {
   HISTORY_REGIONS,
-  mergeHistoryCollection,
   parseHistory,
   type HistoryRegion,
   type HistorySnapshot,
 } from "@haneoka/game-data-exporter/gacha-history";
+import { mergeHistoryCollection } from "./gacha-history-merge.ts";
 
 export const HISTORY_CLOUD_SCHEMA = "haneoka-gacha-cloud-v1";
 export const HISTORY_CLOUD_BYTES = 1024 * 1024;
@@ -18,11 +18,18 @@ export const historyCloudAccountKeyValid = (value: unknown): value is string =>
 
 export interface HistoryCloudSummary {
   accountKey: string;
+  canonicalAccountKey?: string;
+  aliases?: string[];
   server: HistoryRegion;
   revision: number;
   updatedAt: number;
   refreshRequested: number;
   refreshCompleted: number;
+}
+
+export interface HistoryCombineSource {
+  accountKey: string;
+  revision: number | null;
 }
 
 export interface HistoryCloudDocument extends HistoryCloudSummary {

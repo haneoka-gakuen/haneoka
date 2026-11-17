@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 现有 Haneoka 会话、D1 及严格云快照请求。
-// Output: 私有历史读写、CAS 合并和刷新序号。
+// Output: 私有历史读写、CAS 归并／别名兼容、原始备份和刷新序号。
 // Pos: [Map](L2.md)；抽卡历史账号同步边界。
 // Effects/Dependencies: 复用账户访问与 SQL guard；1 MiB/64 账户限制，不代发游戏登录或历史请求。
 import { HISTORY_REGIONS, type HistoryRegion, type HistorySnapshot } from "@haneoka/game-data-exporter/gacha-history";
@@ -13,6 +13,7 @@ import {
   parseCloudHistory,
   parseStoredCloudHistory,
   type StoredCloudHistory,
+  type HistoryCombineSource,
 } from "../src/lib/gacha-history-cloud-data";
 import {
   privateTeamJson as json,
@@ -38,13 +39,19 @@ interface HistoryRow {
   updatedAt: number;
   refreshRequested: number;
   refreshCompleted: number;
+  aliasesJson?: string;
 }
 const summaryColumns =
   "account_key AS accountKey, server, revision, updated_at AS updatedAt, refresh_requested AS refreshRequested, refresh_completed AS refreshCompleted";
 const columns = `${summaryColumns}, history_json AS historyJson`;
+const aliasColumns = `(SELECT json_group_array(alias_key) FROM account_gacha_history_alias a WHERE a.user_id = account_gacha_history.user_id AND a.canonical_key = account_gacha_history.account_key) AS aliasesJson`;
+const canonicalSql =
+  "COALESCE((SELECT canonical_key FROM account_gacha_history_alias WHERE user_id = ? AND alias_key = ?), ?)";
 const readHistory = (env: Env, userId: string, key: string) =>
-  env.DB.prepare(`SELECT ${columns} FROM account_gacha_history WHERE user_id = ? AND account_key = ?`)
-    .bind(userId, key)
+  env.DB.prepare(
+    `SELECT ${columns}, ${aliasColumns} FROM account_gacha_history WHERE user_id = ? AND account_key = ${canonicalSql}`,
+  )
+    .bind(userId, userId, key, key)
     .first<HistoryRow>();
 const summary = ({
   accountKey,
@@ -53,10 +60,19 @@ const summary = ({
   updatedAt,
   refreshRequested,
   refreshCompleted,
+  aliasesJson,
 }: Omit<HistoryRow, "historyJson">) => {
   if (!historyCloudAccountKeyValid(accountKey) || !HISTORY_REGIONS.includes(server))
     throw new HistoryCloudDataError("invalid_history", 422);
-  return { accountKey, server, revision, updatedAt, refreshRequested, refreshCompleted };
+  return {
+    accountKey,
+    server,
+    revision,
+    updatedAt,
+    refreshRequested,
+    refreshCompleted,
+    aliases: JSON.parse(aliasesJson ?? "[]") as string[],
+  };
 };
 const storedHistory = (row: HistoryRow, key: string): StoredCloudHistory => {
   if (row.accountKey !== key) throw new HistoryCloudDataError("history_account_mismatch", 409);
@@ -71,13 +87,17 @@ const storedHistory = (row: HistoryRow, key: string): StoredCloudHistory => {
 const document = (ownerId: string, row: HistoryRow, key: string) => ({
   ownerId,
   ...summary(row),
-  histories: storedHistory(row, key).histories,
+  accountKey: key,
+  ...(row.accountKey !== key ? { canonicalAccountKey: row.accountKey } : {}),
+  histories: storedHistory(row, row.accountKey).histories.map((history) =>
+    row.accountKey === key ? history : { ...history, source: { ...history.source, accountKey: key } },
+  ),
 });
 
 export const listGachaHistory = async (env: Env, userId: string) =>
   (
     await env.DB.prepare(
-      `SELECT ${summaryColumns} FROM account_gacha_history WHERE user_id = ? ORDER BY updated_at DESC`,
+      `SELECT ${summaryColumns}, ${aliasColumns} FROM account_gacha_history WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM account_gacha_history_alias a WHERE a.user_id = account_gacha_history.user_id AND a.alias_key = account_gacha_history.account_key) ORDER BY updated_at DESC`,
     )
       .bind(userId)
       .all<Omit<HistoryRow, "historyJson">>()
@@ -106,10 +126,14 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
   const url = new URL(request.url);
   if (url.pathname !== PREFIX && !url.pathname.startsWith(PREFIX + "/")) return null;
   const tail = url.pathname.slice(PREFIX.length);
-  const match = tail === "" ? null : /^\/([a-f0-9]{64})(\/refresh)?$/u.exec(tail);
+  const match =
+    tail === "" ? null : /^\/([a-f0-9]{64})(\/(?:refresh|combine|sources(?:\/[a-f0-9]{64})?))?$/u.exec(tail);
   if (tail && !match) return error(request, 404, "history_not_found", "History not found");
   const key = match?.[1] ?? null;
-  const refresh = Boolean(match?.[2]);
+  const action = match?.[2] ?? "";
+  const refresh = action === "/refresh";
+  const combine = action === "/combine";
+  const sources = action.startsWith("/sources");
   if (!sameOrigin(request)) return error(request, 403, "cross_origin_request", "Use the same-origin history endpoint");
   if (request.method === "OPTIONS")
     return new Response(null, {
@@ -117,7 +141,12 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
       headers: { Allow: "GET, HEAD, POST, OPTIONS", "Cache-Control": "private, no-store" },
     });
   const write = request.method === "POST";
-  if ((!write && !["GET", "HEAD"].includes(request.method)) || (write && key === null) || (refresh && !write))
+  if (
+    (!write && !["GET", "HEAD"].includes(request.method)) ||
+    (write && key === null) ||
+    ((refresh || combine) && !write) ||
+    (sources && write)
+  )
     return error(request, 405, "method_not_allowed", "Method not allowed");
   if (url.searchParams.size)
     return error(request, 400, "invalid_query", "History endpoints do not accept query parameters");
@@ -127,6 +156,30 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
   const { userId, token } = access.value;
   if (key === null) {
     return json(request, { ownerId: userId, accounts: await listGachaHistory(env, userId) });
+  }
+  if (sources) {
+    const row = await readHistory(env, userId, key);
+    if (!row) return error(request, 404, "history_not_found", "History not found");
+    const sourceKey = action.slice("/sources/".length);
+    const sourceSql = `FROM account_gacha_history h LEFT JOIN account_gacha_history_original o ON o.user_id = h.user_id AND o.account_key = h.account_key
+      WHERE h.user_id = ? AND ((h.account_key = ? AND o.account_key IS NOT NULL) OR h.account_key IN
+        (SELECT alias_key FROM account_gacha_history_alias WHERE user_id = ? AND canonical_key = ?))`;
+    if (action === "/sources") {
+      const rows = await env.DB.prepare(`SELECT h.account_key AS accountKey ${sourceSql}`)
+        .bind(userId, row.accountKey, userId, row.accountKey)
+        .all<{ accountKey: string }>();
+      return json(request, { ownerId: userId, sources: rows.results });
+    }
+    const original = await env.DB.prepare(
+      `SELECT h.account_key AS accountKey, h.server, COALESCE(o.history_json, h.history_json) AS historyJson,
+      COALESCE(o.revision, h.revision) AS revision, COALESCE(o.updated_at, h.updated_at) AS updatedAt, 0 AS refreshRequested, 0 AS refreshCompleted
+      ${sourceSql} AND h.account_key = ?`,
+    )
+      .bind(userId, row.accountKey, userId, row.accountKey, sourceKey)
+      .first<HistoryRow>();
+    return original
+      ? json(request, document(userId, original, sourceKey))
+      : error(request, 404, "history_not_found", "History not found");
   }
   if (!write) {
     const history = await readGachaHistory(env, userId, key);
@@ -143,6 +196,64 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
     if (result.response.status === 422) return error(request, 422, "invalid_history", "Send a history object");
     return result.response;
   }
+  if (combine) {
+    if (
+      !exactKeys(result.body, ["histories", "sources"]) ||
+      !Array.isArray(result.body.histories) ||
+      !Array.isArray(result.body.sources) ||
+      result.body.sources.length < 2 ||
+      result.body.sources.length > MAX_ACCOUNTS
+    )
+      return error(request, 422, "invalid_history", "Send histories and source revisions");
+    const claims = result.body.sources as Array<HistoryCombineSource & Record<string, unknown>>;
+    if (
+      claims.some(
+        (value) =>
+          !value ||
+          !exactKeys(value, ["accountKey", "revision"]) ||
+          !historyCloudAccountKeyValid(value.accountKey) ||
+          (value.revision !== null && (!sequence(value.revision) || value.revision === 0)),
+      ) ||
+      new Set(claims.map((value) => value.accountKey)).size !== claims.length ||
+      !claims.some((value) => value.accountKey === key && value.revision !== null)
+    )
+      return error(request, 422, "invalid_history", "Send source revisions");
+    const histories = result.body.histories.map((value) => parseCloudHistory(value, key));
+    if (!histories.length || new Set(histories.map((value) => value.source.server)).size !== 1)
+      return error(request, 422, "invalid_history", "Send one server's histories");
+    const row = await readHistory(env, userId, key);
+    if (!row || row.accountKey !== key || row.server !== histories[0]!.source.server)
+      return error(request, 409, "history_merge_conflict", "Sync histories again");
+    const historyJson = JSON.stringify({ schema: HISTORY_CLOUD_SCHEMA, histories });
+    if (new TextEncoder().encode(historyJson).byteLength > HISTORY_CLOUD_BYTES)
+      return error(request, 413, "history_too_large", "Cloud history exceeds 1 MiB");
+    const now = Date.now();
+    try {
+      const written = await env.DB.prepare(
+        `INSERT INTO account_gacha_history_combine(id, user_id, canonical_key, sources_json, history_json, created_at)
+        SELECT ?, ?, ?, ?, ?, ? WHERE ${writableOwner}`,
+      )
+        .bind(
+          crypto.randomUUID(),
+          userId,
+          key,
+          JSON.stringify(claims),
+          historyJson,
+          now,
+          userId,
+          token,
+          new Date(now).toISOString(),
+          now,
+        )
+        .run();
+      if (!written.meta.changes) return error(request, 409, "history_session_expired", "Sign in again");
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.includes("history_merge_conflict"))
+        return error(request, 409, "history_merge_conflict", "Sync histories again");
+      throw cause;
+    }
+    return json(request, (await readGachaHistory(env, userId, key))!);
+  }
   let incoming: HistorySnapshot | undefined;
   let completed = 0;
   if (refresh) {
@@ -156,12 +267,21 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
   for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
     const row = await readHistory(env, userId, key);
     if (refresh && !row) return error(request, 404, "history_not_found", "History not found");
-    const stored: StoredCloudHistory = row ? storedHistory(row, key) : { schema: HISTORY_CLOUD_SCHEMA, histories: [] };
+    const stored: StoredCloudHistory = row
+      ? storedHistory(row, row.accountKey)
+      : { schema: HISTORY_CLOUD_SCHEMA, histories: [] };
     if (row && incoming && row.server !== incoming.source.server)
       return error(request, 409, "history_server_mismatch", "History belongs to another server");
     const requested = (row?.refreshRequested ?? 0) + (refresh ? 1 : 0);
     if (completed > requested) return error(request, 422, "invalid_refresh", "Refresh request is no longer current");
-    const historyJson = incoming ? JSON.stringify(mergeCloudHistory(stored, incoming)) : row!.historyJson;
+    const historyJson = incoming
+      ? JSON.stringify(
+          mergeCloudHistory(stored, {
+            ...incoming,
+            source: { ...incoming.source, accountKey: row?.accountKey ?? key },
+          }),
+        )
+      : row!.historyJson;
     if (new TextEncoder().encode(historyJson).byteLength > HISTORY_CLOUD_BYTES)
       return error(request, 413, "history_too_large", "Cloud history exceeds 1 MiB");
     const refreshCompleted = Math.max(row?.refreshCompleted ?? 0, completed);
@@ -171,19 +291,33 @@ async function routeGachaHistoryRequest(request: Request, env: Env): Promise<Res
     const guard = [userId, token, new Date(now).toISOString(), now];
     const statement = row
       ? env.DB.prepare(
-          `UPDATE account_gacha_history SET history_json = ?, revision = revision + 1, updated_at = ?, refresh_requested = ?, refresh_completed = ? WHERE user_id = ? AND account_key = ? AND revision = ? AND ${writableOwner} RETURNING ${columns}`,
-        ).bind(historyJson, now, requested, refreshCompleted, userId, key, row.revision, ...guard)
+          `UPDATE account_gacha_history SET history_json = ?, revision = revision + 1, updated_at = ?, refresh_requested = ?, refresh_completed = ? WHERE user_id = ? AND account_key = ? AND revision = ? AND ${canonicalSql} = account_key AND ${writableOwner} RETURNING ${columns}`,
+        ).bind(
+          historyJson,
+          now,
+          requested,
+          refreshCompleted,
+          userId,
+          row.accountKey,
+          row.revision,
+          userId,
+          key,
+          key,
+          ...guard,
+        )
       : env.DB.prepare(
-          `INSERT INTO account_gacha_history(user_id, account_key, server, history_json, revision, updated_at, refresh_requested, refresh_completed) SELECT ?, ?, ?, ?, 1, ?, 0, 0 WHERE ${writableOwner} AND (SELECT COUNT(*) FROM account_gacha_history WHERE user_id = ?) < ? ON CONFLICT(user_id, account_key) DO NOTHING RETURNING ${columns}`,
-        ).bind(userId, key, incoming!.source.server, historyJson, now, ...guard, userId, MAX_ACCOUNTS);
+          `INSERT INTO account_gacha_history(user_id, account_key, server, history_json, revision, updated_at, refresh_requested, refresh_completed) SELECT ?, ?, ?, ?, 1, ?, 0, 0 WHERE ${writableOwner} AND NOT EXISTS (SELECT 1 FROM account_gacha_history_alias WHERE user_id = ? AND alias_key = ?) AND (SELECT COUNT(*) FROM account_gacha_history h WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM account_gacha_history_alias a WHERE a.user_id = h.user_id AND a.alias_key = h.account_key)) < ? ON CONFLICT(user_id, account_key) DO NOTHING RETURNING ${columns}`,
+        ).bind(userId, key, incoming!.source.server, historyJson, now, ...guard, userId, key, userId, MAX_ACCOUNTS);
     const written = await statement.first<HistoryRow>();
-    if (written) return json(request, document(userId, written, key));
+    if (written) return json(request, document(userId, { ...written, aliasesJson: row?.aliasesJson ?? "[]" }, key));
     const refreshed = await requireAccess(request, env, true);
     if (!refreshed.ok) return refreshed.response;
     if (
       !row &&
       !(await readHistory(env, userId, key)) &&
-      (await env.DB.prepare("SELECT COUNT(*) AS count FROM account_gacha_history WHERE user_id = ?")
+      (await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM account_gacha_history h WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM account_gacha_history_alias a WHERE a.user_id = h.user_id AND a.alias_key = h.account_key)",
+      )
         .bind(userId)
         .first<{ count: number }>())!.count >= MAX_ACCOUNTS
     )

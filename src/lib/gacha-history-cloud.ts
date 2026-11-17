@@ -11,6 +11,7 @@ import {
   parseStoredCloudHistory,
   type HistoryCloudDocument,
   type HistoryCloudSummary,
+  type HistoryCombineSource,
 } from "./gacha-history-cloud-data";
 import { HISTORY_REGIONS, historyObject, parseHistory } from "@haneoka/game-data-exporter/gacha-history";
 import { JsonResponseError } from "../lit/shared/catalog";
@@ -60,6 +61,9 @@ function summary(value: HistoryCloudSummary): HistoryCloudSummary {
     !value ||
     !historyCloudAccountKeyValid(value.accountKey) ||
     !HISTORY_REGIONS.includes(value.server) ||
+    (value.canonicalAccountKey !== undefined && !historyCloudAccountKeyValid(value.canonicalAccountKey)) ||
+    (value.aliases !== undefined &&
+      (!Array.isArray(value.aliases) || value.aliases.some((key) => !historyCloudAccountKeyValid(key)))) ||
     ![value.revision, value.updatedAt, value.refreshRequested, value.refreshCompleted].every(
       (n) => Number.isSafeInteger(n) && n >= 0,
     ) ||
@@ -68,6 +72,8 @@ function summary(value: HistoryCloudSummary): HistoryCloudSummary {
     throw new HistoryCloudError("invalid_history", 422);
   return {
     accountKey: value.accountKey,
+    ...(value.canonicalAccountKey ? { canonicalAccountKey: value.canonicalAccountKey } : {}),
+    aliases: value.aliases ?? [],
     server: value.server,
     revision: value.revision,
     updatedAt: value.updatedAt,
@@ -158,6 +164,26 @@ export class HistoryCloudClient {
       await this.request("POST", accountKey, "", cloudHistoryUpload(payload, completedRequest)),
       accountKey,
     );
+  }
+
+  async combine(
+    accountKey: string,
+    histories: unknown[],
+    sources: HistoryCombineSource[],
+  ): Promise<HistoryCloudDocument> {
+    return document(await this.request("POST", accountKey, "/combine", { histories, sources }), accountKey);
+  }
+
+  async originals(accountKey: string): Promise<HistoryCloudDocument[]> {
+    const result = await this.request<{ sources: Array<{ accountKey: string }> }>("GET", accountKey, "/sources");
+    const documents: HistoryCloudDocument[] = [];
+    for (const source of result.sources) {
+      if (!historyCloudAccountKeyValid(source.accountKey)) throw new HistoryCloudError("invalid_history", 422);
+      documents.push(
+        document(await this.request("GET", accountKey, `/sources/${source.accountKey}`), source.accountKey),
+      );
+    }
+    return documents;
   }
 
   async requestRefresh(accountKey: string): Promise<HistoryCloudDocument> {

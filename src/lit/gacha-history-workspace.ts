@@ -8,6 +8,7 @@ import "./gacha-history";
 import { clientText } from "../i18n/client";
 import { readPageData } from "../lib/page-data";
 import { historyStore, type StoredHistory } from "../lib/gacha-history-store";
+import { historyMatchCards } from "../lib/gacha-history-merge";
 import { HistoryCloudSync } from "../lib/gacha-history-cloud-sync";
 import {
   HISTORY_BYTES,
@@ -57,12 +58,15 @@ class GachaHistoryWorkspace extends HTMLElement {
   };
   private cloudChanged = () => {
     this.records = this.cloud.visibleRecords();
-    if (!this.records.some((row) => row.key === this.selected)) this.selected = this.records[0]?.key ?? "";
+    if (!this.records.some((row) => row.key === this.selected))
+      this.selected =
+        this.records.find((row) => row.aliases?.includes(this.selected))?.key ?? this.records[0]?.key ?? "";
     if (this.isConnected) this.update();
   };
   connectedCallback() {
     this.controller = new AbortController();
     this.catalog = readPageData<GachaHistoryPageData>(this);
+    this.configureReconciliation();
     if (import.meta.env.DEV && new URL(location.href).searchParams.get("preview") === "1" && this.catalog) {
       void import("./gacha-history-preview").then(({ mountGachaHistoryPreview }) =>
         mountGachaHistoryPreview(this.view, this.catalog!),
@@ -75,8 +79,12 @@ class GachaHistoryWorkspace extends HTMLElement {
       this.error = "";
       this.update();
     });
-    this.on("gacha-history-merge", ({ accountKeys, confirmIdentity }) => { void this.merge(accountKeys, confirmIdentity); });
-    this.on("gacha-history-originals", ({ accountKey }) => { void this.originals(accountKey); });
+    this.on("gacha-history-merge", ({ accountKeys, confirmIdentity }) => {
+      void this.merge(accountKeys, confirmIdentity);
+    });
+    this.on("gacha-history-originals", ({ accountKey }) => {
+      void this.originals(accountKey);
+    });
     this.on("gacha-history-kind-change", ({ historyKind }) => {
       this.selectedKind = historyKind;
       this.update();
@@ -190,14 +198,25 @@ class GachaHistoryWorkspace extends HTMLElement {
       signal: this.controller.signal,
     });
   }
+  private configureReconciliation() {
+    const variants = this.catalog?.variants;
+    const cards = historyMatchCards({ jp: variants?.jp?.metadata, intl: variants?.intl?.metadata });
+    historyStore.configure(cards);
+    this.cloud.configure(cards);
+  }
   private async reload() {
     try {
+      await historyStore.reconcile().catch(() => {
+        this.error = this.t("mergeFailed");
+      });
       const records = await historyStore.list();
-      this.localKeys = new Set(records.map(row => row.key));
-      this.localIdentities = new Map(records.map(row => [row.key, row.snapshot.source.accountKey]));
+      this.localKeys = new Set(records.map((row) => row.key));
+      this.localIdentities = new Map(records.map((row) => [row.key, row.snapshot.source.accountKey]));
       this.cloud.setLocal(records);
       this.records = this.cloud.visibleRecords();
-      if (!this.records.some((row) => row.key === this.selected)) this.selected = this.records[0]?.key ?? "";
+      if (!this.records.some((row) => row.key === this.selected))
+        this.selected =
+          this.records.find((row) => row.aliases?.includes(this.selected))?.key ?? this.records[0]?.key ?? "";
     } catch {
       this.error = this.t("errorImportInvalid");
     }
@@ -205,36 +224,69 @@ class GachaHistoryWorkspace extends HTMLElement {
   }
   private async merge(keys: string[], confirmIdentity = false) {
     if (this.busy) return;
-    this.busy = true; this.error = ""; this.update();
+    this.busy = true;
+    this.error = "";
+    this.update();
     try {
       const owner = this.cloud.ownerId;
-      const linked = keys.some(key => this.cloud.isLinked(key));
-      const preferred = keys.find(key => this.cloud.isLinked(key)) ?? this.selected;
-      const record = await historyStore.merge(keys, preferred, this.records, confirmIdentity, () => this.cloud.ownerId === owner && this.isConnected);
-      this.selected = record.key; this.selectedKind = "";
+      const linked = keys.some((key) => this.cloud.isLinked(key));
+      const preferred = keys.find((key) => this.cloud.isLinked(key)) ?? this.selected;
+      const record = await historyStore.merge(
+        keys,
+        preferred,
+        this.records,
+        confirmIdentity,
+        () => this.cloud.ownerId === owner && this.isConnected,
+      );
+      this.selected = record.key;
+      this.selectedKind = "";
       await this.reload();
       if (this.cloud.ownerId === owner) {
         if (linked && !this.cloud.isLinked(record.key)) await this.cloud.setLinked(record.key, true);
         void this.cloud.sync();
       }
     } catch (error) {
-      const key = error instanceof Error ? ({ history_merge_identity: "mergeIdentityError", history_merge_server: "mergeServerError",
-        history_merge_selection: "mergeSelectionError", history_merge_owner_changed: "mergeOwnerChanged", history_merge_budget: "mergeBudgetError" } as Record<string, string>)[error.message] : undefined;
+      const key =
+        error instanceof Error
+          ? (
+              {
+                history_merge_identity: "mergeIdentityError",
+                history_merge_server: "mergeServerError",
+                history_merge_selection: "mergeSelectionError",
+                history_merge_owner_changed: "mergeOwnerChanged",
+                history_merge_budget: "mergeBudgetError",
+              } as Record<string, string>
+            )[error.message]
+          : undefined;
       this.error = this.t(key ?? "mergeFailed");
-    } finally { this.busy = false; if (this.isConnected) this.update(); }
+    } finally {
+      this.busy = false;
+      if (this.isConnected) this.update();
+    }
   }
   private async originals(key: string) {
     try {
-      const record = (await historyStore.list()).find(row => row.key === key);
-      if (!record?.mergeSources?.length) return;
+      const record = this.records.find((row) => row.key === key);
+      const cloud = await this.cloud.originals(key);
+      const sources = [
+        ...(record?.mergeSources ?? []),
+        ...cloud.map((row) => ({ snapshot: row.histories[0], histories: row.histories })),
+      ];
+      if (!sources.length) return;
       const { strToU8, zipSync } = await import("fflate");
       const files: Record<string, Uint8Array> = {};
-      for (const [index, source] of record.mergeSources.entries()) for (const history of source.histories ?? [source.snapshot]) {
-        const value = parseHistory(history);
-        files[`${index + 1}-${value.historyKind.replace(/[^a-z0-9-]/giu, "-")}.json`] = strToU8(JSON.stringify(value));
-      }
+      for (const [index, source] of sources.entries())
+        for (const history of source.histories ?? [source.snapshot]) {
+          const value = parseHistory(history);
+          files[`${index + 1}-${value.historyKind.replace(/[^a-z0-9-]/giu, "-")}.json`] = strToU8(
+            JSON.stringify(value),
+          );
+        }
       downloadBlob(new Blob([zipSync(files)], { type: "application/zip" }), "haneoka-gacha-originals.zip");
-    } catch { this.error = this.t("originalExportFailed"); if (this.isConnected) this.update(); }
+    } catch {
+      this.error = this.t("originalExportFailed");
+      if (this.isConnected) this.update();
+    }
   }
   private source(source: GachaHistoryImportSource) {
     if (source === "saved") {
@@ -280,7 +332,9 @@ class GachaHistoryWorkspace extends HTMLElement {
       await this.reload();
       void this.cloud.sync();
     } catch (error) {
-      this.error = this.t(error instanceof Error && error.message === "history_merge_budget" ? "mergeBudgetError" : "errorImportInvalid");
+      this.error = this.t(
+        error instanceof Error && error.message === "history_merge_budget" ? "mergeBudgetError" : "errorImportInvalid",
+      );
     } finally {
       this.busy = false;
       if (this.isConnected) this.update();
@@ -363,6 +417,8 @@ class GachaHistoryWorkspace extends HTMLElement {
           },
         },
       };
+      this.configureReconciliation();
+      await this.reload();
     } catch {
       this.catalogErrors.set(server, this.t("errorCatalogUnavailable"));
     } finally {
@@ -380,28 +436,36 @@ class GachaHistoryWorkspace extends HTMLElement {
     const catalog: HistoryCatalogData | undefined =
       source?.metadata.schema === "haneoka-gacha-history-data-v1" ? source : undefined;
     view.accounts = this.records.map((row) => {
-      let first = Infinity, last = -Infinity;
-      for (const history of row.histories ?? [row.snapshot]) for (const batch of history.batches) if (batch.executedAt !== null) {
-        first = Math.min(first, batch.executedAt); last = Math.max(last, batch.executedAt);
-      }
-      const date = (value: number) => formatDate(view.locale, value * 1000 + historyOffsetMinutes(row.snapshot.source.server) * 60000, { timeZone: "UTC" });
-      return ({
-      key: row.key,
-      server: row.snapshot.source.server,
-      offsetMinutes: historyOffsetMinutes(row.snapshot.source.server),
-      serverLabel: this.t(
-        { jp: "regionJp", "global-hmt": "regionHmt", "global-en": "regionEn", "global-kr": "regionKo" }[
-          row.snapshot.source.server
-        ],
-      ),
-      label: formatDate(view.locale, row.snapshot.queriedAt, { time: true }),
-      identity: this.localKeys.has(row.key) ? this.localIdentities.get(row.key) : row.snapshot.source.accountKey,
-      canMerge: true,
-      local: this.localKeys.has(row.key),
-      sourceCount: row.mergeSources?.length ?? 0,
-      batches: (row.histories ?? [row.snapshot]).reduce((count, history) => count + history.batches.length, 0),
-      range: Number.isFinite(first) ? `${date(first)} – ${date(last)}` : undefined,
-    }); });
+      let first = Infinity,
+        last = -Infinity;
+      for (const history of row.histories ?? [row.snapshot])
+        for (const batch of history.batches)
+          if (batch.executedAt !== null) {
+            first = Math.min(first, batch.executedAt);
+            last = Math.max(last, batch.executedAt);
+          }
+      const date = (value: number) =>
+        formatDate(view.locale, value * 1000 + historyOffsetMinutes(row.snapshot.source.server) * 60000, {
+          timeZone: "UTC",
+        });
+      return {
+        key: row.key,
+        server: row.snapshot.source.server,
+        offsetMinutes: historyOffsetMinutes(row.snapshot.source.server),
+        serverLabel: this.t(
+          { jp: "regionJp", "global-hmt": "regionHmt", "global-en": "regionEn", "global-kr": "regionKo" }[
+            row.snapshot.source.server
+          ],
+        ),
+        label: formatDate(view.locale, row.snapshot.queriedAt, { time: true }),
+        identity: this.localKeys.has(row.key) ? this.localIdentities.get(row.key) : row.snapshot.source.accountKey,
+        canMerge: true,
+        local: this.cloud.hasLocal(row.key),
+        sourceCount: row.mergeSources?.length || row.aliases?.length || 0,
+        batches: (row.histories ?? [row.snapshot]).reduce((count, history) => count + history.batches.length, 0),
+        range: Number.isFinite(first) ? `${date(first)} – ${date(last)}` : undefined,
+      };
+    });
     view.selectedAccountKey = this.selected;
     view.historyKinds = (current?.histories ?? (snapshot ? [snapshot] : [])).map((row) => row.historyKind);
     view.selectedHistoryKind = snapshot?.historyKind ?? "";

@@ -1,11 +1,12 @@
 // L3 — GEB
 // Input: 原本地记录、现有 Haneoka 会话与显式同步许可。
-// Output: 当前 owner 的可见合并视图、显式本地别名投影及前台云同步。
+// Output: 当前 owner 的自动归并视图、原始备份导出及前台云同步。
 // Pos: [Map](L2-2.md)；抽卡历史账号同步边界。
 // Effects/Dependencies: 读写独立 IndexedDB 云区并发 HTTP；上传只取原本地快照，无后台轮询。
 import { fetchJson } from "../lit/shared/catalog";
 import { historyStore, type HistoryCloudLink, type StoredHistory } from "./gacha-history-store";
-import { mergeHistoryCollection } from "./gacha-history-data";
+import { mergeAccountHistories, type HistoryMatchCards, type HistoryAccountRecord } from "./gacha-history-merge";
+import { reconcileHistories } from "./gacha-history-reconcile";
 import {
   HistoryCloudClient,
   HistoryCloudError,
@@ -20,6 +21,32 @@ export class HistoryCloudSync extends EventTarget {
   busy = false;
   errorCode = "";
   private documents = new Map<string, HistoryCloudDocument>();
+  private cards: HistoryMatchCards = {};
+  private matches = new Map<string, string>();
+  configure(cards: HistoryMatchCards) {
+    this.cards = cards;
+  }
+  canonicalKey(key: string): string {
+    const aliases = new Map<string, string>();
+    for (const record of this.local) for (const alias of record.aliases ?? []) aliases.set(alias, record.key);
+    if (this.ownerId)
+      for (const row of this.documents.values())
+        for (const alias of row.aliases ?? []) aliases.set(alias, row.accountKey);
+    for (const [alias, target] of this.matches) if (!aliases.has(alias)) aliases.set(alias, target);
+    const seen = new Set<string>();
+    while (aliases.has(key) && !seen.has(key)) {
+      seen.add(key);
+      key = aliases.get(key)!;
+    }
+    return key;
+  }
+  hasLocal(key: string): boolean {
+    return this.local.some((row) => this.canonicalKey(row.key) === this.canonicalKey(key));
+  }
+  private linkedKeys(key: string): string[] {
+    const canonical = this.canonicalKey(key);
+    return [...this.links.keys()].filter((value) => this.canonicalKey(value) === canonical);
+  }
   private links = new Map<string, HistoryCloudLink>();
   private local: StoredHistory[] = [];
   private generation = 0;
@@ -37,7 +64,9 @@ export class HistoryCloudSync extends EventTarget {
         signal: AbortSignal.any([this.lifetime.signal, ...(init?.signal ? [init.signal] : [])]),
       }),
   });
+  private viewCache?: StoredHistory[];
   private changed() {
+    this.viewCache = undefined;
     this.dispatchEvent(new Event("change"));
   }
   private guard(owner: string, generation: number) {
@@ -49,32 +78,127 @@ export class HistoryCloudSync extends EventTarget {
     this.changed();
   }
   isLinked(key: string): boolean {
-    return !!this.ownerId && this.links.has(key);
+    return !!this.ownerId && this.linkedKeys(key).length > 0;
   }
   refreshPending(key: string): boolean {
-    const row = this.ownerId ? this.documents.get(key) : undefined;
+    const row = this.ownerId ? this.documents.get(this.canonicalKey(key)) : undefined;
     return !!row && row.refreshRequested > row.refreshCompleted;
   }
   visibleRecords(): StoredHistory[] {
-    const records = new Map(this.local.map((record) => [record.key, record]));
-    const aliases = new Map(this.local.flatMap(record => (record.aliases ?? []).map(key => [key, record.key] as const)));
+    if (this.viewCache) return this.viewCache;
+    const records = new Map<string, StoredHistory>();
+    const add = (record: StoredHistory) => {
+      const key = this.canonicalKey(record.key),
+        previous = records.get(key);
+      const histories = mergeAccountHistories(
+        [
+          ...(previous ? [{ key, histories: previous.histories ?? [previous.snapshot] }] : []),
+          { key: record.key, histories: record.histories ?? [record.snapshot] },
+        ],
+        key,
+      );
+      records.set(key, {
+        ...previous,
+        ...record,
+        key,
+        histories,
+        snapshot: histories[0],
+        aliases: [
+          ...new Set([
+            ...(previous?.aliases ?? []),
+            ...(record.aliases ?? []),
+            ...(key === record.key ? [] : [record.key]),
+          ]),
+        ],
+        mergeSources: [...(previous?.mergeSources ?? []), ...(record.mergeSources ?? [])],
+      });
+    };
+    for (const record of this.local) add(record);
     if (this.ownerId)
-      for (const document of this.documents.values()) {
-        const key = aliases.get(document.accountKey) ?? document.accountKey;
-        const previous = records.get(key);
-        if (previous && previous.snapshot.source.server !== document.server) continue;
-        let histories = previous?.histories ?? (previous ? [previous.snapshot] : []);
-        for (const incoming of document.histories) histories = mergeHistoryCollection(histories,
-          key === document.accountKey ? incoming : { ...incoming, source: { ...incoming.source, accountKey: previous?.snapshot.source.accountKey ?? key } });
-        if (histories.length)
-          records.set(key, { ...previous, key, snapshot: histories[0], histories });
+      for (const row of this.documents.values())
+        add({ key: row.accountKey, snapshot: row.histories[0], histories: row.histories, aliases: row.aliases });
+    return (this.viewCache = [...records.values()].sort(
+      (a, b) => Date.parse(b.snapshot.queriedAt) - Date.parse(a.snapshot.queriedAt),
+    ));
+  }
+  async originals(key: string): Promise<HistoryCloudDocument[]> {
+    const canonical = this.canonicalKey(key);
+    return this.ownerId && this.documents.has(canonical) ? this.client.originals(canonical) : [];
+  }
+  private async reconcile(owner: string, generation: number) {
+    const records = new Map<string, HistoryAccountRecord>();
+    const add = (key: string, histories: HistoryAccountRecord["histories"]) => {
+      key = this.canonicalKey(key);
+      const previous = records.get(key);
+      records.set(key, {
+        key,
+        ownerId: owner,
+        histories: mergeAccountHistories([...(previous ? [previous] : []), { key, histories }], key),
+      });
+    };
+    for (const row of this.documents.values()) add(row.accountKey, row.histories);
+    for (const row of this.local) add(row.key, row.histories ?? [row.snapshot]);
+    const groups = await reconcileHistories([...records.values()], this.cards).catch((error) => {
+      this.guard(owner, generation);
+      this.errorCode = historyCloudErrorCode(error);
+      return [];
+    });
+    this.guard(owner, generation);
+    for (const group of groups) {
+      const remote = group.keys.flatMap((key) => (this.documents.has(key) ? [this.documents.get(key)!] : []));
+      const canonical = remote[0]?.accountKey ?? group.keys[0];
+      const linked = group.keys.some((key) => this.isLinked(key));
+      const local = linked ? this.local.filter((row) => group.keys.includes(this.canonicalKey(row.key))) : [];
+      const sources = new Map(
+        remote.map((row) => [row.accountKey, { accountKey: row.accountKey, revision: row.revision as number | null }]),
+      );
+      for (const row of local) {
+        const key = this.canonicalKey(row.key);
+        if (!sources.has(key)) sources.set(key, { accountKey: key, revision: null });
       }
-    return [...records.values()].sort((a, b) => Date.parse(b.snapshot.queriedAt) - Date.parse(a.snapshot.queriedAt));
+      if (remote.length && sources.size > 1) {
+        const histories = mergeAccountHistories(
+          [
+            ...remote.map((row) => ({ key: row.accountKey, histories: row.histories })),
+            ...local.map((row) => ({ key: row.key, histories: row.histories ?? [row.snapshot] })),
+          ],
+          canonical,
+        );
+        const document = await this.client.combine(canonical, histories, [...sources.values()]);
+        this.guard(owner, generation);
+        await this.accept(document, owner, generation);
+      }
+      for (const key of group.keys) if (key !== canonical) this.matches.set(key, canonical);
+    }
+    for (const row of [...this.documents.values()]) {
+      if (!this.isLinked(row.accountKey)) continue;
+      const local = this.local.filter((value) => this.canonicalKey(value.key) === row.accountKey);
+      const known = new Set([row.accountKey, ...(row.aliases ?? [])]);
+      const unknown = [...new Set(local.flatMap((value) => [value.key, ...(value.aliases ?? [])]))].filter(
+        (key) => !known.has(key),
+      );
+      if (!unknown.length) continue;
+      const histories = mergeAccountHistories(
+        [
+          { key: row.accountKey, histories: row.histories },
+          ...local.map((value) => ({ key: value.key, histories: value.histories ?? [value.snapshot] })),
+        ],
+        row.accountKey,
+      );
+      const sources = [
+        { accountKey: row.accountKey, revision: row.revision },
+        ...unknown.map((accountKey) => ({ accountKey, revision: null })),
+      ];
+      this.guard(owner, generation);
+      await this.accept(await this.client.combine(row.accountKey, histories, sources), owner, generation);
+    }
+    this.changed();
   }
   private revoke = () => {
     this.generation++;
     this.ownerId = null;
     this.documents.clear();
+    this.matches.clear();
     this.links.clear();
     this.busy = false;
     this.errorCode = "";
@@ -101,6 +225,7 @@ export class HistoryCloudSync extends EventTarget {
     this.lifetime.abort();
     this.ownerId = null;
     this.documents.clear();
+    this.matches.clear();
     this.links.clear();
     this.busy = false;
     this.sessionRead = undefined;
@@ -122,6 +247,7 @@ export class HistoryCloudSync extends EventTarget {
         this.generation++;
         this.ownerId = null;
         this.documents.clear();
+        this.matches.clear();
         this.links.clear();
         this.changed();
         throw error;
@@ -132,6 +258,7 @@ export class HistoryCloudSync extends EventTarget {
       this.generation++;
       this.ownerId = owner;
       this.documents.clear();
+      this.matches.clear();
       this.links.clear();
       this.busy = false;
       this.errorCode = "";
@@ -148,6 +275,7 @@ export class HistoryCloudSync extends EventTarget {
         }
         this.guard(owner, current);
         this.documents = new Map(cached.documents.map((row) => [row.accountKey, row]));
+        for (const row of this.documents.values()) for (const alias of row.aliases ?? []) this.documents.delete(alias);
         this.links = new Map(cached.links.map((row) => [row.accountKey, row]));
         this.changed();
       }
@@ -193,19 +321,19 @@ export class HistoryCloudSync extends EventTarget {
       this.fail(new HistoryCloudError("authentication_required", 401));
       return;
     }
-    const previous = this.links.get(key);
+    const previous = this.linkedKeys(key).flatMap((value) => (this.links.has(value) ? [this.links.get(value)!] : []));
     if (!linked) {
-      this.links.delete(key);
+      for (const value of previous) this.links.delete(value.accountKey);
       this.changed();
     }
     try {
       if (!linked) {
-        if (previous) await historyStore.unlinkCloud(owner, key, previous.grantId);
+        for (const value of previous) await historyStore.unlinkCloud(owner, value.accountKey, value.grantId);
         return;
       }
       await this.session();
       this.guard(owner, generation);
-      if (!this.local.some((record) => record.key === key) && !this.documents.has(key))
+      if (!this.hasLocal(key) && !this.documents.has(this.canonicalKey(key)))
         throw new HistoryCloudError("history_account_mismatch", 409);
       if (linked) {
         const link: HistoryCloudLink = { ownerId: owner, accountKey: key, grantId: crypto.randomUUID(), uploaded: {} };
@@ -236,12 +364,12 @@ export class HistoryCloudSync extends EventTarget {
       await this.session();
       this.guard(owner, generation);
       if (this.busy) return;
-      if (!this.links.has(key)) throw new HistoryCloudError("history_account_mismatch", 409);
+      if (!this.isLinked(key)) throw new HistoryCloudError("history_account_mismatch", 409);
       started = true;
       this.busy = true;
       this.errorCode = "";
       this.changed();
-      const document = await this.client.requestRefresh(key);
+      const document = await this.client.requestRefresh(this.canonicalKey(key));
       this.guard(owner, generation);
       await this.accept(document, owner, generation);
     } catch (error) {
@@ -255,8 +383,21 @@ export class HistoryCloudSync extends EventTarget {
   }
   private async accept(document: HistoryCloudDocument, owner: string, generation: number) {
     this.guard(owner, generation);
+    if (document.canonicalAccountKey) {
+      const key = document.canonicalAccountKey;
+      document = {
+        ...document,
+        accountKey: key,
+        canonicalAccountKey: undefined,
+        histories: document.histories.map((history) => ({
+          ...history,
+          source: { ...history.source, accountKey: key },
+        })),
+      };
+    }
     await historyStore.saveCloud(document);
     this.guard(owner, generation);
+    for (const key of document.aliases ?? []) this.documents.delete(key);
     this.documents.set(document.accountKey, document);
     this.changed();
   }
@@ -286,25 +427,43 @@ export class HistoryCloudSync extends EventTarget {
           const summaries = await this.client.list();
           this.guard(owner, generation);
           for (const summary of summaries) {
-            if ((this.documents.get(summary.accountKey)?.revision ?? -1) >= summary.revision) continue;
+            const cached = this.documents.get(summary.accountKey);
+            if (cached && cached.revision >= summary.revision) {
+              if (JSON.stringify(cached.aliases) !== JSON.stringify(summary.aliases))
+                await this.accept({ ...cached, ...summary }, owner, generation);
+              continue;
+            }
             const document = await this.client.read(summary.accountKey);
             this.guard(owner, generation);
             await this.accept(document, owner, generation);
           }
+          await this.reconcile(owner, generation);
+          const uploads = new Map<string, StoredHistory[]>();
           for (const record of this.local) {
-            const initialLink = this.links.get(record.key);
+            const key = this.canonicalKey(record.key);
+            const group = uploads.get(key) ?? [];
+            group.push(record);
+            uploads.set(key, group);
+          }
+          for (const [key, records] of uploads) {
+            const grantKey = this.linkedKeys(key)[0];
+            const initialLink = this.links.get(grantKey);
             if (!initialLink) continue;
             let link: HistoryCloudLink = initialLink;
-            for (const snapshot of record.histories ?? [record.snapshot]) {
-              if (this.links.get(record.key) !== link) break;
+            const histories = mergeAccountHistories(
+              records.map((row) => ({ key: row.key, histories: row.histories ?? [row.snapshot] })),
+              key,
+            );
+            for (const snapshot of histories) {
+              if (this.links.get(grantKey) !== link) break;
               const digest = await this.digest(snapshot);
               this.guard(owner, generation);
-              if (this.links.get(record.key) !== link) break;
+              if (this.links.get(grantKey) !== link) break;
               if (link.uploaded[snapshot.historyKind] === digest) continue;
-              const document = await this.client.upload(record.key, snapshot);
+              const document = await this.client.upload(key, snapshot);
               this.guard(owner, generation);
               await this.accept(document, owner, generation);
-              if (this.links.get(record.key) !== link) break;
+              if (this.links.get(grantKey) !== link) break;
               const updated: HistoryCloudLink = {
                 ...link,
                 uploaded: { ...link.uploaded, [snapshot.historyKind]: digest },
@@ -312,13 +471,12 @@ export class HistoryCloudSync extends EventTarget {
               const captured = link;
               await historyStore.saveCloudLink(
                 updated,
-                () =>
-                  this.ownerId === owner && this.generation === generation && this.links.get(record.key) === captured,
+                () => this.ownerId === owner && this.generation === generation && this.links.get(grantKey) === captured,
                 true,
               );
               this.guard(owner, generation);
-              if (this.links.get(record.key) !== link) break;
-              this.links.set(record.key, updated);
+              if (this.links.get(grantKey) !== link) break;
+              this.links.set(grantKey, updated);
               link = updated;
             }
           }

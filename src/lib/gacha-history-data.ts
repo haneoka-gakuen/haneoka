@@ -19,6 +19,7 @@ import { cardRarityName } from "./card-rarity";
 import { compileGachaLuckRules, type GachaLuckRules, type GachaLuckLaw } from "./gacha-history-luck";
 
 export * from "@haneoka/game-data-exporter/gacha-history";
+export { mergeHistoryCollection } from "./gacha-history-merge";
 
 export interface HistoryCatalogData {
   server?: string;
@@ -270,10 +271,7 @@ export function historyBatchViews(
       const pool = historyObject(poolMap[batch.poolId ?? ""]),
         groups = pool.prizeGroupIds;
       const rarity = typeof card.rarity === "number" || typeof card.rarity === "string" ? card.rarity : "";
-      const rarityLabel =
-        type === 1
-          ? ""
-          : cardRarityName(rarity) || unknown;
+      const rarityLabel = type === 1 ? "" : cardRarityName(rarity) || unknown;
       const attribute = ["", "Red", "Blue", "Green", "Yellow", "Purple"][Number(card.cardType)];
       return {
         id: id || `prize:${prize.prizeId}`,
@@ -305,19 +303,31 @@ export function historyBatchViews(
 }
 
 const luckRules = new WeakMap<HistoryCatalogData, GachaLuckRules>();
-export function historyBatchLuckLaw(catalog: HistoryCatalogData | undefined, poolId: string | null, productId: string | null, draws: number): GachaLuckLaw | undefined {
+export function historyBatchLuckLaw(
+  catalog: HistoryCatalogData | undefined,
+  poolId: string | null,
+  productId: string | null,
+  draws: number,
+): GachaLuckLaw | undefined {
   if (!catalog) return;
   let compiled = catalog.luckRules ?? luckRules.get(catalog);
-  if (!compiled) { compiled = compileGachaLuckRules(catalog.metadata); luckRules.set(catalog, compiled); }
+  if (!compiled) {
+    compiled = compileGachaLuckRules(catalog.metadata);
+    luckRules.set(catalog, compiled);
+  }
   const pool = compiled[poolId ?? ""];
   if (!pool) return;
   if (productId != null && Object.hasOwn(pool, productId)) return pool[productId] ?? undefined;
   const product = historyObject(historyObject(catalog.metadata.products)[productId ?? ""]);
-  const candidates = Object.entries(pool).filter(([id]) => {
-    const option = historyObject(historyObject(catalog.metadata.products)[id]);
-    return option.drawCount === (product.drawCount ?? draws);
-  }).map(([, law]) => law);
-  return candidates.length && candidates.every(law => law && law.key === candidates[0]?.key) ? candidates[0]! : undefined;
+  const candidates = Object.entries(pool)
+    .filter(([id]) => {
+      const option = historyObject(historyObject(catalog.metadata.products)[id]);
+      return option.drawCount === (product.drawCount ?? draws);
+    })
+    .map(([, law]) => law);
+  return candidates.length && candidates.every((law) => law && law.key === candidates[0]?.key)
+    ? candidates[0]!
+    : undefined;
 }
 
 function historyBatchExpectation(
