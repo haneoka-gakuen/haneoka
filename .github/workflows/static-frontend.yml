@@ -264,7 +264,9 @@ jobs:
           python scripts/publish/content_index.py
       - name: Resolve immutable entity projection recipe
         id: projection-identity
-        run: echo "key=$(node scripts/build/prepare-static-inputs.mjs cache-key)" >> "$GITHUB_OUTPUT"
+        run: |
+          key="$(node scripts/build/prepare-static-inputs.mjs cache-key)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Restore verified entity projections
         id: projection-cache
         uses: actions/cache/restore@v6
