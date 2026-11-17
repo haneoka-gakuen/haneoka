@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: AppShell geometry and page action labels, controls and priority.
+// Output: Responsive icon labels and an overflow menu preserving every action.
+// Pos: [Map](L2-2.md); shared title-bar fitting for static and hydrated controls.
+// Effects/Dependencies: Measures browser layout and updates action attributes; opens a proxy menu without moving source controls.
 /**
  * Top app bar overflow (Material 3): when a page's actions do not fit beside
  * the title, the trailing ones move into an overflow menu behind a ⋮ button
@@ -17,13 +22,23 @@ const TITLE_MAX_RESERVED = 160;
 
 const isInteractive = (node: Element) => node.matches("button, a[href], [role='button']");
 const labelOf = (node: Element): string =>
-  (node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "").replace(/\s+/gu, " ").trim();
+  (
+    node.getAttribute("aria-label") ||
+    node.getAttribute("data-aria-label") ||
+    node.getAttribute("title") ||
+    node.textContent ||
+    ""
+  )
+    .replace(/\s+/gu, " ")
+    .trim();
 
 const compactWindow = typeof matchMedia === "function" ? matchMedia("(max-width: 599px)") : undefined;
 
 /** Candidates in the order they overflow: entity arrows first, then page actions from the end. */
 function candidates(actions: HTMLElement): HTMLElement[] {
-  const secondary = [...actions.querySelectorAll<HTMLElement>(".top-app-bar__secondary-actions > [data-entity-navigation]")];
+  const secondary = [
+    ...actions.querySelectorAll<HTMLElement>(".top-app-bar__secondary-actions > [data-entity-navigation]"),
+  ];
   const page = [...actions.querySelectorAll<HTMLElement>(".top-app-bar__group > *")]
     .filter((node) => !node.matches("[data-app-bar-keep], [data-app-bar-search], .top-app-bar__overflow"))
     .reverse();
@@ -64,7 +79,10 @@ function menuEntries(actions: HTMLElement) {
     for (const control of node.querySelectorAll<HTMLElement>("button, a[href]")) {
       const label = labelOf(control);
       if (!label || control.matches(":disabled")) continue;
-      const pressed = control.getAttribute("aria-pressed") ?? control.getAttribute("aria-checked") ?? control.getAttribute("aria-selected");
+      const pressed =
+        control.getAttribute("aria-pressed") ??
+        control.getAttribute("aria-checked") ??
+        control.getAttribute("aria-selected");
       entries.push({
         label,
         icon: control.querySelector(".material-icon, img"),
@@ -129,6 +147,8 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   const style = getComputedStyle(bar);
   const width = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
   const gap = parseFloat(style.columnGap) || 0;
+  for (const node of bar.querySelectorAll<HTMLElement>("[data-app-bar-show-label]"))
+    delete node.dataset.appBarShowLabel;
   for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-overflowed]")) delete node.dataset[HIDDEN];
   const button = actions.querySelector<HTMLElement>(":scope > .top-app-bar__overflow");
   if (button) button.hidden = true;
@@ -144,7 +164,10 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   const actionsGap = parseFloat(getComputedStyle(actions).columnGap) || 0;
   const actionsWidth = () => {
     const shown = [...actions.children].filter((child) => (child as HTMLElement).getBoundingClientRect().width > 0);
-    return shown.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) + Math.max(0, shown.length - 1) * actionsGap;
+    return (
+      shown.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) +
+      Math.max(0, shown.length - 1) * actionsGap
+    );
   };
   const titleRoom = () =>
     width -
@@ -154,14 +177,39 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
     gap * 2;
   // scrollWidth is the title's untruncated width, padding included.
   const minimum = title && !title.hidden ? Math.min(title.scrollWidth, TITLE_MAX_RESERVED) : 0;
-  if (titleRoom() >= minimum && !compactOnly.length) return;
+  const fitLabels = () => {
+    if (actions.querySelector(".top-app-bar__search[data-search-expanded='true']")) return;
+    const reserved = title && !title.hidden ? Math.min(title.scrollWidth, Math.max(minimum, titleRoom())) : 0;
+    const controls = [...bar.querySelectorAll<HTMLElement>(".icon-button:not([data-nav-toggle]), .segmented--icon > button")].filter(
+      (node) => node.getBoundingClientRect().width > 0,
+    );
+    for (const control of controls) {
+      const label = labelOf(control);
+      if (!label) continue;
+      control.dataset.appBarLabel = label;
+      control.dataset.appBarShowLabel = "true";
+    }
+    for (const control of controls.reverse()) {
+      if (titleRoom() >= reserved) break;
+      delete control.dataset.appBarShowLabel;
+    }
+  };
+  if (titleRoom() >= minimum && !compactOnly.length) {
+    fitLabels();
+    return;
+  }
   const available = candidates(actions);
-  if (!available.length && !compactOnly.length) return;
+  if (!available.length && !compactOnly.length) {
+    fitLabels();
+    return;
+  }
   const more = overflowButton(actions);
   more.hidden = false;
-  more.setAttribute("aria-label", clientText(document.documentElement.dataset.locale || "en", "common.actions.moreActions", "More"));
+  const moreLabel = clientText(document.documentElement.dataset.locale || "en", "common.actions.moreActions", "More");
+  if (more.getAttribute("aria-label") !== moreLabel) more.setAttribute("aria-label", moreLabel);
   for (const node of available) {
     if (titleRoom() >= minimum) break;
     node.dataset[HIDDEN] = "true";
   }
+  fitLabels();
 }

@@ -260,8 +260,7 @@ export class AdminWorkspace extends LitElement {
   private readonly poolRequests = new RequestScope();
   private poolRefreshTimer?: number;
   private readonly onPoolVisibility = () => {
-    window.clearTimeout(this.poolRefreshTimer);
-    if (!document.hidden && this.shouldPollCollectorPool()) this.pollCollectorPool();
+    if (document.hidden) window.clearTimeout(this.poolRefreshTimer);
   };
   private shouldPollCollectorPool() {
     return !!this.guestJob || this.guestAccounts.some((guest) => !!guest.poolStatus || ["queued", "creating", "verifying"].includes(guest.status))

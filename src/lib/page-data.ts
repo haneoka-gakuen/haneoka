@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Static page seeds, display attributes and the initial authorized view.
+// Output: One-pass owner initialization, cached data reads and in-place seed adoption.
+// Pos: [Map](L2-2.md); shared transport for embedded and immutable external page data.
+// Effects/Dependencies: Reads DOM and cacheable JSON; coordinates authorization before owners consume their seed.
 import { currentContentGroup, preparePublicStaticData, visibilityPolicyKey } from "./content-policy-browser";
 import { showUnreleasedContent } from "./content-release";
 import { spoilerContentEnabled } from "./spoiler-content";
@@ -7,6 +12,7 @@ export { decodePageData, serializePageData } from "./page-data-codec";
 const parsedPages = new WeakMap<Element, Map<string, { scope: string; value: unknown }>>();
 const externalReads = new Map<string, Promise<string | undefined>>();
 const externalOwners = new WeakSet<Element>();
+const preparedOwners = new WeakSet<Element>();
 function externalPageText(source: string): Promise<string | undefined> {
   let pending = externalReads.get(source);
   if (!pending) {
@@ -39,7 +45,10 @@ function privatePreparation(document: Document): Promise<unknown> {
 export function waitForPageData(owner: HTMLElement, connect: () => void): boolean {
   const id = owner.getAttribute("data-page-data");
   const document = owner.ownerDocument;
-  if (!id || !document.getElementById(id)?.getAttribute("data-src")) return false;
+  if (!id) return false;
+  const source = document.getElementById(id)?.getAttribute("data-src");
+  const privatePage = document.head?.querySelector('meta[name="haneoka-public-static"]');
+  if (!source && (!privatePage || preparedOwners.has(owner))) return false;
   if (externalOwners.has(owner)) return true;
   externalOwners.add(owner);
   owner.inert = true;
@@ -55,6 +64,7 @@ export function waitForPageData(owner: HTMLElement, connect: () => void): boolea
       }
     }
     externalOwners.delete(owner);
+    preparedOwners.add(owner);
     owner.inert = false;
     if (owner.isConnected) connect();
   });
@@ -77,7 +87,7 @@ const attributesOf = (element: Element): [string, string][] =>
 export function installPageData(next: Document): boolean {
   const owners = [...document.querySelectorAll<Owner>(OWNERS)];
   if (!owners.length || owners.some((owner) => parsedPages.has(owner))) return false;
-  const seeds: [HTMLElement, string][] = [];
+  const seeds: [HTMLElement, string, string | null][] = [];
   for (const owner of owners)
     for (const attribute of SEED_ATTRIBUTES) {
       const id = owner.getAttribute(attribute);
@@ -85,12 +95,13 @@ export function installPageData(next: Document): boolean {
       const current = document.getElementById(id);
       const source = next.getElementById(id);
       if (!current || !source) return false;
-      seeds.push([current, source.textContent ?? ""]);
+      seeds.push([current, source.textContent ?? "", source.getAttribute("data-src")]);
     }
   applyDisplayAttributes(attributesOf(next.documentElement));
-  for (const [seed, text] of seeds) {
+  for (const [seed, text, source] of seeds) {
     seed.textContent = text;
-    seed.removeAttribute("data-src");
+    if (source) seed.setAttribute("data-src", source);
+    else seed.removeAttribute("data-src");
   }
   return true;
 }

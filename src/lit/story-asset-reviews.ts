@@ -107,13 +107,6 @@ export class StoryAssetReviews extends LitElement {
     this.query = params.get("q") || "";
     this.view = collectionView(params.get("view"));
     this.mode = reviewMode(params.get("queue"));
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (document.visibilityState === "visible") this.refresh();
-      },
-      { signal: this.lifetime.signal },
-    );
     this.stopLocale = initializeI18nClient().subscribe((c) => {
       this.locale = c.locale;
       this.requestUpdate();

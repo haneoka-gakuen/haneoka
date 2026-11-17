@@ -1821,12 +1821,6 @@ export class CatalogScreen extends LitElement {
   private relativeTimeInputs: unknown[] = [];
   private relativeTimeBoundaries: number[] = [];
   private relativeTimeVisible = false;
-  private onTimeVisibility = () => {
-    if (document.visibilityState === "visible" && this.profile.presentation === "system") {
-      this.resultCache = undefined;
-      this.requestUpdate();
-    }
-  };
 
   constructor() {
     super();
@@ -1869,7 +1863,6 @@ export class CatalogScreen extends LitElement {
     return this;
   }
   private disposeSongDisplay?: () => void;
-  private pageRefreshTimer?: ReturnType<typeof setInterval>;
   private pageChartState?: "pending" | "ready";
   private pageRefresh = new CatalogPageRefresh({
     location: () => navigationDocumentUrl().href,
@@ -1925,7 +1918,6 @@ export class CatalogScreen extends LitElement {
       if (error) console.warn("Catalog page refresh failed", error);
     },
   });
-  private refreshVisiblePage = () => { if (document.visibilityState === "visible") void this.pageRefresh.check(); else this.pageRefresh.cancel(); };
   private disposeDifficultyDisplay?: () => void;
   private onLocale = () => {
     this.settings = { ...this.settings, locale: preferredLocale() };
@@ -1938,7 +1930,6 @@ export class CatalogScreen extends LitElement {
   connectedCallback() {
     if (waitForPageData(this, () => this.connectedCallback())) return;
     super.connectedCallback();
-    document.addEventListener("visibilitychange", this.onTimeVisibility);
     window.addEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
     window.addEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
     window.addEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);
@@ -2036,19 +2027,14 @@ export class CatalogScreen extends LitElement {
     this.characterSection = params.get("section") || "profile";
     if (!this.hasAttribute("data-page-data")) this.ensureSongMeta();
     void this.load().finally(() => this.pageRefresh.check());
-    if (catalogPageRollout.enabledKinds.length) this.pageRefreshTimer = setInterval(this.refreshVisiblePage, 60_000);
-    document.addEventListener("visibilitychange", this.refreshVisiblePage);
   }
   disconnectedCallback() {
     this.shopStarSummaries.clear();
     this.songRateSnapshots.clear();
     this.pageRefresh.cancel();
-    clearInterval(this.pageRefreshTimer);
-    document.removeEventListener("visibilitychange", this.refreshVisiblePage);
     window.clearTimeout(this.relativeTimeClock);
     this.relativeTimeClock = 0;
     this.relativeTimeDeadline = 0;
-    document.removeEventListener("visibilitychange", this.onTimeVisibility);
     window.removeEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
     window.removeEventListener("haneoka:session-changed", this.onCommentsAuthorityChange);
     window.removeEventListener("haneoka:community-forums-changed", this.onCommentsAuthorityChange);

@@ -35,6 +35,5 @@ export function installUpdateCheck() {
   initialBuildId = document.documentElement.getAttribute(WEB_BUILD_ATTRIBUTE) || __WEB_BUILD_ID__;
   if (!initialBuildId) return;
   last = Date.now();
-  document.addEventListener("visibilitychange", () => void check());
   setInterval(() => void check(), CHECK_MS);
 }

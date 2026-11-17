@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Public static descriptors, display preferences and authenticated view grants.
+// Output: Authorized seeds before initialization, cached navigation views and explicit display changes.
+// Pos: [Map](L2-2.md); browser-side adoption of build-produced public and complete page variants.
+// Effects/Dependencies: Requests existing view grants, opens immutable encrypted payloads and preserves page state; no focus-triggered revalidation.
 import { navigate } from "astro:transitions/client";
 import type { TransitionBeforePreparationEvent, TransitionBeforeSwapEvent } from "astro:transitions/client";
 import {
@@ -56,6 +61,7 @@ interface FullView {
   html: string;
   /** Encrypted payload locations of a granted view. */
   payload?: string;
+  grant?: Grant;
   until: number;
 }
 type Reason = "load" | "interaction" | "refresh";
@@ -633,7 +639,7 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
       // The same payload under refreshed display metadata: the running page keeps its state.
       if (shown && known?.payload === payload) {
         applyDisplayAttributes(Object.entries(grant.attributes));
-        remember({ ...known, local: localKey(), etag, until });
+        remember({ ...known, grant, local: localKey(), etag, until });
         return;
       }
       try {
@@ -645,7 +651,7 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
       if (next && current !== controller) next = undefined;
       else if (next) {
         granted = true;
-        remember({ descriptor, local: localKey(), etag, html: "", payload, until });
+        remember({ descriptor, local: localKey(), etag, html: "", payload, grant, until });
       }
     } else {
       const html = await response.text();
@@ -704,6 +710,15 @@ export function preparePageData(): Promise<boolean> {
 async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boolean> {
   controller?.abort();
   const current = (controller = new AbortController());
+  const cached = views.get(descriptor.path);
+  if (cached?.local === localKey() && cached.until > Date.now()) {
+    const next = cached.grant ? await grantDocument(cached.grant, current.signal) : cached.html ? parse(cached.html, descriptor.path) : undefined;
+    if (current === controller && document.body === body && next && installPageData(next)) {
+      checkedBodies.add(body);
+      document.documentElement.setAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE, descriptor.path);
+      return true;
+    }
+  }
   void retainPublic(descriptor.path);
   const response = await fetch(endpoint(descriptor, true), { credentials: "same-origin", cache: "no-cache", signal: current.signal });
   if (current !== controller || document.body !== body) {
@@ -719,8 +734,14 @@ async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boole
   const etag = response.headers.get("ETag") || "";
   const until = Date.now() + maxAge(response);
   if (!isGrant(response)) {
-    // A partial view: its complete document is adopted by the regular upgrade.
-    remember({ descriptor, local: localKey(), etag, html: await response.text(), until });
+    const html = await response.text();
+    if (current !== controller || document.body !== body) return false;
+    remember({ descriptor, local: localKey(), etag, html, until });
+    const next = parse(html, descriptor.path);
+    if (next && installPageData(next)) {
+      document.documentElement.setAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE, descriptor.path);
+      return true;
+    }
     return false;
   }
   const grant = (await response.json()) as Grant;
@@ -732,7 +753,7 @@ async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boole
     return false;
   }
   if (current !== controller || document.body !== body) return false;
-  remember({ descriptor, local: localKey(), etag, html: "", payload: payloadOf(grant), until });
+  remember({ descriptor, local: localKey(), etag, html: "", payload: payloadOf(grant), grant, until });
   if (installPageData(next)) {
     document.documentElement.setAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE, descriptor.path);
     return true;
@@ -905,11 +926,11 @@ export function installPublicStaticView(): void {
     evaluate(document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE) ? "interaction" : "load");
   });
   evaluatedBody = document.body;
-  document.addEventListener("visibilitychange", schedulePublication);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) window.clearTimeout(publicationTimer); });
   evaluate("load");
 }
 
-/** Focus and visibility events coalesce into one revalidation. */
+/** Explicit display changes coalesce into one revalidation. */
 export function refreshPublicStaticView(): void {
   if (refreshTimer !== undefined) return;
   refreshTimer = window.setTimeout(() => {

@@ -298,9 +298,6 @@ export class HomeDashboard extends LitElement {
   private slideTimer?: number;
   private clockTimer?: number;
   private contentAccessChanged = () => { this.crossServerCatalogs = {}; void this.load(); };
-  private visibilityListener = () => {
-    if (document.visibilityState === "visible") this.requestUpdate();
-  };
   /** False only for the invisible wrap jump between the clone and slide 0. */
   private slideAnimated = true;
   private localeListener = (event: Event) => {
@@ -354,7 +351,6 @@ export class HomeDashboard extends LitElement {
     this.locale = preferredLocale(this.locale);
     this.restoreLayout();
     addEventListener("haneoka:locale-ready", this.localeListener);
-    document.addEventListener("visibilitychange", this.visibilityListener);
     if (!this.seed || this.seed.server !== readReleaseServer()) {
       void this.load();
       void this.loadProfiles();
@@ -363,7 +359,6 @@ export class HomeDashboard extends LitElement {
     window.addEventListener("haneoka:session-changed", this.onCommunityContextChange);
     window.addEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
     window.addEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
-    window.addEventListener("focus", this.onCommunityFocus);
     void this.loadLivePanels();
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) this.startAuto();
     queueMicrotask(() => this.mountAction());
@@ -377,12 +372,10 @@ export class HomeDashboard extends LitElement {
     window.removeEventListener("haneoka:session-changed", this.onCommunityContextChange);
     window.removeEventListener("haneoka:community-posts-changed", this.onCommunityContextChange);
     window.removeEventListener("haneoka:community-forums-changed", this.onCommunityContextChange);
-    window.removeEventListener("focus", this.onCommunityFocus);
     this.disposeSongDisplay?.();
     if (this.slideTimer) window.clearInterval(this.slideTimer);
     if (this.clockTimer) window.clearTimeout(this.clockTimer);
     this.clockTimer = undefined;
-    document.removeEventListener("visibilitychange", this.visibilityListener);
     removeEventListener("haneoka:locale-ready", this.localeListener);
     clearAppBarActions(this.appBarOwner);
     this.lazyImages.disconnect();
@@ -429,7 +422,7 @@ export class HomeDashboard extends LitElement {
     this.clockTimer = window.setTimeout(
       () => {
         this.clockTimer = undefined;
-        this.visibilityListener();
+        if (document.visibilityState === "visible") this.requestUpdate();
       },
       Math.max(1, refreshAt - now),
     );
@@ -848,9 +841,6 @@ export class HomeDashboard extends LitElement {
     this.communityViewer = undefined;
     this.communityPhase = "loading";
     void this.loadLivePanels();
-  };
-  private readonly onCommunityFocus = () => {
-    if (this.isConnected && !document.hidden) void this.loadLivePanels();
   };
   private spotlightOf(entry: JsonRecord, resource: string): Spotlight {
     return {

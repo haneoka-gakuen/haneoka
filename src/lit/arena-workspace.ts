@@ -109,12 +109,6 @@ export class ArenaWorkspace extends LitElement {
   private localeReady = () => {
     this.locale = preferredLocale(this.locale) as Locale;
   };
-  private visibility = () => {
-    if (!document.hidden) {
-      this.now = Date.now();
-      this.schedule();
-    }
-  };
   constructor() {
     super();
     this.locale = "ja";
@@ -164,7 +158,6 @@ export class ArenaWorkspace extends LitElement {
     this.locale = preferredLocale(this.locale) as Locale;
     this.server = this.dataServer = releaseServerFromPath(location.pathname) || "jp";
     addEventListener("haneoka:locale-ready", this.localeReady);
-    document.addEventListener("visibilitychange", this.visibility);
     addEventListener("popstate", this.restoreState);
     void this.load();
   }
@@ -178,7 +171,6 @@ export class ArenaWorkspace extends LitElement {
     this.masonry?.disconnect();
     clearAppBarActions(this.owner);
     removeEventListener("haneoka:locale-ready", this.localeReady);
-    document.removeEventListener("visibilitychange", this.visibility);
     removeEventListener("popstate", this.restoreState);
     super.disconnectedCallback();
   }

@@ -190,16 +190,6 @@ export class EventTracker extends LitElement {
       },
       { signal: this.lifetime.signal },
     );
-    document.addEventListener(
-      "visibilitychange",
-      () => {
-        if (document.visibilityState === "visible") {
-          this.now = Date.now();
-          void this.refresh();
-        }
-      },
-      { signal: this.lifetime.signal },
-    );
     this.clock = window.setInterval(() => {
       if (document.visibilityState === "visible") this.now = Date.now();
     }, 1000);

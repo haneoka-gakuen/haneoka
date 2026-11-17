@@ -473,3 +473,18 @@
   content: "";
   pointer-events: none;
 }
+
+.top-app-bar [data-app-bar-show-label] {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-inline: 16px;
+  font: var(--md-sys-typescale-label-large-weight) var(--md-sys-typescale-label-large-size) /
+    var(--md-sys-typescale-label-large-line-height) var(--app-font);
+  white-space: nowrap;
+}
+.top-app-bar [data-app-bar-show-label]::after {
+  content: attr(data-app-bar-label);
+}

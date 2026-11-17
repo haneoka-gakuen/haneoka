@@ -580,7 +580,7 @@ const publicForumsDataId = "shell-public-forums";
       resizeObserver.observe(actions);
       const playerSlot = bar.querySelector<HTMLElement>("[data-app-bar-player]");
       if (playerSlot) resizeObserver.observe(playerSlot);
-      mutationObserver.observe(bar, { childList: true, subtree: true });
+      mutationObserver.observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-label", "data-aria-label", "title", "data-search-expanded"] });
       actions.addEventListener("scroll", syncActionOverflow, { passive: true });
       releaseActionObservers = () => {
         resizeObserver.disconnect();
@@ -588,6 +588,7 @@ const publicForumsDataId = "shell-public-forums";
         actions.removeEventListener("scroll", syncActionOverflow);
       };
       syncActionOverflow();
+      void document.fonts?.ready.then(() => { if (bar.isConnected) syncActionOverflow(); });
     }
   };
 

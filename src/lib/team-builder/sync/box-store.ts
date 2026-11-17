@@ -112,18 +112,16 @@ export class BoxStore {
       };
     }
     if (typeof document !== "undefined") {
-      const visible = () => {
-        if (document.visibilityState === "visible") void this.refresh();
-        else this.flushNow(true);
-      };
+      const visible = () => { if (document.hidden) this.flushNow(true); };
+      const online = () => void this.refresh();
       const hide = () => this.flushNow(true);
       document.addEventListener("visibilitychange", visible);
       addEventListener("pagehide", hide);
-      addEventListener("online", visible);
+      addEventListener("online", online);
       this.cleanups.push(
         () => document.removeEventListener("visibilitychange", visible),
         () => removeEventListener("pagehide", hide),
-        () => removeEventListener("online", visible),
+        () => removeEventListener("online", online),
       );
     }
     this.pullTimer = setInterval(() => {

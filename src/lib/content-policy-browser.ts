@@ -96,10 +96,6 @@ function refreshDocumentVisibility(): void {
   if (publicStaticDocument()) withPublicStatic(() => undefined);
   else if (!document.documentElement.dataset.contentVisibilityPolicy) refreshVisibility();
 }
-function refreshCurrentVisibility(): void {
-  if (!publicStaticDocument()) refreshVisibility();
-  else publicStatic?.refreshPublicStaticView();
-}
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
@@ -118,8 +114,6 @@ export function installContentVisibility(): void {
     if (publicStaticDocument()) withPublicStatic((view) => view.resetPublicStaticView());
     else refreshVisibility();
   });
-  addEventListener("focus", refreshCurrentVisibility);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshCurrentVisibility(); });
   document.addEventListener("astro:page-load", () => { publishContentCacheScope(); refreshDocumentVisibility(); });
   document.addEventListener("astro:before-swap", (event) => {
     requests.cancel();

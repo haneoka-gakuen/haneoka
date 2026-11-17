@@ -202,16 +202,11 @@ export class HistoryCloudSync extends EventTarget {
     this.changed();
     void this.foreground(true);
   };
-  private focus = () => {
-    if (document.visibilityState === "visible") void this.foreground();
-  };
   start() {
     if (this.active) return;
     this.active = true;
     this.lifetime = new AbortController();
     window.addEventListener("haneoka:session-changed", this.revoke, { signal: this.lifetime.signal });
-    window.addEventListener("focus", this.focus, { signal: this.lifetime.signal });
-    document.addEventListener("visibilitychange", this.focus, { signal: this.lifetime.signal });
     void this.foreground(true);
   }
   stop() {
