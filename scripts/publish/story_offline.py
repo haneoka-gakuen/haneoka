@@ -2,7 +2,7 @@
 # Input: 一份完整的正式服 release、目录分片与原生剧情依赖。
 # Output: 按章节组织的内容清单、对象允许索引和固定 release 的离线入口。
 # Pos: [Map](L2-2.md)；App 剧情离线资源投影。
-# Effects/Dependencies: 校验读取 R2 JSON、有界并发发布对象索引，全部成功后切换入口；媒体复用原有 CAS。
+# Effects/Dependencies: 按摘要去重并有界读取 R2 JSON、并发发布对象索引，全部成功后切换入口；媒体复用原有 CAS。
 from __future__ import annotations
 
 import argparse
@@ -58,13 +58,23 @@ class StoryOfflineProjection:
         spec = self.catalog["resources"][name]
         return self.read(spec["index"]), spec
 
+    def read_many(self, paths, executor):
+        representatives = {}
+        for path in paths:
+            entry = self.entries[path]
+            previous = representatives.setdefault(entry["sha256"], path)
+            if self.entries[previous]["bytes"] != entry["bytes"]:
+                raise ValueError(f"Offline input size conflicts for one digest: {path}")
+        values = dict(zip(representatives, executor.map(self.read, representatives.values())))
+        return [values[self.entries[path]["sha256"]] for path in paths]
+
     def entity(self, name, key):
         if name not in self.entities:
             spec = self.catalog["resources"][name]["entities"]
             rows = {}
             paths = [spec["prefix"] + shard + ".json" for shard in spec["shards"]]
             with ThreadPoolExecutor(max_workers=4) as executor:
-                values = list(executor.map(self.read, paths))
+                values = self.read_many(paths, executor)
             for path, records in zip(paths, values):
                 for identity, value in records.items():
                     rows[identity] = (value, path)
@@ -126,25 +136,31 @@ class StoryOfflineProjection:
             visit(value)
         pending = [value for value in pending if isinstance(value, str) and value in self.entries]
         pending.extend(row["path"] for row in refs.values())
-        while pending:
-            path = pending.pop()
-            if path in paths:
-                continue
-            paths.add(path)
-            standalone = path.endswith((".motion3.json", ".exp3.json", "/physics3.json", "/pose3.json", "/cdi3.json"))
-            if path.endswith(".json") and not standalone:
-                selector = next((row.get("selector") for row in documents.values() if row["path"] == path and "selector" in row), None)
-                if selector is not None:
-                    continue
-                value = self.read(path)
-                if path.startswith("metadata/sources/"):
-                    visit(value.get("objectArchive", {}), path)
-                elif path == self.catalog["resources"]["stories"]["index"]:
-                    continue
-                elif path == self.catalog["resources"]["story-runtime"]["index"]:
-                    visit({key: child for key, child in value.items() if key != "stages"}, path)
-                else:
-                    visit(value[selector] if selector is not None else value, path)
+        selectors = {}
+        for row in documents.values():
+            if "selector" in row:
+                selectors.setdefault(row["path"], row["selector"])
+        selected_paths = {path for path, selector in selectors.items() if selector is not None}
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            while pending:
+                batch = []
+                while pending and len(batch) < 8:
+                    path = pending.pop()
+                    if path in paths:
+                        continue
+                    paths.add(path)
+                    standalone = path.endswith((".motion3.json", ".exp3.json", "/physics3.json", "/pose3.json", "/cdi3.json"))
+                    if path.endswith(".json") and not standalone and path not in selected_paths:
+                        batch.append(path)
+                for path, value in zip(batch, self.read_many(batch, executor)):
+                    if path.startswith("metadata/sources/"):
+                        visit(value.get("objectArchive", {}), path)
+                    elif path == self.catalog["resources"]["stories"]["index"]:
+                        continue
+                    elif path == self.catalog["resources"]["story-runtime"]["index"]:
+                        visit({key: child for key, child in value.items() if key != "stages"}, path)
+                    else:
+                        visit(value, path)
         return {
             "schema": SCHEMA,
             "resources": {url: {"sha256": self.entries[row["path"]]["sha256"],

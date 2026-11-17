@@ -18,9 +18,9 @@ permissions:
 jobs:
   publish:
     strategy:
-      max-parallel: 1
+      max-parallel: 2
       matrix:
-        server: [jp, intl]
+        server: ${{ fromJSON(inputs.server == 'jp' && '["jp"]' || inputs.server == 'intl' && '["intl"]' || '["jp","intl"]') }}
     if: inputs.server == 'all' || inputs.server == '' || inputs.server == 'jp' || inputs.server == 'intl'
     runs-on: ubuntu-latest
     timeout-minutes: 60
