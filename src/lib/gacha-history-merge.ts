@@ -8,6 +8,7 @@ import type { HistoryExecution, HistoryRegion, HistorySnapshot } from "@haneoka/
 export interface HistoryAccountRecord {
   key: string;
   ownerId?: string;
+  aliases?: readonly string[];
   histories: readonly HistorySnapshot[];
 }
 export type HistoryMatchCards = Partial<Record<HistoryRegion, readonly string[]>>;
@@ -163,8 +164,12 @@ export function matchingHistoryGroups(
     const seen = new Set<string>();
     for (const history of record.histories) {
       const scope = `${record.ownerId ?? ""}\0${history.source.server}\0`;
-      if (history.source.accountKey) {
-        const identity = scope + history.source.accountKey;
+      for (const key of new Set([
+        record.key,
+        ...(record.aliases ?? []),
+        ...(history.source.accountKey ? [history.source.accountKey] : []),
+      ])) {
+        const identity = scope + key;
         if (known.has(identity)) join(i, known.get(identity)!);
         else known.set(identity, i);
       }

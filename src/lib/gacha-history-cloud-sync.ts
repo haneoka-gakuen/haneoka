@@ -121,17 +121,18 @@ export class HistoryCloudSync extends EventTarget {
   }
   private async reconcile(owner: string, generation: number) {
     const records = new Map<string, HistoryAccountRecord>();
-    const add = (key: string, histories: HistoryAccountRecord["histories"]) => {
+    const add = (key: string, histories: HistoryAccountRecord["histories"], aliases: readonly string[] = []) => {
       key = this.canonicalKey(key);
       const previous = records.get(key);
       records.set(key, {
         key,
         ownerId: owner,
+        aliases: [...(previous?.aliases ?? []), ...aliases],
         histories: mergeAccountHistories([...(previous ? [previous] : []), { key, histories }], key),
       });
     };
-    for (const row of this.documents.values()) add(row.accountKey, row.histories);
-    for (const row of this.local) add(row.key, row.histories ?? [row.snapshot]);
+    for (const row of this.documents.values()) add(row.accountKey, row.histories, row.aliases);
+    for (const row of this.local) add(row.key, row.histories ?? [row.snapshot], row.aliases);
     const groups = await reconcileHistories([...records.values()], this.cards).catch((error) => {
       this.guard(owner, generation);
       this.errorCode = historyCloudErrorCode(error);
