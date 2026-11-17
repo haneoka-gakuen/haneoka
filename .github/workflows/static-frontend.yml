@@ -31,6 +31,9 @@ on:
       verification_only:
         type: boolean
         default: false
+      verify_recovery:
+        type: boolean
+        default: false
       production_publish:
         type: boolean
         default: false
@@ -74,6 +77,7 @@ jobs:
     outputs:
       inputs_sha: ${{ steps.freeze.outputs.inputs_sha }}
       artifact: ${{ steps.freeze.outputs.artifact }}
+      merge_artifact: ${{ steps.freeze.outputs.merge_artifact }}
       node_version: ${{ steps.node.outputs.node-version }}
     steps:
       - uses: actions/checkout@v7
@@ -304,7 +308,9 @@ jobs:
         run: |
           node scripts/build/static-build-inputs.mjs freeze --root "$PWD" --capture "$STATIC_BUILD_INPUT_ROOT" --output .output/static-frozen-inputs > .output/static-freeze-result.json
           node scripts/build/static-build-shards.mjs plan --root "$PWD" --inputs .output/static-frozen-inputs/manifest.json --routes "$STATIC_BUILD_INPUT_ROOT/route-plan" --output .output/static-shard-plan.json
-          node --input-type=module -e 'import fs from "node:fs";const result=JSON.parse(fs.readFileSync(".output/static-freeze-result.json"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`inputs_sha=${result.sha256}\nartifact=static-inputs-${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}-${result.sha256}\n`);'
+          node scripts/build/static-build-inputs.mjs pack-merge --manifest .output/static-frozen-inputs/manifest.json --output .output/static-merge-inputs
+          tar --use-compress-program="zstd -T2 -3" -cf .output/static-merge-inputs.tar.zst -C .output static-merge-inputs static-shard-plan.json
+          node --input-type=module -e 'import fs from "node:fs";const result=JSON.parse(fs.readFileSync(".output/static-freeze-result.json"));fs.appendFileSync(process.env.GITHUB_OUTPUT,`inputs_sha=${result.sha256}\nartifact=static-inputs-${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}-${result.sha256}\nmerge_artifact=static-merge-inputs-${process.env.GITHUB_SHA}-${process.env.GITHUB_RUN_ID}-${result.sha256}\n`);'
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.freeze.outputs.artifact }}
@@ -313,6 +319,15 @@ jobs:
             .output/static-shard-plan.json
           include-hidden-files: true
           compression-level: 6
+          retention-days: 7
+          if-no-files-found: error
+      - name: Save compact merge inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.freeze.outputs.merge_artifact }}
+          path: .output/static-merge-inputs.tar.zst
+          include-hidden-files: true
+          compression-level: 0
           retention-days: 7
           if-no-files-found: error
       - uses: actions/cache/save@v6
@@ -415,10 +430,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Reclaim unused hosted runner runtimes
+      - name: Reclaim large unused runner files
         run: |
           df -h /
-          sudo rm -rf /usr/local/lib/android /opt/ghc
+          available_kb="$(df --output=avail / | tail -1)"
+          if (( available_kb < 24 * 1024 * 1024 )); then
+            for directory in /usr/local/lib/android /opt/ghc; do
+              if [[ -d "$directory" ]]; then sudo find "$directory" -type f -size +16M -delete; fi
+            done
+          fi
           df -h /
       - run: corepack enable
       - uses: actions/setup-node@v7
@@ -430,23 +450,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.prepare.outputs.artifact }}
+          name: ${{ needs.prepare.outputs.merge_artifact }}
           path: .output
-      - run:
-          node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root
-          "$PWD" --source-root "$PWD"
+      - name: Restore only verified packages and common assets
+        run: |
+          tar --zstd -xf .output/static-merge-inputs.tar.zst -C .output
+          rm .output/static-merge-inputs.tar.zst
+          node scripts/build/static-build-inputs.mjs restore --manifest .output/static-merge-inputs/manifest.json --root "$PWD" --source-root "$PWD" --merge-only
       - uses: actions/download-artifact@v8
         with:
           pattern: static-part-${{ needs.prepare.outputs.inputs_sha }}-*
           path: .output/static-parts
       - name: Verify every document, common asset and search language
         run: |
-          for locale in en ja ko zh-CN zh-TW; do
-            mv ".output/static-parts/static-part-${{ needs.prepare.outputs.inputs_sha }}-${locale}" ".output/static-parts/${locale}"
-            tar --zstd -xf ".output/static-parts/${locale}/static-part.tar.zst" -C ".output/static-parts/${locale}"
-            rm -- ".output/static-parts/${locale}/static-part.tar.zst"
-          done
-          node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-merged --consume-parts
+          node scripts/build/static-build-shards.mjs merge --plan .output/static-shard-plan.json --parts .output/static-parts --inputs .output/static-merge-inputs/manifest.json --output .output/static-merged --consume-parts --archived-parts
           rm -rf .output/public .output/static-documents
           mv .output/static-merged/.output/public .output/public
           mv .output/static-merged/.output/static-documents .output/static-documents
@@ -462,21 +479,23 @@ jobs:
       - name: Check Worker types
         run: pnpm typecheck:worker
       - name: Prepare verified Worker publication
-        if: ${{ !inputs.verification_only }}
+        if: ${{ !inputs.verification_only || inputs.verify_recovery }}
         run: node scripts/deploy/worker-publication.mjs prepare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Seal complete frontend verification
-        if: ${{ !inputs.verification_only }}
+        if: ${{ !inputs.verification_only || inputs.verify_recovery }}
         run: node scripts/deploy/worker-publication.mjs verify
       - name: Archive complete qualified publication
         id: archive
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ inputs.verification_only }}" = "true" ]; then
-            tar --use-compress-program="zstd -T2 -3" -cf .output/worker-publication.tar.zst .output/public .output/static-documents/publication.json .output/static-documents/references.json
+          if [[ "${{ inputs.verification_only }}" == "true" && "${{ inputs.verify_recovery }}" != "true" ]]; then
+            tar --use-compress-program="zstd -T2 -3" -cf .output/worker-publication.tar.zst .output/public/build.json .output/static-documents/publication.json .output/static-documents/references.json
           else
-            tar --use-compress-program="zstd -T2 -3" -cf .output/worker-publication.tar.zst .output/deployment .output/public .output/static-documents/publication.json .output/static-documents/references.json
+            node scripts/deploy/publication-archive.mjs create
           fi
           echo "artifact=worker-publication-${{ github.sha }}-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
@@ -487,6 +506,19 @@ jobs:
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
+      - name: Reconstruct the complete archive from immutable locale artifacts
+        if: inputs.verify_recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .output/recovery-original
+          for tree in deployment public static-documents; do
+            mv ".output/$tree" ".output/recovery-original/$tree"
+          done
+          node scripts/deploy/publication-archive.mjs restore
+          node scripts/deploy/worker-publication.mjs verify
+          cmp .output/deployment/manifest.json .output/recovery-original/deployment/manifest.json
+          rm -rf .output/recovery-original
       - name: Apply production D1 migrations
         if: inputs.production_publish && inputs.apply_d1_migrations
         run: |

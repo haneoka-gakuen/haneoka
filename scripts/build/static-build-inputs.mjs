@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 选定源码身份、本地构建输入与 CLI 选项。
-// Output: 输入封装、摘要／文件记录和完整性验证。
+// Output: 完整输入或固定 merge 角色封装、摘要／文件记录和完整性验证。
 // Pos: [Map](L2-2.md)；静态前端捕获／重放输入的 artifact 工具。
 // Effects/Dependencies: Git 子进程和文件读写；处理输入身份与路径，不代表页面构建已完成。
 import assert from "node:assert/strict";
@@ -15,6 +15,7 @@ import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts
 import { staticBuildJson } from "../../src/server/static-input-store.ts";
 
 export const INPUT_SCHEMA = "haneoka-static-build-inputs-v1";
+export const MERGE_INPUT_ROLES = Object.freeze(["common-assets", "compiled-packages"]);
 export const sha256 = (body) => createHash("sha256").update(body).digest("hex");
 const digestBuffer = Buffer.allocUnsafe(1024 * 1024);
 export function safeRelative(value) {
@@ -385,23 +386,108 @@ export async function freezeInputs({ root, specFile, capture, output }) {
     sha256: sha256(JSON.stringify(manifest)),
   };
 }
-export async function verifyInputs(manifestFile, restoreRoot, sourceRoot) {
-  const manifest = metadataFile(manifestFile);
+function readInputManifest(manifestFile) {
+  const body = fs.readFileSync(manifestFile),
+    manifest = JSON.parse(body);
   if (manifest.schema !== INPUT_SCHEMA || !Array.isArray(manifest.entries) || !manifest.entries.length)
     throw new Error("Invalid frozen input manifest");
+  const paths = new Set(),
+    sizes = new Map();
+  for (const entry of manifest.entries) {
+    safeRelative(entry.path);
+    if (
+      paths.has(entry.path) ||
+      typeof entry.role !== "string" ||
+      !entry.role ||
+      !/^[a-f0-9]{64}$/u.test(entry.sha256) ||
+      !Number.isSafeInteger(entry.bytes) ||
+      entry.bytes < 0
+    )
+      throw new Error("Duplicate or invalid frozen input");
+    paths.add(entry.path);
+    if (sizes.has(entry.sha256)) assert.equal(sizes.get(entry.sha256), entry.bytes, "Frozen content sizes differ");
+    sizes.set(entry.sha256, entry.bytes);
+  }
+  return { body, manifest, sha256: sha256(body) };
+}
+
+export async function packMergeInputs({ manifestFile, output }) {
+  const { body, manifest, sha256: manifestSha256 } = readInputManifest(manifestFile);
+  if (fs.existsSync(output)) throw new Error("Merge input destination already exists");
+  const entries = manifest.entries.filter((entry) => MERGE_INPUT_ROLES.includes(entry.role)),
+    content = new Map(),
+    base = path.dirname(manifestFile);
+  fs.mkdirSync(path.join(output, "content"), { recursive: true });
+  for (const entry of entries) {
+    if (content.has(entry.sha256)) continue;
+    const source = path.join(base, "content", entry.sha256),
+      target = path.join(output, "content", entry.sha256);
+    assert.ok(fs.lstatSync(source).isFile(), "Frozen merge content is not a regular file");
+    assert.deepEqual(
+      await fileDigest(source),
+      { sha256: entry.sha256, bytes: entry.bytes },
+      `Frozen input differs: ${entry.path}`,
+    );
+    try {
+      fs.linkSync(source, target);
+    } catch (error) {
+      if (!["EXDEV", "EPERM", "EACCES", "ENOTSUP"].includes(error.code)) throw error;
+      copyOnce(source, target);
+    }
+    content.set(entry.sha256, entry.bytes);
+  }
+  fs.writeFileSync(path.join(output, "manifest.json"), body, { flag: "wx" });
+  return {
+    mergeOnly: true,
+    files: entries.length,
+    bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+    contentFiles: content.size,
+    contentBytes: [...content.values()].reduce((sum, bytes) => sum + bytes, 0),
+    sha256: manifestSha256,
+  };
+}
+
+export async function restoreMergeInputs({ manifestFile, root, sourceRoot = root }) {
+  const { manifest, sha256: manifestSha256 } = readInputManifest(manifestFile);
+  root = fs.realpathSync(root);
+  assert.deepEqual(
+    sourceIdentity(fs.realpathSync(sourceRoot)),
+    manifest.source,
+    "Frozen source/toolchain identity differs",
+  );
+  const entries = manifest.entries.filter((entry) => MERGE_INPUT_ROLES.includes(entry.role)),
+    verified = new Set(),
+    base = path.dirname(manifestFile);
+  for (const entry of entries) {
+    const source = path.join(base, "content", entry.sha256),
+      expected = { sha256: entry.sha256, bytes: entry.bytes };
+    if (!verified.has(entry.sha256)) {
+      assert.deepEqual(await fileDigest(source), expected, `Frozen input differs: ${entry.path}`);
+      verified.add(entry.sha256);
+    }
+    const target = path.join(root, entry.path);
+    if (fs.existsSync(target)) assert.deepEqual(await fileDigest(target), expected);
+    else copyOnce(source, target);
+  }
+  return {
+    manifest,
+    sha256: manifestSha256,
+    mergeOnly: true,
+    files: entries.length,
+    bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+  };
+}
+
+export async function verifyInputs(manifestFile, restoreRoot, sourceRoot) {
+  const { manifest, sha256: manifestSha256 } = readInputManifest(manifestFile);
   if (sourceRoot)
     assert.deepEqual(
       sourceIdentity(fs.realpathSync(sourceRoot)),
       manifest.source,
       "Frozen source/toolchain identity differs",
     );
-  const seen = new Set(),
-    base = path.dirname(manifestFile);
+  const base = path.dirname(manifestFile);
   for (const entry of manifest.entries) {
-    safeRelative(entry.path);
-    if (seen.has(entry.path) || !/^[a-f0-9]{64}$/u.test(entry.sha256))
-      throw new Error("Duplicate or invalid frozen input");
-    seen.add(entry.path);
     const source = path.join(base, "content", entry.sha256);
     assert.deepEqual(
       await fileDigest(source),
@@ -415,7 +501,7 @@ export async function verifyInputs(manifestFile, restoreRoot, sourceRoot) {
       else copyOnce(source, target);
     }
   }
-  return { manifest, sha256: sha256(fs.readFileSync(manifestFile)) };
+  return { manifest, sha256: manifestSha256 };
 }
 
 /** Reuse an explicit immutable data snapshot under the current consumer's source seal. */
@@ -488,10 +574,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       output: { type: "string" },
       manifest: { type: "string" },
       "source-root": { type: "string" },
+      "merge-only": { type: "boolean" },
       capture: { type: "string" },
     },
   });
   const mode = positionals[0];
+  if (values["merge-only"] && mode !== "restore") throw new Error("--merge-only requires restore");
   if (mode === "pin-catalogs") {
     console.log(JSON.stringify(await pinCatalogInputs()));
   } else if (mode === "catalog-cache-key") {
@@ -521,7 +609,28 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         }),
       ),
     );
-  else if ((mode === "verify" || mode === "restore") && values.manifest && (mode !== "restore" || values.root)) {
+  else if (mode === "pack-merge" && values.manifest && values.output)
+    console.log(
+      JSON.stringify(
+        await packMergeInputs({ manifestFile: path.resolve(values.manifest), output: path.resolve(values.output) }),
+      ),
+    );
+  else if (mode === "restore" && values["merge-only"] && values.manifest && values.root) {
+    const result = await restoreMergeInputs({
+      manifestFile: path.resolve(values.manifest),
+      root: path.resolve(values.root),
+      sourceRoot: values["source-root"],
+    });
+    console.log(
+      JSON.stringify({
+        verified: true,
+        mergeOnly: true,
+        files: result.files,
+        bytes: result.bytes,
+        sha256: result.sha256,
+      }),
+    );
+  } else if ((mode === "verify" || mode === "restore") && values.manifest && (mode !== "restore" || values.root)) {
     const result = await verifyInputs(
       path.resolve(values.manifest),
       mode === "restore" ? path.resolve(values.root) : undefined,
@@ -530,6 +639,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(JSON.stringify({ verified: true, files: result.manifest.entries.length, sha256: result.sha256 }));
   } else
     throw new Error(
-      "Use freeze --root DIR --spec JSON --output DIR, verify --manifest JSON, restore --manifest JSON --root DIR, or replay --manifest JSON --root DIR --capture DIR",
+      "Use freeze --root DIR --spec JSON --output DIR, pack-merge --manifest JSON --output DIR, verify --manifest JSON, restore --manifest JSON --root DIR [--merge-only], or replay --manifest JSON --root DIR --capture DIR",
     );
 }

@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      verify_recovery:
+        description: Reconstruct and verify the complete recovery archive from immutable locale artifacts
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,6 +27,7 @@ jobs:
       CONTENT_BUILD_TOKEN: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.CONTENT_BUILD_TOKEN || '' }}
     with:
       verification_only: true
+      verify_recovery: ${{ inputs.verify_recovery == true }}
   build:
     name: Build
     needs: frontend

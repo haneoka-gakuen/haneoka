@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { execFileSync } from "node:child_process";
 import { gunzipSync } from "node:zlib";
 import { INPUT_SCHEMA, sha256, safeRelative, listFiles, fileDigest, copyOnce } from "./static-build-inputs.mjs";
 import { staticBuildSourceIdentity } from "../../src/server/static-build-identity.ts";
@@ -658,19 +659,28 @@ export async function partitionPublication({ root, planFile, output }) {
   }
   return { locales: LOCALES.length, documents: publication.reference.documents, parts: output };
 }
-export async function mergeShards({ planFile, partsRoot, output, inputsManifest, consumeParts = false }) {
+export async function mergeShards({
+  planFile,
+  partsRoot,
+  output,
+  inputsManifest,
+  consumeParts = false,
+  archivedParts = false,
+}) {
   if (
     consumeParts &&
     (path.resolve(output) === path.resolve(partsRoot) ||
       path.resolve(output).startsWith(path.resolve(partsRoot) + path.sep))
   )
     throw new Error("Consumed shard inputs must not contain the merged output");
+  assert.ok(!archivedParts || consumeParts, "Archived merge requires consuming each verified part");
   const { plan, sha256: planSha256 } = readPlan(planFile);
   if (fs.existsSync(output)) throw new Error("Merged publication destination already exists");
   const commonAssets = frozenCommonAssets(plan, inputsManifest);
   const planned = new Map(plan.expected.map((row) => [row.pathname, row]));
   const records = new Map(),
     assets = new Map(),
+    archiveOrigins = new Map(),
     objects = new Map(),
     languages = new Map(),
     packedLocations = {},
@@ -681,8 +691,17 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
     contentRoot = path.join(output, ".output/static-documents/content");
   fs.mkdirSync(contentRoot, { recursive: true });
   for (const locale of LOCALES) {
-    const partRoot = path.join(partsRoot, locale),
-      part = readJson(path.join(partRoot, "part.json"));
+    const partRoot = path.join(partsRoot, locale);
+    if (archivedParts) {
+      const directory = path.join(partsRoot, `static-part-${plan.generation.sha256}-${locale}`);
+      const archive = path.join(directory, "static-part.tar.zst");
+      assert.ok(!fs.existsSync(partRoot), "Archived part destination exists");
+      fs.mkdirSync(partRoot, { recursive: true });
+      execFileSync("tar", ["--zstd", "--extract", "--file", archive, "--directory", partRoot]);
+      fs.unlinkSync(archive);
+      fs.rmdirSync(directory);
+    }
+    const part = readJson(path.join(partRoot, "part.json"));
     if (
       ![PART_SCHEMA, PACKED_PART_SCHEMA].includes(part.schema) ||
       part.locale !== locale ||
@@ -780,7 +799,8 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
         assert.ok(pack && pack.path.slice(1) === asset.path && pack.bytes === asset.bytes, "Unlisted packed asset");
       }
       let source = path.join(partRoot, "public", asset.path);
-      if (fs.existsSync(source)) shippedAssets.add(asset.path);
+      const shipped = fs.existsSync(source);
+      if (shipped) shippedAssets.add(asset.path);
       else {
         const common = matchingCommonAsset(commonAssets, asset);
         if (!common) throw new Error(`Missing shard asset: ${asset.path}`);
@@ -791,6 +811,14 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
         { sha256: asset.sha256, bytes: asset.bytes },
         `Shard asset differs: ${asset.path}`,
       );
+      if (shipped && !archiveOrigins.has(asset.path))
+        archiveOrigins.set(asset.path, {
+          path: asset.path,
+          sha256: asset.sha256,
+          bytes: asset.bytes,
+          locale,
+          member: `public/${asset.path}`,
+        });
       const previous = assets.get(asset.path);
       if (previous) assert.deepEqual(previous, asset, `Conflicting common asset: ${asset.path}`);
       else {
@@ -895,6 +923,14 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
     if (previousDataRoot === undefined) delete process.env.PROVIDER_STATIC_DATA_ROOT;
     else process.env.PROVIDER_STATIC_DATA_ROOT = previousDataRoot;
   }
+  if (plan.source?.sha)
+    writeJson(path.join(metadataRoot, "archive-origins.json"), {
+      schema: "haneoka-static-archive-origins-v1",
+      sourceSha: plan.source.sha,
+      planSha256,
+      generation: plan.generation,
+      assets: [...archiveOrigins.values()].sort((a, b) => a.path.localeCompare(b.path, "en")),
+    });
   return {
     ...result,
     assets: assets.size,
@@ -923,6 +959,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       locale: { type: "string" },
       partition: { type: "string" },
       "consume-parts": { type: "boolean", default: false },
+      "archived-parts": { type: "boolean", default: false },
     },
   });
   const mode = positionals[0];
@@ -991,6 +1028,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         output: path.resolve(values.output),
         inputsManifest: values.inputs,
         consumeParts: values["consume-parts"],
+        archivedParts: values["archived-parts"],
       }),
     );
   else

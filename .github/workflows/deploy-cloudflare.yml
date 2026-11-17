@@ -174,12 +174,13 @@ jobs:
           path: .output/frontend-artifact
       - name: Extract selected complete frontend publication
         if: ${{ inputs.frontend_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HANEOKA_FRONTEND_ARTIFACT_RUN_ID: ${{ inputs.frontend_run_id }}
         run: |
-          if [[ -f .output/frontend-artifact/worker-publication.tar.zst ]]; then
-            tar --zstd -xf .output/frontend-artifact/worker-publication.tar.zst -C .output/frontend-source
-          else
-            tar -xf .output/frontend-artifact/worker-publication.tar -C .output/frontend-source
-          fi
+          archive=.output/frontend-artifact/worker-publication.tar.zst
+          if [[ ! -f "$archive" ]]; then archive=.output/frontend-artifact/worker-publication.tar; fi
+          node scripts/deploy/publication-archive.mjs restore --root .output/frontend-source --archive "$archive"
       - name: Prepare verified Worker publication
         shell: bash
         run: |
@@ -240,6 +241,7 @@ jobs:
           sparse-checkout: |
             scripts/deploy/worker-publication.mjs
             scripts/deploy/publication-source.mjs
+            scripts/deploy/publication-archive.mjs
           sparse-checkout-cone-mode: false
       - name: Install pnpm
         run: corepack enable
@@ -267,16 +269,18 @@ jobs:
           github-token: ${{ github.token }}
           path: .output/restore
       - name: Restore publication files
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |-
-          if [[ -f .output/restore/worker-publication.tar.zst ]]; then
-            tar --zstd -xf .output/restore/worker-publication.tar.zst
-          else
-            tar -xf .output/restore/worker-publication.tar
-          fi
           publisher=scripts/deploy/worker-publication.mjs
+          restorer=scripts/deploy/publication-archive.mjs
           if [[ -n "$HANEOKA_PUBLICATION_ARTIFACT_RUN_ID" ]]; then
             publisher=.output/publication-tooling/scripts/deploy/worker-publication.mjs
+            restorer=.output/publication-tooling/scripts/deploy/publication-archive.mjs
           fi
+          archive=.output/restore/worker-publication.tar.zst
+          if [[ ! -f "$archive" ]]; then archive=.output/restore/worker-publication.tar; fi
+          node "$restorer" restore --archive "$archive"
           node "$publisher" verify --source-root "$GITHUB_WORKSPACE"
       - name: Apply production D1 migrations
         if: ${{ github.event_name == 'push' || inputs.apply_d1_migrations == true }}

@@ -580,7 +580,7 @@ if (mode === "prepare") {
     "compile.wrangler.json",
     configFor({ keepAssets: true, containerImages: retained?.containerImages }),
   );
-  run(["deploy", "--config", configFile, "--dry-run", "--outdir", path.join(output, "worker")]);
+  run(["deploy", "--config", configFile, "--dry-run", "--containers-rollout=none", "--outdir", path.join(output, "worker")]);
   if (!fs.existsSync(path.join(output, "worker/index.js"))) throw new Error("Compiled Worker entry is missing");
   const files = [...filesAt(path.join(output, "worker")).map(fileRecord), ...containerFiles, ...selectedFiles];
   let frontend = selectedFrontend?.manifest.frontend;
@@ -681,6 +681,7 @@ if (mode === "prepare") {
       configFile,
       "--no-bundle",
       "--dry-run",
+      "--containers-rollout=none",
       "--outdir",
       path.join(output, "publish-dry-run"),
     ]);
