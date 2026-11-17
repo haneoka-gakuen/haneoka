@@ -108,7 +108,7 @@ export function assertPublicStaticDocumentPath(sourcePath) {
 }
 
 /** Add search-only classification and title weighting without changing the served document. */
-export function withSearchMetadata(html, sourcePath) {
+function searchMetadata(html, sourcePath) {
   assertPublicStaticDocumentPath(sourcePath);
   // Pagefind keeps script ids as anchors even when their text is excluded.
   if (/<html\b[^>]*\bdata-pagefind-ignore="all"/iu.test(html))
@@ -148,6 +148,33 @@ export function withSearchMetadata(html, sourcePath) {
   }
   // AppShell's title lives outside main. This copy exists only in the search index.
   return `${document.slice(0, from)}<h1 data-pagefind-weight="8">${escapeText(title)}</h1>${document.slice(from)}`;
+}
+
+export function withSearchMetadata(html, sourcePath) {
+  const document = searchMetadata(html, sourcePath);
+  const root = /<html\b[^>]*>/iu.exec(document);
+  const head = /<head\b[^>]*>[\s\S]*?<\/head\s*>/iu.exec(document);
+  const heading = /<h1\b[^>]*\bdata-pagefind-meta="title"[^>]*>[\s\S]*?<\/h1\s*>/iu.exec(document);
+  const main = /<main\b[^>]*\bdata-pagefind-body[^>]*>/iu.exec(document);
+  if (!root || !head || !main) return document;
+  const end = document.indexOf("</main>", main.index + main[0].length);
+  if (end < 0) return document;
+  const shellHeading = heading && (heading.index < main.index || heading.index >= end + 7) ? heading : undefined;
+  const regions = [
+    { from: root.index, to: root.index + root[0].length },
+    { from: head.index, to: head.index + head[0].length },
+    { from: main.index, to: end + 7 },
+    ...(shellHeading ? [{ from: shellHeading.index, to: shellHeading.index + shellHeading[0].length }] : []),
+  ].sort((a, b) => a.from - b.from);
+  let remainder = "",
+    copied = 0;
+  for (const region of regions) {
+    remainder += document.slice(copied, region.from);
+    copied = region.to;
+  }
+  remainder += document.slice(copied);
+  if (/data-pagefind-(?:meta|filter|sort|body|weight)\b/iu.test(remainder)) return document;
+  return `<!doctype html>${root[0]}${head[0]}<body>${shellHeading?.[0] || ""}${document.slice(main.index, end + 7)}</body></html>`;
 }
 
 const attrsOf = (node) => Object.fromEntries((node.attrs || []).map(({ name, value }) => [name, value]));
