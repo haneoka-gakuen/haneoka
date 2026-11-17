@@ -15,6 +15,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlin
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import * as pagefind from "pagefind";
 import { parseFragment } from "parse5";
@@ -267,7 +268,7 @@ async function loadPublicStatic() {
             rewritten.add(sourcePath);
         }),
     ]);
-    sealPrivatePageData(module, privatePages, token);
+    await sealPrivatePageData(module, privatePages, token);
     return { module, staged: new Set(staged), targets, rewritten, rewriteOptions: { media, urlMap } };
   } finally {
     await workers.close();
@@ -280,7 +281,7 @@ async function loadPublicStatic() {
  * permission-protected static content prefix. Pages already public from a
  * previous finalization keep their entries.
  */
-function sealPrivatePageData(module, pages, token) {
+async function sealPrivatePageData(module, pages, token) {
   const shards = new Map();
   const root = privatePageDataRoot(output);
   if (existsSync(root))
@@ -302,24 +303,31 @@ function sealPrivatePageData(module, pages, token) {
   if (!token && !shards.size) return;
   const kid = token ? module.privatePageDataKeyId(token) : "";
   let blobs = 0;
-  for (const [sourcePath, page] of pages) {
-    const html = readFileSync(path.join(output, sourcePath), "utf8");
-    const scripts = module.pageDataScripts(html, page.ids);
-    if (!scripts) throw new Error(`Private page data is missing a seed: ${page.path}`);
-    const sealed = [];
-    for (const id of page.ids) {
-      const { ciphertext, ...seal } = module.sealPageData(scripts.get(id), token);
-      const digest = createHash("sha256").update(ciphertext).digest("hex");
-      const target = path.join(output, "entity-data", "v1", `${digest}.bin`);
-      mkdirSync(path.dirname(target), { recursive: true });
-      if (!existsSync(target)) writeFileSync(target, ciphertext, { flag: "wx" });
-      if (createHash("sha256").update(readFileSync(target)).digest("hex") !== digest)
-        throw new Error(`Private page data differs from its name: ${digest}`);
-      sealed.push({ id, ...seal, url: `/entity-data/v1/${digest}.bin` });
-      blobs++;
-    }
-    shards.set(page.path, { build: page.build, kid, types: page.types, scripts: sealed });
-  }
+  const entries = [...pages];
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, availableParallelism()) }, async () => {
+      while (cursor < entries.length) {
+        const [sourcePath, page] = entries[cursor++];
+        const html = readFileSync(path.join(output, sourcePath), "utf8");
+        const scripts = module.pageDataScripts(html, page.ids);
+        if (!scripts) throw new Error(`Private page data is missing a seed: ${page.path}`);
+        const sealed = [];
+        for (const id of page.ids) {
+          const { ciphertext, ...seal } = await module.sealPageDataAsync(scripts.get(id), token);
+          const digest = createHash("sha256").update(ciphertext).digest("hex");
+          const target = path.join(output, "entity-data", "v1", `${digest}.bin`);
+          mkdirSync(path.dirname(target), { recursive: true });
+          if (!existsSync(target)) writeFileSync(target, ciphertext, { flag: "wx" });
+          if (createHash("sha256").update(readFileSync(target)).digest("hex") !== digest)
+            throw new Error(`Private page data differs from its name: ${digest}`);
+          sealed.push({ id, ...seal, url: `/entity-data/v1/${digest}.bin` });
+          blobs++;
+        }
+        shards.set(page.path, { build: page.build, kid, types: page.types, scripts: sealed });
+      }
+    }),
+  );
   const grouped = new Map();
   for (const [pathname, entry] of shards) {
     const locale = module.privatePageDataLocale(pathname);

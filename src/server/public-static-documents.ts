@@ -6,7 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createCipheriv, createDecipheriv, createHash, createHmac } from "node:crypto";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync, gzip, gunzip } from "node:zlib";
+import { promisify } from "node:util";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { SAXParser, type StartTag } from "parse5-sax-parser";
 import { contentPublished, publicationFields } from "../lib/content-publication.ts";
@@ -699,18 +700,31 @@ const PAGE_DATA_ATTRIBUTES = ["data-page-data", "data-view-data", "data-collecti
 export function pageDataScripts(html: string, ids: readonly string[]): Map<string, string> | undefined {
   const wanted = new Set(ids);
   const scripts = new Map<string, string>();
-  const visit = (node: Node): void => {
-    if ("tagName" in node && isPageData(node) && wanted.has(attr(node, "id") ?? "")) {
-      const text = node.childNodes[0];
-      if (text?.nodeName === "#text" && text.sourceCodeLocation)
-        scripts.set(
-          attr(node, "id")!,
-          html.slice(text.sourceCodeLocation.startOffset, text.sourceCodeLocation.endOffset),
-        );
+  const parser = new SAXParser({ sourceCodeLocationInfo: true });
+  let templateDepth = 0;
+  let pending: { id: string; from: number } | undefined;
+  parser.on("startTag", (token) => {
+    if (token.tagName === "template") templateDepth++;
+    const id = attr(token, "id");
+    if (
+      !templateDepth &&
+      token.tagName === "script" &&
+      attr(token, "type") === "application/json" &&
+      id &&
+      id !== "haneoka-i18n-seed" &&
+      wanted.has(id)
+    )
+      pending = { id, from: token.sourceCodeLocation!.endOffset };
+  });
+  parser.on("endTag", (token) => {
+    if (token.tagName === "template" && templateDepth) templateDepth--;
+    if (token.tagName === "script" && pending) {
+      const to = token.sourceCodeLocation!.startOffset;
+      if (to > pending.from) scripts.set(pending.id, html.slice(pending.from, to));
+      pending = undefined;
     }
-    if ("childNodes" in node) for (const child of node.childNodes) visit(child);
-  };
-  visit(parse(html, { sourceCodeLocationInfo: true }));
+  });
+  parser.end(html);
   return scripts.size === wanted.size ? scripts : undefined;
 }
 
@@ -730,19 +744,40 @@ export interface SealedPageData {
  * gzip + AES-256-GCM under a key unique to this plaintext; the IV is derived
  * from the same digest, which is safe because each key encrypts one plaintext.
  */
-export function sealPageData(text: string, token: string): SealedPageData {
-  const plain = Buffer.from(text);
+const compressPrivateData = promisify(gzip);
+const expandPrivateData = promisify(gunzip);
+function encryptPageData(plain: Buffer, zipped: Buffer, token: string): SealedPageData {
   const sha256 = createHash("sha256").update(plain).digest("hex");
   const key = derive(token, "key", sha256);
   const iv = derive(token, "iv", sha256).subarray(0, 12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(gzipSync(plain, { level: 9 })), cipher.final(), cipher.getAuthTag()]);
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(ciphertext.subarray(-16));
-  const opened = gunzipSync(Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]));
-  if (createHash("sha256").update(opened).digest("hex") !== sha256)
-    throw new Error("Private page data does not round-trip");
+  const ciphertext = Buffer.concat([cipher.update(zipped), cipher.final(), cipher.getAuthTag()]);
   return { sha256, iv: iv.toString("base64url"), bytes: plain.length, ciphertext };
+}
+function decryptPageData(seal: SealedPageData, token: string): Buffer {
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    derive(token, "key", seal.sha256),
+    Buffer.from(seal.iv, "base64url"),
+  );
+  decipher.setAuthTag(seal.ciphertext.subarray(-16));
+  return Buffer.concat([decipher.update(seal.ciphertext.subarray(0, -16)), decipher.final()]);
+}
+function checkPageData(opened: Buffer, expected: string): void {
+  if (createHash("sha256").update(opened).digest("hex") !== expected)
+    throw new Error("Private page data does not round-trip");
+}
+export function sealPageData(text: string, token: string): SealedPageData {
+  const plain = Buffer.from(text);
+  const seal = encryptPageData(plain, gzipSync(plain, { level: 9 }), token);
+  checkPageData(gunzipSync(decryptPageData(seal, token)), seal.sha256);
+  return seal;
+}
+export async function sealPageDataAsync(text: string, token: string): Promise<SealedPageData> {
+  const plain = Buffer.from(text);
+  const seal = encryptPageData(plain, await compressPrivateData(plain, { level: 9 }), token);
+  checkPageData(await expandPrivateData(decryptPageData(seal, token)), seal.sha256);
+  return seal;
 }
 export interface PrivatePageDataScript {
   id: string;
