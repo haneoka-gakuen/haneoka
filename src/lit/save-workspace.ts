@@ -33,6 +33,7 @@ import {
   type SaveSource,
 } from "../lib/app-bridge";
 import { modal } from "./ui/modal";
+import { gameHistoryHelp } from "./ui/game-history-help";
 import { downloadBlob } from "../lib/canvas-capture";
 import { formatDate } from "../lib/date-format";
 import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
@@ -48,6 +49,7 @@ export class SaveWorkspace extends LitElement {
     native: { state: true },
     sources: { state: true },
     sheet: { state: true },
+    historyHelpOpen: { state: true },
     devices: { state: true },
     backups: { state: true },
     locked: { state: true },
@@ -56,6 +58,7 @@ export class SaveWorkspace extends LitElement {
     server: { state: true },
     view: { state: true },
   };
+  declare historyHelpOpen: boolean;
   declare locale: string;
   declare messages: Record<string, string>;
   declare records: StoredSave[];
@@ -86,6 +89,7 @@ export class SaveWorkspace extends LitElement {
     this.sources = [];
     this.releases = [];
     this.sheet = null;
+    this.historyHelpOpen = false;
     this.devices = null;
     this.backups = null;
     this.locked = null;
@@ -783,6 +787,7 @@ export class SaveWorkspace extends LitElement {
     setAppBarActions(
       "save-workspace",
       html`
+        <button class="icon-button" type="button" aria-label=${this.t("readHelp")} @click=${() => { this.historyHelpOpen = true; }}>${icon("help")}</button>
         ${
           this.selected
             ? viewSwitch(this.locale, this.view, (view) => {
@@ -803,6 +808,7 @@ export class SaveWorkspace extends LitElement {
   render() {
     const record = this.records.find((v) => v.id === this.selected);
     return html`
+      ${this.historyHelpOpen ? gameHistoryHelp(key => this.t(key), () => { this.historyHelpOpen = false; }) : nothing}
       <input type="file" multiple hidden @change=${this.file} />
       <div class="save-workspace stack" aria-busy=${this.busy}>
         ${

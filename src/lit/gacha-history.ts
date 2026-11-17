@@ -5,6 +5,7 @@
 // Effects/Dependencies: light DOM 与 SSR 共用；消费共享分析／图表／卡牌，导入及云状态由工作区持有。
 import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import { modal } from "./ui/modal";
+import { gameHistoryHelp } from "./ui/game-history-help";
 import "./ui/image-gallery";
 import {
   analyzeGachaHistory,
@@ -114,9 +115,12 @@ export class GachaHistory extends LitElement {
     expanded: { state: true },
     tab: { state: true },
     accountsOpen: { state: true },
+    readHelpOpen: { state: true },
     mergingAccounts: { state: true },
     mergeKeys: { state: true },
   };
+  declare readHelpOpen: boolean;
+  openReadHelp() { this.readHelpOpen = true; }
   declare cloudSignedIn: boolean;
   declare cloudBusy: boolean;
   declare cloudLinked: boolean;
@@ -223,6 +227,7 @@ export class GachaHistory extends LitElement {
     this.view = "grid";
     this.expanded = new Set();
     this.tab = "overview";
+    this.readHelpOpen = false;
     this.accountsOpen = false; this.mergingAccounts = false; this.mergeKeys = new Set();
   }
   connectedCallback() {
@@ -613,6 +618,7 @@ export class GachaHistory extends LitElement {
     const viewTab = this.tab === "records" || this.tab === "collection";
     return html`
       <div class="gacha-history">
+        ${this.readHelpOpen ? gameHistoryHelp(key => this.t(key), () => { this.readHelpOpen = false; }) : nothing}
         ${this.renderAccountPicker()}
         ${this.renderImagePreview()}
         ${
@@ -635,6 +641,7 @@ export class GachaHistory extends LitElement {
           kind: "gacha-history",
           count: { value: filtered.length, label: this.t("batches", { count: filtered.length }) },
           controls: html`
+            ${iconButton({ label: this.t("readHelp"), icon: "help", onClick: () => this.openReadHelp() })}
             ${iconButton({ label: this.t("exportImage"), icon: "image", disabled: !report || this.exportingImage, onClick: () => report && void this.exportImage(report) })}
             ${this.canExport ? iconButton({ label: this.t("export"), icon: "file_download", disabled: !filtered.length, onClick: () => this.emit("gacha-export", { accountKey: this.selectedAccountKey, historyKind: this.selectedHistoryKind, batches: filtered }) }) : nothing}
             ${
@@ -1835,7 +1842,7 @@ export class GachaHistory extends LitElement {
   }
   private cloudControls() {
     const disabled = this.cloudBusy || this.busy || !this.selectedAccountKey;
-    const accountError = ["authentication_required", "email_verification_required", "account_restricted"].includes(
+    const accountError = ["authentication_required", "email_verification_required", "account_restricted", "history_session_expired"].includes(
       this.cloudErrorCode,
     );
     const errors: Record<string, string> = {
@@ -1846,7 +1853,7 @@ export class GachaHistory extends LitElement {
       history_account_limit: "cloudAccountLimit",
       history_account_mismatch: "cloudAccountMismatch",
       history_server_mismatch: "cloudServerMismatch",
-      history_session_expired: "errorSessionExpired",
+      history_session_expired: "cloudSessionExpired",
       history_network_error: "cloudNetworkError",
       history_cloud_unavailable: "cloudUnavailable",
     };

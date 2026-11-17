@@ -266,6 +266,7 @@
     "src/lib/page-data.ts",
     "src/lib/public-static-browser.ts",
     "src/lib/gacha-history-luck.ts",
+    "src/lib/gacha-history-help.ts",
     "src/lib/gacha-history-merge.ts",
     "src/lib/gacha-history-reconcile.ts",
     "scripts/database/merge_gacha_histories.ts",

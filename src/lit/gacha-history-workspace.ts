@@ -9,6 +9,8 @@ import { clientText } from "../i18n/client";
 import { readPageData } from "../lib/page-data";
 import { historyStore, type StoredHistory } from "../lib/gacha-history-store";
 import { historyMatchCards } from "../lib/gacha-history-merge";
+import { gameHistoryErrorKey } from "../lib/gacha-history-help";
+import { snackbar } from "../lib/snackbar";
 import { HistoryCloudSync } from "../lib/gacha-history-cloud-sync";
 import {
   HISTORY_BYTES,
@@ -351,9 +353,12 @@ class GachaHistoryWorkspace extends HTMLElement {
           result.files.map((file) => new File([file.text], file.name, { type: "application/json" })),
           true,
         );
-    } catch {
-      this.error = this.t("errorImportInvalid");
-      if (this.isConnected) this.update();
+    } catch (error) {
+      this.error = this.t(gameHistoryErrorKey(error));
+      if (this.isConnected) {
+        this.update();
+        snackbar(this.error, { error: true, action: { label: this.t("readHelp"), run: () => { if (this.isConnected) this.view.openReadHelp(); } } });
+      }
     }
   }
   private async adb() {

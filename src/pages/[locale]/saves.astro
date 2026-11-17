@@ -1,4 +1,5 @@
 ---
+import { HISTORY_HELP_KEYS } from "../../lib/gacha-history-help";
 import { staticBuildPaths } from "../../server/static-build";
 import Base from "../../layouts/Base.astro";
 import AppShell from "../../components/AppShell.astro";
@@ -40,6 +41,7 @@ const keys = [
 ];
 const messages = {
   ...Object.fromEntries(keys.map((key) => [key, t(locale, `saveWorkspace.${key}`)])),
+  ...Object.fromEntries(HISTORY_HELP_KEYS.map((key) => [key, t(locale, `catalog.gachaHistory.${key}`)])),
   "servers.jp": t(locale, "tools.teamBuilder.boxImport.servers.jp"),
   "servers.intl": t(locale, "tools.teamBuilder.boxImport.servers.intl"),
 };
