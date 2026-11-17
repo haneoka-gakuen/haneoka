@@ -79,10 +79,10 @@ function sealPrivatePageData(outputRoot: string): { files: number; payloads: num
         for (const script of entry.scripts) {
           const digest = /^\/entity-data\/v1\/([a-f0-9]{64})\.bin$/u.exec(script.url)?.[1];
           const file = digest && path.join(outputRoot, script.url.slice(1));
+          if (!digest || !file) throw new Error(`Invalid private page data URL: ${script.url}`);
           if (
-            !file ||
-            !fs.existsSync(file) ||
-            createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== digest
+            !payloads.has(digest) &&
+            (!fs.existsSync(file) || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== digest)
           )
             throw new Error(`Private page data payload is missing or differs: ${script.url}`);
           payloads.add(digest);
@@ -513,38 +513,32 @@ export function finalizeStaticDocuments(
     }
     return loadedPack.body.subarray(location!.offset, location!.offset + chunk.gzipBytes);
   };
-  const checkedChunks = [...referenced.values()];
-  if (prepared)
-    checkedChunks.sort((a, b) => {
-      const left = prepared.locations[a.sha256]?.packSha256 || "";
-      const right = prepared.locations[b.sha256]?.packSha256 || "";
-      return left < right ? -1 : left > right ? 1 : 0;
-    });
-  for (const chunk of checkedChunks) {
-    const zipped = prepared
-      ? packedBytes(chunk)
-      : fs.readFileSync(path.join(contentRoot, chunk.sha256.slice(0, 2), `${chunk.sha256}.gz`));
-    const body = gunzipSync(zipped);
-    if (
-      zipped.length !== chunk.gzipBytes ||
-      body.length !== chunk.bytes ||
-      createHash("sha256").update(body).digest("hex") !== chunk.sha256
-    )
-      throw new Error(`Static document content differs from its reference: ${chunk.sha256}`);
-    findDataReferences(body);
-    boundaries.set(chunk.sha256, {
-      first: body.toString("latin1", 0, 100),
-      last: body.toString("latin1", Math.max(0, body.length - 100)),
-    });
-  }
-  for (const record of documents.values()) {
-    let previous = "";
-    for (const chunk of staticDocumentChunks(record)) {
-      const boundary = boundaries.get(chunk.sha256)!;
-      findDataReferences(Buffer.from(previous + boundary.first, "latin1"));
-      previous = boundary.last;
+  if (!prepared) {
+    const checkedChunks = [...referenced.values()];
+    for (const chunk of checkedChunks) {
+      const zipped = fs.readFileSync(path.join(contentRoot, chunk.sha256.slice(0, 2), `${chunk.sha256}.gz`));
+      const body = gunzipSync(zipped);
+      if (
+        zipped.length !== chunk.gzipBytes ||
+        body.length !== chunk.bytes ||
+        createHash("sha256").update(body).digest("hex") !== chunk.sha256
+      )
+        throw new Error(`Static document content differs from its reference: ${chunk.sha256}`);
+      findDataReferences(body);
+      boundaries.set(chunk.sha256, {
+        first: body.toString("latin1", 0, 100),
+        last: body.toString("latin1", Math.max(0, body.length - 100)),
+      });
     }
-  }
+    for (const record of documents.values()) {
+      let previous = "";
+      for (const chunk of staticDocumentChunks(record)) {
+        const boundary = boundaries.get(chunk.sha256)!;
+        findDataReferences(Buffer.from(previous + boundary.first, "latin1"));
+        previous = boundary.last;
+      }
+    }
+  } else for (const digest of prepared.dataObjects) dataReferences.add(digest);
   if (prepared) {
     const declared = [...new Set(prepared.dataObjects)].sort();
     if (

@@ -15,6 +15,9 @@ import {
   STATIC_DOCUMENT_PACK_BYTES,
   staticDocumentAssetPath,
   staticDocumentPackPath,
+  staticDocumentChunks,
+  staticDocumentShard,
+  isStaticDocumentRecord,
 } from "../../src/lib/static-documents.ts";
 
 const root = path.resolve(".output/static-documents");
@@ -105,6 +108,25 @@ if (
 )
   throw new Error("Static publication reference manifest structure differs");
 const indexPaths = new Set();
+const documentRecords = new Map();
+const referencedData = new Set();
+const boundaries = new Map();
+const dataMarker = Buffer.from("/provider-static/data/");
+const findDataReferences = (body) => {
+  for (let at = body.indexOf(dataMarker); at >= 0; at = body.indexOf(dataMarker, at + dataMarker.length)) {
+    const value = body.toString("ascii", at + dataMarker.length, at + dataMarker.length + 69);
+    if (/^[a-f0-9]{64}\.json$/u.test(value)) referencedData.add(value.slice(0, 64));
+  }
+};
+const inspectBody = (object, body) => {
+  if (body.length !== object.bytes || digest(body) !== object.sha256)
+    throw new Error(`Static content differs: ${object.sha256}`);
+  findDataReferences(body);
+  boundaries.set(object.sha256, {
+    first: body.toString("latin1", 0, 100),
+    last: body.toString("latin1", Math.max(0, body.length - 100)),
+  });
+};
 for (const index of manifest.indexes) {
   if (!/^\/provider-static\/index\/[a-f0-9]{2}\.json$/u.test(index.path) || indexPaths.has(index.path))
     throw new Error("Invalid static publication index path");
@@ -112,12 +134,37 @@ for (const index of manifest.indexes) {
   const body = fs.readFileSync(path.join(path.resolve(".output/public"), index.path));
   if (body.length !== index.bytes || digest(body) !== index.sha256)
     throw new Error(`Static publication index differs: ${index.path}`);
+  const value = JSON.parse(body);
+  if (value.schema !== STATIC_DOCUMENT_SCHEMA || !value.entries || Array.isArray(value.entries))
+    throw new Error("Invalid static document index schema");
+  for (const [pathname, record] of Object.entries(value.entries)) {
+    if (
+      !pathname.startsWith("/") ||
+      documentRecords.has(pathname) ||
+      !isStaticDocumentRecord(record) ||
+      staticDocumentShard(pathname) !== path.posix.basename(index.path, ".json")
+    )
+      throw new Error(`Invalid static document record: ${pathname}`);
+    documentRecords.set(pathname, record);
+  }
 }
+if (
+  documentRecords.size !== publication.indexedObjects ||
+  [...documentRecords.values()].filter((record) => record.contentType === "text/html; charset=utf-8").length !==
+    manifest.documents
+)
+  throw new Error("Static document index coverage differs");
 if (publication.contentStorage === "worker-assets") {
   if (manifest.contentStorage !== "worker-assets" || manifest.assetRoot !== STATIC_DOCUMENT_ASSET_ROOT)
     throw new Error("Static asset publication storage differs");
   let gzipBytes = 0;
   const objects = publicationObjects(manifest);
+  for (const record of documentRecords.values())
+    for (const chunk of staticDocumentChunks(record)) {
+      const object = objects.get(chunk.sha256);
+      if (!object || object.bytes !== chunk.bytes || object.gzipBytes !== chunk.gzipBytes)
+        throw new Error(`Static document chunk is missing: ${chunk.sha256}`);
+    }
   let packFiles = 0;
   if (manifest.contentIndexes !== undefined || manifest.contentPacks !== undefined) {
     if (
@@ -187,8 +234,7 @@ if (publication.contentStorage === "worker-assets") {
         if (offset !== cursor) throw new Error("Static pack offsets overlap or leave unreferenced bytes");
         const zipped = bytes.subarray(offset, offset + object.gzipBytes),
           body = gunzipSync(zipped);
-        if (body.length !== object.bytes || digest(body) !== object.sha256)
-          throw new Error(`Packed static content differs: ${object.sha256}`);
+        inspectBody(object, body);
         cursor += zipped.length;
         gzipBytes += zipped.length;
       }
@@ -200,11 +246,29 @@ if (publication.contentStorage === "worker-assets") {
       const file = path.join(path.resolve(".output/public"), staticDocumentAssetPath(object.sha256));
       const zipped = fs.readFileSync(file),
         body = gunzipSync(zipped);
-      if (zipped.length !== object.gzipBytes || body.length !== object.bytes || digest(body) !== object.sha256)
-        throw new Error(`Static asset content differs: ${object.sha256}`);
+      if (zipped.length !== object.gzipBytes) throw new Error(`Static asset length differs: ${object.sha256}`);
+      inspectBody(object, body);
       gzipBytes += zipped.length;
     }
   }
+  for (const record of documentRecords.values()) {
+    let previous = "";
+    for (const chunk of staticDocumentChunks(record)) {
+      const boundary = boundaries.get(chunk.sha256);
+      findDataReferences(Buffer.from(previous + boundary.first, "latin1"));
+      previous = boundary.last;
+    }
+  }
+  const dataFile = path.join(root, "data-objects.json");
+  const declared = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, "utf8")) : [...referencedData];
+  if (
+    !Array.isArray(declared) ||
+    declared.length !== manifest.data ||
+    new Set(declared).size !== declared.length ||
+    declared.some((id) => !objects.has(id)) ||
+    JSON.stringify([...declared].sort()) !== JSON.stringify([...referencedData].sort())
+  )
+    throw new Error("Static data reference closure differs");
   if (gzipBytes !== publication.referencedGzipBytes) throw new Error("Static asset reference byte total differs");
   console.log(
     JSON.stringify({
