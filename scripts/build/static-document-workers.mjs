@@ -113,7 +113,9 @@ if (!isMainThread) {
           const own = mediaFor?.(job.locale);
           rewrites.set(
             job.locale,
-            (url, site) => own?.(url, site) ?? mapped?.(url, site) ?? module.functionalMediaUrl(url),
+            Object.assign((url, site) => own?.(url, site) ?? mapped?.(url, site) ?? module.functionalMediaUrl(url), {
+              contextIndependent: true,
+            }),
           );
         }
         const file = path.join(job.staged ? publicStaticStagingRoot(documentsRoot) : output, job.sourcePath);

@@ -31,6 +31,12 @@ on:
       verification_only:
         type: boolean
         default: false
+      production_publish:
+        type: boolean
+        default: false
+      apply_d1_migrations:
+        type: boolean
+        default: true
     outputs:
       frontend_artifact:
         value: ${{ jobs.merge.outputs.artifact }}
@@ -40,6 +46,8 @@ on:
         value: ${{ jobs.prepare.outputs.inputs_sha }}
       node_version:
         value: ${{ jobs.prepare.outputs.node_version }}
+      published:
+        value: ${{ jobs.merge.outputs.published }}
 env:
   STATIC_PUBLIC_DOCUMENTS: "1"
   STATIC_PUBLIC_MEDIA: "1"
@@ -254,15 +262,32 @@ jobs:
         run: |
           python -m pip install boto3==1.43.47 py3rijndael==0.3.3
           python scripts/publish/content_index.py
+      - name: Resolve immutable entity projection recipe
+        id: projection-identity
+        run: echo "key=$(node scripts/build/prepare-static-inputs.mjs cache-key)" >> "$GITHUB_OUTPUT"
+      - name: Restore verified entity projections
+        id: projection-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: data/static-projections/v1/${{ steps.projection-identity.outputs.key }}
+          key: static-projections-${{ env.STATIC_CATALOG_TOKEN != '' && 'build' || 'public' }}-v1-${{ runner.os }}-${{ steps.projection-identity.outputs.key }}
       - name: Collect all production data and route matrices
         env:
           AFDIAN_USER_ID: ${{ secrets.AFDIAN_USER_ID }}
           AFDIAN_TOKEN: ${{ secrets.AFDIAN_TOKEN }}
           PATREON_CREATOR_TOKEN: ${{ secrets.PATREON_CREATOR_TOKEN }}
+          STATIC_BUILD_PROJECTION_CACHE_ROOT: data/static-projections/v1
+          STATIC_BUILD_PROJECTION_RECIPE: ${{ steps.projection-identity.outputs.key }}
         run: |
           node scripts/build/prepare-static-inputs.mjs
           STATIC_BUILD_PHASE=prepare pnpm exec astro build
           node scripts/build/static-build-inputs.mjs compact-catalog-cache --root "$PWD" --capture "$STATIC_BUILD_INPUT_ROOT"
+      - name: Save verified entity projections
+        if: steps.projection-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: data/static-projections/v1/${{ steps.projection-identity.outputs.key }}
+          key: ${{ steps.projection-cache.outputs.cache-primary-key }}
       - name: Publish completed chart computations without changing core snapshots
         if: ${{ !inputs.verification_only && steps.catalog-pages.outputs.enabled == 'true' }}
         env:
@@ -343,6 +368,8 @@ jobs:
     uses: ./.github/workflows/static-locale.yml
     secrets:
       CONTENT_BUILD_TOKEN: ${{ secrets.CONTENT_BUILD_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     with:
       locale: ${{ matrix.locale }}
       inputs_artifact: ${{ needs.prepare.outputs.artifact }}
@@ -351,6 +378,7 @@ jobs:
       runtime_policy: ${{ inputs.verification_only && 'optional' || 'required' }}
       page_groups: ${{ inputs.page_groups }}
       resource_servers: ${{ inputs.resource_servers }}
+      preupload: ${{ inputs.production_publish }}
 
   merge:
     name: Verify and merge complete frontend
@@ -358,9 +386,13 @@ jobs:
       - prepare
       - locale
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    concurrency:
+      group: ${{ inputs.production_publish && 'cloudflare-production-publish' || format('static-frontend-merge-{0}', github.run_id) }}
+      cancel-in-progress: false
     permissions:
       contents: read
+      actions: read
     env:
       NODE_OPTIONS: --max-old-space-size=5120
       STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
@@ -370,7 +402,14 @@ jobs:
       HANEOKA_CUBISM_RUNTIME_POLICY: ${{ inputs.verification_only && 'optional' || 'required' }}
     outputs:
       artifact: ${{ steps.archive.outputs.artifact }}
+      published: ${{ steps.publish.outputs.published }}
     steps:
+      - name: Check publication scope
+        if: inputs.production_publish
+        env:
+          VERIFICATION_ONLY: ${{ inputs.verification_only }}
+        run: |
+          [[ "$VERIFICATION_ONLY" == "false" && "$GITHUB_REF" == "refs/heads/main" && "$GITHUB_EVENT_NAME" != "pull_request" ]]
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -426,6 +465,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Seal complete frontend verification
+        if: ${{ !inputs.verification_only }}
+        run: node scripts/deploy/worker-publication.mjs verify
       - name: Archive complete qualified publication
         id: archive
         run: |
@@ -443,3 +485,34 @@ jobs:
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
+      - name: Apply production D1 migrations
+        if: inputs.production_publish && inputs.apply_d1_migrations
+        run: |
+          pnpm exec wrangler d1 migrations apply haneoka-community --remote
+          pnpm exec wrangler d1 migrations apply haneoka-records --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Publish the verified in-place Worker and assets
+        id: publish
+        if: inputs.production_publish
+        run: |
+          node scripts/deploy/worker-publication.mjs publish
+          echo "published=true" >> "$GITHUB_OUTPUT"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          HANEOKA_PUBLICATION_LOCK: cloudflare-production-publish
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      - name: Save successful static deployment receipt
+        if: always() && inputs.production_publish
+        uses: actions/upload-artifact@v7
+        with:
+          name: static-deployment-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            .output/deployment/successful-static-deployment.json
+            .output/deployment/publication-context.json
+          retention-days: 30
+          if-no-files-found: ignore

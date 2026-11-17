@@ -75,7 +75,11 @@ function sealPrivatePageData(outputRoot: string): { files: number; payloads: num
         for (const script of entry.scripts) {
           const digest = /^\/entity-data\/v1\/([a-f0-9]{64})\.bin$/u.exec(script.url)?.[1];
           const file = digest && path.join(outputRoot, script.url.slice(1));
-          if (!file || !fs.existsSync(file) || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== digest)
+          if (
+            !file ||
+            !fs.existsSync(file) ||
+            createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== digest
+          )
             throw new Error(`Private page data payload is missing or differs: ${script.url}`);
           payloads.add(digest);
         }
@@ -129,6 +133,8 @@ export function beginStaticDocumentsBuild(): void {
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(log, "");
   fs.rmSync(path.join(root, "coverage"), { recursive: true, force: true });
+  fs.rmSync(path.join(root, "materialized"), { recursive: true, force: true });
+  fs.rmSync(publicStaticStagingRoot(root), { recursive: true, force: true });
   written.clear();
 }
 function contentChunk(body: Buffer): StaticDocumentChunk {
@@ -298,7 +304,16 @@ function sealPublicMedia(outputRoot: string): { files: number; bytes: number; sh
     sha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
   };
 }
-export function finalizeStaticDocuments(outputRoot: string): { documents: number; data: number } {
+export interface PreparedStaticPacks {
+  objects: StaticDocumentChunk[];
+  dataObjects: string[];
+  locations: Record<string, StaticDocumentContentLocation>;
+  packs: { path: string; sha256: string; bytes: number }[];
+}
+export function finalizeStaticDocuments(
+  outputRoot: string,
+  prepared?: PreparedStaticPacks,
+): { documents: number; data: number } {
   if (!fs.existsSync(log)) return { documents: 0, data: 0 };
   const documents = new Map<string, StaticDocumentRecord>();
   for (const line of fs.readFileSync(log, "utf8").split("\n").filter(Boolean)) {
@@ -433,8 +448,47 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     }
   };
   const boundaries = new Map<string, { first: string; last: string }>();
-  for (const chunk of referenced.values()) {
-    const zipped = fs.readFileSync(path.join(contentRoot, chunk.sha256.slice(0, 2), `${chunk.sha256}.gz`));
+  const preparedPacks = new Map(prepared?.packs.map((pack) => [pack.sha256, pack]));
+  if (prepared)
+    for (const object of prepared.objects) {
+      const previous = referenced.get(object.sha256);
+      if (previous && (previous.bytes !== object.bytes || previous.gzipBytes !== object.gzipBytes))
+        throw new Error(`Conflicting packed content: ${object.sha256}`);
+      referenced.set(object.sha256, object);
+    }
+  let loadedPack: { sha256: string; body: Buffer } | undefined;
+  const packedBytes = (chunk: StaticDocumentChunk): Buffer => {
+    const location = prepared!.locations[chunk.sha256];
+    const pack = location && preparedPacks.get(location.packSha256);
+    if (
+      !pack ||
+      pack.path !== staticDocumentPackPath(pack.sha256) ||
+      location!.packBytes !== pack.bytes ||
+      location!.gzipBytes !== chunk.gzipBytes ||
+      !Number.isSafeInteger(location!.offset) ||
+      location!.offset < 0 ||
+      location!.offset + chunk.gzipBytes > pack.bytes
+    )
+      throw new Error(`Invalid packed content location: ${chunk.sha256}`);
+    if (loadedPack?.sha256 !== pack.sha256) {
+      const body = fs.readFileSync(path.join(outputRoot, pack.path.slice(1)));
+      if (body.length !== pack.bytes || createHash("sha256").update(body).digest("hex") !== pack.sha256)
+        throw new Error(`Static content pack differs: ${pack.sha256}`);
+      loadedPack = { sha256: pack.sha256, body };
+    }
+    return loadedPack.body.subarray(location!.offset, location!.offset + chunk.gzipBytes);
+  };
+  const checkedChunks = [...referenced.values()];
+  if (prepared)
+    checkedChunks.sort((a, b) => {
+      const left = prepared.locations[a.sha256]?.packSha256 || "";
+      const right = prepared.locations[b.sha256]?.packSha256 || "";
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
+  for (const chunk of checkedChunks) {
+    const zipped = prepared
+      ? packedBytes(chunk)
+      : fs.readFileSync(path.join(contentRoot, chunk.sha256.slice(0, 2), `${chunk.sha256}.gz`));
     const body = gunzipSync(zipped);
     if (
       zipped.length !== chunk.gzipBytes ||
@@ -456,15 +510,25 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
       previous = boundary.last;
     }
   }
-  for (const digest of dataReferences) {
-    const body = fs.readFileSync(path.join(dataRoot, digest.slice(0, 2), `${digest}.json`));
-    if (createHash("sha256").update(body).digest("hex") !== digest)
-      throw new Error(`Static data digest mismatch: ${digest}`);
-    findDataReferences(body);
-    const record = content(body, "application/json; charset=utf-8");
-    referenced.set(digest, { sha256: record.sha256, bytes: record.bytes, gzipBytes: record.gzipBytes });
-    data++;
-  }
+  if (prepared) {
+    const declared = [...new Set(prepared.dataObjects)].sort();
+    if (
+      JSON.stringify([...dataReferences].sort()) !== JSON.stringify(declared) ||
+      declared.some((digest) => !referenced.has(digest))
+    )
+      throw new Error("Packed static data closure differs");
+    data = declared.length;
+  } else
+    for (const digest of dataReferences) {
+      const body = fs.readFileSync(path.join(dataRoot, digest.slice(0, 2), `${digest}.json`));
+      if (createHash("sha256").update(body).digest("hex") !== digest)
+        throw new Error(`Static data digest mismatch: ${digest}`);
+      findDataReferences(body);
+      const record = content(body, "application/json; charset=utf-8");
+      referenced.set(digest, { sha256: record.sha256, bytes: record.bytes, gzipBytes: record.gzipBytes });
+      data++;
+    }
+  fs.writeFileSync(path.join(root, "data-objects.json"), JSON.stringify([...dataReferences].sort()));
   const publicMedia = sealPublicMedia(outputRoot);
   const privatePageData = sealPrivatePageData(outputRoot);
   const assetRoot = path.join(outputRoot, STATIC_DOCUMENT_ASSET_ROOT.slice(1));
@@ -473,7 +537,10 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
   // Locale directories hold private page-data metadata written before packing.
   if (fs.existsSync(assetRoot))
     for (const entry of fs.readdirSync(assetRoot, { withFileTypes: true }))
-      if (!(entry.isDirectory() && PRIVATE_PAGE_DATA_LOCALES.has(entry.name)))
+      if (
+        !(entry.isDirectory() && PRIVATE_PAGE_DATA_LOCALES.has(entry.name)) &&
+        !(prepared && entry.isFile() && preparedPacks.has(/^pack-([a-f0-9]{64})\.bin$/u.exec(entry.name)?.[1] || ""))
+      )
         fs.rmSync(path.join(assetRoot, entry.name), { recursive: true, force: true });
   fs.rmSync(contentIndexDirectory, { recursive: true, force: true });
   fs.mkdirSync(assetRoot, { recursive: true });
@@ -508,19 +575,59 @@ export function finalizeStaticDocuments(outputRoot: string): { documents: number
     pack = [];
     packBytes = 0;
   };
-  for (const chunk of [...referenced.values()].sort((a, b) => a.sha256.localeCompare(b.sha256, "en"))) {
-    if (chunk.gzipBytes > 25 * 1024 * 1024)
-      throw new Error(`Static document exceeds the 25 MiB asset limit: ${chunk.sha256}`);
-    const prefix = chunk.sha256.slice(0, 2);
-    const bytes = fs.readFileSync(path.join(contentRoot, prefix, `${chunk.sha256}.gz`));
-    if (bytes.length !== chunk.gzipBytes) throw new Error(`Static gzip length differs: ${chunk.sha256}`);
-    // Content changes only repack their own hash buckets across later releases.
-    if (prefix !== packPrefix || packBytes + bytes.length > STATIC_DOCUMENT_PACK_BYTES) flushPack();
-    packPrefix = prefix;
-    pack.push({ chunk, bytes });
-    packBytes += bytes.length;
-    if (packBytes >= STATIC_DOCUMENT_PACK_BYTES) flushPack();
-  }
+  if (prepared) {
+    const members = new Map<string, StaticDocumentChunk[]>();
+    for (const chunk of referenced.values()) {
+      const pack = prepared.locations[chunk.sha256]!.packSha256;
+      if (!members.has(pack)) members.set(pack, []);
+      members.get(pack)!.push(chunk);
+    }
+    const usedPacks = new Set<string>();
+    for (const pack of [...preparedPacks.values()].sort((a, b) => a.sha256.localeCompare(b.sha256, "en"))) {
+      const chunks = (members.get(pack.sha256) || []).sort(
+        (a, b) => prepared.locations[a.sha256]!.offset - prepared.locations[b.sha256]!.offset,
+      );
+      if (!chunks.length) continue;
+      const bytes = chunks.reduce((sum, chunk) => sum + chunk.gzipBytes, 0);
+      let selected = pack;
+      if (bytes !== pack.bytes) {
+        const body = Buffer.concat(chunks.map(packedBytes), bytes);
+        const sha256 = createHash("sha256").update(body).digest("hex");
+        selected = { path: staticDocumentPackPath(sha256), sha256, bytes };
+        const file = path.join(outputRoot, selected.path.slice(1));
+        if (!fs.existsSync(file)) fs.writeFileSync(file, body, { flag: "wx" });
+      }
+      let offset = 0;
+      for (const chunk of chunks) {
+        const prefix = chunk.sha256.slice(0, 2);
+        if (!contentShards.has(prefix)) contentShards.set(prefix, {});
+        contentShards.get(prefix)![chunk.sha256] = {
+          packSha256: selected.sha256,
+          offset,
+          gzipBytes: chunk.gzipBytes,
+          packBytes: bytes,
+        };
+        offset += chunk.gzipBytes;
+      }
+      if (!usedPacks.has(selected.sha256)) contentPacks.push(selected);
+      usedPacks.add(selected.sha256);
+    }
+    for (const pack of preparedPacks.values())
+      if (!usedPacks.has(pack.sha256)) fs.rmSync(path.join(outputRoot, pack.path.slice(1)), { force: true });
+  } else
+    for (const chunk of [...referenced.values()].sort((a, b) => a.sha256.localeCompare(b.sha256, "en"))) {
+      if (chunk.gzipBytes > 25 * 1024 * 1024)
+        throw new Error(`Static document exceeds the 25 MiB asset limit: ${chunk.sha256}`);
+      const prefix = chunk.sha256.slice(0, 2);
+      const bytes = fs.readFileSync(path.join(contentRoot, prefix, `${chunk.sha256}.gz`));
+      if (bytes.length !== chunk.gzipBytes) throw new Error(`Static gzip length differs: ${chunk.sha256}`);
+      // Content changes only repack their own hash buckets across later releases.
+      if (prefix !== packPrefix || packBytes + bytes.length > STATIC_DOCUMENT_PACK_BYTES) flushPack();
+      packPrefix = prefix;
+      pack.push({ chunk, bytes });
+      packBytes += bytes.length;
+      if (packBytes >= STATIC_DOCUMENT_PACK_BYTES) flushPack();
+    }
   flushPack();
   const contentIndexes: { path: string; sha256: string; bytes: number }[] = [];
   for (let index = 0; index < 256; index++) {

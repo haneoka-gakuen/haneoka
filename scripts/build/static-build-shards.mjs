@@ -18,6 +18,8 @@ import {
 } from "../../src/server/static-build.ts";
 import {
   STATIC_DOCUMENT_SCHEMA,
+  STATIC_DOCUMENT_CONTENT_INDEX_SCHEMA,
+  staticDocumentPackPath,
   staticDocumentShard,
   staticDocumentChunks,
   isStaticDocumentRecord,
@@ -27,6 +29,7 @@ const LOCALES = ["en", "ja", "ko", "zh-CN", "zh-TW"];
 const SEARCH_LANG = { en: "en", ja: "ja-jp", ko: "ko", "zh-CN": "zh-cn", "zh-TW": "zh-tw" };
 const PLAN_SCHEMA = "haneoka-static-shard-plan-v1";
 const PART_SCHEMA = "haneoka-static-shard-part-v1";
+const PACKED_PART_SCHEMA = "haneoka-static-shard-part-v2";
 const RENDER_SCHEMA = "haneoka-static-render-part-v1";
 const SPARSE_RENDER_SCHEMA = "haneoka-static-render-part-v2";
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
@@ -61,6 +64,25 @@ function generatedIndex(relative) {
     /^provider-static\/content-index\/[a-f0-9]{2}\.json$/u.test(relative) ||
     relative === "provider-static/publication.json.gz"
   );
+}
+const contentPackAsset = (relative) => /^provider-static\/content\/pack-[a-f0-9]{64}\.bin$/u.test(relative);
+function packedLayout(publication, publicRoot, metadataRoot) {
+  const locations = {};
+  for (const index of publication.reference.contentIndexes) {
+    const body = fs.readFileSync(path.join(publicRoot, index.path.slice(1)));
+    assert.deepEqual({ sha256: sha256(body), bytes: body.length }, { sha256: index.sha256, bytes: index.bytes });
+    const value = JSON.parse(body);
+    assert.equal(value.schema, STATIC_DOCUMENT_CONTENT_INDEX_SCHEMA);
+    for (const [digest, location] of Object.entries(value.entries)) {
+      assert.ok(publication.objects.has(digest) && !locations[digest], "Packed shard object differs");
+      locations[digest] = location;
+    }
+  }
+  assert.equal(Object.keys(locations).length, publication.objects.size, "Packed shard coverage differs");
+  const dataObjects = readJson(path.join(metadataRoot, "data-objects.json"));
+  assert.equal(new Set(dataObjects).size, publication.reference.data, "Packed shard data closure differs");
+  assert.ok(dataObjects.every((digest) => publication.objects.has(digest)));
+  return { locations, packs: publication.reference.contentPacks, dataObjects };
 }
 function linkOnce(source, target) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -349,7 +371,7 @@ export async function sealRenderPartition({ root, locale, partition: selected, p
   }
   const rendered = new Set(files.map((file) => file.path.slice(7)));
   for (const file of expected) if (!rendered.has(file)) throw new Error(`Missing rendered route: ${file}`);
-  for (const directory of ["content", "coverage"]) {
+  for (const directory of ["content", "coverage", "public-staging", "materialized"]) {
     const base = path.join(root, ".output/static-documents", directory);
     if (!fs.existsSync(base)) continue;
     for (const relative of listFiles(base)) {
@@ -518,10 +540,12 @@ export async function sealPublication({ root, locale, planFile, output, inputsMa
       throw new Error(`Rendered shard document differs: ${pathname}`);
   const publicRoot = path.join(root, ".output/public"),
     assets = [];
+  const packed = packedLayout(publication, publicRoot, path.join(root, ".output/static-documents"));
   let reusedAssets = 0,
     reusedBytes = 0;
   for (const relative of listFiles(publicRoot)) {
-    if (generatedIndex(relative) || relative === "pagefind/pagefind-entry.json") continue;
+    if ((generatedIndex(relative) && !contentPackAsset(relative)) || relative === "pagefind/pagefind-entry.json")
+      continue;
     const owner = assetOwner(relative);
     if (owner !== "shared" && owner !== locale) continue;
     const asset = { path: relative, owner, ...(await fileDigest(path.join(publicRoot, relative))) };
@@ -532,20 +556,17 @@ export async function sealPublication({ root, locale, planFile, output, inputsMa
       reusedBytes += asset.bytes;
     } else linkOnce(path.join(publicRoot, relative), path.join(output, "public", relative));
   }
-  for (const object of publication.objects.values()) {
-    const relative = `${object.sha256.slice(0, 2)}/${object.sha256}.gz`;
-    linkOnce(path.join(root, ".output/static-documents/content", relative), path.join(output, "content", relative));
-  }
   const search = readJson(path.join(publicRoot, "pagefind/pagefind-entry.json"));
   assert.deepEqual(Object.keys(search.languages), [SEARCH_LANG[locale]], "Search index includes another locale");
   writeJson(path.join(output, "public/pagefind/pagefind-entry.json"), search);
   writeJson(path.join(output, "part.json"), {
-    schema: PART_SCHEMA,
+    schema: PACKED_PART_SCHEMA,
     locale,
     planSha256,
     generation: plan.generation,
     records: [...publication.records],
     objects: [...publication.objects.values()],
+    packed,
     assets,
     searchEntrySha256: sha256(JSON.stringify(search)),
     searchLanguageOrder: plan.searchLanguageOrder || Object.values(SEARCH_LANG),
@@ -569,9 +590,16 @@ export async function partitionPublication({ root, planFile, output }) {
   if (fs.existsSync(output)) throw new Error("Shard destination already exists");
   const publicRoot = path.join(root, ".output/public"),
     contentRoot = path.join(root, ".output/static-documents/content");
+  const packed = fs.existsSync(path.join(root, ".output/static-documents/data-objects.json"))
+    ? packedLayout(publication, publicRoot, path.join(root, ".output/static-documents"))
+    : undefined;
   const assets = [];
   for (const relative of listFiles(publicRoot)) {
-    if (generatedIndex(relative) || relative === "pagefind/pagefind-entry.json") continue;
+    if (
+      (generatedIndex(relative) && !(packed && contentPackAsset(relative))) ||
+      relative === "pagefind/pagefind-entry.json"
+    )
+      continue;
     assets.push({
       path: relative,
       owner: assetOwner(relative),
@@ -587,13 +615,19 @@ export async function partitionPublication({ root, planFile, output }) {
   for (const locale of LOCALES) {
     const partRoot = path.join(output, locale),
       records = [...publication.records].filter(([pathname]) => localeForPath(pathname) === locale);
-    const selectedAssets = assets.filter((asset) => asset.owner === "shared" || asset.owner === locale);
-    for (const asset of selectedAssets)
-      linkOnce(path.join(publicRoot, asset.path), path.join(partRoot, "public", asset.path));
     const objects = new Map(auxiliary.map((object) => [object.sha256, object]));
     for (const [, record] of records)
       for (const chunk of staticDocumentChunks(record)) objects.set(chunk.sha256, chunk);
-    for (const object of objects.values()) {
+    if (packed) for (const digest of packed.dataObjects) objects.set(digest, publication.objects.get(digest));
+    const ownPackIds = new Set(packed && [...objects.keys()].map((digest) => packed.locations[digest].packSha256));
+    const selectedAssets = assets.filter(
+      (asset) =>
+        (asset.owner === "shared" || asset.owner === locale) &&
+        (!contentPackAsset(asset.path) || ownPackIds.has(asset.sha256)),
+    );
+    for (const asset of selectedAssets)
+      linkOnce(path.join(publicRoot, asset.path), path.join(partRoot, "public", asset.path));
+    for (const object of packed ? [] : objects.values()) {
       const relative = `${object.sha256.slice(0, 2)}/${object.sha256}.gz`;
       if (fs.statSync(path.join(contentRoot, relative)).size !== object.gzipBytes)
         throw new Error(`Missing source gzip: ${relative}`);
@@ -602,12 +636,21 @@ export async function partitionPublication({ root, planFile, output }) {
     const entry = { ...search, languages: { [SEARCH_LANG[locale]]: search.languages[SEARCH_LANG[locale]] } };
     writeJson(path.join(partRoot, "public/pagefind/pagefind-entry.json"), entry);
     writeJson(path.join(partRoot, "part.json"), {
-      schema: PART_SCHEMA,
+      schema: packed ? PACKED_PART_SCHEMA : PART_SCHEMA,
       locale,
       planSha256,
       generation: plan.generation,
       records,
       objects: [...objects.values()],
+      ...(packed
+        ? {
+            packed: {
+              locations: Object.fromEntries([...objects.keys()].map((digest) => [digest, packed.locations[digest]])),
+              packs: packed.packs.filter((pack) => ownPackIds.has(pack.sha256)),
+              dataObjects: packed.dataObjects,
+            },
+          }
+        : {}),
       assets: selectedAssets,
       searchEntrySha256: sha256(JSON.stringify(entry)),
       searchLanguageOrder: Object.keys(search.languages),
@@ -616,7 +659,11 @@ export async function partitionPublication({ root, planFile, output }) {
   return { locales: LOCALES.length, documents: publication.reference.documents, parts: output };
 }
 export async function mergeShards({ planFile, partsRoot, output, inputsManifest, consumeParts = false }) {
-  if (consumeParts && (path.resolve(output) === path.resolve(partsRoot) || path.resolve(output).startsWith(path.resolve(partsRoot) + path.sep)))
+  if (
+    consumeParts &&
+    (path.resolve(output) === path.resolve(partsRoot) ||
+      path.resolve(output).startsWith(path.resolve(partsRoot) + path.sep))
+  )
     throw new Error("Consumed shard inputs must not contain the merged output");
   const { plan, sha256: planSha256 } = readPlan(planFile);
   if (fs.existsSync(output)) throw new Error("Merged publication destination already exists");
@@ -625,16 +672,25 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
   const records = new Map(),
     assets = new Map(),
     objects = new Map(),
-    languages = new Map();
-  let searchBase, languageOrder, commonClientFiles;
+    languages = new Map(),
+    packedLocations = {},
+    packedFiles = new Map(),
+    packedData = new Set();
+  let searchBase, languageOrder, commonClientFiles, partSchema;
   const publicRoot = path.join(output, ".output/public"),
     contentRoot = path.join(output, ".output/static-documents/content");
   fs.mkdirSync(contentRoot, { recursive: true });
   for (const locale of LOCALES) {
     const partRoot = path.join(partsRoot, locale),
       part = readJson(path.join(partRoot, "part.json"));
-    if (part.schema !== PART_SCHEMA || part.locale !== locale || part.planSha256 !== planSha256)
+    if (
+      ![PART_SCHEMA, PACKED_PART_SCHEMA].includes(part.schema) ||
+      part.locale !== locale ||
+      part.planSha256 !== planSha256
+    )
       throw new Error(`Shard identity differs: ${locale}`);
+    partSchema ??= part.schema;
+    assert.equal(part.schema, partSchema, "Mixed finalized shard schemas");
     assert.deepEqual(part.generation, plan.generation);
     const ownPaths = new Set();
     for (const [pathname, record] of part.records) {
@@ -660,22 +716,58 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
       const previous = objects.get(object.sha256);
       if (previous) assert.deepEqual(previous, object, "Conflicting shard gzip reference");
       else {
-        const relative = `${object.sha256.slice(0, 2)}/${object.sha256}.gz`,
-          source = path.join(partRoot, "content", relative);
-        if (fs.statSync(source).size !== object.gzipBytes) throw new Error(`Shard gzip length differs: ${relative}`);
-        linkOnce(source, path.join(contentRoot, relative));
+        if (part.schema === PART_SCHEMA) {
+          const relative = `${object.sha256.slice(0, 2)}/${object.sha256}.gz`,
+            source = path.join(partRoot, "content", relative);
+          if (fs.statSync(source).size !== object.gzipBytes) throw new Error(`Shard gzip length differs: ${relative}`);
+          linkOnce(source, path.join(contentRoot, relative));
+        }
         objects.set(object.sha256, object);
       }
     }
     for (const [, record] of part.records)
       for (const chunk of staticDocumentChunks(record))
         assert.deepEqual(ownObjects.get(chunk.sha256), chunk, "Shard content reference is missing");
+    const ownPacks = new Map();
+    if (part.schema === PACKED_PART_SCHEMA) {
+      assert.ok(Array.isArray(part.packed.packs) && Array.isArray(part.packed.dataObjects));
+      for (const pack of part.packed.packs) {
+        assert.match(pack.sha256, /^[a-f0-9]{64}$/u);
+        assert.equal(pack.path, staticDocumentPackPath(pack.sha256));
+        assert.ok(!ownPacks.has(pack.sha256) && Number.isSafeInteger(pack.bytes) && pack.bytes > 0);
+        ownPacks.set(pack.sha256, pack);
+        const previous = packedFiles.get(pack.sha256);
+        if (previous) assert.deepEqual(previous, pack, "Conflicting packed shard file");
+        else packedFiles.set(pack.sha256, pack);
+      }
+      assert.equal(Object.keys(part.packed.locations).length, ownObjects.size, "Packed shard object coverage differs");
+      for (const [digest, location] of Object.entries(part.packed.locations)) {
+        const object = ownObjects.get(digest),
+          pack = ownPacks.get(location.packSha256);
+        assert.ok(
+          object &&
+            pack &&
+            Number.isSafeInteger(location.offset) &&
+            location.offset >= 0 &&
+            location.gzipBytes === object.gzipBytes &&
+            location.packBytes === pack.bytes &&
+            location.offset + object.gzipBytes <= pack.bytes,
+          "Packed shard location differs",
+        );
+        packedLocations[digest] ??= location;
+      }
+      assert.equal(new Set(part.packed.dataObjects).size, part.packed.dataObjects.length);
+      for (const digest of part.packed.dataObjects) {
+        assert.ok(ownObjects.has(digest), "Unlisted packed shard data object");
+        packedData.add(digest);
+      }
+    }
     const ownAssets = new Set(),
       shippedAssets = new Set();
     for (const asset of part.assets) {
       safeRelative(asset.path);
       if (
-        generatedIndex(asset.path) ||
+        (generatedIndex(asset.path) && !(part.schema === PACKED_PART_SCHEMA && contentPackAsset(asset.path))) ||
         asset.path === "pagefind/pagefind-entry.json" ||
         ownAssets.has(asset.path) ||
         assetOwner(asset.path) !== asset.owner ||
@@ -683,6 +775,10 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
       )
         throw new Error(`Invalid shard asset: ${asset.path}`);
       ownAssets.add(asset.path);
+      if (contentPackAsset(asset.path)) {
+        const pack = ownPacks.get(asset.sha256);
+        assert.ok(pack && pack.path.slice(1) === asset.path && pack.bytes === asset.bytes, "Unlisted packed asset");
+      }
       let source = path.join(partRoot, "public", asset.path);
       if (fs.existsSync(source)) shippedAssets.add(asset.path);
       else {
@@ -709,6 +805,7 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
       [...shippedAssets].sort(),
       "Unverified extra shard assets",
     );
+    for (const pack of ownPacks.values()) assert.ok(ownAssets.has(pack.path.slice(1)), "Packed shard file is missing");
     const clients = [...ownAssets].filter((file) => file.startsWith("_astro/")).sort();
     if (commonClientFiles) assert.deepEqual(clients, commonClientFiles, "Client chunk sets differ between locales");
     else commonClientFiles = clients;
@@ -745,7 +842,7 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
       .map((record) => record.sha256),
   );
   const sharedDataRoot = path.join(metadataRoot, "shared-data");
-  for (const object of objects.values()) {
+  for (const object of partSchema === PART_SCHEMA ? objects.values() : []) {
     if (directlyReferenced.has(object.sha256) && !jsonDocuments.has(object.sha256)) continue;
     const body = gunzipSync(fs.readFileSync(path.join(contentRoot, object.sha256.slice(0, 2), `${object.sha256}.gz`)));
     assert.deepEqual({ sha256: sha256(body), bytes: body.length }, { sha256: object.sha256, bytes: object.bytes });
@@ -780,7 +877,17 @@ export async function mergeShards({ planFile, partsRoot, output, inputsManifest,
       pathToFileURL(fileURLToPath(new URL("../../src/server/static-documents.ts", import.meta.url))).href +
         `?merge=${planSha256}-${sha256(output)}`
     );
-    result = module.finalizeStaticDocuments(publicRoot);
+    result = module.finalizeStaticDocuments(
+      publicRoot,
+      partSchema === PACKED_PART_SCHEMA
+        ? {
+            objects: [...objects.values()],
+            dataObjects: [...packedData],
+            locations: packedLocations,
+            packs: [...packedFiles.values()],
+          }
+        : undefined,
+    );
     if (plan.expectedSharedData != null && result.data !== plan.expectedSharedData)
       throw new Error("Merged shared JSON closure differs");
   } finally {

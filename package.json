@@ -141,6 +141,7 @@
     "lit": "^3.3.3",
     "lit-html": "3.3.3",
     "parse5": "catalog:",
+    "parse5-sax-parser": "catalog:",
     "photoswipe": "catalog:",
     "sql.js": "catalog:",
     "three": "catalog:",

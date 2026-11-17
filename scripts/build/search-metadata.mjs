@@ -1,7 +1,7 @@
 import { searchCategory } from "../../src/lib/search-categories.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 import { parse, parseFragment, serialize } from "parse5";
-import { decodePageData } from "../../src/lib/page-data-codec.ts";
+import { decodePageData, PAGE_DATA_WRAPPER, PAGE_DATA_REFERENCE } from "../../src/lib/page-data-codec.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -10,6 +10,48 @@ const compact = (text) => text.replace(/\s+/gu, " ").trim();
 const SCRIPT_START = /<!--|<script\b[^>]*>/giu;
 const SCRIPT_END = /<\/script\s*>/giu;
 const JSON_TYPE = /\stype\s*=\s*(?:"application\/json"|'application\/json'|application\/json(?=[\s>]))/iu;
+
+function markdownPageData(raw) {
+  const data = JSON.parse(raw);
+  const shared =
+    data &&
+    typeof data === "object" &&
+    !Array.isArray(data) &&
+    Object.keys(data).length === 2 &&
+    Array.isArray(data[PAGE_DATA_WRAPPER]) &&
+    "value" in data
+      ? data[PAGE_DATA_WRAPPER]
+      : undefined;
+  const valueOf = (value) => {
+    while (
+      shared &&
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length === 1 &&
+      typeof value[PAGE_DATA_REFERENCE] === "number"
+    )
+      value = shared[value[PAGE_DATA_REFERENCE]];
+    return value;
+  };
+  const root = valueOf(shared ? data.value : data);
+  if (!root || typeof root !== "object" || Array.isArray(root)) return root;
+  const selected = Object.fromEntries(
+    ["schema", "id", "server", "releaseId", "item"]
+      .filter((key) => Object.hasOwn(root, key))
+      .map((key) => [key, root[key]]),
+  );
+  if (root.schema === "haneoka-story-payload-v1") {
+    const episode = valueOf(valueOf(root.episodes)?.[root.id]);
+    if (episode)
+      selected.episodes = {
+        [root.id]: Object.fromEntries(
+          Object.entries(episode).filter(([key]) => key !== "commands" && key !== "assets"),
+        ),
+      };
+  }
+  return decodePageData(shared ? { [PAGE_DATA_WRAPPER]: shared, value: selected } : selected);
+}
 
 function withoutInlineJson(html) {
   const parts = [];
@@ -310,7 +352,7 @@ export function markdownDocument(html, sourcePath, readSeed) {
       ? readSeed?.(attrs["data-src"])
       : match[0].slice(opening.length, match[0].lastIndexOf("</script"));
     if (!raw) continue;
-    const payload = decodePageData(JSON.parse(raw));
+    const payload = markdownPageData(raw);
     const episode = payload?.schema === "haneoka-story-payload-v1" ? payload.episodes?.[payload.id] : undefined;
     const item =
       payload?.schema === "haneoka-entity-payload-v1"

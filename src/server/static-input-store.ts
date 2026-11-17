@@ -120,6 +120,38 @@ class StaticInputStore {
     atomic(failureFile(), JSON.stringify({ error: this.consistencyError.message }));
     throw this.consistencyError;
   }
+  projectionCache(key: string, role: string): string | undefined {
+    const root = process.env.STATIC_BUILD_PROJECTION_CACHE_ROOT;
+    const recipe = process.env.STATIC_BUILD_PROJECTION_RECIPE;
+    if (this.mode !== "capture" || role !== "entity-projection" || !root || !recipe) return;
+    assert.match(recipe, /^[a-f0-9]{64}$/u);
+    return path.resolve(root, recipe, "records", `${digest(key)}.json`);
+  }
+  cachedProjection(key: string, role: string): { record: InputRecord; body: Buffer; value: unknown } | undefined {
+    const file = this.projectionCache(key, role);
+    if (!file || !fs.existsSync(file)) return;
+    try {
+      const record = JSON.parse(fs.readFileSync(file, "utf8")) as InputRecord;
+      assert.equal(record.key, key);
+      assert.equal(record.role, role);
+      assert.equal(record.format, "json");
+      assert.match(record.sha256, /^[a-f0-9]{64}$/u);
+      const body = fs.readFileSync(path.join(path.dirname(file), "../content", record.sha256));
+      assert.equal(body.length, record.bytes);
+      assert.equal(digest(body), record.sha256);
+      return { record, body, value: JSON.parse(body.toString("utf8")) };
+    } catch {
+      fs.rmSync(file, { force: true });
+      return;
+    }
+  }
+  saveProjection(record: InputRecord, body: Buffer): void {
+    const file = this.projectionCache(record.key, record.role);
+    if (!file || record.format !== "json") return;
+    const content = path.join(path.dirname(file), "../content", record.sha256);
+    if (!fs.existsSync(content)) atomic(content, body);
+    atomic(file, JSON.stringify(record));
+  }
   read<T>(key: string, role: string, format: "json" | "bytes", load: () => Promise<T>): Promise<T> {
     let work = this.pending.get(key);
     if (!work) {
@@ -149,6 +181,13 @@ class StaticInputStore {
               : body;
         }
         if (this.mode === "frozen") this.fail(key);
+        const cached = this.cachedProjection(key, role);
+        if (cached) {
+          this.writeBody(cached.body);
+          this.records.set(key, cached.record);
+          atomic(journal, JSON.stringify(cached.record));
+          return cached.value;
+        }
         let value: T;
         try {
           value = await load();
@@ -179,6 +218,7 @@ class StaticInputStore {
         };
         this.records.set(key, record);
         atomic(journal, JSON.stringify(record));
+        this.saveProjection(record, body);
         return value;
       })();
       this.pending.set(key, work);

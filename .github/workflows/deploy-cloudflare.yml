@@ -82,8 +82,12 @@ jobs:
     name: Build verified complete frontend
     if: ${{ !inputs.worker_only && !inputs.build_containers && inputs.publication_run_id == '' && inputs.frontend_run_id == '' }}
     uses: ./.github/workflows/static-frontend.yml
+    with:
+      production_publish: true
+      apply_d1_migrations: ${{ github.event_name == 'push' || inputs.apply_d1_migrations == true }}
     permissions:
       contents: read
+      actions: read
     secrets: inherit
   build:
     name: Build verified service artifact
@@ -209,7 +213,7 @@ jobs:
   deploy:
     name: Publish verified production artifact
     needs: [frontend, build, recovery]
-    if: ${{ always() && !cancelled() && ((inputs.publication_run_id != '' && needs.recovery.result == 'success') || (inputs.publication_run_id == '' && ((inputs.worker_only && needs.build.result == 'success') || (!inputs.worker_only && needs.frontend.result == 'success')))) }}
+    if: ${{ always() && !cancelled() && ((inputs.publication_run_id != '' && needs.recovery.result == 'success') || (inputs.publication_run_id == '' && ((inputs.worker_only && needs.build.result == 'success') || (!inputs.worker_only && needs.frontend.result == 'success' && needs.frontend.outputs.published != 'true')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

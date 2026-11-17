@@ -1,8 +1,25 @@
+// L3 — GEB
+// Input: Fixed resource releases and normal production page data producers.
+// Output: Complete captured values and a release-consistent registry of primary content publication fields.
+// Pos: [Map](L2-2.md); shared preparation for independent locale and route partitions.
+// Effects/Dependencies: Uses captured readers and records the registry as a verified build input.
 import { LOCALES } from "../i18n/locales";
 import { ROUTES } from "../config/routes";
 import { SEKAI_STORY_SECTIONS } from "../config/navigation";
-import { ANON_TOKYO_MODES, type ReleaseServer } from "../lib/resource-route";
-import { catalogEntityData, staticCatalogPageServers, ENTITY_PAYLOAD_RESOURCES, entityProjectionMetrics } from "../lib/entity-graph";
+import { ANON_TOKYO_MODES, resourceKindForCollection, type ReleaseServer } from "../lib/resource-route";
+import fs from "node:fs";
+import path from "node:path";
+import { publicationFields } from "../lib/content-publication";
+import { visibilityType } from "../lib/content-visibility-policy";
+import { eventSongPayload } from "./event-song-release";
+import {
+  catalogEntityData,
+  staticCatalogPageServers,
+  ENTITY_PAYLOAD_RESOURCES,
+  ENTITY_PAYLOAD_SCHEMA,
+  STORY_PAYLOAD_SCHEMA,
+  entityProjectionMetrics,
+} from "../lib/entity-graph";
 import { searchableCatalogPages } from "../lib/searchable-catalog";
 import { searchableModelPages } from "../lib/searchable-models";
 import { searchableStoryPages } from "../lib/searchable-stories";
@@ -25,7 +42,7 @@ import { announcementPageData } from "./announcement-page-data";
 import { catalogCollectionData } from "./catalog-collection";
 import { catalogSystemData, catalogSystemEntityData } from "./catalog-system-data";
 import { workspaceCollectionData } from "./workspace-page-data";
-import { skillCatalogPayload } from "./skill-catalog";
+import { skillCatalogPayload, skillPageId } from "./skill-catalog";
 import { eventTrackerPageData } from "./event-tracker-page-data";
 import { providerCollectionData } from "./provider-page-data";
 import { playlistPageData } from "./playlist-page-data";
@@ -41,7 +58,7 @@ import {
   stampMakerPageData,
 } from "./tool-page-data";
 import { chartRates } from "./chart-rates";
-import { finishStaticBuildInputs } from "./static-input-store";
+import { captureStaticBuildFile, finishStaticBuildInputs } from "./static-input-store";
 import { highScoreRatingPageData } from "./high-score-rating-page-data";
 import { growthPageData } from "./growth-page-data";
 
@@ -50,7 +67,8 @@ async function prepareAll(tasks: Array<() => Promise<unknown>>): Promise<void> {
   const results = await Promise.allSettled(
     Array.from({ length: Math.min(4, tasks.length) }, async () => {
       while (cursor < tasks.length) {
-        const index = cursor++, task = tasks[index]!;
+        const index = cursor++,
+          task = tasks[index]!;
         try {
           await task();
         } catch (error) {
@@ -68,6 +86,14 @@ export async function prepareStaticInputs(): Promise<void> {
   if (process.env.STATIC_BUILD_INPUT_MODE !== "capture") throw new Error("Static preparation requires capture mode");
   const servers = await staticCatalogPageServers();
   const configured = await staticCatalogPageServers(true);
+  const publications: Record<string, Record<string, Record<string, unknown>>> = {};
+  const recordPublication = (server: string, kind: string, id: string, value: unknown) => {
+    const type = visibilityType(kind);
+    if (!type) return;
+    (publications[server] ??= {})[`${type}:${id}`] = publicationFields(
+      value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {},
+    );
+  };
   for (const server of servers) {
     const pin = await staticCatalogRelease(server);
     console.log(`capture native ${server}/${pin.releaseId}`);
@@ -88,21 +114,44 @@ export async function prepareStaticInputs(): Promise<void> {
         () => searchableHelpPages(server),
       ]);
       for (const page of pages) {
-        if (ENTITY_PAYLOAD_RESOURCES.includes(page.resource as (typeof ENTITY_PAYLOAD_RESOURCES)[number]))
-          await catalogEntityData(server, page.resource, page.id);
+        if (ENTITY_PAYLOAD_RESOURCES.includes(page.resource as (typeof ENTITY_PAYLOAD_RESOURCES)[number])) {
+          const payload = await catalogEntityData(server, page.resource, page.id);
+          const entity = payload?.schema === ENTITY_PAYLOAD_SCHEMA ? await eventSongPayload(payload) : undefined;
+          recordPublication(server, resourceKindForCollection(page.collection) || page.resource, page.id, entity?.item);
+        }
       }
-      for (const page of await searchableStoryPages(server))
-        await catalogEntityData(server, "stories", page.storyId);
+      for (const page of await searchableStoryPages(server)) {
+        const payload = await catalogEntityData(server, "stories", page.storyId);
+        recordPublication(
+          server,
+          "stories",
+          page.storyId,
+          payload?.schema === STORY_PAYLOAD_SCHEMA ? payload.episodes[page.storyId] : undefined,
+        );
+      }
+      for (const page of await searchableModelPages(server)) recordPublication(server, page.kind, page.id, page.model);
+      for (const page of await searchableHelpPages(server))
+        recordPublication(server, "help", page.id, page.publication);
+      for (const entry of (await skillCatalogPayload(server)).entries)
+        recordPublication(server, "skills", skillPageId(entry), entry);
       for (const kind of ["missions", "tgw-card"] as const) {
-        const first = pages.find((page) => page.resource === kind);
-        if (first) await catalogSystemEntityData(kind, server, first.id);
+        for (const page of pages.filter((page) => page.resource === kind)) {
+          const entity = await catalogSystemEntityData(kind, server, page.id);
+          recordPublication(server, kind, page.id, entity.document);
+        }
       }
     }
     await prepareAll(
-      ENTITY_PAYLOAD_RESOURCES.flatMap((resource) => isCrossCatalogResource(resource) ? [async () => {
-        const document = await fetchStaticCatalog(resource, server, pin);
-        await primeStaticCatalogBatch(resource, Object.keys(crossCatalogRows(resource, document)), server, pin);
-      }] : []),
+      ENTITY_PAYLOAD_RESOURCES.flatMap((resource) =>
+        isCrossCatalogResource(resource)
+          ? [
+              async () => {
+                const document = await fetchStaticCatalog(resource, server, pin);
+                await primeStaticCatalogBatch(resource, Object.keys(crossCatalogRows(resource, document)), server, pin);
+              },
+            ]
+          : [],
+      ),
     );
     for (const locale of LOCALES) {
       console.log(`capture localized ${server}/${locale}`);
@@ -161,15 +210,24 @@ export async function prepareStaticInputs(): Promise<void> {
         entry.props.selected,
       );
   }
+  const publicationFile = path.resolve(".output/static-inputs/publications.json");
+  fs.mkdirSync(path.dirname(publicationFile), { recursive: true });
+  fs.writeFileSync(publicationFile, JSON.stringify(publications));
+  captureStaticBuildFile(publicationFile, "publications");
   const manifest = await finishStaticBuildInputs();
   console.log(
     JSON.stringify({
       captured: manifest?.records.length,
       entityProjection: entityProjectionMetrics(),
       files: manifest?.files.length,
-      entityProjectionRecords: manifest?.records.filter(record => record.role === "entity-projection").length,
-      entityProjectionUniqueBytes: [...new Map(manifest?.records.filter(record => record.role === "entity-projection")
-        .map(record => [record.sha256, record.bytes])).values()].reduce((sum, bytes) => sum + bytes, 0),
+      entityProjectionRecords: manifest?.records.filter((record) => record.role === "entity-projection").length,
+      entityProjectionUniqueBytes: [
+        ...new Map(
+          manifest?.records
+            .filter((record) => record.role === "entity-projection")
+            .map((record) => [record.sha256, record.bytes]),
+        ).values(),
+      ].reduce((sum, bytes) => sum + bytes, 0),
       nativeBlobs: staticCatalogBlobMetrics(),
       nativeJson: staticCatalogJsonMetrics(),
       unavailableInputs: manifest?.records.filter((record) => record.format === "error").map((record) => record.key),

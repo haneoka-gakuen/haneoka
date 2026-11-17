@@ -12,6 +12,7 @@
 const SHARED_MIN = 1024;
 const WRAPPER = "\u0000page-data";
 const REFERENCE = "\u0000";
+export { WRAPPER as PAGE_DATA_WRAPPER, REFERENCE as PAGE_DATA_REFERENCE };
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 

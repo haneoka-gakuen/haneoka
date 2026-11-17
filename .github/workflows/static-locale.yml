@@ -4,6 +4,10 @@ on:
     secrets:
       CONTENT_BUILD_TOKEN:
         required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
     inputs:
       locale:
         type: string
@@ -26,6 +30,9 @@ on:
       resource_servers:
         type: string
         default: intl,jp
+      preupload:
+        type: boolean
+        default: false
 env:
   STATIC_PUBLIC_DOCUMENTS: "1"
   STATIC_PUBLIC_MEDIA: "1"
@@ -76,6 +83,7 @@ jobs:
       - name: Render and verify the assigned complete pages
         run: |
           pnpm exec astro build
+          node scripts/build/finalize-frontend.mjs --materialize-only
           node scripts/build/static-build-shards.mjs seal-render --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --partition "$STATIC_BUILD_PARTITION" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-render-part
           tar --use-compress-program="zstd -T2 -3" -cf .output/static-render-part.tar.zst -C .output/static-render-part .
       - uses: actions/upload-artifact@v7
@@ -144,6 +152,10 @@ jobs:
           key: static-public-media-v1-${{ runner.os }}-${{ steps.media-identity.outputs.key }}-${{ hashFiles('scripts/build/public-static-media.mjs') }}
           restore-keys: static-public-media-v1-${{ runner.os }}-
       - name: Merge every rendered page, then index and pack once
+        env:
+          PREUPLOAD: ${{ inputs.preupload }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           for partition in 0 1 2 3; do
             mkdir -p ".output/static-render-parts/$partition"
@@ -157,7 +169,16 @@ jobs:
           rm -rf -- .output/static-render-merged
           pnpm finalize:frontend
           node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
+          preupload_pid=""
+          if [[ "$PREUPLOAD" == "true" ]]; then
+            node scripts/deploy/preupload-assets.mjs > .output/preupload.log 2>&1 &
+            preupload_pid=$!
+          fi
           tar --use-compress-program="zstd -T2 -3" -cf .output/static-part.tar.zst -C .output/static-part .
+          if [[ -n "$preupload_pid" ]]; then
+            wait "$preupload_pid"
+            cat .output/preupload.log
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: static-part-${{ inputs.inputs_sha }}-${{ inputs.locale }}

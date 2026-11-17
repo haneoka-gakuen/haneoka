@@ -1,8 +1,14 @@
+// L3 — GEB
+// Input: Complete prerendered HTML, publication fields and exact public media URL mappings.
+// Output: Public page projections, byte-range URL edits and sealed private page-data descriptors.
+// Pos: [Map](L2-2.md); build-only document privacy and transport transformations.
+// Effects/Dependencies: Parses owned JSON and HTML, uses build-secret cryptography and writes staged public pages.
 import fs from "node:fs";
 import path from "node:path";
 import { createCipheriv, createDecipheriv, createHash, createHmac } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
+import { SAXParser, type StartTag } from "parse5-sax-parser";
 import { contentPublished, publicationFields } from "../lib/content-publication.ts";
 import {
   contentVisible,
@@ -56,7 +62,10 @@ export type PublicUrlSite = { element: string; attribute: string } | { script: s
  * Maps a same-site path (`/assets/…`) to the public, immutable location of the
  * same bytes; undefined keeps the original. Absolute same-site values keep their origin.
  */
-export type PublicUrlRewrite = (value: string, site: PublicUrlSite) => string | undefined;
+export type PublicUrlRewrite = ((value: string, site: PublicUrlSite) => string | undefined) & {
+  /** URL-only mappings can retain the page-data dictionary without expanding every repeated subtree. */
+  contextIndependent?: boolean;
+};
 export interface PublicStaticOptions {
   now: number;
   build?: string;
@@ -235,8 +244,11 @@ const publicView = (now: number, policy = DEFAULT_VISIBILITY_POLICY): ContentVie
 
 type Node = DefaultTreeAdapterMap["node"];
 type Element = DefaultTreeAdapterMap["element"];
+type UrlElement = Pick<Element, "tagName" | "attrs"> & {
+  sourceCodeLocation?: Pick<NonNullable<Element["sourceCodeLocation"]>, "attrs" | "startOffset" | "endOffset"> | null;
+};
 type Edit = { from: number; to: number; text: string };
-const attr = (node: Element, name: string): string | undefined =>
+const attr = (node: Pick<Element, "attrs">, name: string): string | undefined =>
   node.attrs.find((attribute) => attribute.name === name)?.value;
 const escapeAttribute = (value: string): string =>
   value.replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
@@ -257,7 +269,7 @@ export function functionalMediaUrl(value: string): string | undefined {
   return next === value ? undefined : next;
 }
 /** URL-bearing attributes of an element, in the order the callback sees them. */
-function urlAttributes(node: Element): string[] {
+function urlAttributes(node: UrlElement): string[] {
   if (MEDIA.has(node.tagName))
     return node.tagName === "img"
       ? ["src", "data-src", "data-fallback", "data-candidates", "data-fallbacks"]
@@ -272,6 +284,7 @@ function urlAttributes(node: Element): string[] {
     return ["content"];
   return [];
 }
+/** Owns JSON parsed from this document; unchanged subtrees need no second object graph. */
 function rewriteJsonUrls(
   value: unknown,
   script: string,
@@ -288,8 +301,13 @@ function rewriteJsonUrls(
       return site.origin + next;
     }
     if (!node || typeof node !== "object") return node;
-    if (Array.isArray(node)) return node.map((child) => walk(child, key));
-    return Object.fromEntries(Object.entries(node).map(([field, child]) => [field, walk(child, field)]));
+    if (Array.isArray(node)) {
+      for (let index = 0; index < node.length; index++) node[index] = walk(node[index], key);
+    } else {
+      const fields = node as Record<string, unknown>;
+      for (const field of Object.keys(fields)) fields[field] = walk(fields[field], field);
+    }
+    return node;
   };
   const result = walk(value, "");
   return { value: changed ? result : value, changed };
@@ -312,7 +330,7 @@ function applyEdits(html: string, edits: Edit[]): string {
  * `data-candidates` and `data-fallbacks` hold JSON lists of image URLs.
  */
 function attributeEdit(
-  node: Element,
+  node: UrlElement,
   name: string,
   rewrite: PublicUrlRewrite | undefined,
   relativize: boolean,
@@ -364,56 +382,79 @@ export function rewriteStaticDocumentUrls(
   externalize?: (id: string, text: string) => string,
 ): string {
   const edits: Edit[] = [];
-  const visit = (node: Node, inTemplate = false): void => {
-    if ("tagName" in node) {
-      for (const name of urlAttributes(node)) {
-        const edit = attributeEdit(node, name, rewrite, false);
-        if (edit) edits.push(edit);
-      }
-      const structured = isJsonLd(node) && jsonLdEdit(html, node, rewrite);
-      if (structured) edits.push(structured);
-      const text = isPageData(node) ? node.childNodes[0] : undefined;
-      if (text?.nodeName === "#text" && text.sourceCodeLocation) {
-        const { startOffset, endOffset } = text.sourceCodeLocation;
-        const result = rewriteJsonUrls(
-          decodePageData(JSON.parse(html.slice(startOffset, endOffset))),
-          attr(node, "id") ?? "",
-          rewrite,
-        );
-        const id = attr(node, "id") ?? "";
-        const rewritten = result.changed ? serializePageData(result.value) : html.slice(startOffset, endOffset);
-        const location = node.sourceCodeLocation;
-        if (externalize && !inTemplate && (id === "team-builder-page" || id.startsWith("catalog-collection-")) &&
-          location?.startTag && location.endTag && Buffer.byteLength(rewritten) > 128 * 1024) {
-          const source = externalize(id, rewritten);
-          edits.push({ from: location.startTag.endOffset - 1, to: location.endTag.startOffset,
-            text: ` data-src="${escapeAttribute(source)}">` });
-        } else if (result.changed) edits.push({ from: startOffset, to: endOffset, text: rewritten });
-      }
-      if (node.tagName === "template") visit((node as DefaultTreeAdapterMap["template"]).content, true);
+  const parser = new SAXParser({ sourceCodeLocationInfo: true });
+  let templateDepth = 0;
+  let script: { node: StartTag; inTemplate: boolean } | undefined;
+  parser.on("startTag", (node) => {
+    if (node.tagName === "template") templateDepth++;
+    for (const name of urlAttributes(node)) {
+      const edit = attributeEdit(node, name, rewrite, false);
+      if (edit) edits.push(edit);
     }
-    if ("childNodes" in node) for (const child of node.childNodes) visit(child, inTemplate);
-  };
-  visit(parse(html, { sourceCodeLocationInfo: true }));
+    if (node.tagName === "script") script = { node, inTemplate: templateDepth > 0 };
+  });
+  parser.on("endTag", (end) => {
+    if (end.tagName === "template") templateDepth--;
+    if (end.tagName !== "script" || !script) return;
+    const { node, inTemplate } = script;
+    script = undefined;
+    const startOffset = node.sourceCodeLocation!.endOffset;
+    const endOffset = end.sourceCodeLocation!.startOffset;
+    const raw = html.slice(startOffset, endOffset);
+    if (!raw) return;
+    const type = attr(node, "type");
+    if (type === "application/ld+json") {
+      const result = rewriteJsonUrls(JSON.parse(raw), "ld+json", rewrite);
+      if (result.changed)
+        edits.push({ from: startOffset, to: endOffset, text: JSON.stringify(result.value).replaceAll("<", "\\u003c") });
+    } else if (type === "application/json" && attr(node, "id") !== "haneoka-i18n-seed") {
+      const id = attr(node, "id") ?? "";
+      const encoded = JSON.parse(raw);
+      const result = rewriteJsonUrls(rewrite.contextIndependent ? encoded : decodePageData(encoded), id, rewrite);
+      const rewritten = result.changed
+        ? rewrite.contextIndependent
+          ? JSON.stringify(result.value)
+              .replace(/</gu, "\\u003c")
+              .replace(/\u2028/gu, "\\u2028")
+              .replace(/\u2029/gu, "\\u2029")
+          : serializePageData(result.value)
+        : raw;
+      if (
+        externalize &&
+        !inTemplate &&
+        (id === "team-builder-page" || id.startsWith("catalog-collection-")) &&
+        Buffer.byteLength(rewritten) > 128 * 1024
+      ) {
+        const source = externalize(id, rewritten);
+        edits.push({ from: startOffset - 1, to: endOffset, text: ` data-src="${escapeAttribute(source)}">` });
+      } else if (result.changed) edits.push({ from: startOffset, to: endOffset, text: rewritten });
+    }
+  });
+  parser.end(html);
   return edits.length ? applyEdits(html, edits) : html;
 }
 
-export function externalizePublicPageData(
-  html: string,
-  write: (id: string, text: string) => string,
-): string {
+export function externalizePublicPageData(html: string, write: (id: string, text: string) => string): string {
   const edits: Edit[] = [];
   const visit = (node: Node): void => {
     if ("tagName" in node && isPageData(node)) {
       const id = attr(node, "id") ?? "";
       const text = node.childNodes[0];
       const location = node.sourceCodeLocation;
-      if ((id === "team-builder-page" || id.startsWith("catalog-collection-")) &&
-        text?.nodeName === "#text" && "value" in text && location?.startTag && location.endTag &&
-        Buffer.byteLength(text.value) > 128 * 1024) {
+      if (
+        (id === "team-builder-page" || id.startsWith("catalog-collection-")) &&
+        text?.nodeName === "#text" &&
+        "value" in text &&
+        location?.startTag &&
+        location.endTag &&
+        Buffer.byteLength(text.value) > 128 * 1024
+      ) {
         const source = write(id, text.value);
-        edits.push({ from: location.startTag.endOffset - 1, to: location.endTag.startOffset,
-          text: ` data-src="${escapeAttribute(source)}">` });
+        edits.push({
+          from: location.startTag.endOffset - 1,
+          to: location.endTag.startOffset,
+          text: ` data-src="${escapeAttribute(source)}">`,
+        });
       }
     }
     if ("childNodes" in node) for (const child of node.childNodes) visit(child);
@@ -533,7 +574,9 @@ export function materializePublicStaticDocument(
     if (node.tagName === "html") {
       if (attr(node, "data-pagefind-ignore") === "all") ignored = true;
       const attributes = [
-        ...(options.build && !attr(node, WEB_BUILD_ATTRIBUTE) ? [`${WEB_BUILD_ATTRIBUTE}="${escapeAttribute(options.build)}"`] : []),
+        ...(options.build && !attr(node, WEB_BUILD_ATTRIBUTE)
+          ? [`${WEB_BUILD_ATTRIBUTE}="${escapeAttribute(options.build)}"`]
+          : []),
         ...(functional ? ['data-content-functional="1"'] : []),
       ];
       if (attributes.length) {
@@ -599,7 +642,10 @@ export function materializePublicStaticDocument(
     if (!contentPublished(registered ?? primary ?? {}, now)) return;
   }
   const privateData: PrivatePageDataSelection | undefined =
-    options.privateData && options.build && ownerSeeds.size && !unsupportedOwner &&
+    options.privateData &&
+    options.build &&
+    ownerSeeds.size &&
+    !unsupportedOwner &&
     [...ownerSeeds].some((id) => changedSeeds.has(id))
       ? { ids: [...ownerSeeds].sort(), types: untyped || !types.size ? [...VISIBILITY_TYPES] : [...types].sort() }
       : undefined;
@@ -630,7 +676,10 @@ export function pageDataScripts(html: string, ids: readonly string[]): Map<strin
     if ("tagName" in node && isPageData(node) && wanted.has(attr(node, "id") ?? "")) {
       const text = node.childNodes[0];
       if (text?.nodeName === "#text" && text.sourceCodeLocation)
-        scripts.set(attr(node, "id")!, html.slice(text.sourceCodeLocation.startOffset, text.sourceCodeLocation.endOffset));
+        scripts.set(
+          attr(node, "id")!,
+          html.slice(text.sourceCodeLocation.startOffset, text.sourceCodeLocation.endOffset),
+        );
     }
     if ("childNodes" in node) for (const child of node.childNodes) visit(child);
   };
@@ -664,7 +713,8 @@ export function sealPageData(text: string, token: string): SealedPageData {
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(ciphertext.subarray(-16));
   const opened = gunzipSync(Buffer.concat([decipher.update(ciphertext.subarray(0, -16)), decipher.final()]));
-  if (createHash("sha256").update(opened).digest("hex") !== sha256) throw new Error("Private page data does not round-trip");
+  if (createHash("sha256").update(opened).digest("hex") !== sha256)
+    throw new Error("Private page data does not round-trip");
   return { sha256, iv: iv.toString("base64url"), bytes: plain.length, ciphertext };
 }
 export interface PrivatePageDataScript {
