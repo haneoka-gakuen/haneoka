@@ -266,6 +266,7 @@
     "scripts/deploy/publication-source.mjs",
     "scripts/deploy/preupload-assets.mjs",
     "scripts/deploy/publication-archive.mjs",
+    "scripts/deploy/publication-file-cache.mjs",
     "scripts/external-repositories.mjs",
     "scripts/cubism-runtime.mjs",
     "scripts/verify/geb.py",

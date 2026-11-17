@@ -14,6 +14,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { publicationSourceContext, resolveSealedPublication } from "./publication-source.mjs";
+import { createPublicationFileCache } from "./publication-file-cache.mjs";
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -33,6 +34,7 @@ if (values["build-containers"] && (mode !== "prepare" || !values["worker-only"])
 if (values["frontend-source"] && (mode !== "prepare" || !values["worker-only"]))
   throw new Error("Frontend promotion requires prepare --worker-only");
 const root = path.resolve(values["source-root"] || process.cwd());
+const localFileCache = createPublicationFileCache({ root });
 const toolingRoot = fileURLToPath(new URL("../../", import.meta.url));
 const output = path.join(root, ".output/deployment");
 const manifestFile = path.join(output, "manifest.json");
@@ -83,8 +85,7 @@ function filesAt(directory) {
     .sort();
 }
 function fileRecord(relative) {
-  const body = fs.readFileSync(path.join(root, relative));
-  return { path: relative, bytes: body.length, sha256: digest(body) };
+  return localFileCache.record(relative);
 }
 function containerSourceInput(container, revision) {
   const config = typescript.parseConfigFileTextToJson("wrangler.jsonc", git("show", `${revision}:wrangler.jsonc`));
@@ -279,9 +280,11 @@ function verifyFiles(records) {
   }
 }
 function readManifest() {
-  const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+  const manifestBody = fs.readFileSync(manifestFile);
+  const manifest = JSON.parse(manifestBody);
   if (manifest.schema !== "haneoka-worker-publication-v1") throw new Error("Publication manifest is missing");
   assert.deepEqual(manifest.source, sourceIdentity(), "Publication source identity differs");
+  localFileCache.bind(manifestBody, manifest.files);
   verifyFiles(manifest.files);
   const expected = manifest.files
     .filter(
@@ -332,6 +335,9 @@ function readManifest() {
         throw new Error("Qualified container image digest is missing");
     }
   }
+  localFileCache.save();
+  if (localFileCache.statistics().enabled)
+    console.log(JSON.stringify({ localPublicationFileCache: localFileCache.statistics() }));
   return manifest;
 }
 async function liveAssets(ownMessage, options) {
@@ -619,6 +625,7 @@ if (mode === "prepare") {
     ),
   );
   fs.rmSync(configFile);
+  if (localFileCache.statistics().enabled) localFileCache.seal(fs.readFileSync(manifestFile), files);
   console.log(
     JSON.stringify({
       prepared: true,
@@ -626,6 +633,7 @@ if (mode === "prepare") {
       workerOnly,
       frontendSourceSha: selectedFrontend?.manifest.source.sourceSha,
       files: files.length,
+      ...(localFileCache.statistics().enabled ? { localPublicationFileCache: localFileCache.statistics() } : {}),
     }),
   );
 } else if (mode === "verify") {

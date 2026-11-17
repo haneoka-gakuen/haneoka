@@ -16,6 +16,7 @@ const publicationTooling = new Set([
   "scripts/deploy/worker-publication.mjs",
   "scripts/deploy/publication-source.mjs",
   "scripts/deploy/publication-archive.mjs",
+  "scripts/deploy/publication-file-cache.mjs",
 ]);
 const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
 const github = (route) => JSON.parse(execFileSync("gh", ["api", route], { encoding: "utf8" }));

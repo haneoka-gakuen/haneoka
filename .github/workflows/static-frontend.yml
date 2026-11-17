@@ -412,6 +412,7 @@ jobs:
       actions: read
     env:
       NODE_OPTIONS: --max-old-space-size=5120
+      HANEOKA_LOCAL_PUBLICATION_CACHE: "1"
       STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
       STATIC_RESOURCE_SERVERS: ${{ inputs.resource_servers }}
       STATIC_CATALOG_TOKEN: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.CONTENT_BUILD_TOKEN || '' }}

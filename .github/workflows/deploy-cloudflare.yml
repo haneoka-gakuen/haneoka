@@ -242,6 +242,7 @@ jobs:
             scripts/deploy/worker-publication.mjs
             scripts/deploy/publication-source.mjs
             scripts/deploy/publication-archive.mjs
+            scripts/deploy/publication-file-cache.mjs
           sparse-checkout-cone-mode: false
       - name: Install pnpm
         run: corepack enable
