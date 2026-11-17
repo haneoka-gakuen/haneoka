@@ -25,7 +25,7 @@ import { searchableCatalogPages } from "./searchable-catalog";
 import { searchableStoryPages } from "./searchable-stories";
 import type { ReleaseServer } from "./resource-route";
 import { PUBLIC_RELEASE_SERVERS, isPublicReleaseServer } from "./temporary-public-routing";
-import { staticBuildJson } from "../server/static-input-store";
+import { hasStaticBuildInput, staticBuildJson } from "../server/static-input-store";
 import { mergeCharacterVoices, type VoiceSnapshot } from "./cross-server/voices";
 
 export async function staticCatalogPageServers(configuredOnly = false): Promise<ReleaseServer[]> {
@@ -938,13 +938,21 @@ async function buildPageData(server: ReleaseServer): Promise<Map<string, PageDat
   return output;
 }
 
+const basePageIdentity = (pin: StaticCatalogRelease, resource: string, id: string) => ({
+  schema: "haneoka-base-page-v1", server: pin.server, sourceId: pin.sourceId, releaseId: pin.releaseId, resource, id,
+});
+
+export function hasCatalogEntityData(pin: StaticCatalogRelease, resource: string, id: string): boolean {
+  return hasStaticBuildInput(`base-page:${JSON.stringify(basePageIdentity(pin, resource, id))}`, "entity-projection");
+}
+
 export async function catalogEntityData(
   server: ReleaseServer,
   resource: string,
   id: string,
 ): Promise<PageData | undefined> {
   const pin = await staticCatalogRelease(server);
-  const identity = { schema: "haneoka-base-page-v1", server, sourceId: pin.sourceId, releaseId: pin.releaseId, resource, id };
+  const identity = basePageIdentity(pin, resource, id);
   const record = await staticBuildJson(`base-page:${JSON.stringify(identity)}`, "entity-projection", async () => {
     if (resource === "characters" || (import.meta.env.DEV && isEntityPayloadResource(resource))) {
       const payloads = await buildEntityPayloads(server, resource, [id]);

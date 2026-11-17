@@ -14,6 +14,7 @@ import { visibilityType } from "../lib/content-visibility-policy";
 import { eventSongPayload } from "./event-song-release";
 import {
   catalogEntityData,
+  hasCatalogEntityData,
   staticCatalogPageServers,
   ENTITY_PAYLOAD_RESOURCES,
   ENTITY_PAYLOAD_SCHEMA,
@@ -58,7 +59,7 @@ import {
   stampMakerPageData,
 } from "./tool-page-data";
 import { chartRates } from "./chart-rates";
-import { captureStaticBuildFile, finishStaticBuildInputs } from "./static-input-store";
+import { staticBuildJson, captureStaticBuildFile, finishStaticBuildInputs } from "./static-input-store";
 import { highScoreRatingPageData } from "./high-score-rating-page-data";
 import { growthPageData } from "./growth-page-data";
 
@@ -113,33 +114,53 @@ export async function prepareStaticInputs(): Promise<void> {
         () => searchableStoryPages(server),
         () => searchableHelpPages(server),
       ]);
-      for (const page of pages) {
-        if (ENTITY_PAYLOAD_RESOURCES.includes(page.resource as (typeof ENTITY_PAYLOAD_RESOURCES)[number])) {
-          const payload = await catalogEntityData(server, page.resource, page.id);
-          const entity = payload?.schema === ENTITY_PAYLOAD_SCHEMA ? await eventSongPayload(payload) : undefined;
-          recordPublication(server, resourceKindForCollection(page.collection) || page.resource, page.id, entity?.item);
-        }
-      }
-      for (const page of await searchableStoryPages(server)) {
-        const payload = await catalogEntityData(server, "stories", page.storyId);
-        recordPublication(
-          server,
-          "stories",
-          page.storyId,
-          payload?.schema === STORY_PAYLOAD_SCHEMA ? payload.episodes[page.storyId] : undefined,
-        );
-      }
-      for (const page of await searchableModelPages(server)) recordPublication(server, page.kind, page.id, page.model);
-      for (const page of await searchableHelpPages(server))
-        recordPublication(server, "help", page.id, page.publication);
-      for (const entry of (await skillCatalogPayload(server)).entries)
-        recordPublication(server, "skills", skillPageId(entry), entry);
-      for (const kind of ["missions", "tgw-card"] as const) {
-        for (const page of pages.filter((page) => page.resource === kind)) {
-          const entity = await catalogSystemEntityData(kind, server, page.id);
-          recordPublication(server, kind, page.id, entity.document);
-        }
-      }
+      const entityPages = pages.filter((page) =>
+        ENTITY_PAYLOAD_RESOURCES.includes(page.resource as (typeof ENTITY_PAYLOAD_RESOURCES)[number]),
+      );
+      const stories = await searchableStoryPages(server);
+      publications[server] = await staticBuildJson(
+        `native-publications:${JSON.stringify(pin)}`,
+        "publication-registry",
+        async () => {
+          for (const page of entityPages) {
+            const payload = await catalogEntityData(server, page.resource, page.id);
+            const entity = payload?.schema === ENTITY_PAYLOAD_SCHEMA ? await eventSongPayload(payload) : undefined;
+            recordPublication(
+              server,
+              resourceKindForCollection(page.collection) || page.resource,
+              page.id,
+              entity?.item,
+            );
+          }
+          for (const page of stories) {
+            const payload = await catalogEntityData(server, "stories", page.storyId);
+            recordPublication(
+              server,
+              "stories",
+              page.storyId,
+              payload?.schema === STORY_PAYLOAD_SCHEMA ? payload.episodes[page.storyId] : undefined,
+            );
+          }
+          for (const page of await searchableModelPages(server))
+            recordPublication(server, page.kind, page.id, page.model);
+          for (const page of await searchableHelpPages(server))
+            recordPublication(server, "help", page.id, page.publication);
+          for (const entry of (await skillCatalogPayload(server)).entries)
+            recordPublication(server, "skills", skillPageId(entry), entry);
+          for (const kind of ["missions", "tgw-card"] as const) {
+            for (const page of pages.filter((page) => page.resource === kind)) {
+              const entity = await catalogSystemEntityData(kind, server, page.id);
+              recordPublication(server, kind, page.id, entity.document);
+            }
+          }
+          return publications[server] || {};
+        },
+      );
+      for (const page of entityPages)
+        if (!hasCatalogEntityData(pin, page.resource, page.id)) await catalogEntityData(server, page.resource, page.id);
+      for (const page of stories)
+        if (!hasCatalogEntityData(pin, "stories", page.storyId))
+          await catalogEntityData(server, "stories", page.storyId);
     }
     await prepareAll(
       ENTITY_PAYLOAD_RESOURCES.flatMap((resource) =>

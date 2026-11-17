@@ -112,6 +112,7 @@ class StaticInputStore {
   readonly records = new Map<string, InputRecord>();
   readonly files = new Map<string, InputFile>();
   readonly pending = new Map<string, Promise<unknown>>();
+  readonly savedProjections = new Set<string>();
   consistencyError?: Error;
   body(row: Pick<InputRecord, "sha256" | "bytes">): Buffer {
     if (!/^[a-f0-9]{64}$/u.test(row.sha256) || !Number.isSafeInteger(row.bytes) || row.bytes < 0)
@@ -135,7 +136,13 @@ class StaticInputStore {
   projectionCache(key: string, role: string): string | undefined {
     const root = process.env.STATIC_BUILD_PROJECTION_CACHE_ROOT;
     const recipe = process.env.STATIC_BUILD_PROJECTION_RECIPE;
-    if (this.mode !== "capture" || !["entity-projection", "native-catalog"].includes(role) || !root || !recipe) return;
+    if (
+      this.mode !== "capture" ||
+      !["entity-projection", "native-catalog", "publication-registry"].includes(role) ||
+      !root ||
+      !recipe
+    )
+      return;
     assert.match(recipe, /^[a-f0-9]{64}$/u);
     return path.resolve(root, recipe, "records", `${digest(key)}.json`);
   }
@@ -150,7 +157,9 @@ class StaticInputStore {
       try {
         const row = JSON.parse(fs.readFileSync(file, "utf8")) as InputRecord;
         assert.equal(`${digest(row.key)}.json`, name);
-        assert.ok(["entity-projection", "native-catalog"].includes(row.role) && row.format === "json");
+        assert.ok(
+          ["entity-projection", "native-catalog", "publication-registry"].includes(row.role) && row.format === "json",
+        );
         assert.match(row.sha256, /^[a-f0-9]{64}$/u);
         const journal = path.join(this.root, "records", name);
         if (this.records.has(row.key) || fs.existsSync(journal)) continue;
@@ -161,6 +170,7 @@ class StaticInputStore {
         retainBody(source, path.join(this.root, "content", row.sha256), body);
         this.records.set(row.key, row);
         atomic(journal, JSON.stringify(row));
+        this.savedProjections.add(row.key);
       } catch {
         fs.rmSync(file, { force: true });
       }
@@ -185,12 +195,14 @@ class StaticInputStore {
     }
   }
   saveProjection(record: InputRecord, body: Buffer): void {
+    if (this.savedProjections.has(record.key)) return;
     const file = this.projectionCache(record.key, record.role);
     if (!file || record.format !== "json") return;
     const content = path.join(path.dirname(file), "../content", record.sha256);
     if (!fs.existsSync(content)) retainBody(path.join(this.root, "content", record.sha256), content, body);
     const metadata = JSON.stringify(record);
     if (!fs.existsSync(file) || fs.readFileSync(file, "utf8") !== metadata) atomic(file, metadata);
+    this.savedProjections.add(record.key);
   }
   has(key: string, role: string): boolean {
     if (this.records.has(key) || fs.existsSync(path.join(this.root, "records", `${digest(key)}.json`))) return true;
@@ -328,7 +340,8 @@ class StaticInputStore {
       files: [...this.files.values()].sort((a, b) => a.path.localeCompare(b.path, "en")),
     };
     for (const row of manifest.records)
-      if (row.format === "json" && this.projectionCache(row.key, row.role)) this.saveProjection(row, this.body(row));
+      if (row.format === "json" && !this.savedProjections.has(row.key) && this.projectionCache(row.key, row.role))
+        this.saveProjection(row, this.body(row));
     if (this.mode === "capture") atomic(path.join(this.root, "capture.json"), JSON.stringify(manifest));
     return manifest;
   }
