@@ -473,8 +473,22 @@ jobs:
             test -s ".output/public/embed/${entry}.js"
           done
           test -s .output/public/embed/manifest.json
+      - name: Start immutable content pack upload
+        if: inputs.production_publish
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          (
+            set +e
+            timeout --kill-after=5s 210s node scripts/deploy/preupload-assets.mjs --publication .output/static-documents/publication.json
+            echo "$?" > .output/pack-preupload.status
+          ) > .output/pack-preupload.log 2>&1 &
       - name: Verify complete immutable asset documents
         run: node scripts/build/publish-static-documents.mjs
+      - name: Check complete immutable asset upload manifest
+        if: inputs.verify_recovery
+        run: node scripts/deploy/preupload-assets.mjs --publication .output/static-documents/publication.json --dry-run
       - name: Check resource pipeline
         run: python3 -m unittest discover -s scripts/garupa_master/tests -t .
       - name: Check Worker types
@@ -520,6 +534,14 @@ jobs:
           node scripts/deploy/worker-publication.mjs verify
           cmp .output/deployment/manifest.json .output/recovery-original/deployment/manifest.json
           rm -rf .output/recovery-original
+      - name: Finish immutable content pack upload
+        if: inputs.production_publish
+        run: |
+          for attempt in $(seq 1 240); do
+            if [[ -f .output/pack-preupload.status ]]; then break; fi
+            sleep 1
+          done
+          if [[ -f .output/pack-preupload.log ]]; then cat .output/pack-preupload.log; fi
       - name: Apply production D1 migrations
         if: inputs.production_publish && inputs.apply_d1_migrations
         run: |

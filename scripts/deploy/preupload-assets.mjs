@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // L3 — GEB
-// Input: Fixed shard plan, sealed locale assets and the locked Wrangler asset hash implementation.
+// Input: Fixed shard plan or complete publication, sealed assets and the locked Wrangler asset hash implementation.
 // Output: Verified public HTML and immutable data uploaded to the existing asset store without a Worker version.
 // Pos: [Map](../L2.md); build-time asset preparation before the complete publication.
 // Effects/Dependencies: Reads sealed files and calls the Cloudflare asset API; never changes traffic or R2.
@@ -11,30 +11,76 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { isPublicStaticDocument } from "../../src/server/static-documents.ts";
+import { STATIC_DOCUMENT_SCHEMA, staticDocumentPackPath } from "../../src/lib/static-documents.ts";
 
 const { values } = parseArgs({
   options: {
     part: { type: "string" },
+    publication: { type: "string" },
+    "public-root": { type: "string" },
     plan: { type: "string" },
     "dry-run": { type: "boolean" },
   },
 });
-const partFile = path.resolve(values.part || ".output/static-part/part.json");
-const part = JSON.parse(fs.readFileSync(partFile, "utf8"));
-const planBody = fs.readFileSync(values.plan || ".output/static-shard-plan.json");
 const digest = (body) => createHash("sha256").update(body).digest("hex");
-assert.equal(part.planSha256, digest(planBody), "Asset preparation shard plan differs");
-assert.deepEqual(part.generation, JSON.parse(planBody).generation, "Asset preparation generation differs");
-assert.ok(["haneoka-static-shard-part-v1", "haneoka-static-shard-part-v2"].includes(part.schema));
-const root = path.join(path.dirname(partFile), "public");
+assert.ok(values.publication === undefined || values.part === undefined, "Select a publication or a locale part");
+let part, assets, root;
+if (values.publication !== undefined) {
+  const publicationFile = path.resolve(values.publication);
+  const publication = JSON.parse(fs.readFileSync(publicationFile, "utf8"));
+  assert.equal(publication.schema, STATIC_DOCUMENT_SCHEMA, "Asset preparation publication schema differs");
+  assert.equal(publication.completeCoverage, true, "Asset preparation requires complete coverage");
+  assert.ok(
+    Number.isSafeInteger(publication.documents) && publication.documents > 0,
+    "Asset preparation requires complete documents",
+  );
+  assert.equal(publication.contentStorage, "worker-assets");
+  const reference = publication.references;
+  assert.equal(reference?.path, "references.json", "Asset preparation reference path differs");
+  assert.match(reference.sha256 || "", /^[a-f0-9]{64}$/u);
+  assert.ok(Number.isSafeInteger(reference.bytes) && reference.bytes > 0);
+  const body = fs.readFileSync(path.join(path.dirname(publicationFile), reference.path));
+  assert.equal(body.length, reference.bytes, "Asset preparation reference length differs");
+  assert.equal(digest(body), reference.sha256, "Asset preparation reference digest differs");
+  const references = JSON.parse(body);
+  assert.equal(references.schema, "haneoka-static-publication-root-v1");
+  assert.equal(references.documentSchema, STATIC_DOCUMENT_SCHEMA);
+  assert.equal(references.contentStorage, "worker-assets");
+  assert.equal(references.documents, publication.documents, "Asset preparation document count differs");
+  root = path.resolve(values["public-root"] || ".output/public");
+  const build = JSON.parse(fs.readFileSync(path.join(root, "build.json"), "utf8"));
+  assert.equal(build.publication, reference.sha256, "Asset preparation build identity differs");
+  assert.ok(Array.isArray(references.contentPacks), "Asset preparation content packs are missing");
+  const seen = new Set();
+  assets = references.contentPacks.map((pack) => {
+    assert.match(pack.sha256 || "", /^[a-f0-9]{64}$/u);
+    assert.equal(pack.path, staticDocumentPackPath(pack.sha256), "Asset preparation pack path differs");
+    assert.ok(!seen.has(pack.path), "Duplicate asset preparation pack");
+    assert.ok(
+      Number.isSafeInteger(pack.bytes) && pack.bytes > 0 && pack.bytes <= 25 * 1024 * 1024,
+      "Invalid asset preparation pack size",
+    );
+    seen.add(pack.path);
+    return { path: pack.path.slice(1), sha256: pack.sha256, bytes: pack.bytes };
+  });
+} else {
+  const partFile = path.resolve(values.part || ".output/static-part/part.json");
+  part = JSON.parse(fs.readFileSync(partFile, "utf8"));
+  const planBody = fs.readFileSync(values.plan || ".output/static-shard-plan.json");
+  assert.equal(part.planSha256, digest(planBody), "Asset preparation shard plan differs");
+  assert.deepEqual(part.generation, JSON.parse(planBody).generation, "Asset preparation generation differs");
+  assert.ok(["haneoka-static-shard-part-v1", "haneoka-static-shard-part-v2"].includes(part.schema));
+  root = path.resolve(values["public-root"] || path.join(path.dirname(partFile), "public"));
+  assets = part.assets;
+}
 const require = createRequire(import.meta.url);
 const wranglerRequire = createRequire(require.resolve("wrangler/package.json"));
 const { hash } = wranglerRequire("blake3-wasm");
 const manifest = {};
 const sources = new Map();
 let selectedBytes = 0;
-for (const file of part.assets) {
-  const html = file.owner === part.locale && file.path.endsWith(".html");
+for (const file of assets) {
+  const html = !!part && file.owner === part.locale && file.path.endsWith(".html");
   const immutable =
     /^(?:provider-static\/content\/pack-[a-f0-9]{64}\.bin|entity-data\/v1\/[a-f0-9]{64}\.(?:bin|json))$/u.test(
       file.path,
@@ -60,7 +106,11 @@ for (const file of part.assets) {
   sources.set(id, { source, type });
   selectedBytes += body.length;
 }
-const report = { locale: part.locale, files: Object.keys(manifest).length, bytes: selectedBytes };
+const report = {
+  ...(part ? { locale: part.locale } : { scope: "publication-packs" }),
+  files: Object.keys(manifest).length,
+  bytes: selectedBytes,
+};
 if (values["dry-run"]) {
   console.log(JSON.stringify({ ...report, dryRun: true, manifestSha256: digest(JSON.stringify(manifest)) }));
 } else if (!report.files) {
