@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Complete public HTML, canonical paths and optional external entity data.
+// Output: Search-only metadata and complete public Markdown records and buckets.
+// Pos: [Map](L2-2.md); semantic document projection for frontend finalization.
+// Effects/Dependencies: Parses the main content for Markdown, selects owned entity fields and writes bounded buckets.
 import { searchCategory } from "../../src/lib/search-categories.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 import { parse, parseFragment, serialize } from "parse5";
@@ -147,13 +152,6 @@ export function withSearchMetadata(html, sourcePath) {
 
 const attrsOf = (node) => Object.fromEntries((node.attrs || []).map(({ name, value }) => [name, value]));
 const markdownEscape = (value) => value.replace(/([\\`*_[\]<>|])/gu, "\\$1");
-const descendants = (node, predicate) => {
-  if (predicate(node)) return node;
-  for (const child of node.childNodes || []) {
-    const found = descendants(child, predicate);
-    if (found) return found;
-  }
-};
 export function markdownPath(pathname) {
   return pathname === "/" ? "/index.md" : `${pathname.replace(/\/+$/u, "")}.md`;
 }
@@ -227,10 +225,16 @@ export function writeMarkdownBucket(outputRoot, pathname, records, readRecord) {
   }
   return { files, bytes, maxBytes };
 }
+function semanticMain(html) {
+  const opening = /<main\b[^>]*\bid="main-content"[^>]*>/iu.exec(html);
+  if (!opening) return;
+  const end = html.indexOf("</main>", opening.index + opening[0].length);
+  if (end < 0) return;
+  return parseFragment(html.slice(opening.index, end + 7)).childNodes[0];
+}
 /** Render the public semantic document, including tables and collapsed detail sections, without UI or page-data scripts. */
 export function markdownDocument(html, sourcePath, readSeed) {
-  const document = parse(withoutInlineJson(html));
-  const main = descendants(document, (node) => node.tagName === "main" && attrsOf(node).id === "main-content");
+  const main = semanticMain(withoutInlineJson(html));
   if (!main) return;
   const headingLevels = [];
   const collectHeadings = (node) => {
@@ -344,13 +348,23 @@ export function markdownDocument(html, sourcePath, readSeed) {
     (node.childNodes || []).forEach(collectSeeds);
   };
   if (/^(?:jp|intl)\/[^/]+\/[^/]+\/[^/]+\/index\.html$/u.test(sourcePath)) collectSeeds(main);
-  for (const match of html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script\s*>/giu)) {
-    const opening = match[0].slice(0, match[0].indexOf(">") + 1);
+  SCRIPT_START.lastIndex = 0;
+  for (let match; seeds.size && (match = SCRIPT_START.exec(html));) {
+    if (match[0] === "<!--") {
+      const end = html.indexOf("-->", SCRIPT_START.lastIndex);
+      if (end < 0) break;
+      SCRIPT_START.lastIndex = end + 3;
+      continue;
+    }
+    const opening = match[0];
+    const from = SCRIPT_START.lastIndex;
+    SCRIPT_END.lastIndex = from;
+    const end = SCRIPT_END.exec(html);
+    if (!end) break;
+    SCRIPT_START.lastIndex = SCRIPT_END.lastIndex;
     const attrs = attrsOf(parseFragment(`${opening}</script>`).childNodes[0]);
     if (attrs.type !== "application/json" || !seeds.has(attrs.id)) continue;
-    const raw = attrs["data-src"]
-      ? readSeed?.(attrs["data-src"])
-      : match[0].slice(opening.length, match[0].lastIndexOf("</script"));
+    const raw = attrs["data-src"] ? readSeed?.(attrs["data-src"]) : html.slice(from, end.index);
     if (!raw) continue;
     const payload = markdownPageData(raw);
     const episode = payload?.schema === "haneoka-story-payload-v1" ? payload.episodes?.[payload.id] : undefined;
