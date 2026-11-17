@@ -36,6 +36,7 @@ from ingest.reuse import REUSABLE_ROLES, ReuseEntry, restore_reusable
 from ingest.unity import index_unity_dependencies
 from ingest.master import discover_master_version
 from extract.master import validate_master_manifest
+from extract.unity_reuse import bundle_context
 from ingest.version_api import (
     AssetVersionInfo,
     cdn_authorization,
@@ -1028,6 +1029,18 @@ def _resolve_catalogs(
     )
 
 
+def _same_adoption_addressables(base_record: dict[str, Any], addressables: dict[str, Any]) -> bool:
+    previous = {key: value for key, value in (base_record.get("addressables") or {}).items() if key != "url"}
+    current = {key: value for key, value in addressables.items() if key != "url"}
+    # CRI locale order also controls USM metadata decoding.
+    if base_record.get("role") == "unity-bundle" and bundle_context(base_record) == bundle_context(
+        {**base_record, "addressables": addressables}
+    ):
+        previous.pop("locales", None)
+        current.pop("locales", None)
+    return previous == current
+
+
 def _publisher_fingerprint() -> dict[str, str]:
     raw = os.environ.get("HANEOKA_PACKAGE_FINGERPRINT", "").strip()
     if not raw:
@@ -1457,17 +1470,14 @@ def ingest_package(
             if base_record is not None:
                 entry = reuse_index.get(filename) if reuse_index else None
                 agrees = entry is None or entry.sha256 == str(base_record["sha256"])
-                # The reuse context must match too: changed locale tagging or
-                # catalog metadata makes the bundle's extraction context differ
-                # even when its bytes are identical, and the extraction stages
-                # would then need bytes the delta source never materialized.
-                same_addressables = (addressables or None) == (
-                    base_record.get("addressables") or None
-                )
+                # CDN generation and mirror URLs do not change bundle bytes or
+                # extraction context. Keep the current transport URL below.
+                same_addressables = _same_adoption_addressables(base_record, addressables)
                 if (
                     agrees
                     and same_addressables
                     and (not expected or expected == int(base_record["bytes"]))
+                    and not target.is_file()
                     and filename not in adopted_records
                 ):
                     with reuse_lock:
@@ -1563,10 +1573,10 @@ def ingest_package(
         # absent from disk by construction, so the two sets are disjoint.
         local_paths = {str(record["path"]) for record in downloaded}
         adopted = []
-        for filename, (base_record, _addressables) in sorted(adopted_records.items()):
+        for filename, (base_record, addressables) in sorted(adopted_records.items()):
             if str(base_record["path"]) in local_paths:
                 continue
-            adopted.append(dict(base_record))
+            adopted.append({**base_record, "addressables": addressables})
             local_paths.add(str(base_record["path"]))
         downloaded.extend(adopted)
         master_files = (

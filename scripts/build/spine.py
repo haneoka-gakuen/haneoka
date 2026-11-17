@@ -1170,14 +1170,18 @@ class _UnityResolver:
         output_path = str(output["path"])
         target = self.layout.root / Path(*PurePosixPath(output_path).parts)
         if not target.is_file() and self.delta is not None:
-            entry = self.delta.require_entry(output_path)
-            if (
-                str(entry.get("sha256") or "") != str(output.get("sha256") or "")
-                or int(entry.get("bytes", -1)) != int(output.get("bytes", -1))
-            ):
-                raise ValueError(f"Spine dependency differs from its pinned release: {output_path}")
+            self.validate_declared(output)
             self.delta.fetch_release_path(output_path, target)
         return target
+
+    def validate_declared(self, output: dict[str, Any]) -> None:
+        output_path = str(output["path"])
+        entry = self.delta.require_entry(output_path)
+        if (
+            str(entry.get("sha256") or "") != str(output.get("sha256") or "")
+            or int(entry.get("bytes", -1)) != int(output.get("bytes", -1))
+        ):
+            raise ValueError(f"Spine dependency differs from its pinned release: {output_path}")
 
     def source_output(self, source_path: str) -> tuple[dict[str, Any] | None, list[dict[str, str]]]:
         candidates = self.outputs_by_source.get(source_path, [])
@@ -1765,16 +1769,7 @@ def _recipe_runtime_preview_reason(recipe: dict[str, Any]) -> dict[str, str]:
     return _preview_reason("render-recipe-unavailable", detail)
 
 
-def _preview_identity(layout: Any, job: dict[str, Any]) -> str:
-    """Fingerprint every input one preview render of this job depends on.
-
-    The job itself pins the render configuration (components, pose, scale,
-    render size); the referenced skeleton/atlas/page files pin the content.
-    A job whose fingerprint matches the previous build's produces a
-    byte-identical PNG, which is what lets the preview be restored instead of
-    rendered.
-    """
-
+def _preview_paths(job: dict[str, Any]) -> list[str]:
     files: set[str] = set()
     for component in job.get("components") or []:
         if not isinstance(component, dict):
@@ -1787,10 +1782,26 @@ def _preview_identity(layout: Any, job: dict[str, Any]) -> str:
             path = str(page.get("path") or "") if isinstance(page, dict) else ""
             if path:
                 files.add(path)
+    return sorted(files)
+
+
+def _preview_identity(layout: Any, job: dict[str, Any], delta: Any = None) -> str:
+    """Fingerprint every input one preview render of this job depends on.
+
+    The job itself pins the render configuration (components, pose, scale,
+    render size); the referenced skeleton/atlas/page files pin the content.
+    A job whose fingerprint matches the previous build's produces a
+    byte-identical PNG, which is what lets the preview be restored instead of
+    rendered.
+    """
+
     inputs = []
-    for path in sorted(files):
+    for path in _preview_paths(job):
         file = layout.root.joinpath(*PurePosixPath(path).parts)
-        inputs.append([path, sha256_file(file) if file.is_file() else ""])
+        digest = sha256_file(file) if file.is_file() else (
+            str(delta.require_entry(path)["sha256"]) if delta is not None else ""
+        )
+        inputs.append([path, digest])
     return sha256_bytes(stable_json({"schema": PREVIEW_SCHEMA, "job": job, "files": inputs}))
 
 
@@ -1800,16 +1811,16 @@ def _reusable_previews(
     reuse_manifest: dict[str, Any] | None,
     restore_output: Any,
     reuse_concurrency: int,
+    delta: Any = None,
 ) -> tuple[list[tuple[dict[str, Any], dict[str, Any], str]], dict[str, int]]:
-    """Restore unchanged documents' preview PNGs from the current R2 release.
+    """Reuse unchanged preview PNGs from the pinned release.
 
-    Documents whose previous previewInputSha256 matches are restored (and
-    re-hashed) instead of rendered; everything else stays pending for the
-    browser renderer.
+    Matching input identities retain declared PNG entries in delta builds.
+    Other builds restore and re-hash PNGs; misses stay pending for rendering.
     """
 
     summary = {"restoredModels": 0, "restoredRecipes": 0, "failed": 0}
-    if reuse_manifest is None or restore_output is None or not pending:
+    if reuse_manifest is None or (restore_output is None and delta is None) or not pending:
         return pending, summary
     if reuse_manifest.get("previewSchema") != PREVIEW_SCHEMA:
         return pending, summary
@@ -1824,7 +1835,7 @@ def _reusable_previews(
     candidates: list[tuple[dict[str, Any], dict[str, Any], str, str, str, Path, dict[str, Any]]] = []
     deferred: list[tuple[dict[str, Any], dict[str, Any], str]] = []
     for document, job, kind in pending:
-        identity = _preview_identity(layout, job)
+        identity = _preview_identity(layout, job, delta)
         document["previewInputSha256"] = identity
         record = previous.get(str(job.get("id") or ""))
         preview = record.get("preview") if isinstance(record, dict) else None
@@ -1844,6 +1855,16 @@ def _reusable_previews(
             deferred.append((document, job, kind))
     if not candidates:
         return pending, summary
+
+    if delta is not None:
+        for document, job, kind, relative, sha_value, _target, preview in candidates:
+            entry = delta.entry(relative)
+            if entry is None or entry["sha256"] != sha_value or entry["bytes"] != preview.get("bytes"):
+                deferred.append((document, job, kind))
+                continue
+            document["preview"] = preview
+            summary["restoredModels" if kind == "model" else "restoredRecipes"] += 1
+        return deferred, summary
 
     def restore(
         item: tuple[dict[str, Any], dict[str, Any], str, str, str, Path, dict[str, Any]],
@@ -1885,6 +1906,7 @@ def _render_previews(
     reuse_manifest: dict[str, Any] | None = None,
     restore_output: Any = None,
     reuse_concurrency: int = 32,
+    delta: Any = None,
 ) -> tuple[int, int, dict[str, int]]:
     """Attempt real WebGL output, retaining an explicit failure for every miss."""
 
@@ -1925,7 +1947,7 @@ def _render_previews(
         *( (recipe, job, "recipe") for recipe, job in recipe_jobs ),
     ]
     pending, reuse_summary = _reusable_previews(
-        layout, pending, reuse_manifest, restore_output, reuse_concurrency
+        layout, pending, reuse_manifest, restore_output, reuse_concurrency, delta
     )
     rendered_models += reuse_summary["restoredModels"]
     rendered_recipes += reuse_summary["restoredRecipes"]
@@ -1935,6 +1957,11 @@ def _render_previews(
         with _SpinePreviewRenderer(layout) as renderer:
             for document, job, kind in pending:
                 try:
+                    if delta is not None:
+                        for path in _preview_paths(job):
+                            target = layout.root.joinpath(*PurePosixPath(path).parts)
+                            if not target.is_file():
+                                delta.fetch_release_path(path, target)
                     outcome = renderer.render(job)
                     if outcome.get("ok") is not True:
                         code = str(outcome.get("code") or "headless-webgl-render-failed")
@@ -2854,11 +2881,11 @@ def build_spine(
         if delta is not None and adoptable(source_path):
             adopted = [deepcopy(model) for model in base_models_by_source[source_path]]
             for model in adopted:
-                resolver.materialize(model["runtime"]["json"])
+                resolver.validate_declared(model["runtime"]["json"])
                 for atlas in model["atlases"]:
-                    resolver.materialize(atlas["atlas"])
+                    resolver.validate_declared(atlas["atlas"])
                     for page in atlas["pages"]:
-                        resolver.materialize(page)
+                        resolver.validate_declared(page)
             models.extend(adopted)
             adopted_model_count += len(adopted)
             continue
@@ -2920,6 +2947,7 @@ def build_spine(
         reuse_manifest=reuse_manifest,
         restore_output=restore_output,
         reuse_concurrency=reuse_concurrency,
+        delta=delta,
     )
     models_by_id = {str(model["id"]): model for model in models}
     recipes_by_id = {str(recipe["id"]): recipe for recipe in recipes}
