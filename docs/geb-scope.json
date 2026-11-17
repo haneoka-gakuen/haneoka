@@ -482,7 +482,11 @@
     "worker/content-view.ts",
     "worker/resource-clients.ts",
     "src/lit/skills-workspace.ts",
-    "src/server/skill-catalog.ts"
+    "src/server/skill-catalog.ts",
+    "src/lit/song-progress.ts",
+    "src/lib/song-progress-image.ts",
+    "src/lib/song-progress-rating.ts",
+    "src/lib/song-progress-roster.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

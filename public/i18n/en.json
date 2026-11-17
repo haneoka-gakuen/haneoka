@@ -1333,11 +1333,11 @@
     },
     "songProgress": {
       "skillRating": "Skill rating",
-      "rosterRating": "Roster strength",
-      "potentialRating": "Potential",
+      "rosterRating": "Roster rating",
+      "potentialRating": "Full-growth rating",
       "highestAp": "Highest AP",
       "highestFc": "Highest FC",
-      "calculateRating": "Calculate",
+      "calculateRating": "Calculate ratings",
       "calculationFailed": "Calculation incomplete",
       "growthIncomplete": "Card growth incomplete",
       "rosterIncomplete": "Five characters and five Snapshots required",
@@ -1359,7 +1359,27 @@
       "summary": "Summary",
       "byLevel": "By level",
       "charts": "Charts",
-      "status": "Status"
+      "status": "Status",
+      "currentGrowth": "Current growth",
+      "currentRating": "Current-growth rating",
+      "ratingGain": "Growth difference",
+      "manageGrowth": "Cards and growth",
+      "rosterHelpTitle": "About roster ratings",
+      "rosterHelp": {
+        "purpose": "Use",
+        "purposeValue": "Compare scoring ability and growth gains of owned cards",
+        "currentValue": "All owned members and Snapshots at recorded growth",
+        "potentialValue": "The same owned cards, with every growth field at its maximum",
+        "gainValue": "Full-growth rating minus current-growth rating",
+        "play": "Live",
+        "playValue": "Ordinary Live / ALL PERFECT",
+        "score": "Scoring",
+        "scoreValue": "Best teams on fixed EXPERT charts / average over skill orders",
+        "bonuses": "Account bonuses",
+        "bonusesValue": "Band items, character ranks and memories excluded",
+        "required": "Required",
+        "requiredValue": "Five different characters, five Snapshots and complete card growth"
+      }
     },
     "songGuess": {
       "title": "Guess the song",

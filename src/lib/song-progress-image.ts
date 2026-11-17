@@ -1,3 +1,4 @@
+// L3 — GEB
 // Input: A frozen localized rating report and the current theme.
 // Output: Overview or Best 20 PNG with player identity, team and site branding.
 // Pos: [Map](L2-2.md); song-progress image export.
@@ -522,7 +523,7 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
   const footerY = canvasHeight - 40;
   ctx.fillStyle = theme.variant;
   ctx.font = `500 15px ${theme.font}`;
-  const footerLeft = [report.generated, report.version, report.server].filter(Boolean).join(" · ");
+  const footerLeft = [report.generated, report.version, report.server].filter(Boolean).join(" / ");
   drawTextFit(ctx, footerLeft, PAD, footerY, CONTENT_WIDTH - 240, "left");
 
   const brandUrl =

@@ -1333,11 +1333,11 @@
     },
     "songProgress": {
       "skillRating": "底力",
-      "rosterRating": "卡池实力",
-      "potentialRating": "养成潜力",
+      "rosterRating": "卡池评分",
+      "potentialRating": "满培养评分",
       "highestAp": "最高 AP",
       "highestFc": "最高 FC",
-      "calculateRating": "计算",
+      "calculateRating": "计算评分",
       "calculationFailed": "计算未完成",
       "growthIncomplete": "卡牌养成信息不完整",
       "rosterIncomplete": "需要五位角色和五张留影",
@@ -1359,7 +1359,27 @@
       "summary": "统计",
       "byLevel": "按等级",
       "charts": "谱面数",
-      "status": "游玩状态"
+      "status": "游玩状态",
+      "currentGrowth": "当前培养",
+      "currentRating": "当前培养评分",
+      "ratingGain": "培养评分差值",
+      "manageGrowth": "卡牌与培养",
+      "rosterHelpTitle": "卡池评分说明",
+      "rosterHelp": {
+        "purpose": "用途",
+        "purposeValue": "比较已持有卡牌的得分能力和培养收益",
+        "currentValue": "全部已持有成员和留影，采用已录入的培养",
+        "potentialValue": "同一批已持有卡牌，各项培养全部升满",
+        "gainValue": "满培养评分 − 当前培养评分",
+        "play": "演奏场景",
+        "playValue": "普通演出 / ALL PERFECT",
+        "score": "计分方式",
+        "scoreValue": "固定 EXPERT 曲目逐曲最优配队，采用技能顺序平均分",
+        "bonuses": "账号加成",
+        "bonusesValue": "不计入乐队道具、角色评级和回忆加成",
+        "required": "计算条件",
+        "requiredValue": "五位不同角色、五张留影及完整的卡牌培养记录"
+      }
     },
     "songGuess": {
       "title": "猜歌",

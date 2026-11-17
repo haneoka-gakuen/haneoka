@@ -1333,11 +1333,11 @@
     },
     "songProgress": {
       "skillRating": "底力",
-      "rosterRating": "卡池實力",
-      "potentialRating": "養成潛力",
+      "rosterRating": "卡池評分",
+      "potentialRating": "滿培養評分",
       "highestAp": "最高 AP",
       "highestFc": "最高 FC",
-      "calculateRating": "計算",
+      "calculateRating": "計算評分",
       "calculationFailed": "計算未完成",
       "growthIncomplete": "卡牌養成資訊不完整",
       "rosterIncomplete": "需要五位角色和五張快照",
@@ -1359,7 +1359,27 @@
       "summary": "統計",
       "byLevel": "依等級",
       "charts": "譜面數",
-      "status": "遊玩狀態"
+      "status": "遊玩狀態",
+      "currentGrowth": "目前培養",
+      "currentRating": "目前培養評分",
+      "ratingGain": "培養評分差值",
+      "manageGrowth": "卡牌與培養",
+      "rosterHelpTitle": "卡池評分說明",
+      "rosterHelp": {
+        "purpose": "用途",
+        "purposeValue": "比較已持有卡牌的得分能力和培養收益",
+        "currentValue": "全部已持有成員和快照，採用已輸入的培養",
+        "potentialValue": "同一批已持有卡牌，各項培養全部升滿",
+        "gainValue": "滿培養評分 − 目前培養評分",
+        "play": "演奏場景",
+        "playValue": "一般演出 / ALL PERFECT",
+        "score": "計分方式",
+        "scoreValue": "固定 EXPERT 曲目逐曲最佳配隊，採用技能順序平均分",
+        "bonuses": "帳號加成",
+        "bonusesValue": "不計入樂團道具、角色評級和回憶加成",
+        "required": "計算條件",
+        "requiredValue": "五位不同角色、五張快照及完整的卡牌培養紀錄"
+      }
     },
     "songGuess": {
       "title": "猜歌",

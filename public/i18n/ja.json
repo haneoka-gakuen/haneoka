@@ -1333,11 +1333,11 @@
     },
     "songProgress": {
       "skillRating": "底力",
-      "rosterRating": "カードプール評価",
-      "potentialRating": "育成後",
+      "rosterRating": "カード評価",
+      "potentialRating": "最大育成時の評価",
       "highestAp": "最高AP",
       "highestFc": "最高FC",
-      "calculateRating": "計算",
+      "calculateRating": "評価を計算",
       "calculationFailed": "計算未完了",
       "growthIncomplete": "育成情報不足",
       "rosterIncomplete": "キャラクター5人とスナップ5枚が必要",
@@ -1359,7 +1359,27 @@
       "summary": "集計",
       "byLevel": "レベル別",
       "charts": "譜面数",
-      "status": "プレイ状況"
+      "status": "プレイ状況",
+      "currentGrowth": "現在の育成",
+      "currentRating": "現在の育成での評価",
+      "ratingGain": "育成による変化",
+      "manageGrowth": "カードと育成",
+      "rosterHelpTitle": "カード評価について",
+      "rosterHelp": {
+        "purpose": "用途",
+        "purposeValue": "所持カードのスコア性能と育成効果を比較",
+        "currentValue": "所持メンバーとスナップすべての入力済み育成状況",
+        "potentialValue": "同じ所持カードをすべて最大まで育成",
+        "gainValue": "最大育成時の評価 − 現在の評価",
+        "play": "ライブ",
+        "playValue": "通常ライブ / ALL PERFECT",
+        "score": "スコア集計",
+        "scoreValue": "固定の EXPERT 譜面ごとに最適編成 / スキル順の平均スコア",
+        "bonuses": "アカウントボーナス",
+        "bonusesValue": "バンドアイテム、キャラランク、メモリーを除外",
+        "required": "計算条件",
+        "requiredValue": "異なるキャラクター5人、スナップ5枚、全育成項目の入力"
+      }
     },
     "songGuess": {
       "title": "楽曲当て",

@@ -1,3 +1,4 @@
+// L3 — GEB
 // Input: Own Box snapshot, frozen R1 benchmark and the current published catalogue.
 // Output: Locally certified current/potential roster ratings and a legal witness team.
 // Pos: [Map](L2-2.md); lazy song-progress calculation adapter.

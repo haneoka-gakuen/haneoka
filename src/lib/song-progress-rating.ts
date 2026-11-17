@@ -1,5 +1,6 @@
+// L3 — GEB
 // Input: Published chart levels, Box marks and owned card growth.
-// Output: Independent R1 skill summary and ordinary-Live benchmark requests.
+// Output: Independent skill summary and ordinary-Live benchmark requests.
 // Pos: [Map](L2-2.md); song progress ratings shared by the page and offline reference producer.
 // Effects/Dependencies: Pure calculations; the caller owns publication, storage and engine execution.
 import type { EngineRequest, SongRef } from "./team-builder/engine/api";

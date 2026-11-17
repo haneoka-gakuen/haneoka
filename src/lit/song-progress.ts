@@ -1,3 +1,8 @@
+// L3 — GEB
+// Input: Published charts, synced clear marks and owned card growth.
+// Output: Song progress, current/full-growth roster ratings and localized image exports.
+// Pos: [Map](L2-2.md); song-progress workspace and roster-rating guidance.
+// Effects/Dependencies: Shares Box storage, lazy native roster searches and the app's save bridge.
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { live } from "lit/directives/live.js";
@@ -25,6 +30,7 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { collectionTable } from "./ui/collection-view";
 import { filterChip, iconButton, segmented } from "./ui/controls";
 import { accordion } from "./ui/accordion";
+import { specList } from "./ui/spec";
 import { errorState, loadingState } from "./ui/state";
 import { clientText } from "../i18n/client";
 import type { Locale } from "@haneoka/i18n";
@@ -61,6 +67,7 @@ export class SongProgress extends LitElement {
     query: { state: true },
     levelsOpen: { state: true },
     ratingDialog: { state: true },
+    rosterHelp: { state: true },
     calculating: { state: true },
     exporting: { state: true },
   };
@@ -71,6 +78,7 @@ export class SongProgress extends LitElement {
   declare filter: Filter;
   declare query: string;
   declare private ratingDialog: boolean;
+  declare private rosterHelp: boolean;
   declare private calculating: boolean;
   declare private exporting: boolean;
   private bestOpen = false;
@@ -98,6 +106,7 @@ export class SongProgress extends LitElement {
     this.query = "";
     this.levelsOpen = false;
     this.ratingDialog = this.calculating = this.exporting = false;
+    this.rosterHelp = false;
   }
   createRenderRoot() {
     return this;
@@ -334,15 +343,17 @@ export class SongProgress extends LitElement {
   }
   private ratings() {
     const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
+    const current = this.rosterRatings?.current?.value, potential = this.rosterRatings?.potential?.value;
+    const gain = current === undefined || potential === undefined ? null : potential - current;
     return html`<div class="song-progress__ratings">
       <section class="surface song-progress__rating">
         ${renderDetailSectionHeading(this.text("skillRating", "Skill rating"), "stats")}
         <p class="song-progress__rating-value">${this.number(skill.value)}</p>
-        <dl class="song-progress__rating-facts">
-          <div><dt>${this.text("highestAp", "Highest AP")}</dt><dd>${this.number(skill.ap)}</dd></div>
-          <div><dt>${this.text("highestFc", "Highest FC")}</dt><dd>${this.number(skill.fc)}</dd></div>
-          <div><dt>Best 20</dt><dd>${skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20)}</dd></div>
-        </dl>
+        ${specList([
+          { label: this.text("highestAp", "Highest AP"), value: this.number(skill.ap) },
+          { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
+          { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
+        ], { numeric: true })}
         ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
           onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
           content:html`<ol class="song-progress__best">${skill.best.map((row,index) => html`<li class="song-progress__best-row">
@@ -352,19 +363,47 @@ export class SongProgress extends LitElement {
         })}
       </section>
       <section class="surface song-progress__rating">
-        ${renderDetailSectionHeading(this.text("rosterRating", "Roster strength"), "cards")}
+        <div class="row row--between">
+          ${renderDetailSectionHeading(this.text("rosterRating", "Roster rating"), "cards")}
+          ${iconButton({ icon: "help", label: this.text("rosterHelpTitle", "About roster ratings"), onClick: () => { this.rosterHelp = true; } })}
+        </div>
+        <span class="md-label-large">${this.text("currentRating", "Current-growth rating")}</span>
         <p class="song-progress__rating-value song-progress__rating-value--roster">${this.number(this.rosterRatings?.current?.value)}</p>
-        <dl class="song-progress__rating-facts">
-          <div><dt>${this.text("potentialRating", "Potential")}</dt><dd>${this.number(this.rosterRatings?.potential?.value)}</dd></div>
-          <div><dt>R1</dt><dd>1000</dd></div>
-        </dl>
+        ${specList([
+          { label: this.text("potentialRating", "Full-growth rating"), value: this.number(potential) },
+          { label: this.text("ratingGain", "Growth difference"), value: gain === null ? "—" : `${gain >= 0 ? "+" : ""}${this.number(gain)}` },
+        ], { numeric: true })}
         <div class="song-progress__rating-actions">
-          <button class="button button--filled" type="button" ?disabled=${this.calculating} @click=${() => void this.calculateRoster()}>${this.text("calculateRating", "Calculate")}</button>
+          <button class="button button--filled" type="button" ?disabled=${this.calculating} @click=${() => void this.calculateRoster()}>${this.text("calculateRating", "Calculate ratings")}</button>
+          <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
           ${this.calculating ? html`<button class="button button--text" type="button" @click=${() => { ++this.ratingGeneration; this.roster?.cancel(); this.calculating = false; this.requestUpdate(); }}>${uiText(this.locale,"common.actions.cancel")}</button>` : nothing}
         </div>
         <small class="md-body-small song-progress__rating-status" role="status">${this.calculating ? this.ratingProgress || uiText(this.locale,"common.states.loading") : this.ratingError || (this.rosterRatings?.incomplete ? this.text("growthIncomplete", "Card growth incomplete") : this.rosterRatings && !this.rosterRatings.potential ? this.text("rosterIncomplete", "Five characters and five Snapshots required") : "")}</small>
       </section>
     </div>`;
+  }
+  private rosterHelpDialog() {
+    if (!this.rosterHelp) return nothing;
+    const close = () => { this.rosterHelp = false; };
+    return html`<dialog class="dialog" aria-labelledby="song-progress-roster-help" ${modal(close)}>
+      <header class="dialog__header"><h2 id="song-progress-roster-help">${this.text("rosterHelpTitle", "About roster ratings")}</h2></header>
+      <div class="dialog__body stack">
+        ${specList([
+          { label: this.text("rosterHelp.purpose", "Use"), value: this.text("rosterHelp.purposeValue", "Compare scoring ability and growth gains of owned cards") },
+          { label: this.text("currentGrowth", "Current growth"), value: this.text("rosterHelp.currentValue", "All owned members and Snapshots at recorded growth") },
+          { label: this.text("potentialRating", "Full-growth rating"), value: this.text("rosterHelp.potentialValue", "The same owned cards, fully grown") },
+          { label: this.text("ratingGain", "Growth difference"), value: this.text("rosterHelp.gainValue", "Full-growth rating minus current-growth rating") },
+          { label: this.text("rosterHelp.play", "Live"), value: this.text("rosterHelp.playValue", "Ordinary Live / ALL PERFECT") },
+          { label: this.text("rosterHelp.score", "Scoring"), value: this.text("rosterHelp.scoreValue", "Best teams on fixed EXPERT charts / average over skill orders") },
+          { label: this.text("rosterHelp.bonuses", "Account bonuses"), value: this.text("rosterHelp.bonusesValue", "Band items, character ranks and memories excluded") },
+          { label: this.text("rosterHelp.required", "Required"), value: this.text("rosterHelp.requiredValue", "Five different characters, five Snapshots and complete card growth") },
+          { label: uiText(this.locale, "catalog.resources.types.MemberCard"), value: ["common.fields.level", "catalog.cards.fields.training", "catalog.cards.fields.awakening", "catalog.cards.fields.liveSkill"].map(key => uiText(this.locale, key)).join(" / ") },
+          { label: uiText(this.locale, "catalog.resources.types.SupportCard"), value: `${uiText(this.locale, "common.fields.level")} / ${clientText(this.locale, "tools.teamBuilder.limitBreak", "Limit Break")}` },
+        ])}
+        <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
+      </div>
+      <footer class="dialog__actions"><button class="button button--text" type="button" @click=${close}>${uiText(this.locale, "common.actions.close")}</button></footer>
+    </dialog>`;
   }
   private exportDialog() {
     if (!this.ratingDialog) return nothing;
@@ -391,17 +430,18 @@ export class SongProgress extends LitElement {
     this.exporting = true;
     const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
     const roster = this.rosterRatings;
+    const gain = roster?.current && roster.potential ? roster.potential.value - roster.current.value : null;
     const team = ((roster?.current ?? roster?.potential)?.team ?? []).map(row => ({
       label: row ? localizedText(row.name,this.locale) || String(row.id) : "—", ...(row?.image ? {image:row.image} : {}),
     }));
     const report: SongProgressImageReport = {
       title: this.text("title", "Song progress"), generated: formatDate(this.locale, Date.now(), { year:"always" }),
-      version: `${roster?.potential?.referenceId ?? "R1"} · ${this.pageData?.variants[this.server]?.identity.releaseId ?? this.server}`,
+      version: "",
       server: this.server.toUpperCase(), profile: { name: this.profile.name || "—", uid: this.profile.uid ? `UID ${this.profile.uid}` : "UID —", rank: `${this.text("profilerank", "Player rank")} ${this.profile.rank || "—"}`, ...(team[0]?.image ? {avatar:team[0].image} : {}) },
       metrics: [
         { label: this.text("skillRating","Skill rating"), value: this.number(skill.value) },
-        { label: this.text("rosterRating","Roster strength"), value: this.number(roster?.current?.value) },
-        { label: this.text("potentialRating","Potential"), value: this.number(roster?.potential?.value) },
+        { label: this.text("currentRating","Current-growth rating"), value: this.number(roster?.current?.value) },
+        { label: this.text("potentialRating","Full-growth rating"), value: this.number(roster?.potential?.value), ...(gain === null ? {} : { detail: `${gain >= 0 ? "+" : ""}${this.number(gain)}` }) },
         { label: this.text("highestAp","Highest AP"), value: this.number(skill.ap) },
         { label: this.text("highestFc","Highest FC"), value: this.number(skill.fc) },
         { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
@@ -546,6 +586,7 @@ export class SongProgress extends LitElement {
           </div>
         </div>
         ${this.exportDialog()}
+        ${this.rosterHelpDialog()}
       </section>
     `;
   }

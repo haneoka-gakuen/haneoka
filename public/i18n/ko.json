@@ -1334,10 +1334,10 @@
     "songProgress": {
       "skillRating": "실력 평가",
       "rosterRating": "카드풀 평가",
-      "potentialRating": "최대 육성",
+      "potentialRating": "최대 육성 평가",
       "highestAp": "최고 AP",
       "highestFc": "최고 FC",
-      "calculateRating": "계산",
+      "calculateRating": "평가 계산",
       "calculationFailed": "계산 미완료",
       "growthIncomplete": "육성 정보 부족",
       "rosterIncomplete": "캐릭터 5명과 스냅 5장 필요",
@@ -1359,7 +1359,27 @@
       "summary": "집계",
       "byLevel": "레벨별",
       "charts": "채보 수",
-      "status": "플레이 상태"
+      "status": "플레이 상태",
+      "currentGrowth": "현재 육성",
+      "currentRating": "현재 육성 평가",
+      "ratingGain": "육성 전후 차이",
+      "manageGrowth": "카드 및 육성",
+      "rosterHelpTitle": "카드풀 평가 안내",
+      "rosterHelp": {
+        "purpose": "용도",
+        "purposeValue": "보유 카드의 스코어 성능과 육성 효과 비교",
+        "currentValue": "보유 멤버와 스냅 전체의 입력된 육성 상태",
+        "potentialValue": "같은 보유 카드의 모든 육성 항목을 최대로 적용",
+        "gainValue": "최대 육성 평가 − 현재 육성 평가",
+        "play": "라이브",
+        "playValue": "일반 라이브 / ALL PERFECT",
+        "score": "스코어 집계",
+        "scoreValue": "고정 EXPERT 채보별 최적 편성 / 스킬 순서 평균 스코어",
+        "bonuses": "계정 보너스",
+        "bonusesValue": "밴드 아이템, 캐릭터 랭크, 메모리 제외",
+        "required": "계산 조건",
+        "requiredValue": "서로 다른 캐릭터 5명, 스냅 5장, 모든 카드 육성 정보"
+      }
     },
     "songGuess": {
       "title": "노래 맞히기",
