@@ -1378,7 +1378,37 @@
         "bonuses": "Account bonuses",
         "bonusesValue": "Band items, character ranks and memories excluded",
         "required": "Required",
-        "requiredValue": "Five different characters, five Snapshots and complete card growth"
+        "requiredValue": "Five different characters, five Snapshots and complete card growth",
+        "snapshotGrowth": "Level / Limit Break"
+      },
+      "view": "Content",
+      "marksView": "Chart progress",
+      "counts": {
+        "title": "Live counts",
+        "total": "Total clears",
+        "fc": "FULL COMBO clears",
+        "ap": "ALL PERFECT clears",
+        "arena": "Gekiso Arena plays",
+        "battle": "Multi Live clears",
+        "edit": "Edit total clears",
+        "import": "Read original save",
+        "pick": "Import saved data",
+        "selectTitle": "Import from saved data",
+        "noSaves": "No imported original saves",
+        "noSource": "No save imported",
+        "readFailed": "Could not read the original save",
+        "writeFailed": "Could not save counts",
+        "wrongServer": "Save region does not match",
+        "missing": "This save has no count records",
+        "invalid": "Enter a nonnegative whole count in range",
+        "chart": "Clears on this difficulty",
+        "song": "Song total clears",
+        "gameSave": "Game save",
+        "sort": "Most clears first",
+        "save": "Save",
+        "fromApp": "Read game save",
+        "editChart": "Edit clears: {chart}",
+        "editChartTitle": "Edit difficulty clears"
       }
     },
     "songGuess": {

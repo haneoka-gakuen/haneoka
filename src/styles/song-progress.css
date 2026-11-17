@@ -28,6 +28,13 @@
     gap: var(--md-sys-spacing-3);
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
+  .song-progress__row--counts {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+  .song-progress__count-facts {
+    grid-column: 1 / -1;
+    padding-block-end: var(--md-sys-spacing-3);
+  }
   .song-progress__song {
     display: grid;
     min-width: 0;

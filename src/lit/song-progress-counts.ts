@@ -1,0 +1,206 @@
+// L3 — GEB
+// Input: Synced progress, original save files and stored local snapshots.
+// Output: Cumulative play statistics, source selection and editable total/per-difficulty clears.
+// Pos: [Map](L2-2.md); song-progress counts reuse Box writes and the save decoder.
+// Effects/Dependencies: Lazy local import Worker/IndexedDB; imported and edited counts use identical synced keys.
+import { html, nothing } from "lit";
+import type { LitElement } from "lit";
+import { live } from "lit/directives/live.js";
+import { modal } from "./ui/modal";
+import { iconButton } from "./ui/controls";
+import { icon } from "./ui/icon";
+import { specList } from "./ui/spec";
+import { collectionList } from "./ui/collection-view";
+import { emptyState } from "./ui/state";
+import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { uiText } from "./shared/catalog";
+import { formatDate } from "../lib/date-format";
+import { COUNT_SOURCE_KEY, chartCountChanges, countChange, countImportChanges, playCount, songPlayCount, storedPlayCount, type CountChanges, type CountEntries } from "../lib/song-progress-counts";
+import type { StoredSave } from "../lib/save-workspace/snapshot";
+import type { BoxSnapshot } from "../lib/team-builder/sync/box-store";
+import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
+import { chooseAppAccount } from "./ui/app-account-chooser";
+
+interface Options {
+  locale(): string;
+  server(): "jp" | "intl";
+  text(key: string, fallback: string): string;
+  write(changes: CountChanges): void;
+  marks(player: Record<string, unknown>): CountChanges;
+  selected(): void;
+  profile(account: DeviceSave): void;
+  difficulties(song: number): readonly number[];
+}
+export class ProgressCounts {
+  private entries: CountEntries = {};
+  private context = "";
+  private controller = new AbortController();
+  private busy = false;
+  private error = "";
+  private records: StoredSave[] | null = null;
+  private editing = false;
+  private submitted = false;
+  private draft = "";
+  private editError = "";
+  private target: { song: number; difficulty: number; context: string } | null = null;
+  constructor(private host: LitElement, private options: Options) {}
+  private t = (key: string, fallback: string) => this.options.text(`counts.${key}`, fallback);
+  private changed() { this.host.requestUpdate(); }
+  sync(snapshot: BoxSnapshot) {
+    this.entries = snapshot.entries;
+    const context = `${this.options.server()}:${snapshot.owner ?? "local"}`;
+    if (context === this.context && !this.controller.signal.aborted) return;
+    this.context = context;
+    this.controller.abort(); this.controller = new AbortController();
+    this.busy = this.editing = false; this.records = null; this.error = "";
+  }
+  dispose() { this.controller.abort(); }
+  cancel() {
+    this.controller.abort(); this.controller = new AbortController();
+    this.busy = this.editing = false; this.records = null; this.error = "";
+  }
+  value(type: number, param1 = 0, param2 = 0) { return storedPlayCount(this.entries, type, param1, param2); }
+  format(count: bigint | null) { return count === null ? "—" : new Intl.NumberFormat(this.options.locale()).format(count); }
+  chart(song: number, difficulty: number) { return difficulty >= 0 && difficulty <= 4 ? this.value(108, song, difficulty + 1) : null; }
+  song(song: number) { return songPlayCount(this.entries, song, this.options.difficulties(song)); }
+  private edit(target: typeof this.target) {
+    this.target = target;
+    this.draft = (target ? this.chart(target.song, target.difficulty) : this.value(76))?.toString() ?? "";
+    this.editError = ""; this.submitted = false; this.editing = true; this.changed();
+  }
+  openFiles() { if (!this.busy) this.host.querySelector<HTMLInputElement>("#progress-counts-file")?.click(); }
+  supportsApp() { return inApp() && appSupports("saveSnapshotV1"); }
+  async readAppSave(activate = true) {
+    if (this.busy) return;
+    const context = this.context, controller = this.controller;
+    this.busy = true; this.error = ""; this.changed();
+    try {
+      const accounts = (await appCall("gameAccounts", {})).filter(account => !account.server || account.server === this.options.server());
+      const key = await chooseAppAccount(this.options.locale(), accounts);
+      if (!key || this.controller !== controller || controller.signal.aborted) return;
+      const account = accounts.find(account => account.key === key)!;
+      const { text } = await appCall("saveSnapshot", { key });
+      const { importSaves } = await import("../lib/save-workspace/import");
+      const values = await importSaves([new File([text], "GameSave.json", { type: "application/json" })], this.options.server(), controller.signal);
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      const value = values.find(value => value.snapshot.server === this.options.server());
+      if (!value) throw new Error("counts_server");
+      const record: StoredSave = { ...value, id: crypto.randomUUID(), label: account.name || this.t("gameSave", "Game save"), importedAt: new Date().toISOString() };
+      const { saveRecords } = await import("../lib/save-workspace/snapshot");
+      await saveRecords("put", record);
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      this.use(record, activate); this.options.profile(account);
+    } catch (error) {
+      if (context === this.context && this.controller === controller && !controller.signal.aborted) this.error = error instanceof Error && error.message === "counts_server"
+        ? this.t("wrongServer", "Save region does not match") : this.t("readFailed", "Could not read the original save");
+    } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
+  }
+  private async pick() {
+    const context = this.context, controller = this.controller;
+    this.busy = true; this.error = ""; this.changed();
+    try {
+      const { saveRecords } = await import("../lib/save-workspace/snapshot");
+      const records = await saveRecords("list");
+      if (context === this.context && this.controller === controller && !controller.signal.aborted) this.records = records.filter(record => record.snapshot.server === this.options.server()).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+    } catch { if (context === this.context && this.controller === controller) this.error = this.t("readFailed", "Could not read save data"); }
+    finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
+  }
+  private use(record: StoredSave, activate = true) {
+    const changes = countImportChanges(record.snapshot.player._missionCounters, record.label, record.snapshot.savedAt ?? record.importedAt);
+    const marks = this.options.marks(record.snapshot.player);
+    if (changes.length || marks.length) this.options.write([...marks, ...changes]);
+    this.error = changes.length ? "" : this.t("missing", "This save has no count records");
+    this.records = null; if (activate) this.options.selected(); this.changed();
+  }
+  importCounters(counters: unknown, label: string) {
+    try {
+      const changes = countImportChanges(counters, label, new Date().toISOString());
+      if (changes.length) this.options.write(changes);
+    } catch { this.error = this.t("writeFailed", "Could not save counts"); this.changed(); }
+  }
+  private saveEdit(value: bigint | null) {
+    try {
+      this.options.write(this.target ? chartCountChanges(this.entries, this.target.song, this.target.difficulty, value, this.options.difficulties(this.target.song)) : [countChange(76, 0, 0, value)]);
+      this.editing = false;
+    }
+    catch { this.editError = this.t("writeFailed", "Could not save counts"); }
+    this.changed();
+  }
+  private file = async (event: Event) => {
+    const input = event.target as HTMLInputElement, files = [...input.files ?? []]; input.value = "";
+    if (!files.length || this.busy) return;
+    const context = this.context, controller = this.controller;
+    this.busy = true; this.error = ""; this.changed();
+    try {
+      const { importSaves } = await import("../lib/save-workspace/import");
+      const values = await importSaves(files, this.options.server(), controller.signal);
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      const matching = values.filter(value => value.snapshot.server === this.options.server());
+      if (!matching.length) throw new Error("counts_server");
+      const { saveRecords } = await import("../lib/save-workspace/snapshot");
+      const records: StoredSave[] = [];
+      for (const value of matching) {
+        const record = { ...value, id: crypto.randomUUID(), importedAt: new Date().toISOString() };
+        await saveRecords("put", record); records.push(record);
+      }
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      if (records.length === 1) this.use(records[0]!); else this.records = records;
+    } catch (error) {
+      if (context === this.context && this.controller === controller && !controller.signal.aborted) this.error = error instanceof Error && error.message === "counts_server"
+        ? this.t("wrongServer", "Save region does not match") : this.t("readFailed", "Could not read the original save");
+    } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
+  };
+  renderSummary() {
+    const source = this.entries[COUNT_SOURCE_KEY]?.v as { label?: string; readAt?: string } | undefined;
+    return html`<section class="surface stack">
+      <div class="row row--between">${renderDetailSectionHeading(this.t("title", "Live counts"), "stats")}</div>
+      ${specList([
+        { label: this.t("total", "Total clears"), value: html`<span class="cluster">${this.format(this.value(76))}${iconButton({ icon: "edit", label: this.t("edit", "Edit total clears"), onClick: () => this.edit(null) })}</span>` },
+        { label: this.t("fc", "FULL COMBO clears"), value: this.format(this.value(77)) },
+        { label: this.t("ap", "ALL PERFECT clears"), value: this.format(this.value(78)) },
+        { label: this.t("arena", "Gekiso Arena plays"), value: this.format(this.value(102)) },
+        { label: this.t("battle", "Multi Live clears"), value: this.format(this.value(137)) },
+      ], { numeric: true, className: "spec-list--trailing" })}
+      <div class="cluster">
+        ${this.supportsApp() ? html`<button class="button button--filled" type="button" ?disabled=${this.busy} @click=${() => void this.readAppSave()}>${this.t("fromApp", "Read game save")}</button>` : nothing}
+        <button class=${`button ${this.supportsApp() ? "button--outlined" : "button--filled"}`} type="button" ?disabled=${this.busy} @click=${() => this.openFiles()}>${this.t("import", "Read original save")}</button>
+        <button class="button button--tonal" type="button" ?disabled=${this.busy} @click=${() => void this.pick()}>${this.t("pick", "Choose saved data")}</button>
+      </div>
+      <input id="progress-counts-file" type="file" multiple hidden accept=".json,.zip,.gz,.dat,.bin" @change=${this.file} />
+      <small class="song-progress__rating-status" role="status" title=${this.error || source?.label || ""}>${this.busy ? uiText(this.options.locale(), "common.states.loading") : this.error || (source?.label && source.readAt ? `${source.label} / ${formatDate(this.options.locale(), source.readAt, { year: "always", time: true })}` : this.t("noSource", "No save imported"))}</small>
+    </section>`;
+  }
+  renderRow(song: number, difficulty: number, context: string) {
+    return specList([
+      { label: this.t("chart", "Clears on this difficulty"), value: html`<span class="cluster">${this.format(this.chart(song, difficulty))}${difficulty <= 4 ? iconButton({ icon: "edit", label: this.t("editChart", "Edit clears: {chart}").replace("{chart}", context), onClick: () => this.edit({ song, difficulty, context }) }) : nothing}</span>` },
+      { label: this.t("song", "Song total clears"), value: this.format(this.song(song)) },
+    ], { numeric: true, split: true, className: "song-progress__count-facts" });
+  }
+  renderDialogs() {
+    const close = () => { this.editing = false; this.records = null; this.changed(); };
+    const parsed = playCount(this.draft.trim()), invalid = this.submitted && parsed === null;
+    return html`${this.records ? html`<dialog class="dialog" aria-labelledby="progress-counts-source" ${modal(close)}>
+      <header class="dialog__header"><h2 id="progress-counts-source">${this.t("selectTitle", "Import from saved data")}</h2></header>
+      <div class="dialog__body stack">${this.records.length ? collectionList(this.records.map(record => ({ id: record.id, title: record.label,
+        subtitle: formatDate(this.options.locale(), record.snapshot.savedAt ?? record.importedAt, { year: "always", time: true }), media: icon("description", 24),
+        onOpen: () => { try { this.use(record); } catch { this.error = this.t("writeFailed", "Could not save counts"); this.records = null; this.changed(); } },
+      }))) : emptyState({ title: this.t("noSaves", "No saved data") })}</div>
+      <footer class="dialog__actions"><button class="button button--text" type="button" @click=${close}>${uiText(this.options.locale(), "common.actions.close")}</button></footer>
+    </dialog>` : nothing}
+    ${this.editing ? html`<dialog class="dialog" aria-labelledby="progress-counts-editor" ${modal(close)}>
+      <header class="dialog__header"><h2 id="progress-counts-editor">${this.target ? this.t("editChartTitle", "Edit difficulty clears") : this.t("edit", "Edit total clears")}</h2></header>
+      <div class="dialog__body stack">
+        ${this.target ? html`<strong>${this.target.context}</strong>` : nothing}
+        <md-outlined-text-field id="progress-counts-value" type="text" inputmode="numeric" pattern="[0-9]*" label=${this.target ? this.t("chart", "Clears on this difficulty") : this.t("total", "Total clears")}
+          .value=${live(this.draft)} ?error=${invalid} aria-invalid=${invalid ? "true" : nothing}
+          @input=${(event: Event) => { this.draft = (event.target as HTMLInputElement).value; this.editError = ""; this.changed(); }}></md-outlined-text-field>
+        <small class="song-progress__rating-status" role="alert">${this.editError || (invalid ? this.t("invalid", "Enter a nonnegative whole count in range") : "")}</small>
+      </div>
+      <footer class="dialog__actions">
+        <button class="button button--text" type="button" @click=${() => this.saveEdit(null)}>${uiText(this.options.locale(), "common.actions.clear")}</button>
+        <button class="button button--text" type="button" @click=${close}>${uiText(this.options.locale(), "common.actions.cancel")}</button>
+        <button class="button button--filled" type="button" @click=${() => { this.submitted = true; if (parsed === null) { this.changed(); return; } this.saveEdit(parsed); }}>${this.t("save", "Save")}</button>
+      </footer>
+    </dialog>` : nothing}`;
+  }
+}

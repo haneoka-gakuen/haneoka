@@ -1378,7 +1378,37 @@
         "bonuses": "帳號加成",
         "bonusesValue": "不計入樂團道具、角色評級和回憶加成",
         "required": "計算條件",
-        "requiredValue": "五位不同角色、五張快照及完整的卡牌培養紀錄"
+        "requiredValue": "五位不同角色、五張快照及完整的卡牌培養紀錄",
+        "snapshotGrowth": "等級 / 開放上限"
+      },
+      "view": "查看內容",
+      "marksView": "譜面進度",
+      "counts": {
+        "title": "演出次數",
+        "total": "累計通關",
+        "fc": "FULL COMBO 次數",
+        "ap": "ALL PERFECT 次數",
+        "arena": "激奏舞台參與次數",
+        "battle": "多人演出通關次數",
+        "edit": "編輯累計通關",
+        "import": "讀取原始存檔",
+        "pick": "從已存檔匯入",
+        "selectTitle": "從存檔匯入進度",
+        "noSaves": "尚未匯入原始存檔",
+        "noSource": "尚未匯入存檔",
+        "readFailed": "無法讀取原始存檔",
+        "writeFailed": "次數無法儲存",
+        "wrongServer": "存檔伺服器不符",
+        "missing": "存檔沒有次數紀錄",
+        "invalid": "請輸入有效的非負整數",
+        "chart": "此難度通關",
+        "song": "此曲總次數",
+        "gameSave": "遊戲存檔",
+        "sort": "依通關次數由多至少",
+        "save": "儲存",
+        "fromApp": "讀取遊戲存檔",
+        "editChart": "編輯通關次數：{chart}",
+        "editChartTitle": "編輯此難度通關次數"
       }
     },
     "songGuess": {

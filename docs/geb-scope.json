@@ -486,7 +486,9 @@
     "src/lit/song-progress.ts",
     "src/lib/song-progress-image.ts",
     "src/lib/song-progress-rating.ts",
-    "src/lib/song-progress-roster.ts"
+    "src/lib/song-progress-roster.ts",
+    "src/lib/song-progress-counts.ts",
+    "src/lit/song-progress-counts.ts"
   ],
   "entry_documents": [
     "AGENTS.md",

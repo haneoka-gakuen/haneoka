@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Versioned save snapshots and local storage requests.
-// Output: Sanitized, lossless progress snapshots and IndexedDB records.
+// Output: Sanitized, lossless progress snapshots including lifetime mission counters and IndexedDB records.
 // Pos: [Map](../L2-2.md); shared save workspace.
 // Effects/Dependencies: Filters account credentials and persists independent local copies.
 import { losslessJson } from "@haneoka/game-data-exporter/save-document";
@@ -13,7 +13,7 @@ export interface SaveSnapshot {
 const denied =
   /password|token|secret|certification|accountid|session|credential|friendprofile|friendinvitation|chat|iaptransaction|externalpayment|reportedplayer|world_room|linkedaccount|specialfocus|sendingrequest|pendingapproval/i;
 const fields = new Set(
-  "_memberCards _supportCards _characters _characterFriendships _bandItems _items _liveMusicResults _topHighScoreRatings _challengeMusicResults _events _challengeLives _gachaRecords _storyEpisodeRecords _decks _normalMissions _limitedMissions _characterMissions _playerSeasonPass _monthlyPass _receivedLoginBonuses _unlockedCostumes _currentCostumes _backgrounds _stamps _degrees _playerProfileCards _liveLaneSkins _liveNoteSkins _liveNoteEffectSkins _liveNoteSeGroups _spots _memory _liveBoost _liveSkip _vip _offlineBonus _arenaLeagues _liveMusics _challengeMusics _characterFriendshipRankRewards _stampFavorites _exchange _shop _exp _playerRankUpData".split(
+  "_memberCards _supportCards _characters _characterFriendships _bandItems _items _liveMusicResults _missionCounters _topHighScoreRatings _challengeMusicResults _events _challengeLives _gachaRecords _storyEpisodeRecords _decks _normalMissions _limitedMissions _characterMissions _playerSeasonPass _monthlyPass _receivedLoginBonuses _unlockedCostumes _currentCostumes _backgrounds _stamps _degrees _playerProfileCards _liveLaneSkins _liveNoteSkins _liveNoteEffectSkins _liveNoteSeGroups _spots _memory _liveBoost _liveSkip _vip _offlineBonus _arenaLeagues _liveMusics _challengeMusics _characterFriendshipRankRewards _stampFavorites _exchange _shop _exp _playerRankUpData".split(
     " ",
   ),
 );

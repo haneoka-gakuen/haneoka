@@ -1378,7 +1378,37 @@
         "bonuses": "계정 보너스",
         "bonusesValue": "밴드 아이템, 캐릭터 랭크, 메모리 제외",
         "required": "계산 조건",
-        "requiredValue": "서로 다른 캐릭터 5명, 스냅 5장, 모든 카드 육성 정보"
+        "requiredValue": "서로 다른 캐릭터 5명, 스냅 5장, 모든 카드 육성 정보",
+        "snapshotGrowth": "레벨 / 상한 해제"
+      },
+      "view": "표시 내용",
+      "marksView": "채보 진행도",
+      "counts": {
+        "title": "라이브 횟수",
+        "total": "누적 클리어",
+        "fc": "FULL COMBO 횟수",
+        "ap": "ALL PERFECT 횟수",
+        "arena": "격주 아레나 참가 횟수",
+        "battle": "멀티 라이브 클리어 횟수",
+        "edit": "누적 클리어 편집",
+        "import": "원본 세이브 읽기",
+        "pick": "저장 데이터에서 가져오기",
+        "selectTitle": "세이브에서 진행도 가져오기",
+        "noSaves": "가져온 원본 세이브 없음",
+        "noSource": "가져온 세이브 없음",
+        "readFailed": "원본 세이브를 읽을 수 없습니다",
+        "writeFailed": "횟수를 저장할 수 없습니다",
+        "wrongServer": "세이브 서버가 다릅니다",
+        "missing": "세이브에 횟수 기록이 없습니다",
+        "invalid": "유효한 0 이상의 정수를 입력하세요",
+        "chart": "현재 난이도 클리어",
+        "song": "곡별 총 클리어 횟수",
+        "gameSave": "게임 세이브",
+        "sort": "클리어 횟수가 많은 순",
+        "save": "저장",
+        "fromApp": "게임 세이브 읽기",
+        "editChart": "클리어 횟수 편집: {chart}",
+        "editChartTitle": "난이도별 클리어 횟수 편집"
       }
     },
     "songGuess": {

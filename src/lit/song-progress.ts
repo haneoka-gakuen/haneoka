@@ -1,8 +1,8 @@
 // L3 — GEB
-// Input: Published charts, synced clear marks and owned card growth.
-// Output: Song progress, current/full-growth roster ratings and localized image exports.
+// Input: Published charts, synced clear marks/counts, local saves and owned card growth.
+// Output: Editable chart progress/counts, current/full-growth ratings and localized image exports.
 // Pos: [Map](L2-2.md); song-progress workspace and roster-rating guidance.
-// Effects/Dependencies: Shares Box storage, lazy native roster searches and the app's save bridge.
+// Effects/Dependencies: Shares Box storage, lazy native roster searches, local save decoding and the app bridge.
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { live } from "lit/directives/live.js";
@@ -31,6 +31,9 @@ import { collectionTable } from "./ui/collection-view";
 import { filterChip, iconButton, segmented } from "./ui/controls";
 import { accordion } from "./ui/accordion";
 import { specList } from "./ui/spec";
+import { ProgressCounts } from "./song-progress-counts";
+import { saveClearMarks, type CountChanges } from "../lib/song-progress-counts";
+import { MAX_BOX_KEYS } from "../lib/team-builder/sync/box-doc";
 import { errorState, loadingState } from "./ui/state";
 import { clientText } from "../i18n/client";
 import type { Locale } from "@haneoka/i18n";
@@ -68,6 +71,7 @@ export class SongProgress extends LitElement {
     levelsOpen: { state: true },
     ratingDialog: { state: true },
     rosterHelp: { state: true },
+    viewMode: { state: true },
     calculating: { state: true },
     exporting: { state: true },
   };
@@ -79,6 +83,7 @@ export class SongProgress extends LitElement {
   declare query: string;
   declare private ratingDialog: boolean;
   declare private rosterHelp: boolean;
+  declare private viewMode: "marks" | "counts";
   declare private calculating: boolean;
   declare private exporting: boolean;
   private bestOpen = false;
@@ -97,6 +102,24 @@ export class SongProgress extends LitElement {
   private snapshot: BoxSnapshot | null = null;
   private unsubscribe?: () => void;
   private server: ReleaseServer = "intl";
+  private counts = new ProgressCounts(this, {
+    locale: () => this.locale,
+    server: () => this.server as "jp" | "intl",
+    text: (key, fallback) => this.text(key, fallback),
+    write: changes => this.writeProgress(changes),
+    marks: player => {
+      const marks = saveClearMarks(player);
+      return marks === null ? [] : this.markChanges(marks);
+    },
+    selected: () => this.selectView("counts"),
+    profile: account => {
+      this.profile = { name: account.name ?? "", uid: account.profileId, rank: account.rank === null ? "" : String(account.rank) };
+      this.saveProfile();
+    },
+    difficulties: song => (this.songSources[String(song)]?.difficulty as Row[] ?? [])
+      .filter(row => Number(row.difficulty) <= 4 && contentPublished(row))
+      .map(row => Number(row.difficulty)),
+  });
   constructor() {
     super();
     this.locale = "ja";
@@ -107,6 +130,7 @@ export class SongProgress extends LitElement {
     this.levelsOpen = false;
     this.ratingDialog = this.calculating = this.exporting = false;
     this.rosterHelp = false;
+    this.viewMode = "marks";
   }
   createRenderRoot() {
     return this;
@@ -164,15 +188,18 @@ export class SongProgress extends LitElement {
       onInput: value => { this.query = value.trim().toLowerCase(); },
     });
     setAppBarActions(OWNER, html`
-      ${inApp() ? iconButton({ icon: "sports_esports", label: this.text("importSave", "Import from game save"), onClick: () => void this.importSave() }) : nothing}
-      ${iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => { this.ratingDialog = true; } })}
+      ${inApp() && this.viewMode === "marks" ? iconButton({ icon: "sports_esports", label: this.text("importSave", "Import from game save"), onClick: () => void this.importSave() }) : nothing}
+      ${this.viewMode === "counts" ? this.counts.supportsApp()
+        ? iconButton({ icon: "sports_esports", label: this.text("counts.fromApp", "Read game save"), onClick: () => void this.counts.readAppSave() })
+        : iconButton({ icon: "folder_open", label: this.text("counts.import", "Read original save"), onClick: () => this.counts.openFiles() })
+        : iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => { this.ratingDialog = true; } })}
     `);
   }
   /** In the app: clear, full combo and all perfect from a game save. */
-  private async importSave(given?: Record<string, number>) {
+  private async importSave(given?: Record<string, number>, missionCounters?: unknown) {
+    if (!given && this.counts.supportsApp()) { await this.counts.readAppSave(false); return; }
     let importedProfile: { name: string; uid: string; rank: string } | undefined;
-    const marks =
-      given ??
+    const progress = given ? { marks: given, missionCounters } :
       (
         await appAccountCall("songProgress", { server: this.server }, async (accounts) => {
           const key = await chooseAppAccount(this.locale, accounts);
@@ -183,22 +210,23 @@ export class SongProgress extends LitElement {
           return key;
         },
         ).catch(() => null)
-      )?.marks;
+      );
+    const marks = progress?.marks;
     if (!marks || !this.store) return;
     if (importedProfile) {
       this.profile = importedProfile;
       this.saveProfile();
     }
-    const changes = this.charts
-      .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))
-      .map((chart) => ({ key: chart.key, value: marks[chart.key] || null }));
-    this.store.set(changes);
+    const changes = this.markChanges(marks);
+    this.writeProgress(changes);
+    if (progress.missionCounters !== undefined) this.counts.importCounters(progress.missionCounters, this.text("counts.gameSave", "Game save"));
     snackbar(this.text("imported", "Imported {count} charts").replace("{count}", String(changes.length)));
   }
   private start() {
     if (!this.isConnected) return;
     this.server = currentReleaseServer() as ReleaseServer;
     const params = new URLSearchParams(location.search);
+    this.viewMode = params.get("view") === "counts" ? "counts" : "marks";
     const difficulty = DIFFICULTIES.indexOf(params.get("difficulty") as (typeof DIFFICULTIES)[number]);
     if (difficulty >= 0) this.difficulty = difficulty === 4 ? 5 : difficulty;
     this.renderStaticChrome();
@@ -217,6 +245,7 @@ export class SongProgress extends LitElement {
       }
       const ownerChanged = this.snapshot?.owner !== snapshot.owner;
       this.snapshot = snapshot;
+      this.counts.sync(snapshot);
       if (ownerChanged) this.loadProfile();
       this.requestUpdate();
     });
@@ -225,7 +254,7 @@ export class SongProgress extends LitElement {
       // Progress the app's save page sent here.
       if (!inApp() || !this.isConnected) return;
       const pending = await appCall("pendingSongProgress", {}).catch(() => null);
-      if (pending) await this.importSave(pending.marks);
+      if (pending) await this.importSave(pending.marks, pending.missionCounters);
     });
   }
   disconnectedCallback() {
@@ -236,6 +265,7 @@ export class SongProgress extends LitElement {
     ++this.ratingGeneration;
     this.roster?.dispose();
     this.roster = undefined;
+    this.counts.dispose();
     this.store?.dispose();
     this.store = null;
     super.disconnectedCallback();
@@ -398,7 +428,7 @@ export class SongProgress extends LitElement {
           { label: this.text("rosterHelp.bonuses", "Account bonuses"), value: this.text("rosterHelp.bonusesValue", "Band items, character ranks and memories excluded") },
           { label: this.text("rosterHelp.required", "Required"), value: this.text("rosterHelp.requiredValue", "Five different characters, five Snapshots and complete card growth") },
           { label: uiText(this.locale, "catalog.resources.types.MemberCard"), value: ["common.fields.level", "catalog.cards.fields.training", "catalog.cards.fields.awakening", "catalog.cards.fields.liveSkill"].map(key => uiText(this.locale, key)).join(" / ") },
-          { label: uiText(this.locale, "catalog.resources.types.SupportCard"), value: `${uiText(this.locale, "common.fields.level")} / ${clientText(this.locale, "tools.teamBuilder.limitBreak", "Limit Break")}` },
+          { label: uiText(this.locale, "catalog.resources.types.SupportCard"), value: this.text("rosterHelp.snapshotGrowth", "Level / Limit Break") },
         ])}
         <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
       </div>
@@ -468,6 +498,25 @@ export class SongProgress extends LitElement {
   private setStatus(chart: Chart, value: number) {
     this.store?.set([{ key: chart.key, value: value || null }]);
   }
+  private markChanges(marks: Record<string, number>): CountChanges {
+    return this.charts.filter(chart => (marks[chart.key] ?? 0) !== this.status(chart))
+      .map(chart => ({ key: chart.key, value: marks[chart.key] || null }));
+  }
+  private writeProgress(changes: CountChanges) {
+    if (!this.store || !this.snapshot) return;
+    if (Object.keys(this.snapshot.entries).length + new Set(changes.filter(change => !(change.key in this.snapshot!.entries)).map(change => change.key)).size > MAX_BOX_KEYS)
+      throw new Error("counts_limit");
+    this.store.set(changes);
+  }
+  private selectView(view: "marks" | "counts") {
+    if (view === "counts" && this.calculating) { ++this.ratingGeneration; this.roster?.cancel(); this.calculating = false; this.ratingProgress = ""; }
+    if (view === "marks") this.counts.cancel();
+    this.viewMode = view; this.ratingDialog = this.rosterHelp = false;
+    const url = new URL(location.href);
+    if (view === "counts") url.searchParams.set("view", view); else url.searchParams.delete("view");
+    history.replaceState(history.state, "", url);
+    this.renderStaticChrome();
+  }
   private selectDifficulty(value: string) {
     this.difficulty = Number(value);
     const url = new URL(location.href);
@@ -518,7 +567,7 @@ export class SongProgress extends LitElement {
     const status = this.status(chart);
     const href = resourcePath({ server: this.server, locale: this.locale as Locale, kind: "songs", id: String(chart.songId) });
     return html`
-      <li class="song-progress__row" data-status=${status}>
+      <li class=${`song-progress__row${this.viewMode === "counts" ? " song-progress__row--counts" : ""}`} data-status=${status}>
         <a class="song-progress__song" href=${href}>
           <img src=${chart.jacket} alt="" width="48" height="48" loading="lazy" decoding="async" />
           <span class="song-progress__copy">
@@ -527,7 +576,7 @@ export class SongProgress extends LitElement {
           </span>
         </a>
         <span class="song-progress__level tabular" style=${`--chart-color:var(--md-extended-color-difficulty-${DIFFICULTIES[chart.difficulty === 5 ? 4 : chart.difficulty] === "special" ? "master" : DIFFICULTIES[chart.difficulty]})`}>${chart.levelText}</span>
-        <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
+        ${this.viewMode === "counts" ? this.counts.renderRow(chart.songId, chart.difficulty, `${chart.title} / ${DIFFICULTY_TAGS[chart.difficulty === 5 ? 4 : chart.difficulty]}`) : html`<span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
           ${[1, 2, 3].map(
             (value) => html`<button
               type="button"
@@ -539,7 +588,7 @@ export class SongProgress extends LitElement {
               @click=${() => this.setStatus(chart, status === value ? 0 : value)}
             >${["", "CLEAR", "FC", "AP"][value]}</button>`,
           )}
-        </span>
+        </span>`}
       </li>
     `;
   }
@@ -549,27 +598,37 @@ export class SongProgress extends LitElement {
       return html`<section class="page song-progress">${errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => void this.load())}</section>`;
     const charts = this.charts.filter((chart) => chart.difficulty === this.difficulty);
     const shown = charts
-      .filter((chart) => this.filter === "all" || this.status(chart) === Number(this.filter))
+      .filter((chart) => this.viewMode === "counts" || this.filter === "all" || this.status(chart) === Number(this.filter))
       .filter((chart) => !this.query || chart.title.toLowerCase().includes(this.query) || chart.artist.toLowerCase().includes(this.query))
-      .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId);
+      .sort((a, b) => {
+        if (this.viewMode === "counts") {
+          const first = this.counts.chart(a.songId, a.difficulty), second = this.counts.chart(b.songId, b.difficulty);
+          if (first !== second) return first === null ? 1 : second === null ? -1 : first > second ? -1 : 1;
+        }
+        return b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId;
+      });
     const present = DIFFICULTIES.map((name, index) => ({ name, value: index === 4 ? 5 : index })).filter(({ value }) =>
       this.charts.some((chart) => chart.difficulty === value),
     );
     return html`
       <section class="page song-progress">
+        <div class="stack">
+        ${segmented({ label: this.text("view", "Content"), value: this.viewMode,
+          options: [{ value: "marks", label: this.text("marksView", "Chart progress") }, { value: "counts", label: this.text("counts.title", "Live counts") }],
+          onSelect: view => this.selectView(view) })}
         <div class="song-progress__layout">
           <div class="stack">
-            ${this.ratings()}
+            ${this.viewMode === "counts" ? this.counts.renderSummary() : this.ratings()}
             ${segmented({
               label: uiText(this.locale, "catalog.songs.fields.difficulty"),
               value: String(this.difficulty),
               options: present.map(({ name, value }) => ({ value: String(value), label: name.toUpperCase() })),
               onSelect: (value) => this.selectDifficulty(value),
             })}
-            ${this.summary(charts)}
+            ${this.viewMode === "marks" ? this.summary(charts) : nothing}
           </div>
           <div class="stack">
-            <div class="chip-set" role="group" aria-label=${this.text("status", "Status")}>
+            ${this.viewMode === "counts" ? html`<span class="md-body-small">${this.text("counts.sort", "Most clears first")}</span>` : html`<div class="chip-set" role="group" aria-label=${this.text("status", "Status")}>
               ${(["all", "0", "1", "2", "3"] as const).map((value) =>
                 filterChip({
                   label: value === "all" ? uiText(this.locale, "common.states.all") : this.statusLabel(Number(value)),
@@ -580,13 +639,15 @@ export class SongProgress extends LitElement {
                   },
                 }),
               )}
-            </div>
+            </div>`}
             ${keyed(`${this.server}:${this.difficulty}`, html`<ol class="song-progress__list" role="list">${shown.map((chart) => this.row(chart))}</ol>`)}
             ${shown.length ? nothing : html`<p class="detail-copy">${uiText(this.locale, "common.states.empty")}</p>`}
           </div>
         </div>
+        </div>
         ${this.exportDialog()}
         ${this.rosterHelpDialog()}
+        ${this.counts.renderDialogs()}
       </section>
     `;
   }
