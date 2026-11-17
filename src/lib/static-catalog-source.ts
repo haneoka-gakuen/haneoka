@@ -17,7 +17,7 @@ import fs from "node:fs";
 import nodePath from "node:path";
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { CapturedInputError, staticBuildJson } from "../server/static-input-store";
+import { CapturedInputError, hasStaticBuildInput, staticBuildJson } from "../server/static-input-store";
 import { openReleaseCatalog, ReleaseCatalogError, type ReleaseCatalog } from "../server/release-catalog";
 import { publicStampManifest } from "./stamp-maker/public-manifest";
 
@@ -140,7 +140,8 @@ function readLocalPath(catalog: ReleaseCatalog, route: string): unknown {
   const [resource, action, name, id] = parts;
   if (resource === "stamps" && action === "textless" && parts.length === 2)
     return publicStampManifest(catalog.readReleaseJson("runtime/stamp-maker/manifest.json"), {
-      server: catalog.identity.server, sourceId: catalog.identity.sourceId,
+      server: catalog.identity.server,
+      sourceId: catalog.identity.sourceId,
       stampIds: new Set(Object.keys(catalog.readCollection("stamps") as Record<string, unknown>)),
     });
   if (resource === "ui-marks" && parts.length === 1) return catalog.readUiMarks();
@@ -398,10 +399,20 @@ async function fetchJson(
       }
       const reused = release && !absoluteUrl ? await reusableBatch(path, release) : undefined;
       if (!reused) jsonMetrics.httpRequests++;
-      const value: unknown = reused ? reused.value : await fetchResponse(path, server, (response) => {
-        observedRelease(response, release);
-        return response.json();
-      }, release?.releaseId, "GET", release?.sourceId, absoluteUrl);
+      const value: unknown = reused
+        ? reused.value
+        : await fetchResponse(
+            path,
+            server,
+            (response) => {
+              observedRelease(response, release);
+              return response.json();
+            },
+            release?.releaseId,
+            "GET",
+            release?.sourceId,
+            absoluteUrl,
+          );
       if (cacheFile && release) {
         const temporary = `${cacheFile}.${process.pid}.tmp`;
         try {
@@ -563,14 +574,20 @@ export async function staticCatalogRelease(server = "intl"): Promise<StaticCatal
   const promise = staticBuildJson(`native-pin:${server}`, "native-pin", async () => {
     const local = localCatalog(server);
     if (local) return Object.freeze({ ...local.identity });
-    return fetchResponse("release?projection=identity", server, (response) => {
-      const releaseId = response.headers.get("x-haneoka-release-id") || "";
-      const sourceId = response.headers.get("x-haneoka-source-id") || "";
-      if (!RELEASE_ID_PATTERN.test(releaseId) || !SOURCE_ID_PATTERN.test(sourceId)) {
-        throw new Error(`Static catalog returned an invalid release identity for ${server}`);
-      }
-      return Object.freeze({ server, releaseId, sourceId });
-    }, undefined, "HEAD");
+    return fetchResponse(
+      "release?projection=identity",
+      server,
+      (response) => {
+        const releaseId = response.headers.get("x-haneoka-release-id") || "";
+        const sourceId = response.headers.get("x-haneoka-source-id") || "";
+        if (!RELEASE_ID_PATTERN.test(releaseId) || !SOURCE_ID_PATTERN.test(sourceId)) {
+          throw new Error(`Static catalog returned an invalid release identity for ${server}`);
+        }
+        return Object.freeze({ server, releaseId, sourceId });
+      },
+      undefined,
+      "HEAD",
+    );
   }).then((pin) => Object.freeze(pin));
   releasePromises.set(server, promise);
   try {
@@ -605,24 +622,27 @@ export async function fetchStaticCatalog(
         readLocalPath(local, path),
       );
     } catch (error) {
-      if (process.env.CATALOG_PAGE_RELEASE_ROOTS || !(error instanceof ReleaseCatalogError) || !error.fallbackToHttp) throw error;
+      if (process.env.CATALOG_PAGE_RELEASE_ROOTS || !(error instanceof ReleaseCatalogError) || !error.fallbackToHttp)
+        throw error;
     }
   }
   try {
     return await fetchJson(path, server, pinned);
   } catch (error) {
-    const notFound = error instanceof StaticCatalogHttpError && error.status === 404
-      || error instanceof CapturedInputError
-        && error.message.startsWith(`Static catalog request failed for ${server}/stamps/textless (404) {`);
-    if (path !== "stamps/textless" || !notFound)
-      throw error;
+    const notFound =
+      (error instanceof StaticCatalogHttpError && error.status === 404) ||
+      (error instanceof CapturedInputError &&
+        error.message.startsWith(`Static catalog request failed for ${server}/stamps/textless (404) {`));
+    if (path !== "stamps/textless" || !notFound) throw error;
     if (!(await fetchStaticReleaseEntry("runtime/stamp-maker/manifest.json", server, pinned))) throw error;
     const [manifest, stamps] = await Promise.all([
       fetchStaticReleaseJson("runtime/stamp-maker/manifest.json", server, pinned),
       fetchStaticCatalog("stamps", server, pinned),
     ]);
     return publicStampManifest(manifest, {
-      server, sourceId: pinned.sourceId, stampIds: new Set(Object.keys(stamps as Record<string, unknown>)),
+      server,
+      sourceId: pinned.sourceId,
+      stampIds: new Set(Object.keys(stamps as Record<string, unknown>)),
     });
   }
 }
@@ -674,10 +694,18 @@ async function releaseBytes(relative: string, server: string, pinned: StaticCata
   const [tree, ...parts] = relative.split("/");
   const url = new URL(`/${tree}/${encodeURIComponent(server)}/${parts.map(encodeURIComponent).join("/")}`, ORIGIN);
   url.searchParams.set("release", pinned.releaseId);
-  const body = await fetchResponse(relative, server, async (response) => {
-    observedRelease(response, pinned);
-    return Buffer.from(await response.arrayBuffer());
-  }, pinned.releaseId, "GET", pinned.sourceId, url.toString());
+  const body = await fetchResponse(
+    relative,
+    server,
+    async (response) => {
+      observedRelease(response, pinned);
+      return Buffer.from(await response.arrayBuffer());
+    },
+    pinned.releaseId,
+    "GET",
+    pinned.sourceId,
+    url.toString(),
+  );
   blobMetrics.fetches++;
   if (body.length !== entry.bytes || createHash("sha256").update(body).digest("hex") !== entry.sha256)
     throw new StaticCatalogConsistencyError(`Release file hash mismatch: ${relative}`);
@@ -829,8 +857,16 @@ export async function fetchStaticCatalogBatch(
       const start = batches[cursor++]!;
       const selected = requestIds.slice(start, start + size);
       const query = selected.map((id) => `id=${encodeURIComponent(id)}`).join("&");
+      const captured = selected.every((id) =>
+        ["native-entity", "native-json"].some((prefix) =>
+          hasStaticBuildInput(
+            `${prefix}:${requestKey(`${resource}/${encodeURIComponent(id)}`, server, pinned)}`,
+            "native-catalog",
+          ),
+        ),
+      );
       const document =
-        process.env.STATIC_BUILD_INPUT_MODE === "frozen"
+        process.env.STATIC_BUILD_INPUT_MODE === "frozen" || captured
           ? {
               items: Object.fromEntries(
                 await Promise.all(
@@ -840,7 +876,9 @@ export async function fetchStaticCatalogBatch(
                       `native-entity:${requestKey(`${resource}/${encodeURIComponent(id)}`, server, pinned)}`,
                       "native-catalog",
                       async () => {
-                        throw new Error("Frozen entity is missing");
+                        if (process.env.STATIC_BUILD_INPUT_MODE === "frozen")
+                          throw new Error("Frozen entity is missing");
+                        return fetchStaticCatalog(`${resource}/${encodeURIComponent(id)}`, server, pinned);
                       },
                     ),
                   ]),
