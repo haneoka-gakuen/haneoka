@@ -485,6 +485,10 @@
     var(--md-sys-typescale-label-large-line-height) var(--app-font);
   white-space: nowrap;
 }
-.top-app-bar [data-app-bar-show-label]::after {
-  content: attr(data-app-bar-label);
+.top-app-bar__action-label {
+  display: none;
+  pointer-events: none;
+}
+.top-app-bar [data-app-bar-show-label] > .top-app-bar__action-label {
+  display: inline;
 }

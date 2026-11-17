@@ -554,8 +554,13 @@ const publicForumsDataId = "shell-public-forums";
     // entities load, so watch both its box and its children.
     const actions = host.querySelector<HTMLElement>("[data-top-app-bar-actions]");
     let fitting = false;
+    let interacting = false;
+    let pendingFit = false;
+    let releaseFit = 0;
     const syncActionOverflow = () => {
       if (!actions || !bar || fitting) return;
+      if (interacting) { pendingFit = true; return; }
+      pendingFit = false;
       fitting = true;
       try {
         const identity = bar.querySelector<HTMLElement>("[data-top-app-bar-identity]");
@@ -574,6 +579,19 @@ const publicForumsDataId = "shell-public-forums";
     };
     if (actions && bar) {
       releaseActionObservers?.();
+      const holdFit = () => { clearTimeout(releaseFit); interacting = true; };
+      const finishFit = () => {
+        clearTimeout(releaseFit);
+        releaseFit = window.setTimeout(() => { interacting = false; if (pendingFit) syncActionOverflow(); }, 0);
+      };
+      const holdKey = (event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") holdFit(); };
+      const finishKey = (event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") finishFit(); };
+      bar.addEventListener("pointerdown", holdFit, true);
+      bar.addEventListener("keydown", holdKey, true);
+      window.addEventListener("pointerup", finishFit, true);
+      window.addEventListener("pointercancel", finishFit, true);
+      window.addEventListener("keyup", finishKey, true);
+      window.addEventListener("blur", finishFit);
       const resizeObserver = new ResizeObserver(syncActionOverflow);
       const mutationObserver = new MutationObserver(syncActionOverflow);
       resizeObserver.observe(bar);
@@ -586,6 +604,13 @@ const publicForumsDataId = "shell-public-forums";
         resizeObserver.disconnect();
         mutationObserver.disconnect();
         actions.removeEventListener("scroll", syncActionOverflow);
+        bar.removeEventListener("pointerdown", holdFit, true);
+        bar.removeEventListener("keydown", holdKey, true);
+        window.removeEventListener("pointerup", finishFit, true);
+        window.removeEventListener("pointercancel", finishFit, true);
+        window.removeEventListener("keyup", finishKey, true);
+        window.removeEventListener("blur", finishFit);
+        clearTimeout(releaseFit);
       };
       syncActionOverflow();
       void document.fonts?.ready.then(() => { if (bar.isConnected) syncActionOverflow(); });

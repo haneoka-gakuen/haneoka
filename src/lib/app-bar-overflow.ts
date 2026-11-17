@@ -184,9 +184,16 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
       (node) => node.getBoundingClientRect().width > 0,
     );
     for (const control of controls) {
-      const label = labelOf(control);
+      const label = control.getAttribute("aria-label") || control.getAttribute("data-aria-label") || control.getAttribute("title");
       if (!label) continue;
-      control.dataset.appBarLabel = label;
+      let text = control.querySelector<HTMLElement>(":scope > .top-app-bar__action-label");
+      if (!text) {
+        text = document.createElement("span");
+        text.className = "top-app-bar__action-label";
+        text.setAttribute("aria-hidden", "true");
+        control.append(text);
+      }
+      if (text.textContent !== label) text.textContent = label;
       control.dataset.appBarShowLabel = "true";
     }
     for (const control of controls.reverse()) {

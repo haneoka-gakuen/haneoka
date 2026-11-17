@@ -174,6 +174,7 @@ function searchContent(options: AppBarSearchOptions, inputId: string, expanded: 
 /** Renders (or re-renders) this owner's actions into the app bar. */
 export function setAppBarActions(owner: string, content: TemplateResult, context?: object) {
   if (staticAppBar) { staticAppBar.actions.set(owner, content); return; }
+  if (context && "isConnected" in context && context.isConnected === false) return;
   const node = container(owner, true);
   if (node) render(content, node, { host: context });
 }
@@ -181,6 +182,7 @@ export function setAppBarActions(owner: string, content: TemplateResult, context
 /** Renders an entity's non-interactive identity marks between Back and title. */
 export function setAppBarIdentity(owner: string, content: TemplateResult, context?: object) {
   if (staticAppBar) { staticAppBar.identity.set(owner, content); return; }
+  if (context && "isConnected" in context && context.isConnected === false) return;
   const node = identityContainer(owner, true);
   if (node) render(content, node, { host: context });
 }

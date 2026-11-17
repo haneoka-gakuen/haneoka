@@ -245,6 +245,7 @@ export class SongPuzzle extends LitElement {
     if (!this.pageData) this.server = readReleaseServer();
     if (this.loaded)
       void this.updateComplete.then(() => {
+        if (!this.isConnected) return;
         const selectedServer = readReleaseServer();
         if (!restored && selectedServer !== this.server && this.pageData) this.switchServer(selectedServer);
         else this.checkCover(true);
@@ -353,6 +354,7 @@ export class SongPuzzle extends LitElement {
     for (const song of this.songs) song.name = song.labels[songTitle(song.row, this.locale).locale as Locale] || song.id;
   }
   protected updated() {
+    if (!this.isConnected) return;
     if (this.loaded) this.saveGame();
     this.images.observe(this);
     const dialog = this.querySelector<HTMLDialogElement>("dialog.selection-pane");
