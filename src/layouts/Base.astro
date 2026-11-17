@@ -79,8 +79,9 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
   <head>
     <style is:inline data-community-visibility set:html={communityVisibilityCss(origin)} />
     <script is:inline data-astro-rerun define:vars={{ communityHiddenHosts }}>
-      if (!document.documentElement.hasAttribute("data-community-pages"))
-        document.documentElement.dataset.communityPages = communityHiddenHosts.split(",").some((host) => host.trim() === location.hostname) ? "0" : "1";
+      // if (!document.documentElement.hasAttribute("data-community-pages"))
+      //   document.documentElement.dataset.communityPages = communityHiddenHosts.split(",").some((host) => host.trim() === location.hostname) ? "0" : "1";
+      document.documentElement.dataset.communityPages = "1";
     </script>
     <meta name="haneoka-content-route" content={publicRoute} />
     <meta name="haneoka-content-placeholder" content={JSON.stringify(renderUnavailableContent(locale))} data-title={JSON.stringify(t(locale, "common.states.unpublished"))} data-site-title={t(locale, "common.seo.siteTitle")} />

@@ -1,13 +1,15 @@
 // L3 — GEB
 // Input: 请求域名、社区隐藏域名配置、页面／评论路径和 HTML 站点状态。
-// Output: 社区可见性、受限页面／评论接口识别和保留水合标记的显示规则。
+// Output: 当前统一开放的社区可见性、页面／评论接口识别和保留水合标记的显示规则。
 // Pos: [Map](L2-2.md)；Worker、开发中间件与浏览器共用的社区显示策略。
 // Effects/Dependencies: 浏览器读取 HTML 状态；不改变账号、库存或云同步权限。
 export const COMMUNITY_VISIBILITY_ATTRIBUTE = "data-community-pages";
 export const DEFAULT_COMMUNITY_HIDDEN_HOSTS = "haneoka.com";
 
-export const communityPagesEnabled = (hostname: string, hiddenHosts = DEFAULT_COMMUNITY_HIDDEN_HOSTS): boolean =>
-  !hiddenHosts.split(",").some((host) => host.trim() === hostname);
+export const communityPagesEnabled = (_hostname: string, _hiddenHosts = DEFAULT_COMMUNITY_HIDDEN_HOSTS): boolean => {
+  // return !_hiddenHosts.split(",").some((host) => host.trim() === _hostname);
+  return true;
+};
 
 export function communityVisible(): boolean {
   const page = (globalThis as { document?: { documentElement?: { getAttribute(name: string): string | null } } })
