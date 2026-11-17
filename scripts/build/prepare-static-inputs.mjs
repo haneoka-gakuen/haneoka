@@ -18,7 +18,7 @@ resetStaticBuildInputErrors();
 if (process.env.STATIC_BUILD_INPUT_MODE !== "capture" || !process.env.STATIC_BUILD_INPUT_ROOT)
   throw new Error("Set STATIC_BUILD_INPUT_MODE=capture and STATIC_BUILD_INPUT_ROOT");
 const output = path.resolve(".astro/static-inputs/prepare.mjs");
-const compiled = await build({
+await build({
   entryPoints: [path.resolve("src/server/prepare-static-inputs.ts")],
   absWorkingDir: root,
   outfile: output,
@@ -26,7 +26,6 @@ const compiled = await build({
   platform: "node",
   format: "esm",
   packages: "external",
-  metafile: true,
   define: { "import.meta.env": JSON.stringify({ PROD: true, DEV: false, SSR: true, BASE_URL: "/" }) },
   logLevel: "warning",
 });
@@ -37,9 +36,7 @@ const recipe =
   digest(
     JSON.stringify({
       schema: "haneoka-entity-projection-cache-v1",
-      inputs: Object.keys(compiled.metafile.inputs)
-        .sort()
-        .map((file) => [file, digest(fs.readFileSync(file))]),
+      producer: digest(fs.readFileSync(output)),
       packages: digest(fs.readFileSync(".output/compiled-packages/manifest.json")),
       lock: digest(fs.readFileSync("pnpm-lock.yaml")),
       pins: JSON.parse(fs.readFileSync(".output/static-native-pins.json", "utf8")),
