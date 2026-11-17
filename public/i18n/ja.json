@@ -1384,8 +1384,8 @@
       "counts": {
         "title": "ライブ回数",
         "total": "累計クリア回数",
-        "fc": "FULL COMBO 回数",
-        "ap": "ALL PERFECT 回数",
+        "fc": "FC回数",
+        "ap": "AP回数",
         "arena": "撃奏アリーナ参加回数",
         "battle": "マルチライブクリア回数",
         "import": "元のセーブを読み込む",

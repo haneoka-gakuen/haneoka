@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Published charts, synced clear marks/counts, local saves and owned card growth.
-// Output: Editable chart progress/counts, current/full-growth ratings and localized image exports.
+// Output: Editable chart marks/difficulty counts, read-only totals, roster ratings and localized exports.
 // Pos: [Map](L2-2.md); song-progress workspace and roster-rating guidance.
 // Effects/Dependencies: Shares Box storage, lazy native roster searches, local save decoding and the app bridge.
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -375,8 +375,9 @@ export class SongProgress extends LitElement {
           { label: this.text("highestAp", "Highest AP"), value: this.number(skill.ap) },
           { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
           { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
+          ...this.counts.summaryRows(),
         ], { numeric: true })}
-        ${this.counts.renderSummary()}
+        ${this.counts.renderImportState()}
         ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
           onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
           content:html`<ol class="song-progress__best">${skill.best.map((row,index) => html`<li class="song-progress__best-row">
@@ -552,7 +553,7 @@ export class SongProgress extends LitElement {
     const href = resourcePath({ server: this.server, locale: this.locale as Locale, kind: "songs", id: String(chart.songId) });
     return html`
       <li class="song-progress__row" data-status=${status}>
-        <a class="song-progress__song" href=${href}>
+        <a class="song-progress__song" href=${href} title=${chart.title}>
           <img src=${chart.jacket} alt="" width="48" height="48" loading="lazy" decoding="async" />
           <span class="song-progress__copy">
             <strong lang=${chart.titleLanguage}>${chart.title}</strong>

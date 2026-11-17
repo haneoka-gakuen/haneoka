@@ -15,6 +15,7 @@
     min-width: 0;
   }
   .song-progress__list {
+    container: song-progress-list / inline-size;
     display: grid;
     margin: 0;
     padding: 0;
@@ -30,7 +31,7 @@
   }
   .song-progress__controls {
     display: grid;
-    grid-template-columns: max-content repeat(2, minmax(0, 104px));
+    grid-template-columns: max-content minmax(0, 104px) 56px;
     justify-content: start;
     align-items: center;
     gap: var(--md-sys-spacing-2);
@@ -44,6 +45,20 @@
     --md-outlined-text-field-trailing-space: var(--md-sys-spacing-2);
     --md-outlined-text-field-input-text-size: var(--md-sys-typescale-body-medium-size);
     --md-outlined-text-field-label-text-size: var(--md-sys-typescale-body-small-size);
+  }
+  .song-progress__controls > .spec-list :is(dt, dd) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @container song-progress-list (min-width: 480px) {
+    .song-progress__row {
+      grid-template-columns: minmax(0, 1fr) 36px max-content 72px 56px;
+      column-gap: var(--md-sys-spacing-2);
+    }
+    .song-progress__controls {
+      display: contents;
+    }
   }
   .song-progress__song {
     display: grid;

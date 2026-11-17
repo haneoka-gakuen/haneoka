@@ -1384,8 +1384,8 @@
       "counts": {
         "title": "演出次數",
         "total": "累計通關",
-        "fc": "FULL COMBO 次數",
-        "ap": "ALL PERFECT 次數",
+        "fc": "FC 次數",
+        "ap": "AP 次數",
         "arena": "激奏舞台參與次數",
         "battle": "多人演出通關次數",
         "import": "讀取原始存檔",

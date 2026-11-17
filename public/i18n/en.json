@@ -1384,8 +1384,8 @@
       "counts": {
         "title": "Live counts",
         "total": "Total clears",
-        "fc": "FULL COMBO clears",
-        "ap": "ALL PERFECT clears",
+        "fc": "FC clears",
+        "ap": "AP clears",
         "arena": "Gekiso Arena plays",
         "battle": "Multi Live clears",
         "import": "Read original save",

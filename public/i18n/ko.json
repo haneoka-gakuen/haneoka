@@ -1384,8 +1384,8 @@
       "counts": {
         "title": "라이브 횟수",
         "total": "누적 클리어",
-        "fc": "FULL COMBO 횟수",
-        "ap": "ALL PERFECT 횟수",
+        "fc": "FC 횟수",
+        "ap": "AP 횟수",
         "arena": "격주 아레나 참가 횟수",
         "battle": "멀티 라이브 클리어 횟수",
         "import": "원본 세이브 읽기",

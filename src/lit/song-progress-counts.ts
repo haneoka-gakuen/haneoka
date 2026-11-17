@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Synced progress, original save files and stored local snapshots.
-// Output: Cumulative play statistics, source selection and editable total/per-difficulty clears.
+// Output: Read-only cumulative statistics, source selection and editable per-difficulty clears.
 // Pos: [Map](L2-2.md); song-progress counts reuse Box writes and the save decoder.
 // Effects/Dependencies: Lazy local import Worker/IndexedDB; imported and edited counts use identical synced keys.
 import { html, nothing } from "lit";
@@ -15,7 +15,7 @@ import { emptyState } from "./ui/state";
 import { actionMenu } from "./ui/action-menu";
 import { uiText } from "./shared/catalog";
 import { formatDate } from "../lib/date-format";
-import { chartCountChanges, countChange, countImportChanges, playCount, playCountKey, songPlayCount, storedPlayCount, type CountChanges, type CountEntries } from "../lib/song-progress-counts";
+import { chartCountChanges, countImportChanges, playCount, playCountKey, songPlayCount, storedPlayCount, type CountChanges, type CountEntries } from "../lib/song-progress-counts";
 import type { StoredSave } from "../lib/save-workspace/snapshot";
 import type { BoxSnapshot } from "../lib/team-builder/sync/box-store";
 import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
@@ -109,9 +109,9 @@ export class ProgressCounts {
       if (changes.length) this.options.write(changes);
     } catch { this.error = this.t("writeFailed", "Could not save counts"); this.changed(); }
   }
-  private field(label: string, ariaLabel: string, target?: { song: number; difficulty: number }) {
-    const key = target ? playCountKey(108, target.song, target.difficulty + 1) : playCountKey(76);
-    const current = () => target ? this.chart(target.song, target.difficulty) : this.value(76);
+  private field(label: string, ariaLabel: string, target: { song: number; difficulty: number }) {
+    const key = playCountKey(108, target.song, target.difficulty + 1);
+    const current = () => this.chart(target.song, target.difficulty);
     type Control = HTMLElement & { value: string; error: boolean };
     const commit = (event: Event) => {
       const control = event.currentTarget as Control, raw = control.value.trim();
@@ -122,7 +122,7 @@ export class ProgressCounts {
       control.value = value?.toString() ?? "";
       if (value === current()) return;
       try {
-        this.options.write(target ? chartCountChanges(this.entries, target.song, target.difficulty, value, this.options.difficulties(target.song)) : [countChange(76, 0, 0, value)]);
+        this.options.write(chartCountChanges(this.entries, target.song, target.difficulty, value, this.options.difficulties(target.song)));
       } catch { this.invalidFields.add(key); control.error = true; snackbar(this.t("writeFailed", "Could not save counts")); }
     };
     return html`<md-outlined-text-field class="number-field" type="text" inputmode="numeric" pattern="[0-9]*"
@@ -169,15 +169,17 @@ export class ProgressCounts {
       ],
     });
   }
-  renderSummary() {
-    return html`
-      ${this.field(this.t("total", "Total clears"), this.t("total", "Total clears"))}
-      ${specList([
+  summaryRows() {
+    return [
+        { label: this.t("total", "Total clears"), value: this.format(this.value(76)) },
         { label: this.t("fc", "FULL COMBO clears"), value: this.format(this.value(77)) },
         { label: this.t("ap", "ALL PERFECT clears"), value: this.format(this.value(78)) },
         { label: this.t("arena", "Gekiso Arena plays"), value: this.format(this.value(102)) },
         { label: this.t("battle", "Multi Live clears"), value: this.format(this.value(137)) },
-      ], { numeric: true, className: "spec-list--trailing" })}
+    ];
+  }
+  renderImportState() {
+    return html`
       <input id="progress-counts-file" type="file" multiple hidden accept=".json,.zip,.gz,.dat,.bin" @change=${this.file} />
       <small class="song-progress__rating-status" role="status">${this.busy ? uiText(this.options.locale(), "common.states.loading") : this.error}</small>
     `;
@@ -185,9 +187,8 @@ export class ProgressCounts {
   renderRow(song: number, difficulty: number, context: string) {
     return html`
       ${difficulty <= 4 ? this.field(this.t("chartShort", "Clears"), this.t("editChart", "Edit clears: {chart}").replace("{chart}", context), { song, difficulty })
-        : html`<md-outlined-text-field class="number-field" readonly label=${this.t("chartShort", "Clears")} aria-label=${`${this.t("chart", "Clears on this difficulty")} / ${context}`} .value=${live(this.format(this.chart(song, difficulty)))}></md-outlined-text-field>`}
-      <md-outlined-text-field class="number-field" readonly label=${this.t("songShort", "Total")} aria-label=${`${this.t("song", "Song total clears")} / ${context}`}
-        .value=${live(this.format(this.song(song)))} title=${this.format(this.song(song))}></md-outlined-text-field>
+        : specList([{ label: this.t("chartShort", "Clears"), value: this.format(this.chart(song, difficulty)) }], { numeric: true, split: true })}
+      ${specList([{ label: this.t("songShort", "Total"), value: html`<span title=${`${this.t("song", "Song total clears")} / ${context}: ${this.format(this.song(song))}`}>${this.format(this.song(song))}</span>` }], { numeric: true, split: true, className: "song-progress__song-total" })}
     `;
   }
   renderDialogs() {
