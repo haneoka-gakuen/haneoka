@@ -1381,8 +1381,6 @@
         "requiredValue": "五位不同角色、五张留影及完整的卡牌培养记录",
         "snapshotGrowth": "等级 / 上限解锁"
       },
-      "view": "查看内容",
-      "marksView": "谱面进度",
       "counts": {
         "title": "演出次数",
         "total": "累计通关",
@@ -1390,12 +1388,10 @@
         "ap": "ALL PERFECT 次数",
         "arena": "激奏舞台参与次数",
         "battle": "多人演出通关次数",
-        "edit": "编辑累计通关",
         "import": "读取原始存档",
         "pick": "从已存档导入",
         "selectTitle": "从存档导入进度",
         "noSaves": "尚未导入原始存档",
-        "noSource": "尚未导入存档",
         "readFailed": "无法读取原始存档",
         "writeFailed": "次数无法保存",
         "wrongServer": "存档区服不匹配",
@@ -1404,11 +1400,8 @@
         "chart": "此难度通关",
         "song": "该曲总次数",
         "gameSave": "游戏存档",
-        "sort": "按通关次数从多到少",
-        "save": "保存",
         "fromApp": "读取游戏存档",
-        "editChart": "编辑通关次数：{chart}",
-        "editChartTitle": "编辑此难度通关次数"
+        "editChart": "编辑通关次数：{chart}"
       }
     },
     "songGuess": {

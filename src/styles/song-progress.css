@@ -28,10 +28,11 @@
     gap: var(--md-sys-spacing-3);
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
   }
-  .song-progress__row--counts {
-    grid-template-columns: minmax(0, 1fr) 40px;
-  }
   .song-progress__count-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: var(--md-sys-spacing-4);
     grid-column: 1 / -1;
     padding-block-end: var(--md-sys-spacing-3);
   }

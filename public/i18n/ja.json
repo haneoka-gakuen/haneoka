@@ -1381,8 +1381,6 @@
         "requiredValue": "異なるキャラクター5人、スナップ5枚、全育成項目の入力",
         "snapshotGrowth": "レベル / 上限解放"
       },
-      "view": "表示内容",
-      "marksView": "譜面の進捗",
       "counts": {
         "title": "ライブ回数",
         "total": "累計クリア回数",
@@ -1390,12 +1388,10 @@
         "ap": "ALL PERFECT 回数",
         "arena": "撃奏アリーナ参加回数",
         "battle": "マルチライブクリア回数",
-        "edit": "累計クリア回数を編集",
         "import": "元のセーブを読み込む",
         "pick": "保存データから読み込む",
         "selectTitle": "セーブから進捗を読み込む",
         "noSaves": "読み込んだセーブがありません",
-        "noSource": "セーブ未読み込み",
         "readFailed": "セーブを読み込めません",
         "writeFailed": "回数を保存できません",
         "wrongServer": "セーブのサーバーが異なります",
@@ -1404,11 +1400,8 @@
         "chart": "この難易度のクリア",
         "song": "楽曲合計クリア回数",
         "gameSave": "ゲームのセーブ",
-        "sort": "クリア回数の多い順",
-        "save": "保存",
         "fromApp": "ゲームのセーブから読む",
-        "editChart": "クリア回数を編集: {chart}",
-        "editChartTitle": "難易度別クリア回数を編集"
+        "editChart": "クリア回数を編集: {chart}"
       }
     },
     "songGuess": {
