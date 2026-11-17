@@ -181,9 +181,9 @@ export function justWindowControl(host: TeamBuilder): TemplateResult | typeof no
   const value = percent ? s.justWindowPercent : s.justWindowMs;
   const limit = host.constraintLimits()?.justMs;
   const base = justBaseWindow(host.data);
-  const upper = limit == null ? "—" : percent && base ? `+${Math.floor((limit / base - 1) * 100)}%` : `±${limit} ms`;
+  const upper = limit == null ? "—" : limit === 0 ? host.common("common.states.unavailable", "Unavailable") : percent && base ? `+${Math.floor((limit / base - 1) * 100)}%` : `±${limit} ms`;
   const t = (key: string, fallback: string) => host.t(`justCoverage.${key}`, fallback);
-  const issue = () => host.submitted && host.inputIssues().some(issue => issue.field === "tb-just-coverage");
+  const issue = () => host.submitted && host.inputIssues().some(issue => issue.field === "tb-just-coverage" || issue.fields?.includes("tb-just-coverage"));
   const duration = (key: "justDurationSeconds" | "justContinuousSeconds", label: string) => html`<md-outlined-text-field
     type="number" min="0" step="0.1" suffix-text="s" label=${label}
     .value=${live(s[key] ? String(s[key]) : "")} placeholder=${host.t("unlimitedCombo", "No minimum")}

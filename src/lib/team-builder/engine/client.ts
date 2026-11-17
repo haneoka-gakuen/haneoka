@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -463,6 +463,10 @@ export class EngineClient {
   get phases() { return [...new Set(this.pool.map(worker => worker.currentPhase).filter((phase): phase is NonNullable<typeof phase> => phase !== null))]; }
   prefetch(songs: readonly SongRef[]) {
     this.downloads.prefetch(songs);
+  }
+  async constraintCharts(songs: readonly SongRef[]): Promise<EngineChart[]> {
+    const rows = await Promise.all(songs.slice(0, 4).map(song => this.downloads.load(song).catch(() => null)));
+    return rows.filter((row): row is EngineChart => row !== null);
   }
   /** Warm the requested part of the pool after the first Worker is ready. */
   warm(count = this.pool.length) {

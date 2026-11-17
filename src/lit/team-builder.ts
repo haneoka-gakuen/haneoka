@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
@@ -44,6 +44,7 @@ import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engi
 import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
 import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
 import { ENGINE_MODEL_VERSION, EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
+import type { EngineChart } from "../lib/team-builder/engine/protocol";
 import type {
   EngineHit,
   EngineRequest,
@@ -1301,7 +1302,8 @@ export class TeamBuilder extends LitElement {
   private readonly issuesCache = new Map<boolean, { field: string; fields?: string[]; validation?: boolean; message: string }[]>();
   private limitsUpdate: Promise<boolean> | null = null;
   private limitsValue: TeamConstraintLimits | null = null;
-  private limitsCache: { master: EngineMaster; key: string; value: TeamConstraintLimits } | null = null;
+  private limitsCharts: { engine: EngineClient; key: string; mode: string; rows: EngineChart[] } | null = null;
+  private limitsCache: { master: EngineMaster; key: string; charts: object; value: TeamConstraintLimits } | null = null;
   constraintLimits(): TeamConstraintLimits | null {
     const update = this.updateComplete;
     if (this.limitsUpdate === update) return this.limitsValue;
@@ -1313,11 +1315,22 @@ export class TeamBuilder extends LitElement {
       : this.request() ?? (settings.goal === "gekiso" ? this.request({ ...this.gekisoGoal(settings), ...(settings.arena ? { arena: settings.arena } : {}) }) : null);
     if (!request) return null;
     const { minBonusPercent: _bonus, ...constraints } = request.constraints;
-    const minimumCombo = request.goal.kind === "gekiso" ? request.goal.minComboBonus : request.goal.kind === "event" ? request.goal.gekiso?.minComboBonus : undefined;
-    const key = JSON.stringify([request.members, request.snaps, request.unknownPolicy, constraints, minimumCombo, "songs" in request.goal ? request.goal.songs : null, request.songRules, request.goal.kind === "gekiso" ? request.goal.arena?.missions : null, request.goal.kind === "event" ? [request.goal.eventId, request.goal.eventEffects, request.goal.measure, request.goal.rewardPlan] : null]);
-    if (this.limitsCache?.master !== this.master || this.limitsCache.key !== key)
-      this.limitsCache = { master: this.master, key, value: teamConstraintLimits(this.master, this.data, request) };
-    return this.limitsValue = this.limitsCache.value;
+    const gekiso = request.goal.kind === "gekiso" ? request.goal : request.goal.kind === "event" ? request.goal.gekiso : undefined;
+    const songs = "songs" in request.goal && settings.justWindowMode !== "off" ? request.goal.songs.filter(song => this.hasMission("JustCount", [song])).slice(0, 4) : [];
+    const chartKey = JSON.stringify(songs);
+    if (this.engine && (this.limitsCharts?.engine !== this.engine || this.limitsCharts.key !== chartKey ||
+      !this.limitsCharts.rows.length && this.limitsCharts.mode !== settings.justWindowMode)) {
+      const state = this.limitsCharts = { engine: this.engine, key: chartKey, mode: settings.justWindowMode, rows: [] as EngineChart[] };
+      if (songs.length) void state.engine.constraintCharts(songs).then(rows => {
+        if (this.limitsCharts !== state || this.engine !== state.engine || !this.isConnected) return;
+        state.rows = rows; this.requestUpdate();
+      });
+    }
+    const charts = this.limitsCharts?.engine === this.engine ? this.limitsCharts.rows : [];
+    const key = JSON.stringify([request.members, request.snaps, request.unknownPolicy, constraints, gekiso?.minComboBonus, gekiso?.minJustWindowMs, gekiso?.justWindow, "songs" in request.goal ? request.goal.songs : null, request.songRules, request.goal.kind === "gekiso" ? [request.goal.arena?.bandId, request.goal.arena?.missions] : null, request.goal.kind === "event" ? [request.goal.eventId, request.goal.eventEffects, request.goal.measure, request.goal.rewardPlan] : null]);
+    if (this.limitsCache?.master !== this.master || this.limitsCache.key !== key || this.limitsCache.charts !== charts)
+      this.limitsCache = { master: this.master, key, charts, value: teamConstraintLimits(this.master, this.data, request, charts) };
+    return this.limitsValue = songs.length && !charts.length ? { ...this.limitsCache.value, justMs: null } : this.limitsCache.value;
   }
   inputIssues(recommendation = false): { field: string; fields?: string[]; validation?: boolean; message: string }[] {
     const update = this.updateComplete;
@@ -1459,16 +1472,21 @@ export class TeamBuilder extends LitElement {
       const request = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.request() : this.request();
       if (request) {
         const limits = this.constraintLimits();
-        const jointMembers = s.goal === "gekiso" && limits?.memberConditionsUnreachable && s.minMissionMembers.some(Boolean);
-        if (jointMembers && !issues.some(issue => issue.field === "tb-mission-members"))
-          issues.push({ field: "tb-mission-members", fields: ["tb-mission-members", ...(s.minComboBonus > 1 ? ["tb-combo"] : [])], validation: true,
+        const joint = gekiso && limits?.memberConditionsUnreachable &&
+          (s.minMissionMembers.some(Boolean) || s.minComboBonus > 1 && s.justWindowMs > 0);
+        if (joint) {
+          const fields = [...(s.minMissionMembers.some(Boolean) ? ["tb-mission-members"] : []),
+            ...(s.minComboBonus > 1 ? ["tb-combo"] : []), ...(s.justWindowMs > 0 ? ["tb-just-window", ...(s.justWindowMode === "partial" ? ["tb-just-coverage"] : [])] : [])];
+          if (!issues.some(issue => fields.includes(issue.field))) issues.push({ field: fields[0]!, fields, validation: true,
             message: this.t("conditionsUnreachable", "These conditions cannot be met together") });
+        }
         if (s.minBonus !== null && limits?.eventBonus != null && Math.floor(s.minBonus * 100 + 0.5) > Math.round(limits.eventBonus * 100))
           add("tb-min-bonus", "minBonusUnreachable", "Minimum event bonus cannot be reached", true);
-        if (gekiso && !jointMembers && validGekisoCount(s.minComboBonus, 1) && limits?.combo !== null && limits?.combo !== undefined && s.minComboBonus > limits.combo)
+        if (gekiso && !joint && validGekisoCount(s.minComboBonus, 1) && limits?.combo !== null && limits?.combo !== undefined && s.minComboBonus > limits.combo)
           add("tb-combo", "minComboUnreachable", "Minimum base COMBO BONUS cannot be reached", true);
-        if (gekiso && limits?.justMs !== null && limits?.justMs !== undefined && s.justWindowMs > limits.justMs)
-          add("tb-just-window", "minJustWindowUnreachable", "Minimum JUST window cannot be reached", true);
+        if (gekiso && !joint && limits?.justMs !== null && limits?.justMs !== undefined && s.justWindowMs > limits.justMs)
+          issues.push({ field: "tb-just-window", fields: ["tb-just-window", ...(s.justWindowMode === "partial" ? ["tb-just-coverage"] : [])], validation: true,
+            message: this.t("minJustWindowUnreachable", "Minimum JUST window cannot be reached") });
       }
     }
     const emptyProof = this.tab === "pt" && s.rewardMode === "recommendation" ? this.pt.noFeasibleTeams
