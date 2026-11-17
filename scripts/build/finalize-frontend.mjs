@@ -142,12 +142,30 @@ async function loadPublicStatic() {
     publications,
     privateData: Boolean(token),
   };
-  const workers = new StaticDocumentWorkers({ output, documentsRoot, options, media, urlMap });
+  const tokenized = carriedMaterialization.length > 0 && carriedMaterialization.every((part) => part.tokenized);
+  const urlTokens = new Map();
+  for (const part of carriedMaterialization)
+    for (const [token, value] of part.urlTokens || []) {
+      if (urlTokens.has(token) && urlTokens.get(token) !== value) throw new Error("Conflicting static URL token");
+      urlTokens.set(token, value);
+    }
+  const workers = new StaticDocumentWorkers({
+    output,
+    documentsRoot,
+    options,
+    media,
+    urlMap,
+    ...(tokenized ? { urlTokens: [...urlTokens] } : {}),
+  });
   try {
     if (carriedMaterialization.length) {
       const covered = new Set();
       for (const part of carriedMaterialization) {
-        if (part.schema !== "haneoka-materialized-pages-v1" || part.build !== options.build)
+        if (
+          !["haneoka-materialized-pages-v1", "haneoka-materialized-pages-v2"].includes(part.schema) ||
+          part.build !== options.build ||
+          Boolean(part.tokenized) !== tokenized
+        )
           throw new Error("Materialized page identity differs");
         for (const sourcePath of part.targets) {
           if (covered.has(sourcePath)) throw new Error(`Duplicate materialized page: ${sourcePath}`);
@@ -198,17 +216,28 @@ async function loadPublicStatic() {
       const partition = staticRenderPartition();
       if (!partition || !process.env.STATIC_BUILD_LOCALE)
         throw new Error("Materialization requires a locale partition");
+      if (!urlMap) {
+        const planned = await Promise.all([
+          ...staged.map((sourcePath) => workers.run({ kind: "tokenize", sourcePath, staged: true })),
+          ...files
+            .filter((sourcePath) => staticDocumentLookupPath(`/${sourcePath}`))
+            .map((sourcePath) => workers.run({ kind: "tokenize", sourcePath })),
+        ]);
+        for (const entries of planned) for (const [token, value] of entries) urlTokens.set(token, value);
+      }
       mkdirSync(materializedRoot, { recursive: true });
       writeFileSync(
         path.join(materializedRoot, `${process.env.STATIC_BUILD_LOCALE}-${partition.index}.json`),
         JSON.stringify({
-          schema: "haneoka-materialized-pages-v1",
+          schema: "haneoka-materialized-pages-v2",
           build: options.build,
           partition,
           targets: [...targets],
           staged,
           privatePages: [...privatePages],
           references: [...mediaReferences],
+          tokenized: !urlMap,
+          urlTokens: [...urlTokens],
         }),
       );
       return;

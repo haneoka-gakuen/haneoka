@@ -268,6 +268,33 @@ export function functionalMediaUrl(value: string): string | undefined {
   const next = url.pathname + url.search + url.hash;
   return next === value ? undefined : next;
 }
+
+/** Render partitions reserve URL edits before the complete locale selects its public image budget. */
+export function staticUrlToken(value: string, site: PublicUrlSite): string | undefined {
+  if (functionalMediaUrl(value) === undefined) return;
+  const kind = "element" in site ? "a" : "j";
+  const digest = createHash("sha256").update(`${kind}\0${value}`).digest("hex");
+  return `/__haneoka_static_url_${kind}_${digest}__`;
+}
+
+export function resolveStaticUrlTokens(
+  html: string,
+  tokens: ReadonlyMap<string, string>,
+  rewrite: (value: string) => string | undefined,
+): string {
+  return html.replace(/\/__haneoka_static_url_([aj])_[a-f0-9]{64}__/gu, (token, kind: string) => {
+    const original = tokens.get(token);
+    if (original === undefined) throw new Error(`Static URL token has no source: ${token}`);
+    const target = rewrite(original) ?? original;
+    return kind === "a"
+      ? escapeAttribute(target)
+      : JSON.stringify(target)
+          .slice(1, -1)
+          .replace(/</gu, "\\u003c")
+          .replace(/\u2028/gu, "\\u2028")
+          .replace(/\u2029/gu, "\\u2029");
+  });
+}
 /** URL-bearing attributes of an element, in the order the callback sees them. */
 function urlAttributes(node: UrlElement): string[] {
   if (MEDIA.has(node.tagName))

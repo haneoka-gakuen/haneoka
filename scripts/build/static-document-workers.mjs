@@ -78,7 +78,9 @@ if (!isMainThread) {
   const { publicStaticStagingRoot, isPublicStaticDocument } = await import("../../src/server/static-documents.ts");
   const { publicMediaRewrite } = await import("./public-static-media.mjs");
   const { markdownDocument } = await import("./search-metadata.mjs");
-  const { output, documentsRoot, options, media, urlMap } = workerData;
+  const { output, documentsRoot, options, media, urlMap, urlTokens } = workerData;
+  const tokens = urlTokens && new Map(urlTokens);
+  const tokenCache = new Map();
   let mediaFor;
   const mapped = urlMap && module.publicUrlMapRewrite(urlMap);
   const rewrites = new Map();
@@ -104,6 +106,28 @@ if (!isMainThread) {
           module.stagePublicStaticDocument(documentsRoot, job.sourcePath, published.html);
           value = { references: [...references], privateData: published.privateData };
         }
+      } else if (job.kind === "tokenize") {
+        const file = path.join(job.staged ? publicStaticStagingRoot(documentsRoot) : output, job.sourcePath);
+        const html = fs.readFileSync(file, "utf8");
+        if (!/<\/html\s*>/iu.test(html)) {
+          parentPort.postMessage({ value: [] });
+          return;
+        }
+        const added = [];
+        const rewrite = Object.assign(
+          (url, site) => {
+            const key = `${"element" in site ? "a" : "j"}\0${url}`;
+            if (tokenCache.has(key)) return tokenCache.get(key);
+            const token = module.staticUrlToken(url, site);
+            tokenCache.set(key, token);
+            if (token) added.push([token, url]);
+            return token;
+          },
+          { contextIndependent: true },
+        );
+        const next = module.rewriteStaticDocumentUrls(html, rewrite);
+        if (next !== html) fs.writeFileSync(file, next);
+        value = added;
       } else if (job.kind === "rewrite") {
         if (media && !mediaFor)
           mediaFor = publicMediaRewrite(
@@ -124,23 +148,24 @@ if (!isMainThread) {
           parentPort.postMessage({ value: false });
           return;
         }
-        const next = module.rewriteStaticDocumentUrls(
-          html,
-          rewrites.get(job.locale),
-          job.staged
-            ? (_id, data) => {
-                const sha256 = createHash("sha256").update(data).digest("hex");
-                const target = path.join(output, "entity-data", "v1", `${sha256}.json`);
-                fs.mkdirSync(path.dirname(target), { recursive: true });
-                try {
-                  fs.writeFileSync(target, data, { flag: "wx" });
-                } catch (error) {
-                  if (error.code !== "EEXIST") throw error;
-                }
-                return `/entity-data/v1/${sha256}.json`;
-              }
-            : undefined,
-        );
+        const externalize = (_id, data) => {
+          const sha256 = createHash("sha256").update(data).digest("hex");
+          const target = path.join(output, "entity-data", "v1", `${sha256}.json`);
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          try {
+            fs.writeFileSync(target, data, { flag: "wx" });
+          } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+          }
+          return `/entity-data/v1/${sha256}.json`;
+        };
+        let next;
+        if (tokens) {
+          next = module.resolveStaticUrlTokens(html, tokens, rewrites.get(job.locale));
+          if (job.staged && module.publicStaticTarget(job.sourcePath)?.scope !== "entity")
+            next = module.externalizePublicPageData(next, externalize);
+        } else
+          next = module.rewriteStaticDocumentUrls(html, rewrites.get(job.locale), job.staged ? externalize : undefined);
         if (job.contentsOnly) value = next;
         else {
           if (next !== html) fs.writeFileSync(file, next);

@@ -6,7 +6,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync, gzip } from "node:zlib";
+import { promisify } from "node:util";
+import { availableParallelism } from "node:os";
 import {
   STATIC_DOCUMENT_SCHEMA,
   STATIC_DOCUMENT_INDEX_ROOT,
@@ -35,6 +37,8 @@ const root = path.join(process.cwd(), ".output", "static-documents");
 const contentRoot = path.join(root, "content");
 const log = path.join(root, "documents.jsonl");
 const written = new Map<string, number>();
+const pendingCompression = new Map<string, Promise<StaticDocumentChunk>>();
+const compress = promisify(gzip);
 const moduleGraph = createModuleGraph(path.join(process.cwd(), ".output", "public"));
 
 export const PUBLIC_STATIC_DOCUMENT_SCHEMA = "haneoka-public-static-documents-v1";
@@ -136,6 +140,7 @@ export function beginStaticDocumentsBuild(): void {
   fs.rmSync(path.join(root, "materialized"), { recursive: true, force: true });
   fs.rmSync(publicStaticStagingRoot(root), { recursive: true, force: true });
   written.clear();
+  pendingCompression.clear();
 }
 function contentChunk(body: Buffer): StaticDocumentChunk {
   const sha256 = createHash("sha256").update(body).digest("hex");
@@ -161,6 +166,27 @@ function contentChunk(body: Buffer): StaticDocumentChunk {
 function content(body: Buffer, contentType: string): StaticDocumentRecord {
   return { ...contentChunk(body), contentType };
 }
+async function compressedChunk(body: Buffer): Promise<StaticDocumentChunk> {
+  const sha256 = createHash("sha256").update(body).digest("hex");
+  const file = path.join(contentRoot, sha256.slice(0, 2), `${sha256}.gz`);
+  if (written.has(sha256) || fs.existsSync(file)) return contentChunk(body);
+  const pending = pendingCompression.get(sha256);
+  if (pending) return pending;
+  const work = (async () => {
+    const zipped = await compress(body, { level: 6 });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (fs.existsSync(file)) return contentChunk(body);
+    fs.writeFileSync(file, zipped, { flag: "wx" });
+    written.set(sha256, zipped.length);
+    return { sha256, bytes: body.length, gzipBytes: zipped.length };
+  })();
+  pendingCompression.set(sha256, work);
+  try {
+    return await work;
+  } finally {
+    pendingCompression.delete(sha256);
+  }
+}
 function sharedJsonBoundary(body: Buffer): readonly [number, number] | undefined {
   let cursor = 0;
   let selected: readonly [number, number] | undefined;
@@ -178,10 +204,12 @@ function sharedJsonBoundary(body: Buffer): readonly [number, number] | undefined
   }
   return selected;
 }
-function htmlChunks(body: Buffer, from: number, to: number): StaticDocumentRecord {
-  const chunks = [body.subarray(0, from), body.subarray(from, to), body.subarray(to)]
-    .filter((part) => part.length > 0)
-    .map(contentChunk);
+async function htmlChunks(body: Buffer, from: number, to: number): Promise<StaticDocumentRecord> {
+  const chunks = await Promise.all(
+    [body.subarray(0, from), body.subarray(from, to), body.subarray(to)]
+      .filter((part) => part.length > 0)
+      .map(compressedChunk),
+  );
   return {
     sha256: createHash("sha256").update(body).digest("hex"),
     bytes: body.length,
@@ -190,14 +218,16 @@ function htmlChunks(body: Buffer, from: number, to: number): StaticDocumentRecor
     chunks,
   };
 }
-function htmlContent(body: Buffer): StaticDocumentRecord {
+async function htmlContent(body: Buffer): Promise<StaticDocumentRecord> {
   const start = Buffer.from(STATIC_DOCUMENT_UNDERLAY_START);
   const end = Buffer.from(STATIC_DOCUMENT_UNDERLAY_END);
   const from = body.indexOf(start),
     to = body.indexOf(end);
   if (from < 0 && to < 0) {
     const shared = sharedJsonBoundary(body);
-    return shared ? htmlChunks(body, ...shared) : content(body, "text/html; charset=utf-8");
+    return shared
+      ? htmlChunks(body, ...shared)
+      : { ...(await compressedChunk(body)), contentType: "text/html; charset=utf-8" };
   }
   if (
     from < 0 ||
@@ -219,7 +249,7 @@ export async function writeStaticDocument(pathname: string, source: string): Pro
   // Astro dev can append a component's module script after the closing root.
   if (!/<\/html\s*>\s*(?:<script\b[^>]*>[\s\S]*?<\/script\s*>\s*)*$/iu.test(html))
     throw new Error(`Incomplete static document: ${pathname}`);
-  const record = htmlContent(Buffer.from(html));
+  const record = await htmlContent(Buffer.from(html));
   fs.appendFileSync(log, `${JSON.stringify({ pathname, ...record })}\n`);
   return record;
 }
@@ -238,41 +268,46 @@ export async function packCoreStaticDocuments(outputRoot: string, files: readonl
   }
   const publicFiles = readPublicStaticList();
   let packed = 0;
-  for (const file of files) {
-    const physicalPath = `/${file.split(path.sep).join("/")}`;
-    const pathname = staticDocumentLookupPath(physicalPath);
-    if (!pathname) continue;
-    const core = coreStaticDocumentPath(pathname) === pathname;
-    const html = fs.readFileSync(path.join(outputRoot, file), "utf8");
-    // A repeated finalization finds the public page in place of its complete source.
-    if (core && isPublicStaticDocument(html)) {
-      const listed = publicFiles[pathname];
-      if (!listed || previous.get(pathname)?.sha256 !== listed.document)
-        throw new Error(`Public static document has no complete source: ${pathname}`);
-      paths.push(pathname);
-      continue;
+  let cursor = 0;
+  const packNext = async () => {
+    while (cursor < files.length) {
+      const file = files[cursor++]!;
+      const physicalPath = `/${file.split(path.sep).join("/")}`;
+      const pathname = staticDocumentLookupPath(physicalPath);
+      if (!pathname) continue;
+      const core = coreStaticDocumentPath(pathname) === pathname;
+      const html = fs.readFileSync(path.join(outputRoot, file), "utf8");
+      // A repeated finalization finds the public page in place of its complete source.
+      if (core && isPublicStaticDocument(html)) {
+        const listed = publicFiles[pathname];
+        if (!listed || previous.get(pathname)?.sha256 !== listed.document)
+          throw new Error(`Public static document has no complete source: ${pathname}`);
+        paths.push(pathname);
+        continue;
+      }
+      // Astro emits small redirect documents without an enclosing html element.
+      // Keep their original redirect response in the static asset binding.
+      if (
+        core &&
+        html.length < 16 * 1024 &&
+        !html.includes("</html>") &&
+        /<meta\b[^>]*\bhttp-equiv=["']refresh["'][^>]*\bcontent=["']0;url=\/[^"'<>]+["'][^>]*>/iu.test(html) &&
+        /<meta\b[^>]*\bname=["']robots["'][^>]*\bcontent=["']noindex["'][^>]*>/iu.test(html)
+      )
+        continue;
+      // Middleware-packed extension pages leave a short receipt in publicDir.
+      if (!core && !html.includes("</html>")) {
+        const receipt = /^<!-- static-document:([a-f0-9]{64}) -->\s*$/u.exec(html);
+        if (!receipt || previous.get(pathname)?.sha256 !== receipt[1])
+          throw new Error(`Static document receipt is missing or differs: ${pathname}`);
+        continue;
+      }
+      await writeStaticDocument(pathname, html);
+      if (core) paths.push(pathname);
+      packed++;
     }
-    // Astro emits small redirect documents without an enclosing html element.
-    // Keep their original redirect response in the static asset binding.
-    if (
-      core &&
-      html.length < 16 * 1024 &&
-      !html.includes("</html>") &&
-      /<meta\b[^>]*\bhttp-equiv=["']refresh["'][^>]*\bcontent=["']0;url=\/[^"'<>]+["'][^>]*>/iu.test(html) &&
-      /<meta\b[^>]*\bname=["']robots["'][^>]*\bcontent=["']noindex["'][^>]*>/iu.test(html)
-    )
-      continue;
-    // Middleware-packed extension pages leave a short receipt in publicDir.
-    if (!core && !html.includes("</html>")) {
-      const receipt = /^<!-- static-document:([a-f0-9]{64}) -->\s*$/u.exec(html);
-      if (!receipt || previous.get(pathname)?.sha256 !== receipt[1])
-        throw new Error(`Static document receipt is missing or differs: ${pathname}`);
-      continue;
-    }
-    await writeStaticDocument(pathname, html);
-    if (core) paths.push(pathname);
-    packed++;
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, availableParallelism()) }, packNext));
   registerStaticDocumentCoverage("core", paths, false);
   return packed;
 }
