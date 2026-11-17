@@ -376,7 +376,7 @@ export class SongProgress extends LitElement {
           { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
           { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
           ...this.counts.summaryRows(),
-        ], { numeric: true })}
+        ], { numeric: true, className: "song-progress__rating-facts" })}
         ${this.counts.renderImportState()}
         ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
           onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
@@ -396,7 +396,7 @@ export class SongProgress extends LitElement {
         ${specList([
           { label: this.text("potentialRating", "Full-growth rating"), value: this.number(potential) },
           { label: this.text("ratingGain", "Growth difference"), value: gain === null ? "—" : `${gain >= 0 ? "+" : ""}${this.number(gain)}` },
-        ], { numeric: true })}
+        ], { numeric: true, className: "song-progress__rating-facts" })}
         <div class="song-progress__rating-actions">
           <button class="button button--filled" type="button" ?disabled=${this.calculating} @click=${() => void this.calculateRoster()}>${this.text("calculateRating", "Calculate ratings")}</button>
           <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
