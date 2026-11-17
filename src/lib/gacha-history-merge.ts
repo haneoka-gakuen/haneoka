@@ -228,3 +228,23 @@ export function matchingHistoryGroups(
   });
   return [...groups.values()].map((values) => [...new Set(values)]).filter((values) => values.length > 1);
 }
+
+/** Remote canonical identities supersede old local merge directions. */
+export function resolveHistoryAccountKey(
+  key: string,
+  local: readonly { key: string; aliases?: readonly string[] | undefined }[],
+  cloud: readonly { accountKey: string; aliases?: readonly string[] | undefined }[],
+  matches: ReadonlyMap<string, string>,
+): string {
+  const aliases = new Map<string, string>();
+  for (const row of local) for (const alias of row.aliases ?? []) aliases.set(alias, row.key);
+  for (const row of cloud) for (const alias of row.aliases ?? []) aliases.set(alias, row.accountKey);
+  for (const [alias, target] of matches) if (!aliases.has(alias)) aliases.set(alias, target);
+  for (const row of cloud) aliases.delete(row.accountKey);
+  const seen = new Set<string>();
+  while (aliases.has(key) && !seen.has(key)) {
+    seen.add(key);
+    key = aliases.get(key)!;
+  }
+  return key;
+}

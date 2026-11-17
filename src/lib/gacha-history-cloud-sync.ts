@@ -5,7 +5,12 @@
 // Effects/Dependencies: 读写独立 IndexedDB 云区并发 HTTP；上传只取原本地快照，无后台轮询。
 import { fetchJson } from "../lit/shared/catalog";
 import { historyStore, type HistoryCloudLink, type StoredHistory } from "./gacha-history-store";
-import { mergeAccountHistories, type HistoryMatchCards, type HistoryAccountRecord } from "./gacha-history-merge";
+import {
+  mergeAccountHistories,
+  resolveHistoryAccountKey,
+  type HistoryMatchCards,
+  type HistoryAccountRecord,
+} from "./gacha-history-merge";
 import { reconcileHistories } from "./gacha-history-reconcile";
 import {
   HistoryCloudClient,
@@ -27,18 +32,7 @@ export class HistoryCloudSync extends EventTarget {
     this.cards = cards;
   }
   canonicalKey(key: string): string {
-    const aliases = new Map<string, string>();
-    for (const record of this.local) for (const alias of record.aliases ?? []) aliases.set(alias, record.key);
-    if (this.ownerId)
-      for (const row of this.documents.values())
-        for (const alias of row.aliases ?? []) aliases.set(alias, row.accountKey);
-    for (const [alias, target] of this.matches) if (!aliases.has(alias)) aliases.set(alias, target);
-    const seen = new Set<string>();
-    while (aliases.has(key) && !seen.has(key)) {
-      seen.add(key);
-      key = aliases.get(key)!;
-    }
-    return key;
+    return resolveHistoryAccountKey(key, this.local, this.ownerId ? [...this.documents.values()] : [], this.matches);
   }
   hasLocal(key: string): boolean {
     return this.local.some((row) => this.canonicalKey(row.key) === this.canonicalKey(key));
@@ -422,6 +416,7 @@ export class HistoryCloudSync extends EventTarget {
       this.errorCode = "";
       this.changed();
       try {
+        let conflicts = 0;
         do {
           this.syncAgain = false;
           const summaries = await this.client.list();
@@ -437,7 +432,15 @@ export class HistoryCloudSync extends EventTarget {
             this.guard(owner, generation);
             await this.accept(document, owner, generation);
           }
-          await this.reconcile(owner, generation);
+          try {
+            await this.reconcile(owner, generation);
+          } catch (error) {
+            if (error instanceof HistoryCloudError && error.code === "history_merge_conflict" && conflicts++ < 2) {
+              this.syncAgain = true;
+              continue;
+            }
+            throw error;
+          }
           const uploads = new Map<string, StoredHistory[]>();
           for (const record of this.local) {
             const key = this.canonicalKey(record.key);
