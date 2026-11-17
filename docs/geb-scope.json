@@ -262,6 +262,8 @@
     "scripts/verify/geb.py",
     "public/sw.js",
     "src/lib/gacha-history-store.ts",
+    "src/lib/gacha-history-luck.ts",
+    "src/lit/shared/gacha-history-luck.ts",
     "src/lib/gacha-history-cloud-data.ts",
     "src/lib/gacha-history-cloud.ts",
     "src/lib/gacha-history-cloud-sync.ts",

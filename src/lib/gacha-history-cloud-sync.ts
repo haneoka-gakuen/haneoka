@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 原本地记录、现有 Haneoka 会话与显式同步许可。
-// Output: 当前 owner 的可见合并视图及前台云同步。
+// Output: 当前 owner 的可见合并视图、显式本地别名投影及前台云同步。
 // Pos: [Map](L2-2.md)；抽卡历史账号同步边界。
 // Effects/Dependencies: 读写独立 IndexedDB 云区并发 HTTP；上传只取原本地快照，无后台轮询。
 import { fetchJson } from "../lit/shared/catalog";
@@ -57,14 +57,17 @@ export class HistoryCloudSync extends EventTarget {
   }
   visibleRecords(): StoredHistory[] {
     const records = new Map(this.local.map((record) => [record.key, record]));
+    const aliases = new Map(this.local.flatMap(record => (record.aliases ?? []).map(key => [key, record.key] as const)));
     if (this.ownerId)
       for (const document of this.documents.values()) {
-        const previous = records.get(document.accountKey);
+        const key = aliases.get(document.accountKey) ?? document.accountKey;
+        const previous = records.get(key);
         if (previous && previous.snapshot.source.server !== document.server) continue;
         let histories = previous?.histories ?? (previous ? [previous.snapshot] : []);
-        for (const incoming of document.histories) histories = mergeHistoryCollection(histories, incoming);
+        for (const incoming of document.histories) histories = mergeHistoryCollection(histories,
+          key === document.accountKey ? incoming : { ...incoming, source: { ...incoming.source, accountKey: previous?.snapshot.source.accountKey ?? key } });
         if (histories.length)
-          records.set(document.accountKey, { key: document.accountKey, snapshot: histories[0], histories });
+          records.set(key, { ...previous, key, snapshot: histories[0], histories });
       }
     return [...records.values()].sort((a, b) => Date.parse(b.snapshot.queriedAt) - Date.parse(a.snapshot.queriedAt));
   }

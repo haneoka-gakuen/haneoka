@@ -24,6 +24,7 @@ export interface CollectionListEntry {
   title: unknown;
   titleLanguage?: string;
   subtitle: unknown;
+  threeLine?: boolean;
   image?: string;
   media?: unknown;
   trailing?: unknown;
@@ -58,7 +59,7 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
               entry.href
                 ? html`
                     <a
-                      class="list-item list-item--two-line list-item--interactive"
+                      class=${`list-item ${entry.threeLine ? "list-item--three-line" : "list-item--two-line"} list-item--interactive`}
                       href=${entry.href}
                       data-open-item=${entry.id}
                     >
@@ -67,7 +68,7 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
                   `
                 : html`
                     <button
-                      class="list-item list-item--two-line list-item--interactive"
+                      class=${`list-item ${entry.threeLine ? "list-item--three-line" : "list-item--two-line"} list-item--interactive`}
                       type="button"
                       data-open-item=${entry.id}
                       @click=${entry.onOpen}

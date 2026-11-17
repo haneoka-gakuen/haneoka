@@ -1,5 +1,6 @@
 import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import type { GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
+import type { GachaLuckLaw } from "./gacha-history-luck";
 
 export interface GachaHistoryAccount {
   key: string;
@@ -7,6 +8,12 @@ export interface GachaHistoryAccount {
   serverLabel: string;
   label: string;
   offsetMinutes?: number;
+  identity?: string;
+  canMerge?: boolean;
+  local?: boolean;
+  sourceCount?: number;
+  batches?: number;
+  range?: string;
 }
 export interface GachaHistoryPool {
   id: string;
@@ -55,6 +62,7 @@ export interface GachaHistoryBatch {
   source?: string;
   cost?: GachaHistoryCost;
   expected?: GachaHistoryExpectation;
+  luckLaw?: GachaLuckLaw;
 }
 export interface GachaHistoryExpectation {
   high: number;
@@ -71,6 +79,8 @@ export interface GachaHistoryEvents {
   "gacha-catalog-retry": CustomEvent<void>;
   "gacha-open-app": CustomEvent<void>;
   "gacha-account-change": CustomEvent<{ accountKey: string }>;
+  "gacha-history-merge": CustomEvent<{ accountKeys: string[]; confirmIdentity?: boolean }>;
+  "gacha-history-originals": CustomEvent<{ accountKey: string }>;
   "gacha-history-kind-change": CustomEvent<{ historyKind: string }>;
   "gacha-import": CustomEvent<void>;
   "gacha-import-source": CustomEvent<{ source: GachaHistoryImportSource }>;

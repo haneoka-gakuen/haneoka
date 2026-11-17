@@ -10,12 +10,10 @@ import {
   analyzeGachaHistory,
   gachaHistoryDay,
   gachaHistoryHits,
-  gachaHistoryLuck,
   gachaHistoryMonths,
   summarizeGachaHistoryMoney,
   type GachaDrawInterval,
   type GachaHit,
-  type GachaLuck,
   type GachaPoolHits,
 } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import "./shared/gacha-history-chart";
@@ -50,6 +48,8 @@ import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import "../styles/gacha-history.css";
 import { renderLocalSaveSourcePicker } from "./shared/local-save-source-picker";
 import { formatDate, formatTime } from "../lib/date-format";
+import { GachaLuckClient } from "./shared/gacha-history-luck";
+import type { GachaLuckResult, GachaLuckSummary, GachaLuckValue } from "../lib/gacha-history-luck";
 
 type Axis = "category" | "pool" | "kind" | "rarity" | "pickup";
 type Tab = "overview" | "pools" | "collection" | "records" | "trends" | "settings";
@@ -113,6 +113,9 @@ export class GachaHistory extends LitElement {
     view: { state: true },
     expanded: { state: true },
     tab: { state: true },
+    accountsOpen: { state: true },
+    mergingAccounts: { state: true },
+    mergeKeys: { state: true },
   };
   declare cloudSignedIn: boolean;
   declare cloudBusy: boolean;
@@ -157,7 +160,17 @@ export class GachaHistory extends LitElement {
   declare private view: CollectionView;
   declare private expanded: Set<string>;
   declare private tab: Tab;
+  private declare accountsOpen: boolean;
+  private declare mergingAccounts: boolean;
+  private declare mergeKeys: Set<string>;
   private images = new LazyImages();
+  private luckClient = new GachaLuckClient(() => this.requestUpdate());
+  private luckResult?: GachaLuckResult;
+  private scopeInputs: unknown[] = [];
+  private scopeRows: readonly GachaHistoryBatch[] = [];
+  private analysisCache = new WeakMap<readonly GachaHistoryBatch[], ReturnType<typeof analyzeGachaHistory>>();
+  private reportInputs: unknown[] = [];
+  private reportValue?: GachaHistoryReport;
   private indexedPools?: readonly GachaHistoryPool[];
   private poolIndex = new Map<string, GachaHistoryPool>();
   private expansionReady = false;
@@ -210,6 +223,7 @@ export class GachaHistory extends LitElement {
     this.view = "grid";
     this.expanded = new Set();
     this.tab = "overview";
+    this.accountsOpen = false; this.mergingAccounts = false; this.mergeKeys = new Set();
   }
   connectedCallback() {
     super.connectedCallback();
@@ -217,6 +231,7 @@ export class GachaHistory extends LitElement {
       import("@material/web/select/outlined-select.js"),
       import("@material/web/select/select-option.js"),
       import("@material/web/progress/linear-progress.js"),
+      import("@material/web/checkbox/checkbox.js"),
     ]);
   }
   createRenderRoot() {
@@ -252,7 +267,25 @@ export class GachaHistory extends LitElement {
     );
   }
   private analysis(batches: readonly GachaHistoryBatch[]) {
-    return analyzeGachaHistory(batches, this.offsetMinutes);
+    let value = this.analysisCache.get(batches);
+    if (!value) { value = analyzeGachaHistory(batches, this.offsetMinutes); this.analysisCache.set(batches, value); }
+    return value;
+  }
+  private scopedHistory(): readonly GachaHistoryBatch[] {
+    const inputs = [this.batches, this.selectedAccountKey, this.pools, this.filters.pool, this.filters.category, this.from, this.to, this.offsetMinutes];
+    if (inputs.every((value, index) => value === this.scopeInputs[index])) return this.scopeRows;
+    this.scopeInputs = inputs;
+    this.scopeRows = this.batches.filter(batch => {
+      const pool = this.poolMap.get(batch.poolId), day = gachaHistoryDay(batch.pulledAt, this.offsetMinutes) ?? "";
+      return batch.accountKey === this.selectedAccountKey && (!this.filters.pool.length || this.filters.pool.includes(batch.poolId)) &&
+        (!this.filters.category.length || pool && this.filters.category.includes(pool.category)) &&
+        (!this.from || day && day >= this.from) && (!this.to || day && day <= this.to);
+    });
+    return this.scopeRows;
+  }
+  private pureItemPool(id: string | null) { return (this.poolMap.get(id ?? "")?.rates?.rarities.item ?? 0) >= 1 - 1e-12; }
+  private cardDraws(stats: ReturnType<GachaHistory["analysis"]>) {
+    return stats.pools.reduce((total, pool) => total + (this.pureItemPool(pool.poolId) ? 0 : pool.total), 0);
   }
   private serverTime(value: string, kind: "time" | "date" | "dateTime") {
     const shifted = new Date(value).getTime() + this.offsetMinutes * 60000;
@@ -299,6 +332,8 @@ export class GachaHistory extends LitElement {
     }
   }
   disconnectedCallback() {
+    this.luckClient.reset(); this.luckResult = undefined; this.scopeInputs = []; this.scopeRows = [];
+    this.reportInputs = []; this.reportValue = undefined;
     this.cancelImageExport();
     this.images.disconnect();
     clearAppBarSearch(OWNER);
@@ -409,63 +444,56 @@ export class GachaHistory extends LitElement {
       sum = 0;
     for (const pool of stats.pools) {
       const rates = this.poolMap.get(pool.poolId ?? "")?.rates;
-      if (!rates) continue;
+      if (!rates || this.pureItemPool(pool.poolId)) continue;
       draws += pool.total;
       sum += rate(rates) * pool.total;
     }
     return draws ? sum / draws : null;
   }
-  private luckTier(luck: GachaLuck) {
-    const p = luck.percentile;
-    return p >= 0.9 ? 1 : p >= 0.65 ? 2 : p > 0.35 ? 3 : p > 0.1 ? 4 : 5;
+  private luckSummary(poolId?: string): GachaLuckSummary | undefined {
+    return poolId === undefined ? this.luckResult?.overall : this.luckResult?.pools[poolId];
   }
-  private luckValue(luck: GachaLuck) {
-    const share = (value: number) => (value < 0.001 ? `< ${this.percent(0.001, 1, 1)}` : this.percent(value, 1, 1));
-    return luck.percentile >= 0.5
-      ? this.t("luckTop", { value: share(1 - luck.percentile) })
-      : this.t("luckBottom", { value: share(luck.percentile) });
+  private luckTier(luck: GachaLuckValue) { return luck.tier; }
+  private luckValue(luck: GachaLuckValue) {
+    if (luck.score === 50) return this.t("luckMedian");
+    const probability = Math.min(luck.upper, luck.lower);
+    const value = probability < .001 ? `< ${this.percent(.001, 1, 1)}` : this.percent(probability, 1, 2);
+    return this.t(luck.upper <= luck.lower ? "luckTop" : "luckBottom", { value });
   }
-  private luckMeter(label: string, luck: GachaLuck | null) {
-    if (!luck) return nothing;
-    const tier = this.luckTier(luck);
-    return html`
-      <div class="gacha-luck" data-tier=${tier}>
-        <div class="row row--between row--baseline">
-          <span class="md-title-small">${label}</span>
-          <span class="gacha-luck__tier">${this.t(`luckTier${tier}`)}</span>
-        </div>
-        <div
-          class="gacha-luck__track"
-          role="meter"
-          aria-label=${label}
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow=${Math.round(luck.percentile * 100)}
-          aria-valuetext=${this.luckValue(luck)}
-        >
-          <span class="gacha-luck__fill" style=${`inline-size:${(luck.percentile * 100).toFixed(1)}%`}></span>
-          <span class="gacha-luck__mark" style=${`inset-inline-start:${(luck.percentile * 100).toFixed(1)}%`}></span>
-        </div>
-        <dl class="spec-list spec-list--split spec-list--numeric">
-          <div>
-            <dt>${this.t("observed")}</dt>
-            <dd>${this.number(luck.observed)}</dd>
-          </div>
-          <div>
-            <dt>${this.t("expected")}</dt>
-            <dd>${this.number(luck.expected, 2)}</dd>
-          </div>
-          <div>
-            <dt>${this.t("luck")}</dt>
-            <dd>${this.luckValue(luck)}</dd>
-          </div>
-          <div>
-            <dt>${this.t("atLeastChance")}</dt>
-            <dd>${luck.atLeast < 0.001 ? `< ${this.percent(0.001, 1, 1)}` : this.percent(luck.atLeast, 1, 1)}</dd>
-          </div>
-        </dl>
+  private luckState(summary?: GachaLuckSummary, value: GachaLuckValue | null | undefined = summary?.combined) {
+    if (this.luckClient.error) return this.t("luckCalculationFailed");
+    if (this.luckClient.pending) return this.t("luckCalculating");
+    if (value && !value.variable && value.expected === 0) return this.t("luckNoTarget");
+    if (summary?.combined) return this.t("luckFixed");
+    if (summary?.itemDraws && !summary.unknownDraws) return this.t("luckItemOnly");
+    return summary?.unknownDraws ? this.t("luckUnavailable") : "—";
+  }
+  private luckMeter(label: string, luck: GachaLuckValue | null | undefined, summary?: GachaLuckSummary, combined = false) {
+    const value = luck?.variable ? luck : undefined;
+    const chance = value ? Math.min(value.lower, value.upper) : null;
+    const facts = combined ? [
+      [`SSR+ · ${this.t("observed")}`, summary?.high ? this.number(summary.high.observed) : "—"],
+      [`SSR+ · ${this.t("expected")}`, summary?.high ? this.number(summary.high.expected, 2) : "—"],
+      [`${this.t("luckPickupHigh")} · ${this.t("observed")}`, summary?.pickup ? this.number(summary.pickup.observed) : "—"],
+      [`${this.t("luckPickupHigh")} · ${this.t("expected")}`, summary?.pickup ? this.number(summary.pickup.expected, 2) : "—"],
+    ] : [[this.t("observed"), luck ? this.number(luck.observed) : "—"], [this.t("expected"), luck ? this.number(luck.expected, 2) : "—"]];
+    facts.push([this.t("luckScore"), value ? this.number(value.score, 1) : "—"],
+      [this.t(value && value.lower < value.upper ? "atMostChance" : "atLeastChance"), chance === null ? "—" : chance < .001 ? `< ${this.percent(.001, 1, 1)}` : this.percent(chance, 1, 2)]);
+    return html`<div class="gacha-luck" data-tier=${value?.tier ?? "neutral"} aria-busy=${String(this.luckClient.pending)}>
+      <div class="row row--between row--baseline"><span class="md-title-small">${label}</span>
+        <span class="gacha-luck__tier">${value ? this.t(`luckTier${value.tier}`) : this.luckState(summary, luck)}</span></div>
+      <div class="gacha-luck__track" role="meter" aria-label=${label} aria-valuemin="0" aria-valuemax="100"
+        aria-valuenow=${value ? Math.round(value.score) : nothing} aria-valuetext=${value ? this.luckValue(value) : this.luckState(summary, luck)}>
+        <span class="gacha-luck__fill" style=${`inline-size:${value?.score ?? 0}%`}></span>
+        <span class="gacha-luck__mark" ?hidden=${!value} style=${`inset-inline-start:${value?.score ?? 0}%`}></span>
       </div>
-    `;
+      <dl class="spec-list spec-list--split spec-list--numeric">${facts.map(([name, text]) => html`<div><dt>${name}</dt><dd>${text}</dd></div>`)}</dl>
+    </div>`;
+  }
+  private luckCoverage(summary?: GachaLuckSummary) {
+    return html`<dl class="spec-list spec-list--split spec-list--numeric">${[
+      ["luckCovered", summary?.knownDraws], ["luckUnknown", summary?.unknownDraws], ["luckItems", summary?.itemDraws],
+    ].map(([key, value]) => html`<div><dt>${this.t(String(key))}</dt><dd>${value === undefined ? "—" : this.number(Number(value))}</dd></div>`)}</dl>`;
   }
   private stat(options: { icon: TemplateResult; label: string; value: unknown; supporting?: unknown; tone?: string }) {
     return html`
@@ -504,16 +532,8 @@ export class GachaHistory extends LitElement {
   render() {
     const poolMap = this.poolMap;
     const accountBatches = this.batches.filter((batch) => batch.accountKey === this.selectedAccountKey);
-    const scoped = accountBatches.filter((batch) => {
-      const pool = poolMap.get(batch.poolId),
-        day = gachaHistoryDay(batch.pulledAt, this.offsetMinutes) ?? "";
-      return (
-        (!this.filters.pool.length || this.filters.pool.includes(batch.poolId)) &&
-        (!this.filters.category.length || (pool && this.filters.category.includes(pool.category))) &&
-        (!this.from || (day && day >= this.from)) &&
-        (!this.to || (day && day <= this.to))
-      );
-    });
+    const scoped = this.scopedHistory();
+    this.luckResult = this.luckClient.read(scoped, this.isConnected);
     const filtered = scoped
       .filter(
         (batch) =>
@@ -589,10 +609,11 @@ export class GachaHistory extends LitElement {
         }),
       );
     const stats = scoped.length ? this.analysis(scoped) : null;
-    const report = stats ? this.report(scoped, stats) : null;
+    const report = stats && !this.luckClient.pending && !this.luckClient.error ? this.cachedReport(scoped, stats) : null;
     const viewTab = this.tab === "records" || this.tab === "collection";
     return html`
       <div class="gacha-history">
+        ${this.renderAccountPicker()}
         ${this.renderImagePreview()}
         ${
           this.importSourceOpen
@@ -714,17 +735,58 @@ export class GachaHistory extends LitElement {
     `;
   }
 
+  public openAccountPicker() {
+    this.accountsOpen = true; this.mergingAccounts = false; this.mergeKeys = new Set();
+  }
+  private renderAccountPicker() {
+    if (!this.accountsOpen) return nothing;
+    const selected = this.accounts.filter(row => this.mergeKeys.has(row.key) && row.canMerge);
+    const enabled = (row: GachaHistoryAccount) => row.canMerge && !this.busy && selected.every(other => row.server === other.server);
+    const identities = new Set(selected.flatMap(row => row.identity ? [row.identity] : []));
+    const label = (row: GachaHistoryAccount) => [row.serverLabel, row.label].filter(Boolean).join(" / ");
+    const subtitle = (row: GachaHistoryAccount) => html`<span class="stack stack--flush">
+      ${row.range ? html`<span>${row.range}</span>` : nothing}
+      <span>${[row.batches === undefined ? "" : this.t("batches", { count: row.batches }), row.local === undefined ? "" : this.t(row.local ? "localRecords" : "cloudRecords")].filter(Boolean).join(" / ")}</span>
+    </span>`;
+    const active = this.accounts.find(row => row.key === this.selectedAccountKey);
+    return html`<dialog class="dialog" aria-label=${this.t(this.mergingAccounts ? "mergeRecords" : "selectAccount")} ${modal(() => { this.accountsOpen = false; })}>
+      <header class="dialog__header"><div class="row row--between"><h2>${this.t(this.mergingAccounts ? "mergeRecords" : "selectAccount")}</h2>
+        ${iconButton({ icon: "close", label: this.t("close"), onClick: () => { this.accountsOpen = false; } })}</div></header>
+      <div class="dialog__body">
+        ${this.mergingAccounts ? html`<ul class="list">${this.accounts.map(row => html`<li><label class=${`list-item list-item--three-line list-item--interactive${this.mergeKeys.has(row.key) ? " is-selected" : ""}`}>
+          <span class="list-item__leading"><md-checkbox touch-target="wrapper" .checked=${this.mergeKeys.has(row.key)}
+            ?disabled=${!enabled(row)} aria-label=${[label(row), row.range, row.batches === undefined ? "" : this.t("batches", { count: row.batches })].filter(Boolean).join(" / ")} @change=${() => { const keys = new Set(this.mergeKeys); if (keys.has(row.key)) keys.delete(row.key); else keys.add(row.key); this.mergeKeys = keys; }}></md-checkbox></span>
+          <span class="list-item__body"><strong class="list-item__headline">${label(row)}</strong><span class="list-item__supporting">${subtitle(row)}</span></span>
+        </label></li>`)}</ul>` : collectionList(this.accounts.map(row => ({
+          id: row.key, title: label(row), subtitle: subtitle(row), threeLine: true, media: icon("person", 24),
+          trailing: row.key === this.selectedAccountKey ? icon("check", 20) : nothing,
+          onOpen: () => { this.accountsOpen = false; this.emit("gacha-account-change", { accountKey: row.key }); },
+        })))}
+      </div>
+      <footer class="dialog__actions">
+        ${this.mergingAccounts ? html`
+          <button class="button button--text" @click=${() => { this.mergingAccounts = false; this.mergeKeys = new Set(); }}>${this.t("backToAccounts")}</button>
+          <button class="button button--filled" ?disabled=${this.busy || selected.length < 2} @click=${() => { this.accountsOpen = false; this.emit("gacha-history-merge", { accountKeys: selected.map(row => row.key), confirmIdentity: identities.size > 1 }); }}>${this.t(identities.size > 1 ? "mergeAsAccount" : "mergeRecordsCount", { count: selected.length })}</button>
+        ` : html`
+          ${active?.sourceCount ? html`<button class="button button--text" @click=${() => { this.accountsOpen = false; this.emit("gacha-history-originals", { accountKey: active.key }); }}>${this.t("exportOriginalRecords")}</button>` : nothing}
+          <button class="button button--tonal" ?disabled=${this.busy || this.accounts.filter(row => row.canMerge).length < 2}
+            @click=${() => { this.mergingAccounts = true; this.mergeKeys = new Set(); }}>${this.t("mergeRecords")}</button>
+        `}
+      </footer>
+    </dialog>`;
+  }
   private renderHero(scoped: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]> | null) {
     const account = this.accounts.find((row) => row.key === this.selectedAccountKey);
     const dates = scoped
       .map((batch) => batch.pulledAt)
       .filter((value): value is string => Boolean(value))
       .sort();
-    const luck = stats ? gachaHistoryLuck(scoped, "high") : null;
+    const summary = this.luckSummary();
+    const luck = summary?.combined?.variable ? summary.combined : null;
     const official = stats ? this.officialRate(stats, (rates) => rates.high) : null;
     const gems = stats ? (stats.cost.freeGems.value ?? 0) + (stats.cost.paidGems.value ?? 0) : 0;
     const latest = [...scoped]
-      .filter((batch) => batch.pulledAt)
+      .filter((batch) => batch.pulledAt && !this.pureItemPool(batch.poolId))
       .sort((a, b) => (b.pulledAt! > a.pulledAt! ? 1 : -1))[0];
     const streak = latest
       ? gachaHistoryHits(
@@ -739,22 +801,10 @@ export class GachaHistory extends LitElement {
     return html`
       <section class="gacha-hero surface stack" aria-label=${this.t("account")}>
         <div class="gacha-hero__account">
-          <md-outlined-select
-            label=${this.t("account")}
-            .value=${this.selectedAccountKey}
-            .displayText=${account ? [account.serverLabel, account.label].filter(Boolean).join(" / ") : ""}
-            ?disabled=${!this.accounts.length || this.busy}
-            @change=${(event: Event) => this.emit("gacha-account-change", { accountKey: (event.target as HTMLSelectElement).value })}
-          >
-            <md-select-option value=""><div slot="headline">${this.t("selectAccount")}</div></md-select-option>
-            ${this.accounts.map(
-              (row) => html`
-                <md-select-option value=${row.key} ?selected=${row.key === this.selectedAccountKey}>
-                  <div slot="headline">${[row.serverLabel, row.label].filter(Boolean).join(" / ")}</div>
-                </md-select-option>
-              `,
-            )}
-          </md-outlined-select>
+          <button class="button button--tonal gacha-account-button" type="button"
+            aria-label=${[this.t("selectAccount"), account?.serverLabel, account?.label].filter(Boolean).join(" / ")} ?disabled=${!this.accounts.length || this.busy} @click=${() => this.openAccountPicker()}>
+            ${icon("person", 24)}<span>${account ? [account.serverLabel, account.label].filter(Boolean).join(" / ") : this.t("selectAccount")}</span>${icon("swap_horiz", 20)}
+          </button>
           <div class="gacha-hero__actions">
             ${
               this.canRefresh
@@ -864,7 +914,7 @@ export class GachaHistory extends LitElement {
                     icon: icon("star", 24),
                     label: "SSR+",
                     value: this.number(stats.high),
-                    supporting: `${this.percent(stats.high, stats.total)}${official == null ? "" : ` / ${this.t("officialRate")} ${this.percent(official)}`}`,
+                    supporting: `${this.percent(stats.high, this.cardDraws(stats))}${official == null ? "" : ` / ${this.t("officialRate")} ${this.percent(official)}`}`,
                     tone: "tertiary",
                   })}
                   ${this.stat({
@@ -872,7 +922,7 @@ export class GachaHistory extends LitElement {
                     label: this.t("pickup"),
                     value: this.number(stats.pickup),
                     supporting: stats.pickup
-                      ? this.t("pullsEach", { count: this.number(stats.total / stats.pickup, 1) })
+                      ? this.t("pullsEach", { count: this.number(this.cardDraws(stats) / stats.pickup, 1) })
                       : stats.pickupUnknown
                         ? `${this.t("unknown")} ${this.number(stats.pickupUnknown)}`
                         : "",
@@ -887,7 +937,7 @@ export class GachaHistory extends LitElement {
                   ${this.stat({
                     icon: icon("auto_awesome", 24),
                     label: this.t("luck"),
-                    value: luck ? this.t(`luckTier${this.luckTier(luck)}`) : "—",
+                    value: luck ? this.t(`luckTier${this.luckTier(luck)}`) : this.luckState(summary),
                     supporting: luck ? this.luckValue(luck) : "",
                     tone: luck ? `luck-${this.luckTier(luck)}` : "neutral",
                   })}
@@ -1053,16 +1103,12 @@ export class GachaHistory extends LitElement {
     return html`
       <div class="gacha-history__grid">
         <section class="surface stack">
-          ${renderDetailSectionHeading(this.t("luck"), "stats", { level: 3 })}
-          ${this.luckMeter("SSR+", gachaHistoryLuck(scoped, "high"))}
-          ${this.luckMeter(this.t("pickup"), gachaHistoryLuck(scoped, "pickup"))}
-          ${
-            !gachaHistoryLuck(scoped, "high")
-              ? html`
-                  <p class="md-body-medium">—</p>
-                `
-              : nothing
-          }
+          <div class="row row--between">${renderDetailSectionHeading(this.t("luckCombined"), "stats", { level: 3 })}
+            ${this.luckClient.error ? iconButton({ icon: "refresh", label: this.t("luckRetry"), onClick: () => { this.luckClient.reset(); this.requestUpdate(); } }) : nothing}</div>
+          ${this.luckMeter(this.t("luckCombined"), this.luckSummary()?.combined, this.luckSummary(), true)}
+          ${this.luckMeter("SSR+", this.luckSummary()?.high, this.luckSummary())}
+          ${this.luckMeter(this.t("luckPickupHigh"), this.luckSummary()?.pickup, this.luckSummary())}
+          ${this.luckCoverage(this.luckSummary())}
         </section>
         <section class="surface stack">
           ${renderDetailSectionHeading(this.t("rateComparison"), "difficulty", { level: 3 })}
@@ -1074,7 +1120,7 @@ export class GachaHistory extends LitElement {
               .map(([label, count, official]) => [
                 label,
                 this.number(count),
-                this.percent(count, stats.total),
+                this.percent(count, this.cardDraws(stats)),
                 official == null ? "—" : this.percent(official),
               ]),
             { numeric: true },
@@ -1201,7 +1247,7 @@ export class GachaHistory extends LitElement {
                   </div>
                   <span class="gacha-pool__total">${this.t("draws", { count: this.number(pool.total) })}</span>
                 </header>
-                <div class="gacha-pool__stats">
+                <div class="gacha-pool__stats" ?hidden=${this.pureItemPool(pool.poolId)}>
                   ${this.stat({
                     icon: icon("star", 20),
                     label: "SSR+",
@@ -1234,7 +1280,8 @@ export class GachaHistory extends LitElement {
                         : `${this.t("expected")} ${this.number(pool.expectedHigh, 2)} / ${this.t("difference")} ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2, signDisplay: "always" }).format(pool.delta ?? 0)}`,
                   })}
                 </div>
-                ${this.luckMeter(this.t("luck"), gachaHistoryLuck(batches, "high"))}
+                ${this.luckMeter(this.t("luckCombined"), this.luckSummary(pool.poolId ?? "")?.combined, this.luckSummary(pool.poolId ?? ""), true)}
+                ${this.luckCoverage(this.luckSummary(pool.poolId ?? ""))}
                 ${
                   view?.featured?.length
                     ? html`
@@ -1710,20 +1757,31 @@ export class GachaHistory extends LitElement {
     `;
   }
 
+  private cachedReport(batches: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]>) {
+    const inputs = [batches, this.luckResult, this.pools, this.accounts, this.locale, this.currencyConversion];
+    if (!this.reportValue || inputs.some((value, index) => value !== this.reportInputs[index])) {
+      this.reportInputs = inputs; this.reportValue = this.report(batches, stats);
+    }
+    return this.reportValue;
+  }
   private report(
     batches: readonly GachaHistoryBatch[],
     stats: ReturnType<GachaHistory["analysis"]>,
   ): GachaHistoryReport {
-    const luck = gachaHistoryLuck(batches, "high");
+    const summary = this.luckSummary();
+    const luck = summary?.combined?.variable ? summary.combined : null;
     const metrics = [
       { label: this.t("total"), value: this.number(stats.total) },
-      { label: "SSR+", value: `${this.number(stats.high)} / ${this.percent(stats.high, stats.total)}` },
-      { label: this.t("pickup"), value: this.number(stats.pickup) },
+      { label: `SSR+ · ${this.t("luckActualExpected")}`, value: summary?.high ? `${this.number(summary.high.observed)} / ${this.number(summary.high.expected, 2)}` : `${this.number(stats.high)} / —` },
+      { label: `${this.t("luckPickupHigh")} · ${this.t("luckActualExpected")}`, value: summary?.pickup ? `${this.number(summary.pickup.observed)} / ${this.number(summary.pickup.expected, 2)}` : `${this.number(stats.pickup)} / —` },
       {
-        label: this.t("luck"),
-        value: luck ? `${this.t(`luckTier${this.luckTier(luck)}`)} / ${this.luckValue(luck)}` : "—",
+        label: this.t("luckCombined"),
+        value: luck ? `${this.t(`luckTier${this.luckTier(luck)}`)} / ${this.luckValue(luck)}` : this.luckState(summary),
       },
+      { label: this.t("luckCovered"), value: summary ? this.number(summary.knownDraws) : "—" },
+      { label: this.t("luckUnknown"), value: summary ? this.number(summary.unknownDraws) : "—" },
     ];
+    if (summary?.itemDraws) metrics.push({ label: this.t("luckItems"), value: this.number(summary.itemDraws) });
     const groups = stats.pools.flatMap((pool) => {
       const selected = batches.filter((batch) => batch.poolId === pool.poolId);
       return (["member", "support"] as const).map((kind) => ({

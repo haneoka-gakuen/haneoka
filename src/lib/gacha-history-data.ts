@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 固定目录、规范历史快照和当前语言。
-// Output: 抽卡记录展示、卡池公示概率／开放期／UP 卡、保底期望、兑换进度及星钻计价适配。
+// Output: 抽卡记录展示、卡池概率／UP 卡、保底期望与联合分布、兑换进度及星钻计价适配。
 // Pos: [Map](L2-2.md)；抽卡历史展示与资料边界。
 // Effects/Dependencies: 调用公开 SDK 纯计算；复用路径和多语言展示规则。
 import type {
@@ -16,6 +16,7 @@ import { historyObject, type HistorySnapshot } from "@haneoka/game-data-exporter
 import { gachaHistoryExpectation, gachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import { gachaTargetProgress, type GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import { cardRarityName } from "./card-rarity";
+import { compileGachaLuckRules, type GachaLuckRules, type GachaLuckLaw } from "./gacha-history-luck";
 
 export * from "@haneoka/game-data-exporter/gacha-history";
 
@@ -29,6 +30,7 @@ export interface HistoryCatalogData {
   items: Record<string, unknown>;
   marks?: Record<string, unknown>;
   baseTopUp?: Record<string, unknown>;
+  luckRules?: GachaLuckRules;
 }
 
 export const historyBaseTopUpId = (server: string) => (server === "jp" ? "2" : "1000000101");
@@ -249,6 +251,7 @@ export function historyBatchViews(
     pulledAt: batch.executedAt === null ? null : new Date(batch.executedAt * 1000).toISOString(),
     drawCount: batch.prizes.length,
     expected: historyBatchExpectation(catalog, batch.poolId, batch.productId, batch.prizes.length),
+    luckLaw: historyBatchLuckLaw(catalog, batch.poolId, batch.productId, batch.prizes.length),
     cost: {
       freeGems: batch.freeGems ?? undefined,
       paidGems: batch.paidGems ?? undefined,
@@ -299,6 +302,22 @@ export function historyBatchViews(
       };
     }),
   }));
+}
+
+const luckRules = new WeakMap<HistoryCatalogData, GachaLuckRules>();
+export function historyBatchLuckLaw(catalog: HistoryCatalogData | undefined, poolId: string | null, productId: string | null, draws: number): GachaLuckLaw | undefined {
+  if (!catalog) return;
+  let compiled = catalog.luckRules ?? luckRules.get(catalog);
+  if (!compiled) { compiled = compileGachaLuckRules(catalog.metadata); luckRules.set(catalog, compiled); }
+  const pool = compiled[poolId ?? ""];
+  if (!pool) return;
+  if (productId != null && Object.hasOwn(pool, productId)) return pool[productId] ?? undefined;
+  const product = historyObject(historyObject(catalog.metadata.products)[productId ?? ""]);
+  const candidates = Object.entries(pool).filter(([id]) => {
+    const option = historyObject(historyObject(catalog.metadata.products)[id]);
+    return option.drawCount === (product.drawCount ?? draws);
+  }).map(([, law]) => law);
+  return candidates.length && candidates.every(law => law && law.key === candidates[0]?.key) ? candidates[0]! : undefined;
 }
 
 function historyBatchExpectation(

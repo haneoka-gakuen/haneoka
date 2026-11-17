@@ -38,6 +38,17 @@
     justify-content: flex-end;
     gap: 8px;
   }
+  .gacha-history .gacha-account-button {
+    min-inline-size: 0;
+    min-block-size: 48px;
+    justify-content: flex-start;
+  }
+  .gacha-account-button > span {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .gacha-hero__meta {
     display: flex;
     flex-wrap: wrap;
@@ -95,12 +106,16 @@
   }
   .gacha-stat[data-tone="tertiary"],
   .gacha-stat[data-tone="luck-1"],
-  .gacha-stat[data-tone="luck-2"] {
+  .gacha-stat[data-tone="luck-2"],
+  .gacha-stat[data-tone="luck-3"],
+  .gacha-stat[data-tone="luck-4"] {
     --stat-accent: var(--md-sys-color-on-tertiary-container);
     --stat-accent-container: var(--md-sys-color-tertiary-container);
   }
-  .gacha-stat[data-tone="luck-4"],
-  .gacha-stat[data-tone="luck-5"] {
+  .gacha-stat[data-tone="luck-6"],
+  .gacha-stat[data-tone="luck-7"],
+  .gacha-stat[data-tone="luck-8"],
+  .gacha-stat[data-tone="luck-9"] {
     --stat-accent: var(--md-sys-color-on-error-container);
     --stat-accent-container: var(--md-sys-color-error-container);
   }
@@ -194,12 +209,16 @@
       var(--md-sys-typescale-label-large-line-height) var(--app-font);
   }
   .gacha-luck[data-tier="1"] .gacha-luck__tier,
-  .gacha-luck[data-tier="2"] .gacha-luck__tier {
+  .gacha-luck[data-tier="2"] .gacha-luck__tier,
+  .gacha-luck[data-tier="3"] .gacha-luck__tier,
+  .gacha-luck[data-tier="4"] .gacha-luck__tier {
     color: var(--md-sys-color-on-tertiary-container);
     background: var(--md-sys-color-tertiary-container);
   }
-  .gacha-luck[data-tier="4"] .gacha-luck__tier,
-  .gacha-luck[data-tier="5"] .gacha-luck__tier {
+  .gacha-luck[data-tier="6"] .gacha-luck__tier,
+  .gacha-luck[data-tier="7"] .gacha-luck__tier,
+  .gacha-luck[data-tier="8"] .gacha-luck__tier,
+  .gacha-luck[data-tier="9"] .gacha-luck__tier {
     color: var(--md-sys-color-on-error-container);
     background: var(--md-sys-color-error-container);
   }

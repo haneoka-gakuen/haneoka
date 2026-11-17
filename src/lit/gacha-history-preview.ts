@@ -2,7 +2,7 @@ import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-hist
 import type { GachaHistory } from "./gacha-history";
 import type { GachaHistoryPageData } from "../server/gacha-history-page-data";
 import type { GachaHistoryPrize, GachaHistoryBatch, GachaHistoryPool } from "../lib/gacha-history-view";
-import { historyObject, historyDefaultGemConversion, historyPoolViews } from "../lib/gacha-history-data";
+import { historyObject, historyDefaultGemConversion, historyPoolViews, historyBatchLuckLaw } from "../lib/gacha-history-data";
 import { localizedText } from "./shared/catalog";
 import { clientText } from "../i18n/client";
 import { cardRarityName } from "../lib/card-rarity";
@@ -142,6 +142,7 @@ export function mountGachaHistoryPreview(view: GachaHistory, page: GachaHistoryP
         drawCount: count,
         prizes,
         cost: random() < 0.7 ? { freeGems: count * 250, paidGems: 0 } : { freeGems: 0, paidGems: count * 250 },
+        luckLaw: historyBatchLuckLaw(catalog, pool.id, null, count),
         expected: {
           high: count * pool.rates!.high,
           memberSsr: count * pool.rates!.memberHigh,

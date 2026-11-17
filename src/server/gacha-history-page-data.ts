@@ -5,6 +5,7 @@
 // Effects/Dependencies: 经静态目录读取器捕获或重放 gacha metadata、卡牌、UI marks 与基础充值项。
 import { fetchStaticCatalog, staticCatalogRelease } from "../lib/static-catalog-source";
 import { historyObject, historyBaseTopUpId, type HistoryCatalogData } from "../lib/gacha-history-data";
+import { compileGachaLuckRules } from "../lib/gacha-history-luck";
 
 export interface GachaHistoryPageData {
   schema: "haneoka-gacha-history-page-v1";
@@ -32,6 +33,7 @@ export function gachaHistoryPageData(): Promise<GachaHistoryPageData> {
             server,
             exchanges: historyObject(historyObject(gacha.history).exchanges),
             metadata: historyObject(gacha.history),
+            luckRules: compileGachaLuckRules(historyObject(gacha.history)),
             pools: historyObject(gacha.entries),
             cards: historyObject(cards),
             supports: historyObject(supports),
