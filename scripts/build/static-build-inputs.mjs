@@ -16,6 +16,7 @@ import { staticBuildJson } from "../../src/server/static-input-store.ts";
 
 export const INPUT_SCHEMA = "haneoka-static-build-inputs-v1";
 export const sha256 = (body) => createHash("sha256").update(body).digest("hex");
+const digestBuffer = Buffer.allocUnsafe(1024 * 1024);
 export function safeRelative(value) {
   if (
     typeof value !== "string" ||
@@ -41,9 +42,15 @@ export function listFiles(root) {
 export async function fileDigest(file) {
   const hash = createHash("sha256");
   let bytes = 0;
-  for await (const chunk of fs.createReadStream(file)) {
-    hash.update(chunk);
-    bytes += chunk.length;
+  const fd = fs.openSync(file, "r");
+  try {
+    // These build-only reads finish synchronously, so concurrent callers share one bounded buffer.
+    for (let read; (read = fs.readSync(fd, digestBuffer, 0, digestBuffer.length, null));) {
+      hash.update(digestBuffer.subarray(0, read));
+      bytes += read;
+    }
+  } finally {
+    fs.closeSync(fd);
   }
   return { sha256: hash.digest("hex"), bytes };
 }

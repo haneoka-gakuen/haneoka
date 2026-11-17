@@ -2,7 +2,7 @@
 # Input: 一份完整的正式服 release、目录分片与原生剧情依赖。
 # Output: 按章节组织的内容清单、对象允许索引和固定 release 的离线入口。
 # Pos: [Map](L2-2.md)；App 剧情离线资源投影。
-# Effects/Dependencies: 校验读取 R2 JSON、发布清单；媒体复用原有 CAS，不复制整个资源版本。
+# Effects/Dependencies: 校验读取 R2 JSON、有界并发发布对象索引，全部成功后切换入口；媒体复用原有 CAS。
 from __future__ import annotations
 
 import argparse
@@ -218,10 +218,15 @@ class StoryOfflineProjection:
         shards = defaultdict(dict)
         for digest, entry in allowed.items():
             shards[digest[:2]][digest] = entry
-        for shard, rows in shards.items():
+
+        def publish_objects(item):
+            shard, rows = item
             if previous:
                 rows = {**(self.store.get_json(prefix + f"objects/{shard}.json") or {}), **rows}
             self.store.put_bytes(prefix + f"objects/{shard}.json", json_bytes(rows))
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(publish_objects, shards.items()))
         self.store.put_bytes(prefix + f"manifests/{root_hash}.json", root_body)
         pointer = {"schema": SCHEMA, "server": server, "releaseId": release, "sourceId": self.manifest["sourceId"],
                    "sha256": root_hash, "recipeSHA256": RECIPE,
