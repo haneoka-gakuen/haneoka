@@ -695,11 +695,87 @@ def _serialized_cri_payload(data: dict[str, Any] | None) -> bytes | None:
     return None
 
 
+def _embedded_runtime_path(source_path: str) -> PurePosixPath:
+    source = PurePosixPath(source_path)
+    tail = source.relative_to("Assets/AddressableResources/Cri")
+    if any(part.casefold().startswith("notese_") for part in tail.parts):
+        return PurePosixPath("note-se")
+    return PurePosixPath("cri", *[part.casefold() for part in tail.parts[:-1]], source.stem)
+
+
+def _embedded_task(
+    source_path: str,
+    relative: PurePosixPath,
+    *,
+    payload: bytes | None = None,
+    payload_sha256: str = "",
+) -> dict[str, Any]:
+    task: dict[str, Any] = {
+        "label": source_path,
+        "source": {
+            "unitySourcePath": source_path,
+            "payloadSha256": sha256_bytes(payload) if payload is not None else payload_sha256,
+        },
+        "kind": "acb",
+        "relative": relative,
+        "preferred": PurePosixPath(source_path).stem if relative == PurePosixPath("note-se") else "",
+    }
+    if payload is not None:
+        task["bytes"] = payload
+    if relative == PurePosixPath("note-se"):
+        task["semanticDecodeProfile"] = NOTE_SE_DECODE_PROFILE
+    return task
+
+
+def _deferred_embedded_tasks(
+    build: Any,
+    source_index: dict[str, Any],
+    delta: Any,
+    reuse_manifest: dict[str, Any] | None,
+    transform_id: str,
+) -> list[dict[str, Any]]:
+    """Defer cached payload reads only when root selection and bundle inputs match."""
+    if delta is None or reuse_manifest is None:
+        return []
+    cached = _cached_by_source(reuse_manifest, transform_id, "unitySourcePath")
+    tasks = []
+    for source_path, record in sorted(cached.items()):
+        source = record["source"]
+        current = source_index["sources"].get(source_path)
+        if (
+            current is None
+            or not PurePosixPath(source_path).is_relative_to("Assets/AddressableResources/Cri")
+            or record["kind"] != "acb"
+            or not SHA256.fullmatch(str(source.get("payloadSha256") or ""))
+        ):
+            continue
+        relative = f"metadata/{current['descriptor']}"
+        entry = delta.entry(relative)
+        file = build.root / relative
+        if (
+            entry is None
+            or file.stat().st_size != entry["bytes"]
+            or sha256_file(file) != entry["sha256"]
+        ):
+            continue
+        descriptor = read_json(file)
+        digest = descriptor["selectedBundle"]
+        serialized = (source_index.get("serializedFiles") or {}).get(descriptor["serializedFile"], {})
+        if not delta.reusable(digest) or serialized.get("bundleSha256") != digest:
+            continue
+        tasks.append(
+            _embedded_task(source_path, _embedded_runtime_path(source_path),
+                           payload_sha256=source["payloadSha256"])
+        )
+    return tasks
+
+
 def _embedded_payloads(
     build: Any,
     source_index: dict[str, Any],
     delta: Any = None,
     reuse_concurrency: int = 32,
+    source_paths: set[str] | None = None,
 ) -> list[tuple[str, bytes, PurePosixPath]]:
     values = []
     prefix = PurePosixPath("Assets/AddressableResources/Cri")
@@ -708,6 +784,7 @@ def _embedded_payloads(
         (source_path, record)
         for source_path, record in sorted((source_index.get("sources") or {}).items())
         if PurePosixPath(source_path).is_relative_to(prefix)
+        and (source_paths is None or source_path in source_paths)
     ]
     if delta is not None:
         inputs: dict[Path, tuple[str, str]] = {}
@@ -752,11 +829,6 @@ def _embedded_payloads(
             f"with {workers} workers in {time.perf_counter() - started:.3f}s\n"
         )
     for source_path, record in sources:
-        source = PurePosixPath(source_path)
-        try:
-            tail = source.relative_to(prefix)
-        except ValueError:
-            continue
         raw = None
         try:
             raw = _serialized_cri_payload(store.source_data(source_path))
@@ -815,13 +887,7 @@ def _embedded_payloads(
             expected = int.from_bytes(raw[4:8], "big") + 8
             if 8 <= expected <= len(raw):
                 raw = raw[:expected]
-        if any(part.casefold().startswith("notese_") for part in tail.parts):
-            relative = PurePosixPath("note-se")
-        else:
-            relative = PurePosixPath(
-                "cri", *[part.casefold() for part in tail.parts[:-1]], source.stem
-            )
-        values.append((source_path, raw, relative))
+        values.append((source_path, raw, _embedded_runtime_path(source_path)))
     return values
 
 
@@ -1809,25 +1875,20 @@ def extract_cri(
             }
         )
 
+    deferred = _deferred_embedded_tasks(build, source_index, delta, reuse_manifest, transform_id)
+    if deferred:
+        sys.stderr.write(f"cri: deferred raw payload reads for {len(deferred)} unchanged embedded sources\n")
+    embedded_tasks = list(deferred)
+    deferred_paths = {task["source"]["unitySourcePath"] for task in deferred}
+    embedded_paths = {
+        path for path in source_index["sources"]
+        if PurePosixPath(path).is_relative_to("Assets/AddressableResources/Cri")
+    } - deferred_paths
     for source_path, payload, relative in _embedded_payloads(
-        build, source_index, delta, reuse_concurrency
+        build, source_index, delta, reuse_concurrency, embedded_paths
     ):
-        task = {
-            "label": source_path,
-            "source": {
-                "unitySourcePath": source_path,
-                "payloadSha256": sha256_bytes(payload),
-            },
-            "kind": "acb",
-            "relative": relative,
-            "bytes": payload,
-            "preferred": PurePosixPath(source_path).stem
-            if relative == PurePosixPath("note-se")
-            else "",
-        }
-        if relative == PurePosixPath("note-se"):
-            task["semanticDecodeProfile"] = NOTE_SE_DECODE_PROFILE
-        tasks.append(task)
+        embedded_tasks.append(_embedded_task(source_path, relative, payload=payload))
+    tasks.extend(sorted(embedded_tasks, key=lambda task: task["label"]))
     for task in tasks:
         if task["kind"] == "usm":
             task["semanticDecodeProfile"] = USM_DECODE_PROFILE
@@ -1889,10 +1950,29 @@ def extract_cri(
         pending = [
             (index, task) for index, task in enumerate(tasks) if records[index] is None
         ]
+        pending_embedded = {
+            task["source"]["unitySourcePath"]
+            for _, task in pending
+            if "unitySourcePath" in task["source"] and "bytes" not in task
+        }
+        embedded_payloads = {}
+        if pending_embedded:
+            for path, payload, relative in _embedded_payloads(
+                build, source_index, delta, reuse_concurrency, pending_embedded
+            ):
+                embedded_payloads[path] = (payload, relative)
         # Declare tasks whose adoption was rejected still need their original
         # payload to decode; restore it from the source CAS on demand.
         for index, task in pending:
             if task.get("payload") is None and "bytes" not in task:
+                if "unitySourcePath" in task["source"]:
+                    path = task["source"]["unitySourcePath"]
+                    if path not in embedded_payloads:
+                        raise ValueError(f"declared embedded CRI source has no ACB payload: {path}")
+                    payload, relative = embedded_payloads[path]
+                    task.update(_embedded_task(path, relative, payload=payload))
+                    task["taskId"] = _cri_task_id(task, transform_id)
+                    continue
                 digest = str(task["source"]["artifactSha256"])
                 target = source.root / str(task["artifactPath"])
                 delta.fetch_original_bundle(digest, target)
