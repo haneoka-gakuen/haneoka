@@ -20,6 +20,7 @@ import { renderSongComparison } from "./song-comparison-view";
 import { toolLayout } from "./tool-layout";
 import { eventSection, gekisoSamplingAdvanced, justWindowControl, playConditions, songList } from "./build-tab";
 import { segmented } from "../ui/controls";
+import { cardScopeControl, unknownGrowthControl } from "./card-input-controls";
 import { clock } from "../../lib/team-builder/engine/execution";
 import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/constraint-feasibility";
 import { compareHits } from "../../lib/team-builder/engine/merge";
@@ -27,13 +28,13 @@ import type { TeamBuilder } from "../team-builder";
 
 const format = (host: TeamBuilder, value: number, digits = 0) =>
   new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);
-export function manualReady(host: TeamBuilder) {
-  const inputs = host.manualInputs();
+export function manualReady(host: TeamBuilder, team = host.manual) {
+  const inputs = host.manualInputs(team);
   return (
-    host.manual.members.every((id) => id !== null) &&
+    team.members.every((id) => id !== null) &&
     inputs.members.length === 5 &&
-    inputs.snaps.length === host.manual.snaps.filter((id) => id !== null).length &&
-    new Set(host.manual.members.map((id) => host.catalog!.member(id!)?.characterId)).size === 5
+    inputs.snaps.length === team.snaps.filter((id) => id !== null).length &&
+    new Set(team.members.map((id) => host.catalog!.member(id!)?.characterId)).size === 5
   );
 }
 function teamSpec(host: TeamBuilder, team = host.manual) {
@@ -251,7 +252,7 @@ async function suggest(host: TeamBuilder, slot: number) {
 }
 
 
-function savedFormation(team: SavedTeam) {
+export function savedFormation(team: SavedTeam) {
   const leader = team.leader === null ? 0 : team.members.indexOf(team.leader);
   return { members: [...team.members], snaps: [...team.snaps], leader: leader < 0 ? 0 : leader };
 }
@@ -288,6 +289,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
       <div class="row row--between row--wrap">
         ${sectionHeading({ icon: "edit_square", label: host.t("manualTeam", "Build a team by hand") })}
         <div class="cluster">
+          <button class="button button--text" type="button" ?disabled=${!manualReady(host)}
+            @click=${() => { void import("./parking-view").then(module => module.openParking(host, { team: host.manual, ...(host.settings.songs[0] ? { song: host.settings.songs[0] } : {}) })); }}>
+            ${host.t("parking.useTeam", "Park with this team")}
+          </button>
           ${
             !comparison
               ? html`
@@ -359,15 +364,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
       ${
         !comparison
           ? html`
-              ${segmented({
-                label: host.t("scope", "Cards"),
-                value: host.settings.scope,
-                options: [
-                  { value: "box", label: host.t("scopeBox", "My cards") },
-                  { value: "theoretical", label: host.t("manualAllCards", "All cards; unowned at max growth") },
-                ],
-                onSelect: (scope) => host.updateSettings({ scope }),
-              })}
+              ${cardScopeControl(host, host.settings.scope, scope => host.updateSettings({ scope }), "manual")}
               <span class="tb-results__meta">${host.t("manualGrowth", "Owned cards: recorded growth")}</span>
             `
           : nothing
@@ -570,16 +567,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                     ${gekisoSamplingAdvanced(host)}
                   `
             }
-              <span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
-              ${segmented({
-              label: host.t("unknownPolicy", "Growth not entered"),
-              value: host.settings.unknownPolicy,
-              options: [
-                { value: "max", label: host.t("unknownMax", "Count as max") },
-                { value: "min", label: host.t("unknownMin", "Count as minimum") },
-              ],
-              onSelect: (unknownPolicy) => host.updateSettings({ unknownPolicy }),
-            })}
+              ${unknownGrowthControl(host, host.settings.unknownPolicy, unknownPolicy => host.updateSettings({ unknownPolicy }))}
             </section>
           `,
           html`

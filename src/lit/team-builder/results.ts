@@ -1402,6 +1402,14 @@ export function renderHit(
           items: [
             { label: host.t("copyTeam", "Copy as text"), icon: "content_copy", run: () => copyText(host, hit) },
             { label: host.t("saveImage", "Save image"), icon: "image", run: () => void exportImage(host, key, hit) },
+            ...(() => {
+              const goal = resultRequest(host, hit)?.goal;
+              if (stale || !hit.event || !hit.score || !hit.song || hit.aggregate || goal?.kind !== "event" || goal.measure !== "points" || goal.rewardPlan || goal.eventEffects || goal.gekiso || goal.route === "skip") return [];
+              const seed = { eventId: goal.eventId, song: hit.song,
+                team: { members: hit.members.map(cardIdOf), snaps: hit.snaps.map(key => key ? cardIdOf(key) : null), leader: 0 },
+                challenge: goal.route === "challenge", consumption: goal.consumption ?? 0 };
+              return [{ label: host.t("parking.useTeam", "Park with this team"), icon: "emoji_events", run: () => { void import("./parking-view").then(module => module.openParking(host, seed)); } }];
+            })(),
             ...(analysisHref
               ? [
                   {

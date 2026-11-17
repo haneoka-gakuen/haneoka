@@ -1,6 +1,7 @@
 import { skillRoleControls } from "./skill-role-controls";
 import { farmingRewardPlan, renderRewardPlan } from "./reward-plan-view";
 import { toolLayout } from "./tool-layout";
+import { renderParking } from "./parking-view";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import "@material/web/progress/linear-progress.js";
@@ -39,7 +40,7 @@ import {
 } from "./build-tab";
 import { choiceField, sectionHeading } from "./catalog";
 import { renderChecklist } from "./tool-layout";
-import { boostControl } from "./boost-control";
+import { boostControl, challengeCostControl } from "./boost-control";
 import { rovingKeydown, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { accordion } from "../ui/accordion";
@@ -50,6 +51,7 @@ import { usesPtResults } from "./score-goal";
 import { changeRewardMode } from "../../lib/team-builder/reward-plan";
 
 export class PtController {
+  parking = false;
   private task: symbol | null = null;
   job: PtJob | null = null;
   running = false;
@@ -508,14 +510,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
       </div>
       ${
         s.route === "challenge"
-          ? segmented({
-              label: host.t("cpPerLive", "CP per live"),
-              value: String(s.challengePoints),
-              options: host
-                .settlementMaster!.challengeBoosts.filter((row) => row.consumed > 0)
-                .map((row) => ({ value: String(row.consumed), label: `${row.consumed} CP` })),
-              onSelect: (value) => host.updateSettings({ challengePoints: Number(value) }),
-            })
+          ? challengeCostControl(host, s.challengePoints, challengePoints => host.updateSettings({ challengePoints }))
           : ptField(
               host,
               "consumption",
@@ -591,14 +586,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                       ${ptField(
                         host,
                         "challenge-consumption",
-                        segmented({
-                          label: host.t("cpPerLive", "CP per live"),
-                          value: String(s.challengePoints),
-                          options: host
-                            .settlementMaster!.challengeBoosts.filter((row) => row.consumed > 0)
-                            .map((row) => ({ value: String(row.consumed), label: `${row.consumed} CP` })),
-                          onSelect: (value) => host.updateSettings({ challengePoints: Number(value) }),
-                        }),
+                        challengeCostControl(host, s.challengePoints, challengePoints => host.updateSettings({ challengePoints })),
                       )}
                     `
                   : nothing
@@ -923,24 +911,29 @@ function renderRanking(host: TeamBuilder): TemplateResult {
 
 export function renderPtTab(host: TeamBuilder): TemplateResult {
   const mode = host.settings.rewardMode;
-  if (mode !== "plan") host.pt.sync();
+  if (mode !== "plan" && !host.pt.parking) host.pt.sync();
   const modes = html`
     <section class="surface stack">
       ${segmented({
         label: host.t("farm.task", "Event task"),
-        value: mode === "plan" ? "plan" : "farm",
+        value: host.pt.parking ? "parking" : mode === "plan" ? "plan" : "farm",
         options: [
           { value: "farm", label: host.t("farm.title", "Farming recommendations") },
           { value: "plan", label: host.t("farm.plan", "Resource planning") },
+          { value: "parking", label: host.t("parking.title", "Parking calculator") },
         ],
         onSelect: (value) => {
           host.cancel();
           host.pt.showIssues = false;
+          host.pt.parking = value === "parking";
+          host.submitted = false;
+          if (value === "parking") { host.requestUpdate(); return; }
           host.updateSettings({ rewardMode: value === "plan" ? "plan" : farmingMode(host.settings.farming) });
         },
       })}
     </section>
   `;
+  if (host.pt.parking) return renderParking(host, modes);
   if (mode === "plan") return renderBuildTab(host, modes);
   return toolLayout(
     host,

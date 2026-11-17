@@ -69,6 +69,7 @@ type NumberFieldOptions = {
   suffix?: string;
   disabled?: boolean;
   commitOnChange?: boolean;
+  invalid?: boolean;
 } & ({ value: number; nullable?: false; onInput(value: number): void } |
   { value: number | null; nullable: true; onInput(value: number | null): void });
 
@@ -94,6 +95,7 @@ export function numberField(options: NumberFieldOptions): TemplateResult {
       suffix-text=${options.suffix ?? nothing} inputmode=${options.step === 1 || options.step === undefined ? "numeric" : "decimal"}
       .value=${focusedValue(options.value === null ? "" : String(options.value))}
       ?disabled=${options.disabled}
+      ?error=${options.invalid} aria-invalid=${options.invalid ? "true" : nothing}
       @input=${(event: Event) => update(event, false)} @change=${(event: Event) => update(event, true)}>
     </md-outlined-text-field>
   `;

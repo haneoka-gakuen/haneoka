@@ -112,10 +112,10 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
   `;
 }
 
-export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown) {
+export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown, options?: { summary?: string; validate?: boolean }) {
   const settings = () => typeof body === "function" ? body() : body;
-  const summary = conditionSummary(host);
-  const issues = host.submitted && (host.tab === "arena" || host.tab === "pt" || host.tab === "build" && host.buildMode !== "manual")
+  const summary = options?.summary ?? conditionSummary(host);
+  const issues = options?.validate !== false && host.submitted && (host.tab === "arena" || host.tab === "pt" || host.tab === "build" && host.buildMode !== "manual")
     ? host.inputIssues(host.tab === "pt" && host.searchSettings.rewardMode === "recommendation") : [];
   const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
   const footer = html`

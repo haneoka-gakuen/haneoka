@@ -988,6 +988,7 @@ export interface TeamSpec {
   leader: string;
 }
 export interface TeamEvaluation {
+  unsupported?: string[];
   sectionSummary?: SectionSummary;
   song: SongRef;
   power: number;

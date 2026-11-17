@@ -1427,6 +1427,7 @@ export class EngineClient {
     });
   }
   evaluateBatch(requests: EvaluateRequest[]) { return this.diagnosticsBatch<TeamEvaluation>("evaluate", requests); }
+  prefetchCharts(songs: readonly SongRef[]) { this.downloads.prefetch(songs); }
   sectionMetricsBatch(requests: EvaluateRequest[]) { return this.diagnosticsBatch<SectionMetricDistribution>("sectionMetrics", requests); }
   evaluate(request: EvaluateRequest) {
     return this.enqueue(() => this.pool[0]!.send<TeamEvaluation[]>({ type: "evaluate", id: 0, request }));

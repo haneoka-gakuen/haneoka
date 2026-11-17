@@ -7,7 +7,8 @@ import { toolLayout } from "./tool-layout";
 import { songMissions } from "../../lib/catalog-filters";
 import { multiSongControl, songRulesControl } from "./song-rules";
 import { arenaSongView } from "../../lib/team-builder/arena";
-import { boostControl } from "./boost-control";
+import { boostControl, challengeCostControl } from "./boost-control";
+import { cardScopeControl, recordedGrowthControl, unknownGrowthControl } from "./card-input-controls";
 /** Team search: goal, songs, play, candidates and constraints; results beside them. */
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -331,8 +332,12 @@ export function songList(
   allowedSongIds?: number[],
   fieldId = "tb-songs",
   allowedCharts?: readonly SongRef[],
+  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean },
 ): TemplateResult {
   const catalog = host.catalog!;
+  const activeRules = () => options?.songRules === null ? undefined : options?.songRules ?? (host.tab === "arena" ? host.arena.rule : host.songRules());
+  const rules = activeRules();
+  const showMissions = options?.showMissions ?? ((host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso"));
   const available = (song: SongRef) =>
     (!allowedSongIds || allowedSongIds.includes(song.songId)) &&
     (!allowedCharts || allowedCharts.some((ref) => ref.songId === song.songId && ref.difficulty === song.difficulty)) &&
@@ -349,7 +354,7 @@ export function songList(
           @click=${() => {
             host.songPicker = {
               songs: songs.map((song) => ({ ...song })),
-              context: `${host.tab}:${host.searchSettings.goal}:${single ? "single" : allowedSongIds ? "restricted" : "songs"}${host.tab === "arena" ? `:${host.arena.draft.leagueId}` : ""}`,
+              context: options?.context ?? `${host.tab}:${host.searchSettings.goal}:${single ? "single" : allowedSongIds ? "restricted" : "songs"}${host.tab === "arena" ? `:${host.arena.draft.leagueId}` : ""}`,
               single,
               recommend: !single && fieldId === "tb-songs",
               query: "",
@@ -360,7 +365,7 @@ export function songList(
               difficulty: 3,
               allowedSongIds,
               allowedCharts: allowedCharts ? [...allowedCharts] : undefined,
-              songRules: host.tab === "arena" ? host.arena.rule : host.songRules(),
+              songRules: activeRules(),
               change,
             };
             host.requestUpdate();
@@ -382,7 +387,7 @@ export function songList(
                       <span class="list-item__body">
                         <strong class="list-item__headline clamp-1" lang=${catalog.songTitleLanguage(song.songId)}>${catalog.songTitle(song.songId)}</strong>
                         <span class="list-item__supporting">
-                          ${catalog.difficultyLabel(song.songId, song.difficulty)}${(host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso") ? ` / ${missionSummary(songMissions(host.songRules() ? arenaSongView(catalog.song(song.songId), host.songRules()!) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` / ${host.t("unavailable", "Unavailable")}` : ""}
+                          ${catalog.difficultyLabel(song.songId, song.difficulty)}${showMissions ? ` / ${missionSummary(songMissions(rules ? arenaSongView(catalog.song(song.songId), rules) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` / ${host.t("unavailable", "Unavailable")}` : ""}
                         </span>
                       </span>
                       <span class="list-item__trailing">
@@ -399,11 +404,11 @@ export function songList(
   `;
 }
 
-export function eventSection(host: TeamBuilder, s = host.searchSettings): TemplateResult {
+export function eventSection(host: TeamBuilder, s = host.searchSettings, options: { rulesOnly?: boolean } = {}): TemplateResult {
   const catalog = host.catalog!;
   const events = catalog.events();
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
-  const manualAllowed = host.tab === "pt" && s.goal !== "plan";
+  const manualAllowed = !options.rulesOnly && host.tab === "pt" && s.goal !== "plan";
   const manual = manualAllowed && s.manualEventEnabled;
   const eventId = host.settings.eventId ?? events[0]?.id ?? null;
   if (host.settings.eventId === null && eventId !== null && !manual) queueMicrotask(() => set({ eventId }));
@@ -455,7 +460,7 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings): Templa
     </div>`:nothing}
     ${manual ? renderManualEvent(host) : nothing}
     ${
-      !manual && challenge && challengeSongs.length
+      !options.rulesOnly && !manual && challenge && challengeSongs.length
         ? html`
             <div class="cluster">
               <button
@@ -779,15 +784,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
   return html`
     <section class="surface stack" id="tb-cards" data-tb-field tabindex="-1">
       ${sectionHeading({ icon: "style", label: host.t("scope", "Cards") })}
-      ${segmented({
-        label: host.t("scope", "Cards"),
-        value: s.scope,
-        options: [
-          { value: "box", label: host.t("scopeBox", "My cards"), icon: "style" },
-          { value: "theoretical", label: host.t("scopeAll", "All cards, full growth"), icon: "auto_awesome_motion" },
-        ],
-        onSelect: (scope) => set({ scope }),
-      })}
+      ${cardScopeControl(host, s.scope, scope => set({ scope }))}
       ${
         activity && s.rewardMode !== "plan" && s.scope === "box"
           ? html`
@@ -799,37 +796,14 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
       }
       ${
         s.scope === "box" && (!activity || s.rewardMode === "plan")
-          ? html`
-              <div class="tb-field">
-                <span class="tb-field__label">${host.t("unknownPolicy", "Growth not entered")}</span>
-                ${segmented({
-                  label: host.t("unknownPolicy", "Growth not entered"),
-                  value: s.unknownPolicy,
-                  options: [
-                    { value: "max", label: host.t("unknownMax", "Count as max") },
-                    { value: "min", label: host.t("unknownMin", "Count as minimum") },
-                  ],
-                  onSelect: (unknownPolicy) => set({ unknownPolicy }),
-                })}
-              </div>
-            `
+          ? unknownGrowthControl(host, s.unknownPolicy, unknownPolicy => set({ unknownPolicy }))
           : nothing
       }
       ${
         activity && s.rewardMode !== "plan" && s.scope === "box"
           ? html`
-              ${choiceField({
-                type: "select",
-                label: host.t("unknownPolicy", "Growth not entered"),
-                value: farmingConditions(s.farming).requireGrowth ? "required" : s.unknownPolicy,
-                options: [
-                  {value: "required", label: host.t("farm.requireGrowth", "Complete before calculating")},
-                  {value: "min", label: host.t("unknownMin", "Count as minimum")},
-                  {value: "max", label: host.t("unknownMax", "Count as max")},
-                ].map(option => ({...option, disabled: s.farming.play === "gekiso"})),
-                onSelect: value => host.updateFarming(value === "required" ? {requireGrowth: true}
-                  : {requireGrowth: false, unknownPolicy: value as "min" | "max"}),
-              })}
+              ${recordedGrowthControl(host, farmingConditions(s.farming).requireGrowth ? "required" : s.unknownPolicy,
+                value => host.updateFarming(value === "required" ? { requireGrowth: true } : { requireGrowth: false, unknownPolicy: value }), s.farming.play === "gekiso")}
             `
           : nothing
       }
@@ -1112,7 +1086,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                     @change=${(e: Event) => set({ planStartingCp: Math.max(0, Number((e.target as HTMLInputElement).value) || 0) })}
                   ></md-outlined-text-field>
                 </div>
-                ${segmented({ label: host.t("cpPerLive", "Challenge points per live"), value: String(s.challengePoints), options: host.settlementMaster!.challengeBoosts.map(row=>row.consumed).filter(cp=>cp>0).map((cp) => ({ value: String(cp), label: `${cp}` })), onSelect: (value) => set({ challengePoints: Number(value) }) })}
+                ${challengeCostControl(host, s.challengePoints, challengePoints => set({ challengePoints }))}
                 <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                 ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }), false, challengeSongs, "tb-challenge-songs")}
               </section>
