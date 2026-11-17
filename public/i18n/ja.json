@@ -1401,7 +1401,9 @@
         "song": "楽曲合計クリア回数",
         "gameSave": "ゲームのセーブ",
         "fromApp": "ゲームのセーブから読む",
-        "editChart": "クリア回数を編集: {chart}"
+        "editChart": "クリア回数を編集: {chart}",
+        "chartShort": "回数",
+        "songShort": "合計"
       }
     },
     "songGuess": {

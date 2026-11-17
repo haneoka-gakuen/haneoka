@@ -1401,7 +1401,9 @@
         "song": "Song total clears",
         "gameSave": "Game save",
         "fromApp": "Read game save",
-        "editChart": "Edit clears: {chart}"
+        "editChart": "Edit clears: {chart}",
+        "chartShort": "Clears",
+        "songShort": "Total"
       }
     },
     "songGuess": {

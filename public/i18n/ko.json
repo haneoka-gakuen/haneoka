@@ -1401,7 +1401,9 @@
         "song": "곡별 총 클리어 횟수",
         "gameSave": "게임 세이브",
         "fromApp": "게임 세이브 읽기",
-        "editChart": "클리어 횟수 편집: {chart}"
+        "editChart": "클리어 횟수 편집: {chart}",
+        "chartShort": "횟수",
+        "songShort": "총횟수"
       }
     },
     "songGuess": {

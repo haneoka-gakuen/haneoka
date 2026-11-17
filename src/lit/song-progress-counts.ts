@@ -12,7 +12,7 @@ import { icon } from "./ui/icon";
 import { specList } from "./ui/spec";
 import { collectionList } from "./ui/collection-view";
 import { emptyState } from "./ui/state";
-import { renderDetailSectionHeading } from "./shared/detail-section-heading";
+import { actionMenu } from "./ui/action-menu";
 import { uiText } from "./shared/catalog";
 import { formatDate } from "../lib/date-format";
 import { chartCountChanges, countChange, countImportChanges, playCount, playCountKey, songPlayCount, storedPlayCount, type CountChanges, type CountEntries } from "../lib/song-progress-counts";
@@ -85,6 +85,7 @@ export class ProgressCounts {
     } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
   }
   private async pick() {
+    if (this.busy) return;
     const context = this.context, controller = this.controller;
     this.busy = true; this.error = ""; this.changed();
     try {
@@ -159,9 +160,17 @@ export class ProgressCounts {
         ? this.t("wrongServer", "Save region does not match") : this.t("readFailed", "Could not read the original save");
     } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
   };
+  renderImportMenu(onGameImport: () => void) {
+    return actionMenu({ id: "song-progress-import", label: html`${icon("folder_open", 24)}<span>${uiText(this.options.locale(), "common.actions.import")}</span>`,
+      items: [
+        ...(inApp() ? [{ label: this.t("fromApp", "Read game save"), leading: icon("sports_esports", 20), run: onGameImport }] : []),
+        { label: this.t("import", "Read original save"), leading: icon("folder_open", 20), run: () => this.openFiles() },
+        { label: this.t("pick", "Choose saved data"), leading: icon("description", 20), run: () => void this.pick() },
+      ],
+    });
+  }
   renderSummary() {
-    return html`<section class="surface stack">
-      <div class="row row--between">${renderDetailSectionHeading(this.t("title", "Live counts"), "stats")}</div>
+    return html`
       ${this.field(this.t("total", "Total clears"), this.t("total", "Total clears"))}
       ${specList([
         { label: this.t("fc", "FULL COMBO clears"), value: this.format(this.value(77)) },
@@ -169,21 +178,17 @@ export class ProgressCounts {
         { label: this.t("arena", "Gekiso Arena plays"), value: this.format(this.value(102)) },
         { label: this.t("battle", "Multi Live clears"), value: this.format(this.value(137)) },
       ], { numeric: true, className: "spec-list--trailing" })}
-      <div class="cluster">
-        ${this.supportsApp() ? html`<button class="button button--filled" type="button" ?disabled=${this.busy} @click=${() => void this.readAppSave()}>${this.t("fromApp", "Read game save")}</button>` : nothing}
-        <button class=${`button ${this.supportsApp() ? "button--outlined" : "button--filled"}`} type="button" ?disabled=${this.busy} @click=${() => this.openFiles()}>${this.t("import", "Read original save")}</button>
-        <button class="button button--tonal" type="button" ?disabled=${this.busy} @click=${() => void this.pick()}>${this.t("pick", "Choose saved data")}</button>
-      </div>
       <input id="progress-counts-file" type="file" multiple hidden accept=".json,.zip,.gz,.dat,.bin" @change=${this.file} />
       <small class="song-progress__rating-status" role="status">${this.busy ? uiText(this.options.locale(), "common.states.loading") : this.error}</small>
-    </section>`;
+    `;
   }
   renderRow(song: number, difficulty: number, context: string) {
-    return html`<div class="song-progress__count-facts">
-      ${difficulty <= 4 ? this.field(this.t("chart", "Clears on this difficulty"), this.t("editChart", "Edit clears: {chart}").replace("{chart}", context), { song, difficulty })
-        : specList([{ label: this.t("chart", "Clears on this difficulty"), value: this.format(this.chart(song, difficulty)) }], { numeric: true, split: true })}
-      ${specList([{ label: this.t("song", "Song total clears"), value: this.format(this.song(song)) }], { numeric: true, split: true })}
-    </div>`;
+    return html`
+      ${difficulty <= 4 ? this.field(this.t("chartShort", "Clears"), this.t("editChart", "Edit clears: {chart}").replace("{chart}", context), { song, difficulty })
+        : html`<md-outlined-text-field class="number-field" readonly label=${this.t("chartShort", "Clears")} aria-label=${`${this.t("chart", "Clears on this difficulty")} / ${context}`} .value=${live(this.format(this.chart(song, difficulty)))}></md-outlined-text-field>`}
+      <md-outlined-text-field class="number-field" readonly label=${this.t("songShort", "Total")} aria-label=${`${this.t("song", "Song total clears")} / ${context}`}
+        .value=${live(this.format(this.song(song)))} title=${this.format(this.song(song))}></md-outlined-text-field>
+    `;
   }
   renderDialogs() {
     const close = () => { this.records = null; this.changed(); };

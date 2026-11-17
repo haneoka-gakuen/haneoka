@@ -1401,7 +1401,9 @@
         "song": "此曲總次數",
         "gameSave": "遊戲存檔",
         "fromApp": "讀取遊戲存檔",
-        "editChart": "編輯通關次數：{chart}"
+        "editChart": "編輯通關次數：{chart}",
+        "chartShort": "次數",
+        "songShort": "總次數"
       }
     },
     "songGuess": {

@@ -184,8 +184,7 @@ export class SongProgress extends LitElement {
       onInput: value => { this.query = value.trim().toLowerCase(); },
     });
     setAppBarActions(OWNER, html`
-      ${inApp() ? iconButton({ icon: "sports_esports", label: this.text("importSave", "Import from game save"), onClick: () => void this.importSave() })
-        : iconButton({ icon: "folder_open", label: this.text("counts.import", "Read original save"), onClick: () => this.counts.openFiles() })}
+      ${this.counts.renderImportMenu(() => void this.importSave())}
       ${iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => { this.ratingDialog = true; } })}
     `);
   }
@@ -377,6 +376,7 @@ export class SongProgress extends LitElement {
           { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
           { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
         ], { numeric: true })}
+        ${this.counts.renderSummary()}
         ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
           onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
           content:html`<ol class="song-progress__best">${skill.best.map((row,index) => html`<li class="song-progress__best-row">
@@ -560,6 +560,7 @@ export class SongProgress extends LitElement {
           </span>
         </a>
         <span class="song-progress__level tabular" style=${`--chart-color:var(--md-extended-color-difficulty-${DIFFICULTIES[chart.difficulty === 5 ? 4 : chart.difficulty] === "special" ? "master" : DIFFICULTIES[chart.difficulty]})`}>${chart.levelText}</span>
+        <div class="song-progress__controls">
         <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
           ${[1, 2, 3].map(
             (value) => html`<button
@@ -574,6 +575,7 @@ export class SongProgress extends LitElement {
           )}
         </span>
         ${this.counts.renderRow(chart.songId, chart.difficulty, `${chart.title} / ${DIFFICULTY_TAGS[chart.difficulty === 5 ? 4 : chart.difficulty]}`)}
+        </div>
       </li>
     `;
   }
@@ -593,7 +595,6 @@ export class SongProgress extends LitElement {
       <section class="page song-progress">
         <div class="song-progress__layout">
           <div class="stack">
-            ${this.counts.renderSummary()}
             ${this.ratings()}
             ${this.summary(charts)}
           </div>
