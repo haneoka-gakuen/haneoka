@@ -52,8 +52,9 @@ export async function staticEventSongs<T extends Record<string, unknown>>(
 export async function eventSongPayload(payload: EntityPayload): Promise<EntityPayload> {
   if (!payload.sourceId) return payload;
   const songs = payload.aux?.songs as Record<string, Record<string, unknown>> | undefined;
+  // Primary publication metadata remains stable after the song's own release time.
   if (
-    !(payload.resource === "songs" && needsEventSongRelease(payload.item)) &&
+    !(payload.resource === "songs" && payload.item.eventPublishedAt === undefined) &&
     !Object.values(songs || {}).some(needsEventSongRelease)
   )
     return payload;
