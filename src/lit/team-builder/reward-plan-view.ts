@@ -24,7 +24,7 @@ import { rankTargetControl } from "./score-goal";
 export const rewardLabel = (host: TeamBuilder, metric: RewardMetric): string =>
   metric === "points" ? "PT" : metric === "challenge-points" ? "CP" : host.t("rewardPlan.badges", "Badges");
 export const bonusMetricLabel = (host: TeamBuilder, metric: RewardMetric): string =>
-  metric === "items" ? host.t("farm.itemBonus", "Item bonus") : host.t("farm.pointBonus", "Event PT bonus");
+  metric === "items" ? host.t("itemsBonus", "Item bonus") : host.t("pointsBonus", "Point bonus");
 const rewardIcon = (host: TeamBuilder, metric: RewardMetric) => {
   const settings = host.searchSettings;
   const eventId = settings.manualEventEnabled ? settings.manualEvent.templateId : settings.eventId;
