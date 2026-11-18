@@ -17,7 +17,26 @@ from core.manifests import stable_json
 
 
 IGNORED_PARTS = {".venv", "__pycache__", "dist", "node_modules", "worker-assets"}
-OPERATIONAL_INPUTS = {"scripts/build/announcements.py"}
+OPERATIONAL_INPUTS = {
+    "scripts/build/announcements.py",
+    "scripts/build/prepare-static-inputs.mjs",
+    "scripts/build/prepare-static-routes.mjs",
+    "scripts/build/static-build-inputs.mjs",
+    "scripts/build/static-build-shards.mjs",
+    "scripts/build/static-document-workers.mjs",
+    "scripts/build/static-render-handoff.mjs",
+    "scripts/build/finalize-frontend.mjs",
+    "scripts/build/module-preload.mjs",
+    "scripts/build/package-build-cache.mjs",
+    "scripts/build/search-metadata.mjs",
+    "scripts/build/public-static-media.mjs",
+    "scripts/build/publish-static-documents.mjs",
+    "scripts/build/build-performance.mjs",
+    "scripts/build/L2-2.md",
+    "scripts/core/L2-2.md",
+    "scripts/extract/L2-2.md",
+    "scripts/ingest/L2-2.md",
+}
 BUILD_INPUTS = (
     "scripts/pipeline.py",
     "scripts/build",
@@ -175,6 +194,21 @@ _STAGE_SOURCE_COMPATIBILITY = {
     ("live2d", "build/live2d.py", "2294fa62506b208970a9a667c7a0594f90befb9c7405cc23b46a028bede29a40"):
         "e1ccb10b49e3eabb5109eda6a92ad6ed22600dbd2076c3d824b45fa755f1a366",
 }
+# Keep the published recipe primary unchanged; aliases qualify only these full closures.
+_STAGE_RECIPE_EQUIVALENCE = {
+    ("cri", "1de5a50ee8f6c0b29744a206354370edd819d5918c773c335caddc55ad703a56"):
+        ("extract/cri.py", "c87c89796493f42521fa3125346b9c69291d70480e12977ae7060f03eb0bd985",
+         "c8bdff63b8a211ed07b9fb2fe9a29170977bfbf6ef5ba9f87641897153952562"),
+    ("cri", "90ffe8b835ba5f77c9e11da7541bb2ebc1b81fa52489fe2de3923343b60cf047"):
+        ("extract/cri.py", "c8bdff63b8a211ed07b9fb2fe9a29170977bfbf6ef5ba9f87641897153952562",
+         "c87c89796493f42521fa3125346b9c69291d70480e12977ae7060f03eb0bd985"),
+    ("spine", "a2734e8f6cb1e29df6cf9931f0c1ba885539dcf7f24cdde9de79210e3ac909f6"):
+        ("build/spine.py", "93252ad0b67c3fc2e19e4e0e75598d135bc53639ef94b679e76d71cebda504ba",
+         "d0132f0ebe249d04f3355d19148e671d2ecd1ac981533929df7952e10a9af826"),
+    ("spine", "903f255e04f108d7872b77241a8b982d09d154ba864ba1e56b20535a3c3569e3"):
+        ("build/spine.py", "d0132f0ebe249d04f3355d19148e671d2ecd1ac981533929df7952e10a9af826",
+         "93252ad0b67c3fc2e19e4e0e75598d135bc53639ef94b679e76d71cebda504ba"),
+}
 _UNITY_PACKAGES = {
     "unitypy", "pillow", "texture2ddecoder", "lz4", "brotli", "etcpak",
     "astc-encoder-py", "pycryptodome", "fsspec", "attrs", "fmod-toolkit",
@@ -260,7 +294,7 @@ def stage_options(stage: str, options: dict | None = None) -> dict[str, bool]:
     return {**defaults, **(options or {})}
 
 
-def _stage_recipe(read: Callable[[str], bytes | None], config: ServerConfig, stage: str, options: dict | None) -> dict:
+def _stage_recipe_payload(read: Callable[[str], bytes | None], config: ServerConfig, stage: str, options: dict | None) -> dict:
     normalized_options = stage_options(stage, options)
     sources = _stage_sources(read, stage)
     requirements = (read("scripts/requirements.txt") or b"").decode("utf-8")
@@ -331,10 +365,33 @@ def _stage_recipe(read: Callable[[str], bytes | None], config: ServerConfig, sta
         extras["ktxArchiveSha256"] = sorted({digest for index, line in enumerate(lines)
             if "KTX-Software/releases/download/" in line
             for digest in re.findall(r"\b[a-f0-9]{64}\b", "\n".join(lines[index:index + 4]))})
-    payload = {"schema": STAGE_RECIPE_SCHEMA, "stage": stage, "sources": sources,
-               "configuration": configuration, "packages": pins, "tools": extras, "options": normalized_options}
-    return {"schema": STAGE_RECIPE_SCHEMA, "stage": stage,
-            "fingerprint": sha256_bytes(stable_json(payload)), "options": normalized_options}
+    return {"schema": STAGE_RECIPE_SCHEMA, "stage": stage, "sources": sources,
+            "configuration": configuration, "packages": pins, "tools": extras, "options": normalized_options}
+
+
+def _recipe_identity(payload: dict) -> dict:
+    return {"schema": payload["schema"], "stage": payload["stage"],
+            "fingerprint": sha256_bytes(stable_json(payload)), "options": payload["options"]}
+
+
+def _stage_recipe(read: Callable[[str], bytes | None], config: ServerConfig, stage: str, options: dict | None) -> dict:
+    return _recipe_identity(_stage_recipe_payload(read, config, stage, options))
+
+
+def _stage_recipe_aliases(read: Callable[[str], bytes | None], config: ServerConfig, recipe: dict) -> list[dict]:
+    if recipe.get("stage") not in {"cri", "spine"}:
+        return []
+    payload = _stage_recipe_payload(read, config, recipe["stage"], recipe.get("options"))
+    if _recipe_identity(payload) != recipe:
+        return []
+    sources = payload["sources"]
+    equivalent = _STAGE_RECIPE_EQUIVALENCE.get((recipe["stage"], sha256_bytes(stable_json(sources))))
+    if equivalent is None:
+        return []
+    file, current, previous = equivalent
+    if sources.get(file) != current:
+        return []
+    return [_recipe_identity({**payload, "sources": {**sources, file: previous}})]
 
 
 def stage_recipe(project_root: Path, config: ServerConfig, stage: str, options: dict | None = None) -> dict:
@@ -343,6 +400,14 @@ def stage_recipe(project_root: Path, config: ServerConfig, stage: str, options: 
         return file.read_bytes() if file.is_file() else None
 
     return _stage_recipe(read, config, stage, options)
+
+
+def stage_recipe_aliases(project_root: Path, config: ServerConfig, recipe: dict) -> list[dict]:
+    def read(relative: str) -> bytes | None:
+        file = project_root / relative
+        return file.read_bytes() if file.is_file() else None
+
+    return _stage_recipe_aliases(read, config, recipe)
 
 
 def pipeline_producer(project_root: Path, config: ServerConfig) -> dict:

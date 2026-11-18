@@ -29,7 +29,7 @@ from build.spine import build_spine
 from core.config import ServerConfig, load_server_config
 from core.build_metrics import measure, observe
 from core.contracts import SOURCE_SCHEMA
-from core.fingerprints import build_fingerprint, stage_recipe, legacy_stage_recipes, resource_build_options, STAGE_ROOTS
+from core.fingerprints import build_fingerprint, stage_recipe, stage_recipe_aliases, legacy_stage_recipes, resource_build_options, STAGE_ROOTS
 from core.manifests import read_json, stable_json, write_json
 from core.private_config import redact_private_text, runtime_settings, github_masks
 from core.paths import build_layout, source_layout
@@ -93,7 +93,14 @@ def _record_stage(config: ServerConfig, identity: str, stage: str, options: dict
 
 
 def _stage_compatible(delta: Any, config: ServerConfig, stage: str, options: dict | None = None) -> bool:
-    return delta.compatible_stage(_stage_recipe(config, stage, options))
+    return _delta_recipe_matches(delta, config, _stage_recipe(config, stage, options))
+
+
+def _delta_recipe_matches(delta: Any, config: ServerConfig, recipe: dict) -> bool:
+    return delta.compatible_stage(recipe) or any(
+        delta.compatible_stage(alias)
+        for alias in stage_recipe_aliases(Path(__file__).resolve().parent.parent, config, recipe)
+    )
 
 
 def build_id(config: ServerConfig, source_id: str) -> str:
@@ -636,7 +643,7 @@ def command_extract_cri(args: argparse.Namespace) -> None:
         try:
             store = R2Store(config, args.reuse_concurrency)
             snapshot = current_release_document(store, config, "metadata/cri.json")
-            if snapshot is not None and not _snapshot_recipe_matches(store, snapshot, _stage_recipe(config, "cri")):
+            if snapshot is not None and not _snapshot_recipe_matches(store, snapshot, _stage_recipe(config, "cri"), config):
                 snapshot = None
         except Exception as error:
             sys.stderr.write(
@@ -687,7 +694,7 @@ def _preview_reuse_inputs(
     """Load the pinned base release's stage document for preview reuse."""
 
     if delta is not None:
-        if recipe is None or not delta.compatible_stage(recipe):
+        if recipe is None or not _delta_recipe_matches(delta, config, recipe):
             return None, None
         try:
             snapshot = {
@@ -712,19 +719,21 @@ def _preview_reuse_inputs(
         return None, None
     if not isinstance(snapshot, dict):
         return None, None
-    if recipe is None or not _snapshot_recipe_matches(store, snapshot, recipe):
+    if recipe is None or not _snapshot_recipe_matches(store, snapshot, recipe, config):
         return None, None
     return snapshot.get("document"), _preview_restore(store, snapshot)
 
 
-def _snapshot_recipe_matches(store: Any, snapshot: dict, recipe: dict) -> bool:
+def _snapshot_recipe_matches(store: Any, snapshot: dict, recipe: dict, config: ServerConfig) -> bool:
     entry = snapshot.get("entries", {}).get(f"metadata/pipeline-recipes/{recipe['stage']}.json")
     if not isinstance(entry, dict):
         return False
     try:
         body = store.get_bytes(cas_key(entry["sha256"]))
-        return bool(body is not None and len(body) == entry["bytes"]
-                    and sha256_bytes(body) == entry["sha256"] and json.loads(body) == recipe)
+        if body is None or len(body) != entry["bytes"] or sha256_bytes(body) != entry["sha256"]:
+            return False
+        stored = json.loads(body)
+        return stored == recipe or stored in stage_recipe_aliases(Path(__file__).resolve().parent.parent, config, recipe)
     except Exception as error:  # noqa: BLE001 - unavailable reuse rebuilds the stage
         sys.stderr.write(f"warning: {recipe['stage']} producer proof unavailable; rebuild stage: {error}\n")
         return False
