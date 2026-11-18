@@ -23,7 +23,8 @@ import "../styles/bestdori-detail.css";
 import "./ui/image-gallery";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
 import { filterDateBound } from "../lib/filter-date";
-import { catalogQueryNames, intersectCatalogFacets, parseCatalogQuery } from "../lib/catalog-query";
+import { cardRarityName, cardRarityRank } from "../lib/card-rarity";
+import { catalogQueryNames, intersectCatalogFacets, matchesCatalogRarity, parseCatalogQuery } from "../lib/catalog-query";
 import { facet } from "./ui/facet";
 import { collectionList, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import {
@@ -1467,13 +1468,17 @@ export class StoryWorkspace extends LitElement {
           : [],
       ],
     ] as Array<[string, string, string[]]>) {
+      if (key === "rarity" && this.origin === "release")
+        values.sort((a, b) => cardRarityRank(b) - cardRarityRank(a));
       if (values.length)
         groups.push({
           key,
           label,
           options: values.map((value) => ({
             value,
-            label: key === "kind" ? uiText(this.locale, this.kindFacetLabel(this.mode, value)) : value,
+            label: key === "kind"
+              ? uiText(this.locale, this.kindFacetLabel(this.mode, value))
+              : key === "rarity" && this.origin === "release" ? cardRarityName(value) || value : value,
           })),
         });
     }
@@ -1648,8 +1653,7 @@ export class StoryWorkspace extends LitElement {
       if (facets.perspective?.length && !facets.perspective.includes(String(episode.perspectiveCharacterId || "")))
         return false;
       if (facets.rarity?.length && !facets.rarity.includes(String(episode.rarity))) return false;
-      if (facets.minRarity?.length && Number(episode.rarity) < Number(facets.minRarity[0])) return false;
-      if (facets.maxRarity?.length && Number(episode.rarity) > Number(facets.maxRarity[0])) return false;
+      if (!matchesCatalogRarity(episode.rarity, facets, this.origin === "release")) return false;
       if (facets.attribute?.length && !facets.attribute.includes(String(episode.attribute))) return false;
       if (
         (rangeStart !== -Infinity || rangeEnd !== Infinity) &&

@@ -1,4 +1,5 @@
 import { gachaPrizeCard } from "./shared/gacha-prize-card";
+import { cardRarityRank } from "../lib/card-rarity";
 import { EVENT_LABEL_PATHS, SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 /**
@@ -287,7 +288,8 @@ function featuredGrid(c: Controller, featured: Item[]) {
 
 /** The game's own ratio table: one collapsible group per slot, prizes inside. */
 function renderRates(c: Controller, item: Item) {
-  const rates = Array.isArray(item.rates) ? (item.rates as Item[]) : [];
+  const rates = Array.isArray(item.rates)
+    ? [...item.rates as Item[]].sort((a, b) => cardRarityRank(b.rarity) - cardRarityRank(a.rarity)) : [];
   if (!rates.length) return nothing;
   const slotLabel = (row: Item) => html`
     <span class="rarity-inline">
@@ -481,7 +483,7 @@ function renderSimulationSummary(c: Controller, runs: readonly GachaRun[]) {
   const draws = runs.reduce((sum, run) => sum + run.draws, 0);
   const points = runs.reduce((sum, run) => sum + run.points, 0);
   const groups = kindRarityCounts(runs);
-  const rarities = [...new Set(groups.flatMap((group) => group.counts.map(([rarity]) => rarity)))].sort((a, b) => b - a);
+  const rarities = [...new Set(groups.flatMap((group) => group.counts.map(([rarity]) => rarity)))].sort((a, b) => cardRarityRank(b) - cardRarityRank(a));
   const cell = (count: number) =>
     count
       ? html`${count.toLocaleString(locale)} <small>${((count / draws) * 100).toLocaleString(locale, { maximumFractionDigits: 2 })}%</small>`

@@ -88,7 +88,8 @@ import { resolveLocalizedText } from "../lib/localized-text";
 import { shopPaymentPrices, shopPriceLine, type ShopStarRewards } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
-import { catalogQueryNames, intersectCatalogFacets, parseCatalogQuery, type CatalogQueryAlias, type CatalogQueryFacets } from "../lib/catalog-query";
+import { cardRarityRank } from "../lib/card-rarity";
+import { catalogQueryNames, intersectCatalogFacets, matchesCatalogRarity, parseCatalogQuery, type CatalogQueryAlias, type CatalogQueryFacets } from "../lib/catalog-query";
 import { facet } from "./ui/facet";
 import { fold } from "./game-system-detail";
 import { collectionList, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
@@ -364,6 +365,8 @@ const EXTRA_FILTERS = [
   "gekisouTiming",
   "minRarity",
   "maxRarity",
+  "minRarityRank",
+  "maxRarityRank",
   "school",
   "part",
   "birthdayMonth",
@@ -3664,6 +3667,7 @@ export class CatalogScreen extends LitElement {
     if (this.sort === "nativeScore") return this.nativeSongScore(item) ?? Number.NaN;
     if (this.sort === "id") return this.itemId(item);
     if (this.sort === "title") return this.itemTitle(item);
+    if (this.sort === "rarity" && !this.isProvider()) return cardRarityRank(item.rarity);
     if (this.sort === "character") return Number(item.characterId || this.itemCharacterIds(item)[0] || 0);
     if (this.sort === "characters") return this.itemCharacterIds(item)[0] || 0;
     if (this.sort === "band")
@@ -3992,9 +3996,7 @@ export class CatalogScreen extends LitElement {
         if (!matchesSongMissions(item, values, facets.gekisouMatch?.[0])) return false;
       } else if (!this.facetValues(item, key).some((value) => values.includes(value))) return false;
     }
-    const rarity = Number(item.rarity);
-    if (facets.minRarity?.length && (!Number.isFinite(rarity) || rarity < Number(facets.minRarity[0]))) return false;
-    if (facets.maxRarity?.length && (!Number.isFinite(rarity) || rarity > Number(facets.maxRarity[0]))) return false;
+    if (!matchesCatalogRarity(item.rarity, facets, !this.isProvider())) return false;
     const chartRanges = [
       ["Level", "displayLevel", "playLevel"],
       ["Notes", "noteCount", "noteCount"],
@@ -4124,10 +4126,12 @@ export class CatalogScreen extends LitElement {
     }
     if (["member", "support"].includes(kind)) {
       const counts = tally((item) => (item.rarity ? [item.rarity] : []));
+      const rarities = [...counts.keys()];
+      if (!this.isProvider()) rarities.sort((a, b) => cardRarityRank(b) - cardRarityRank(a));
       groups.push({
         key: "rarity",
         label: this.label("rarity", "Rarity"),
-        options: [...counts.keys()].map((value) => ({
+        options: rarities.map((value) => ({
           value,
           label: this.fieldValue({ rarity: value }, "rarity"),
           image: this.rarityMark(value),

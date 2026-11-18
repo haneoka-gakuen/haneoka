@@ -3,6 +3,7 @@
 // Output: Catalogue-compatible card/chart ordering and shared sort controls.
 // Pos: [Map](../L2-2.md); adapter for owned cards and all team-builder pickers.
 // Effects/Dependencies: Keeps per-workspace resource preferences; requests a render after changes.
+import { cardRarityRank } from "../../lib/card-rarity";
 import { catalogSortOptions, compareCatalogSort } from "../../lib/catalog-sort";
 import { objectRow } from "../../lib/team-builder/data";
 import type { SongRef } from "../../lib/team-builder/engine/api";
@@ -62,6 +63,7 @@ export function sortedCards(host: TeamBuilder, kind: "members" | "snaps", ids: r
       case "supportSkill": value = skillName(host, item, "support"); break;
       case "gekisouSupportSkill": value = skillName(host, item, "gekisouSupport"); break;
       case "release": value = release(item); break;
+      case "rarity": value = cardRarityRank(item.rarity); break;
       default: value = item[state.sort];
     }
     return [id, value] as const;

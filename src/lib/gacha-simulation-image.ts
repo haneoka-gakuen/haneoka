@@ -1,3 +1,4 @@
+import { cardRarityAtLeast } from "./card-rarity";
 import { drawExportBrand } from "./export-brand";
 /** PNG exports of a recruitment simulation: every draw, or the merged summary. */
 
@@ -123,7 +124,7 @@ function drawCard(
 ) {
   ctx.save();
   roundRect(ctx, x, y, w, h, 12);
-  ctx.fillStyle = card.rarity >= 4 ? theme.tertiary : theme.container;
+  ctx.fillStyle = cardRarityAtLeast(card.rarity, 10) ? theme.tertiary : theme.container;
   ctx.fill();
   ctx.clip();
   contain(ctx, loaded(card.image), x + 2, y + 2, w - 4, h - 4);

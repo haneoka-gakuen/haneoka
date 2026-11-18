@@ -4,10 +4,10 @@ import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillTypeKey, skillTypeTitle, matchesSelections } from "../../lib/catalog-filters";
 import { filterDateBound } from "../../lib/filter-date";
-import { catalogQueryNames, parseCatalogQuery, type CatalogQuery } from "../../lib/catalog-query";
+import { catalogQueryNames, matchesCatalogRarity, parseCatalogQuery, type CatalogQuery } from "../../lib/catalog-query";
 import { chooserGroup } from "../ui/chooser-filters";
 import { filterChip } from "../ui/controls";
-import { cardRarityName } from "../shared/rarity-icon";
+import { cardRarityName, cardRarityRank } from "../../lib/card-rarity";
 import type { TeamBuilder } from "../team-builder";
 import type { BoxFilters } from "./types";
 import { isContentVisible } from "../../lib/content-release";
@@ -92,8 +92,8 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
   if (!matchesSelections(catalog.bandIds(kind, id).map(String), plan.facets.collectionBand || []) ||
       !matchesSelections(catalog.characterIds(kind, id).map(String), plan.facets.character || []) ||
       !matchesSelections([String(card.attribute)], plan.facets.type || []) ||
-      (plan.facets.minRarity?.length && card.rarity < Number(plan.facets.minRarity[0])) ||
-      (plan.facets.maxRarity?.length && card.rarity > Number(plan.facets.maxRarity[0]))) return false;
+      !matchesSelections([String(card.rarity)], plan.facets.rarity || []) ||
+      !matchesCatalogRarity(card.rarity, plan.facets, true)) return false;
   const query = plan.text.normalize("NFKC").toLocaleLowerCase(host.locale).trim();
   const haystack = [`#${id}`, catalog.cardName(kind, id), ...catalog.characterIds(kind, id).map((id) => catalog.characterName(id)), ...catalog.bandIds(kind, id).map((id) => catalog.bandName(id))].join(" ").normalize("NFKC").toLocaleLowerCase(host.locale);
   return !query || haystack.includes(query);
@@ -121,7 +121,7 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
     ${numeric("bands", label("band"), [...new Set(cards.flatMap((card) => catalog.bandIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.bandName(id),image:catalog.bandIcon(id) || undefined})))}
     ${numeric("characters", label("character"), [...new Set(cards.flatMap((card) => catalog.characterIds(kind, card.id)))].sort((a,b) => a-b).map((id) => ({value:String(id),label:catalog.characterName(id),image:catalog.characterFace(id) || undefined})))}
     ${numeric("attributes", label("attribute"), [...new Set(cards.map((card) => card.attribute))].filter((id) => id >= 1 && id <= 5).sort().map((id) => ({value:String(id),label:catalog.attributeName(id),image:catalog.attributeIcon(id) || undefined})))}
-    ${numeric("rarities", label("rarity"), [...new Set(cards.map((card) => card.rarity))].sort((a,b) => b-a).map((id) => ({value:String(id),label:cardRarityName(id),image:catalog.rarityIcon(id) || undefined,imageOnly:!!catalog.rarityIcon(id)})))}
+    ${numeric("rarities", label("rarity"), [...new Set(cards.map((card) => card.rarity))].sort((a, b) => cardRarityRank(b) - cardRarityRank(a)).map((id) => ({value:String(id),label:cardRarityName(id),image:catalog.rarityIcon(id) || undefined,imageOnly:!!catalog.rarityIcon(id)})))}
     ${CARD_SKILL_FACETS.filter((facet) => (facet.kinds as readonly string[]).includes(role)).map((facet) => {
       const options = new Map<string, {value:string;label:string;image?:string}>();
       for (const card of cards) for (const skill of cardSkills(catalog.cardFilterItem(kind, card.id), facet.role)) {

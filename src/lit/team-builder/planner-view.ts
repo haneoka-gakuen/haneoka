@@ -20,7 +20,7 @@ import type { EventEffectRow, RewardRow, ScoreRankRow, BoostRow } from "../../li
 import { skillDisplay } from "../shared/skill-text";
 import { resolveLocalizedText } from "../../lib/localized-text";
 import { contentPublished } from "../../lib/content-publication";
-import { cardRarityName } from "../shared/rarity-icon";
+import { CARD_RARITY_ORDER, cardRarityName } from "../../lib/card-rarity";
 import { filterChip, iconButton, segmented } from "../ui/controls";
 import { modal } from "../ui/modal";
 import { tile } from "../ui/tile";
@@ -197,7 +197,7 @@ function cardEditor(host: Host) {
         host,
         host.common("catalog.cards.fields.rarity", "Rarity"),
         c.rarity,
-        [2, 3, 4, 10, 20].map((value) => ({ value, label: cardRarityName(value) })),
+        CARD_RARITY_ORDER.map((value) => ({ value, label: cardRarityName(value) })),
         (value) => {
           c.rarity = value;
           const cards = c.kind === "members" ? source.members : source.snapshots;

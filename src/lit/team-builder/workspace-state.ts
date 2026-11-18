@@ -82,6 +82,7 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
   if (stored.scopedSongAttribute !== true && settings.songRules.musicType === legacyChallengeType)
     settings.songRules.musicType = 0;
   settings.scopedSongAttribute = true;
+  if (settings.minRarity === 2) settings.minRarity = 0;
   if (stored.targetRank === undefined && stored.scoreTarget === "at-least" && stored.targetScore)
     settings.targetRank = null;
   settings.maxAccountBonuses = stored.maxAccountBonuses === true;

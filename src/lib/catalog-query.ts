@@ -1,5 +1,6 @@
 import aliases from "./catalog-query-aliases.json";
 import type { CatalogRecord } from "./catalog-filters";
+import { cardRarityId, cardRarityRank } from "./card-rarity";
 
 export type CatalogQueryGame = keyof typeof aliases.attributes;
 export type CatalogQueryFacets = Record<string, string[]>;
@@ -83,7 +84,7 @@ export function parseCatalogQuery(
       if (parts.some((part) => part.quoted)) continue;
       const expression = normalize(parts.map((part) => part.value).join(" "));
       const numeric =
-        /^(?:(lv|level|rarity|stars?|星[级級]?|稀有度|等[级級]|[级級]|レベル|[★☆*])\s*:?\s*)?(>=|<=|>|<|=|≥|≤)?\s*(\d+(?:\.\d+)?)\s*(星[级級]?|等[级級]|[级級]|レベル|[★☆*])?\s*(?:(\+)|-\s*(\d+(?:\.\d+)?)|(以上|以下))?$/u.exec(
+        /^(?:(lv|level|rarity|stars?|星[级級]?|稀有度|等[级級]|[级級]|レベル|[★☆*])\s*:?\s*)?(>=|<=|>|<|=|≥|≤)?\s*(\d+(?:\.\d+)?|ssr|sr|ex|bd|r)\s*(星[级級]?|等[级級]|[级級]|レベル|[★☆*])?\s*(?:(\+)|-\s*(\d+(?:\.\d+)?|ssr|sr|ex|bd|r)|(以上|以下))?$/u.exec(
           expression,
         );
       if (!numeric || !numeric.slice(1).some((value, index) => index !== 2 && value)) continue;
@@ -93,17 +94,22 @@ export function parseCatalogQuery(
       if (numeric[1] && numeric[4] && fieldFor(numeric[1]) !== fieldFor(numeric[4])) continue;
       const field =
         numeric[1] || numeric[4] ? fieldFor(numeric[1] || numeric[4]) : context.kind === "song" ? "Level" : "Rarity";
-      const value = Number(numeric[3]);
+      const orderedRarity = field === "Rarity" && context.game === "our-notes";
+      const bound = (raw: string) => orderedRarity ? cardRarityRank(cardRarityId(raw) ?? raw) : Number(raw);
+      const value = bound(numeric[3]!);
+      const upper = numeric[6] ? bound(numeric[6]) : value;
+      if (!Number.isFinite(value) || !Number.isFinite(upper) || orderedRarity && (!value || !upper)) continue;
+      const key = orderedRarity ? "RarityRank" : field;
       const comparison = numeric[2] || (numeric[7] === "以上" || numeric[5] ? ">=" : numeric[7] === "以下" ? "<=" : "");
-      if (comparison === ">=" || comparison === "≥") add(`min${field}`, String(value));
-      else if (comparison === ">") add(`min${field}`, String(value + (field === "Rarity" ? 1 : 0.000001)));
-      else if (comparison === "<=" || comparison === "≤") add(`max${field}`, String(value));
-      else if (comparison === "<") add(`max${field}`, String(value - (field === "Rarity" ? 1 : 0.000001)));
+      if (comparison === ">=" || comparison === "≥") add(`min${key}`, String(value));
+      else if (comparison === ">") add(`min${key}`, String(value + (field === "Rarity" ? 1 : 0.000001)));
+      else if (comparison === "<=" || comparison === "≤") add(`max${key}`, String(value));
+      else if (comparison === "<") add(`max${key}`, String(value - (field === "Rarity" ? 1 : 0.000001)));
       else {
-        add(`min${field}`, String(value));
-        add(`max${field}`, numeric[6] ?? String(value));
+        add(`min${key}`, String(value));
+        add(`max${key}`, String(upper));
       }
-      consumed?.(token.start, tokens[index + length - 1]!.end, [`min${field}`, `max${field}`]);
+      consumed?.(token.start, tokens[index + length - 1]!.end, [`min${key}`, `max${key}`]);
       index += length - 1;
       numericMatched = true;
       break;
@@ -151,6 +157,18 @@ export function parseCatalogQuery(
     text: Object.keys(facets).length ? remaining.join(" ") : query.trim(),
     facets,
   };
+}
+
+export function matchesCatalogRarity(value: unknown, facets: CatalogQueryFacets, nativeRarity: boolean): boolean {
+  const { minRarity, maxRarity, minRarityRank, maxRarityRank } = facets;
+  if (!minRarity?.length && !maxRarity?.length && !minRarityRank?.length && !maxRarityRank?.length) return true;
+  const rank = nativeRarity ? cardRarityRank : Number;
+  const current = rank(value);
+  if (!Number.isFinite(current) || nativeRarity && !current) return false;
+  return (!minRarity?.length || current >= rank(minRarity[0]))
+    && (!maxRarity?.length || current <= rank(maxRarity[0]))
+    && (!minRarityRank?.length || current >= Number(minRarityRank[0]))
+    && (!maxRarityRank?.length || current <= Number(maxRarityRank[0]));
 }
 
 /** Remove recognized filter terms without reinterpreting quoted free text. */

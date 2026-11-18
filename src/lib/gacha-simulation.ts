@@ -1,3 +1,4 @@
+import { cardRarityAtLeast, cardRarityRank } from "./card-rarity";
 /**
  * Recruitment simulation over the published lot table.
  *
@@ -85,7 +86,7 @@ function guaranteedLots(table: Lot[], option: Row): Lot[] {
   return table
     .filter((lot) => (type === 2 ? lot.kind === "member" : type === 3 ? lot.kind === "support" : true))
     .flatMap((lot) => {
-      const prizes = lot.prizes.filter(({ prize }) => prize.rarity >= rarity);
+      const prizes = lot.prizes.filter(({ prize }) => cardRarityAtLeast(prize.rarity, rarity));
       if (!prizes.length) return [];
       const share =
         prizes.reduce((sum, entry) => sum + entry.weight, 0) / lot.prizes.reduce((sum, entry) => sum + entry.weight, 0);
@@ -142,9 +143,9 @@ export function simulateGacha(
       pull.push(drawFrom(guaranteedSlot ? ensured : table, random));
     }
     if (guarantee && rule === "redraw") {
-      let missing = guarantee.count - pull.filter((prize) => prize.rarity >= guarantee.rarity).length;
+      let missing = guarantee.count - pull.filter((prize) => cardRarityAtLeast(prize.rarity, guarantee.rarity)).length;
       for (let index = size - 1; missing > 0 && index >= 0; index -= 1) {
-        if (pull[index]!.rarity >= guarantee.rarity) continue;
+        if (cardRarityAtLeast(pull[index]!.rarity, guarantee.rarity)) continue;
         pull[index] = drawFrom(ensured, random);
         missing -= 1;
       }
@@ -169,7 +170,7 @@ export function tallyGacha(runs: readonly GachaRun[]): Record<GachaCardKind, Gac
     if (entry) entry.count += 1;
     else merged.set(prize.key, { prize, count: 1 });
   }
-  const sorted = [...merged.values()].sort((a, b) => b.prize.rarity - a.prize.rarity || b.prize.id - a.prize.id);
+  const sorted = [...merged.values()].sort((a, b) => cardRarityRank(b.prize.rarity) - cardRarityRank(a.prize.rarity) || b.prize.id - a.prize.id);
   return {
     member: sorted.filter((entry) => entry.prize.kind === "member"),
     support: sorted.filter((entry) => entry.prize.kind === "support"),
@@ -189,5 +190,5 @@ export function kindRarityCounts(
   }
   return (["member", "support", "item"] as const)
     .filter((kind) => counts.has(kind))
-    .map((kind) => ({ kind, counts: [...counts.get(kind)!].sort(([a], [b]) => b - a) }));
+    .map((kind) => ({ kind, counts: [...counts.get(kind)!].sort(([a], [b]) => cardRarityRank(b) - cardRarityRank(a)) }));
 }

@@ -1,8 +1,9 @@
 // L3 — GEB
 // Input: Published pool weights, executed product guarantees and projected history.
-// Output: Joint SSR+/UP batch laws, conservative nine-tier ratings and coverage.
+// Output: Joint EX+/UP batch laws, conservative nine-tier ratings and coverage.
 // Pos: [Map](L2-2.md); gacha history probability model shared by builds and its browser worker.
 // Effects/Dependencies: Pure calculations; polynomial products use bounded-error floating-point FFT for large histories.
+import { cardRarityAtLeast } from "./card-rarity";
 import type { GachaHistoryBatch } from "./gacha-history-view";
 
 type Row = Record<string, unknown>;
@@ -90,7 +91,7 @@ export function compileGachaLuckLaw(pool: Row, option: Row): GachaLuckLaw | null
         typeof prize.pickup !== "boolean" || resource !== 1 && ![2, 3, 4, 10, 20].includes(r)) return null;
       const mass = weight * rate / inner, card = resource === 2 || resource === 3;
       const high = card && HIGH.has(r), category = high ? prize.pickup ? 2 : 1 : 0;
-      const qualifies = r >= rarity && (type === 1 || type === 4 && card || type === resource);
+      const qualifies = cardRarityAtLeast(r, rarity) && (type === 1 || type === 4 && card || type === resource);
       total += mass; ordinary[category] += mass;
       if (card) cardMass += mass;
       (qualifies ? eligible : ineligible)[category] += mass;

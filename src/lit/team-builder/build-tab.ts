@@ -14,7 +14,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import "@material/web/progress/linear-progress.js";
 import type { SongRef } from "../../lib/team-builder/engine/api";
-import { cardRarityName } from "../shared/rarity-icon";
+import { CARD_RARITY_ORDER, cardRarityName } from "../../lib/card-rarity";
 import { filterChip, iconButton, inputChip, rovingKeydown, segmented } from "../ui/controls";
 import { selectionPane } from "../ui/selection-pane";
 import { matchesCardFilters, renderCardFilters } from "./card-filters";
@@ -693,7 +693,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
           value: String(s.minRarity),
           options: [
             { value: "0", label: host.common("common.states.all", "All") },
-            ...[2, 3, 4].map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
+            ...CARD_RARITY_ORDER.slice(1).map((rarity) => ({ value: String(rarity), label: `${cardRarityName(rarity)}+` })),
           ],
           onSelect: (value) => set({ minRarity: Number(value) }),
         })}

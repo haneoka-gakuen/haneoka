@@ -68,6 +68,7 @@ import {
   type FarmingSettings,
   type Tab,
 } from "./team-builder/types";
+import { cardRarityAtLeast } from "../lib/card-rarity";
 import { challengeEventForGoal, farmingConditions, farmingSettings, parseOpponents, justWindowGoal, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
 import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
@@ -1044,7 +1045,7 @@ export class TeamBuilder extends LitElement {
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) &&
         (!s.bands.length || s.bands.includes(card.bandId)) &&
-        card.rarity >= s.minRarity
+        cardRarityAtLeast(card.rarity, s.minRarity)
       );
     };
     const snapOk = (cardId: number) => {
@@ -1053,7 +1054,7 @@ export class TeamBuilder extends LitElement {
       const local=plannerMetadata(this.data!.snapshots[String(cardId)]!);
       if (local.active===false) return false;
       if (s.scope === "theoretical" && local.active!==true && !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))) return false;
-      return (!s.attributes.length || s.attributes.includes(card.cardType)) && card.rarity >= s.minRarity;
+      return (!s.attributes.length || s.attributes.includes(card.cardType)) && cardRarityAtLeast(card.rarity, s.minRarity);
     };
     const fixedMembers = new Set([
       ...(s.scope === "theoretical"
