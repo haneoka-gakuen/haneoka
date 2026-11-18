@@ -22,6 +22,7 @@ import engineUrl from "./generated/team-engine.wasm?url";
 
 let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const WORKER_ACK_TIMEOUT_MS = 60_000;
+const SCORE_REPLY_GRACE_MS = 8;
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => reject(signal.reason ?? new DOMException("Cancelled", "AbortError"));
@@ -48,6 +49,7 @@ export const ENGINE_MODEL_VERSION = "native-frame-origins-v1";
 export type ProofProgress = { unit: "charts" | "shards" | "joint"; checkedTeams?: number };
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void;
   init: boolean; timer: ReturnType<typeof setTimeout>;
+  replyWindow?: { deadline: number; expire: () => void };
   progress?: (done: number, total: number, proof?: ProofProgress) => void; snapshot?: (value: EngineSnapshot) => void;
   eventGrowth?: (value: EventTeamSearchPage) => void; checkedTeams?: (song: SongRef | null, count: number) => void };
 type Preparation = { message: Extract<EngineCall, { type: "run" }>; floor: number; reward?: RewardFloor };
@@ -131,6 +133,10 @@ class EngineWorker {
       }
       const pending = this.pending.get(reply.id);
       if (!pending) return;
+      if (pending.replyWindow && clock() > pending.replyWindow.deadline) {
+        pending.replyWindow.expire();
+        return;
+      }
       if (reply.type !== "error" && pending.init !== (reply.type === "ready")) {
         fail(new Error("engine-invalid-reply"));
         return;
@@ -183,7 +189,7 @@ class EngineWorker {
         : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
   }
   private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"],
-    checkedTeams?: Pending["checkedTeams"]): Promise<unknown> {
+    checkedTeams?: Pending["checkedTeams"], replyWindow?: Pending["replyWindow"]): Promise<unknown> {
     const id = this.nextId++;
     const cooperativeFloor = this.cooperativeFloor && this.acceptsFloor(message);
     if (message.type === "run") this.runId = cooperativeFloor ? id : null;
@@ -194,7 +200,7 @@ class EngineWorker {
       const timer = setTimeout(() => {
         if (this.worker === worker) this.reset(new Error(init ? "engine-init-timeout" : "engine-start-timeout"));
       }, WORKER_ACK_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, init, timer, progress, snapshot, eventGrowth, checkedTeams });
+      this.pending.set(id, { resolve, reject, init, timer, progress, snapshot, eventGrowth, checkedTeams, replyWindow });
       this.post({ ...message, id, ...(message.type === "run" ? { cooperativeFloor, reportRankChecks: !!checkedTeams } : {}),
         ...(message.type === "eventGrowth" || message.type === "eventGrowthPage" ? { paused: this.eventGrowthPaused } : {}) });
     });
@@ -234,7 +240,7 @@ class EngineWorker {
     return this.post({ type: "floor", id: this.runId, value: hit.key, reward });
   }
   async send<T>(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], searchBudgetMs?: number,
-    eventGrowth?: Pending["eventGrowth"], checkedTeams?: Pending["checkedTeams"]): Promise<T> {
+    eventGrowth?: Pending["eventGrowth"], checkedTeams?: Pending["checkedTeams"], replyWindow?: Pending["replyWindow"]): Promise<T> {
     const preparation: Preparation | null = message.type === "run" ? { message, floor: -Infinity } : null;
     this.preparing = preparation;
     let worker: Worker | null = null;
@@ -268,7 +274,7 @@ class EngineWorker {
       else if (message.type === "evaluate" || message.type === "sectionMetrics" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
-      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams)) as T;
+      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams, replyWindow)) as T;
     } finally {
       if (this.preparing === preparation) this.preparing = null;
       if (worker && worker === this.worker && this.pending.size === 0) this.setPhase(null);
@@ -663,7 +669,16 @@ export class EngineClient {
     });
     this.activeStops.add(stop);
     const deadline = request.deadline!;
-    const timer = Number.isFinite(deadline) ? setTimeout(() => stop("budget"), remaining(deadline)) : undefined;
+    const scoreReplyDeadline = deadline + SCORE_REPLY_GRACE_MS;
+    let scoreWorker: EngineWorker | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (Number.isFinite(deadline)) timer = setTimeout(() => {
+      // A cumulative score can finish in WASM while its final message is still in transit.
+      const replyTime = remaining(scoreReplyDeadline);
+      if (scoreWorker?.currentPhase === "computationMs" && replyTime > 0)
+        timer = setTimeout(() => stop("budget"), replyTime);
+      else stop("budget");
+    }, remaining(deadline));
     const accept = (value: EngineSnapshot) => {
       if (!stopped && value.requestId === request.requestId && value.contextKey === request.contextKey) publish(value.response);
     };
@@ -977,8 +992,11 @@ export class EngineClient {
       const serialRankCharts = trackRank && songs.length > 1 && !onFinalResult;
       if (!parallel && !serialRankCharts) {
         if (trackRank) reportRankProof();
-        const response = await idlest().send<EngineResponse>({ type: "run", id: 0, request },
-          trackRank ? undefined : progress, opponents ? undefined : accept, undefined, undefined, rankChecksForCall());
+        const worker = idlest();
+        if (Number.isFinite(deadline) && request.goal.kind === "score" && request.goal.songs.length === 1 && request.goal.play?.cumulativeTiming) scoreWorker = worker;
+        const replyWindow = scoreWorker ? { deadline: scoreReplyDeadline, expire: () => stop("budget") } : undefined;
+        const response = await worker.send<EngineResponse>({ type: "run", id: 0, request },
+          trackRank ? undefined : progress, opponents ? undefined : accept, undefined, undefined, rankChecksForCall(), replyWindow);
         if (trackRank && !stopped) reportRankProof(response.results);
         if (!stopped) onFinalResult?.({ requestId: request.requestId!, contextKey: request.contextKey!, response: structuredClone(response) });
         return response;
