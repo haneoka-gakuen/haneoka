@@ -111,7 +111,6 @@ export function compileRewardPlan(
     unit: 1,
     minimumRank: plan.minimumRank ?? 7,
     maximizeBonus: true,
-    tieBreak: "score",
     levels: [[{ metric: plan.bonus, weight: 1 }]],
   };
   const first = [{ metric: plan.primary, weight: RATE_SCALE }];
