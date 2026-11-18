@@ -1,0 +1,154 @@
+name: Finalize complete static locale
+description: Merge every verified render partition and seal one immutable locale part
+inputs:
+  prepared:
+    default: "false"
+  own_partition:
+    default: ""
+  locale:
+    required: true
+  inputs_artifact:
+    required: true
+  inputs_sha:
+    required: true
+  node_version:
+    required: true
+  preupload:
+    default: "false"
+  verify_uploads:
+    default: "false"
+  github_token:
+    required: true
+  cloudflare_account_id:
+    default: ""
+  cloudflare_api_token:
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Reclaim large unused runner files
+      shell: bash
+      run: |
+        df -h /
+        available_kb="$(df --output=avail / | tail -1)"
+        if (( available_kb < 24 * 1024 * 1024 )); then
+          for directory in /usr/local/lib/android /opt/ghc; do
+            if [[ -d "$directory" ]]; then sudo find "$directory" -type f -size +16M -delete; fi
+          done
+        fi
+        df -h /
+    - name: Enable pnpm
+      if: inputs.prepared != 'true'
+      shell: bash
+      run: corepack enable
+    - uses: actions/setup-node@v7
+      if: inputs.prepared != 'true'
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+    - name: Check out locked external repositories
+      if: inputs.prepared != 'true'
+      shell: bash
+      run: node scripts/external-repositories.mjs checkout
+    - name: Install workspace dependencies
+      if: inputs.prepared != 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - uses: actions/download-artifact@v8
+      if: inputs.prepared != 'true'
+      with:
+        name: ${{ inputs.inputs_artifact }}
+        path: .output
+    - name: Restore verified immutable inputs
+      if: inputs.prepared != 'true'
+      shell: bash
+      run: node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root "$PWD" --source-root "$PWD"
+    - name: Verify reused source identity
+      if: inputs.prepared == 'true'
+      shell: bash
+      run: |
+        node --input-type=module <<'JS'
+        import assert from 'node:assert/strict';
+        import fs from 'node:fs';
+        import { staticBuildSourceIdentity } from './src/server/static-build-identity.ts';
+        assert.deepEqual(staticBuildSourceIdentity(fs.realpathSync('.')), JSON.parse(fs.readFileSync('.output/static-frozen-inputs/manifest.json')).source);
+        JS
+    - name: Verify external repository locks
+      shell: bash
+      run: pnpm dependencies:verify
+    - name: Select immutable render checkpoints
+      id: parts
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        HANDOFF_LOCALE: ${{ inputs.locale }}
+        HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
+        HANDOFF_PARTITION: ${{ inputs.own_partition }}
+      run: |
+        args=(select --locale "$HANDOFF_LOCALE" --generation "$HANDOFF_GENERATION")
+        if [[ -n "$HANDOFF_PARTITION" ]]; then args+=(--partition "$HANDOFF_PARTITION"); fi
+        node scripts/build/static-render-handoff.mjs "${args[@]}"
+    - uses: actions/download-artifact@v8
+      if: steps.parts.outputs.complete != 'true'
+      with:
+        artifact-ids: ${{ steps.parts.outputs.download_ids }}
+        run-id: ${{ github.run_id }}
+        github-token: ${{ inputs.github_token }}
+        path: .output/static-render-archives
+    - name: Resolve pinned public media cache
+      if: steps.parts.outputs.complete != 'true'
+      id: media-identity
+      shell: bash
+      run: >-
+        echo "key=$(node --input-type=module -e 'import { publicMediaCacheKey } from "./scripts/build/public-static-media.mjs"; console.log(publicMediaCacheKey())')" >> "$GITHUB_OUTPUT"
+    - name: Reuse verified public image bytes
+      if: steps.parts.outputs.complete != 'true'
+      uses: actions/cache@v6
+      with:
+        path: data/static-catalog/blobs/v1
+        key: static-public-media-v1-${{ runner.os }}-${{ steps.media-identity.outputs.key }}-${{ hashFiles('scripts/build/public-static-media.mjs') }}
+        restore-keys: static-public-media-v1-${{ runner.os }}-
+    - name: Merge every rendered page, then index and pack once
+      if: steps.parts.outputs.complete != 'true'
+      shell: bash
+      env:
+        STATIC_BUILD_PARTITION: ""
+        PREUPLOAD: ${{ inputs.preupload }}
+        VERIFY_UPLOADS: ${{ inputs.verify_uploads }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id }}
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare_api_token }}
+        HANDOFF_LOCALE: ${{ inputs.locale }}
+        HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
+        HANDOFF_PARTITION: ${{ inputs.own_partition }}
+      run: |
+        args=(unpack --locale "$HANDOFF_LOCALE" --generation "$HANDOFF_GENERATION")
+        if [[ -n "$HANDOFF_PARTITION" ]]; then args+=(--partition "$HANDOFF_PARTITION"); fi
+        node scripts/build/static-render-handoff.mjs "${args[@]}"
+        node scripts/build/static-build-shards.mjs merge-render --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --parts .output/static-render-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-render-merged
+        rm -rf -- .output/static-render-parts .output/static-render-archives
+        cp -al .output/static-render-merged/. .output/
+        rm -rf -- .output/static-render-merged
+        pnpm finalize:frontend
+        node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
+        if [[ "$VERIFY_UPLOADS" == "true" ]]; then node scripts/deploy/preupload-assets.mjs --dry-run; fi
+        preupload_pid=""
+        if [[ "$PREUPLOAD" == "true" ]]; then
+          node scripts/deploy/preupload-assets.mjs > .output/preupload.log 2>&1 &
+          preupload_pid=$!
+        fi
+        tar --use-compress-program="zstd -T2 -3" -cf .output/static-part.tar.zst -C .output/static-part .
+        if [[ -n "$preupload_pid" ]]; then
+          wait "$preupload_pid"
+          cat .output/preupload.log
+        fi
+    - uses: actions/upload-artifact@v7
+      if: steps.parts.outputs.complete != 'true'
+      with:
+        name: static-part-${{ inputs.inputs_sha }}-${{ inputs.locale }}
+        path: .output/static-part.tar.zst
+        include-hidden-files: true
+        compression-level: 0
+        retention-days: 8
+        overwrite: false
+        if-no-files-found: error

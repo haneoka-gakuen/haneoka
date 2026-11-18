@@ -44,9 +44,10 @@ jobs:
   render:
     name: Render ${{ inputs.locale }} partition ${{ matrix.partition }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -64,39 +65,135 @@ jobs:
       ASTRO_TELEMETRY_DISABLED: "1"
       HANEOKA_CUBISM_RUNTIME_POLICY: ${{ inputs.runtime_policy }}
     steps:
+      - name: Resolve immutable locale checkpoints
+        id: checkpoint
+        if: github.run_attempt > 1
+        uses: actions/github-script@v8
+        env:
+          HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
+          HANDOFF_LOCALE: ${{ inputs.locale }}
+          HANDOFF_PARTITION: ${{ matrix.partition }}
+        with:
+          retries: 0
+          script: |
+            const assert = require('node:assert/strict');
+            const read = async (method, parameters) => {
+              for (let attempt = 0; ; attempt++) {
+                try { return await method({ ...parameters, request: { signal: AbortSignal.timeout(5000) } }); }
+                catch (error) {
+                  if (attempt === 2) throw error;
+                  await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+                }
+              }
+            };
+            const parameters = { ...context.repo, run_id: context.runId };
+            const { data: run } = await read(github.rest.actions.getWorkflowRun, parameters);
+            const expectedHead = context.eventName === 'pull_request' ? context.payload.pull_request.head.sha : context.sha;
+            assert.equal(run.head_sha, expectedHead);
+            const artifacts = [];
+            for (let page = 1; ; page++) {
+              const { data } = await read(github.rest.actions.listWorkflowRunArtifacts, { ...parameters, per_page: 100, page });
+              artifacts.push(...data.artifacts);
+              if (data.artifacts.length < 100) break;
+            }
+            const find = name => {
+              const matches = artifacts.filter(artifact => artifact.name === name);
+              assert.ok(matches.length <= 1, `Duplicate immutable artifact: ${name}`);
+              if (!matches.length) return '';
+              const artifact = matches[0];
+              assert.ok(!artifact.expired && artifact.size_in_bytes > 0);
+              assert.match(artifact.digest || '', /^sha256:[a-f0-9]{64}$/);
+              assert.equal(artifact.workflow_run?.id, context.runId);
+              assert.equal(artifact.workflow_run?.repository_id, run.repository.id);
+              assert.equal(artifact.workflow_run?.head_sha, run.head_sha);
+              return String(artifact.id);
+            };
+            const stem = `${process.env.HANDOFF_GENERATION}-${process.env.HANDOFF_LOCALE}`;
+            const complete = find(`static-part-${stem}`);
+            core.setOutput('complete', complete);
+            if (!complete) core.setOutput('render', find(`static-render-${stem}-${process.env.HANDOFF_PARTITION}`));
       - uses: actions/checkout@v7
+        if: steps.checkpoint.outputs.complete == ''
         with:
           fetch-depth: 0
       - run: corepack enable
+        if: steps.checkpoint.outputs.complete == ''
       - uses: actions/setup-node@v7
+        if: steps.checkpoint.outputs.complete == ''
         with:
           node-version: ${{ inputs.node_version }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: node scripts/external-repositories.mjs checkout
+        if: steps.checkpoint.outputs.complete == ''
       - run: pnpm install --frozen-lockfile
+        if: steps.checkpoint.outputs.complete == ''
       - uses: actions/download-artifact@v8
+        if: steps.checkpoint.outputs.complete == ''
         with:
           name: ${{ inputs.inputs_artifact }}
           path: .output
       - name: Restore verified common artifacts and immutable inputs
+        if: steps.checkpoint.outputs.complete == ''
         run: |
           node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root "$PWD" --source-root "$PWD"
           pnpm dependencies:verify
       - name: Render and verify the assigned complete pages
+        if: steps.checkpoint.outputs.complete == '' && steps.checkpoint.outputs.render == ''
         run: |
           pnpm exec astro build
           node scripts/build/finalize-frontend.mjs --materialize-only
           node scripts/build/static-build-shards.mjs seal-render --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --partition "$STATIC_BUILD_PARTITION" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-render-part
           tar --use-compress-program="zstd -T2 -3" -cf .output/static-render-part.tar.zst -C .output/static-render-part .
       - uses: actions/upload-artifact@v7
+        if: steps.checkpoint.outputs.complete == '' && steps.checkpoint.outputs.render == ''
         with:
           name: static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-${{ matrix.partition }}
           path: .output/static-render-part.tar.zst
           include-hidden-files: true
           compression-level: 0
           retention-days: 7
+          overwrite: false
           if-no-files-found: error
+      - name: Check for an immediate finalizer handoff
+        id: handoff
+        if: steps.checkpoint.outputs.complete == ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
+          HANDOFF_LOCALE: ${{ inputs.locale }}
+          HANDOFF_PARTITION: ${{ matrix.partition }}
+        run: node scripts/build/static-render-handoff.mjs candidate --locale "$HANDOFF_LOCALE" --generation "$HANDOFF_GENERATION" --partition "$HANDOFF_PARTITION"
+      - name: Claim finalization on this prepared runner
+        id: claim
+        if: steps.handoff.outputs.ready == 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: static-finalizer-claim-${{ inputs.inputs_sha }}-${{ inputs.locale }}
+          path: ${{ steps.handoff.outputs.claim_file }}
+          compression-level: 0
+          retention-days: 1
+          overwrite: false
+          if-no-files-found: error
+      - name: Finalize on the prepared render runner
+        if: steps.claim.outcome == 'success' && steps.claim.outputs['artifact-id'] != ''
+        continue-on-error: true
+        uses: ./.github/actions/finalize-static-locale
+        with:
+          prepared: "true"
+          own_partition: ${{ matrix.partition }}
+          locale: ${{ inputs.locale }}
+          inputs_artifact: ${{ inputs.inputs_artifact }}
+          inputs_sha: ${{ inputs.inputs_sha }}
+          node_version: ${{ inputs.node_version }}
+          preupload: ${{ inputs.preupload }}
+          verify_uploads: ${{ inputs.verify_uploads }}
+          github_token: ${{ github.token }}
+          cloudflare_account_id: ${{ inputs.preupload && secrets.CLOUDFLARE_ACCOUNT_ID || '' }}
+          cloudflare_api_token: ${{ inputs.preupload && secrets.CLOUDFLARE_API_TOKEN || '' }}
   finalize:
     name: Render complete ${{ inputs.locale }} frontend
     needs: render
@@ -104,6 +201,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+      actions: read
     env:
       NODE_OPTIONS: --max-old-space-size=5120
       STATIC_PAGE_GROUPS: ${{ inputs.page_groups }}
@@ -116,84 +214,59 @@ jobs:
       ASTRO_TELEMETRY_DISABLED: "1"
       HANEOKA_CUBISM_RUNTIME_POLICY: ${{ inputs.runtime_policy }}
     steps:
+      - name: Check for a complete locale before starting a runner setup
+        id: checkpoint
+        uses: actions/github-script@v8
+        env:
+          HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
+          HANDOFF_LOCALE: ${{ inputs.locale }}
+        with:
+          retries: 0
+          script: |
+            const assert = require('node:assert/strict');
+            const read = async (method, parameters) => {
+              for (let attempt = 0; ; attempt++) {
+                try { return await method({ ...parameters, request: { signal: AbortSignal.timeout(5000) } }); }
+                catch (error) {
+                  if (attempt === 2) throw error;
+                  await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+                }
+              }
+            };
+            const parameters = { ...context.repo, run_id: context.runId };
+            const { data: run } = await read(github.rest.actions.getWorkflowRun, parameters);
+            assert.equal(run.head_sha, context.eventName === 'pull_request' ? context.payload.pull_request.head.sha : context.sha);
+            const artifacts = [];
+            for (let page = 1; ; page++) {
+              const { data } = await read(github.rest.actions.listWorkflowRunArtifacts, { ...parameters, per_page: 100, page });
+              artifacts.push(...data.artifacts);
+              if (data.artifacts.length < 100) break;
+            }
+            const matches = artifacts.filter(artifact => artifact.name === `static-part-${process.env.HANDOFF_GENERATION}-${process.env.HANDOFF_LOCALE}`);
+            assert.ok(matches.length <= 1, 'Duplicate complete locale artifact');
+            if (matches.length) {
+              const artifact = matches[0];
+              assert.ok(!artifact.expired && artifact.size_in_bytes > 0);
+              assert.match(artifact.digest || '', /^sha256:[a-f0-9]{64}$/);
+              assert.equal(artifact.workflow_run?.id, context.runId);
+              assert.equal(artifact.workflow_run?.repository_id, run.repository.id);
+              assert.equal(artifact.workflow_run?.head_sha, run.head_sha);
+            }
+            core.setOutput('complete', matches.length ? 'true' : 'false');
       - uses: actions/checkout@v7
+        if: steps.checkpoint.outputs.complete != 'true'
         with:
           fetch-depth: 0
-      - name: Reclaim large unused runner files
-        run: |
-          df -h /
-          available_kb="$(df --output=avail / | tail -1)"
-          if (( available_kb < 24 * 1024 * 1024 )); then
-            for directory in /usr/local/lib/android /opt/ghc; do
-              if [[ -d "$directory" ]]; then sudo find "$directory" -type f -size +16M -delete; fi
-            done
-          fi
-          df -h /
-      - run: corepack enable
-      - uses: actions/setup-node@v7
+      - name: Finalize on the fallback runner
+        if: steps.checkpoint.outputs.complete != 'true'
+        uses: ./.github/actions/finalize-static-locale
         with:
-          node-version: ${{ inputs.node_version }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: node scripts/external-repositories.mjs checkout
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.inputs_artifact }}
-          path: .output
-      - name: Restore verified common artifacts and immutable inputs
-        run: |
-          node scripts/build/static-build-inputs.mjs restore --manifest .output/static-frozen-inputs/manifest.json --root "$PWD" --source-root "$PWD"
-          pnpm dependencies:verify
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-*
-          path: .output/static-render-archives
-      - name: Resolve pinned public media cache
-        id: media-identity
-        run: >-
-          echo "key=$(node --input-type=module -e 'import { publicMediaCacheKey } from "./scripts/build/public-static-media.mjs"; console.log(publicMediaCacheKey())')" >> "$GITHUB_OUTPUT"
-      - name: Reuse verified public image bytes
-        uses: actions/cache@v6
-        with:
-          path: data/static-catalog/blobs/v1
-          key: static-public-media-v1-${{ runner.os }}-${{ steps.media-identity.outputs.key }}-${{ hashFiles('scripts/build/public-static-media.mjs') }}
-          restore-keys: static-public-media-v1-${{ runner.os }}-
-      - name: Merge every rendered page, then index and pack once
-        env:
-          PREUPLOAD: ${{ inputs.preupload }}
-          VERIFY_UPLOADS: ${{ inputs.verify_uploads }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          for partition in 0 1 2 3; do
-            mkdir -p ".output/static-render-parts/$partition"
-            archive=".output/static-render-archives/static-render-${{ inputs.inputs_sha }}-${{ inputs.locale }}-$partition/static-render-part.tar.zst"
-            tar --zstd -xf "$archive" -C ".output/static-render-parts/$partition"
-            rm -- "$archive"
-          done
-          node scripts/build/static-build-shards.mjs merge-render --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --parts .output/static-render-parts --inputs .output/static-frozen-inputs/manifest.json --output .output/static-render-merged
-          rm -rf -- .output/static-render-parts .output/static-render-archives
-          cp -al .output/static-render-merged/. .output/
-          rm -rf -- .output/static-render-merged
-          pnpm finalize:frontend
-          node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
-          if [[ "$VERIFY_UPLOADS" == "true" ]]; then node scripts/deploy/preupload-assets.mjs --dry-run; fi
-          preupload_pid=""
-          if [[ "$PREUPLOAD" == "true" ]]; then
-            node scripts/deploy/preupload-assets.mjs > .output/preupload.log 2>&1 &
-            preupload_pid=$!
-          fi
-          tar --use-compress-program="zstd -T2 -3" -cf .output/static-part.tar.zst -C .output/static-part .
-          if [[ -n "$preupload_pid" ]]; then
-            wait "$preupload_pid"
-            cat .output/preupload.log
-          fi
-      - uses: actions/upload-artifact@v7
-        with:
-          name: static-part-${{ inputs.inputs_sha }}-${{ inputs.locale }}
-          path: .output/static-part.tar.zst
-          include-hidden-files: true
-          compression-level: 0
-          retention-days: 8
-          if-no-files-found: error
+          locale: ${{ inputs.locale }}
+          inputs_artifact: ${{ inputs.inputs_artifact }}
+          inputs_sha: ${{ inputs.inputs_sha }}
+          node_version: ${{ inputs.node_version }}
+          preupload: ${{ inputs.preupload }}
+          verify_uploads: ${{ inputs.verify_uploads }}
+          github_token: ${{ github.token }}
+          cloudflare_account_id: ${{ inputs.preupload && secrets.CLOUDFLARE_ACCOUNT_ID || '' }}
+          cloudflare_api_token: ${{ inputs.preupload && secrets.CLOUDFLARE_API_TOKEN || '' }}

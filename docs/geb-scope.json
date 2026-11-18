@@ -255,6 +255,7 @@
     "scripts/build/team-builder-engine.mjs",
     "scripts/build/static-build-inputs.mjs",
     "scripts/build/static-build-shards.mjs",
+    "scripts/build/static-render-handoff.mjs",
     "scripts/build/prepare-static-inputs.mjs",
     "scripts/build/finalize-frontend.mjs",
     "scripts/build/search-metadata.mjs",

@@ -373,6 +373,7 @@ jobs:
     needs: prepare
     permissions:
       contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
