@@ -34,7 +34,7 @@ export function manualResultRequest(host: TeamBuilder, team: ManualTeam, goal: G
   const snaps = team.snaps.map((id) => (id === null ? null : `s${id}`));
   return structuredClone({
     ...inputs,
-    player: host.view!.player,
+    player: inputs.player!,
     songRules: host.songRules(goal),
     goal,
     constraints: {

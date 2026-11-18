@@ -784,7 +784,7 @@ export function renderCandidates(host: TeamBuilder): TemplateResult {
   return html`
     <section class="surface stack" id="tb-cards" data-tb-field tabindex="-1">
       ${sectionHeading({ icon: "style", label: host.t("scope", "Cards") })}
-      ${cardScopeControl(host, s.scope, scope => set({ scope }))}
+      ${cardScopeControl(host, s, set)}
       ${
         activity && s.rewardMode !== "plan" && s.scope === "box"
           ? html`

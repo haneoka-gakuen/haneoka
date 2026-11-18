@@ -1,4 +1,4 @@
-/** Card box → resolved member and snap states. */
+/** Card box → resolved member/snap states and release-capped account presets. */
 import type { EngineMaster, MemberCard, SnapCard } from "./master";
 import {
   maxAwake,
@@ -38,6 +38,17 @@ export interface PlayerInput {
   vipRank: number | null;
   characterMemory: Record<string, number | null>;
   musicMemory: Record<string, number | null>;
+}
+
+/** Release-defined account caps; memory points retain their recorded values. */
+export function maxAccountPlayer(master: EngineMaster, player: PlayerInput): PlayerInput {
+  return {
+    ...player,
+    characterRanks: Object.fromEntries([...master.characters.keys()].map(id => [id, master.maxCharacterRank])),
+    characterTotalRank: master.characters.size * master.maxCharacterRank,
+    bandItems: Object.fromEntries([...master.bandItems].map(([id, item]) => [id, Math.max(0, ...item.levels.keys())])),
+    vipRank: Math.max(1, ...master.vipBonus.keys()),
+  };
 }
 /** How unknown growth fields are filled. */
 export type UnknownPolicy = "max" | "min";

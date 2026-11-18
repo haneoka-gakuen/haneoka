@@ -4,6 +4,7 @@
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
 import { evaluateResult, rankRisk } from "./result-analysis";
+import { cardScopeLabel } from "./card-input-controls";
 import { sectionResults } from "./section-results";
 import { justWindowResults } from "./just-window-results";
 import { missionMemberCounts } from "../../lib/team-builder/constraint-feasibility";
@@ -66,7 +67,7 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
     source.server.toUpperCase(),
     ...((usesPtResults(host) ? host.pt.stale : host.stale) ? [host.t("stale", "Conditions changed")] : []),
     `${host.t("unknownPolicy", "Growth")}: ${growthPolicyLabel(host, s)}`,
-    `${host.t("scope", "Cards")}: ${s.scope === "theoretical" ? host.t("scopeAll", "All cards, full growth") : host.t("scopeBox", "My cards")}`,
+    `${host.t("scope", "Cards")}: ${cardScopeLabel(host, s)}`,
     `${host.t("goal", "Goal")}: ${primary(host, hit).label}`,
     ...(s.goal === "event" || s.goal === "plan"
       ? [

@@ -250,10 +250,10 @@ function sectionControls(host: TeamBuilder) {
   const sameBand = (ids: number[]) => ids.length === 5 && ids.every(id => host.master!.members.get(id)?.bandId === arena.bandId);
   for (const team of host.view!.teams) {
     if (!sameBand(team.members)) continue;
-    const growth = host.manualInputs({ members: team.members, snaps: team.snaps, leader: Math.max(0, team.members.indexOf(team.leader ?? team.members[0]!)) }, arena.settings.scope);
+    const growth = host.manualInputs({ members: team.members, snaps: team.snaps, leader: Math.max(0, team.members.indexOf(team.leader ?? team.members[0]!)) }, arena.settings);
     if (growth.members.length !== 5 || growth.snaps.length !== team.snaps.filter(id => id !== null).length) continue;
     candidates.push({ id: `saved:${team.id}`, name: team.name, input: { members: growth.members, snaps: growth.snaps,
-      player: host.view!.player, unknownPolicy: arena.settings.scope === "theoretical" ? "max" : arena.settings.unknownPolicy,
+      player: growth.player!, unknownPolicy: arena.settings.scope === "theoretical" ? "max" : arena.settings.unknownPolicy,
       team: { members: team.members.map(id => `m${id}`), snaps: team.snaps.map(id => id === null ? null : `s${id}`), leader: `m${team.leader ?? team.members[0]}` },
       ranks: [...arena.settings.gekisoRanks] as [number, number, number] } });
   }

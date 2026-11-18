@@ -364,7 +364,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
       ${
         !comparison
           ? html`
-              ${cardScopeControl(host, host.settings.scope, scope => host.updateSettings({ scope }), "manual")}
+              ${cardScopeControl(host, host.settings, patch => host.updateSettings(patch), "manual")}
               <span class="tb-results__meta">${host.t("manualGrowth", "Owned cards: recorded growth")}</span>
             `
           : nothing

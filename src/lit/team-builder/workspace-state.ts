@@ -74,6 +74,7 @@ export function justWindowGoal(settings: Pick<BuildSettings, "justWindowMode" | 
 
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
+  settings.maxAccountBonuses = stored.maxAccountBonuses === true;
   settings.skillRoles = readSkillRoleLimits(stored.skillRoles);
   settings.minMissionMembers = stored.minMissionMembers?.length === 3 ? [...stored.minMissionMembers] : [0, 0, 0];
   settings.justWindowUnit = stored.justWindowUnit ?? ((stored.justWindowMs ?? 0) > 0 ? "ms" : "percent");

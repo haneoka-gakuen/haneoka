@@ -15,6 +15,7 @@ import type { BuildSettings } from "./types";
 import { resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
 import { manualResultHit } from "./manual-results";
 import { resultMetric, type ResultMetric } from "./result-metric";
+import { cardScopeLabel } from "./card-input-controls";
 
 export interface ComparisonEntry {
   id: string;
@@ -491,7 +492,7 @@ export class ResultComparison {
                   }
                   <span>
                     ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
-                      : item.settings.scope === "theoretical" ? host.t("scopeAll", "All cards, full growth") : host.t("scopeBox", "My cards")}
+                      : cardScopeLabel(host, item.settings)}
                     /
                     ${item.input.unknownPolicy === "max" ? host.t("unknownMax", "Count as max") : host.t("unknownMin", "Count as minimum")}
                   </span>

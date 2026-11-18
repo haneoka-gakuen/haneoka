@@ -159,6 +159,7 @@ export const resultSettings = (
       weighted: false,
       ptCycle: !!job?.cycle,
       scope: job?.presentation?.scope ?? "box",
+      maxAccountBonuses: job?.presentation?.maxAccountBonuses ?? false,
       unknownPolicy: request?.unknownPolicy ?? "min",
       boosts: goal?.kind === "event" ? goal.consumption : 0,
       ptMode: goal?.kind === "event" && goal.gekiso ? "gekiso" : "solo",

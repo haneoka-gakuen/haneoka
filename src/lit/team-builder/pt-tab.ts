@@ -157,7 +157,7 @@ export class PtController {
       snaps: s.noSnaps ? [] : request.snaps,
       unknownPolicy: "min",
       player: {
-        ...structuredClone(view.player),
+        ...structuredClone(request.player),
         characterMemory: Object.fromEntries([...(this.host.master?.characters.keys() ?? [])].map((id) => [id, 0])),
         musicMemory: Object.fromEntries([...(this.host.master?.songs.keys() ?? [])].map((id) => [id, 0])),
       },
@@ -371,7 +371,7 @@ export class PtController {
           },
           cycle,
         );
-        job.presentation = { scope: host.settings.scope };
+        job.presentation = { scope: host.settings.scope, maxAccountBonuses: host.settings.maxAccountBonuses };
       }
       if (generation !== this.generation || signature !== this.inputSignature()) return;
       this.job = job;

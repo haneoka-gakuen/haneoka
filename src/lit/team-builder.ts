@@ -41,7 +41,7 @@ import { fetchCrossServerTeamBuilderData, mergeTeamBuilderData } from "../lib/te
 import { visibleContentServers } from "../lib/content-sources";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
-import { maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
+import { maxAccountPlayer, maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
 import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
 import { ENGINE_MODEL_VERSION, EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
 import type { EngineChart } from "../lib/team-builder/engine/protocol";
@@ -1101,26 +1101,33 @@ export class TeamBuilder extends LitElement {
       ),
     };
   }
-  manualInputs(team = this.manual, scope = this.settings.scope) {
+  playerInput(settings = this.searchSettings) {
+    return settings.scope === "theoretical" && settings.maxAccountBonuses
+      ? maxAccountPlayer(this.master!, this.view!.player) : this.view!.player;
+  }
+  manualInputs(team = this.manual, settings = this.settings) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
-    const theoretical = scope === "theoretical";
+    const theoretical = settings.scope === "theoretical";
+    const fullGrowth = theoretical && settings.maxAccountBonuses;
     const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
-      if (row) return [row];
       const card = id === null ? undefined : this.master?.members.get(id);
+      if (card && fullGrowth) return [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }];
+      if (row) return [row];
       const planning=id===null?undefined:this.planner.cardById(id);
       if(card&&planning)return [{key:`m${id}`,cardId:card.id,...maxMemberGrowth(this.master!,card),...planning.growth}];
       return card && theoretical ? [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }] : [];
     });
     const snaps = team.snaps.flatMap((id) => {
       const row = owned.snaps.find((row) => row.cardId === id);
-      if (row) return [row];
       const card = id === null ? undefined : this.master?.snaps.get(id);
+      if (card && fullGrowth) return [{ key: `s${id}`, cardId: card.id, ...maxSnapGrowth(this.master!, card) }];
+      if (row) return [row];
       const planning=id===null?undefined:this.planner.cardById(id);
       if(card&&planning)return [{key:`s${id}`,cardId:card.id,...maxSnapGrowth(this.master!,card),...planning.growth}];
       return card && theoretical ? [{ key: `s${id}`, cardId: card.id, ...maxSnapGrowth(this.master!, card) }] : [];
     });
-    return { members, snaps, player: this.view?.player, unknownPolicy: this.settings.unknownPolicy };
+    return { members, snaps, player: this.view ? this.playerInput(settings) : undefined, unknownPolicy: fullGrowth ? "max" as const : settings.unknownPolicy };
   }
   manualGoal(): Extract<Goal, { kind: "score" | "gekiso" }> {
     const s = this.effectiveSettings(this.settings.manualScoreMode);
@@ -1145,6 +1152,7 @@ export class TeamBuilder extends LitElement {
       this.data?.crossServer?.identities,
       this.view && engineInputs(this.view, true),
       this.settings.scope,
+      this.view && this.playerInput(this.settings),
       this.settings.unknownPolicy,
       this.manualGoal(),
       this.songRules(this.manualGoal()),
@@ -1686,6 +1694,7 @@ export class TeamBuilder extends LitElement {
       goal = { ...goal, eventId: s.manualEvent.templateId!, eventEffects: resolved.effects };
     }
     const theoretical = s.scope === "theoretical";
+    const player = this.playerInput(s);
     const locked = (kind: "m" | "s") => [
       ...new Set([
         ...(theoretical
@@ -1704,11 +1713,11 @@ export class TeamBuilder extends LitElement {
       player:
         this.tab === "pt" && s.rewardMode !== "plan" && (!farmingConditions(s.farming).includeMemory || s.rewardMode === "recommendation")
           ? {
-              ...this.view.player,
+              ...player,
               characterMemory: Object.fromEntries([...(this.master?.characters.keys() ?? [])].map((id) => [id, 0])),
               musicMemory: Object.fromEntries([...(this.master?.songs.keys() ?? [])].map((id) => [id, 0])),
             }
-          : this.view.player,
+          : player,
       unknownPolicy: theoretical ? "max" : s.unknownPolicy,
       goal,
       constraints: {

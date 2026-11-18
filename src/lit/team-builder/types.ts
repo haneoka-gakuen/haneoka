@@ -65,6 +65,7 @@ export interface BuildSettings {
   k: number;
   unknownPolicy: "max" | "min";
   scope: "box" | "theoretical";
+  maxAccountBonuses: boolean;
   leader: number | null;
   /** member card → snap card (null keeps it empty). */
   bindings: [number, number | null][];
@@ -161,6 +162,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   k: 1,
   unknownPolicy: "max",
   scope: "box",
+  maxAccountBonuses: false,
   leader: null,
   bindings: [],
   required: { members: [], snaps: [] },

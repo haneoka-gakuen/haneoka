@@ -169,7 +169,7 @@ export function renderParking(host: TeamBuilder, modes: TemplateResult) {
       ${specList([{ label: host.t("playJudgements", "Play judgements"), value: host.t("playAp", "All Perfect") }])}
     </section>
     <section class=${`surface stack${teamInvalid ? " pt-field--invalid" : ""}`} aria-invalid=${String(teamInvalid)} id="parking-teams">${sectionHeading({ icon: "group", label: t("teams", "Available teams") })}
-      ${cardScopeControl(host, host.settings.scope, scope => host.updateSettings({ scope }), "manual")}
+      ${cardScopeControl(host, host.settings, patch => host.updateSettings(patch), "manual")}
       ${unknownGrowthControl(host, host.settings.unknownPolicy, unknownPolicy => host.updateSettings({ unknownPolicy }))}
       <div class="cluster">${filterChip({ label: t("currentTeam", "Current manual team"), selected: d.includeManual, onToggle: () => set(() => { d.includeManual = !d.includeManual; }) })}
         ${host.view!.teams.map(team => filterChip({ label: team.name, selected: d.teamIds.has(team.id), onToggle: () => set(() => { if (d.teamIds.has(team.id)) d.teamIds.delete(team.id); else d.teamIds.add(team.id); }) }))}</div>
@@ -196,7 +196,7 @@ export function renderParking(host: TeamBuilder, modes: TemplateResult) {
         const cacheKey = JSON.stringify([d.owner, eventId, d.songId, d.difficulty, d.challenge, d.consumption, host.settings.frameRate, host.view!.player, job]);
         const cached = d.evaluations.get(cacheKey);
         if (cached) { rows.push(cached); continue; }
-        const row = (await engine.evaluate({ ...job.inputs, player: structuredClone(host.view!.player),
+        const row = (await engine.evaluate({ ...job.inputs, player: structuredClone(job.inputs.player!),
           team: { members: job.team.members.map(id => `m${id}`), snaps: job.team.snaps.map(id => id === null ? null : `s${id}`), leader: `m${job.team.members[job.team.leader]}` },
           songs: [{ songId: d.songId, difficulty: d.difficulty }], play: { frameRate: host.settings.frameRate, great: 0, good: 0, bad: 0, miss: 0 },
           challengeEventId: d.challenge ? eventId : null, event: { eventId: eventId!, route: d.challenge ? "challenge" : "live", consumption: d.consumption, rewardRoom: { mode: "solo" } },
