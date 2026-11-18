@@ -458,12 +458,8 @@ export class GachaHistory extends LitElement {
   private luckSummary(poolId?: string): GachaLuckSummary | undefined {
     return poolId === undefined ? this.luckResult?.overall : this.luckResult?.pools[poolId];
   }
-  private luckTier(luck: GachaLuckValue) { return luck.tier; }
-  private luckValue(luck: GachaLuckValue) {
-    if (luck.score === 50) return this.t("luckMedian");
-    const probability = Math.min(luck.upper, luck.lower);
-    const value = probability < .001 ? `< ${this.percent(.001, 1, 1)}` : this.percent(probability, 1, 2);
-    return this.t(luck.upper <= luck.lower ? "luckTop" : "luckBottom", { value });
+  private luckRating(luck: GachaLuckValue) {
+    return `${this.number(luck.score, 1)} ${this.t(`luckTier${luck.tier}`)}`;
   }
   private luckState(summary?: GachaLuckSummary, value: GachaLuckValue | null | undefined = summary?.combined) {
     if (this.luckClient.error) return this.t("luckCalculationFailed");
@@ -475,30 +471,26 @@ export class GachaHistory extends LitElement {
   }
   private luckMeter(label: string, luck: GachaLuckValue | null | undefined, summary?: GachaLuckSummary, combined = false) {
     const value = luck?.variable ? luck : undefined;
-    const chance = value ? Math.min(value.lower, value.upper) : null;
+    const tier = value ? this.t(`luckTier${value.tier}`) : this.luckState(summary, luck);
     const facts = combined ? [
-      [`EX+ / ${this.t("observed")}`, summary?.high ? this.number(summary.high.observed) : "—"],
-      [`EX+ / ${this.t("expected")}`, summary?.high ? this.number(summary.high.expected, 2) : "—"],
-      [`${this.t("luckPickupHigh")} · ${this.t("observed")}`, summary?.pickup ? this.number(summary.pickup.observed) : "—"],
-      [`${this.t("luckPickupHigh")} · ${this.t("expected")}`, summary?.pickup ? this.number(summary.pickup.expected, 2) : "—"],
+      [`SSR+ / ${this.t("observed")}`, summary?.high ? this.number(summary.high.observed) : "—"],
+      [`SSR+ / ${this.t("expected")}`, summary?.high ? this.number(summary.high.expected, 2) : "—"],
+      [`${this.t("luckPickupHigh")} / ${this.t("observed")}`, summary?.pickup ? this.number(summary.pickup.observed) : "—"],
+      [`${this.t("luckPickupHigh")} / ${this.t("expected")}`, summary?.pickup ? this.number(summary.pickup.expected, 2) : "—"],
     ] : [[this.t("observed"), luck ? this.number(luck.observed) : "—"], [this.t("expected"), luck ? this.number(luck.expected, 2) : "—"]];
-    facts.push([this.t("luckScore"), value ? this.number(value.score, 1) : "—"],
-      [this.t(value && value.lower < value.upper ? "atMostChance" : "atLeastChance"), chance === null ? "—" : chance < .001 ? `< ${this.percent(.001, 1, 1)}` : this.percent(chance, 1, 2)]);
     return html`<div class="gacha-luck" data-tier=${value?.tier ?? "neutral"} aria-busy=${String(this.luckClient.pending)}>
       <div class="row row--between row--baseline"><span class="md-title-small">${label}</span>
-        <span class="gacha-luck__tier">${value ? this.t(`luckTier${value.tier}`) : this.luckState(summary, luck)}</span></div>
+        <span class="row row--baseline">
+          ${value ? html`<span class="md-title-small tabular">${this.number(value.score, 1)}</span>` : nothing}
+          <span class="gacha-luck__tier">${tier}</span>
+        </span></div>
       <div class="gacha-luck__track" role="meter" aria-label=${label} aria-valuemin="0" aria-valuemax="100"
-        aria-valuenow=${value ? Math.round(value.score) : nothing} aria-valuetext=${value ? this.luckValue(value) : this.luckState(summary, luck)}>
+        aria-valuenow=${value ? Math.round(value.score * 10) / 10 : nothing} aria-valuetext=${value ? this.luckRating(value) : tier}>
         <span class="gacha-luck__fill" style=${`inline-size:${value?.score ?? 0}%`}></span>
         <span class="gacha-luck__mark" ?hidden=${!value} style=${`inset-inline-start:${value?.score ?? 0}%`}></span>
       </div>
       <dl class="spec-list spec-list--split spec-list--numeric">${facts.map(([name, text]) => html`<div><dt>${name}</dt><dd>${text}</dd></div>`)}</dl>
     </div>`;
-  }
-  private luckCoverage(summary?: GachaLuckSummary) {
-    return html`<dl class="spec-list spec-list--split spec-list--numeric">${[
-      ["luckCovered", summary?.knownDraws], ["luckUnknown", summary?.unknownDraws], ["luckItems", summary?.itemDraws],
-    ].map(([key, value]) => html`<div><dt>${this.t(String(key))}</dt><dd>${value === undefined ? "—" : this.number(Number(value))}</dd></div>`)}</dl>`;
   }
   private stat(options: { icon: TemplateResult; label: string; value: unknown; supporting?: unknown; tone?: string }) {
     return html`
@@ -920,7 +912,7 @@ export class GachaHistory extends LitElement {
                   })}
                   ${this.stat({
                     icon: icon("star", 24),
-                    label: "EX+",
+                    label: "SSR+",
                     value: this.number(stats.high),
                     supporting: `${this.percent(stats.high, this.cardDraws(stats))}${official == null ? "" : ` / ${this.t("officialRate")} ${this.percent(official)}`}`,
                     tone: "tertiary",
@@ -945,9 +937,8 @@ export class GachaHistory extends LitElement {
                   ${this.stat({
                     icon: icon("auto_awesome", 24),
                     label: this.t("luck"),
-                    value: luck ? this.t(`luckTier${this.luckTier(luck)}`) : this.luckState(summary),
-                    supporting: luck ? this.luckValue(luck) : "",
-                    tone: luck ? `luck-${this.luckTier(luck)}` : "neutral",
+                    value: luck ? this.luckRating(luck) : this.luckState(summary),
+                    tone: luck ? `luck-${luck.tier}` : "neutral",
                   })}
                   ${this.stat({
                     icon: icon("diamond", 24),
@@ -1068,7 +1059,7 @@ export class GachaHistory extends LitElement {
           (["nonPickup", "pickup"] as const).map((key) => ({ name: this.t(key), values: rows.map((row) => row[key]) })),
           {
             horizontal: true,
-            caption: `${this.t(kind.kind)} ${this.number(kind.total)} / EX+ ${this.percent(kind.high, kind.total)}`,
+            caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
           },
         );
       });
@@ -1076,14 +1067,14 @@ export class GachaHistory extends LitElement {
 
   private renderOverview(scoped: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]>) {
     const rows: Array<[string, number, number | null]> = [
-      ["EX+", stats.high, this.officialRate(stats, (r) => r.high)],
+      ["SSR+", stats.high, this.officialRate(stats, (r) => r.high)],
       [
-        `${this.t("member")} EX+`,
+        `${this.t("member")} SSR+`,
         stats.kinds.find((k) => k.kind === "member")!.high,
         this.officialRate(stats, (r) => r.memberHigh),
       ],
       [
-        `${this.t("support")} EX+`,
+        `${this.t("support")} SSR+`,
         stats.kinds.find((k) => k.kind === "support")!.high,
         this.officialRate(stats, (r) => r.supportHigh),
       ],
@@ -1119,9 +1110,8 @@ export class GachaHistory extends LitElement {
           <div class="row row--between">${renderDetailSectionHeading(this.t("luckCombined"), "stats", { level: 3 })}
             ${this.luckClient.error ? iconButton({ icon: "refresh", label: this.t("luckRetry"), onClick: () => { this.luckClient.reset(); this.requestUpdate(); } }) : nothing}</div>
           ${this.luckMeter(this.t("luckCombined"), this.luckSummary()?.combined, this.luckSummary(), true)}
-          ${this.luckMeter("EX+", this.luckSummary()?.high, this.luckSummary())}
+          ${this.luckMeter("SSR+", this.luckSummary()?.high, this.luckSummary())}
           ${this.luckMeter(this.t("luckPickupHigh"), this.luckSummary()?.pickup, this.luckSummary())}
-          ${this.luckCoverage(this.luckSummary())}
         </section>
         <section class="surface stack">
           ${renderDetailSectionHeading(this.t("rateComparison"), "difficulty", { level: 3 })}
@@ -1263,7 +1253,7 @@ export class GachaHistory extends LitElement {
                 <div class="gacha-pool__stats" ?hidden=${this.pureItemPool(pool.poolId)}>
                   ${this.stat({
                     icon: icon("star", 20),
-                    label: "EX+",
+                    label: "SSR+",
                     value: this.number(pool.high),
                     supporting: `${this.percent(pool.high, pool.total)}${view?.rates ? ` / ${this.t("officialRate")} ${this.percent(view.rates.high)}` : ""}`,
                     tone: "tertiary",
@@ -1294,7 +1284,6 @@ export class GachaHistory extends LitElement {
                   })}
                 </div>
                 ${this.luckMeter(this.t("luckCombined"), this.luckSummary(pool.poolId ?? "")?.combined, this.luckSummary(pool.poolId ?? ""), true)}
-                ${this.luckCoverage(this.luckSummary(pool.poolId ?? ""))}
                 ${
                   view?.featured?.length
                     ? html`
@@ -1625,7 +1614,7 @@ export class GachaHistory extends LitElement {
                                     high
                                       ? html`
                                           <span class="gacha-chip" data-tone="tertiary">
-                                            ${icon("star", 16)}EX+ ${high}
+                                            ${icon("star", 16)}SSR+ ${high}
                                           </span>
                                         `
                                       : nothing
@@ -1680,11 +1669,11 @@ export class GachaHistory extends LitElement {
           months.map((row) => monthLabel(row.month)),
           composition(months),
           {
-            details: months.map((row) => `EX+ ${row.high} / ${this.t("pickup")} ${row.pickup}`),
+            details: months.map((row) => `SSR+ ${row.high} / ${this.t("pickup")} ${row.pickup}`),
           },
         )}
         ${this.chart(
-          `EX+ / ${this.t("monthlyTrend")}`,
+          `SSR+ / ${this.t("monthlyTrend")}`,
           months.map((row) => monthLabel(row.month)),
           [
             { name: this.t("nonPickup"), values: months.map((row) => row.high - Math.min(row.high, row.pickup)) },
@@ -1695,7 +1684,7 @@ export class GachaHistory extends LitElement {
           this.t("dailyTrend"),
           stats.days.map((day) => day.day ?? this.t("unknownTime")),
           composition(stats.days),
-          { details: stats.days.map((day) => `EX+ ${day.high} / ${this.t("pickup")} ${day.pickup}`), wide: true },
+          { details: stats.days.map((day) => `SSR+ ${day.high} / ${this.t("pickup")} ${day.pickup}`), wide: true },
         )}
         ${this.chart(
           this.t("poolComposition"),
@@ -1710,7 +1699,7 @@ export class GachaHistory extends LitElement {
             [
               this.t("month"),
               this.t("total"),
-              "EX+",
+              "SSR+",
               this.t("pickup"),
               this.t("observedRate"),
               this.t("freeGems"),
@@ -1785,16 +1774,13 @@ export class GachaHistory extends LitElement {
     const luck = summary?.combined?.variable ? summary.combined : null;
     const metrics = [
       { label: this.t("total"), value: this.number(stats.total) },
-      { label: `EX+ / ${this.t("luckActualExpected")}`, value: summary?.high ? `${this.number(summary.high.observed)} / ${this.number(summary.high.expected, 2)}` : `${this.number(stats.high)} / —` },
-      { label: `${this.t("luckPickupHigh")} · ${this.t("luckActualExpected")}`, value: summary?.pickup ? `${this.number(summary.pickup.observed)} / ${this.number(summary.pickup.expected, 2)}` : `${this.number(stats.pickup)} / —` },
+      { label: `SSR+ / ${this.t("luckActualExpected")}`, value: summary?.high ? `${this.number(summary.high.observed)} / ${this.number(summary.high.expected, 2)}` : `${this.number(stats.high)} / —` },
+      { label: `${this.t("luckPickupHigh")} / ${this.t("luckActualExpected")}`, value: summary?.pickup ? `${this.number(summary.pickup.observed)} / ${this.number(summary.pickup.expected, 2)}` : `${this.number(stats.pickup)} / —` },
       {
         label: this.t("luckCombined"),
-        value: luck ? `${this.t(`luckTier${this.luckTier(luck)}`)} / ${this.luckValue(luck)}` : this.luckState(summary),
+        value: luck ? this.luckRating(luck) : this.luckState(summary),
       },
-      { label: this.t("luckCovered"), value: summary ? this.number(summary.knownDraws) : "—" },
-      { label: this.t("luckUnknown"), value: summary ? this.number(summary.unknownDraws) : "—" },
     ];
-    if (summary?.itemDraws) metrics.push({ label: this.t("luckItems"), value: this.number(summary.itemDraws) });
     const groups = stats.pools.flatMap((pool) => {
       const selected = batches.filter((batch) => batch.poolId === pool.poolId);
       return (["member", "support"] as const).map((kind) => ({
@@ -1821,7 +1807,7 @@ export class GachaHistory extends LitElement {
       .filter((kind) => kind.kind === "member" || kind.kind === "support")
       .map((kind) => ({
         label: `${this.t(kind.kind)} / ${this.t("rarityDistribution")}`,
-        caption: `${this.t(kind.kind)} ${this.number(kind.total)} / EX+ ${this.percent(kind.high, kind.total)}`,
+        caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
         legend: [this.t("nonPickup"), this.t("pickup")],
         rows: kind.distribution
           .filter(

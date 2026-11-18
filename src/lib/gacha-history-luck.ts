@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Published pool weights, executed product guarantees and projected history.
-// Output: Joint EX+/UP batch laws, conservative nine-tier ratings and coverage.
+// Output: Joint SSR+/UP batch laws, conservative nine-tier ratings and coverage.
 // Pos: [Map](L2-2.md); gacha history probability model shared by builds and its browser worker.
 // Effects/Dependencies: Pure calculations; polynomial products use bounded-error floating-point FFT for large histories.
 import { cardRarityAtLeast } from "./card-rarity";
