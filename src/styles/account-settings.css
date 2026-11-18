@@ -350,6 +350,9 @@
     padding: 0;
     border: 0;
   }
+  .account-api-form {
+    align-items: start;
+  }
   .account-api-scopes > span {
     grid-column: 1 / -1;
     color: var(--md-sys-color-on-surface-variant);

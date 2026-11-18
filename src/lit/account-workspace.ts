@@ -725,7 +725,7 @@ export class AccountWorkspace extends LitElement {
               `
             : nothing
         }
-        <form class="account-inline-form" @submit=${this.createApiToken}>
+        <form class="account-inline-form account-api-form" @submit=${this.createApiToken}>
           <md-outlined-text-field name="name" label=${this.label("apiTokenName", "Token name")}
             maxlength="64" required ?disabled=${this.busy}></md-outlined-text-field>
           <md-outlined-select name="days" label=${this.label("apiTokenLifetime", "Valid for")} ?disabled=${this.busy}>
