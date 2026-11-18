@@ -350,16 +350,32 @@
     padding: 0;
     border: 0;
   }
-  .account-api-scope {
+  .account-api-scopes > span {
+    grid-column: 1 / -1;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .account-api-scopes .account-api-scope {
     display: flex;
     min-height: 48px;
     align-items: center;
     gap: 12px;
   }
-  .account-api-token {
+  .account-api-list {
+    --md-list-container-color: transparent;
+    --md-text-button-container-height: 48px;
+  }
+  .account-api-submit {
+    grid-column: 1 / -1;
+    justify-self: end;
+    --md-filled-button-container-height: 48px;
+  }
+  .account-api-revoke {
+    --md-filled-button-container-color: var(--md-sys-color-error);
+    --md-filled-button-label-text-color: var(--md-sys-color-on-error);
+  }
+  .account-api-value {
     display: block;
-    overflow-wrap: anywhere;
-    user-select: all;
+    width: 100%;
   }
   .provider-row--link {
     width: 100%;

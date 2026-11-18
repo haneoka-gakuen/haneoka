@@ -2,6 +2,15 @@ import { clientText } from "../i18n/client";
 import { rememberedReturn } from "../lib/document-url";
 import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
+import "@material/web/button/filled-button.js";
+import "@material/web/button/text-button.js";
+import "@material/web/checkbox/checkbox.js";
+import "@material/web/divider/divider.js";
+import "@material/web/list/list.js";
+import "@material/web/list/list-item.js";
+import "@material/web/select/outlined-select.js";
+import "@material/web/select/select-option.js";
+import "@material/web/textfield/outlined-text-field.js";
 import { modal } from "./ui/modal";
 import { specList } from "./ui/spec";
 import { loadingState } from "./ui/state";
@@ -674,89 +683,88 @@ export class AccountWorkspace extends LitElement {
     return html`
       <article class="surface account-block">
         ${this.heading(icon("key", 18), this.label("apiTokens", "API tokens"), this.apiTokens.length)}
-        <div class="provider-list">
+        <md-list class="account-api-list" aria-label=${this.label("apiTokens", "API tokens")}>
           ${this.apiTokens.map(
-            (token) => html`
-              <div class="provider-row">
-                <span class="provider-mark">${icon("key", 20)}</span>
-                <span>
-                  <strong>${String(token.name)}</strong>
-                  <small>
-                    ${(token.scopes as string[]).map((scope) => this.apiScopeLabel(scope)).join(" / ")}
-                    <br />
-                    ${this.label("apiTokenExpires", "Expires")} ${this.date(token.expiresAt)}
-                    / ${this.label("apiTokenUsed", "Last used")}
-                    ${token.lastUsedAt ? this.date(token.lastUsedAt) : this.label("apiTokenNeverUsed", "Never")}
-                  </small>
+            (token, index) => html`
+              ${index ? html`<md-divider></md-divider>` : nothing}
+              <md-list-item>
+                <span slot="start" class="provider-mark">${icon("key", 20)}</span>
+                <span slot="headline">${String(token.name)}</span>
+                <span slot="supporting-text">
+                  ${(token.scopes as string[]).map((scope) => this.apiScopeLabel(scope)).join(" / ")}
+                  <br />
+                  ${this.label("apiTokenExpires", "Expires")} ${this.date(token.expiresAt)}
+                  / ${this.label("apiTokenUsed", "Last used")}
+                  ${token.lastUsedAt ? this.date(token.lastUsedAt) : this.label("apiTokenNeverUsed", "Never")}
                 </span>
-                <button class="button button--text" ?disabled=${this.busy} @click=${() => (this.apiTokenRevoking = token)}>
+                <md-text-button slot="end" ?disabled=${this.busy} @click=${() => (this.apiTokenRevoking = token)}>
                   ${this.label("revoke", "Revoke")}
-                </button>
-              </div>
+                </md-text-button>
+              </md-list-item>
             `,
           )}
-        </div>
+        </md-list>
         ${
           this.apiTokenEvents.length
             ? html`
-                <div class="provider-list" aria-label=${this.label("apiTokenEvents", "Recent changes")}>
+                <md-list class="account-api-list" aria-label=${this.label("apiTokenEvents", "Recent changes")}>
                   ${this.apiTokenEvents.map(
-                    (entry) => html`
-                      <div class="provider-row">
-                        <span class="provider-mark">${icon("history", 20)}</span>
-                        <span>
-                          <strong>${String(entry.tokenName)}</strong>
-                          <small>
-                            ${this.label("apiTokenEventChanged", "Box entries changed")}: ${Number(entry.changed).toLocaleString(preferredLocale())}
-                            / ${String(entry.server).toUpperCase()} / ${this.date(entry.createdAt)}
-                          </small>
+                    (entry, index) => html`
+                      ${index ? html`<md-divider></md-divider>` : nothing}
+                      <md-list-item>
+                        <span slot="start" class="provider-mark">${icon("history", 20)}</span>
+                        <span slot="headline">${String(entry.tokenName)}</span>
+                        <span slot="supporting-text">
+                          ${this.label("apiTokenEventChanged", "Box entries changed")}: ${Number(entry.changed).toLocaleString(preferredLocale())}
+                          / ${String(entry.server).toUpperCase()} / ${this.date(entry.createdAt)}
                         </span>
-                      </div>
+                      </md-list-item>
                     `,
                   )}
-                </div>
+                </md-list>
               `
             : nothing
         }
         <form class="account-inline-form" @submit=${this.createApiToken}>
-          <label>
-            <span>${this.label("apiTokenName", "Token name")}</span>
-            <span class="field"><input name="name" maxlength="64" required /></span>
-          </label>
-          <label>
-            <span>${this.label("apiTokenLifetime", "Valid for")}</span>
-            <span class="field">
-              <select name="days">
-                ${[30, 90, 365].map(
-                  (days) => html`<option value=${days} ?selected=${days === 90}>${this.label(`apiTokenDays${days}`, `${days} days`)}</option>`,
-                )}
-              </select>
-            </span>
-          </label>
-          <fieldset class="account-api-scopes">
-            <legend>${this.label("apiTokenScopes", "Permissions")}</legend>
+          <md-outlined-text-field name="name" label=${this.label("apiTokenName", "Token name")}
+            maxlength="64" required ?disabled=${this.busy}></md-outlined-text-field>
+          <md-outlined-select name="days" label=${this.label("apiTokenLifetime", "Valid for")} ?disabled=${this.busy}>
+            ${[30, 90, 365].map(days => html`
+              <md-select-option value=${days} ?selected=${days === 90}>
+                <div slot="headline">${this.label(`apiTokenDays${days}`, `${days} days`)}</div>
+              </md-select-option>
+            `)}
+          </md-outlined-select>
+          <div class="account-api-scopes" role="group" aria-labelledby="account-api-permissions">
+            <span id="account-api-permissions">${this.label("apiTokenScopes", "Permissions")}</span>
             ${API_SCOPES.map(
               (scope) => html`
                 <label class="account-api-scope">
-                  <input type="checkbox" name="scopes" value=${scope} ?checked=${scope === "team:read"} />
+                  <md-checkbox name="scopes" value=${scope} ?checked=${scope === "team:read"}
+                    touch-target="wrapper" ?disabled=${this.busy}></md-checkbox>
                   <span>${this.apiScopeLabel(scope)}</span>
                 </label>
               `,
             )}
-          </fieldset>
-          <button class="button" ?disabled=${this.busy}>${this.label("apiTokenCreate", "Create token")}</button>
+          </div>
+          <md-filled-button class="account-api-submit" type="submit" ?disabled=${this.busy}>
+            ${this.label("apiTokenCreate", "Create token")}
+          </md-filled-button>
         </form>
       </article>
       ${
         this.apiTokenValue
           ? html`
-              <dialog class="dialog" ${modal(() => (this.apiTokenValue = ""))}>
+              <dialog class="dialog" aria-labelledby="account-api-created" ${modal(() => (this.apiTokenValue = ""))}>
                 <div class="dialog__surface">
-                  <header class="dialog__header"><h2>${this.label("apiTokenShown", "Copy this token now")}</h2></header>
-                  <div class="dialog__body"><code class="account-api-token">${this.apiTokenValue}</code></div>
+                  <header class="dialog__header"><h2 id="account-api-created">${this.label("apiTokenShown", "Copy this token now")}</h2></header>
+                  <div class="dialog__body">
+                    <md-outlined-text-field class="account-api-value" type="textarea" rows="2" readonly
+                      label=${this.label("apiTokens", "API tokens")} .value=${this.apiTokenValue}></md-outlined-text-field>
+                  </div>
                   <footer class="dialog__actions">
-                    <button class="button button--text" type="button" @click=${() => (this.apiTokenValue = "")}>${this.label("close", "Close")}</button>
-                    <button class="button" type="button" @click=${this.copyApiToken}>${this.label("apiTokenCopy", "Copy")}</button>
+                    <md-text-button @click=${() => (this.apiTokenValue = "")}>${this.label("close", "Close")}</md-text-button>
+                    <md-filled-button @click=${this.copyApiToken}>${this.label("apiTokenCopy", "Copy")}</md-filled-button>
                   </footer>
                 </div>
               </dialog>
@@ -766,13 +774,15 @@ export class AccountWorkspace extends LitElement {
       ${
         revoking
           ? html`
-              <dialog class="dialog" ${modal(() => (this.apiTokenRevoking = null))}>
+              <dialog class="dialog" aria-labelledby="account-api-revoke" ${modal(() => (this.apiTokenRevoking = null))}>
                 <div class="dialog__surface">
-                  <header class="dialog__header"><h2>${this.label("apiTokenRevokeTitle", "Revoke this token?")}</h2></header>
+                  <header class="dialog__header"><h2 id="account-api-revoke">${this.label("apiTokenRevokeTitle", "Revoke this token?")}</h2></header>
                   <div class="dialog__body">${String(revoking.name)}</div>
                   <footer class="dialog__actions">
-                    <button class="button button--text" type="button" @click=${() => (this.apiTokenRevoking = null)}>${this.label("close", "Close")}</button>
-                    <button class="button button--danger" type="button" ?disabled=${this.busy} @click=${this.revokeApiToken}>${this.label("revoke", "Revoke")}</button>
+                    <md-text-button @click=${() => (this.apiTokenRevoking = null)}>${this.label("close", "Close")}</md-text-button>
+                    <md-filled-button class="account-api-revoke" ?disabled=${this.busy} @click=${this.revokeApiToken}>
+                      ${this.label("revoke", "Revoke")}
+                    </md-filled-button>
                   </footer>
                 </div>
               </dialog>
