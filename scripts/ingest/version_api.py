@@ -220,6 +220,13 @@ def discover_asset_version(
     status_match = re.match(r"HTTP/\S+\s+(\d{3})(?:\s|$)", status)
     if status_match and int(status_match.group(1)) in RETRYABLE_HTTP_STATUS:
         raise DiscoveryUnavailable("service", f"asset version HTTP status {status_match.group(1)}")
+    if (
+        status_match and status_match.group(1) == "403"
+        and endpoint == "https://api.bang-dream-on.jp/app.masterdata.MasterdataService/Version"
+        and proxy and proxy == os.environ.get("JP_VERSION_PROXY")
+        and os.environ.get("JP_VERSION_PROXY_CONTROLLER")
+    ):
+        raise DiscoveryUnavailable("egress-blocked", "JP asset version returned HTTP 403 after egress failover")
     if not status_match or status_match.group(1) != "200":
         raise RuntimeError(f"asset version HTTP response failed ({status})")
     if VERSION_HEADER not in headers:
