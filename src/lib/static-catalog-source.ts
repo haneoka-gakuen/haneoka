@@ -2,7 +2,7 @@
 // Input: 资源请求、server、可选固定 release 和构建环境。
 // Output: 目录／实体 JSON、批量记录及来源一致性错误。
 // Pos: [Map](L2-2.md)；构建期目录读取与固定身份边界。
-// Effects/Dependencies: Node 文件读取、HTTP 请求与正文超时重试、内存请求缓存及静态输入捕获；回退受身份策略约束。
+// Effects/Dependencies: Node 文件读取、HTTP 请求与正文传输失败重试、内存请求缓存及静态输入捕获；回退受身份策略约束。
 import {
   projectCriSources,
   mergeCriSourceTree,
@@ -36,6 +36,15 @@ const ORIGIN = (process.env.STATIC_CATALOG_ORIGIN || "https://haneoka.org").repl
 const TOKEN = process.env.STATIC_CATALOG_TOKEN || "";
 const BUST = `static-catalog-${Date.now()}`;
 const RETRYABLE = new Set([403, 429, 500, 502, 503, 504]);
+const RETRYABLE_BODY_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "UND_ERR_SOCKET",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_RES_CONTENT_LENGTH_MISMATCH",
+  "ERR_STREAM_PREMATURE_CLOSE",
+]);
 const RELEASE_ID_PATTERN = /^r-[a-f0-9]{20}$/u;
 const SOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -311,10 +320,16 @@ async function fetchResponse<T>(
       try {
         return await read(response);
       } catch (error) {
-        if (!signal.aborted || !(error instanceof Error) || !["AbortError", "TimeoutError"].includes(error.name))
-          throw error;
+        const timedOut =
+          signal.aborted && error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name);
+        const code = asRecord(asRecord(error)?.cause)?.code ?? asRecord(error)?.code;
+        const interrupted = typeof code === "string" && RETRYABLE_BODY_CODES.has(code);
+        if (!timedOut && !interrupted) throw error;
         if (!retry)
-          throw new Error(`Static catalog response timed out for ${server}/${path.split("?")[0]}`, { cause: error });
+          throw new Error(
+            `Static catalog response ${timedOut ? "timed out" : "interrupted"} for ${server}/${path.split("?")[0]}`,
+            { cause: error },
+          );
       } finally {
         await releaseResponseBody(response);
       }
