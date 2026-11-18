@@ -2,7 +2,7 @@
 // Input: 锁定 Git 源码树与冻结内容清单。
 // Output: Web 源码、资源内容及最终构建身份。
 // Pos: [Map](L2-2.md)；页面更新提示使用的 Web 输入身份。
-// Effects/Dependencies: 读取 Git／文件字节；非 public 导航不参与源码身份，public 文件全部保留。
+// Effects/Dependencies: 读取 Git／文件字节；非 public 导航与构建协调脚本不参与源码身份，public 文件和捕获产物全部保留。
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -27,6 +27,16 @@ interface FrozenInputs {
 
 const digest = (body: string | Uint8Array) => createHash("sha256").update(body).digest("hex");
 const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const coordinationInputs = new Set([
+  "src/server/prepare-static-inputs.ts",
+  "scripts/build/build-performance.mjs",
+  "scripts/build/package-build-cache.mjs",
+  "scripts/build/prepare-static-inputs.mjs",
+  "scripts/build/prepare-static-routes.mjs",
+  "scripts/build/static-build-inputs.mjs",
+  "scripts/build/static-build-shards.mjs",
+  "scripts/build/static-render-handoff.mjs",
+]);
 
 function ignoredNavigationPath(file: string): boolean {
   if (file.startsWith("public/")) return false;
@@ -35,7 +45,7 @@ function ignoredNavigationPath(file: string): boolean {
 
 function sourceFile(relative: string, external: boolean): boolean {
   if (!external && relative.startsWith("public/")) return true;
-  if (ignoredNavigationPath(relative)) return false;
+  if (ignoredNavigationPath(relative) || (!external && coordinationInputs.has(relative))) return false;
   if (/\.dart$|(?:^|\/)pubspec(?:\.lock|\.yaml)$/u.test(relative)) return false;
   if (/(?:^|\/)(?:dart|flutter)\//u.test(relative)) return false;
   if (!external) {
