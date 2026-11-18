@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性，关闭后恢复原曲属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
@@ -929,6 +929,9 @@ export class TeamBuilder extends LitElement {
         const attributes = new Set(this.catalog?.challengeSongs(current.eventId).map(song => song.musicType));
         if (attributes.size) this.settings = { ...this.settings,
           songRules: { ...(this.settings.songRules ?? ORIGINAL_SONG_RULES), musicType: attributes.size === 1 ? [...attributes][0]! : 0 } };
+      } else if (challenge(previous) && !challenge(current)) {
+        this.settings = { ...this.settings,
+          songRules: { ...(this.settings.songRules ?? ORIGINAL_SONG_RULES), musicType: ORIGINAL_SONG_RULES.musicType } };
       }
     }
     this.engine?.prefetch(this.searchSettings.songs);
