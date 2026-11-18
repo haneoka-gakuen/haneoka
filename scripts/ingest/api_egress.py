@@ -56,10 +56,15 @@ def _controller(method: str = "GET", node: str | None = None) -> dict[str, Any]:
 
 
 def _nodes(group: dict[str, Any]) -> list[str]:
-    priority = ("JP-M1", "JP-M2", "JP-Z1", "JP-G1")
-    return sorted(dict.fromkeys(group["all"]), key=lambda node: (
-        next((i for i, part in enumerate(priority) if part in node), len(priority)), node,
-    ))[:8]
+    priority = ("JP-M1", "JP-M2", "JP-Z1", "JP-G1", "[V6]JP-Z1", "HK-G1", "TW-V1")
+
+    def order(node: str) -> tuple[int, str]:
+        name = node.upper()
+        label = re.search(r"(?:\[V6\])?(?:JP-[A-Z0-9]+|HK-G1|TW-V1)\b", name)
+        key = label[0] if label else ""
+        return (priority.index(key) if key in priority else len(priority), node)
+
+    return sorted(dict.fromkeys(group["all"]), key=order)[:8]
 
 
 def next_cdn_opener(url: str, visited: set[str], *handlers) -> urllib.request.OpenerDirector | None:
@@ -147,5 +152,5 @@ def select_preferred_exit() -> None:
     with _selector_lock():
         nodes = _nodes(_controller())
         if not nodes:
-            raise RuntimeError("subscription has no Japanese exits")
+            raise RuntimeError("subscription has no configured resource exits")
         _controller("PUT", nodes[0])

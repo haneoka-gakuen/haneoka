@@ -1,5 +1,5 @@
 name: JP API egress
-description: Start Japanese exits with request-driven API failover
+description: Start the configured JP resource exits with request-driven failover
 inputs:
   subscription_url:
     description: Japanese proxy subscription URL
@@ -7,6 +7,9 @@ inputs:
   verify_jp_api:
     description: Check the production JP version service before source processing
     default: "true"
+  regional_fallback:
+    description: Include the verified regional backup exits for JP production
+    default: "false"
 runs:
   using: composite
   steps:
@@ -14,6 +17,7 @@ runs:
       env:
         SUBSCRIPTION_URL: ${{ inputs.subscription_url }}
         VERIFY_JP_API: ${{ inputs.verify_jp_api }}
+        REGIONAL_FALLBACK: ${{ inputs.regional_fallback }}
       run: |
         set -euo pipefail
         umask 077
@@ -46,6 +50,10 @@ runs:
         rules:
           - MATCH,JP-EGRESS
         YAML
+        if [[ "$REGIONAL_FALLBACK" == "true" ]]; then
+          sed -i '/^    filter:/c\    filter: "(?i)JP-|HK-G1|TW-V1"' "$dir/config.yaml"
+          sed -i '/^    exclude-filter:/d' "$dir/config.yaml"
+        fi
         export JP_VERSION_PROXY=http://127.0.0.1:7899
         export JP_VERSION_PROXY_CONTROLLER=http://127.0.0.1:7900
         export JP_VERSION_PROXY_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
