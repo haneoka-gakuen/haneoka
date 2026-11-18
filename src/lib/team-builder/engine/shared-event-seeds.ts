@@ -1,5 +1,5 @@
 // Input: Resolved ordinary-live mean reward request, Worker callbacks and cancellation state.
-// Output: Fully scored legal joint candidates, distinct by member set, plus native work statistics.
+// Output: Fully scored legal joint candidates or a whole-domain SS exclusion, with native work statistics.
 // Pos: [Map](L2-2.md); incumbent candidates for ordinary-live multi-chart reward proof.
 // Effects/Dependencies: Scouts chart winners and replays fixed formations with the original reward plan.
 import type { ConstraintInput, EngineHit, EngineRequest, EngineResponse, Goal, SongRef, SongResult } from "./api";
@@ -73,14 +73,27 @@ export function canScoutSharedEventSs(request: EngineRequest): request is EventR
 const SS_SCOUT_CANDIDATES = 3;
 const SS_SCOUT_CHART_MS = 850;
 
+function provedEmptySong(result: EngineResponse, song: SongRef): SongResult | undefined {
+  const row = result.results[0];
+  if (result.error || result.stopReason !== "complete" || result.overall.length || result.results.length !== 1 ||
+    !row?.proven || !sameSong(row.song, song) || row.hits.length || row.bound !== null ||
+    row.floor !== undefined || row.excludedBelow !== undefined || row.exclusion || row.rewardPhase) return undefined;
+  return row;
+}
+
 export async function scoutSharedEventSs(
   request: EventRequest,
   workers: number,
   run: (worker: number, request: EngineRequest) => Promise<EngineResponse>,
   offer: (hit: EngineHit) => void,
+  proveEmpty: (response: EngineResponse) => void,
   stopped: () => boolean,
 ) {
-  const { songs } = request.goal;
+  const { goal } = request;
+  const { songs } = goal;
+  // The joint gate and the single-song search use the same ordinary Live scoring inputs here.
+  const canProveEmpty = !request.songRules && !goal.rewardRoom && !goal.eventEffects && !goal.weights && !goal.cpExchange
+    && !goal.rewardPlan?.autoCp && (!("challengeEventId" in goal) || goal.challengeEventId == null);
   const deadline = deadlineOf(request);
   const finished = () => stopped() || clock() >= deadline;
   const replayed = new Set<string>();
@@ -89,10 +102,26 @@ export async function scoutSharedEventSs(
   await Promise.all(Array.from({ length: workers }, async (_, worker) => {
     while (!finished() && next < songs.length) {
       const song = songs[next++]!;
-      const result = await run(worker, {
-        ...request, aggregation: undefined, goal: { ...request.goal, songs: [song] }, k: SS_SCOUT_CANDIDATES,
+      const probe: EngineRequest = {
+        ...request, aggregation: undefined, goal: { ...goal, songs: [song] }, k: SS_SCOUT_CANDIDATES,
         deadline: Math.min(clock() + SS_SCOUT_CHART_MS, deadline),
-      });
+      };
+      const result = await run(worker, probe);
+      if (finished()) return;
+      if (canProveEmpty && provedEmptySong(result, song)) {
+        // Joint bonus constraints use per-card maxima. Removing the floor makes this
+        // proof cover every joint formation even when a card has a negative bonus.
+        const certificate = probe.constraints.minBonusPercent == null ? result : await run(worker, {
+          ...probe, constraints: { ...probe.constraints, minBonusPercent: null },
+          deadline: Math.min(clock() + SS_SCOUT_CHART_MS, deadline),
+        });
+        if (finished()) return;
+        const empty = provedEmptySong(certificate, song);
+        if (empty) {
+          proveEmpty({ ...certificate, results: [{ ...empty, song: null }] });
+          return;
+        }
+      }
       for (const hit of result.overall) {
         if (finished()) return;
         const key = formationKey(hit);

@@ -915,6 +915,7 @@ export class EngineClient {
         };
         if (sharedSeed) publishShared();
         if (stopped) return latest;
+        let scoutEmpty: EngineResponse | undefined;
         const proof = Promise.all(
           workers.map(async (worker, index) => {
             const part = { ...request, ...(count > 1 ? { shard: { index, count } } : {}),
@@ -923,13 +924,13 @@ export class EngineClient {
               { type: "run", id: 0, request: part, loadedCharts },
               undefined,
               (value) => {
-                if (stopped || value.requestId !== request.requestId || value.contextKey !== request.contextKey) return;
+                if (stopped || scoutEmpty || value.requestId !== request.requestId || value.contextKey !== request.contextKey) return;
                 parts[index] = value.response;
                 publishShared();
               },
               undefined, undefined, rankChecksForCall(),
             );
-            if (!stopped) {
+            if (!stopped && !scoutEmpty) {
               publishShared();
               reportArenaProof?.();
             }
@@ -937,6 +938,7 @@ export class EngineClient {
         );
         const scoutWorkers = pool.slice(count, count + 3);
         let stopScout: (() => void) | undefined;
+        let scoutProof: Promise<void> | undefined;
         if (memory > 4 && snapshot && !onFinalResult && scoutWorkers.length && canScoutSharedEventSs(request)) {
           const budget = Math.min(1800, remaining(deadline) / 5);
           let scouting = true;
@@ -948,6 +950,8 @@ export class EngineClient {
           };
           const timer = setTimeout(finish, budget);
           stopScout = finish;
+          let completeFromScout!: () => void;
+          scoutProof = new Promise<void>(resolve => { completeFromScout = resolve; });
           void scoutSharedEventSs(
             { ...request, deadline: clock() + budget },
             scoutWorkers.length,
@@ -959,15 +963,24 @@ export class EngineClient {
               publish(response);
               finish();
             },
+            response => {
+              if (stopped || scoutEmpty || latest.overall.length || completeResponse(latest)) return;
+              scoutEmpty = response;
+              completeFromScout();
+              finish();
+            },
             () => stopped || !scouting,
           ).then(finish, finish);
         }
         try {
-          await proof;
+          await (scoutProof ? Promise.race([proof, scoutProof]) : proof);
         } finally {
           stopScout?.();
         }
-        const result = merged();
+        if (scoutEmpty && !stopped) {
+          for (const worker of workers) if (worker.load) worker.cancel();
+        }
+        const result = scoutEmpty ?? merged();
         if (trackRank && !stopped) reportRankProof(result.results);
         return result;
       }
