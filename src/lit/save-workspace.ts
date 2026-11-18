@@ -260,7 +260,7 @@ export class SaveWorkspace extends LitElement {
     if (!id) return;
     void this.run(async () => {
       await saveRecords("delete", id);
-      location.hash = "";
+      this.closeRecord();
       await this.reload();
     });
   }
@@ -767,6 +767,10 @@ export class SaveWorkspace extends LitElement {
       back.className = "icon-button";
       back.dataset.entityBack = "";
       back.setAttribute("aria-label", this.t("back"));
+      back.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.closeRecord();
+      });
       render(icon("arrow_back"), back);
       leading.prepend(back);
       this.shellBack = back;
@@ -780,6 +784,12 @@ export class SaveWorkspace extends LitElement {
         this.movedMenu = { menu, leading, group };
       }
     }
+  }
+  private closeRecord() {
+    const url = new URL(location.href);
+    url.hash = "";
+    history.replaceState(history.state, "", url);
+    this.route();
   }
   protected updated() {
     this.lazyImages.observe(this);
