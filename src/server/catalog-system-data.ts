@@ -5,7 +5,7 @@ import { OFFICIAL_CATALOG_SERVERS, type CrossCatalogResource, type OfficialCatal
 import { isCrossCatalogResource } from "../lib/cross-server/definitions";
 import { pinCrossCatalogValue } from "../lib/cross-server/presentation";
 import { fetchStaticCatalog, fetchStaticCatalogBatch, staticCatalogRelease } from "../lib/static-catalog-source";
-import type { CatalogSystemKind, CatalogSystemPayload } from "../lib/catalog-system-data";
+import { tgwCardArtwork, type CatalogSystemKind, type CatalogSystemPayload } from "../lib/catalog-system-data";
 import type { ReleaseServer } from "../lib/release-server";
 import type { Locale } from "../i18n/locales";
 
@@ -27,8 +27,11 @@ export async function catalogSystemEntityData(kind: "missions" | "tgw-card", ser
   const source = await batch;
   const document = source.documents.get(id);
   if (!document) throw new Error(`Missing static entity: ${server}/${kind}/${id}`);
+  const data = kind === "tgw-card"
+    ? pinCrossCatalogValue({ ...document, artwork: tgwCardArtwork(document.image) }, { ...source.release, server: server as OfficialCatalogServer }) as Record<string, unknown>
+    : document;
   return { schema: "haneoka-catalog-system-v1", kind, server, entityId: id,
-    release: source.release, document, ...(kind === "tgw-card" ? { pointName: source.pointName } : {}) };
+    release: source.release, document: data, ...(kind === "tgw-card" ? { pointName: source.pointName } : {}) };
 }
 export function catalogSystemData(kind: CatalogSystemKind, server: ReleaseServer, locale: Locale, mode?: string): Promise<CatalogSystemPayload> {
   const key = `${kind}:${server}:${locale}:${mode || ""}`;
@@ -70,7 +73,8 @@ async function loadData(kind: CatalogSystemKind, server: ReleaseServer, locale: 
         const id = entry.perServer[source]!.id;
         const detail = details.get(id);
         if (!detail || String(detail.id) !== id) throw new Error(`T.G.W detail unavailable: ${source}/${id}`);
-        tierDetails[entry.key] = detail;
+        const row = { ...entry.perServer[source]!.row, ...detail };
+        tierDetails[entry.key] = pinCrossCatalogValue({ ...row, artwork: tgwCardArtwork(row.image) }, identity) as Record<string, unknown>;
       }
     }));
     payload.tierDetails = tierDetails;

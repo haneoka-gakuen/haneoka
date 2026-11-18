@@ -14,7 +14,7 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
 import { LitElement, html, nothing } from "lit";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
-import type { CatalogSystemPayload } from "../lib/catalog-system-data";
+import { tgwCardArtwork, type CatalogSystemPayload, type TgwCardArtwork } from "../lib/catalog-system-data";
 import { fetchCrossServerCatalog } from "../lib/cross-server/fetch";
 import { crossServerPublicCache } from "../lib/cross-server/cache";
 import { crossCatalogPresentation, pinCrossCatalogValue, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
@@ -54,6 +54,7 @@ interface Tier extends JsonRecord {
   rankRewards?: Reward[];
   image?: string;
   imageVariants?: JsonRecord;
+  artwork?: TgwCardArtwork;
 }
 
 export class TgwCardWorkspace extends LitElement {
@@ -388,18 +389,11 @@ export class TgwCardWorkspace extends LitElement {
       parts.push(this.text("durationSeconds", `${number.format(remainder)} s`, { count: number.format(remainder) }));
     return parts.join(" ");
   }
-  /** Card tier from the rank art's file name: `tgwcard_gold_7.png` → gold. */
-  private cardTier(tier: Tier): "normal" | "gold" | "platinum" | "black" {
-    const match = /tgwcard_(normal|gold|platinum|black)_\d+\./u.exec(String(tier.image || ""));
-    if (match) return match[1] as "normal" | "gold" | "platinum" | "black";
-    return tier.rank >= 16 ? "black" : tier.rank >= 11 ? "platinum" : tier.rank >= 6 ? "gold" : "normal";
+  private cardArt(tier: Tier) {
+    return tier.artwork ?? tgwCardArtwork(tier.image);
   }
-  /** Sibling art in the rank image's folder: the tier's card face, rank plate and badge. */
-  private cardArt(tier: Tier, suffix: "" | "_rank" | "_small") {
-    const source = String(tier.image || "");
-    const slash = source.lastIndexOf("/");
-    if (slash < 0) return "";
-    return `${source.slice(0, slash + 1)}tgwcard_${this.cardTier(tier)}${suffix}.png`;
+  private cardTier(tier: Tier): TgwCardArtwork["kind"] {
+    return this.cardArt(tier)?.kind ?? (tier.rank >= 16 ? "black" : tier.rank >= 11 ? "platinum" : tier.rank >= 6 ? "gold" : "normal");
   }
   private tierLabel(kind: ReturnType<TgwCardWorkspace["cardTier"]>) {
     const keys = { normal: "tierNormal", gold: "tierGold", platinum: "tierPlatinum", black: "tierBlack" } as const;
@@ -460,10 +454,11 @@ export class TgwCardWorkspace extends LitElement {
         ${[...groups].map(([kind, tiers]) => {
           const first = tiers[0]!;
           const last = tiers[tiers.length - 1]!;
+          const badge = this.cardArt(first)?.badge;
           return html`
             <section class="tgw-tier" data-tier=${kind}>
               <header class="tgw-tier__head">
-                <img src=${this.cardArt(first, "_small")} alt="" width="60" height="28" decoding="async" />
+                ${badge ? html`<img src=${badge} alt="" width="60" height="28" decoding="async" />` : nothing}
                 <strong>${this.tierLabel(kind)}</strong>
                 <small class="tabular">${pad(first.rank)}–${pad(last.rank)}</small>
               </header>
@@ -485,14 +480,17 @@ export class TgwCardWorkspace extends LitElement {
     const next = this.entityId ? undefined : this.tiers[index + 1];
     const pointName = this.name(this.pointName);
     const kind = this.cardTier(tier);
+    const artwork = this.cardArt(tier);
     const labels = benefits.map((benefit) => this.benefitDisplay(benefit)).filter((entry) => entry.label);
     return html`
       <article class="tgw-rank" id=${`tgw-rank-${tier.rank}`} aria-labelledby=${`tgw-rank-title-${tier.rank}`}>
         <section class="tgw-summary surface" data-tier=${kind}>
           <figure class="tgw-art" role="img" aria-label=${this.name(tier.title)}>
-            <img class="tgw-art__face" src=${this.cardArt(tier, "")} alt="" width="980" height="630" decoding="async" />
-            <img class="tgw-art__plate" src=${this.cardArt(tier, "_rank")} alt="" decoding="async" />
-            <img class="tgw-art__number" src=${String(tier.image || "")} alt="" decoding="async" />
+            ${artwork ? html`
+              <img class="tgw-art__face" src=${artwork.face} alt="" width="980" height="630" decoding="async" />
+              <img class="tgw-art__plate" src=${artwork.plate} alt="" decoding="async" />
+            ` : nothing}
+            ${tier.image ? html`<img class="tgw-art__number" src=${tier.image} alt="" decoding="async" />` : nothing}
           </figure>
           <div class="tgw-summary__copy">
             <h2 class="tgw-summary__title" id=${`tgw-rank-title-${tier.rank}`}>${this.name(tier.title)}${(() => { const entry = this.unionTiers?.entries.get(tier); return catalogServerBadge(entry, this.locale); })()}</h2>
