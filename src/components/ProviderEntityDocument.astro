@@ -4,7 +4,7 @@ import Base from "../layouts/Base.astro";
 import AppShell from "./AppShell.astro";
 import { renderProviderEntity } from "../server/render-provider";
 import { writeStaticJsonDocument } from "../server/static-documents";
-import { providerEntityJsonPath, providerEntityRoute, type ProviderEntityPayload } from "../lib/provider-entity-data";
+import { providerDetailHref, providerEntityJsonPath, providerEntityRoute, type ProviderEntityPayload } from "../lib/provider-entity-data";
 import { catalogConfig } from "../config/catalog-labels";
 import { localizeValue } from "../i18n/locales";
 import { t } from "../i18n/messages";
@@ -25,6 +25,7 @@ const fallback = resource === "songs" ? provider === "bestdori" ? "GBP Songs" : 
 const collectionTitle = t(locale, titleKey, fallback);
 const record = payload.detail;
 const summary = payload.collection.document[payload.id] as Record<string, unknown>;
+const providerHref = providerDetailHref({ ...payload, ...(payload.card ? { cardId: String(payload.card.cardId) } : {}) }, { ...summary, ...record });
 const songDisplayTitle = resource === "songs" ? songTitle({ ...summary, ...record }, locale) : undefined;
 const entityTitle = songDisplayTitle?.text || localizeValue(record.musicTitle || record.title || record.prefix || record.name || summary?.musicTitle || summary?.title || summary?.prefix || summary?.name, locale) || collectionTitle;
 const rendered = await renderProviderEntity(payload, locale, route);
@@ -50,7 +51,7 @@ const neighbor = (row: Record<string, unknown> | undefined) => row
 const config = song ? catalogConfig({ resource: "songs", locale, origin: provider, entityId: payload.id, entityContext: true }) : "";
 ---
 <Base locale={locale} route={route} canonicalRoute={route} title={entityTitle} description={entityTitle} noindex>
-  <AppShell locale={locale} route={collectionRoute} title={entityTitle} appBar={rendered.appBar} entity={{ title: entityTitle, titleLanguage: songDisplayTitle?.locale, backHref, previous: neighbor(siblings[index - 1]), next: index < 0 ? undefined : neighbor(siblings[index + 1]) }}>
+  <AppShell locale={locale} route={collectionRoute} title={entityTitle} appBar={rendered.appBar} providerHref={providerHref} entity={{ title: entityTitle, titleLanguage: songDisplayTitle?.locale, backHref, previous: neighbor(siblings[index - 1]), next: index < 0 ? undefined : neighbor(siblings[index + 1]) }}>
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
     {song
       ? <catalog-screen config={config} data-page-data={pageDataId} data-collection-data="provider-entity-collection" data-prerendered set:html={rendered.body}></catalog-screen>

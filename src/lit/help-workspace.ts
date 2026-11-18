@@ -305,6 +305,7 @@ export class HelpWorkspace extends LitElement {
       "help",
       segmented({
         label: uiText(this.locale, "common.actions.view"),
+        appBarSwitch: "view",
         value: this.mode,
         options: [
           { value: "manual" as const, label: uiText(this.locale, "settings.labels.manual"), icon: "menu_book" },

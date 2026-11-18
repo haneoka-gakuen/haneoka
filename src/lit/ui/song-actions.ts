@@ -72,28 +72,25 @@ export function chartPageActions(options: {
 }) {
   const t = (key: string) => clientText(options.locale, key);
   return html`
-    <span class="chart-page-actions">
-      ${editChartAction(options.locale, options.editor)}
-      <button
-        class="icon-button"
-        @click=${options.onDownload}
-        aria-label=${t("common.actions.downloadChart")}
-        title=${t("common.actions.downloadChart")}
-      >
-        <svg class="material-icon" width="20" height="20"><use href="/icons.svg#download"></use></svg>
-      </button>
-      <span class="chart-page-mode">
-        ${segmented({
-          label: t("common.actions.view"),
-          value: options.mode,
-          iconOnly: true,
-          options: [
-            { value: "simple" as const, label: t("common.layout.simple"), icon: "view_week" },
-            { value: "watch" as const, label: t("common.actions.watch"), icon: "play_circle" },
-          ],
-          onSelect: options.onMode,
-        })}
-      </span>
-    </span>
+    ${editChartAction(options.locale, options.editor)}
+    <button
+      class="icon-button"
+      @click=${options.onDownload}
+      aria-label=${t("common.actions.downloadChart")}
+      title=${t("common.actions.downloadChart")}
+    >
+      <svg class="material-icon" width="20" height="20"><use href="/icons.svg#download"></use></svg>
+    </button>
+    ${segmented({
+      label: t("common.actions.view"),
+      appBarSwitch: "view",
+      value: options.mode,
+      iconOnly: true,
+      options: [
+        { value: "simple" as const, label: t("common.layout.simple"), icon: "view_week" },
+        { value: "watch" as const, label: t("common.actions.watch"), icon: "play_circle" },
+      ],
+      onSelect: options.onMode,
+    })}
   `;
 }

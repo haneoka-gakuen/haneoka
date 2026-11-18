@@ -8,6 +8,8 @@ import { resourceCollectionHref } from "../lib/resource-route";
 import type { ReleaseServer } from "../lib/release-server";
 import { publicForumNavigation } from "../server/public-forum-navigation";
 import { serializePageData } from "../lib/page-data";
+import bestdoriIcon from "../assets/icons/bestdori.png";
+import sekaiViewerIcon from "../assets/icons/sekai-viewer.png";
 interface Props {
   locale: Locale;
   route: string;
@@ -16,6 +18,7 @@ interface Props {
   server?: ReleaseServer;
   appBar?: { actions: string; identity: string; search: string };
   contained?: boolean;
+  providerHref?: string;
   entity?: {
     title: string;
     titleLanguage?: string;
@@ -25,9 +28,14 @@ interface Props {
     next?: { href: string; title?: string };
   };
 }
-const { locale, route, title, titleKey, server, entity, appBar, contained = false } = Astro.props;
+const { locale, route, title, titleKey, server, entity, appBar, providerHref, contained = false } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
+const providerSite = isRouteActive("/community/gbp", route)
+  ? { name: "Bestdori", href: "https://bestdori.com/", icon: bestdoriIcon.src }
+  : isRouteActive("/community/sekai", route)
+    ? { name: "Sekai Viewer", href: "https://sekai.best/", icon: sekaiViewerIcon.src }
+    : null;
 const itemActive = (target: string) => target === "/community" ? ["/community", "/community/feeds"].includes(route) : isRouteActive(target, route);
 const sectionActive = (section: { items: { route: string }[] }) => section.items.some((item) => itemActive(item.route));
 const navigationServer = server?.startsWith("jp") ? "jp" : "intl";
@@ -339,6 +347,12 @@ const publicForumsDataId = "shell-public-forums";
               </a>
             )}
           </div>
+        )}
+        {providerSite && (
+          <a class="icon-button top-app-bar__provider" data-provider-site data-provider-home={providerSite.href} href={providerHref ?? providerSite.href}
+            aria-label={providerSite.name} title={providerSite.name} target="_blank" rel="noopener noreferrer">
+            <img src={providerSite.icon} alt="" width="24" height="24" />
+          </a>
         )}
       </div>
     </header>

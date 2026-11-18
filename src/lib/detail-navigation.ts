@@ -99,6 +99,11 @@ export async function navigateDetailPage(href: string, historyMode: "push" | "re
   }
 }
 
+export function updateProviderLink(owner: Element, href: string | undefined) {
+  const link = owner.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-provider-site]");
+  if (link) link.href = href ?? link.dataset.providerHome!;
+}
+
 export function entityReturnHref(): string | undefined {
   if (typeof window === "undefined") return;
   return (

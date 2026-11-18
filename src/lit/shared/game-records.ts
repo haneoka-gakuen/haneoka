@@ -36,6 +36,7 @@ export function gameRecordsRegionPicker(
   return html`
     <div
       class="settings-options song-ranking__regions"
+      data-app-bar-switch="server"
       role="radiogroup"
       aria-label=${label("region", "Ranking region")}
     >

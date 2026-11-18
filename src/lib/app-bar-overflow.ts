@@ -33,6 +33,12 @@ const labelOf = (node: Element): string =>
     .trim();
 
 const compactWindow = typeof matchMedia === "function" ? matchMedia("(max-width: 599px)") : undefined;
+const SWITCH = "[data-app-bar-switch]";
+
+function actionRowItems(actions: HTMLElement) {
+  return [...actions.children].flatMap(child =>
+    child.matches(`.top-app-bar__group:has(> ${SWITCH})`) ? [...child.children] : [child]);
+}
 
 /** Candidates in the order they overflow: entity arrows first, then page actions from the end. */
 function candidates(actions: HTMLElement): HTMLElement[] {
@@ -42,7 +48,31 @@ function candidates(actions: HTMLElement): HTMLElement[] {
   const page = [...actions.querySelectorAll<HTMLElement>(".top-app-bar__group > *")]
     .filter((node) => !node.matches("[data-app-bar-keep], [data-app-bar-search], .top-app-bar__overflow"))
     .reverse();
-  return [...secondary, ...page];
+  return [...secondary, ...page.filter(node => !node.matches(SWITCH))];
+}
+
+function collapseSwitch(actions: HTMLElement, group: HTMLElement) {
+  const kind = group.dataset.appBarSwitch === "server" ? "server" : "view";
+  const selector = `[data-app-bar-switch="${kind}"]`;
+  let button = actions.querySelector<HTMLButtonElement>(`:scope > .top-app-bar__switch-popup${selector}`);
+  if (!button) {
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "icon-button top-app-bar__switch-popup";
+    button.dataset.appBarSwitch = kind;
+    button.setAttribute("aria-haspopup", "menu");
+    button.setAttribute("aria-controls", MENU_ID);
+    const symbol = kind === "server" ? "language" : "view_list";
+    button.innerHTML = `<svg class="material-icon" width="24" height="24" aria-hidden="true"><use href="/icons.svg#${symbol}"></use></svg>`;
+    button.addEventListener("click", () => openMenu(actions, button!, [
+      ...actions.querySelectorAll<HTMLElement>(`.top-app-bar__group > ${selector}[data-app-bar-switch-collapsed]`),
+    ]));
+    actions.append(button);
+  }
+  const label = labelOf(group.matches("[role='radiogroup']") ? group : group.querySelector("[role='radiogroup']") ?? group);
+  if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
+  group.dataset.appBarSwitchCollapsed = "true";
+  button.hidden = false;
 }
 
 function overflowButton(actions: HTMLElement): HTMLButtonElement {
@@ -59,8 +89,8 @@ function overflowButton(actions: HTMLElement): HTMLButtonElement {
   return button;
 }
 
-function menuEntries(actions: HTMLElement) {
-  const hidden = [...actions.querySelectorAll<HTMLElement>(`[data-app-bar-overflowed]`)];
+function menuEntries(actions: HTMLElement, switches?: HTMLElement[]) {
+  const hidden = switches ?? [...actions.querySelectorAll<HTMLElement>(`[data-app-bar-overflowed]`)];
   // Overflow order is reversed page order; show entries in page order.
   hidden.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const entries: { label: string; icon?: Element | null; checked?: boolean; target: HTMLElement }[] = [];
@@ -94,7 +124,7 @@ function menuEntries(actions: HTMLElement) {
   return entries;
 }
 
-function openMenu(actions: HTMLElement, button: HTMLButtonElement) {
+function openMenu(actions: HTMLElement, button: HTMLButtonElement, switches?: HTMLElement[]) {
   let menu = document.getElementById(MENU_ID) as HTMLElement | null;
   if (!menu) {
     menu = document.createElement("div");
@@ -104,7 +134,7 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement) {
     menu.popover = "auto";
     document.body.append(menu);
   }
-  const entries = menuEntries(actions);
+  const entries = menuEntries(actions, switches);
   menu.replaceChildren(
     ...entries.map((entry) => {
       const item = document.createElement("button");
@@ -128,6 +158,7 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement) {
       item.addEventListener("click", () => {
         menu!.hidePopover();
         entry.target.click();
+        if (switches) button.focus({ preventScroll: true });
       });
       return item;
     }),
@@ -150,6 +181,10 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   for (const node of bar.querySelectorAll<HTMLElement>("[data-app-bar-show-label]"))
     delete node.dataset.appBarShowLabel;
   for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-overflowed]")) delete node.dataset[HIDDEN];
+  for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-switch-collapsed]")) delete node.dataset.appBarSwitchCollapsed;
+  for (const node of actions.querySelectorAll<HTMLButtonElement>(".top-app-bar__switch-popup")) node.hidden = true;
+  const switches = [...actions.querySelectorAll<HTMLElement>(`.top-app-bar__group > ${SWITCH}`)];
+  if (compactWindow?.matches) for (const group of switches) collapseSwitch(actions, group);
   const button = actions.querySelector<HTMLElement>(":scope > .top-app-bar__overflow");
   if (button) button.hidden = true;
   // On compact windows a detail page's leading slot is Back, so the
@@ -163,7 +198,7 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   // about how much it holds: measure what it actually lays out.
   const actionsGap = parseFloat(getComputedStyle(actions).columnGap) || 0;
   const actionsWidth = () => {
-    const shown = [...actions.children].filter((child) => (child as HTMLElement).getBoundingClientRect().width > 0);
+    const shown = actionRowItems(actions).filter((child) => child.getBoundingClientRect().width > 0);
     return (
       shown.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0) +
       Math.max(0, shown.length - 1) * actionsGap
@@ -207,6 +242,10 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   }
   const available = candidates(actions);
   if (!available.length && !compactOnly.length) {
+    for (const group of switches) {
+      if (titleRoom() >= minimum) break;
+      collapseSwitch(actions, group);
+    }
     fitLabels();
     return;
   }
@@ -217,6 +256,10 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   for (const node of available) {
     if (titleRoom() >= minimum) break;
     node.dataset[HIDDEN] = "true";
+  }
+  for (const group of switches) {
+    if (titleRoom() >= minimum) break;
+    collapseSwitch(actions, group);
   }
   fitLabels();
 }

@@ -33,6 +33,7 @@ import {
   observeDetailLocation,
   updateEntityHeading,
   updateEntityNeighbors,
+  updateProviderLink,
   entityReturnHref,
 } from "../lib/detail-navigation";
 import { RequestScope } from "../lib/request-scope";
@@ -93,7 +94,7 @@ import {
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
-import { providerEntityRoute } from "../lib/provider-entity-data";
+import { providerDetailHref, providerEntityRoute } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
 import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
@@ -743,6 +744,12 @@ export class StoryWorkspace extends LitElement {
       }
     }
     this.syncProviderShellNavigation();
+    if (this.entityId && !this.detailLoading && this.isProvider()) {
+      const target = providerEntityFromUrl(navigationDocumentUrl());
+      if (target) updateProviderLink(this, providerDetailHref({
+        ...target, ...(this.detailCard ? { cardId: String(this.detailCard.cardId) } : {}),
+      }, this.detailEpisode ?? {}));
+    }
     this.syncAppBarActions();
     // Focus stays inside a detail while it is open.
     this.paneFocus.sync(
@@ -2669,6 +2676,7 @@ export class StoryWorkspace extends LitElement {
   private renderDetailModes() {
     return segmented({
       label: uiText(this.locale, "media.audio.playback"),
+      appBarSwitch: "view",
       value: this.detailMode,
       iconOnly: true,
       options: [

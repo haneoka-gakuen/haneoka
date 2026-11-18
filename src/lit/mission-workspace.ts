@@ -631,7 +631,7 @@ export class MissionWorkspace extends LitElement {
   }
   private modeFilter() {
     return html`
-      <div class="mission-workspace__filter">
+      <div class="mission-workspace__filter" data-app-bar-switch="view">
         ${segmented({
           label: uiText(this.locale, "common.actions.view"),
           value: this.mode,

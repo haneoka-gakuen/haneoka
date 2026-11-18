@@ -199,6 +199,7 @@ export class CalendarPage extends LitElement {
       })}
       ${segmented({
         label: this.t("view"),
+        appBarSwitch: "view",
         value: this.view,
         iconOnly: true,
         options: [

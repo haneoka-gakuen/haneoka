@@ -73,7 +73,8 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { readPageData, waitForPageData } from "../lib/page-data";
 import type { CatalogCollectionPayload } from "../server/catalog-collection";
 import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
-import type { ProviderEntityPayload } from "../lib/provider-entity-data";
+import { providerDetailHref, type ProviderEntityPayload } from "../lib/provider-entity-data";
+import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
@@ -101,6 +102,7 @@ import {
   entityReturnHref,
   syncEntityNavigation,
   updateEntityHeading,
+  updateProviderLink,
 } from "../lib/detail-navigation";
 import {
   clearAppBarActions,
@@ -1688,6 +1690,8 @@ export class CatalogScreen extends LitElement {
   private readonly entityAppBarOwner = `catalog-screen-entity-${++entityAppBarOwnerSequence}`;
   private restoreLocation = () => {
     const documentUrl = navigationDocumentUrl();
+    const providerEntity = providerEntityFromUrl(documentUrl);
+    if (providerEntity?.resource === "songs") updateProviderLink(this, providerDetailHref(providerEntity));
     this.locationStateUrl = `${documentUrl.pathname}${documentUrl.search}`;
     const params = documentUrl.searchParams;
     this.view = this.profile.perDifficulty ? "table" : collectionView(params.get("view"));
@@ -1977,6 +1981,8 @@ export class CatalogScreen extends LitElement {
     this.addEventListener("click", this.onScreenClick);
     this.settings = JSON.parse(this.config || "{}") as Config;
     const documentUrl = navigationDocumentUrl();
+    const providerEntity = providerEntityFromUrl(documentUrl);
+    if (providerEntity?.resource === "songs") updateProviderLink(this, providerDetailHref(providerEntity));
     this.locationStateUrl = `${documentUrl.pathname}${documentUrl.search}`;
     const selection = parseEntitySelection(documentUrl.pathname);
     if (
@@ -5151,6 +5157,7 @@ export class CatalogScreen extends LitElement {
           this.settings.resource === "song-meta"
             ? segmented({
                 label: uiText(this.settings.locale, "common.actions.view"),
+                appBarSwitch: "view",
                 value: this.metaChart ? "chart" : "table",
                 iconOnly: true,
                 options: [

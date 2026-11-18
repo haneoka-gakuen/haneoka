@@ -156,6 +156,7 @@ export interface SegmentedOptions<T extends string> {
   onSelect: (value: T) => void;
   /** Icon-only segments keep their label in the accessibility tree. */
   iconOnly?: boolean;
+  appBarSwitch?: "view" | "server";
   /** Show each option's primary binding beside its icon. */
   showShortcuts?: boolean;
   /** Text segments fill available space by default; false opts into a compact group. */
@@ -175,6 +176,7 @@ export function segmented<T extends string>(options: SegmentedOptions<T>): Templ
   return html`
     <div
       class=${classes}
+      data-app-bar-switch=${options.appBarSwitch ?? nothing}
       role="radiogroup"
       aria-label=${options.label}
       @keydown=${rovingKeydown(

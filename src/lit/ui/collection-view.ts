@@ -13,6 +13,7 @@ export const viewSwitch = (locale: string, value: CollectionView, onSelect: (vie
     value,
     onSelect,
     iconOnly: true,
+    appBarSwitch: "view",
     options: [
       { value: "grid", label: uiText(locale, "common.layout.grid"), icon: "grid_view" },
       { value: "list", label: uiText(locale, "common.layout.list"), icon: "table_rows" },

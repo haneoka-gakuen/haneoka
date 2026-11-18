@@ -124,14 +124,15 @@
   gap: 4px;
   max-width: 100%;
 }
-.top-app-bar__actions [data-app-bar-overflowed] {
+.top-app-bar__actions :is([data-app-bar-overflowed], [data-app-bar-switch-collapsed]) {
   display: none !important;
 }
 .top-app-bar__actions:has(.top-app-bar__search[data-search-expanded="true"]) {
   flex: 1 1 auto;
   max-width: none;
 }
-.top-app-bar__overflow[hidden] {
+.top-app-bar__overflow[hidden],
+.top-app-bar__switch-popup[hidden] {
   display: none;
 }
 .top-app-bar__overflow-menu {
@@ -453,6 +454,33 @@
 }
 .top-app-bar__overflow {
   order: 99;
+}
+.top-app-bar__provider {
+  order: 4;
+  flex: none;
+}
+.top-app-bar__provider > img {
+  border-radius: var(--md-sys-shape-corner-extra-small);
+}
+.top-app-bar__actions > .top-app-bar__group:has(> [data-app-bar-switch]) {
+  display: contents;
+}
+.top-app-bar__actions > .top-app-bar__group:has(> [data-app-bar-switch]) > :not([data-app-bar-switch]) {
+  order: 2;
+  flex: 0 0 auto;
+}
+.top-app-bar__actions [data-app-bar-switch="view"] {
+  order: 100;
+  flex: 0 0 auto;
+}
+.top-app-bar__actions [data-app-bar-switch="server"] {
+  order: 101;
+  flex: 0 0 auto;
+}
+@media (max-width: 599px) {
+  .top-app-bar__overflow {
+    order: 102;
+  }
 }
 /* Controls in the trailing slot keep their intrinsic width, so when they do
  * not fit the overflow menu takes them whole instead of the bar squeezing a

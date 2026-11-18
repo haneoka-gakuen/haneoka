@@ -26,14 +26,6 @@
   .chart-page--empty p {
     margin: 0;
   }
-  .chart-page-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .chart-page-mode {
-    display: inline-flex;
-  }
   /* Geometry comes from .pane-layer (components/overlay.css); the chart layer
    sits above the detail pane it was opened from. */
   .chart-detail-layer {
