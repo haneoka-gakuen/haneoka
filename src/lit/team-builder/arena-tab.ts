@@ -379,12 +379,11 @@ export function renderArenaTab(host: TeamBuilder) {
       ${renderCandidates(host)}
       <section class="surface stack">
         ${sectionHeading({ icon: "library_music", label: host.t("songs", "Songs"), count: settings.songs.length || undefined })}
-        <div class="cluster">
-          <button class="button button--text" @click=${() => arena.selectPool()}>
-            ${host.t("arena.usePool", "Select league song pool")}
-          </button>
-        </div>
-        ${songList(host, draft.build.songs, (songs) => arena.updateBuild({ songs }), false, arena.allowedSongIds, "tb-songs", arena.allowedCharts)}
+        ${songList(host, draft.build.songs, (songs) => arena.updateBuild({ songs }), false, arena.allowedSongIds, "tb-songs", arena.allowedCharts, {
+          poolAction: html`<button class="button button--text" type="button" @click=${() => arena.selectPool()}>
+            ${host.t("arena.usePool", "Use league songs")}
+          </button>`,
+        })}
       </section>
     `,
     renderBuildRun(host),

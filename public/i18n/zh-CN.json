@@ -3676,7 +3676,7 @@
         "objective": "配队目标",
         "shared": "多曲通用队伍",
         "individual": "各曲分别配队",
-        "usePool": "选择联赛曲池",
+        "usePool": "使用联赛曲",
         "mean": "跨曲平均分",
         "scoreDetails": "逐曲表现",
         "meanPower": "平均综合力",

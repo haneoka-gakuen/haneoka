@@ -332,7 +332,7 @@ export function songList(
   allowedSongIds?: number[],
   fieldId = "tb-songs",
   allowedCharts?: readonly SongRef[],
-  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean },
+  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean; poolAction?: TemplateResult | typeof nothing },
 ): TemplateResult {
   const catalog = host.catalog!;
   const activeRules = () => options?.songRules === null ? undefined : options?.songRules ?? (host.tab === "arena" ? host.arena.rule : host.songRules());
@@ -344,10 +344,12 @@ export function songList(
     catalog.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty);
   return html`
     <div class="tb-songs" id=${fieldId} data-tb-field tabindex="-1">
-      <div class="row row--between tb-input-summary">
+      <div class="row row--between row--wrap tb-input-summary">
         <span class="tb-results__meta">
           ${host.t("chartCount", "{count} charts", { count: songs.filter(available).length })}
         </span>
+        <div class="row row--wrap tb-song-actions">
+        ${options?.poolAction ?? nothing}
         <button
           class="button button--tonal tb-songs__add"
           type="button"
@@ -373,6 +375,7 @@ export function songList(
         >
           ${icon("add", 18)}${songs.length ? host.t("editSongs", "Change songs") : host.t("addSongs", "Choose songs")}
         </button>
+        </div>
       </div>
       ${
         songs.length
@@ -404,16 +407,23 @@ export function songList(
   `;
 }
 
-export function eventSection(host: TeamBuilder, s = host.searchSettings, options: { rulesOnly?: boolean } = {}): TemplateResult {
+function manageEventsButton(host: TeamBuilder) {
+  return html`<button class="button button--text" type="button" @click=${() => host.planner.open("events")}>${host.t("planner.manageEvents", "Manage events")}</button>`;
+}
+
+export function eventSectionHeading(host: TeamBuilder, options: { icon: string; label: string }) {
+  return html`<div class="row row--between row--wrap">${sectionHeading(options)}${manageEventsButton(host)}</div>`;
+}
+
+export function eventSection(host: TeamBuilder, s = host.searchSettings, options: { rulesOnly?: boolean; manageInHeading?: boolean } = {}): TemplateResult {
   const catalog = host.catalog!;
   const events = catalog.events();
   const set = (patch: Partial<BuildSettings>) => host.updateSettings(patch);
   const manualAllowed = !options.rulesOnly && host.tab === "pt" && s.goal !== "plan";
   const manual = manualAllowed && s.manualEventEnabled;
   const eventId = host.settings.eventId ?? events[0]?.id ?? null;
+  const editable = eventId !== null && !manual && host.planner.events.some(event => event.id === eventId);
   if (host.settings.eventId === null && eventId !== null && !manual) queueMicrotask(() => set({ eventId }));
-  const challengeSongs = catalog.challengeSongs(eventId);
-  const challenge = s.goal === "plan" || (s.goal === "event" ? s.route === "challenge" : s.challengeRules);
   return html`
     <md-outlined-select
       id="tb-event"
@@ -450,39 +460,24 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings, options
         `,
       )}
     </md-outlined-select>
-    <div class="cluster">
-      <button class="button button--tonal" type="button" @click=${()=>host.planner.editEvent()}>${icon("add",18)}${host.t("planner.newEvent","New custom event")}</button>
-      <button class="button button--text" type="button" @click=${()=>host.planner.open("events")}>${host.t("planner.manageEvents","Manage events")}</button>
-    </div>
-    ${eventId!==null&&!manual?html`<div class="cluster">
-      ${host.planner.events.some(event=>event.id===eventId)?html`<button class="button button--text" type="button" @click=${()=>host.planner.editEvent(eventId)}>${host.t("planner.edit","Edit")}</button>`:nothing}
-      <button class="button button--text" type="button" @click=${()=>host.planner.editEvent(undefined,eventId)}>${host.t("planner.copyEvent","Copy as custom event")}</button>
-    </div>`:nothing}
+    ${!options.manageInHeading || editable ? html`<div class="cluster">
+      ${options.manageInHeading ? nothing : manageEventsButton(host)}
+      ${editable ? html`<button class="button button--text" type="button" @click=${() => host.planner.editEvent(eventId)}>${host.t("planner.edit", "Edit")}</button>` : nothing}
+    </div>` : nothing}
     ${manual ? renderManualEvent(host) : nothing}
-    ${
-      !options.rulesOnly && !manual && challenge && challengeSongs.length
-        ? html`
-            <div class="cluster">
-              <button
-                class="button button--text button--small"
-                type="button"
-                @click=${() => {
-                  const songs = challengeSongs.flatMap(row=>catalog.difficultyRows(row.liveMusicId)
-                    .filter(difficulty=>host.songDifficulties.includes(Number(difficulty.difficulty)))
-                    .map(difficulty=>({songId:row.liveMusicId,difficulty:Number(difficulty.difficulty)})));
-                  set(
-                    s.goal === "plan"
-                      ? { planChallengeSongs: songs }
-                      : { songs: s.goal === "power" ? songs.slice(0, 1) : songs },
-                  );
-                }}
-              >
-                ${icon("swords", 18)}${host.t("useChallengeSongs", "Use challenge songs")}
-              </button>
-            </div>
-          `
-        : nothing
-    }
+  `;
+}
+
+export function useChallengeSongsButton(host: TeamBuilder, ids: readonly number[], change: (songs: SongRef[]) => void) {
+  if (!ids.length) return nothing;
+  const catalog = host.catalog!;
+  return html`
+    <button class="button button--text" type="button" @click=${() => {
+      const songs = [...new Set(ids)].flatMap(songId => catalog.difficultyRows(songId)
+        .filter(difficulty => host.songDifficulties.includes(Number(difficulty.difficulty)))
+        .map(difficulty => ({ songId, difficulty: Number(difficulty.difficulty) })));
+      change(songs);
+    }}>${icon("swords", 18)}${host.t("useChallengeSongs", "Use challenge songs")}</button>
   `;
 }
 
@@ -1044,8 +1039,8 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
         host.tab === "build" && s.goal !== "plan"
           ? html`
               <section class="surface stack">
-                ${sectionHeading({ icon: "event", label: host.t("event", "Event") })}
-                ${eventSection(host)}
+                ${eventSectionHeading(host, { icon: "event", label: host.t("event", "Event") })}
+                ${eventSection(host, s, { manageInHeading: true })}
                 ${s.goal === "score" || s.goal === "power" ? html`
                   <label class="tb-check">
                     <md-checkbox
@@ -1056,9 +1051,6 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                     <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
                   </label>
                 ` : nothing}
-                <button class="button button--text" type="button" @click=${() => host.setTab("pt")}>
-                  ${icon("emoji_events", 18)}${host.t("pt.tab", "Event rewards")}
-                </button>
               </section>
             `
           : nothing
@@ -1067,7 +1059,9 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
         s.goal === "plan"
           ? html`
               <section class="surface stack">
-                ${sectionHeading({ icon: "cycle", label: host.t("planSetup", "Resource plan") })} ${eventSection(host)}
+                ${sectionHeading({ icon: "cycle", label: host.t("planSetup", "Resource plan") })}
+                ${eventSectionHeading(host, { icon: "event", label: host.t("event", "Event") })}
+                ${eventSection(host, s, { manageInHeading: true })}
                 ${playConditions(host, s)}
                 <span class="tb-results__meta">
                   ${host.t("farm.memory", "Character / song memory bonuses")}: ${host.t("farm.included", "Included")}
@@ -1091,7 +1085,9 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 </div>
                 ${challengeCostControl(host, s.challengePoints, challengePoints => set({ challengePoints }))}
                 <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
-                ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }), false, challengeSongs, "tb-challenge-songs")}
+                ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }),
+                  false, challengeSongs, "tb-challenge-songs", undefined,
+                  { poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => set({ planChallengeSongs })) })}
               </section>
             `
           : nothing
@@ -1102,7 +1098,12 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
           ? html`
               <section class="surface stack">
                 ${sectionHeading({ icon: "library_music", label: challenge ? host.t("planChallengeSongs", "Challenge songs") : s.goal === "plan" ? host.t("planNormalSongs", "Normal-live songs") : host.t("songs", "Songs"), count: s.songs.length || undefined })}
-                ${songList(host, s.goal === "power" ? s.songs : host.settings.songs, (songs) => set({ songs }), s.goal === "power", allowedSongIds)}
+                ${songList(host, s.goal === "power" ? s.songs : host.settings.songs, (songs) => set({ songs }),
+                  s.goal === "power", allowedSongIds, "tb-songs", undefined, {
+                    poolAction: challenge && !s.manualEventEnabled
+                      ? useChallengeSongsButton(host, challengeSongs, (songs) => set({ songs: s.goal === "power" ? songs.slice(0, 1) : songs }))
+                      : nothing,
+                  })}
                 ${multiSongControl(host)}
               ${songRulesControl(host)}
               </section>

@@ -3676,7 +3676,7 @@
         "objective": "Team objective",
         "shared": "One team for all songs",
         "individual": "A team for each song",
-        "usePool": "Select league song pool",
+        "usePool": "Use league songs",
         "mean": "Average across songs",
         "scoreDetails": "Scores by song",
         "meanPower": "Average power",

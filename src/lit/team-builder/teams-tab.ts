@@ -18,7 +18,7 @@ import { attachManualResults, clearManualOrders, manualOrderScore, manualResultH
 import { resultRequest } from "./score-goal";
 import { renderSongComparison } from "./song-comparison-view";
 import { toolLayout } from "./tool-layout";
-import { eventSection, gekisoSamplingAdvanced, justWindowControl, playConditions, songList } from "./build-tab";
+import { eventSection, eventSectionHeading, gekisoSamplingAdvanced, justWindowControl, playConditions, songList, useChallengeSongsButton } from "./build-tab";
 import { segmented } from "../ui/controls";
 import { cardScopeControl, unknownGrowthControl } from "./card-input-controls";
 import { clock } from "../../lib/team-builder/engine/execution";
@@ -284,6 +284,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
   const suggesting = host.manualSuggesting;
   const calculating = host.taskKind === "evaluation" || host.taskKind === "suggestion";
   const showSkipScore = host.settings.manualScoreMode !== "gekiso";
+  const { eventId, manualChallengeRules } = host.settings;
+  const challengeSongIds = showSkipScore && manualChallengeRules && eventId !== null
+    ? catalog.challengeSongs(eventId).map((row) => row.liveMusicId)
+    : undefined;
   const editor = html`
     <section id="sc-formation" data-sc-field class="surface stack">
       <div class="row row--between row--wrap">
@@ -538,9 +542,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               host.settings.songs,
               (songs) => host.updateSettings({ songs }),
               false,
-              showSkipScore && host.settings.manualChallengeRules && host.settings.eventId !== null
-                ? catalog.challengeSongs(host.settings.eventId).map((row) => row.liveMusicId)
-                : undefined,
+              challengeSongIds,
+              "tb-songs",
+              undefined,
+              { poolAction: useChallengeSongsButton(host, challengeSongIds ?? [], (songs) => host.updateSettings({ songs })) },
             )}
               ${songRulesControl(host)}
             </section>
@@ -559,7 +564,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                       ></md-checkbox>
                       <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
                     </label>
-                    ${host.settings.manualChallengeRules ? eventSection(host) : nothing}
+                    ${manualChallengeRules ? html`
+                      ${eventSectionHeading(host, { icon: "event", label: host.t("event", "Event") })}
+                      ${eventSection(host, host.searchSettings, { manageInHeading: true })}
+                    ` : nothing}
                   `
                 : html`
                     ${rangeRankControl(host, host.settings.gekisoRanks, (range, rank) => {

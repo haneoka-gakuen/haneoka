@@ -35,6 +35,8 @@ import {
   justWindowControl,
   gekisoSamplesControl,
   eventSection,
+  eventSectionHeading,
+  useChallengeSongsButton,
   playSection,
   songList,
 } from "./build-tab";
@@ -482,8 +484,8 @@ function renderSetup(host: TeamBuilder): TemplateResult {
   const autoCp = !plan.bonus && plan.options["challenge-points"].mode === "convert" && plan.options["challenge-points"].auto;
   return html`
     <section class="surface stack">
-      ${sectionHeading({ icon: "emoji_events", label: host.t("eventSetup", "Event") })}
-      ${ptField(host, "event", eventSection(host, s))}
+      ${eventSectionHeading(host, { icon: "emoji_events", label: host.t("eventSetup", "Event") })}
+      ${ptField(host, "event", eventSection(host, s, { manageInHeading: true }))}
       <div
         class="cluster tb-goals"
         role="radiogroup"
@@ -564,6 +566,11 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                   (songs) => host.updateSettings({ songs }),
                   false,
                   s.route === "challenge" ? challengeSongs : catalog.normalEventSongIds(s.manualEventEnabled ? null : s.eventId),
+                  "tb-songs",
+                  undefined,
+                  { poolAction: s.route === "challenge" && !s.manualEventEnabled
+                    ? useChallengeSongsButton(host, challengeSongs, (songs) => host.updateSettings({ songs }))
+                    : nothing },
                 ),
               )}
               ${multiSongControl(host)}
@@ -581,6 +588,9 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                           (planChallengeSongs) => host.updateSettings({ planChallengeSongs }),
                           false,
                           challengeSongs,
+                          "tb-challenge-songs",
+                          undefined,
+                          { poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => host.updateSettings({ planChallengeSongs })) },
                         ),
                       )}
                       ${ptField(

@@ -972,6 +972,8 @@ function eventEditor(host: Host) {
 function library(host: Host) {
   const p = host.planner,
     catalog = host.catalog!;
+  const eventId = host.settings.eventId;
+  const canCopy = p.libraryScope === "events" && eventId !== null && !host.searchSettings.manualEventEnabled && catalog.events().some(event => event.id === eventId);
   return html`
     <div class="stack">
       <div class="cluster">
@@ -980,7 +982,8 @@ function library(host: Host) {
             ? html`
                 ${button(text(host, "newMember"), () => p.editCard("members"))}${button(text(host, "newSnap"), () => p.editCard("snaps"))}
               `
-            : button(text(host, "newEvent"), () => p.editEvent())
+            : html`${button(text(host, "newEvent"), () => p.editEvent())}
+                ${canCopy ? button(text(host, "copyEvent"), () => p.editEvent(undefined, eventId)) : nothing}`
         }
       </div>
       ${

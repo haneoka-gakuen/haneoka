@@ -759,8 +759,9 @@
   .tb-input-summary > .tb-results__meta {
     flex: 1;
   }
-  .tb-input-summary > .button {
-    flex-shrink: 0;
+  .tb-song-actions {
+    justify-content: flex-end;
+    margin-inline-start: auto;
   }
   .tb-accordion {
     --surface-padding: 0px;

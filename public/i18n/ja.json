@@ -3676,7 +3676,7 @@
         "objective": "編成目標",
         "shared": "複数楽曲共通の編成",
         "individual": "楽曲ごとに編成",
-        "usePool": "リーグの楽曲を選択",
+        "usePool": "リーグ楽曲を使用",
         "mean": "楽曲全体の平均スコア",
         "scoreDetails": "楽曲ごとのスコア",
         "meanPower": "平均総合力",
