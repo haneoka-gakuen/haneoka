@@ -45,6 +45,8 @@ on:
         value: ${{ jobs.merge.outputs.artifact }}
       inputs_artifact:
         value: ${{ jobs.prepare.outputs.artifact }}
+      merge_artifact:
+        value: ${{ jobs.prepare.outputs.merge_artifact }}
       inputs_sha:
         value: ${{ jobs.prepare.outputs.inputs_sha }}
       node_version:

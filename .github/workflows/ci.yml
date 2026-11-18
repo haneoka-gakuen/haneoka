@@ -35,6 +35,12 @@ jobs:
     timeout-minutes: 360
     env:
       PROVIDER_STATIC_SNAPSHOT: data/provider-static/snapshots/${{ github.run_id }}
+      STATIC_PAGE_GROUPS: core
+      STATIC_RESOURCE_SERVERS: intl,jp
+      STATIC_CATALOG_SOURCE: http
+      STATIC_PUBLIC_DOCUMENTS: "1"
+      STATIC_PUBLIC_MEDIA: "1"
+      STATIC_PUBLIC_MEDIA_MAX_BYTES: "536870912"
 
     steps:
       - name: Check out repository
@@ -46,7 +52,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: ${{ needs.frontend.outputs.node_version }}
           cache: pnpm
           cache-dependency-path: |
             package.json
@@ -64,14 +70,22 @@ jobs:
       - name: Check out locked external repositories
         run: node scripts/external-repositories.mjs checkout
 
-      - name: Set up the locked Vega Rust and WASM toolchain
-        uses: ./.dependencies/vega/.github/actions/setup-wasm
-
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Verify external repository compatibility lock
         run: pnpm dependencies:verify
+
+      - name: Download this run's verified compiled inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.frontend.outputs.merge_artifact }}
+          path: .output
+
+      - name: Restore verified packages and common assets
+        run: |
+          tar --zstd -xf .output/static-merge-inputs.tar.zst -C .output
+          node scripts/build/static-build-inputs.mjs restore --manifest .output/static-merge-inputs/manifest.json --root "$PWD" --source-root "$PWD" --merge-only
 
       - name: Restore verified provider HTTP responses
         id: provider-http-cache
@@ -95,9 +109,7 @@ jobs:
           restore-keys: ci-provider-snapshot-v1-${{ runner.os }}-${{ github.run_id }}-
 
       - name: Check compiled frontend sources
-        run: |
-          pnpm build:packages
-          pnpm lint:frontend
+        run: pnpm lint:frontend
 
       - name: Save verified provider HTTP responses
         if: always() && steps.provider-http-cache.outputs.cache-primary-key != '' && steps.provider-http-cache.outputs.cache-hit != 'true'
