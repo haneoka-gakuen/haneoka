@@ -1388,6 +1388,7 @@
         "snapshotGrowth": "Level / Limit Break"
       },
       "counts": {
+        "remoteFailed": "Could not read counts from the game server",
         "title": "Live counts",
         "total": "Total clears",
         "fc": "FC clears",
@@ -4925,6 +4926,13 @@
       "visibilityPrivate": "Private",
       "gameAccounts": "Game accounts",
       "deviceSaves": "Saves on this device",
+      "importSettingsFailed": "Could not save import settings",
+      "autoTeam": "Automatically import cards",
+      "autoSongs": "Automatically import song progress",
+      "autoHistory": "Automatically read recruitment records",
+      "autoLink": "Automatically link game account",
+      "importSessionExpired": "Game session expired. Read the latest save again.",
+      "autoImportFailed": "Some save data could not be imported",
       "addGameSave": "Read game save",
       "unblockUser": "Unblock",
       "unmute": "Unmute",

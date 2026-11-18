@@ -1388,6 +1388,7 @@
         "snapshotGrowth": "레벨 / 상한 해제"
       },
       "counts": {
+        "remoteFailed": "게임 서버에서 클리어 횟수를 가져오지 못했습니다",
         "title": "라이브 횟수",
         "total": "누적 클리어",
         "fc": "FC 횟수",
@@ -4925,6 +4926,13 @@
       "visibilityPrivate": "비공개",
       "gameAccounts": "게임 계정",
       "deviceSaves": "이 기기의 저장 데이터",
+      "importSettingsFailed": "가져오기 설정을 저장하지 못했습니다",
+      "autoTeam": "카드 자동 가져오기",
+      "autoSongs": "악곡 진행도 자동 가져오기",
+      "autoHistory": "모집 기록 자동 읽기",
+      "autoLink": "게임 계정 자동 연결",
+      "importSessionExpired": "게임 인증이 만료되었습니다. 최신 저장 데이터를 다시 읽어 주세요.",
+      "autoImportFailed": "일부 저장 데이터를 가져오지 못했습니다",
       "addGameSave": "게임 저장 데이터 읽기",
       "unblockUser": "차단 해제",
       "unmute": "뮤트 해제",

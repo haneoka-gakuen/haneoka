@@ -1388,6 +1388,7 @@
         "snapshotGrowth": "等級 / 開放上限"
       },
       "counts": {
+        "remoteFailed": "無法從遊戲伺服器讀取通關次數",
         "title": "演出次數",
         "total": "累計通關",
         "fc": "FC 次數",
@@ -4925,6 +4926,13 @@
       "visibilityPrivate": "私密",
       "gameAccounts": "遊戲帳號",
       "deviceSaves": "本機遊戲存檔",
+      "importSettingsFailed": "無法儲存自動匯入設定",
+      "autoTeam": "自動匯入配隊卡牌",
+      "autoSongs": "自動匯入樂曲進度",
+      "autoHistory": "自動讀取招募紀錄",
+      "autoLink": "自動綁定遊戲帳號",
+      "importSessionExpired": "遊戲登入憑據已失效，請重新匯入最新存檔。",
+      "autoImportFailed": "部分存檔資料未能匯入",
       "addGameSave": "讀取遊戲存檔",
       "unblockUser": "解除封鎖",
       "unmute": "解除靜音",

@@ -2,6 +2,7 @@ import { clientText } from "../i18n/client";
 import { rememberedReturn } from "../lib/document-url";
 import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
 import { LitElement, html, nothing } from "lit";
+import { live } from "lit/directives/live.js";
 import "@material/web/button/filled-button.js";
 import "@material/web/button/text-button.js";
 import "@material/web/checkbox/checkbox.js";
@@ -10,6 +11,7 @@ import "@material/web/list/list.js";
 import "@material/web/list/list-item.js";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
+import "@material/web/switch/switch.js";
 import "@material/web/textfield/outlined-text-field.js";
 import { modal } from "./ui/modal";
 import { specList } from "./ui/spec";
@@ -23,7 +25,7 @@ import { RequestScope, throwIfAborted } from "../lib/request-scope";
 import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 import { snackbar } from "../lib/snackbar";
-import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
+import { appCall, appSupports, DEFAULT_SAVE_IMPORT, inApp, type DeviceSave, type SaveImportAction, type SaveImportOptions } from "../lib/app-bridge";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
 
@@ -78,6 +80,7 @@ export class AccountWorkspace extends LitElement {
     appeals: { state: true },
     games: { state: true },
     deviceSaves: { state: true },
+    saveImportOptions: { state: true },
     relationships: { state: true },
     draft: { state: true },
     removing: { state: true },
@@ -105,6 +108,7 @@ export class AccountWorkspace extends LitElement {
   declare appeals: Value[];
   declare games: Value[];
   declare deviceSaves: DeviceSave[];
+  declare private saveImportOptions: SaveImportOptions;
   declare relationships: Value[];
   /** Unsaved name, handle and bio, shown in the public card preview. */
   declare draft: { name?: string; handle?: string; bio?: string };
@@ -142,6 +146,7 @@ export class AccountWorkspace extends LitElement {
     this.appeals = [];
     this.games = [];
     this.deviceSaves = [];
+    this.saveImportOptions = DEFAULT_SAVE_IMPORT;
     this.relationships = [];
     this.draft = {};
     this.removing = null;
@@ -174,15 +179,23 @@ export class AccountWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
     ]);
     const query = new URLSearchParams(location.search);
+    if (query.get("section") === "games") this.section = "games";
     if (query.get("verified") === "1") this.message = this.label("verified", "Verified");
     if (query.get("deleted") === "1") this.message = this.label("accountDeleted", "Account deleted.");
     if (query.get("linked") === "1") this.message = this.label("accountLinked", "Account linked.");
     void this.load();
     if (inApp()) {
       addEventListener("haneoka-app-accounts", this.loadDeviceSaves);
+      addEventListener("haneoka-save-import-complete", this.reloadLinkedGames);
+      addEventListener("pageshow", this.restoreDeviceSaves);
       void this.loadDeviceSaves();
+      if (appSupports("saveAutomationV1"))
+        void appCall("saveImportOptions", {}).then((options) => { this.saveImportOptions = options; }).catch(() => {});
     }
   }
+  private readonly restoreDeviceSaves = (event: PageTransitionEvent) => {
+    if (event.persisted) void this.loadDeviceSaves();
+  };
   private readonly loadDeviceSaves = async () => {
     try {
       this.deviceSaves = await appCall("gameAccounts", {});
@@ -190,10 +203,26 @@ export class AccountWorkspace extends LitElement {
       this.deviceSaves = [];
     }
   };
+  private readonly reloadLinkedGames = async () => {
+    const owner = this.user()?.id;
+    if (!owner) return;
+    const value = await this.request("/api/v1/account/game-accounts", { signal: this.lifetime.signal }).catch(() => null);
+    if (this.isConnected && this.user()?.id === owner && Array.isArray(value?.accounts)) this.games = value.accounts as Value[];
+  };
+  private async changeSaveImportOption(action: SaveImportAction, selected: boolean) {
+    try {
+      this.saveImportOptions = await appCall("saveImportOptions", { [action]: selected });
+    } catch {
+      this.saveImportOptions = { ...this.saveImportOptions };
+      snackbar(this.label("importSettingsFailed", "Could not save import settings"), { error: true });
+    }
+  }
 
   private readonly onLocale = () => this.requestUpdate();
   disconnectedCallback() {
     removeEventListener("haneoka-app-accounts", this.loadDeviceSaves);
+    removeEventListener("haneoka-save-import-complete", this.reloadLinkedGames);
+    removeEventListener("pageshow", this.restoreDeviceSaves);
     this.lifetime.abort();
     this.loadRequests.cancel();
     this.profileRequests.cancel();
@@ -339,7 +368,10 @@ export class AccountWorkspace extends LitElement {
       this.appeals = [];
       if (this.session)
         await Promise.all([this.loadProfile(signal, speculative), this.loadSecurity(signal, speculative)]);
-      if (current()) this.phase = "ready";
+      if (current()) {
+        this.phase = "ready";
+        if (this.session && appSupports("saveAutomationV1")) dispatchEvent(new Event("haneoka-app-accounts"));
+      }
     } catch (error) {
       if (!current()) return;
       if (error instanceof JsonResponseError && error.status === 401) this.clearSession();
@@ -975,6 +1007,7 @@ export class AccountWorkspace extends LitElement {
                   <h2>${this.label("loadFailed", "Account information could not be loaded")}</h2>
                   <button class="button" @click=${this.load}>${this.label("retry", "Retry")}</button>
                 </section>
+                ${inApp() ? this.renderDeviceSaves() : nothing}
               `
             : this.session
               ? this.renderAccount()
@@ -1267,7 +1300,7 @@ export class AccountWorkspace extends LitElement {
 
   /** In the app: the saves read on this device, which need no sign-in. */
   private renderDeviceSaves() {
-    if (!inApp() || appSupports("saveSnapshotV1")) return html`<a class="button button--tonal" href=${`/${preferredLocale()}/saves/`}>${this.label("deviceSaves", "Saves on this device")}</a>`;
+    if (!inApp()) return html`<a class="button button--tonal" href=${`/${preferredLocale()}/saves/`}>${this.label("deviceSaves", "Saves on this device")}</a>`;
     const locale = preferredLocale();
     const number = (value: number) => new Intl.NumberFormat(locale).format(value);
     return html`
@@ -1280,7 +1313,7 @@ export class AccountWorkspace extends LitElement {
                   ${this.deviceSaves.map(
                     (save) => html`
                       <li class="account-object">
-                        <button class="detail-object" type="button" @click=${() => void appCall("openGameAccount", { key: save.key })}>
+                        <button class="detail-object" type="button" @click=${() => void appCall("openGameAccount", { key: save.key, fromAccount: true })}>
                           <span class="account-avatar" aria-hidden="true">${icon("sports_esports", 20)}</span>
                           <span>
                             ${save.name || save.profileId}
@@ -1301,9 +1334,27 @@ export class AccountWorkspace extends LitElement {
               `
             : nothing
         }
-        <button class="button button--tonal" type="button" @click=${() => void appCall("addGameAccount", {})}>
+        <button class="button button--tonal" type="button" @click=${() => void appCall("addGameAccount", { fromAccount: true })}>
           ${icon("add", 18)}${this.label("addGameSave", "Read game save")}
         </button>
+        ${appSupports("saveAutomationV1") ? html`
+          <md-divider></md-divider>
+          <ul class="detail-object-list" role="list">
+            ${([
+              ["team", "autoTeam", "Automatically import cards"],
+              ["songs", "autoSongs", "Automatically import song progress"],
+              ["history", "autoHistory", "Automatically read recruitment records"],
+              ["link", "autoLink", "Automatically link game account"],
+            ] as const).map(([action, key, fallback]) => html`
+              <li><label class="detail-object row row--between">
+                <span>${this.label(key, fallback)}</span>
+                <md-switch .selected=${live(this.saveImportOptions[action])} icons aria-label=${this.label(key, fallback)}
+                  @change=${(event: Event) => void this.changeSaveImportOption(action, (event.currentTarget as HTMLElement & { selected: boolean }).selected)}
+                ></md-switch>
+              </label></li>
+            `)}
+          </ul>
+        ` : nothing}
       </section>
     `;
   }

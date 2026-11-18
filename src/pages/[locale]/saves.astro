@@ -53,5 +53,11 @@ const messages = {
   </AppShell>
 </Base>
 <script>
-  import "../../lit/save-workspace";
+  import { appSupports, inApp } from "../../lib/app-bridge";
+
+  if (inApp() && !appSupports("saveSourcesV1")) {
+    location.replace(`/${document.documentElement.dataset.locale}/account/?section=games`);
+  } else {
+    void import("../../lit/save-workspace");
+  }
 </script>

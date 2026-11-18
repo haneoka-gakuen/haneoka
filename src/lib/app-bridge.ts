@@ -21,15 +21,19 @@ export interface AppMethods {
   /** Game saves read on this device; `haneoka-app-accounts` fires on window when they change. */
   gameAccounts: { args: Record<string, never>; result: DeviceSave[] };
   /** The app's page for one save: progress, cards, clears, export and update. */
-  openGameAccount: { args: { key: string }; result: null };
+  openGameAccount: { args: { key: string; fromAccount?: boolean }; result: null };
   /** The app's save reading: Shizuku, game folder, USB, backups or files. */
-  addGameAccount: { args: Record<string, never>; result: null };
+  addGameAccount: { args: { fromAccount?: boolean }; result: null };
+  saveImportOptions: { args: Partial<SaveImportOptions>; result: SaveImportOptions };
+  saveImportJobs: { args: Record<string, never>; result: SaveImportJob[] };
+  prepareSaveImport: { args: { id: string; action: SaveImportAction }; result: unknown };
+  completeSaveImport: { args: { id: string; action: SaveImportAction }; result: null };
   /** Gacha history the app's save page read from the game server, taken once. */
   pendingGachaHistory: { args: Record<string, never>; result: { files: { name: string; text: string }[] } | null };
   /** Clear marks and lossless mission counters from a chosen save; key also identifies older marks-only replies. */
-  songProgress: { args: { server: string; key?: string }; result: { marks: Record<string, number>; missionCounters?: unknown[]; key?: string; server?: string } | null };
+  songProgress: { args: { server: string; key?: string }; result: AppSongProgress | null };
   /** Song progress the app's save page sent here, taken once. */
-  pendingSongProgress: { args: Record<string, never>; result: { marks: Record<string, number>; missionCounters?: unknown[]; key?: string; server?: string } | null };
+  pendingSongProgress: { args: Record<string, never>; result: AppSongProgress | null };
   /** A save sent to the team builder from the app's save page, taken once. */
   pendingBoxImport: { args: Record<string, never>; result: { server: string; text: string } | null };
   /** `saveSourcesV1`: where this device can read game saves. */
@@ -62,6 +66,23 @@ export interface AppMethods {
 }
 
 export type SaveSource = "files" | "folder" | "adb" | "iosBackup" | "shizuku" | "gameFolder";
+export type SaveImportAction = "team" | "songs" | "history" | "link";
+export type SaveImportOptions = Record<SaveImportAction, boolean>;
+export const DEFAULT_SAVE_IMPORT: SaveImportOptions = { team: true, songs: true, history: true, link: true };
+export interface SaveImportJob {
+  id: string;
+  key: string;
+  server: "jp" | "intl";
+  actions: SaveImportAction[];
+}
+
+export interface AppSongProgress {
+  marks: Record<string, number>;
+  missionCounters?: unknown[];
+  key?: string;
+  server?: string;
+  countError?: string;
+}
 
 export interface SaveRead {
   keys: string[];

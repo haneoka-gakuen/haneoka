@@ -7,7 +7,8 @@ import { html, nothing } from "lit";
 import type { CatalogCost } from "../../lib/catalog-cost-summary";
 import { formatDate } from "../../lib/date-format";
 import { loadGrowthCatalog, stageDisplay, type GrowthPageData } from "../../lib/growth-catalog";
-import { saveRecords, type StoredSave } from "../../lib/save-workspace/snapshot";
+import { parseSnapshot, saveRecords, type SaveSnapshot } from "../../lib/save-workspace/snapshot";
+import { appCall, appSupports, inApp } from "../../lib/app-bridge";
 import type { EngineHit, EngineRequest } from "../../lib/team-builder/engine/api";
 import { completeResponse } from "../../lib/team-builder/engine/execution";
 import {
@@ -32,6 +33,13 @@ interface Source {
   settings: BuildSettings;
 }
 
+interface TrainingSave {
+  id: string;
+  label: string;
+  savedAt: string | number | null;
+  read(): Promise<SaveSnapshot>;
+}
+
 const actionLabels = {
   level: "level",
   training: "training",
@@ -45,7 +53,7 @@ export class TeamTrainingPlan {
   private source: Source | null = null;
   private catalog: GrowthPageData | null = null;
   private materials: CatalogCost[] = [];
-  private records: StoredSave[] = [];
+  private records: TrainingSave[] = [];
   private selection = "";
   private manual = new Map<string, number>();
   private materialsOpen = false;
@@ -86,7 +94,7 @@ export class TeamTrainingPlan {
     host.requestUpdate();
     const [catalog, saves] = await Promise.allSettled([
       loadGrowthCatalog(identity, host.locale, abort.signal),
-      saveRecords("list"),
+      this.readSaves(identity.server),
     ]);
     if (this.source !== source || abort.signal.aborted) return;
     if (catalog.status === "fulfilled") {
@@ -94,14 +102,27 @@ export class TeamTrainingPlan {
       this.materials = trainingMaterials(source.input, catalog.value);
     } else this.loadError = true;
     if (saves.status === "fulfilled") {
-      this.records = saves.value
-        .filter((record) => record.snapshot.server === identity.server)
-        .sort((a, b) => (b.snapshot.savedAt ?? b.importedAt).localeCompare(a.snapshot.savedAt ?? a.importedAt));
+      this.records = saves.value;
     } else this.saveError = true;
     this.selection = this.records.length === 1 ? this.records[0]!.id : this.records.length ? "" : "manual";
     this.materialsOpen = this.selection === "manual";
     this.loading = false;
     host.requestUpdate();
+  }
+
+  private async readSaves(server: string): Promise<TrainingSave[]> {
+    if (appSupports("saveSnapshotV1")) {
+      return (await appCall("gameAccounts", {}))
+        .filter((save) => save.server === server)
+        .map((save) => ({
+          id: save.key, label: save.name || save.profileId, savedAt: save.savedAt,
+          read: async () => parseSnapshot((await appCall("saveSnapshot", { key: save.key })).text),
+        }));
+    }
+    return (await saveRecords("list"))
+      .filter((record) => record.snapshot.server === server)
+      .sort((a, b) => (b.snapshot.savedAt ?? b.importedAt).localeCompare(a.snapshot.savedAt ?? a.importedAt))
+      .map((record) => ({ id: record.id, label: record.label, savedAt: record.snapshot.savedAt, read: async () => record.snapshot }));
   }
 
   sync(identity: string) {
@@ -154,8 +175,10 @@ export class TeamTrainingPlan {
     this.stopped = false;
     host.requestUpdate();
     const active = () => this.source === source && host.ownsTask(task) && !this.stopped;
-    const snapshot = this.records.find((r) => r.id === this.selection)?.snapshot;
+    const record = this.records.find((r) => r.id === this.selection);
     try {
+      const snapshot = await record?.read();
+      if (!active()) return;
       if (snapshot && !Array.isArray(snapshot.player._items)) throw new Error("training-save-items");
       const stock = snapshot ? trainingStock(snapshot) : new Map(this.manual);
       const prepared = prepareTraining(source.input, catalog, snapshot);
@@ -207,7 +230,7 @@ export class TeamTrainingPlan {
     const metric = resultMetric(host, plan?.final ?? source.hit, source.settings);
     const gain = plan ? metric.value - resultMetric(host, plan.baseline, source.settings).value : 0;
     const visibleRemaining = materials.filter((item) => plan?.remaining.has(item.identity));
-    const selectedSave = this.records.find((record) => record.id === selection)?.snapshot;
+    const selectedSave = this.records.find((record) => record.id === selection);
     const status = this.loading
       ? "loading"
       : this.loadError
@@ -333,8 +356,8 @@ export class TeamTrainingPlan {
                       <option value=${record.id} ?selected=${selection === record.id}>
                         ${record.label}
                         ${
-                          this.records.length > 1 && record.snapshot.savedAt
-                            ? ` ${formatDate(host.locale, record.snapshot.savedAt, { time: true })}`
+                          this.records.length > 1 && record.savedAt
+                            ? ` ${formatDate(host.locale, record.savedAt, { time: true })}`
                             : nothing
                         }
                       </option>
@@ -357,7 +380,7 @@ export class TeamTrainingPlan {
                       : nothing
               }
             </span>
-            <a class="button button--text" href=${`/${host.locale}/saves/`}>${t("saves")}</a>
+            <a class="button button--text" href=${inApp() ? `/${host.locale}/account/?section=games` : `/${host.locale}/saves/`}>${t("saves")}</a>
             ${
               selection === "manual" && materials.length
                 ? accordion({

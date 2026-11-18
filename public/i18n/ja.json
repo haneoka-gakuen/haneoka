@@ -1388,6 +1388,7 @@
         "snapshotGrowth": "レベル / 上限解放"
       },
       "counts": {
+        "remoteFailed": "ゲームサーバーからクリア回数を取得できませんでした",
         "title": "ライブ回数",
         "total": "累計クリア回数",
         "fc": "FC回数",
@@ -4925,6 +4926,13 @@
       "visibilityPrivate": "非公開",
       "gameAccounts": "ゲームアカウント",
       "deviceSaves": "この端末のセーブデータ",
+      "importSettingsFailed": "取り込み設定を保存できませんでした",
+      "autoTeam": "カードを自動で取り込む",
+      "autoSongs": "楽曲の進捗を自動で取り込む",
+      "autoHistory": "ガチャ履歴を自動で読み込む",
+      "autoLink": "ゲームアカウントを自動で連携する",
+      "importSessionExpired": "ゲームの認証が切れました。最新のセーブを読み込み直してください。",
+      "autoImportFailed": "一部のセーブデータを取り込めませんでした",
       "addGameSave": "セーブデータを読み込む",
       "unblockUser": "ブロック解除",
       "unmute": "ミュート解除",

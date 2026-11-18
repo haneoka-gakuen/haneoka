@@ -1388,6 +1388,7 @@
         "snapshotGrowth": "等级 / 上限解锁"
       },
       "counts": {
+        "remoteFailed": "无法从游戏服务器读取通关次数",
         "title": "演出次数",
         "total": "累计通关",
         "fc": "FC 次数",
@@ -4925,6 +4926,13 @@
       "visibilityPrivate": "私密",
       "gameAccounts": "游戏账号",
       "deviceSaves": "本机游戏存档",
+      "importSettingsFailed": "无法保存自动导入设置",
+      "autoTeam": "自动导入配队卡牌",
+      "autoSongs": "自动导入乐曲进度",
+      "autoHistory": "自动读取招募记录",
+      "autoLink": "自动绑定游戏账号",
+      "importSessionExpired": "游戏登录凭据已失效，请重新导入最新存档。",
+      "autoImportFailed": "部分存档数据未能导入",
       "addGameSave": "读取游戏存档",
       "unblockUser": "取消屏蔽",
       "unmute": "取消静音",

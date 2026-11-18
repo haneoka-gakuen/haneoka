@@ -130,7 +130,7 @@ class HistoryStore extends EventTarget {
       })
       .sort((a, b) => Date.parse(b.snapshot.queriedAt) - Date.parse(a.snapshot.queriedAt));
   }
-  async import(value: unknown, companionKey?: string): Promise<StoredHistory> {
+  async import(value: unknown, companionKey?: string, overwrite = false): Promise<StoredHistory> {
     const snapshot = parseHistory(value),
       companion = companionKey
         ? /^([a-f0-9]{64})(?:-(jp|global-hmt|global-en|global-kr))?(?:-kind-[a-f0-9]{16})?$/u.exec(companionKey)
@@ -169,12 +169,14 @@ class HistoryStore extends EventTarget {
           try {
             if (previous.result) {
               const previousRecord = previous.result as StoredHistory;
-              let histories = [parseHistory(previousRecord.snapshot)];
-              for (const history of previousRecord.histories ?? [])
-                histories = mergeHistoryCollection(histories, parseHistory(history));
-              record.histories = mergeHistoryCollection(histories, incoming);
-              checkHistoryBudget(record.histories);
-              record.snapshot = record.histories[0];
+              if (!overwrite) {
+                let histories = [parseHistory(previousRecord.snapshot)];
+                for (const history of previousRecord.histories ?? [])
+                  histories = mergeHistoryCollection(histories, parseHistory(history));
+                record.histories = mergeHistoryCollection(histories, incoming);
+                checkHistoryBudget(record.histories);
+                record.snapshot = record.histories[0];
+              }
               record.aliases = previousRecord.aliases;
               record.mergeSources = previousRecord.mergeSources;
             }

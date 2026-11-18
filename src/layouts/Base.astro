@@ -280,6 +280,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { installUiFonts } from "../lib/ui-fonts";
       import { installUpdateCheck } from "../lib/update-check";
       import { installFullscreen } from "../lib/fullscreen";
+      import { appSupports } from "../lib/app-bridge";
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installNavigationPrefetch } from "../lib/navigation-prefetch";
       import { installContentRequests } from "../lib/content-request";
@@ -294,6 +295,13 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       installI18nDom();
       installUpdateCheck();
       installFullscreen();
+      if (appSupports("saveAutomationV1")) {
+        const runSaveImports = () => void import("../lib/app-save-import")
+          .then(({ runAppSaveImports }) => runAppSaveImports()).catch(() => {});
+        runSaveImports();
+        window.addEventListener("pageshow", (event) => { if (event.persisted) runSaveImports(); });
+        addEventListener("haneoka-app-accounts", runSaveImports);
+      }
       if ("serviceWorker" in navigator)
         addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });
       const restoreAudioDock = async () => {
