@@ -18,10 +18,13 @@ import {
   type RewardPlan,
 } from "../../lib/team-builder/reward-plan";
 import { segmented } from "../ui/controls";
-import { choiceField, sectionHeading } from "./catalog";
+import { sectionHeading } from "./catalog";
+import { rankTargetControl } from "./score-goal";
 
 export const rewardLabel = (host: TeamBuilder, metric: RewardMetric): string =>
   metric === "points" ? "PT" : metric === "challenge-points" ? "CP" : host.t("rewardPlan.badges", "Badges");
+export const bonusMetricLabel = (host: TeamBuilder, metric: RewardMetric): string =>
+  metric === "items" ? host.t("farm.itemBonus", "Item bonus") : host.t("farm.pointBonus", "Event PT bonus");
 const rewardIcon = (host: TeamBuilder, metric: RewardMetric) => {
   const settings = host.searchSettings;
   const eventId = settings.manualEventEnabled ? settings.manualEvent.templateId : settings.eventId;
@@ -38,7 +41,8 @@ export const rewardRankingLabel = (host: TeamBuilder, plan: RewardRankingPlan): 
       const label = level
         .map(
           (term) =>
-            `${rewardLabel(host, term.metric)}${index === 0 && term.weight !== plan.unit ? ` × ${new Intl.NumberFormat(host.locale, { maximumFractionDigits: 4 }).format(term.weight / plan.unit)}` : ""}`,
+            plan.maximizeBonus ? bonusMetricLabel(host, term.metric)
+              : `${rewardLabel(host, term.metric)}${index === 0 && term.weight !== plan.unit ? ` × ${new Intl.NumberFormat(host.locale, { maximumFractionDigits: 4 }).format(term.weight / plan.unit)}` : ""}`,
         )
         .join(" + ");
       return index ? `${host.t("rewardPlan.tie", "Tie-break")} ${label}` : label;
@@ -48,6 +52,8 @@ export const rewardRankingLabel = (host: TeamBuilder, plan: RewardRankingPlan): 
 export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
   const set = (rewardPlan: RewardPlan) =>
     host.updateFarming({ rewardPlan, ptCycle: false, weighted: false, measure: rewardPlan.primary });
+  const canRank = host.searchSettings.route !== "skip";
+  const bonus = canRank ? plan.bonus : undefined;
   const primaryOptions = REWARD_METRICS.filter(
     (metric) => host.searchSettings.route !== "challenge" || metric !== "challenge-points",
   );
@@ -67,6 +73,24 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
   return html`
     <section class="surface stack" id="tb-reward-plan" data-tb-field tabindex="-1">
       ${sectionHeading({ icon: "emoji_events", label: host.t("rewardPlan.title", "Reward plan") })}
+      ${canRank ? segmented({
+        label: host.t("rewardPlan.objective", "Optimization target"),
+        value: bonus ? "bonus" : "reward",
+        options: [
+          { value: "reward", label: host.t("rewardPlan.rewards", "Rewards") },
+          { value: "bonus", label: host.t("rewardPlan.maximizeBonus", "Maximum bonus") },
+        ],
+        onSelect: value => set({ ...plan, bonus: value === "bonus" ? plan.primary === "items" ? "items" : "points" : undefined }),
+      }) : nothing}
+      ${bonus ? html`
+        ${rankTargetControl(host, plan.minimumRank ?? 7, null,
+          rank => set({ ...plan, minimumRank: rank ?? 7 }), host.t("analysis.minimumRank", "Every order reaches"))}
+        ${segmented({
+          label: host.t("rewardPlan.maximizeBonus", "Maximum bonus"), value: bonus,
+          options: (["points", "items"] as const).map(value => ({ value, label: bonusMetricLabel(host, value) })),
+          onSelect: bonus => set({ ...plan, bonus }),
+        })}
+      ` : html`
       ${segmented({
         label: host.t("rewardPlan.criterion", "Reward target"),
         value: plan.criterion ?? "mean",
@@ -77,18 +101,8 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
         ],
         onSelect: (criterion) => set({ ...plan, criterion }),
       })}
-      ${host.searchSettings.route !== "skip" ? html`
-      ${choiceField({
-        type: "select",
-        label: host.t("analysis.minimumRank", "Every order reaches"),
-        value: String(plan.minimumRank ?? 0),
-        options: [0, 3, 4, 5, 6, 7].map((rank, index) => ({
-          value: String(rank),
-          label: [host.t("skillRoles.unlimited", "Any"), "C", "B", "A", "S", "SS"][index]!,
-        })),
-        onSelect: (rank) => set({ ...plan, minimumRank: Number(rank) || undefined }),
-      })}
-      ` : nothing}
+      ${canRank ? rankTargetControl(host, plan.minimumRank ?? null, host.t("skillRoles.unlimited", "Any"),
+        rank => set({ ...plan, minimumRank: rank ?? undefined }), host.t("analysis.minimumRank", "Every order reaches")) : nothing}
       <span class="tb-field__label">${host.t("rewardPlan.primary", "Main reward")}</span>
       ${segmented({
         label: host.t("rewardPlan.primary", "Main reward"),
@@ -174,6 +188,7 @@ export function renderRewardPlan(host: TeamBuilder, plan: RewardPlan) {
         `;
       })}
       <span class="tb-results__meta">${host.t("rewardPlan.order", "Ranking")}: ${preview}</span>
+      `}
     </section>
   `;
 }

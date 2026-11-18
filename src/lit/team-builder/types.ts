@@ -31,6 +31,7 @@ export interface BuildSettings {
   /** Score goal only: rank by the share of orders reaching targetScore, or the average capped at it. */
   scoreTarget: "none" | "at-least" | "capped";
   targetScore: number | null;
+  targetRank: number | null;
   playMode: "ap" | "custom";
   /** Percent of notes, 0–100. */
   great: number;
@@ -137,6 +138,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   frameRate: 60,
   scoreTarget: "none",
   targetScore: null,
+  targetRank: 7,
   playMode: "ap",
   great: 3,
   good: 0,

@@ -1381,6 +1381,7 @@ export class TeamBuilder extends LitElement {
       if (
         s.goal === "score" &&
         s.scoreTarget !== "none" &&
+        !(s.scoreTarget === "at-least" && s.targetRank !== null) &&
         !(s.targetScore && Number.isFinite(s.targetScore) && s.targetScore > 0)
       )
         add("tb-target-score", "needTargetScore", "Enter a positive target score");
@@ -1598,14 +1599,19 @@ export class TeamBuilder extends LitElement {
         if (s.powerSong && !s.songs.length) return null;
         return { kind: "power", song: s.powerSong ? (s.songs[0] ?? null) : null, challengeEventId: challengeId };
       case "score":
-        if (!s.songs.length || (s.scoreTarget !== "none" && !(s.targetScore && s.targetScore > 0))) return null;
+        if (!s.songs.length) return null;
+        const target = s.scoreTarget === "at-least" && s.targetRank !== null
+          ? { kind: "at-least" as const, rank: s.targetRank }
+          : s.scoreTarget !== "none" && s.targetScore && s.targetScore > 0
+            ? { kind: s.scoreTarget, score: s.targetScore } : undefined;
+        if (s.scoreTarget !== "none" && !target) return null;
         return {
           kind: "score",
           songs: s.songs,
           criterion: s.criterion,
           play: { ...play, ...(s.criterion === "max" && s.scoreTarget === "none" && s.scoreTiming !== "nominal" ? { cumulativeTiming: s.scoreTiming } : {}) },
           challengeEventId: challengeId,
-          ...(s.scoreTarget !== "none" ? { target: { kind: s.scoreTarget, score: s.targetScore! } } : {}),
+          ...(target ? { target } : {}),
         };
       case "gekiso":
         return s.songs.length ? { ...this.gekisoGoal(s), ...(s.arena ? { arena: s.arena } : {}) } : null;
@@ -1619,7 +1625,7 @@ export class TeamBuilder extends LitElement {
           const compiled = compileRewardPlan(plan, { songs: s.planChallengeSongs, consumption: s.challengePoints }, s.route === "skip");
           if (!compiled) return null;
           if (s.route === "skip") delete compiled.minimumRank;
-          return { kind: "event", rewardPlan: compiled, measure: plan.primary,
+          return { kind: "event", rewardPlan: compiled, measure: compiled.maximizeBonus ? plan.bonus! : plan.primary,
             ...(s.ptMode === "gekiso" && s.route === "live" ? { rewardRoom: s.rewardRoomMode === "solo" ? { mode: "solo" as const } : { mode: "battle" as const, players: s.rewardPlayers, ...(s.rewardOtherScore === null ? {} : { otherAverageScore: s.rewardOtherScore }) } } : {}),
             ranking: s.ptMode === "gekiso" && s.route === "live" ? "pt-only" : "primary",
             route: s.route, eventId: s.eventId, songs: s.route === "skip" ? [] : s.songs,

@@ -7,6 +7,7 @@ import type { EngineHit } from "../../lib/team-builder/engine/api";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { SCORE_GOALS, resultRequest, resultSettings, scoreGoal, scoreText } from "./score-goal";
+import { bonusMetricLabel } from "./reward-plan-view";
 
 export interface ResultMetric {
   id: string;
@@ -56,6 +57,7 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     const cpLabel = sampled ? host.t("averageCpPerPlay", "Average challenge points per play") : host.t("cpPerPlay", "Challenge points per play");
     if (event.rewardPlan) {
       const plan = event.rewardPlan, primary = plan.levels[0]![0]!.metric;
+      if (plan.maximizeBonus) return metric(`reward-plan:${JSON.stringify(plan)}`, bonusMetricLabel(host, primary), event.mean, 2, "%");
       const label = plan.criterion === "min" ? host.t("rewardPlan.min", "Minimum reward") : plan.criterion === "max" ? host.t("rewardPlan.max", "Highest reward") : plan.levels[0]!.length > 1 ? host.t("rewardPlan.converted", "Converted rewards")
         : primary === "points" ? pointsLabel
         : primary === "items" ? (sampled ? itemsLabel : host.t("rewardPlan.itemsPerPlay", "Badges per play")) : cpLabel;
@@ -89,15 +91,18 @@ export function resultMetric(host: TeamBuilder, hit: EngineHit, s: BuildSettings
     const goal = scoreGoal(s),
       orders = hit.score.orders,
       target = s.targetScore ?? 0;
-    if (goal === "at-least" && orders.length)
+    if (goal === "at-least" && orders.length) {
+      const reaching = s.targetRank === null ? orders.filter(value => value >= target).length
+        : Object.entries(hit.score.ranks).reduce((sum, [rank, count]) => Number(rank) >= s.targetRank! ? sum + count : sum, 0);
       return metric(
         goal,
         scoreText(host, SCORE_GOALS[goal].metric),
-        (orders.filter((v) => v >= target).length / orders.length) * 100,
+        reaching / orders.length * 100,
         1,
         "%",
         false,
       );
+    }
     if (goal === "capped" && orders.length)
       return metric(
         goal,

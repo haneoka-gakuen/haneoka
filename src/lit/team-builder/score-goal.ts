@@ -108,6 +108,17 @@ export function renderScoreGoal(host: TeamBuilder, s: BuildSettings, set: (patch
   });
 }
 
+export const scoreRankName = (rank: number) => ["", "", "D", "C", "B", "A", "S", "SS"][rank] ?? "";
+
+export function rankTargetControl(host: TeamBuilder, rank: number | null, other: string | null, onSelect: (rank: number | null) => void, label: string) {
+  return choiceField({
+    type: "select", label, value: String(rank ?? 0),
+    options: [...(other === null ? [] : [{ value: "0", label: other }]),
+      ...[3, 4, 5, 6, 7].map(value => ({ value: String(value), label: scoreRankName(value) }))],
+    onSelect: value => onSelect(Number(value) || null),
+  });
+}
+
 /** The score goal's ranking: a target when one is set, otherwise the criterion. */
 export const scoreGoal = (s: BuildSettings) =>
   s.goal === "score" && s.scoreTarget !== "none" ? s.scoreTarget

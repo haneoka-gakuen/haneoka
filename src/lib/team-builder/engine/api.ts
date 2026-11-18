@@ -144,6 +144,7 @@ export interface RewardTerm { metric: RewardMetric; weight: number }
 export interface RewardRankingPlan {
   criterion?: "mean" | "max" | "min";
   minimumRank?: number;
+  maximizeBonus?: true;
   tieBreak?: "power" | "score";
   unit: number;
   levels: RewardTerm[][];
@@ -161,7 +162,7 @@ export type Goal =
       play: PlayModel;
       challengeEventId: number | null;
       /** Replaces the criterion: share of the 120 orders reaching `score`, or the average capped at it. */
-      target?: { kind: "at-least" | "capped"; score: number };
+      target?: { kind: "at-least" | "capped"; score: number } | { kind: "at-least"; rank: number };
     }
   | {
       kind: "event";

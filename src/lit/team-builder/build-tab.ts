@@ -23,7 +23,7 @@ import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { choiceField, sectionHeading } from "./catalog";
 import { renderResults } from "./results";
-import { renderScoreGoal, scoreGoal } from "./score-goal";
+import { rankTargetControl, renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
 import { farmingConditions, missionSummary, parseOpponents } from "./workspace-state";
@@ -977,8 +977,11 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                   s.goal === "score" || s.goal === "gekiso"
                     ? html`
                         ${renderScoreGoal(host, s, set)}
+                        ${scoreGoal(s) === "at-least"
+                          ? rankTargetControl(host, s.targetRank, host.t("targetScore", "Target score"), targetRank => set({ targetRank }), host.t("targetGrade", "Target grade"))
+                          : nothing}
                         ${
-                          scoreGoal(s) === "at-least" || scoreGoal(s) === "capped"
+                          (scoreGoal(s) === "at-least" && s.targetRank === null) || scoreGoal(s) === "capped"
                             ? html`
                                 <md-outlined-text-field
                                   type="number"

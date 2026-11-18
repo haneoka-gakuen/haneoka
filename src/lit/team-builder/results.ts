@@ -31,7 +31,7 @@ import { sectionHeading } from "./catalog";
 import { renderChecklist } from "./tool-layout";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof, manualResultSource, resultOrderIndex, setResultOrder } from "./score-goal";
+import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof, scoreRankName, manualResultSource, resultOrderIndex, setResultOrder } from "./score-goal";
 import { resolveBox } from "../../lib/team-builder/engine/box";
 import { effectPercent, resolveSlotSkill } from "../../lib/team-builder/engine/skills";
 import { memberEventPercent, snapEventPercent } from "../../lib/team-builder/engine/power";
@@ -76,6 +76,7 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
       : []),
     ...(hit.event?.rewardPlan ? [
       `${host.t("rewardPlan.order", "Ranking")}: ${rewardRankingLabel(host, hit.event.rewardPlan)}`,
+      ...(hit.event.rewardPlan.minimumRank ? [`${host.t("analysis.minimumRank", "Every order reaches")} ${scoreRankName(hit.event.rewardPlan.minimumRank)}`] : []),
       ...Object.entries(hit.event.rewardValues ?? {}).map(([metric, value]) => `${rewardLabel(host, metric as "points" | "items" | "challenge-points")}: ${format(host, value.value, 4)}`),
     ] : []),
     ...(input?.goal.kind === "event" && input.goal.weights
@@ -88,7 +89,9 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
         : `${host.t("rewardPlan.battle", "Multiplayer")} / ${host.t("rewardPlan.players", "Players")}: ${input.goal.rewardRoom.players} / ${host.t("rewardPlan.otherScore", "Other players’ average score")}: ${input.goal.rewardRoom.otherAverageScore === undefined ? host.t("rewardPlan.equalScore", "Same score as you") : format(host, input.goal.rewardRoom.otherAverageScore)}`,
     ] : []),
     ...(input?.goal.kind === "score" && input.goal.target
-      ? [`${host.t("targetScore", "Target score")}: ${format(host, input.goal.target.score)}`]
+      ? ["rank" in input.goal.target
+          ? `${host.t("targetGrade", "Target grade")}: ${scoreRankName(input.goal.target.rank)}`
+          : `${host.t("targetScore", "Target score")}: ${format(host, input.goal.target.score)}`]
       : []),
     ...(input && "play" in input.goal
       ? [

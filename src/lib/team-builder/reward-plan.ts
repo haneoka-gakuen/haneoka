@@ -15,6 +15,7 @@ export interface RewardOption {
 export interface RewardPlan {
   criterion?: "mean" | "max" | "min";
   minimumRank?: number;
+  bonus?: "points" | "items";
   primary: RewardMetric;
   options: Record<RewardMetric, RewardOption>;
   tieOrder: RewardMetric[];
@@ -106,6 +107,13 @@ export function compileRewardPlan(
   challenge: { songs: SongRef[]; consumption: number },
   skip = false,
 ): RewardRankingPlan | null {
+  if (plan.bonus && !skip) return {
+    unit: 1,
+    minimumRank: plan.minimumRank ?? 7,
+    maximizeBonus: true,
+    tieBreak: "score",
+    levels: [[{ metric: plan.bonus, weight: 1 }]],
+  };
   const first = [{ metric: plan.primary, weight: RATE_SCALE }];
   let auto = false;
   for (const metric of REWARD_METRICS) {

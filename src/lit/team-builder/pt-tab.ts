@@ -479,7 +479,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
   ] as const;
   const available = plays.filter((play) => play.available).map((play) => play.value);
   const plan = farmingRewardPlan(host);
-  const autoCp = plan.options["challenge-points"].mode === "convert" && plan.options["challenge-points"].auto;
+  const autoCp = !plan.bonus && plan.options["challenge-points"].mode === "convert" && plan.options["challenge-points"].auto;
   return html`
     <section class="surface stack">
       ${sectionHeading({ icon: "emoji_events", label: host.t("eventSetup", "Event") })}
@@ -517,7 +517,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
               boostControl(host, s.boosts, (boosts) => host.updateSettings({ boosts })),
             )
       }
-      ${s.route === "live" && challenge && plan.primary !== "challenge-points" ? html`
+      ${s.route === "live" && challenge && !plan.bonus && plan.primary !== "challenge-points" ? html`
         <label class="tb-check" id="tb-reward-scope">
           <md-checkbox touch-target="wrapper" .checked=${autoCp}
             @change=${(event: Event) => {
