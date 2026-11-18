@@ -2,7 +2,7 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；复用同输入已证明的自动 CP 校准；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, objectRow, type TeamBuilderData } from "../data";
@@ -436,6 +436,10 @@ function phasedReward(data: TeamBuilderData, request: EngineRequest): boolean {
   return requestMissions(data, request, goal.songs[0]!).every(mission => mission === 1);
 }
 
+function submittedRequest(request: EngineRequest): EngineRequest {
+  return singleSongRequest(structuredClone(request));
+}
+
 /** Main-thread handle on the engine Workers. A search is split by leader over a pool of Workers and merged; cancelling
  * replaces every Worker, so a long search never blocks. */
 export class EngineClient {
@@ -486,6 +490,7 @@ export class EngineClient {
   private readonly activeStops = new Set<(reason: StopReason) => void>();
   private generation = 0;
   private completed: { key: string; response: EngineResponse } | null = null;
+  private cpCalibration: { key: string; response: EngineResponse } | null = null;
   get searchQueued() { return [...this.queuedSearches.values()].some(Boolean); }
   private responseKey(request: EngineRequest): string | null {
     if (request.k > 5 || request.members.length > 256 || request.snaps.length > 256 || requestSongs(request).length > 4
@@ -496,10 +501,11 @@ export class EngineClient {
   }
 
   run(request: EngineRequest, progress?: Pending["progress"], snapshot?: Pending["snapshot"], onFinalResult?: FinalResultHandler): Promise<EngineResponse> {
-    request = singleSongRequest(request);
     const started = clock();
+    const deadline = deadlineOf(request);
+    request = submittedRequest(request);
     const generation = this.generation;
-    const task = { ...request, timeLimitMs: null, deadline: deadlineOf(request), requestId: request.requestId ?? crypto.randomUUID(), contextKey: request.contextKey ?? JSON.stringify([this.dataIdentity, request]) };
+    const task = { ...request, timeLimitMs: null, deadline, requestId: request.requestId ?? crypto.randomUUID(), contextKey: request.contextKey ?? JSON.stringify([this.dataIdentity, request]) };
     let stoppedBeforeStart: EngineResponse | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const blocked = this.queueDepth > 0;
@@ -546,8 +552,9 @@ export class EngineClient {
     const started = clock();
     const generation = this.generation;
     const tasks = requests.map(input => {
-      const request = singleSongRequest(input);
-      return { ...request, timeLimitMs: null, deadline: deadlineOf(request),
+      const deadline = deadlineOf(input);
+      const request = submittedRequest(input);
+      return { ...request, timeLimitMs: null, deadline,
         requestId: request.requestId ?? crypto.randomUUID(), contextKey: request.contextKey ?? JSON.stringify([this.dataIdentity, request]) };
     });
     return this.enqueue(async () => {
@@ -664,10 +671,17 @@ export class EngineClient {
       if (!remaining(deadline)) { stop("budget"); return latest; }
       if (completeResponse(latest)) return latest;
       if (request.goal.kind === "event" && request.goal.rewardPlan?.autoCp) {
-        const resolved = await idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, resolveRewardPlan: true } });
+        // The native calibration discards ordinary search seeds and completed rows. This client owns a fixed release.
+        const { deadline: _deadline, timeLimitMs: _time, requestId: _id, contextKey: _context,
+          seeds: _seeds, completed: _completed, ...input } = request;
+        const key = JSON.stringify(input);
+        const cached = this.cpCalibration?.key === key ? this.cpCalibration.response : null;
+        const resolved = cached ? structuredClone(cached)
+          : await idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, resolveRewardPlan: true } });
         if (stopped) return latest;
         if (!resolved.resolvedRewardPlan) return { ...latest, stopReason: resolved.stopReason ?? "budget" };
         cpChallenge = resolved.cpChallenge;
+        if (!cached && cpChallenge) this.cpCalibration = { key, response: structuredClone(resolved) };
         if (cpChallenge) publish({ ...latest, cpChallenge }, true);
         request = { ...request, goal: { ...request.goal, rewardPlan: resolved.resolvedRewardPlan } };
       }

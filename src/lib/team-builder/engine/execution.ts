@@ -23,6 +23,9 @@ export const requestSongs = (input: EngineRequest): (SongRef | null)[] => {
     ? [...goal.challengeSongs, ...goal.normalSongs] : goal.kind === "event" && !goal.songs.length && goal.route === "skip" ? [null] : goal.songs;
 };
 export const requestChartSongs = (input: EngineRequest): (SongRef | null)[] => {
+  if (input.resolveRewardPlan && !input.songRules && input.goal.kind === "event" && input.goal.rewardPlan) {
+    return input.goal.rewardPlan.autoCp?.songs ?? [];
+  }
   const request = singleSongRequest(input);
   return [
     ...((request.aggregation === "mean" && (request.goal.kind === "score" || request.goal.kind === "event")) || (request.goal.kind === "gekiso" && (request.goal.arena || request.aggregation === "mean")) ? request.goal.songs : requestSongs(request)), ...(request.goal.kind === "event" ? request.goal.rewardPlan?.autoCp?.songs ?? [] : []),
