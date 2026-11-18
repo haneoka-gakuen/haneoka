@@ -2,7 +2,7 @@
 // Input: 锁定 Git 源码树与冻结内容清单。
 // Output: Web 源码、资源内容及最终构建身份。
 // Pos: [Map](L2-2.md)；页面更新提示使用的 Web 输入身份。
-// Effects/Dependencies: 读取 Git／文件字节；非 public 导航与构建协调脚本不参与源码身份，public 文件和捕获产物全部保留。
+// Effects/Dependencies: 读取 Git／文件字节；排除导航与构建协调源码，仅归一已验证语音缺失记录的请求诊断身份，保留有效内容与原始捕获。
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -113,6 +113,78 @@ export function webSourceIdentity(root: string): string {
   return digest(JSON.stringify(rows.sort(([a], [b]) => compare(a, b))));
 }
 
+function voiceAbsenceReference(
+  row: CapturedInputs["records"][number],
+  contentRoot: string,
+): Pick<InputReference, "sha256" | "bytes"> {
+  const key =
+    /^(native-json|native-optional):(jp|intl)\0(r-[a-f0-9]{20})\0([A-Za-z0-9][A-Za-z0-9._-]{0,127})\0(voices\/member-card:\d+)$/u.exec(
+      row.key,
+    );
+  if (
+    !key ||
+    (key[1] === "native-json"
+      ? row.role !== "native-catalog" || row.format !== "error"
+      : row.role !== "native-optional" || row.format !== "json")
+  )
+    return row;
+  if (!/^[a-f0-9]{64}$/u.test(row.sha256) || !Number.isSafeInteger(row.bytes) || row.bytes < 0)
+    throw new Error("Invalid Web voice absence reference");
+  const bytes = fs.readFileSync(path.join(contentRoot, row.sha256));
+  if (bytes.length !== row.bytes || digest(bytes) !== row.sha256)
+    throw new Error("Web voice absence body differs from frozen inputs");
+  const object = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return row;
+  }
+  if (!object(value)) return row;
+  const field = key[1] === "native-json" ? "message" : "reason";
+  if (
+    field === "message"
+      ? Object.keys(value).sort().join(",") !== "message,name" || value.name !== "Error"
+      : Object.keys(value).sort().join(",") !== "reason,value" || value.value !== null
+  )
+    return row;
+  const prefix = `Static catalog request failed for ${key[2]}/${key[5]} (404) `;
+  const message = value[field];
+  if (typeof message !== "string" || !message.startsWith(prefix)) return row;
+  let diagnostics: unknown;
+  try {
+    diagnostics = JSON.parse(message.slice(prefix.length));
+  } catch {
+    return row;
+  }
+  if (
+    !object(diagnostics) ||
+    diagnostics.errorCode !== "entity_not_found" ||
+    diagnostics.idCount !== 0 ||
+    diagnostics.routeHash !== digest(key[5]) ||
+    diagnostics.expectedReleaseId !== key[3] ||
+    diagnostics.observedReleaseId !== key[3] ||
+    diagnostics.expectedSourceId !== key[4] ||
+    diagnostics.observedSourceId !== key[4]
+  )
+    return row;
+  const transient = ["requestId", "cfRay", "bodyRequestId"];
+  if (
+    !transient.every(
+      (name) => typeof diagnostics[name] === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(diagnostics[name]),
+    )
+  )
+    return row;
+  const stable = Object.fromEntries(
+    Object.entries(diagnostics)
+      .filter(([name]) => !transient.includes(name))
+      .sort(([a], [b]) => compare(a, b)),
+  );
+  const canonical = Buffer.from(JSON.stringify({ ...value, [field]: prefix + JSON.stringify(stable) }));
+  return { sha256: digest(canonical), bytes: canonical.length };
+}
+
 /** Captured values and generated assets retain resource, provider and translation updates. */
 export function webContentIdentity(manifestFile: string): string {
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8")) as FrozenInputs;
@@ -131,7 +203,10 @@ export function webContentIdentity(manifestFile: string): string {
     const value = JSON.parse(bytes.toString("utf8")) as CapturedInputs;
     if (value.schema !== "haneoka-static-captured-inputs-v1") throw new Error("Invalid Web capture manifest");
     capturePaths.add(file);
-    for (const row of value.records) rows.push(["record", row.key, row.role, row.format, row.sha256, row.bytes]);
+    for (const row of value.records) {
+      const reference = voiceAbsenceReference(row, path.join(path.dirname(manifestFile), "content"));
+      rows.push(["record", row.key, row.role, row.format, reference.sha256, reference.bytes]);
+    }
     for (const row of value.files) rows.push(["file", row.path, row.role, row.sha256, row.bytes]);
   }
   for (const row of manifest.entries) {
