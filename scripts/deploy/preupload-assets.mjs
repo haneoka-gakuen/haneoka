@@ -103,7 +103,7 @@ for (const file of assets) {
     .toString("hex")
     .slice(0, 32);
   manifest[`/${file.path}`] = { hash: id, size: body.length };
-  sources.set(id, { source, type });
+  sources.set(id, { source, type, bytes: body.length });
   selectedBytes += body.length;
 }
 const report = {
@@ -127,7 +127,8 @@ if (values["dry-run"]) {
   assert.ok(!config.error && /^[a-z0-9-]+$/u.test(config.config.name));
   const api = `https://api.cloudflare.com/client/v4/accounts/${account}`;
   const deadline = Date.now() + 180_000;
-  let uploaded = 0;
+  let uploaded = 0,
+    uploadedBytes = 0;
   const request = async (url, authorization, body, headers) => {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -172,6 +173,7 @@ if (values["dry-run"]) {
             }
             await request(`${api}/workers/assets/upload?base64=true`, session.jwt, form);
             uploaded += bucket.length;
+            uploadedBytes += bucket.reduce((sum, id) => sum + sources.get(id).bytes, 0);
           } catch (error) {
             failed = error;
             throw error;
@@ -181,9 +183,17 @@ if (values["dry-run"]) {
     );
     const failure = results.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;
-    console.log(JSON.stringify({ ...report, uploaded, reused: sources.size - uploaded }));
+    console.log(
+      JSON.stringify({
+        ...report,
+        uploaded,
+        uploadedBytes,
+        reused: sources.size - uploaded,
+        reusedBytes: [...sources.values()].reduce((sum, file) => sum + file.bytes, 0) - uploadedBytes,
+      }),
+    );
   } catch (error) {
     console.warn(`Asset preparation deferred to the complete publisher: ${error.message}`);
-    console.log(JSON.stringify({ ...report, uploaded, fallback: true }));
+    console.log(JSON.stringify({ ...report, uploaded, uploadedBytes, fallback: true }));
   }
 }
