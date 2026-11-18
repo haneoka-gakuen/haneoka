@@ -25,10 +25,10 @@ export interface AppMethods {
   addGameAccount: { args: Record<string, never>; result: null };
   /** Gacha history the app's save page read from the game server, taken once. */
   pendingGachaHistory: { args: Record<string, never>; result: { files: { name: string; text: string }[] } | null };
-  /** Clear marks (1 clear, 2 full combo, 3 all perfect) by `l.{song}.{difficulty}` from a chosen game save. */
-  songProgress: { args: { server: string; key?: string }; result: { marks: Record<string, number>; missionCounters?: unknown[] } | null };
+  /** Clear marks and lossless mission counters from a chosen save; key also identifies older marks-only replies. */
+  songProgress: { args: { server: string; key?: string }; result: { marks: Record<string, number>; missionCounters?: unknown[]; key?: string; server?: string } | null };
   /** Song progress the app's save page sent here, taken once. */
-  pendingSongProgress: { args: Record<string, never>; result: { marks: Record<string, number>; missionCounters?: unknown[] } | null };
+  pendingSongProgress: { args: Record<string, never>; result: { marks: Record<string, number>; missionCounters?: unknown[]; key?: string; server?: string } | null };
   /** A save sent to the team builder from the app's save page, taken once. */
   pendingBoxImport: { args: Record<string, never>; result: { server: string; text: string } | null };
   /** `saveSourcesV1`: where this device can read game saves. */

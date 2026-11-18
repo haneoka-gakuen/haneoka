@@ -19,7 +19,7 @@ import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
 import { setAppBarSearch, clearAppBarSearch, setAppBarActions, clearAppBarActions } from "../lib/app-bar";
-import { appAccountCall, appCall, inApp } from "../lib/app-bridge";
+import { appAccountCall, appCall, appSupports, inApp } from "../lib/app-bridge";
 import { chooseAppAccount } from "./ui/app-account-chooser";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
@@ -32,7 +32,7 @@ import { filterChip, iconButton, segmented } from "./ui/controls";
 import { accordion } from "./ui/accordion";
 import { specList } from "./ui/spec";
 import { ProgressCounts } from "./song-progress-counts";
-import { saveClearMarks, type CountChanges } from "../lib/song-progress-counts";
+import { countImportChanges, saveClearMarks, type CountChanges } from "../lib/song-progress-counts";
 import { MAX_BOX_KEYS } from "../lib/team-builder/sync/box-doc";
 import { errorState, loadingState } from "./ui/state";
 import { clientText } from "../i18n/client";
@@ -189,10 +189,11 @@ export class SongProgress extends LitElement {
     `);
   }
   /** In the app: clear, full combo and all perfect from a game save. */
-  private async importSave(given?: Record<string, number>, missionCounters?: unknown) {
-    if (!given && this.counts.supportsApp()) { await this.counts.readAppSave(); return; }
+  private async importSave(given?: Record<string, number>, missionCounters?: unknown, key?: string) {
+    if (!given && this.counts.supportsApp() && !appSupports("songProgressCountsV1")) { await this.counts.readAppSave(); return; }
+    const store = this.store, owner = this.snapshot?.owner;
     let importedProfile: { name: string; uid: string; rank: string } | undefined;
-    const progress = given ? { marks: given, missionCounters } :
+    const progress = given ? { marks: given, missionCounters, key } :
       (
         await appAccountCall("songProgress", { server: this.server }, async (accounts) => {
           const key = await chooseAppAccount(this.locale, accounts);
@@ -205,14 +206,17 @@ export class SongProgress extends LitElement {
         ).catch(() => null)
       );
     const marks = progress?.marks;
-    if (!marks || !this.store) return;
+    if (!marks || !store || store !== this.store || owner !== this.snapshot?.owner || !this.isConnected) return;
+    if (progress.missionCounters === undefined && inApp() && (progress.key || appSupports("accountKeysV1") || this.counts.supportsApp())) {
+      if (await this.counts.readAppSave({ key: progress.key, fallback: true })) return;
+      if (store !== this.store || owner !== this.snapshot?.owner || !this.isConnected) return;
+    }
     if (importedProfile) {
       this.profile = importedProfile;
       this.saveProfile();
     }
     const changes = this.markChanges(marks);
-    this.writeProgress(changes);
-    if (progress.missionCounters !== undefined) this.counts.importCounters(progress.missionCounters, this.text("counts.gameSave", "Game save"));
+    this.writeProgress([...changes, ...countImportChanges(progress.missionCounters, this.text("counts.gameSave", "Game save"), new Date().toISOString())]);
     snackbar(this.text("imported", "Imported {count} charts").replace("{count}", String(changes.length)));
   }
   private start() {
@@ -246,7 +250,8 @@ export class SongProgress extends LitElement {
       // Progress the app's save page sent here.
       if (!inApp() || !this.isConnected) return;
       const pending = await appCall("pendingSongProgress", {}).catch(() => null);
-      if (pending) await this.importSave(pending.marks, pending.missionCounters);
+      if (pending?.server && pending.server !== this.server) { snackbar(this.text("counts.wrongServer", "Save region does not match")); return; }
+      if (pending) await this.importSave(pending.marks, pending.missionCounters, pending.key);
     });
   }
   disconnectedCallback() {

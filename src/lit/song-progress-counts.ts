@@ -59,29 +59,32 @@ export class ProgressCounts {
   song(song: number) { return songPlayCount(this.entries, song, this.options.difficulties(song)); }
   openFiles() { if (!this.busy) this.host.querySelector<HTMLInputElement>("#progress-counts-file")?.click(); }
   supportsApp() { return inApp() && appSupports("saveSnapshotV1"); }
-  async readAppSave() {
-    if (this.busy) return;
+  async readAppSave(options: { key?: string; fallback?: boolean } = {}): Promise<boolean> {
+    if (this.busy) return false;
     const context = this.context, controller = this.controller;
     this.busy = true; this.error = ""; this.changed();
     try {
       const accounts = (await appCall("gameAccounts", {})).filter(account => !account.server || account.server === this.options.server());
-      const key = await chooseAppAccount(this.options.locale(), accounts);
-      if (!key || this.controller !== controller || controller.signal.aborted) return;
-      const account = accounts.find(account => account.key === key)!;
+      const key = options.key ?? await chooseAppAccount(this.options.locale(), accounts);
+      if (!key || this.controller !== controller || controller.signal.aborted) return false;
+      const account = accounts.find(account => account.key === key);
+      if (!account) throw new Error("counts_server");
       const { text } = await appCall("saveSnapshot", { key });
       const { importSaves } = await import("../lib/save-workspace/import");
       const values = await importSaves([new File([text], "GameSave.json", { type: "application/json" })], this.options.server(), controller.signal);
-      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return false;
       const value = values.find(value => value.snapshot.server === this.options.server());
       if (!value) throw new Error("counts_server");
       const record: StoredSave = { ...value, id: crypto.randomUUID(), label: account.name || this.t("gameSave", "Game save"), importedAt: new Date().toISOString() };
       const { saveRecords } = await import("../lib/save-workspace/snapshot");
       await saveRecords("put", record);
-      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return;
+      if (context !== this.context || this.controller !== controller || controller.signal.aborted) return false;
       this.use(record); this.options.profile(account);
+      return true;
     } catch (error) {
-      if (context === this.context && this.controller === controller && !controller.signal.aborted) this.error = error instanceof Error && error.message === "counts_server"
+      if (!options.fallback && context === this.context && this.controller === controller && !controller.signal.aborted) this.error = error instanceof Error && error.message === "counts_server"
         ? this.t("wrongServer", "Save region does not match") : this.t("readFailed", "Could not read the original save");
+      return false;
     } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
   }
   private async pick() {
@@ -102,12 +105,6 @@ export class ProgressCounts {
     if (changes.length || marks.length) this.options.write([...marks, ...changes]);
     this.error = changes.length ? "" : this.t("missing", "This save has no count records");
     this.records = null; this.changed();
-  }
-  importCounters(counters: unknown, label: string) {
-    try {
-      const changes = countImportChanges(counters, label, new Date().toISOString());
-      if (changes.length) this.options.write(changes);
-    } catch { this.error = this.t("writeFailed", "Could not save counts"); this.changed(); }
   }
   private field(label: string, ariaLabel: string, target: { song: number; difficulty: number }) {
     const key = playCountKey(108, target.song, target.difficulty + 1);
