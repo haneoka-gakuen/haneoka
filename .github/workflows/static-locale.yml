@@ -165,21 +165,8 @@ jobs:
           HANDOFF_LOCALE: ${{ inputs.locale }}
           HANDOFF_PARTITION: ${{ matrix.partition }}
         run: node scripts/build/static-render-handoff.mjs candidate --locale "$HANDOFF_LOCALE" --generation "$HANDOFF_GENERATION" --partition "$HANDOFF_PARTITION"
-      - name: Claim finalization on this prepared runner
-        id: claim
-        if: steps.handoff.outputs.ready == 'true'
-        continue-on-error: true
-        timeout-minutes: 1
-        uses: actions/upload-artifact@v7
-        with:
-          name: static-finalizer-claim-${{ inputs.inputs_sha }}-${{ inputs.locale }}
-          path: ${{ steps.handoff.outputs.claim_file }}
-          compression-level: 0
-          retention-days: 1
-          overwrite: false
-          if-no-files-found: error
       - name: Finalize on the prepared render runner
-        if: steps.claim.outcome == 'success' && steps.claim.outputs['artifact-id'] != ''
+        if: steps.handoff.outputs.ready == 'true'
         continue-on-error: true
         uses: ./.github/actions/finalize-static-locale
         with:

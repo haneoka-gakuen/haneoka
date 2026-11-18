@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Current run artifacts, sealed render parts and a fixed shard plan.
-// Output: A bounded takeover opportunity or fixed artifact IDs for complete locale finalization.
+// Output: One elected prepared finalizer or fixed artifact IDs for complete locale finalization.
 // Pos: [Map](L2-2.md); render runner handoff and immutable checkpoints.
 // Effects/Dependencies: Reads GitHub Actions metadata; moves local sealed parts and extracts selected render archives before the existing complete verifier.
 import assert from "node:assert/strict";
@@ -26,6 +26,7 @@ const locale = values.locale,
 assert.ok(["en", "ja", "ko", "zh-CN", "zh-TW"].includes(locale));
 assert.match(generation || "", /^[a-f0-9]{64}$/u);
 if (own !== undefined) assert.match(own, /^[0-3]$/u);
+if (mode === "candidate") assert.ok(own !== undefined, "A finalizer candidate needs its partition");
 const runId = process.env.GITHUB_RUN_ID,
   repository = process.env.GITHUB_REPOSITORY;
 assert.match(runId || "", /^[1-9][0-9]*$/u);
@@ -41,7 +42,6 @@ assert.equal(plan.generation.kind, "frozen-inputs");
 assert.equal(plan.generation.sha256, generation);
 assert.equal(plan.source.sha, sourceSha, "Render handoff source differs");
 const finalName = `static-part-${generation}-${locale}`;
-const claimName = `static-finalizer-claim-${generation}-${locale}`;
 
 function checkedArtifact(artifacts, name, run) {
   const matches = artifacts.filter((artifact) => artifact.name === name);
@@ -54,7 +54,9 @@ function checkedArtifact(artifacts, name, run) {
   assert.equal(String(artifact.workflow_run?.id), runId);
   assert.equal(artifact.workflow_run?.repository_id, run.repository.id, "Artifact repository differs");
   assert.equal(artifact.workflow_run?.head_sha, run.head_sha, "Artifact run head differs");
-  return { id: artifact.id, name, digest: artifact.digest };
+  const createdAt = Date.parse(artifact.created_at);
+  assert.ok(Number.isFinite(createdAt), "Artifact creation time is missing");
+  return { id: artifact.id, name, digest: artifact.digest, createdAt };
 }
 
 async function state(deadline) {
@@ -121,21 +123,22 @@ if (mode === "unpack") {
         console.log(JSON.stringify({ locale, complete: true, artifactId: completed.id }));
         break;
       }
-      if (mode === "candidate" && artifacts.some((artifact) => artifact.name === claimName)) break;
       const parts = [0, 1, 2, 3].map((partition) => {
         const artifact = checkedArtifact(artifacts, `static-render-${generation}-${locale}-${partition}`, run);
         return artifact && { ...artifact, partition };
       });
       if (parts.every(Boolean)) {
+        if (mode === "candidate") {
+          const elected = parts.toSorted((a, b) => b.createdAt - a.createdAt || b.id - a.id)[0];
+          console.log(JSON.stringify({ locale, partition: Number(own), finalizer: elected.partition }));
+          if (elected.partition !== Number(own)) break;
+        }
         fs.writeFileSync(
           selectionFile,
           JSON.stringify({ runId, sourceSha, planSha256, generation, locale, artifacts: parts }),
         );
         output("complete", "false");
         if (mode === "candidate") {
-          const claim = path.join(process.env.RUNNER_TEMP, `static-finalizer-${locale}-${own}.json`);
-          fs.writeFileSync(claim, JSON.stringify({ runId, sourceSha, generation, locale, partition: own }));
-          output("claim_file", claim);
           output("ready", "true");
         } else {
           let local = false;
