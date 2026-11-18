@@ -35,6 +35,7 @@ import { staticDocumentShard, staticDocumentLookupPath } from "../../src/lib/sta
 import { restrictShardCoverage } from "./static-build-shards.mjs";
 import { staticRenderPartition } from "../../src/server/static-build.ts";
 
+const started = performance.now();
 const output = path.resolve(".output/public");
 const documentsRoot = path.resolve(".output/static-documents");
 const materializeOnly = process.argv.slice(2).includes("--materialize-only");
@@ -158,6 +159,7 @@ async function loadPublicStatic() {
     urlMap,
     ...(tokenized ? { urlTokens: [...urlTokens] } : {}),
   });
+  let result;
   try {
     if (carriedMaterialization.length) {
       const covered = new Set();
@@ -268,11 +270,12 @@ async function loadPublicStatic() {
             rewritten.add(sourcePath);
         }),
     ]);
-    await sealPrivatePageData(module, privatePages, token);
-    return { module, staged: new Set(staged), targets, rewritten, rewriteOptions: { media, urlMap } };
+    result = { module, staged: new Set(staged), targets, rewritten, rewriteOptions: { media, urlMap } };
   } finally {
     await workers.close();
   }
+  await sealPrivatePageData(module, privatePages, token);
+  return result;
 }
 
 /**
@@ -526,3 +529,15 @@ if (!materializeOnly) {
       `finalized ${staticDocuments.documents} complete static documents and ${staticDocuments.data} shared data objects`,
     );
 }
+
+const cpu = process.cpuUsage();
+console.log(
+  JSON.stringify({
+    stage: "finalize-frontend",
+    mode: materializeOnly ? "materialize" : "finalize",
+    locale: process.env.STATIC_BUILD_LOCALE || "all",
+    elapsedMs: performance.now() - started,
+    cpuMicros: cpu.user + cpu.system,
+    peakRssKb: process.resourceUsage().maxRSS,
+  }),
+);

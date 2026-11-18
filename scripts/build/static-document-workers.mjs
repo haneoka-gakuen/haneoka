@@ -11,7 +11,7 @@ import { Worker, isMainThread, parentPort, workerData } from "node:worker_thread
 export class StaticDocumentWorkers {
   constructor(options) {
     this.queue = [];
-    this.workers = Array.from({ length: Math.min(2, availableParallelism()) }, () => {
+    this.workers = Array.from({ length: Math.min(4, options.concurrency ?? 4, availableParallelism()) }, () => {
       const worker = new Worker(new URL(import.meta.url), { workerData: options });
       const slot = { worker };
       worker.on("message", ({ value, error }) => {
