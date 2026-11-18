@@ -20,8 +20,14 @@ const { values } = parseArgs({
     "public-root": { type: "string" },
     plan: { type: "string" },
     "dry-run": { type: "boolean" },
+    "budget-seconds": { type: "string", default: "180" },
   },
 });
+const budgetSeconds = Number(values["budget-seconds"]);
+assert.ok(
+  Number.isInteger(budgetSeconds) && budgetSeconds >= 1 && budgetSeconds <= 600,
+  "Invalid asset preparation budget",
+);
 const digest = (body) => createHash("sha256").update(body).digest("hex");
 assert.ok(values.publication === undefined || values.part === undefined, "Select a publication or a locale part");
 let part, assets, root, plan, planFile;
@@ -156,7 +162,7 @@ if (values["dry-run"]) {
   );
   assert.ok(!config.error && /^[a-z0-9-]+$/u.test(config.config.name));
   const api = `https://api.cloudflare.com/client/v4/accounts/${account}`;
-  const deadline = Date.now() + 180_000;
+  const deadline = Date.now() + budgetSeconds * 1000;
   let uploaded = 0,
     uploadedBytes = 0,
     uploadMode = "unavailable",
@@ -175,7 +181,10 @@ if (values["dry-run"]) {
           headers: { Authorization: `Bearer ${authorization}`, ...headers },
           signal: AbortSignal.timeout(Math.min(60_000, remaining)),
         });
-        if (!response.ok) throw new Error(`Asset preparation returned HTTP ${response.status}`);
+        if (!response.ok)
+          throw Object.assign(new Error(`Asset preparation returned HTTP ${response.status}`), {
+            retryable: response.status === 429 || response.status >= 500,
+          });
         const result = await response.json();
         if (!result.success || !result.result) throw new Error("Asset preparation response is incomplete");
         return result.result;
@@ -212,16 +221,18 @@ if (values["dry-run"]) {
     concurrency = single ? Math.min(50, advertisedConcurrency > 0 ? Math.floor(advertisedConcurrency) : 50) : 3;
     assert.ok(concurrency > 0, "Asset preparation upload concurrency is invalid");
     const uploadBuckets = single ? session.buckets.flat().map((id) => [id]) : session.buckets;
+    for (const bucket of uploadBuckets)
+      for (const id of bucket) assert.ok(sources.has(id), "Upload session requested an unlisted asset");
     let cursor = 0;
     let failed;
+    let abort = false;
     const results = await Promise.allSettled(
       Array.from({ length: concurrency }, async () => {
-        while (cursor < uploadBuckets.length && !failed) {
+        while (cursor < uploadBuckets.length && !abort && Date.now() < deadline) {
           const bucket = uploadBuckets[cursor++];
           try {
             if (single) {
               const id = bucket[0];
-              assert.ok(sources.has(id), "Upload session requested an unlisted asset");
               const { source, type } = sources.get(id);
               await request(`${api}/workers/assets/upload/${id}`, session.jwt, () => fs.createReadStream(source), {
                 "Content-Type": type,
@@ -229,7 +240,6 @@ if (values["dry-run"]) {
             } else {
               const form = new FormData();
               for (const id of bucket) {
-                assert.ok(sources.has(id), "Upload session requested an unlisted asset");
                 const { source, type } = sources.get(id);
                 form.append(id, new File([fs.readFileSync(source).toString("base64")], id, { type }));
               }
@@ -238,14 +248,16 @@ if (values["dry-run"]) {
             uploaded += bucket.length;
             uploadedBytes += bucket.reduce((sum, id) => sum + sources.get(id).bytes, 0);
           } catch (error) {
-            failed = error;
-            throw error;
+            failed ??= error;
+            abort ||= !error.retryable && !["TypeError", "TimeoutError", "AbortError"].includes(error.name);
           }
         }
       }),
     );
     const failure = results.find((result) => result.status === "rejected");
     if (failure) throw failure.reason;
+    if (failed) throw failed;
+    if (cursor < uploadBuckets.length) throw new Error("Asset preparation time budget reached");
     console.log(
       JSON.stringify({
         ...report,

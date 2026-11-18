@@ -134,7 +134,7 @@ runs:
         if [[ "$VERIFY_UPLOADS" == "true" ]]; then node scripts/deploy/preupload-assets.mjs --dry-run; fi
         preupload_pid=""
         if [[ "$PREUPLOAD" == "true" ]]; then
-          node scripts/deploy/preupload-assets.mjs > .output/preupload.log 2>&1 &
+          node scripts/deploy/preupload-assets.mjs --budget-seconds 360 > .output/preupload.log 2>&1 &
           preupload_pid=$!
         fi
         tar --use-compress-program="zstd -T2 -3" -cf .output/static-part.tar.zst -C .output/static-part .
