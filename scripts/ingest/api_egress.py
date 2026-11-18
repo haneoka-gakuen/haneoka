@@ -27,6 +27,7 @@ _READ_PATHS = {
     "/app.announcement.AnnouncementService/Get",
 }
 _LOCK = threading.Lock()
+_TLS12_COMPATIBLE = False
 
 
 @contextmanager
@@ -115,6 +116,12 @@ def run_api_curl(
 ) -> subprocess.CompletedProcess[bytes]:
     if not is_managed_jp_read(command[-1], proxy):
         return subprocess.run(command, input=input, timeout=timeout, capture_output=capture_output, check=check)
+    global _TLS12_COMPATIBLE
+    tls12 = [*command[:-1], "--tlsv1.2", "--tls-max", "1.2", command[-1]]
+
+    def execute(args: list[str]) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(args, input=input, timeout=timeout, capture_output=capture_output, check=check)
+
     visited: set[str] = set()
     attempts = 0
     while True:
@@ -124,9 +131,13 @@ def run_api_curl(
             node = group["now"]
         visited.add(node)
         try:
-            result: subprocess.CompletedProcess[bytes] | subprocess.TimeoutExpired = subprocess.run(
-                command, input=input, timeout=timeout, capture_output=capture_output, check=check,
-            )
+            compatible = _TLS12_COMPATIBLE
+            result: subprocess.CompletedProcess[bytes] | subprocess.TimeoutExpired = execute(tls12 if compatible else command)
+            if result.returncode == 0 and _http_status(command, result.stdout) == 403 and not compatible:
+                result = execute(tls12)
+                if result.returncode == 0 and _http_status(command, result.stdout) == 200:
+                    _TLS12_COMPATIBLE = True
+                    print("JP API egress: TLS 1.2 accepted by the version service", file=sys.stderr)
         except subprocess.TimeoutExpired as error:
             result = error
             failure = "timeout"
