@@ -15,7 +15,7 @@ import socket
 import subprocess
 import urllib.parse
 from dataclasses import dataclass
-from ingest.api_egress import RETRYABLE_CURL_CODES, run_api_curl
+from ingest.api_egress import RETRYABLE_CURL_CODES, is_managed_jp_read, run_api_curl
 
 GRPC_USER_AGENT = "grpc-dotnet/2.66.0"
 EMPTY_GRPC_FRAME = b"\x00\x00\x00\x00\x00"
@@ -220,12 +220,7 @@ def discover_asset_version(
     status_match = re.match(r"HTTP/\S+\s+(\d{3})(?:\s|$)", status)
     if status_match and int(status_match.group(1)) in RETRYABLE_HTTP_STATUS:
         raise DiscoveryUnavailable("service", f"asset version HTTP status {status_match.group(1)}")
-    if (
-        status_match and status_match.group(1) == "403"
-        and endpoint == "https://api.bang-dream-on.jp/app.masterdata.MasterdataService/Version"
-        and proxy and proxy == os.environ.get("JP_VERSION_PROXY")
-        and os.environ.get("JP_VERSION_PROXY_CONTROLLER")
-    ):
+    if status_match and status_match.group(1) == "403" and is_managed_jp_read(endpoint, proxy):
         raise DiscoveryUnavailable("egress-blocked", "JP asset version returned HTTP 403 after egress failover")
     if not status_match or status_match.group(1) != "200":
         raise RuntimeError(f"asset version HTTP response failed ({status})")

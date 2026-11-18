@@ -100,17 +100,20 @@ def _http_status(command: list[str], stdout: bytes) -> int | None:
     return int(statuses[-1]) if statuses else None
 
 
-def run_api_curl(
-    command: list[str], *, proxy: str | None, input: bytes, timeout: float,
-    capture_output: bool = True, check: bool = False,
-) -> subprocess.CompletedProcess[bytes]:
-    target = urllib.parse.urlsplit(command[-1])
-    managed = (
+def is_managed_jp_read(url: str, proxy: str | None) -> bool:
+    target = urllib.parse.urlsplit(url)
+    return bool(
         proxy and proxy == os.environ.get("JP_VERSION_PROXY")
         and os.environ.get("JP_VERSION_PROXY_CONTROLLER")
         and target.hostname == "api.bang-dream-on.jp" and target.path in _READ_PATHS
     )
-    if not managed:
+
+
+def run_api_curl(
+    command: list[str], *, proxy: str | None, input: bytes, timeout: float,
+    capture_output: bool = True, check: bool = False,
+) -> subprocess.CompletedProcess[bytes]:
+    if not is_managed_jp_read(command[-1], proxy):
         return subprocess.run(command, input=input, timeout=timeout, capture_output=capture_output, check=check)
     visited: set[str] = set()
     attempts = 0
