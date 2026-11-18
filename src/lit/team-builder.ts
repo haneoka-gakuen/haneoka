@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；进入挑战配置时填入活动挑战属性，关闭后恢复原曲属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
@@ -68,7 +68,7 @@ import {
   type FarmingSettings,
   type Tab,
 } from "./team-builder/types";
-import { farmingConditions, farmingSettings, parseOpponents, justWindowGoal, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
+import { challengeEventForGoal, farmingConditions, farmingSettings, parseOpponents, justWindowGoal, resolveLuckSamples, resolveJustWindow, validJustWindowInput, restoreBuildSettings } from "./team-builder/workspace-state";
 import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
 import { snackbar } from "../lib/snackbar";
@@ -816,10 +816,7 @@ export class TeamBuilder extends LitElement {
       const required = this.settings.required;
       this.persistentBoxView = readBox(snapshot.entries);
       this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
-      const stored = this.view.prefs[SETTINGS_KEY.slice(5)];
-      this.settings = restoreBuildSettings(
-        stored && typeof stored === "object" ? (stored as Partial<BuildSettings>) : {},
-      );
+      this.settings = this.readBuildPreferences();
       if (!ownerChanged) this.settings.required = required;
       if (this.settings.goal === "event" || this.settings.goal === "plan") {
         this.settings = { ...this.settings, rewardMode: this.settings.goal, goal: "score" };
@@ -900,9 +897,16 @@ export class TeamBuilder extends LitElement {
     this.engine.prefetch(this.searchSettings.songs);
     this.requestUpdate();
   }
+  private readBuildPreferences() {
+    const value = this.view?.prefs[SETTINGS_KEY.slice(5)];
+    const stored = value && typeof value === "object" ? value as Partial<BuildSettings> : {};
+    const legacyChallengeType = stored.scopedSongAttribute !== true &&
+      (stored.challengeRules || stored.route === "challenge" || stored.farming?.play === "challenge")
+      ? this.challengeSongType(stored.eventId ?? null) : undefined;
+    return restoreBuildSettings(stored, legacyChallengeType);
+  }
   restorePlanningPreferences() {
-    const stored=this.view?.prefs[SETTINGS_KEY.slice(5)];
-    this.settings=restoreBuildSettings(stored&&typeof stored==="object"?stored as Partial<BuildSettings>:{});
+    this.settings = this.readBuildPreferences();
     this.arena.restore();this.songComparison.restore();this.requestUpdate();
   }
   updateSettings(patch: Partial<BuildSettings>) {
@@ -910,30 +914,12 @@ export class TeamBuilder extends LitElement {
       this.arena.updateBuild(patch);
       return;
     }
-    const challengeChanged = (["challengeRules", "eventId", "goal", "route", "rewardMode"] as const)
-      .some(key => patch[key] !== undefined && patch[key] !== this.settings[key])
-      || patch.farming?.play !== undefined && patch.farming.play !== this.settings.farming.play;
-    const previous = challengeChanged ? this.searchSettings : null;
     const scopeChanged =
       this.tab === "pt" &&
       patch.rewardMode !== undefined &&
       (patch.rewardMode === "plan") !== (this.settings.rewardMode === "plan");
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
-    if (previous && patch.songRules === undefined) {
-      const current = this.searchSettings;
-      const challenge = (s: BuildSettings) => s.goal === "event" ? s.route === "challenge"
-        : (s.goal === "score" || s.goal === "power") && s.challengeRules;
-      if (challenge(current) && (!challenge(previous) || current.eventId !== previous.eventId)
-          && current.eventId !== null) {
-        const attributes = new Set(this.catalog?.challengeSongs(current.eventId).map(song => song.musicType));
-        if (attributes.size) this.settings = { ...this.settings,
-          songRules: { ...(this.settings.songRules ?? ORIGINAL_SONG_RULES), musicType: attributes.size === 1 ? [...attributes][0]! : 0 } };
-      } else if (challenge(previous) && !challenge(current)) {
-        this.settings = { ...this.settings,
-          songRules: { ...(this.settings.songRules ?? ORIGINAL_SONG_RULES), musicType: ORIGINAL_SONG_RULES.musicType } };
-      }
-    }
     this.engine?.prefetch(this.searchSettings.songs);
     if (Object.keys(patch).some((key) => key !== "required")) {
       const { required: _required, ...stored } = this.settings;
@@ -954,7 +940,9 @@ export class TeamBuilder extends LitElement {
     }
     this.updateSettings({ farming, rewardMode });
   }
-  openSongComparison(formation?: typeof this.manual) {
+  openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null) {
+    if (source && challengeEventForGoal(source.goal) === null)
+      this.songComparison.update({ songRules: source.songRules });
     if (formation) {
       clearManualOrders(this);
       this.manual = structuredClone(formation);
@@ -1133,7 +1121,7 @@ export class TeamBuilder extends LitElement {
     return { members, snaps, player: this.view ? this.playerInput(settings) : undefined, unknownPolicy: fullGrowth ? "max" as const : settings.unknownPolicy };
   }
   manualGoal(): Extract<Goal, { kind: "score" | "gekiso" }> {
-    const s = this.effectiveSettings(this.settings.manualScoreMode);
+    const s = this.compatibleSettings({ ...this.settings, challengeRules: this.settings.manualChallengeRules }, this.settings.manualScoreMode);
     if (this.settings.manualScoreMode === "gekiso")
       return { ...this.gekisoGoal({ ...s, gekisoPlacementMode: "rank", minComboBonus: 1 }), criterion: "mean" };
     return {
@@ -1193,37 +1181,47 @@ export class TeamBuilder extends LitElement {
   manualSuggestionContext() {
     return JSON.stringify([this.manualContext(), this.engineCards(), this.view && engineInputs(this.view, true)]);
   }
-  get searchSettings(): BuildSettings {
+  private get workspaceSettings(): BuildSettings {
     const settings =
       this.tab === "arena"
         ? this.arena.settings
         : this.tab === "pt" && this.settings.rewardMode !== "plan" ? farmingSettings(this.settings) : this.settings;
-    const goal =
-      ((this.tab === "build" && this.buildMode === "manual") || this.tab === "teams")
-        ? settings.manualScoreMode
-        : this.tab === "pt"
-          ? settings.rewardMode === "plan"
-            ? "plan"
-            : "event"
-          : settings.goal;
-    return this.compatibleSettings({ ...settings, goal });
+    if (this.tab === "teams" || this.tab === "build" && this.buildMode === "manual")
+      return { ...settings, goal: settings.manualScoreMode, challengeRules: settings.manualChallengeRules };
+    return this.tab === "pt" ? { ...settings, goal: settings.rewardMode === "plan" ? "plan" : "event" } : settings;
+  }
+  get searchSettings(): BuildSettings {
+    return this.compatibleSettings(this.workspaceSettings);
   }
   get settlementMaster() {
     const s=this.searchSettings;
     return this.master?plannerMaster(this.master,s.eventId,s.route==="challenge"):null;
   }
+  challengeSongType(eventId: number | null): number | undefined {
+    if (eventId === null || !this.catalog) return undefined;
+    const songs = this.catalog.challengeSongs(eventId);
+    const first = songs[0];
+    return first ? songs.every(song => song.musicType === first.musicType) ? first.musicType : 0 : undefined;
+  }
+  challengeSongTypeForSettings(s = this.workspaceSettings) {
+    const challenge = s.goal === "event" ? s.route === "challenge"
+      : (s.goal === "score" || s.goal === "power" && s.powerSong) && s.challengeRules;
+    return challenge ? this.challengeSongType(s.eventId) : undefined;
+  }
   songRules(goal?: Goal | null) {
     if (this.tab === "arena") return undefined;
     if (this.tab === "song-comparison") return activeSongRules(this.songComparison.settings.songRules, true);
     if (goal !== undefined) {
-      if (!goal || goal.kind === "potential" || (goal.kind === "power" && !goal.song)) return undefined;
-      return activeSongRules(this.settings.songRules, goal.kind === "gekiso" || (goal.kind === "event" && !!goal.gekiso));
+      if (!goal || goal.kind === "potential" || goal.kind === "power" && !goal.song || goal.kind === "event" && goal.route === "skip") return undefined;
+      const challenge = challengeEventForGoal(goal);
+      const rule = challenge === null ? this.settings.songRules : { ...ORIGINAL_SONG_RULES, musicType: this.challengeSongType(challenge) ?? 0 };
+      return activeSongRules(rule, goal.kind === "gekiso" || goal.kind === "event" && !!goal.gekiso);
     }
-    const s = this.settings;
-    const mode = this.tab === "teams" || (this.tab === "build" && this.buildMode === "manual")
-      ? s.manualScoreMode : this.tab === "pt" ? s.rewardMode === "plan" ? "plan" : "event" : s.goal;
-    if (mode === "potential" || (mode === "power" && !s.powerSong)) return undefined;
-    return activeSongRules(s.songRules, mode === "gekiso" || (mode === "event" && s.farming.play === "gekiso"));
+    const s = this.workspaceSettings;
+    if (s.goal === "potential" || s.goal === "power" && !s.powerSong || s.goal === "event" && s.route === "skip") return undefined;
+    const type = this.challengeSongTypeForSettings(s);
+    const rule = type === undefined ? s.songRules : { ...ORIGINAL_SONG_RULES, musicType: type };
+    return activeSongRules(rule, s.goal === "gekiso" || s.goal === "event" && s.ptMode === "gekiso");
   }
   hasMission(type: string, songs = this.effectiveSettings().songs): boolean {
     const rule = this.tab === "arena" ? this.arena.rule : this.songRules();

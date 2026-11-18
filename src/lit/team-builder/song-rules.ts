@@ -43,6 +43,7 @@ export function songRuleFields(
   rule: SongRules,
   change: (patch: Partial<SongRules>) => void,
   gekiso = true,
+  lockAttribute = false,
 ) {
   const catalog = host.catalog!;
   const nativeIcon = (source: string) => html`<span class="tb-game-icon">${source ? gameGlyph(source, 20) : nothing}</span>`;
@@ -55,6 +56,7 @@ export function songRuleFields(
       options: [0, 1, 2, 3, 4, 5, 99].map(value => ({
         value: String(value),
         label: value ? catalog.attributeName(value) : original,
+        disabled: lockAttribute,
         leading: value && catalog.attributeIcon(value)
           ? html`<img src=${catalog.attributeIcon(value)} width="20" height="20" alt="" loading="lazy" />` : undefined,
       })),
@@ -79,13 +81,14 @@ export function songRuleFields(
 }
 export function songRulesControl(
   host: TeamBuilder,
-  draft = host.searchSettings.songRules,
+  draft?: SongRules,
   save: (rule: SongRules) => void = (songRules) => host.updateSettings({ songRules }),
   mode?: boolean,
 ) {
   const s = host.searchSettings;
   const gekiso = mode ?? (s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso" && s.route === "live"));
-  const rule = draft ?? ORIGINAL_SONG_RULES;
+  const rule = (host.tab === "song-comparison" ? draft : draft ?? s.songRules) ?? ORIGINAL_SONG_RULES;
+  const challengeType = host.tab === "song-comparison" ? undefined : host.challengeSongTypeForSettings(s);
   return accordion({
     id: "tb-song-rules",
     label: host.t("songRules", "Song rules"),
@@ -96,7 +99,8 @@ export function songRulesControl(
       host.requestUpdate();
     },
     content: html`
-      <div class="stack">${songRuleFields(host, rule, (patch) => save({ ...rule, ...patch }), gekiso)}</div>
+      <div class="stack">${songRuleFields(host, { ...rule, musicType: challengeType ?? rule.musicType },
+        (patch) => save({ ...rule, ...patch }), gekiso, challengeType !== undefined)}</div>
     `,
   });
 }

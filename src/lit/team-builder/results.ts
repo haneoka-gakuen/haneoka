@@ -1363,12 +1363,11 @@ export function renderHit(
                   type="button"
                   ?disabled=${stale}
                   @click=${() => {
-                    host.songComparison.update({songRules: resultInputs(host)?.songRules});
                     host.openSongComparison({
                       members: hit.members.map(cardIdOf),
                       snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
                       leader: 0,
-                    });
+                    }, resultInputs(host, hit));
                   }}
                 >
                   ${host.t("sc.useTeam", "Compare songs with this team")}

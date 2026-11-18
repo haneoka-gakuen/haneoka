@@ -300,7 +300,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                     class="button button--text"
                     type="button"
                     ?disabled=${!manualReady(host)}
-                    @click=${() => { host.songComparison.update({songRules: host.songRules(host.manualGoal())}); host.openSongComparison(); }}
+                    @click=${() => {
+                      const goal = host.manualGoal();
+                      host.openSongComparison(undefined, { goal, songRules: host.songRules(goal) });
+                    }}
                   >
                     ${host.t("sc.useTeam", "Compare songs with this team")}
                   </button>
@@ -535,7 +538,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               host.settings.songs,
               (songs) => host.updateSettings({ songs }),
               false,
-              showSkipScore && host.settings.challengeRules && host.settings.eventId !== null
+              showSkipScore && host.settings.manualChallengeRules && host.settings.eventId !== null
                 ? catalog.challengeSongs(host.settings.eventId).map((row) => row.liveMusicId)
                 : undefined,
             )}
@@ -551,12 +554,12 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                     <label class="tb-check">
                       <md-checkbox
                         touch-target="wrapper"
-                        .checked=${live(host.settings.challengeRules)}
-                        @change=${(event: Event) => host.updateSettings({ challengeRules: (event.target as HTMLInputElement).checked })}
+                        .checked=${live(host.settings.manualChallengeRules)}
+                        @change=${(event: Event) => host.updateSettings({ manualChallengeRules: (event.target as HTMLInputElement).checked })}
                       ></md-checkbox>
                       <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")}</span>
                     </label>
-                    ${host.settings.challengeRules ? eventSection(host, { ...host.settings, goal: "score" }) : nothing}
+                    ${host.settings.manualChallengeRules ? eventSection(host) : nothing}
                   `
                 : html`
                     ${rangeRankControl(host, host.settings.gekisoRanks, (range, rank) => {
@@ -575,7 +578,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               <button
                 class="button tb-run__button"
                 type="button"
-                ?disabled=${!calculating && (!manualReady(host) || duplicate || !host.manualGoal().songs.length || host.running || (showSkipScore && host.settings.challengeRules && host.settings.eventId === null))}
+                ?disabled=${!calculating && (!manualReady(host) || duplicate || !host.manualGoal().songs.length || host.running || (showSkipScore && host.settings.manualChallengeRules && host.settings.eventId === null))}
                 @click=${() => (calculating ? host.cancel() : void evaluate(host))}
               >
                 ${calculating ? icon("close", 18) : icon("calculate", 18)}${calculating ? host.common("common.actions.cancel", "Cancel") : host.t("evaluateTeam", "Evaluate on the chosen songs")}

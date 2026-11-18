@@ -8,7 +8,7 @@ import { dataRows, type TeamBuilderData } from "../../lib/team-builder/data";
 import { MAX_GEKISO_COUNT } from "../../lib/team-builder/constraint-feasibility";
 import { readSongRules } from "../../lib/team-builder/arena";
 import { legacyRewardPlan } from "../../lib/team-builder/reward-plan";
-import type { SongRef, JustWindowPolicy } from "../../lib/team-builder/engine/api";
+import type { Goal, SongRef, JustWindowPolicy } from "../../lib/team-builder/engine/api";
 import { CUSTOM_ACCURACY, DEFAULT_FARMING, DEFAULT_SETTINGS, type BuildSettings, type FarmingSettings } from "./types";
 
 export const chartKey = (song: SongRef) => `${song.songId}:${song.difficulty}`;
@@ -72,8 +72,16 @@ export function justWindowGoal(settings: Pick<BuildSettings, "justWindowMode" | 
       minDurationMs: settings.justDurationSeconds * 1000, minContinuousMs: settings.justContinuousSeconds * 1000 } };
 }
 
-export function restoreBuildSettings(stored: Partial<BuildSettings> = {}): BuildSettings {
+export function challengeEventForGoal(goal: Goal | null | undefined): number | null {
+  if (goal?.kind === "score" || goal?.kind === "power") return goal.challengeEventId;
+  return goal?.kind === "event" && goal.route === "challenge" ? goal.eventId : null;
+}
+
+export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacyChallengeType?: number): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
+  if (stored.scopedSongAttribute !== true && settings.songRules.musicType === legacyChallengeType)
+    settings.songRules.musicType = 0;
+  settings.scopedSongAttribute = true;
   settings.maxAccountBonuses = stored.maxAccountBonuses === true;
   settings.skillRoles = readSkillRoleLimits(stored.skillRoles);
   settings.minMissionMembers = stored.minMissionMembers?.length === 3 ? [...stored.minMissionMembers] : [0, 0, 0];

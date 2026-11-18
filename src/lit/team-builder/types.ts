@@ -12,6 +12,7 @@ export type LuckSamplingMode = "auto" | "manual";
 export interface BuildSettings {
   aggregation: "individual" | "mean";
   songRules?: import("../../lib/team-builder/arena").SongRules;
+  scopedSongAttribute?: true;
   arena?: ArenaGoal;
   rewardMode: "recommendation" | "event" | "plan";
   farming: FarmingSettings;
@@ -55,6 +56,7 @@ export interface BuildSettings {
   challengePoints: number;
   /** Score and power under challenge rules (event parameter bonus, challenge music type). */
   challengeRules: boolean;
+  manualChallengeRules: boolean;
   /** Power: include the song's type and tag bonus. */
   powerSong: boolean;
   window: number;
@@ -153,6 +155,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   boosts: 3,
   challengePoints: 200,
   challengeRules: false,
+  manualChallengeRules: false,
   powerSong: true,
   window: 120,
   planBudget: 100,
