@@ -30,6 +30,9 @@ on:
       resource_servers:
         type: string
         default: intl,jp
+      verify_uploads:
+        type: boolean
+        default: false
       preupload:
         type: boolean
         default: false
@@ -159,6 +162,7 @@ jobs:
       - name: Merge every rendered page, then index and pack once
         env:
           PREUPLOAD: ${{ inputs.preupload }}
+          VERIFY_UPLOADS: ${{ inputs.verify_uploads }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -174,6 +178,7 @@ jobs:
           rm -rf -- .output/static-render-merged
           pnpm finalize:frontend
           node scripts/build/static-build-shards.mjs seal --root "$PWD" --locale "$STATIC_BUILD_LOCALE" --plan .output/static-shard-plan.json --inputs .output/static-frozen-inputs/manifest.json --output .output/static-part
+          if [[ "$VERIFY_UPLOADS" == "true" ]]; then node scripts/deploy/preupload-assets.mjs --dry-run; fi
           preupload_pid=""
           if [[ "$PREUPLOAD" == "true" ]]; then
             node scripts/deploy/preupload-assets.mjs > .output/preupload.log 2>&1 &

@@ -396,6 +396,7 @@ jobs:
       page_groups: ${{ inputs.page_groups }}
       resource_servers: ${{ inputs.resource_servers }}
       preupload: ${{ inputs.production_publish }}
+      verify_uploads: ${{ inputs.verify_recovery }}
 
   merge:
     name: Verify and merge complete frontend

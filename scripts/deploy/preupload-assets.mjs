@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // L3 — GEB
 // Input: Fixed shard plan or complete publication, sealed assets and the locked Wrangler asset hash implementation.
-// Output: Verified public HTML and immutable data uploaded to the existing asset store without a Worker version.
+// Output: Verified public documents and data uploaded to the existing asset store without a Worker version.
 // Pos: [Map](../L2.md); build-time asset preparation before the complete publication.
 // Effects/Dependencies: Reads sealed files and calls the Cloudflare asset API; never changes traffic or R2.
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ const { values } = parseArgs({
 });
 const digest = (body) => createHash("sha256").update(body).digest("hex");
 assert.ok(values.publication === undefined || values.part === undefined, "Select a publication or a locale part");
-let part, assets, root;
+let part, assets, root, plan, planFile;
 if (values.publication !== undefined) {
   const publicationFile = path.resolve(values.publication);
   const publication = JSON.parse(fs.readFileSync(publicationFile, "utf8"));
@@ -66,12 +66,36 @@ if (values.publication !== undefined) {
 } else {
   const partFile = path.resolve(values.part || ".output/static-part/part.json");
   part = JSON.parse(fs.readFileSync(partFile, "utf8"));
-  const planBody = fs.readFileSync(values.plan || ".output/static-shard-plan.json");
+  planFile = path.resolve(values.plan || ".output/static-shard-plan.json");
+  const planBody = fs.readFileSync(planFile);
+  plan = JSON.parse(planBody);
   assert.equal(part.planSha256, digest(planBody), "Asset preparation shard plan differs");
-  assert.deepEqual(part.generation, JSON.parse(planBody).generation, "Asset preparation generation differs");
+  assert.deepEqual(part.generation, plan.generation, "Asset preparation generation differs");
   assert.ok(["haneoka-static-shard-part-v1", "haneoka-static-shard-part-v2"].includes(part.schema));
   root = path.resolve(values["public-root"] || path.join(path.dirname(partFile), "public"));
   assets = part.assets;
+}
+let frozenCommon;
+function omittedFrozenCommon(file) {
+  if (file.owner !== "shared" || plan.generation.kind !== "frozen-inputs") return false;
+  if (!frozenCommon) {
+    const body = fs.readFileSync(path.join(path.dirname(planFile), "static-frozen-inputs/manifest.json"));
+    assert.equal(digest(body), plan.generation.sha256, "Asset preparation frozen generation differs");
+    const inputs = JSON.parse(body);
+    assert.equal(inputs.schema, "haneoka-static-build-inputs-v1");
+    assert.ok(Array.isArray(inputs.entries));
+    frozenCommon = new Map();
+    for (const entry of inputs.entries) {
+      if (entry.role !== "common-assets" || !entry.path?.startsWith(".generated-public/")) continue;
+      const relative = entry.path.slice(".generated-public/".length);
+      assert.ok(!frozenCommon.has(relative), "Duplicate frozen common asset");
+      assert.match(entry.sha256 || "", /^[a-f0-9]{64}$/u);
+      assert.ok(Number.isSafeInteger(entry.bytes) && entry.bytes >= 0);
+      frozenCommon.set(relative, entry);
+    }
+  }
+  const common = frozenCommon.get(file.path);
+  return !!common && common.sha256 === file.sha256 && common.bytes === file.bytes;
 }
 const require = createRequire(import.meta.url);
 const wranglerRequire = createRequire(require.resolve("wrangler/package.json"));
@@ -79,26 +103,32 @@ const { hash } = wranglerRequire("blake3-wasm");
 const manifest = {};
 const sources = new Map();
 let selectedBytes = 0;
+const reserved = new Set(["build.json", "_header", "_headers", "_redirects", ".assetsignore"]);
+const contentTypes = {
+  html: "text/html; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  json: "application/json",
+  bin: "application/octet-stream",
+};
 for (const file of assets) {
+  if (reserved.has(file.path)) continue;
+  const extension = path.extname(file.path).slice(1);
   const html = !!part && file.owner === part.locale && file.path.endsWith(".html");
   const immutable =
     /^(?:provider-static\/content\/pack-[a-f0-9]{64}\.bin|entity-data\/v1\/[a-f0-9]{64}\.(?:bin|json))$/u.test(
       file.path,
     );
-  if (!html && !immutable) continue;
+  const document = !!part && ["md", "txt", "json"].includes(extension);
+  if (!html && !immutable && !document) continue;
   assert.ok(!path.isAbsolute(file.path) && !file.path.split(/[\\/]/u).includes(".."));
   const source = path.join(root, file.path);
+  if (document && !immutable && !fs.lstatSync(source, { throwIfNoEntry: false }) && omittedFrozenCommon(file)) continue;
   const body = fs.readFileSync(source);
   assert.equal(body.length, file.bytes, `Asset preparation length differs: ${file.path}`);
   assert.equal(digest(body), file.sha256, `Asset preparation digest differs: ${file.path}`);
   if (html && !isPublicStaticDocument(body.toString("utf8", 0, 4096))) continue;
-  const extension = path.extname(file.path).slice(1);
-  const type =
-    extension === "html"
-      ? "text/html; charset=utf-8"
-      : extension === "json"
-        ? "application/json"
-        : "application/octet-stream";
+  const type = contentTypes[extension];
   const id = hash(body.toString("base64") + extension)
     .toString("hex")
     .slice(0, 32);
@@ -128,15 +158,20 @@ if (values["dry-run"]) {
   const api = `https://api.cloudflare.com/client/v4/accounts/${account}`;
   const deadline = Date.now() + 180_000;
   let uploaded = 0,
-    uploadedBytes = 0;
+    uploadedBytes = 0,
+    uploadMode = "unavailable",
+    concurrency = 0;
   const request = async (url, authorization, body, headers) => {
     for (let attempt = 0; ; attempt++) {
+      let stream;
       try {
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw new Error("Asset preparation time budget reached");
+        const payload = typeof body === "function" ? (stream = body()) : body;
         const response = await fetch(url, {
           method: "POST",
-          body,
+          body: payload,
+          ...(stream ? { duplex: "half" } : {}),
           headers: { Authorization: `Bearer ${authorization}`, ...headers },
           signal: AbortSignal.timeout(Math.min(60_000, remaining)),
         });
@@ -146,8 +181,10 @@ if (values["dry-run"]) {
         return result.result;
       } catch (error) {
         if (attempt === 2 || Date.now() >= deadline) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+      } finally {
+        stream?.destroy();
       }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
     }
   };
   try {
@@ -158,20 +195,46 @@ if (values["dry-run"]) {
       { "Content-Type": "application/json" },
     );
     assert.ok(Array.isArray(session.buckets) && typeof session.jwt === "string");
+    let capabilities;
+    try {
+      capabilities = JSON.parse(Buffer.from(session.jwt.split(".")[1], "base64").toString());
+    } catch {
+      capabilities = {};
+    }
+    const single = capabilities?.wrangler_single_asset_uploads === true;
+    let advertisedConcurrency;
+    try {
+      advertisedConcurrency = Number(capabilities?.edge_kv_upload_concurrency);
+    } catch {
+      advertisedConcurrency = 0;
+    }
+    uploadMode = single ? "single" : "bulk";
+    concurrency = single ? Math.min(50, advertisedConcurrency > 0 ? Math.floor(advertisedConcurrency) : 50) : 3;
+    assert.ok(concurrency > 0, "Asset preparation upload concurrency is invalid");
+    const uploadBuckets = single ? session.buckets.flat().map((id) => [id]) : session.buckets;
     let cursor = 0;
     let failed;
     const results = await Promise.allSettled(
-      Array.from({ length: 3 }, async () => {
-        while (cursor < session.buckets.length && !failed) {
-          const bucket = session.buckets[cursor++];
+      Array.from({ length: concurrency }, async () => {
+        while (cursor < uploadBuckets.length && !failed) {
+          const bucket = uploadBuckets[cursor++];
           try {
-            const form = new FormData();
-            for (const id of bucket) {
+            if (single) {
+              const id = bucket[0];
               assert.ok(sources.has(id), "Upload session requested an unlisted asset");
               const { source, type } = sources.get(id);
-              form.append(id, new File([fs.readFileSync(source).toString("base64")], id, { type }));
+              await request(`${api}/workers/assets/upload/${id}`, session.jwt, () => fs.createReadStream(source), {
+                "Content-Type": type,
+              });
+            } else {
+              const form = new FormData();
+              for (const id of bucket) {
+                assert.ok(sources.has(id), "Upload session requested an unlisted asset");
+                const { source, type } = sources.get(id);
+                form.append(id, new File([fs.readFileSync(source).toString("base64")], id, { type }));
+              }
+              await request(`${api}/workers/assets/upload?base64=true`, session.jwt, form);
             }
-            await request(`${api}/workers/assets/upload?base64=true`, session.jwt, form);
             uploaded += bucket.length;
             uploadedBytes += bucket.reduce((sum, id) => sum + sources.get(id).bytes, 0);
           } catch (error) {
@@ -186,6 +249,8 @@ if (values["dry-run"]) {
     console.log(
       JSON.stringify({
         ...report,
+        uploadMode,
+        concurrency,
         uploaded,
         uploadedBytes,
         reused: sources.size - uploaded,
@@ -194,6 +259,6 @@ if (values["dry-run"]) {
     );
   } catch (error) {
     console.warn(`Asset preparation deferred to the complete publisher: ${error.message}`);
-    console.log(JSON.stringify({ ...report, uploaded, uploadedBytes, fallback: true }));
+    console.log(JSON.stringify({ ...report, uploadMode, concurrency, uploaded, uploadedBytes, fallback: true }));
   }
 }
