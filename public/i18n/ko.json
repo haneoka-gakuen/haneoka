@@ -2893,7 +2893,7 @@
       "scope": "카드 범위",
       "scopeBox": "보유 카드",
       "scopeAll": "모든 카드 (최대 육성)",
-      "scopeAllMax": "모든 카드, 육성 및 계정 보너스 최대",
+      "scopeAllMax": "카드와 계정 모두 최대",
       "unknownPolicy": "입력하지 않은 육성",
       "unknownMax": "최대로 계산",
       "unknownMin": "최소로 계산",

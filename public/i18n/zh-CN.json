@@ -2893,7 +2893,7 @@
       "scope": "卡牌范围",
       "scopeBox": "我的卡牌",
       "scopeAll": "全部卡牌，满培养",
-      "scopeAllMax": "全部卡牌，满培养与满账号加成",
+      "scopeAllMax": "全卡与账号满配",
       "unknownPolicy": "未填写的培养",
       "unknownMax": "按满值计算",
       "unknownMin": "按最低计算",

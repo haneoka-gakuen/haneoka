@@ -2893,7 +2893,7 @@
       "scope": "カード範囲",
       "scopeBox": "所持カード",
       "scopeAll": "全カード（最大育成）",
-      "scopeAllMax": "全カード（育成・アカウントボーナス最大）",
+      "scopeAllMax": "全カードとアカウント最大",
       "unknownPolicy": "未入力の育成",
       "unknownMax": "最大として計算",
       "unknownMin": "最小として計算",

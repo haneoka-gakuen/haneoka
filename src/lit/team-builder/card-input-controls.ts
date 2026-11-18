@@ -8,7 +8,6 @@ import type { TeamBuilder } from "../team-builder";
 import type { UnknownPolicy } from "../../lib/team-builder/engine/box";
 import { segmented } from "../ui/controls";
 import { choiceField } from "./catalog";
-import { icon } from "../ui/icon";
 import type { BuildSettings } from "./types";
 
 const growthOptions = (host: TeamBuilder) => [
@@ -19,7 +18,7 @@ const growthOptions = (host: TeamBuilder) => [
 type CardScopeSettings = Pick<BuildSettings, "scope" | "maxAccountBonuses">;
 export function cardScopeLabel(host: TeamBuilder, settings: CardScopeSettings): string {
   return settings.scope === "box" ? host.t("scopeBox", "My cards")
-    : settings.maxAccountBonuses ? host.t("scopeAllMax", "All cards, max growth and account bonuses")
+    : settings.maxAccountBonuses ? host.t("scopeAllMax", "Max cards and account")
     : host.t("scopeAll", "All cards, full growth");
 }
 
@@ -27,9 +26,9 @@ export function cardScopeControl(host: TeamBuilder, settings: CardScopeSettings,
   return segmented({
     label: host.t("scope", "Cards"), value: settings.scope === "box" ? "box" : settings.maxAccountBonuses ? "max-account" : "theoretical",
     options: [
-      { value: "box", label: host.t("scopeBox", "My cards"), ...(mode === "search" ? { leading: icon("style", 20) } : {}) },
-      { value: "theoretical", label: mode === "manual" ? host.t("manualAllCards", "All cards; unowned at max growth") : host.t("scopeAll", "All cards, full growth"), ...(mode === "search" ? { leading: icon("auto_awesome_motion", 20) } : {}) },
-      { value: "max-account", label: host.t("scopeAllMax", "All cards, max growth and account bonuses"), ...(mode === "search" ? { leading: icon("trending_up", 20) } : {}) },
+      { value: "box", label: host.t("scopeBox", "My cards") },
+      { value: "theoretical", label: mode === "manual" ? host.t("manualAllCards", "All cards; unowned at max growth") : host.t("scopeAll", "All cards, full growth") },
+      { value: "max-account", label: host.t("scopeAllMax", "Max cards and account") },
     ], onSelect: value => change({ scope: value === "box" ? "box" : "theoretical", maxAccountBonuses: value === "max-account" }),
   });
 }

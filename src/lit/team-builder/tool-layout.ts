@@ -8,6 +8,7 @@ import { modal } from "../ui/modal";
 import { iconButton } from "../ui/controls";
 import { icon } from "../ui/icon";
 import type { TeamBuilder } from "../team-builder";
+import { cardScopeLabel } from "./card-input-controls";
 
 export function conditionSummary(host: TeamBuilder) {
   const s = host.searchSettings;
@@ -35,9 +36,7 @@ export function conditionSummary(host: TeamBuilder) {
   return [
     host.tab === "song-comparison" || manual
       ? host.t("manualTeam", "Build a team by hand")
-      : s.scope === "box"
-        ? host.t("scopeBox", "My cards")
-        : host.t("scopeAll", "All cards, full growth"),
+      : cardScopeLabel(host, s),
     host.t("chartCount", "{count} charts", { count }),
     ...(gekiso
       ? [
@@ -85,7 +84,7 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
         ${row(
           !cardIssue,
           1,
-          host.searchSettings.scope === "box" ? host.t("tabBox", "My cards") : host.t("scopeAll", "All cards, full growth"),
+          cardScopeLabel(host, host.searchSettings),
           cardIssue ? (emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : cardIssue.message) : host.t("stepCardsDone", "{count} cards", { count: cards }),
           emptyBox
             ? { label: host.t("importMyCards", "Import my cards"), run: () => host.imports.openBox(), primary: true }
