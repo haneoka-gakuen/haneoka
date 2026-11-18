@@ -1,4 +1,5 @@
 name: CI
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('CI on {0}', github.ref) || github.event.pull_request.title }}
 
 on:
   pull_request:
@@ -18,6 +19,7 @@ concurrency:
 
 jobs:
   frontend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Verify complete frontend
     uses: ./.github/workflows/static-frontend.yml
     permissions:
@@ -28,9 +30,8 @@ jobs:
     with:
       verification_only: true
       verify_recovery: ${{ inputs.verify_recovery == true }}
-  build:
-    name: Build
-    needs: frontend
+  source:
+    name: Check frontend sources and resource pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
@@ -133,3 +134,36 @@ jobs:
       - name: Check resource pipeline
         run: |
           python3 -m unittest discover -s scripts/garupa_master/tests -t .
+
+  build:
+    name: Build
+    needs: [source, frontend]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require source checks and complete frontend verification
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$SOURCE_RESULT" != success ]]; then
+            echo "::error::Source checks ended with $SOURCE_RESULT"
+            exit 1
+          fi
+          if [[ "$FORK_PR" != true ]]; then
+            test "$FRONTEND_RESULT" = success
+            exit
+          fi
+          test "$FRONTEND_RESULT" = skipped
+          verified=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f event=workflow_dispatch -f status=success -f head_sha="$GITHUB_SHA" \
+            --jq '.workflow_runs[] | select(.head_repository.id == .repository.id and .display_title == ("CI on refs/heads/" + .head_branch)) | .html_url')
+          if [[ -z "$verified" ]]; then
+            echo "::error::Complete frontend verification is pending for merge commit $GITHUB_SHA. After review, run CI on an upstream branch at this exact commit, then re-run this failed job."
+            exit 1
+          fi
+          printf 'Verified by %s\n' "$verified" >> "$GITHUB_STEP_SUMMARY"
