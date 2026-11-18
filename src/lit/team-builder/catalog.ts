@@ -1,11 +1,12 @@
 // L3 — GEB
 // Input: Release-pinned team data, catalogue visuals, locale and song display preference.
-// Output: Card/song presentation, native game icons and explicit select/button fields.
+// Output: Card/song presentation, event song pools, native game icons and explicit select/button fields.
 // Pos: [Map](../L2-2.md); team workspace presentation helpers.
 // Effects/Dependencies: Caches titles by language and preference; reads pinned public chart assets for mission icons and aborts on disposal.
 import { CONTENT_SOURCE_IDS } from "../../lib/content-sources";
 import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../../packages/api-client/src/chart-assets";
 import { isReleasedContent } from "../../lib/content-release";
+import { contentPublished } from "../../lib/content-publication";
 import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";
 import type { SongRef } from "../../lib/team-builder/engine/api";
@@ -474,13 +475,12 @@ export class Catalog {
     return this.master.challengeMusics.filter((row) => eventId === null || row.eventId === eventId);
   }
   normalEventSongIds(eventId: number | null) {
-    const custom=eventId===null?undefined:this.data.events[String(eventId)]?.plannerRules as {normalSongs:number[]}|undefined;
-    if(custom?.normalSongs.length)return custom.normalSongs;
-    const challengeIds=new Set(this.challengeSongs(eventId).map(row=>row.liveMusicId));
-    const eventSongId = eventId === null ? undefined : this.master.events.get(eventId)?.musicId;
-    return Object.keys(this.data.songs)
-      .map(Number)
-      .filter((id) => id !== eventSongId && !challengeIds.has(id));
+    const custom = eventId === null ? undefined : this.data.events[String(eventId)]?.plannerRules as { normalSongs: number[] } | undefined;
+    if (custom?.normalSongs.length) return custom.normalSongs;
+    const now = Date.now();
+    return Object.entries(this.data.songs)
+      .filter(([, song]) => contentPublished({ ...song, eventPublishedAt: undefined }, now))
+      .map(([id]) => Number(id));
   }
 }
 
