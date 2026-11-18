@@ -209,6 +209,24 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
   <AppShell locale={locale} route="/settings" title={title} titleKey="navigation.settings">
     <section class="page">
       <div class="settings-content">
+        <div class="settings-card" data-app-updates hidden>
+          <div class="settings-card__body">
+            <section class="settings-group" aria-labelledby="app-updates-title">
+              <div class="settings-row">
+                <header class="settings-row__header">
+                  <span class="settings-row__icon"><Icon name="download" /></span>
+                  <div>
+                    <h2 id="app-updates-title"><I18nText keyName="settings.labels.appUpdates" fallback="App updates" locale={locale} /></h2>
+                    <p class="settings-current" data-app-version></p>
+                  </div>
+                </header>
+                <button class="button button--tonal" type="button" data-app-check-update>
+                  <I18nText keyName="settings.labels.checkAppUpdate" fallback="Check for updates" locale={locale} />
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
         {[groups.slice(0, 3), groups.slice(3 + dateGroups.length, 4 + dateGroups.length), groups.slice(4 + dateGroups.length), dateGroups].map((card) => (
           <div class:list={["settings-card", { "md-accordion settings-dates": card === dateGroups }]}>
             {card === dateGroups && (
@@ -380,6 +398,10 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
 </Base>
 
 <script>
+  import { appCall, appSupports, appVersion } from "../lib/app-bridge";
+  import { clientText } from "../i18n/client";
+  import { preferredLocale } from "../lit/shared/catalog";
+  import { snackbar } from "../lib/snackbar";
   import "@material/web/switch/switch.js";
   import "@material/web/select/outlined-select.js";
   import "@material/web/select/select-option.js";
@@ -449,6 +471,29 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
     const { signal } = controller;
     let stopDifficultyDisplay: (() => void) | undefined;
     let stopSpoilerDisplay: (() => void) | undefined;
+    const updates = settings.querySelector<HTMLElement>("[data-app-updates]");
+    if (updates && appSupports("appUpdateV1")) {
+      const button = updates.querySelector<HTMLButtonElement>("[data-app-check-update]")!;
+      const version = appVersion();
+      updates.querySelector<HTMLElement>("[data-app-version]")!.textContent = version ? `v${version}` : "";
+      updates.hidden = false;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        const status = await appCall("checkAppUpdate", {}).catch(() => "unavailable" as const);
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        if (signal.aborted) return;
+        const message = {
+          current: ["appUpToDate", "You’re up to date"],
+          busy: ["appCheckingUpdate", "Checking for updates"],
+          unavailable: ["appUpdateUnavailable", "Could not check for updates"],
+          install_failed: ["appInstallFailed", "Could not install the update"],
+          handled: null,
+        }[status];
+        if (message) snackbar(clientText(preferredLocale(), `settings.labels.${message[0]}`, message[1]));
+      }, { signal });
+    }
     disposeSettings = () => {
       controller.abort();
       stopDifficultyDisplay?.();

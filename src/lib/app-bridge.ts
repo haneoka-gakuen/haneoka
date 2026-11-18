@@ -7,6 +7,7 @@
 export interface AppMethods {
   /** The chosen save's player document as a `haneoka-game-save-v1` snapshot. */
   saveSnapshot: { args: { key: string }; result: { text: string } };
+  checkAppUpdate: { args: Record<string, never>; result: "current" | "handled" | "busy" | "unavailable" | "install_failed" };
   /** The chosen game account's card, character and band item progress as `ONPKG1:` text. */
   boxAccount: { args: { server: string; key?: string }; result: { text: string } | null };
   /** Gacha history read from the game server, as companion files (`{key}.json`). */
@@ -105,6 +106,10 @@ export const inApp = (): boolean => typeof navigator !== "undefined" && /\bHaneo
 
 export function appPlatform(): string | undefined {
   return (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.platform;
+}
+
+export function appVersion(): string | undefined {
+  return (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.version;
 }
 
 export function appCall<M extends keyof AppMethods>(

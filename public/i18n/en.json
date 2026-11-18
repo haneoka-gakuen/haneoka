@@ -295,6 +295,12 @@
   },
   "settings": {
     "labels": {
+      "appUpdates": "App updates",
+      "checkAppUpdate": "Check for updates",
+      "appUpToDate": "You’re up to date",
+      "appCheckingUpdate": "Checking for updates",
+      "appUpdateUnavailable": "Could not check for updates",
+      "appInstallFailed": "Could not install the update",
       "appearance": "Appearance",
       "themeLight": "Light",
       "themeSystem": "Follow system",

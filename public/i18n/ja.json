@@ -295,6 +295,12 @@
   },
   "settings": {
     "labels": {
+      "appUpdates": "アプリのアップデート",
+      "checkAppUpdate": "アップデートを確認",
+      "appUpToDate": "最新版です",
+      "appCheckingUpdate": "アップデートを確認中",
+      "appUpdateUnavailable": "アップデートを確認できませんでした",
+      "appInstallFailed": "アップデートをインストールできませんでした",
       "appearance": "外観",
       "themeLight": "ライト",
       "themeSystem": "システム設定に合わせる",

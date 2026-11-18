@@ -295,6 +295,12 @@
   },
   "settings": {
     "labels": {
+      "appUpdates": "应用更新",
+      "checkAppUpdate": "检查更新",
+      "appUpToDate": "已是最新版本",
+      "appCheckingUpdate": "正在检查更新",
+      "appUpdateUnavailable": "无法检查更新",
+      "appInstallFailed": "更新安装失败",
       "appearance": "外观",
       "themeLight": "浅色",
       "themeSystem": "跟随系统",
