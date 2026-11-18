@@ -281,6 +281,7 @@ jobs:
           key: static-projections-${{ env.STATIC_CATALOG_TOKEN != '' && 'build' || 'public' }}-v1-${{ runner.os }}-${{ steps.projection-identity.outputs.key }}
       - name: Collect all production data and route matrices
         env:
+          STATIC_ROUTE_PREPARER: ${{ vars.STATIC_ROUTE_PREPARER }}
           AFDIAN_USER_ID: ${{ secrets.AFDIAN_USER_ID }}
           AFDIAN_TOKEN: ${{ secrets.AFDIAN_TOKEN }}
           PATREON_CREATOR_TOKEN: ${{ secrets.PATREON_CREATOR_TOKEN }}
@@ -288,7 +289,11 @@ jobs:
           STATIC_BUILD_PROJECTION_RECIPE: ${{ steps.projection-identity.outputs.key }}
         run: |
           node scripts/build/prepare-static-inputs.mjs
-          STATIC_BUILD_PHASE=prepare pnpm exec astro build
+          case "$STATIC_ROUTE_PREPARER" in
+            ""|collector) STATIC_BUILD_PHASE=prepare node scripts/build/prepare-static-routes.mjs ;;
+            astro) STATIC_BUILD_PHASE=prepare pnpm exec astro build ;;
+            *) echo "Unknown static route preparer" >&2; exit 1 ;;
+          esac
           node scripts/build/static-build-inputs.mjs compact-catalog-cache --root "$PWD" --capture "$STATIC_BUILD_INPUT_ROOT"
       - name: Save verified entity projections
         if: steps.projection-cache.outputs.cache-hit != 'true'

@@ -257,6 +257,7 @@
     "scripts/build/static-build-shards.mjs",
     "scripts/build/static-render-handoff.mjs",
     "scripts/build/prepare-static-inputs.mjs",
+    "scripts/build/prepare-static-routes.mjs",
     "scripts/build/finalize-frontend.mjs",
     "scripts/build/search-metadata.mjs",
     "scripts/publish/r2.py",

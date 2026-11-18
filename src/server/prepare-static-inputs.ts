@@ -36,6 +36,7 @@ import {
 import { appRelease } from "./app-release";
 import { sponsorList } from "./sponsors";
 import { publicForumDirectory } from "./public-forum-directory";
+import { themeCharacters } from "./theme-characters";
 import { homePageData } from "./home-page-data";
 import { destinationHubMedia } from "./destination-hub-data";
 import { loadCalendarData } from "./calendar";
@@ -205,6 +206,7 @@ export async function prepareStaticInputs(): Promise<void> {
     appRelease,
     sponsorList,
     publicForumDirectory,
+    () => themeCharacters("en"),
     rankingCardsPageData,
     eventTrackerPageData,
     stampMakerPageData,
