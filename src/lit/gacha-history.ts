@@ -480,12 +480,6 @@ export class GachaHistory extends LitElement {
   private luckMeter(label: string, luck: GachaLuckValue | null | undefined, summary?: GachaLuckSummary, combined = false) {
     const value = luck?.variable ? luck : undefined;
     const tier = value ? this.t(`luckTier${value.tier}`) : this.luckState(summary, luck);
-    const facts = combined ? [
-      [`SSR+ / ${this.t("observed")}`, summary?.high ? this.number(summary.high.observed) : "—"],
-      [`SSR+ / ${this.t("expected")}`, summary?.high ? this.number(summary.high.expected, 2) : "—"],
-      [`${this.t("luckPickupHigh")} / ${this.t("observed")}`, summary?.pickup ? this.number(summary.pickup.observed) : "—"],
-      [`${this.t("luckPickupHigh")} / ${this.t("expected")}`, summary?.pickup ? this.number(summary.pickup.expected, 2) : "—"],
-    ] : [[this.t("observed"), luck ? this.number(luck.observed) : "—"], [this.t("expected"), luck ? this.number(luck.expected, 2) : "—"]];
     return html`<div class="gacha-luck" data-tier=${value?.tier ?? "neutral"} aria-busy=${String(this.luckClient.pending)}>
       <div class="row row--between row--baseline"><span class="md-title-small">${label}</span>
         <span class="row row--baseline">
@@ -497,8 +491,18 @@ export class GachaHistory extends LitElement {
         <span class="gacha-luck__fill" style=${`inline-size:${value?.score ?? 0}%`}></span>
         <span class="gacha-luck__mark" ?hidden=${!value} style=${`inset-inline-start:${value?.score ?? 0}%`}></span>
       </div>
-      <dl class="spec-list spec-list--split spec-list--numeric">${facts.map(([name, text]) => html`<div><dt>${name}</dt><dd>${text}</dd></div>`)}</dl>
+      ${combined ? nothing : html`<dl class="spec-list spec-list--split spec-list--numeric">
+        <div><dt>${this.t("observed")}</dt><dd>${luck ? this.number(luck.observed) : "—"}</dd></div>
+        <div><dt>${this.t("expected")}</dt><dd>${luck ? this.number(luck.expected, 2) : "—"}</dd></div>
+      </dl>`}
     </div>`;
+  }
+  private luckMeters(summary?: GachaLuckSummary) {
+    return html`
+      ${this.luckMeter(this.t("luckCombined"), summary?.combined, summary, true)}
+      ${this.luckMeter("SSR+", summary?.high, summary)}
+      ${this.luckMeter(this.t("luckPickupHigh"), summary?.pickup, summary)}
+    `;
   }
   private stat(options: { icon: TemplateResult; label: string; value: unknown; supporting?: unknown; tone?: string }) {
     return html`
@@ -1090,9 +1094,7 @@ export class GachaHistory extends LitElement {
         <section class="surface stack">
           <div class="row row--between">${renderDetailSectionHeading(this.t("luckCombined"), "stats", { level: 3 })}
             ${this.luckClient.error ? iconButton({ icon: "refresh", label: this.t("luckRetry"), onClick: () => { this.luckClient.reset(); this.requestUpdate(); } }) : nothing}</div>
-          ${this.luckMeter(this.t("luckCombined"), this.luckSummary()?.combined, this.luckSummary(), true)}
-          ${this.luckMeter("SSR+", this.luckSummary()?.high, this.luckSummary())}
-          ${this.luckMeter(this.t("luckPickupHigh"), this.luckSummary()?.pickup, this.luckSummary())}
+          ${this.luckMeters(this.luckSummary())}
         </section>
         <section class="surface stack">
           ${renderDetailSectionHeading(this.t("rateComparison"), "difficulty", { level: 3 })}
@@ -1277,7 +1279,7 @@ export class GachaHistory extends LitElement {
                       : "",
                   })}
                 </div>
-                ${this.luckMeter(this.t("luckCombined"), luck?.combined, luck, true)}
+                ${this.luckMeters(luck)}
                 ${
                   view?.featured?.length
                     ? html`

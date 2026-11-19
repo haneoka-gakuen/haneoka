@@ -2,7 +2,7 @@
 // Input: 新界面语言的文档请求及同一英文页面的响应。
 // Output: 本地化 HTML、规范地址、链接与社交元数据。
 // Pos: [Map](L2.md)；复用英文文档的界面语言适配器。
-// Effects/Dependencies: 由原文档路径执行权限检查和缓存；只加载当前语言的词库。
+// Effects/Dependencies: 先执行原文档权限检查；复用词库及版本，在译文命中验证器时跳过 HTML 重写。
 import { interpolateMessage, messageAtPath, type MessageCatalog } from "@haneoka/i18n";
 import {
   englishInterfacePath,
@@ -13,6 +13,7 @@ import {
 import type { InterfaceLanguage, InterfaceLanguageId } from "../src/i18n/interface-language-options";
 import { formatDocumentTitle, withoutSiteSuffix } from "../src/lib/document-title";
 import { CANONICAL_ORIGIN } from "../src/lib/site-origin";
+import { retainRequestRead } from "./request-work";
 
 const dictionaries: Record<InterfaceLanguageId, () => Promise<{ default: MessageCatalog }>> = {
   de: () => import("../src/i18n/interface/de.json"),
@@ -27,10 +28,28 @@ const dictionaries: Record<InterfaceLanguageId, () => Promise<{ default: Message
   vi: () => import("../src/i18n/interface/vi.json"),
 };
 
+const dictionariesWithRevision = new Map<InterfaceLanguageId, Promise<{ catalog: MessageCatalog; revision: string }>>();
+function interfaceDictionary(language: InterfaceLanguageId) {
+  let pending = dictionariesWithRevision.get(language);
+  if (!pending) {
+    pending = dictionaries[language]().then(async ({ default: catalog }) => {
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(catalog)));
+      return { catalog, revision: [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("") };
+    }).catch((error: unknown) => {
+      dictionariesWithRevision.delete(language);
+      throw error;
+    });
+    dictionariesWithRevision.set(language, pending);
+    retainRequestRead(pending);
+  }
+  return pending;
+}
+
 interface InterfaceDocument {
   url: URL;
   request: Request;
   language: InterfaceLanguage;
+  ifNoneMatch: string | null;
 }
 
 export function interfaceDocument(request: Request): InterfaceDocument | undefined {
@@ -45,16 +64,15 @@ export function interfaceDocument(request: Request): InterfaceDocument | undefin
     headers.set("Accept-Encoding", "identity");
     for (const name of ["If-None-Match", "If-Modified-Since", "Range", "If-Range"]) headers.delete(name);
   }
-  return { url, language, request: new Request(source, { headers, method: request.method }) };
+  return { url, language, request: new Request(source, { headers, method: request.method }), ifNoneMatch: request.headers.get("If-None-Match") };
 }
 
 export async function translateInterfaceDocument(document: InterfaceDocument, source: Response): Promise<Response> {
   const { url, language } = document;
-  const link = (value: string) => interfaceHref(value, language.value, url.origin);
   const location = source.headers.get("Location");
   if (location && source.status >= 300 && source.status < 400) {
     const headers = new Headers(source.headers);
-    headers.set("Location", link(location));
+    headers.set("Location", interfaceHref(location, language.value, url.origin));
     return new Response(source.body, { headers, status: source.status });
   }
   if (!source.headers.get("Content-Type")?.includes("text/html")) return source;
@@ -63,10 +81,32 @@ export async function translateInterfaceDocument(document: InterfaceDocument, so
   headers.set("Content-Language", language.tag);
   for (const name of ["Content-Encoding", "Content-Length", "ETag", "Last-Modified", "Accept-Ranges"])
     headers.delete(name);
+  const sourceTag = source.status === 200 && !source.headers.has("Set-Cookie") &&
+    !/\bno-store\b/iu.test(source.headers.get("Cache-Control") ?? "")
+    ? /^(?:W\/)?"([^"]+)"$/u.exec(source.headers.get("ETag") ?? "")?.[1]
+    : undefined;
+  const dictionary = sourceTag || source.body ? await interfaceDictionary(language.value) : null;
+  if (sourceTag && dictionary) {
+    const etag = `"interface-v1-${language.value}-${dictionary.revision}-${sourceTag}"`;
+    headers.set("ETag", "W/" + etag);
+    const validator = document.ifNoneMatch;
+    if (validator?.trim() === "*" || validator?.split(",").some((value) => value.trim().replace(/^W\//u, "") === etag)) {
+      await source.body?.cancel();
+      return new Response(null, { headers, status: 304 });
+    }
+  }
   const response = new Response(source.body, { headers, status: source.status });
-  if (!source.body) return response;
+  if (!source.body || !dictionary) return response;
 
-  const { default: catalog } = await dictionaries[language.value]();
+  const links = new Map<string, string>();
+  const link = (value: string) => {
+    const cached = links.get(value);
+    if (cached !== undefined) return cached;
+    const converted = interfaceHref(value, language.value, url.origin);
+    if (links.size < 256) links.set(value, converted);
+    return converted;
+  };
+  const { catalog } = dictionary;
   const message = (key: string | null) => (key ? messageAtPath(catalog, key) : undefined);
   const siteTitle = message("common.seo.siteTitle") ?? "BanG Dream! Our Notes Database";
   const englishPath = new URL(document.request.url).pathname;

@@ -1249,6 +1249,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "Metoda płatności",
+      "paymentKinds": {
+        "cash": "Pieniądze",
+        "stars": "Gwiazdki",
+        "paidStars": "Płatne gwiazdki",
+        "free": "Za darmo",
+        "ad": "Obejrzyj reklamę",
+        "other": "Inne waluty"
+      },
+      "officialRecharge": "Oficjalne doładowanie Biligame",
       "paidStars": "Płacone gwiazdy",
       "freeStars": "Bezpłatne gwiazdy na zakup",
       "passStars": "Pasz gwiazd",
@@ -1366,7 +1376,6 @@
       "profilename": "Nazwa gracza",
       "profileuid": "Gra UID",
       "profilerank": "Rankowanie gracza",
-      "benchmarkTeam": "Zespół benchmarku",
       "exportFailed": "Eksport obrazu nie powiodł się",
       "importSave": "Importowanie z gry Save",
       "imported": "Importowane wykresy {count}",
@@ -4953,6 +4962,8 @@
       "autoLink": "Automatyczne linkowanie konta gry",
       "importSessionExpired": "Sesja gry wygasła. przeczytaj najnowsze zapisanie ponownie.",
       "autoImportFailed": "Niektóre dane nie mogą być importowane",
+      "openSaveImport": "Importuj zapis z poziomu konta",
+      "saveImportGuide": "Odczytaj zapis gry w sekcji Konto. Włączone automatyczne importy zaktualizują dane w tle.",
       "addGameSave": "Czytaj gry Save",
       "unblockUser": "Unblockowanie",
       "unmute": "Niewiele",

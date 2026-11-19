@@ -233,8 +233,11 @@ export interface OfficialEventWindow {
 
 export interface OfficialCollectorJob {
   contract: "haneoka:official-ranking-job/1";
-  /** `lookup` skips catalog and boards and only serves demand. */
+  /** `lookup` skips catalog download and serves player queries or retained Arena windows. */
   mode?: "lookup";
+  arenaSweepKey?: string;
+  arenaSweepPopulationBand?: string;
+  arenaSweepCatalog?: Pick<OfficialCatalog, "arena" | "masterVersion" | "resourceVersion" | "tableHashes">;
   /** Pending final boards of the latest-started event, whose aggregation ended. */
   finalEvent?: NonNullable<OfficialCatalog["event"]>;
   finalBoards?: Array<{ kind: OfficialObservation["kind"]; challengeId: string }>;
@@ -243,6 +246,7 @@ export interface OfficialCollectorJob {
   capabilities?: string[];
   arenaProgress?: OfficialArenaProgress[];
   populationOrder?: string[];
+  arenaPopulationExcluded?: string[];
   arenaWindows?: Array<{ seasonId: string; bandId: string; startRank: number; endRank: number }>;
   eventWindows?: Array<{ eventId: string; startRank: number; endRank: number }>;
   playerLookups?: string[];

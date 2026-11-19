@@ -1,4 +1,5 @@
 import { html } from "lit";
+import { inApp } from "../../lib/app-bridge";
 import { clientText } from "../../i18n/client";
 import type { GachaHistoryImportSource } from "../../lib/gacha-history-view";
 import { iconButton } from "../ui/controls";
@@ -14,8 +15,9 @@ export function renderLocalSaveSourcePicker(options: {
   onClose: () => void;
 }) {
   const t = (key: string) => clientText(options.locale, `catalog.gachaHistory.${key}`, "");
+  const accountImport = inApp();
   const sources = {
-    game: { label: t("gameSource"), icon: icon("sports_esports") },
+    game: { label: accountImport ? clientText(options.locale, "account.page.openSaveImport", "Import a save in Account") : t("gameSource"), icon: icon("sports_esports") },
     saved: { label: t("savedSource"), icon: icon("account_circle") },
     files: { label: t("filesSource"), icon: icon("folder_open") },
     adb: { label: t("adbSource"), icon: icon("usb") },
@@ -36,7 +38,9 @@ export function renderLocalSaveSourcePicker(options: {
                   <span class="list-item__body">
                     <span class="list-item__headline">${sources[source].label}</span>
                     ${
-                      options.historyGuidance && (source === "files" || source === "adb")
+                      source === "game" && accountImport
+                        ? html`<span class="list-item__supporting">${clientText(options.locale, "account.page.saveImportGuide", "Read the game save in Account.")}</span>`
+                        : options.historyGuidance && (source === "files" || source === "adb")
                         ? html`
                             <span class="list-item__supporting">
                               ${t(source === "adb" ? "usbHistoryHelp" : "historyFilesHelp")}

@@ -27,8 +27,10 @@ def serve():
     if len(token) < 32:
         raise ValueError('collector service token missing')
     # One host can serve every region, as one Container per region did: each
-    # region keeps its own run and lookup slots.
+    # region keeps dedicated regular and lookup slots, plus one sweep per leased account.
     locks = {}
+    active_sweeps = {}
+    private_regions = set()
     locks_guard = threading.Lock()
 
     def slots(region):
@@ -129,15 +131,38 @@ def serve():
             except Exception:
                 self.reply(400, {'error': 'invalid_job'})
                 return
-            lock, lookup_lock = slots(job['region'])
-            gate = lookup_lock if not private_job and job.get('mode') == 'lookup' else lock
-            if not gate.acquire(blocking=False):
-                self.reply(409, {'error': 'busy'})
-                return
-            if private_job and not lookup_lock.acquire(blocking=False):
-                gate.release()
-                self.reply(409, {'error': 'busy'})
-                return
+            region = job['region']
+            lock, lookup_lock = slots(region)
+            sweep_account = None if private_job else job.get('arenaSweepKey')
+            if sweep_account:
+                with locks_guard:
+                    accounts = active_sweeps.setdefault(region, set())
+                    admitted = region not in private_regions and sweep_account not in accounts
+                    if admitted:
+                        accounts.add(sweep_account)
+                if not admitted:
+                    self.reply(409, {'error': 'busy'})
+                    return
+                gate = None
+            else:
+                gate = lookup_lock if not private_job and job.get('mode') == 'lookup' else lock
+                if not gate.acquire(blocking=False):
+                    self.reply(409, {'error': 'busy'})
+                    return
+                if private_job:
+                    if not lookup_lock.acquire(blocking=False):
+                        gate.release()
+                        self.reply(409, {'error': 'busy'})
+                        return
+                    with locks_guard:
+                        admitted = not active_sweeps.get(region)
+                        if admitted:
+                            private_regions.add(region)
+                    if not admitted:
+                        lookup_lock.release()
+                        gate.release()
+                        self.reply(409, {'error': 'busy'})
+                        return
             # A remote host accepts a scheduled run at once: its end reaches the
             # Worker through the run's callbacks, so the caller does not wait.
             if not private_job and job.get('mode') != 'lookup' and self.headers.get('X-Haneoka-Collector-Async') == '1':
@@ -174,9 +199,15 @@ def serve():
                 report_failure(job['region'], failure)
                 self.reply(500, {'error': 'guest_job_failed' if guest_job else 'account_job_failed' if account_login else 'collection_failed', 'failure': failure})
             finally:
-                if private_job:
-                    lookup_lock.release()
-                gate.release()
+                if sweep_account:
+                    with locks_guard:
+                        active_sweeps[region].remove(sweep_account)
+                else:
+                    if private_job:
+                        with locks_guard:
+                            private_regions.remove(region)
+                        lookup_lock.release()
+                    gate.release()
 
         def log_message(self, *_args):
             pass

@@ -5,6 +5,7 @@
 // Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
 import { saveRankingSearchWindow } from "./ranking-search";
+import { retainRequestRead } from "./request-work";
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
 
@@ -363,14 +364,34 @@ export async function takeOfficialFinalTarget(env: OfficialRankingStoreBindings,
     }) };
 }
 
+interface CatalogCacheEntry {
+  key: string;
+  hash: string;
+  value: Promise<OfficialCatalog>;
+}
+const catalogs = new WeakMap<R2Bucket, Map<GameRecordsRegion, CatalogCacheEntry>>();
+
 export async function readOfficialCatalog(env: OfficialRankingStoreBindings, region: GameRecordsRegion): Promise<OfficialCatalog | null> {
-  const { db } = storage(env);
+  const { db, bucket } = storage(env);
   const row = await db.prepare("SELECT payload_key, payload_hash, observed_at_ms FROM official_ranking_catalogs WHERE region = ?")
     .bind(region).first<Pick<ObservationRow, "payload_key" | "payload_hash"> & { observed_at_ms: number }>();
   if (!row) return null;
-  const catalog = await readPayload<OfficialCatalog>(env, row.payload_key, row.payload_hash);
-  if (catalog.region !== region) throw new Error("official_region_mismatch");
-  return { ...catalog, catalogObservedAtMs: row.observed_at_ms };
+  let cache = catalogs.get(bucket);
+  if (!cache) { cache = new Map(); catalogs.set(bucket, cache); }
+  let entry = cache.get(region);
+  if (entry?.key !== row.payload_key || entry.hash !== row.payload_hash) {
+    const value = readPayload<OfficialCatalog>(env, row.payload_key, row.payload_hash).then((catalog) => {
+      if (catalog.region !== region) throw new Error("official_region_mismatch");
+      return catalog;
+    }).catch((error: unknown) => {
+      if (cache.get(region)?.value === value) cache.delete(region);
+      throw error;
+    });
+    entry = { key: row.payload_key, hash: row.payload_hash, value };
+    cache.set(region, entry);
+    retainRequestRead(value);
+  }
+  return { ...await entry.value, catalogObservedAtMs: row.observed_at_ms };
 }
 
 async function saveDailyObservation(db: D1Database, board: string,

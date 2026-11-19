@@ -17,6 +17,8 @@ export function playerProfilePresence(lastLoginAtMs: number | null, observedAtMs
   return now - lastLoginAtMs < PLAYER_PROFILE_ONLINE_MS ? "online" : "offline";
 }
 
+export const GAME_REGION_NAMES: Readonly<Record<GameRecordsRegion, string>> = { jp: "JP", tw: "TW/HK/MO", en: "EN Regions", kr: "KR" };
+
 const PROFILE_REGIONS: Readonly<Record<string, GameRecordsRegion>> = { "2": "tw", "3": "en", "4": "kr", "5": "jp" };
 /** The game's player IDs are 11 digits and the first names the region. */
 export const profileRegion = (profileId: string): GameRecordsRegion | null =>

@@ -8,7 +8,8 @@ import type { CatalogCost } from "../../lib/catalog-cost-summary";
 import { formatDate } from "../../lib/date-format";
 import { loadGrowthCatalog, stageDisplay, type GrowthPageData } from "../../lib/growth-catalog";
 import { parseSnapshot, saveRecords, type SaveSnapshot } from "../../lib/save-workspace/snapshot";
-import { appCall, appSupports, inApp } from "../../lib/app-bridge";
+import { clientText } from "../../i18n/client";
+import { appCall, appSaveImportHref, appSupports, inApp } from "../../lib/app-bridge";
 import type { EngineHit, EngineRequest } from "../../lib/team-builder/engine/api";
 import { completeResponse } from "../../lib/team-builder/engine/execution";
 import {
@@ -380,7 +381,7 @@ export class TeamTrainingPlan {
                       : nothing
               }
             </span>
-            <a class="button button--text" href=${inApp() ? `/${host.locale}/account/?section=games` : `/${host.locale}/saves/`}>${t("saves")}</a>
+            <a class="button button--text" href=${inApp() ? appSaveImportHref(host.locale) : `/${host.locale}/saves/`}>${inApp() ? clientText(host.locale, "account.page.openSaveImport", "Import a save in Account") : t("saves")}</a>
             ${
               selection === "manual" && materials.length
                 ? accordion({

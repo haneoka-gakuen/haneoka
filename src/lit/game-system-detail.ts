@@ -23,9 +23,11 @@ import {
   convertShopPrice,
   fetchShopFxRates,
   formatMoney,
+  shopPaymentKind,
   shopPaymentPrices,
   localeShopCurrency,
   moneyName,
+  officialIntlShopUrl,
   shopPriceEntries,
   shopStarsPer100,
   type ShopStarRewards,
@@ -770,8 +772,11 @@ function renderExchangeGoods(c: Controller, item: Item) {
 function renderShopFacts(c: Controller, item: Item) {
   const payment = (item.payment || {}) as Item;
   const rows: Array<{ label: string; value: unknown }> = [];
-  const prices = shopPaymentPrices(payment, c.itemSourceServer(item));
-  if (payment.advertisement) {
+  const prices = shopPaymentPrices(payment, c.unionDetail?.activeServer ?? c.itemSourceServer(item));
+  const kind = shopPaymentKind(payment);
+  if (kind === "free") {
+    rows.push({ label: c.detailLabel("price"), value: c.label("catalog.shop.paymentKinds.free", "Free") });
+  } else if (kind === "ad") {
     rows.push({ label: c.detailLabel("price"), value: c.label("watchAd", "Watch an ad") });
   } else {
     // Cash entries read like the song page's difficulty facts: one spec row
@@ -1714,10 +1719,15 @@ export function renderGameSystemDetail(c: Controller, item: Item) {
       `;
     case "login-campaigns":
       return renderLoginDays(c, rewards);
-    case "shop":
+    case "shop": {
+      const recharge = officialIntlShopUrl(c.unionDetail?.activeServer ?? c.itemSourceServer(item), (item.payment ?? {}) as Item);
       return html`
+        ${recharge ? html`<section class="detail-section"><a class="button button--tonal" href=${recharge} target="_blank" rel="noopener noreferrer">
+          ${icon("open_in_new", 18)} ${c.label("catalog.shop.officialRecharge", "Biligame official recharge")}
+        </a></section>` : nothing}
         ${renderShopFacts(c, item)}${rewardSection(c, rewards, c.label("contents", "Contents"))}
       `;
+    }
     case "exchange":
       return renderExchangeGoods(c, item);
     case "circle":

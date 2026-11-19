@@ -86,7 +86,7 @@ import { sortControl } from "./ui/sort-control";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { observeDifficultyDisplay } from "../lib/difficulty-display";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { shopPaymentPrices, shopPriceLine, type ShopStarRewards } from "../lib/shop-currency";
+import { SHOP_PAYMENT_KINDS, shopPaymentKind, shopPaymentPrices, shopPriceLine, type ShopStarRewards } from "../lib/shop-currency";
 import "./catalog-table";
 import { filterDateBound } from "../lib/filter-date";
 import { cardRarityRank } from "../lib/card-rarity";
@@ -131,7 +131,7 @@ import {
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import { eventArtwork } from "./ui/event-artwork";
 import { liveMusicTypeMark, songTile } from "./shared/song-tile";
-import { detailLayout } from "./ui/detail-layout";
+import { detailLayout, DETAIL_LAYOUT_STACKED } from "./ui/detail-layout";
 import { upgradeCost } from "./ui/upgrade-cost";
 import {
   resolveSongPerformer,
@@ -193,7 +193,6 @@ import { LOCALES, type Locale } from "../i18n/locales";
 import { metaScatter } from "./shared/meta-scatter";
 
 /** Collections whose detail is a picture and a few facts: comments go below, full width. */
-const SPARSE_DETAIL = new Set(["stamps", "stickers", "backgrounds", "chat-customizations", "band-items", "comics", "real-lives"]);
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -355,6 +354,8 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 const CARD_ACQUISITIONS = ["permanent", "limited", "birthday", "event", "pass", "gift", "dreamfes", "campaign", "unknown"] as const;
 
 const EXTRA_FILTERS = [
+  "shopServer",
+  "shopPayment",
   "difficulty",
   "composer",
   "lyrics",
@@ -1864,7 +1865,7 @@ export class CatalogScreen extends LitElement {
     this.detailReady = false;
     this.docked = matches(EXPANDED);
     this.compact = matches(COMPACT);
-    this.commentsCompact = matches("(max-width: 959px)");
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
     this.density = "comfortable";
     this.sim = null;
     this.gachaOption = "";
@@ -1969,11 +1970,11 @@ export class CatalogScreen extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
     ]);
     this.density = currentDensity();
-    this.commentsCompact = matches("(max-width: 959px)");
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
     this.disposeMedia = [
       watchMedia(EXPANDED, (value) => (this.docked = value)),
       watchMedia(COMPACT, (value) => (this.compact = value)),
-      watchMedia("(max-width: 959px)", (value) => (this.commentsCompact = value)),
+      watchMedia(DETAIL_LAYOUT_STACKED, (value) => (this.commentsCompact = value)),
     ];
     window.addEventListener(DENSITY_EVENT, this.onDensity);
     window.addEventListener("keydown", this.onKeydown);
@@ -3103,7 +3104,15 @@ export class CatalogScreen extends LitElement {
     const source = (this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
       : this.expandedItems()).filter((item) => isContentListed(this.settings.resource, item, this.itemId(item)));
-    const items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
+    let items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
+    if (this.settings.resource === "shop" && (facets.shopServer?.length || facets.shopPayment?.length)) {
+      items = items.map((item) => {
+        const entry = this.unionEntry(item);
+        const server = this.shopVariants(item, facets)[0]?.server;
+        return entry && (server === "jp" || server === "intl") && server !== entry.displayServer
+          ? this.unionPrimaryRow({ ...entry, displayServer: server }) : item;
+      });
+    }
     const direction = this.order === "asc" ? 1 : -1;
     const now = Date.now();
     const numeric = (this.profile.presentation === "song" &&
@@ -3162,7 +3171,9 @@ export class CatalogScreen extends LitElement {
   /** The shop row's price, as one line of text. */
   private shopPriceLabel(item: Item) {
     const payment = (item.payment || {}) as Item;
-    if (payment.advertisement) return this.label("watchAd", "Watch an ad");
+    const kind = shopPaymentKind(payment);
+    if (kind === "ad") return this.label("watchAd", "Watch an ad");
+    if (kind === "free") return uiText(this.settings.locale, "catalog.shop.paymentKinds.free");
     // Cash listings lead with the storefront price in the visitor's region's
     // currency (zh-Hans reads the NT$/HK$ tiers first); entries without a
     // regional price keep the game-currency emblem row or the headline.
@@ -3959,7 +3970,20 @@ export class CatalogScreen extends LitElement {
     });
     return links.length ? html`<small class="cluster">${links}</small>` : nothing;
   }
-  private facetValues(item: Item, key: string): string[] {
+  private shopVariants(item: Item, facets?: CatalogQueryFacets) {
+    const entry = this.unionEntry(item);
+    const variants = entry
+      ? [entry.displayServer, ...entry.sourceIds.filter((server) => server !== entry.displayServer)]
+          .map((server) => ({ server, payment: (entry.perServer[server]?.row.payment ?? {}) as Item }))
+      : [{ server: this.itemSourceServer(item), payment: (item.payment ?? {}) as Item }];
+    return variants.filter(({ server, payment }) =>
+      (!facets?.shopServer?.length || facets.shopServer.includes(server))
+      && (!facets?.shopPayment?.length || facets.shopPayment.includes(shopPaymentKind(payment))));
+  }
+  private facetValues(item: Item, key: string, facets?: CatalogQueryFacets): string[] {
+    if (this.settings.resource === "shop" && (key === "shopServer" || key === "shopPayment")) {
+      return this.shopVariants(item, facets).map(({ server, payment }) => key === "shopServer" ? server : shopPaymentKind(payment));
+    }
     if (this.settings.resource === "chat-customizations" && key === "kind") return [String(item.kind)];
     const skillTypes = skillFacetValues(item, key);
     if (skillTypes) return skillTypes;
@@ -4034,7 +4058,7 @@ export class CatalogScreen extends LitElement {
         continue;
       if (key === "gekisouType") {
         if (!matchesSongMissions(item, values, facets.gekisouMatch?.[0])) return false;
-      } else if (!this.facetValues(item, key).some((value) => values.includes(value))) return false;
+      } else if (!this.facetValues(item, key, facets).some((value) => values.includes(value))) return false;
     }
     if (!matchesCatalogRarity(item.rarity, facets, !this.isProvider())) return false;
     const chartRanges = [
@@ -4101,7 +4125,7 @@ export class CatalogScreen extends LitElement {
           continue;
         const values = group.key === "gekisouType"
           ? group.options.filter((option) => matchesSongMissions(item, [option.value], facets.gekisouMatch?.[0])).map((option) => option.value)
-          : this.facetValues(item, group.key);
+          : this.facetValues(item, group.key, facets);
         for (const value of new Set(values)) counts.set(value, (counts.get(value) || 0) + 1);
       }
       return {
@@ -4282,6 +4306,25 @@ export class CatalogScreen extends LitElement {
           label: uiText(this.settings.locale, `catalog.chatCustomizations.${value}`),
           image: String(this.items.find((item) => item.kind === value)?.icon || ""),
           count: counts.get(value),
+        })),
+      });
+    }
+    if (this.settings.resource === "shop") {
+      const servers = tally((item) => this.facetValues(item, "shopServer"));
+      const payments = tally((item) => this.facetValues(item, "shopPayment"));
+      groups.push({
+        key: "shopServer",
+        label: uiText(this.settings.locale, "settings.labels.server"),
+        options: ["jp", "intl"].filter((server) => servers.has(server)).map((server) => ({
+          value: server,
+          label: this.label(server === "jp" ? "settingsJapan" : "settingsGlobal", server),
+        })),
+      }, {
+        key: "shopPayment",
+        label: uiText(this.settings.locale, "catalog.shop.paymentMethod"),
+        options: SHOP_PAYMENT_KINDS.filter((payment) => payments.has(payment)).map((payment) => ({
+          value: payment,
+          label: uiText(this.settings.locale, `catalog.shop.paymentKinds.${payment}`),
         })),
       });
     }
@@ -6786,7 +6829,6 @@ export class CatalogScreen extends LitElement {
         !(Array.isArray(item.sourceTables) && item.sourceTables.includes("MasterEvent"))
       )
         return null;
-      if (resource === "shop" && item.sourceTable !== "MasterShop") return null;
       if (resource === "tgw-card" && item.sourceTable !== "MasterVip") return null;
       id = decimal(item[resource === "tgw-card" ? "rank" : "id"]);
     } else return null;
@@ -6824,7 +6866,7 @@ export class CatalogScreen extends LitElement {
     )
       return false;
     const target = this.detailCommentTarget(this.selected);
-    return !!target && JSON.stringify([target.type, target.id]) === key;
+    return !!target && JSON.stringify([target.type, target.id, this.unionDetail?.activeServer ?? this.itemSourceServer(this.selected)]) === key;
   }
   private activateComments(key: string, generation: number, element: HTMLElement) {
     if (
@@ -6881,7 +6923,8 @@ export class CatalogScreen extends LitElement {
   private renderEntityDiscussion(item: Item) {
     const target = this.detailCommentTarget(item);
     if (!target || typeof window === "undefined" || !this.isConnected || !communityVisible()) return nothing;
-    const key = JSON.stringify([target.type, target.id]);
+    const server = this.unionDetail?.activeServer ?? this.itemSourceServer(item);
+    const key = JSON.stringify([target.type, target.id, server]);
     if (this.commentsActivationKey !== key) {
       this.resetCommentsActivation();
       this.commentsActivationKey = key;
@@ -6931,7 +6974,7 @@ export class CatalogScreen extends LitElement {
           entity-type=${target.type}
           entity-id=${target.id}
           locale=${this.settings.locale}
-          server=${this.itemSourceServer(item)}
+          server=${server}
           target-title=${this.itemTitle(item)}
           comment-id=${navigationDocumentUrl().searchParams.get("commentId") || ""}
         ></entity-comments>
@@ -6953,11 +6996,7 @@ export class CatalogScreen extends LitElement {
     return {
       comments: this.renderEntityDiscussion(item),
       hasMedia,
-      // Beside the artwork only where the facts column is long enough to sit next to it.
-      placement:
-        hasMedia && !this.commentsCompact && !SPARSE_DETAIL.has(this.settings.resource)
-          ? ("media" as const)
-          : ("bottom" as const),
+      placement: this.commentsCompact ? ("bottom" as const) : ("media" as const),
     };
   }
   private renderCharacterArchive(item: Item, fields: Array<{ key: string; value: string }>) {

@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md); shared browser and native-shell save workspace.
 // Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads, tab-local handoff and the app's save sources (saveSourcesV1).
 import { observeSongDisplay, songTitle } from "../lib/song-display";
+import { clientText } from "../i18n/client";
 import { viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { tile } from "./ui/tile";
@@ -31,6 +32,7 @@ import {
   type IosBackup,
   type SaveRead,
   type SaveSource,
+  appSaveImportHref,
 } from "../lib/app-bridge";
 import { modal } from "./ui/modal";
 import { gameHistoryHelp } from "./ui/game-history-help";
@@ -925,7 +927,11 @@ export class SaveWorkspace extends LitElement {
                     : nothing
                 }
                 ${
-                  this.sources.length
+                  inApp()
+                    ? html`<a class="button button--tonal" href=${appSaveImportHref(this.locale)}>
+                        ${clientText(this.locale, "account.page.openSaveImport", "Import a save in Account")}
+                      </a>`
+                    : this.sources.length
                     ? html`
                         <section class="surface stack">
                           <h2 class="detail-section-title">${this.t("sources")}</h2>
@@ -948,13 +954,7 @@ export class SaveWorkspace extends LitElement {
                           </ul>
                         </section>
                       `
-                    : inApp()
-                      ? html`
-                          <button class="button button--tonal" @click=${() => void appCall("addGameAccount", {})}>
-                            ${this.t("read")}
-                          </button>
-                        `
-                      : nothing
+                    : nothing
                 }
               `
         }

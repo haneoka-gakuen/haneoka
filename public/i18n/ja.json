@@ -1249,6 +1249,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "支払い方法",
+      "paymentKinds": {
+        "cash": "現金",
+        "stars": "スター",
+        "paidStars": "有償スター",
+        "free": "無料",
+        "ad": "広告視聴",
+        "other": "その他の通貨"
+      },
+      "officialRecharge": "Biligame公式チャージ",
       "paidStars": "有償スター",
       "freeStars": "購入時の無償スター",
       "passStars": "パスのスター",
@@ -1366,7 +1376,6 @@
       "profilename": "プレイヤー名",
       "profileuid": "プレイヤーID",
       "profilerank": "プレイヤーランク",
-      "benchmarkTeam": "基準曲の編成",
       "exportFailed": "画像の書き出しに失敗しました",
       "importSave": "セーブデータから読み込む",
       "imported": "{count} 譜面を読み込みました",
@@ -4953,6 +4962,8 @@
       "autoLink": "ゲームアカウントを自動で連携する",
       "importSessionExpired": "ゲームの認証が切れました。最新のセーブを読み込み直してください。",
       "autoImportFailed": "一部のセーブデータを取り込めませんでした",
+      "openSaveImport": "アカウントでセーブを取り込む",
+      "saveImportGuide": "アカウントでゲームのセーブデータを読み込むと、有効にした項目がバックグラウンドで更新されます。",
       "addGameSave": "セーブデータを読み込む",
       "unblockUser": "ブロック解除",
       "unmute": "ミュート解除",

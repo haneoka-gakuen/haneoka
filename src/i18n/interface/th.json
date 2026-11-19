@@ -1249,6 +1249,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "วิธีชำระเงิน",
+      "paymentKinds": {
+        "cash": "เงินสด",
+        "stars": "ดาว",
+        "paidStars": "ดาวแบบชำระเงิน",
+        "free": "ฟรี",
+        "ad": "ดูโฆษณา",
+        "other": "สกุลเงินอื่น"
+      },
+      "officialRecharge": "เติมเงินอย่างเป็นทางการกับ Biligame",
       "paidStars": "ดาราที่จ่าย",
       "freeStars": "ดาวฟรีในการซื้อ",
       "passStars": "สเตนเลส",
@@ -1366,7 +1376,6 @@
       "profilename": "ชื่อผู้เล่น",
       "profileuid": "เกม UID",
       "profilerank": "ระดับผู้เล่น",
-      "benchmarkTeam": "ทีมงาน Benchmark",
       "exportFailed": "การส่งออกภาพล้มเหลว",
       "importSave": "การส่งออกจากเกม Save",
       "imported": "หมายเลข {count}",
@@ -4953,6 +4962,8 @@
       "autoLink": "บัญชีเกมอัตโนมัติ",
       "importSessionExpired": "การประชุมเกมหมดอายุ อ่านการบันทึกล่าสุดอีกครั้ง",
       "autoImportFailed": "บางข้อมูลที่เก็บไว้ไม่สามารถนําเข้าได้",
+      "openSaveImport": "นำเข้าเซฟที่หน้าบัญชี",
+      "saveImportGuide": "อ่านเซฟเกมจากหน้าบัญชี รายการที่เปิดนำเข้าอัตโนมัติจะอัปเดตในเบื้องหลัง",
       "addGameSave": "อ่านเกมบันทึก",
       "unblockUser": "เลิกบล็อก",
       "unmute": "เปิดเสียง",

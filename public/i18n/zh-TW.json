@@ -1249,6 +1249,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "付款方式",
+      "paymentKinds": {
+        "cash": "現金",
+        "stars": "星鑽",
+        "paidStars": "付費星鑽",
+        "free": "免費",
+        "ad": "觀看廣告",
+        "other": "其他道具"
+      },
+      "officialRecharge": "Biligame 官方儲值",
       "paidStars": "付費星石",
       "freeStars": "購買時免費星石",
       "passStars": "月卡星石",
@@ -1366,7 +1376,6 @@
       "profilename": "玩家暱稱",
       "profileuid": "遊戲 UID",
       "profilerank": "玩家等級",
-      "benchmarkTeam": "基準曲目隊伍",
       "exportFailed": "圖片匯出失敗",
       "importSave": "從遊戲存檔匯入",
       "imported": "已匯入 {count} 個譜面",
@@ -4953,6 +4962,8 @@
       "autoLink": "自動綁定遊戲帳號",
       "importSessionExpired": "遊戲登入憑據已失效，請重新匯入最新存檔。",
       "autoImportFailed": "部分存檔資料未能匯入",
+      "openSaveImport": "在帳號頁匯入存檔",
+      "saveImportGuide": "在帳號頁讀取遊戲存檔，已開啟自動匯入的項目會在背景更新。",
       "addGameSave": "讀取遊戲存檔",
       "unblockUser": "解除封鎖",
       "unmute": "解除靜音",

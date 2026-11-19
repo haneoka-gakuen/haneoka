@@ -150,6 +150,8 @@ class ArenaCollector:
         self.stage = 'attempt_callback'
         probe = self.probing and start > 1 and 'arena-probes-v1' in self.capabilities
         claim = self.updates.attempt(snapshot, f"arena/{self.arena['seasonId']}/{band}/{start}/{start + 99}", retain=not probe)
+        if claim.get('yieldToDemand'):
+            raise ArenaDeferred()
         if claim.get('reused'):
             observation = claim['reused']
             self.windows[key] = observation
@@ -216,8 +218,9 @@ class ArenaCollector:
                     descriptorSha256=self.descriptor_digest)
 
     def top(self, reserve=0):
+        sweep_only = 'arena-sweep-v1' in self.capabilities
         try:
-            if self.job.get('finalArena') is not None:
+            if sweep_only or self.job.get('finalArena') is not None:
                 for demand in self.job.get('arenaWindows', []):
                     try:
                         self.window(demand['bandId'], demand['startRank'])
@@ -242,7 +245,7 @@ class ArenaCollector:
                         except ArenaThrottled:
                             continue
         except ArenaDeferred:
-            if self.job.get('finalArena') is None and self.active() and any((band, 1) not in self.windows for band in self.arena['bandIds']):
+            if not sweep_only and self.job.get('finalArena') is None and self.active() and any((band, 1) not in self.windows for band in self.arena['bandIds']):
                 raise ArenaStopped('failed', self.failure_info('arena_board', TimeoutError()), None)
 
     def point(self, position):
@@ -362,7 +365,14 @@ class ArenaCollector:
     def population_plan(self):
         candidates = []
         priority = self.job.get('populationOrder', []) if 'population-priority-v1' in self.capabilities else []
-        for band in self.arena['bandIds']:
+        if 'arena-sweep-v1' in self.capabilities:
+            bands = [self.job['arenaSweepPopulationBand']]
+        else:
+            bands = self.arena['bandIds']
+        excluded = set(self.job.get('arenaPopulationExcluded', []))
+        for band in bands:
+            if band in excluded:
+                continue
             if self.job.get('finalArena') is not None and band not in self.job['finalPopulationBands']:
                 continue
             thresholds = self.arena['thresholdsByBand'][band]

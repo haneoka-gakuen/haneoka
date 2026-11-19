@@ -1,5 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 
+export const DETAIL_LAYOUT_STACKED = "(max-width: 959px)";
+
 /** Optional discussion slot; existing two-argument detail layouts retain their structure. */
 export function detailLayout(media: unknown, content: unknown, discussion?: {
   comments: unknown;

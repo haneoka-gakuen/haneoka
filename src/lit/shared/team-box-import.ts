@@ -90,8 +90,8 @@ function renderSources(state: BoxImportDialogState, actions: BoxImportDialogActi
       ${actions.appAccount
         ? importSourceRow({
             glyph: "sports_esports",
-            title: t("appAccount", "Game save"),
-            hint: t("appAccountHint", "This phone, a USB phone, a backup or files"),
+            title: clientText(actions.locale ?? "en", "account.page.openSaveImport", "Import a save in Account"),
+            hint: clientText(actions.locale ?? "en", "account.page.saveImportGuide", "Read the game save in Account."),
             onClick: actions.appAccount,
           })
         : nothing}
