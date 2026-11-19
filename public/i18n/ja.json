@@ -1599,6 +1599,7 @@
       "observedRate": "実際の排出率",
       "pullsEach": "平均 {count} 回に1枚",
       "sinceLastHigh": "前回の SSR+ から",
+      "consecutiveWithoutHigh": "SSR+ 未獲得の連続回数",
       "noRecordedHigh": "SSR+ の獲得記録なし",
       "sinceLastPickup": "前回の UP から",
       "mergeBudgetError": "統合後の記録が大きすぎます。期間を分けて書き出してください",

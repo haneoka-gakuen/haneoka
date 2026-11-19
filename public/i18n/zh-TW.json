@@ -1599,6 +1599,7 @@
       "observedRate": "實際出率",
       "pullsEach": "平均 {count} 抽一張",
       "sinceLastHigh": "距上次 SSR+",
+      "consecutiveWithoutHigh": "連續未獲得 SSR+",
       "noRecordedHigh": "尚無 SSR+ 獲得紀錄",
       "sinceLastPickup": "距上次 UP",
       "mergeBudgetError": "合併後記錄過大，請分段匯出",

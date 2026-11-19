@@ -39,7 +39,7 @@ export interface BoxStoreOptions {
   fetcher?: typeof fetch;
   /** Debounce before sending local edits. */
   flushDelayMs?: number;
-  /** Background pull period while the page is visible. */
+  /** Minimum background pull period while the page is visible. */
   pullIntervalMs?: number;
 }
 
@@ -62,7 +62,9 @@ export class BoxStore {
   private readonly fetcher: typeof fetch;
   private readonly listeners = new Set<(snapshot: BoxSnapshot) => void>();
   private flushTimer?: ReturnType<typeof setTimeout>;
-  private pullTimer?: ReturnType<typeof setInterval>;
+  private pullTimer?: ReturnType<typeof setTimeout>;
+  private idlePullDelay?: number;
+  private pulling?: { owner: string; promise: Promise<void> };
   private inflight: Promise<void> | null = null;
   private failures = 0;
   private channel: BroadcastChannel | null = null;
@@ -112,29 +114,39 @@ export class BoxStore {
       };
     }
     if (typeof document !== "undefined") {
-      const visible = () => { if (document.hidden) this.flushNow(true); };
+      const visible = () => {
+        if (document.hidden) {
+          clearTimeout(this.pullTimer);
+          this.flushNow(true);
+          return;
+        }
+        if (this.status === "signed-out" || Date.now() - (this.lastSyncedAt ?? 0) >= this.pullFloor)
+          void this.refresh();
+        else this.schedulePull();
+      };
       const online = () => void this.refresh();
+      const sessionChanged = () => void this.checkSession(true);
       const hide = () => this.flushNow(true);
       document.addEventListener("visibilitychange", visible);
+      addEventListener("haneoka:session-changed", sessionChanged);
       addEventListener("pagehide", hide);
       addEventListener("online", online);
       this.cleanups.push(
         () => document.removeEventListener("visibilitychange", visible),
+        () => removeEventListener("haneoka:session-changed", sessionChanged),
         () => removeEventListener("pagehide", hide),
         () => removeEventListener("online", online),
       );
     }
-    this.pullTimer = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState === "visible") void this.pull();
-    }, this.options.pullIntervalMs ?? 90_000);
     // Local data first: the page is usable before the network answers.
     this.useOwner(this.readCachedOwner(), false);
     await this.checkSession(true);
+    this.schedulePull();
   }
   dispose() {
     this.disposed = true;
     clearTimeout(this.flushTimer);
-    clearInterval(this.pullTimer);
+    clearTimeout(this.pullTimer);
     this.channel?.close();
     for (const cleanup of this.cleanups) cleanup();
     this.listeners.clear();
@@ -163,8 +175,7 @@ export class BoxStore {
 
   /** Re-checks the session (rate limited) and syncs both ways. */
   async refresh(): Promise<void> {
-    await this.checkSession(false);
-    await this.pull();
+    if (!(await this.checkSession(false))) await this.pull();
     this.flushNow();
   }
 
@@ -173,7 +184,7 @@ export class BoxStore {
     return cached ? cached : null;
   }
   private async checkSession(force: boolean) {
-    if (!force && Date.now() - this.sessionCheckedAt < 60_000) return;
+    if (this.disposed || !force && Date.now() - this.sessionCheckedAt < 60_000) return false;
     this.sessionCheckedAt = Date.now();
     let owner: string | null;
     try {
@@ -187,18 +198,25 @@ export class BoxStore {
       // Offline: keep working on the cached account's replica.
       if (this.owner === undefined) this.useOwner(this.readCachedOwner(), false);
       this.setStatus(this.owner ? "offline" : "local");
-      return;
+      return false;
     }
+    if (this.disposed) return false;
     if (owner !== this.owner) this.useOwner(owner, true);
     if (owner) {
       await this.migrateCloudOnce();
       await this.pull();
       this.flushNow();
-    } else this.setStatus("local");
+      return true;
+    }
+    this.setStatus("local");
+    return false;
   }
   private useOwner(owner: string | null, fromSession: boolean) {
     const previous = this.owner;
     this.owner = owner;
+    this.idlePullDelay = undefined;
+    this.lastSyncedAt = null;
+    clearTimeout(this.pullTimer);
     if (fromSession) {
       if (owner) this.storage.setItem("haneoka:team-box:owner", owner);
       else this.storage.removeItem("haneoka:team-box:owner");
@@ -324,7 +342,7 @@ export class BoxStore {
           return;
         }
         if (!response.ok) throw new Error(`http-${response.status}`);
-        this.receive((await response.json()) as { revision: number; entries: Record<string, BoxEntry> });
+        this.receive((await response.json()) as { revision: number; entries: Record<string, BoxEntry> }, since);
         // Acknowledge exactly what was sent; edits made meanwhile stay queued.
         const acknowledged = new Map(sent.map((op) => [op.k, op.t]));
         this.replica.outbox = this.replica.outbox.filter((op) => acknowledged.get(op.k) !== op.t);
@@ -333,6 +351,8 @@ export class BoxStore {
         this.lastSyncedAt = Date.now();
         this.persist();
         this.setStatus(this.replica.outbox.length ? "pending" : "synced");
+        this.idlePullDelay = undefined;
+        this.schedulePull();
         if (this.replica.outbox.length) this.scheduleFlush();
       } catch (error) {
         if (owner !== this.owner) return;
@@ -348,37 +368,72 @@ export class BoxStore {
     });
     const wrapped = this.inflight;
   }
-  async pull(): Promise<void> {
+  private get pullFloor() {
+    return this.options.pullIntervalMs ?? 90_000;
+  }
+
+  private schedulePull() {
+    clearTimeout(this.pullTimer);
+    if (!this.owner || this.disposed || this.status === "signed-out" ||
+        typeof document !== "undefined" && document.hidden) return;
+    this.pullTimer = setTimeout(() => void this.pull(), this.idlePullDelay ?? this.pullFloor);
+  }
+
+  pull(): Promise<void> {
     const owner = this.owner;
-    if (!owner || this.disposed) return;
+    if (!owner || this.disposed) return Promise.resolve();
+    if (this.pulling?.owner === owner) return this.pulling.promise;
+    const since = this.replica.revision;
+    const promise = this.pullReplica(owner, since).finally(() => {
+      if (this.pulling?.promise === promise) this.pulling = undefined;
+      if (this.owner === owner) this.schedulePull();
+    });
+    this.pulling = { owner, promise };
+    return promise;
+  }
+
+  private async pullReplica(owner: string, since: number): Promise<void> {
     try {
       const response = await this.fetcher(
-        `/api/v1/team-box/${encodeURIComponent(this.options.server)}?since=${this.replica.revision}`,
+        `/api/v1/team-box/${encodeURIComponent(this.options.server)}?since=${since}`,
         { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json", "x-haneoka-expected-user": owner } },
       );
-      if (owner !== this.owner) return;
-      if (response.status === 401 || response.status === 403) {
+      if (owner !== this.owner || this.disposed) return;
+      if ([401, 403, 409].includes(response.status)) {
+        this.sessionCheckedAt = 0;
         this.setStatus("signed-out");
         return;
       }
       if (!response.ok) throw new Error(`http-${response.status}`);
-      this.receive((await response.json()) as { revision: number; entries: Record<string, BoxEntry> });
+      const body = (await response.json()) as { revision: number; entries: Record<string, BoxEntry> };
+      if (owner !== this.owner || this.disposed) return;
+      const changed = this.receive(body, since);
+      const idle = !changed && this.status === "synced" && !this.replica.outbox.length;
+      this.idlePullDelay = idle
+        ? Math.min(4 * this.pullFloor, 2 * (this.idlePullDelay ?? this.pullFloor))
+        : undefined;
       this.lastSyncedAt = Date.now();
-      this.persist();
+      this.error = null;
+      if (changed) this.persist();
       this.setStatus(this.replica.outbox.length ? "pending" : "synced");
+      if (this.replica.outbox.length && !this.inflight) this.scheduleFlush();
     } catch (error) {
+      if (owner !== this.owner || this.disposed) return;
       this.error = String(error);
       this.setStatus("offline");
     }
   }
-  private receive(payload: { revision: number; entries: Record<string, BoxEntry> }) {
+  private receive(payload: { revision: number; entries: Record<string, BoxEntry> }, since: number) {
     if (!payload || typeof payload.revision !== "number" || typeof payload.entries !== "object") throw new Error("invalid-box-response");
+    const previous = this.replica.revision;
+    if (payload.revision < previous && previous !== since) return false;
     // A server behind this replica (restored backup) gets everything again.
-    if (payload.revision < this.replica.revision) this.replica.outbox = Object.entries(this.replica.entries).map(([k, e]) => ({ k, v: e.v, t: e.t, c: e.c }));
+    if (payload.revision < previous) this.replica.outbox = Object.entries(this.replica.entries).map(([k, e]) => ({ k, v: e.v, t: e.t, c: e.c }));
     const changed = mergeEntries(this.replica.entries, payload.entries);
     for (const entry of Object.values(payload.entries)) this.clock.observe(entry.t);
     this.replica.revision = payload.revision;
     if (changed.length) this.changed();
+    return changed.length > 0 || previous !== payload.revision;
   }
   private setStatus(status: BoxSyncStatus) {
     if (this.status === status) return;

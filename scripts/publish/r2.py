@@ -1759,19 +1759,29 @@ def garbage_collect_cas(
     candidates: dict[str, tuple[datetime, int, str]] = {}
     cutoff = datetime.now(timezone.utc) - timedelta(hours=minimum_age_hours)
     scanned = 0
+    scanned_bytes = 0
+    initially_referenced_bytes = 0
+    newer_unreferenced_bytes = 0
     for item in store.iter_keys(CAS_PREFIX + "/" + (f"{shard}/" if shard else "")):
         scanned += 1
         key = str(item["Key"])
         modified = item.get("LastModified")
-        if key in live or not isinstance(modified, datetime) or modified > cutoff:
+        size = item.get("Size")
+        valid_size = isinstance(size, int) and not isinstance(size, bool) and size >= 0
+        if valid_size:
+            scanned_bytes += size
+        if key in live:
+            if valid_size:
+                initially_referenced_bytes += size
+            continue
+        if not isinstance(modified, datetime) or modified > cutoff:
+            if valid_size:
+                newer_unreferenced_bytes += size
             continue
         parse_cas_key(key)
-        size = item.get("Size")
         etag = item.get("ETag")
         if (
-            not isinstance(size, int)
-            or isinstance(size, bool)
-            or size < 0
+            not valid_size
             or not isinstance(etag, str)
             or not etag
         ):
@@ -1849,6 +1859,9 @@ def garbage_collect_cas(
         "minimumAgeHours": minimum_age_hours,
         "shard": shard,
         "scannedObjects": scanned,
+        "scannedBytes": scanned_bytes,
+        "initiallyReferencedBytes": initially_referenced_bytes,
+        "unreferencedBytesOutsideAgeWindow": newer_unreferenced_bytes,
         "manifestCount": len(manifests),
         "manifestReads": initial_reads["reads"] + refreshed_reads["reads"],
         "reusedManifests": refreshed_reads["reused"],

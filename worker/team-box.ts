@@ -2,7 +2,7 @@
 // Input: 认证 Box 读写请求、server、操作与 Env。
 // Output: Box 版本／变化或权限、格式和状态错误。
 // Pos: [Map](L2.md)；当前配队 Box 云端同步接口。
-// Effects/Dependencies: 鉴权、服务器状态、限流和 D1 读写；复用浏览器共享 Box 文档契约。
+// Effects/Dependencies: 鉴权、服务器状态、限流和 D1 读写；轮询命中当前版本只读取摘要。
 import {
   BOX_SCHEMA,
   MAX_BOX_BYTES,
@@ -98,17 +98,25 @@ export const handleTeamBoxRequest = async (request: Request, env: Env): Promise<
   const access = await requireAccess(request, env, write);
   if (!access.ok) return access.response;
   const { userId, token } = access.value;
-  const resourceServer = await env.DB.prepare("SELECT status FROM resource_server WHERE slug = ?").bind(server).first<{ status: string }>();
-  if (!resourceServer) return error(request, 404, "server_not_found", "Server not found");
   const now = Date.now();
   if (!write) {
     const since = sinceOf(Number(url.searchParams.get("since") ?? 0));
     if (since === null) return error(request, 400, "invalid_since", "since must be a revision");
-    const row = await readBox(env, userId, server);
-    const revision = row?.revision ?? 0;
+    const row = await env.DB.prepare(
+      `SELECT COALESCE(box.revision, 0) AS revision,
+              CASE WHEN box.revision <> ? THEN box.box_json END AS boxJson
+       FROM resource_server rs
+       LEFT JOIN account_team_box box ON box.server = rs.slug AND box.user_id = ?
+       WHERE rs.slug = ?`,
+    ).bind(since, userId, server).first<{ revision: number; boxJson: string | null }>();
+    if (!row) return error(request, 404, "server_not_found", "Server not found");
+    const { revision, boxJson } = row;
     // A client ahead of the server (restored database) refetches everything.
-    return json(request, { revision, serverTime: now, entries: changesSince(parse(row).entries, since > revision ? 0 : since) });
+    const entries = boxJson === null ? {} : changesSince(parse({ revision, boxJson }).entries, since > revision ? 0 : since);
+    return json(request, { revision, serverTime: now, entries });
   }
+  const resourceServer = await env.DB.prepare("SELECT status FROM resource_server WHERE slug = ?").bind(server).first<{ status: string }>();
+  if (!resourceServer) return error(request, 404, "server_not_found", "Server not found");
   if (resourceServer.status !== "active") return error(request, 409, "server_unavailable", "This resource server is not active");
   if (env.COMMUNITY_RATE_LIMITER) {
     const limit = await env.COMMUNITY_RATE_LIMITER.limit({ key: `team-box:${userId}` });

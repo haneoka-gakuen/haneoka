@@ -21,7 +21,7 @@
  *
  * Freshness: entries are fresh for FRESH_MS and may be served up to
  * FRESH_MS + STALE_MS old while one background request refreshes them. Any
- * successful API mutation handled in this colo moves the colo's generation
+ * successful community-affecting API mutation handled in this colo moves the colo's generation
  * mark, so entries stored before it are ignored here at once; other colos
  * converge within the TTL.
  */
@@ -78,6 +78,14 @@ async function generation(cache: Cache, url: URL): Promise<number> {
   return Number.isFinite(value) ? value : 0;
 }
 
+/** Private synchronizations and official observations cannot change this cache's views. */
+export function affectsAnonymousCommunity(path: string): boolean {
+  return path.startsWith("/api/") &&
+    !/^\/api\/v1\/(?:team-(?:box|workspace|inventory)\/|gacha-history(?:\/|$)|me\/preferences(?:\/|$))/u.test(path) &&
+    !/^\/api\/internal\/official-(?:rankings|host)\//u.test(path) &&
+    !/\/(?:image\.png|images\.zip)$/u.test(path);
+}
+
 /** A successful mutation invalidates this colo's anonymous entries immediately. */
 export async function markCommunityMutation(origin: string): Promise<void> {
   const cache = edgeCache();
@@ -103,14 +111,14 @@ async function storable(response: Response, url: URL): Promise<boolean> {
   }
 }
 
-async function store(cache: Cache, url: URL, response: Response): Promise<void> {
+async function store(cache: Cache, url: URL, response: Response, startedAt: number): Promise<void> {
   if (!(await storable(response, url))) return;
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", `public, max-age=${Math.ceil((FRESH_MS + STALE_MS) / 1000)}`);
   headers.delete("Vary");
   headers.delete("Set-Cookie");
   headers.delete("Server-Timing");
-  headers.set(STORED_AT, String(Date.now()));
+  headers.set(STORED_AT, String(startedAt));
   await cache.put(cacheKey(url), new Response(response.body, { status: 200, headers })).catch(() => undefined);
 }
 
@@ -141,13 +149,14 @@ export async function cachedCommunityRead(
   const url = new URL(request.url);
   if (visibilityKey) url.searchParams.set("__visibility", visibilityKey);
   const key = cacheKey(url);
-  const [hit, mark] = await Promise.all([cache.match(key).catch(() => undefined), generation(cache, url)]);
+  const hit = await cache.match(key).catch(() => undefined);
   const storedAt = Number(hit?.headers.get(STORED_AT));
   const age = Date.now() - storedAt;
-  if (hit && Number.isFinite(storedAt) && storedAt > mark && age >= 0 && age < FRESH_MS + STALE_MS) {
+  if (hit && Number.isFinite(storedAt) && age >= 0 && age < FRESH_MS + STALE_MS && storedAt > await generation(cache, url)) {
     if (age >= FRESH_MS && !refreshing.has(key.url)) {
+      const startedAt = Date.now();
       const refresh = compute()
-        .then((fresh) => store(cache, url, fresh))
+        .then((fresh) => store(cache, url, fresh, startedAt))
         .catch(() => undefined)
         .finally(() => refreshing.delete(key.url));
       refreshing.set(key.url, refresh);
@@ -155,8 +164,10 @@ export async function cachedCommunityRead(
     }
     return present(hit, age < FRESH_MS ? "hit" : "stale");
   }
+  if (hit?.body) ctx.waitUntil(hit.body.cancel().catch(() => undefined));
+  const startedAt = Date.now();
   const response = await compute();
   if (response.status !== 200) return response;
-  ctx.waitUntil(store(cache, url, response.clone()));
+  ctx.waitUntil(store(cache, url, response.clone(), startedAt));
   return present(response, "miss");
 }

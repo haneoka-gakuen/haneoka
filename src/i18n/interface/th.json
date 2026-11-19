@@ -1599,6 +1599,7 @@
       "observedRate": "อัตราที่สังเกต",
       "pullsEach": "1 ใน {count} ระยํา",
       "sinceLastHigh": "ตั้งแต่ SSR+",
+      "consecutiveWithoutHigh": "จำนวนครั้งติดกันที่ไม่ได้ SSR+",
       "noRecordedHigh": "ยังไม่มีบันทึกการได้รับ SSR+",
       "sinceLastPickup": "จาก pickup ใหม่ล่าสุด",
       "mergeBudgetError": "ประวัติการผูกมัดเป็นขนาดใหญ่เกินไป; การส่งออกตามวันที่",

@@ -3,7 +3,7 @@
 // Output: Cross-pool SSR+ streak and rate comparisons on matched samples.
 // Pos: [Map](L2-2.md); recruitment history statistics.
 // Effects/Dependencies: Pure calculations using the SDK's same-timestamp hit intervals.
-import { gachaHistoryHits, type GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
+import { gachaHistoryHits, type GachaPoolHits, type GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import { cardRarityId, cardRarityName } from "./card-rarity";
 import type { GachaHistoryBatch, GachaHistoryPool, GachaHistoryPrize } from "./gacha-history-view";
 
@@ -24,13 +24,21 @@ export function latestGachaHigh(
 ) {
   const draws = batches.filter((batch) => batch.prizes.length && !isItemOnlyGacha(pools.get(batch.poolId)?.rates));
   const timeline = gachaHistoryHits(draws.map((batch) => ({ ...batch, poolId: null })), "high")[0];
+  return gachaHighStreak(draws, timeline);
+}
+
+export function gachaHighStreak(
+  batches: readonly GachaHistoryBatch[],
+  timeline: GachaPoolHits | undefined,
+  fromFirstDraw = false,
+) {
   const last = timeline?.hits.at(-1);
   const hitPools = new Set<string>();
   let uncertain = false;
   let undatedHit = false;
   let hasHit = Boolean(last);
   const lastTime = Date.parse(last?.pulledAt ?? "");
-  for (const batch of draws) {
+  for (const batch of batches) {
     const time = Date.parse(batch.pulledAt ?? "");
     if (time < lastTime) continue;
     for (const prize of batch.prizes) {
@@ -43,11 +51,12 @@ export function latestGachaHigh(
       }
     }
   }
-  return {
-    trailing: !uncertain && !undatedHit && last ? timeline.trailing : null,
-    poolIds: undatedHit ? [] : [...hitPools],
-    hasHit,
-  };
+  let trailing = null;
+  if (!uncertain && !undatedHit && timeline) {
+    if (last) trailing = timeline.trailing;
+    else if (fromFirstDraw && !hasHit) trailing = { min: timeline.total, max: timeline.total };
+  }
+  return { trailing, poolIds: undatedHit ? [] : [...hitPools], hasHit };
 }
 
 export interface GachaRateSample {

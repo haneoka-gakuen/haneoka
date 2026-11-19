@@ -116,7 +116,7 @@ import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
 import { withD1Session } from "./d1-session";
-import { cachedCommunityRead, edgeCacheable, markCommunityMutation } from "./community-edge-cache";
+import { affectsAnonymousCommunity, cachedCommunityRead, edgeCacheable, markCommunityMutation } from "./community-edge-cache";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
@@ -344,6 +344,7 @@ const INLINE_MEDIA_TYPES: ReadonlySet<string> = new Set([
 
 const CANONICAL_HOST = "haneoka.org";
 const POINTER_TTL_MS = 30_000;
+const POINTER_EDGE_TTL_SECONDS = 60;
 const POINTER_CACHE_LIMIT = 128;
 // Structured catalogue documents are snapshot-oriented and shared by the
 // Garupa playlist and catalog APIs. The edge caches them under a
@@ -742,8 +743,8 @@ async function currentRelease(env: Env, server: ResourceServerRoute, fresh = fal
     pointerCache.set(key, cached);
     return cached.value;
   }
-  // A fresh read may be ten seconds old; the pointer moves once per release.
-  const text = await cachedR2Text(env, key, fresh ? 10 : 30);
+  // Keep the short publication-check cache independent of ordinary reads.
+  const text = await cachedR2Text(env, key, fresh ? 10 : POINTER_EDGE_TTL_SECONDS, fresh ? "fresh" : undefined);
   if (text === null) return null;
   const value = parseJson(text);
   if (!isJsonObject(value)) throw new Error(`invalid release pointer: ${key}`);
@@ -785,7 +786,11 @@ async function requestedRelease(env: Env, server: ResourceServerRoute, releaseId
   if (!RELEASE_ID_PATTERN.test(releaseId)) return null;
   const key = `${server.slug}\u0000${server.resourcePrefix}\u0000${releaseId}`;
   const existing = requestedReleaseCache.get(key);
-  if (existing) return existing;
+  if (existing) {
+    requestedReleaseCache.delete(key);
+    requestedReleaseCache.set(key, existing);
+    return existing;
+  }
   const current = pointerCache.get(`${server.resourcePrefix}/current.json`);
   if (current && current.expiresAt > Date.now() && current.value.releaseId === releaseId) return current.value;
   let immutable = false;
@@ -860,13 +865,6 @@ function releaseCacheRequest(request: Request, releaseRevision: string): Request
   return new Request(url, request);
 }
 
-function mediaCacheRequest(request: Request, releaseId: string, gzip = false): Request {
-  const key = releaseCacheRequest(request, releaseId);
-  const url = new URL(key.url);
-  url.searchParams.set("__media", gzip ? "gzip-v1" : "identity-v2");
-  return new Request(url, key);
-}
-
 function normalizeEtag(value: string): string {
   return value.trim().replace(/^W\//, "");
 }
@@ -937,74 +935,49 @@ async function serveR2Object(
     }
   };
 
-  if (rangeHeader || request.method === "HEAD" || ifNoneMatch) {
-    const metadata = await env.ASSET_BUCKET.head(key);
-    if (!metadata) return null;
-    validateSize(metadata);
-    const headers = headersFor(metadata);
-    if (ifNoneMatch && etagMatches(ifNoneMatch, metadata.httpEtag))
-      return new Response(null, {
-        status: 304,
-        headers,
-        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-      });
-    if (rangeHeader && ifRange && ifRange.trim() !== metadata.httpEtag) rangeHeader = null;
-    const range = parseRange(rangeHeader, metadata.size);
-    if (range && "invalid" in range) {
-      headers.set("Content-Range", `bytes */${metadata.size}`);
-      return new Response(null, {
-        status: 416,
-        headers,
-        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-      });
-    }
-    if (range) {
-      headers.set("Content-Range", `bytes ${range.start}-${range.end}/${metadata.size}`);
-      headers.set("Content-Length", String(range.length));
-      if (request.method === "HEAD")
-        return new Response(null, {
-          status: 206,
-          headers,
-          encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-        });
-      const object = await env.ASSET_BUCKET.get(key, { range: { offset: range.start, length: range.length } });
-      if (object) validateSize(object);
-      return object
-        ? new Response(object.body, {
-            status: 206,
-            headers,
-            encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-          })
-        : null;
-    }
-    headers.set("Content-Length", String(metadata.size));
-    if (request.method === "HEAD")
-      return new Response(null, {
-        status: 200,
-        headers,
-        encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-      });
-    const object = await env.ASSET_BUCKET.get(key);
-    if (object) validateSize(object);
-    return object
-      ? new Response(object.body, {
-          status: 200,
-          headers,
-          encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-        })
-      : null;
+  const knownRange = options.expectedBytes === undefined ? null : parseRange(rangeHeader, options.expectedBytes);
+  const directRange = knownRange && !("invalid" in knownRange) && !ifRange ? knownRange : null;
+  const responseFor = (object: R2Object, body: ReadableStream | null, range: ByteRange | null, status = range ? 206 : 200) => {
+    const headers = headersFor(object);
+    if (range) headers.set("Content-Range", `bytes ${range.start}-${range.end}/${object.size}`);
+    if (status !== 304) headers.set("Content-Length", String(range?.length ?? object.size));
+    return new Response(body, {
+      status,
+      headers,
+      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+    });
+  };
+
+  if (request.method !== "HEAD" && (!rangeHeader || directRange)) {
+    const tags = ifNoneMatch?.split(",").map(normalizeEtag).filter((tag) => /^"[^"]*"$/u.test(tag)).join(", ");
+    const validator = ifNoneMatch?.trim() === "*" ? "*" : tags;
+    const object = await env.ASSET_BUCKET.get(key, {
+      ...(validator ? { onlyIf: new Headers({ "If-None-Match": validator }) } : {}),
+      ...(directRange ? { range: { offset: directRange.start, length: directRange.length } } : {}),
+    });
+    if (!object) return null;
+    validateSize(object);
+    return "body" in object
+      ? responseFor(object, object.body, directRange)
+      : responseFor(object, null, null, 304);
   }
 
-  const object = await env.ASSET_BUCKET.get(key);
+  const metadata = await env.ASSET_BUCKET.head(key);
+  if (!metadata) return null;
+  validateSize(metadata);
+  if (etagMatches(ifNoneMatch, metadata.httpEtag)) return responseFor(metadata, null, null, 304);
+  if (request.method === "HEAD") return responseFor(metadata, null, null);
+  if (ifRange && ifRange.trim() !== metadata.httpEtag) rangeHeader = null;
+  const range = parseRange(rangeHeader, metadata.size);
+  if (range && "invalid" in range) {
+    const headers = headersFor(metadata);
+    headers.set("Content-Range", `bytes */${metadata.size}`);
+    return new Response(null, { status: 416, headers });
+  }
+  const object = await env.ASSET_BUCKET.get(key, range ? { range: { offset: range.start, length: range.length } } : undefined);
   if (!object) return null;
   validateSize(object);
-  const headers = headersFor(object);
-  headers.set("Content-Length", String(object.size));
-  return new Response(object.body, {
-    status: 200,
-    headers,
-    encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-  });
+  return responseFor(object, object.body, range);
 }
 
 async function edgeCached(
@@ -1180,7 +1153,10 @@ function releaseIndexShard(path: string): string {
 async function releaseIndex(env: Env, release: Release, shard: string): Promise<ReleaseIndexEntries> {
   const key = `${release.indexPrefix}${shard}.json`;
   let pending = releaseIndexCache.get(key);
-  if (!pending) {
+  if (pending) {
+    releaseIndexCache.delete(key);
+    releaseIndexCache.set(key, pending);
+  } else {
     pending = readR2Json(env, key, IMMUTABLE_R2_TTL).then((value) => {
       if (
         !isJsonObject(value) ||
@@ -2165,7 +2141,10 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
     const path = assetPath.replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/").replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "");
     const shard = `${index.assetShards.prefix}${fnv1a32Shard(path, index.assetShards.count)}.json`;
     let ownership = contentOwnershipShards.get(shard);
-    if (!ownership) {
+    if (ownership) {
+      contentOwnershipShards.delete(shard);
+      contentOwnershipShards.set(shard, ownership);
+    } else {
       ownership = readR2Json(env, shard, IMMUTABLE_R2_TTL).then((value) => value as unknown as Pick<ContentResourceIndex, "assets" | "previewAssets"> | null).catch((error: unknown) => { contentOwnershipShards.delete(shard); throw error; });
       boundedPromiseCache(contentOwnershipShards, shard, ownership, 64);
     }
@@ -3064,15 +3043,6 @@ async function handleReleaseMedia(
   const clientEncoding = request.cf?.clientAcceptEncoding;
   const gzip = moc && !request.headers.has("Range") &&
     acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
-  if (requested && !stampDiagnostics) {
-    const hit = await readEdgeCache(mediaCacheRequest(request, requested, gzip), ctx, PINNED_MEDIA_CACHE_CONTROL, gzip);
-    if (hit) {
-      if (hit.headers.get("X-Haneoka-Release-Id") === requested &&
-        SOURCE_ID_PATTERN.test(hit.headers.get("X-Haneoka-Source-Id") || "") &&
-        (!hit.headers.has("Content-Encoding") || gzip && hit.headers.get("Content-Encoding") === "gzip")) return hit;
-      if (hit.body) ctx.waitUntil(hit.body.cancel());
-    }
-  }
   let release: Release | null;
   try {
     release = requested ? await requestedRelease(env, server, requested) : await currentRelease(env, server);
@@ -3123,33 +3093,42 @@ async function handleReleaseMedia(
   // change, so browsers keep it for a year instead of revalidating every
   // jacket on every visit. Unpinned URLs follow the moving current pointer
   // for at most an hour.
-  const cacheControl = stampDiagnostics
-    ? "private, no-store"
-    : requested
-      ? PINNED_MEDIA_CACHE_CONTROL
-      : UNPINNED_MEDIA_CACHE_CONTROL;
-  const cacheRequest = mediaCacheRequest(request, release.releaseId, gzip);
-  const produce = async () => {
-    let response: Response | null = null;
-    for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
-      if (gzip) {
-        response = await serveReleaseObject(env, request, release, `${candidate}.gz`, "application/octet-stream", {
-          cacheControl,
-          contentEncoding: "gzip",
-          varyAcceptEncoding: true,
-        });
-      }
-      response ??= await serveReleaseObject(env, request, release, candidate, undefined, {
+  const cacheControl = requested ? PINNED_MEDIA_CACHE_CONTROL : UNPINNED_MEDIA_CACHE_CONTROL;
+  const readMedia = async (path: string, encoded = false) => {
+    const entry = await releaseEntry(env, release, path);
+    if (!entry) return null;
+    const mediaType = encoded ? "application/octet-stream" : entry.mediaType;
+    // Resolve the release mapping after the access boundary. Only byte-identical
+    // representations are shared, with release headers attached on the way out.
+    const key = new URL(`https://release-bytes.haneoka.internal/v1/${entry.key}`);
+    key.searchParams.set("type", mediaType);
+    key.searchParams.set("bytes", String(entry.bytes));
+    if (encoded) key.searchParams.set("encoding", "gzip");
+    if (moc) key.searchParams.set("vary", "encoding");
+    return edgeCached(
+      new Request(key, request),
+      ctx,
+      MEDIA_CACHE_TTL,
+      async () => (await serveR2Object(env, request, entry.key, mediaType, {
+        expectedBytes: entry.bytes,
         cacheControl,
+        ...(encoded ? { contentEncoding: "gzip" } : {}),
         varyAcceptEncoding: moc,
-      });
-      if (response) break;
-    }
-    return response ? releaseResponseHeaders(response, release) : new Response("not found", { status: 404, headers: CORS });
+      })) ?? new Response(null, { status: 404, headers: CORS }),
+      cacheControl,
+      encoded,
+    );
   };
-  // Store gzip as opaque bytes so Cache API reads cannot decode the MOC body.
-  const response = await edgeCached(cacheRequest, ctx, MEDIA_CACHE_TTL, produce, cacheControl, gzip);
-  return releaseResponseHeaders(response, release);
+
+  for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
+    if (gzip) {
+      const compressed = await readMedia(`${candidate}.gz`, true);
+      if (compressed && compressed.status !== 404) return releaseResponseHeaders(compressed, release);
+    }
+    const response = await readMedia(candidate);
+    if (response && response.status !== 404) return releaseResponseHeaders(response, release);
+  }
+  return releaseResponseHeaders(new Response("not found", { status: 404, headers: CORS }), release);
 }
 
 async function handleArtifact(
@@ -3639,14 +3618,15 @@ async function handleSonolus(
     assetUrl.pathname.startsWith("/sonolus/levels/") ||
     assetUrl.pathname === "/sonolus/playlists" ||
     assetUrl.pathname.startsWith("/sonolus/playlists/");
-  const isBestdoriCatalog = isBestdoriSonolusCatalogRequest(assetUrl);
+  const projectCatalog = isCatalogRoute || pathname === "/sonolus/info";
+  const isBestdoriCatalog = projectCatalog && isBestdoriSonolusCatalogRequest(assetUrl);
   const communityName = /^\/sonolus\/levels\/(haneoka-community-(?:[1-9]\d{0,15}|[0-9a-f-]{36}))(?:\/data\/[a-f0-9]{40})?$/u.exec(
     assetUrl.pathname,
   )?.[1];
-  const isCommunityCatalog =
-    !!communityName ||
-    assetUrl.searchParams.get("source") === "community" ||
-    assetUrl.searchParams.get("type") === "community";
+  const isCommunityCatalog = projectCatalog && (
+    !!communityName || assetUrl.searchParams.get("source") === "community" ||
+    assetUrl.searchParams.get("type") === "community"
+  );
   const releases = await activeSonolusReleases(env);
   const canonicalRelease = releases[0];
   if (!canonicalRelease) {
@@ -3677,6 +3657,7 @@ async function handleSonolus(
     const hit = await caches.default.match(cacheRequest);
     if (hit) return sonolusView ? privateContentResponse(hit) : hit;
   }
+  const repositoryHash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(pathname)?.[1];
   let fallbackThumbnail: JsonObject | undefined;
   let repositoryPublic = false;
   try {
@@ -3685,7 +3666,7 @@ async function handleSonolus(
     // data itself remains pinned to the exact release encoded in each data ID.
     const readRawJson = async (releasePath: string) =>
       (await readGlobalSonolusJson(env, releasePath, payloadRevision)) ?? readReleaseJson(env, canonicalRelease, releasePath);
-    const thumbnail = await sonolusThumbnailCache.getOrCreate(baseRevision, async () =>
+    const thumbnail = assetUrl.pathname.startsWith("/sonolus/repository/") ? undefined : await sonolusThumbnailCache.getOrCreate(baseRevision, async () =>
       sonolusFallbackThumbnail(await readRawJson("runtime/sonolus/thumbnail-fallback"), origin),
     );
     fallbackThumbnail = thumbnail;
@@ -3697,20 +3678,15 @@ async function handleSonolus(
     if (isCommunityCatalog)
       revision += `:community:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(communityRows.map((row) => [row.id, row.revision, row.updatedAt])))))].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
     const communityProviders = isCommunityCatalog ? communitySonolusProviders(env, communityRows, revision) : null;
-    const catalogProvider =
+    const catalogProvider = projectCatalog || repositoryHash ? (
       communityProviders?.catalogProvider ??
       (isBestdoriCatalog
         ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision, origin)
-        : ourNotesSonolusCatalogProvider(env, ctx, releases, revision, origin, sonolusView ?? (await requestContentView(request, env))));
-    const dataProvider =
-      communityProviders?.dataProvider ??
-      (isBestdoriCatalog
-        ? await bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE, payloadRevision === "unversioned" ? "unversioned" : `${payloadRevision}:${bestdoriRevision}`)
-        : await ourNotesSonolusDataProvider(env, releases, payloadRevision));
+        : ourNotesSonolusCatalogProvider(env, ctx, releases, revision, origin, sonolusView ?? (await requestContentView(request, env))))
+    ) : null;
     const serverBanner =
       assetUrl.pathname === "/sonolus/info" ? sonolusServerBanner(await readJson("runtime/sonolus/info")) : undefined;
-    const repositoryHash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(assetUrl.pathname)?.[1];
-    if (repositoryHash && sonolusView) {
+    if (repositoryHash && sonolusView && catalogProvider) {
       const ownership = await sonolusRepositoryOwnership(baseRevision, readRawJson);
       repositoryPublic = ownership.publicHashes.has(repositoryHash);
       if (!repositoryPublic) {
@@ -3729,7 +3705,7 @@ async function handleSonolus(
       }
     }
     const chartData = /^\/sonolus\/levels\/([^/]+)\/data\/[a-f0-9]{40}$/u.exec(assetUrl.pathname);
-    if (chartData && sonolusView) {
+    if (chartData && sonolusView && catalogProvider) {
       const visible: ChartCatalogSnapshot = await catalogProvider.load();
       if (![...visible.charts, ...(visible.aliases ?? [])].some((chart) => chart.name === chartData[1]))
         return new Response(JSON.stringify({ message: "Content is not public" }), { status: 403, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "private, no-store" } });
@@ -3740,7 +3716,13 @@ async function handleSonolus(
         return response;
       }
     }
-    const projected = await sonolusLevelService.handle({
+    const dataProvider = projectCatalog ? (
+      communityProviders?.dataProvider ??
+      (isBestdoriCatalog
+        ? await bestdoriSonolusDataProvider(env.BESTDORI_UPSTREAM_BASE, payloadRevision === "unversioned" ? "unversioned" : `${payloadRevision}:${bestdoriRevision}`)
+        : await ourNotesSonolusDataProvider(env, releases, payloadRevision))
+    ) : null;
+    const projected = dataProvider && catalogProvider ? await sonolusLevelService.handle({
       catalogProvider,
       dataProvider,
       ...(isCommunityCatalog
@@ -3781,7 +3763,7 @@ async function handleSonolus(
       searchParams: assetUrl.searchParams,
       sonolusBaseUrl: origin,
       ...(serverBanner ? { serverBanner } : {}),
-    });
+    }) : null;
     if (projected) {
       if (isCommunityCatalog) projected.cacheControl = "no-store";
       if (
@@ -3860,7 +3842,10 @@ async function handleSonolus(
   const repository = relative.startsWith("sonolus/repository/");
   const staticDocument = !repository && !relative.startsWith("sonolus/licenses/");
   const contentType = repository ? "application/octet-stream" : "application/json; charset=utf-8";
-  const response = await edgeCached(releaseCacheRequest(request, baseRevision), ctx, MEDIA_CACHE_TTL, async () => {
+  const bytesKey = repositoryHash
+    ? new Request(`https://release-bytes.haneoka.internal/sonolus-v1/${repositoryHash}`, request)
+    : releaseCacheRequest(request, baseRevision);
+  const response = await edgeCached(bytesKey, ctx, MEDIA_CACHE_TTL, async () => {
     const sourceRequest = staticDocument ? sonolusDocumentSourceRequest(request) : request;
     const source =
       (await serveGlobalSonolusObject(env, sourceRequest, relative, contentType)) ||
@@ -4885,9 +4870,7 @@ const worker: ExportedHandler<Env> = {
             request.method !== "HEAD" &&
             request.method !== "OPTIONS" &&
             response.status < 400 &&
-            !/\/(?:image\.png|images\.zip)$/u.test(new URL(request.url).pathname) &&
-            !new URL(request.url).pathname.startsWith("/api/internal/official-rankings/") &&
-            new URL(request.url).pathname.startsWith("/api/")
+            affectsAnonymousCommunity(new URL(request.url).pathname)
           )
             ctx.waitUntil(markCommunityMutation(request.url));
           return openToEveryOrigin(response);

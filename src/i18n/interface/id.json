@@ -1599,6 +1599,7 @@
       "observedRate": "Tingkat yang diperhatikan",
       "pullsEach": "1 dalam {count} menarik",
       "sinceLastHigh": "Sejak SSR+",
+      "consecutiveWithoutHigh": "Undian berturut-turut tanpa SSR+",
       "noRecordedHigh": "Belum ada perolehan SSR+ yang tercatat",
       "sinceLastPickup": "Sejak Pickup Terakhir",
       "mergeBudgetError": "Sejarah yang tergelincir terlalu besar; ekspor per tanggal",

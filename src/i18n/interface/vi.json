@@ -1599,6 +1599,7 @@
       "observedRate": "Tỷ lệ quan sát",
       "pullsEach": "1 trong {count} rút",
       "sinceLastHigh": "Từ SSR+",
+      "consecutiveWithoutHigh": "Lượt liên tiếp không có SSR+",
       "noRecordedHigh": "Chưa có lượt nhận SSR+ được ghi lại",
       "sinceLastPickup": "Từ pickup cuối cùng",
       "mergeBudgetError": "Lịch sử mờ quá lớn; xuất khẩu theo ngày",

@@ -112,7 +112,13 @@ export class HistoryCloudClient {
     }
   }
 
-  private async request<T>(method: "GET" | "POST", accountKey: string | null, suffix = "", body?: unknown): Promise<T> {
+  private async request<T>(
+    method: "GET" | "POST",
+    accountKey: string | null,
+    suffix = "",
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> {
     const owner = this.options.ownerId();
     if (!owner) throw new HistoryCloudError("authentication_required", 401);
     if (accountKey !== null && !historyCloudAccountKeyValid(accountKey))
@@ -129,6 +135,7 @@ export class HistoryCloudClient {
           cache: "no-store",
           signal: AbortSignal.timeout(30_000),
           headers: {
+            ...headers,
             accept: "application/json",
             "x-haneoka-expected-user": owner,
             ...(serialized === undefined ? {} : { "content-type": "application/json" }),
@@ -186,8 +193,21 @@ export class HistoryCloudClient {
     return documents;
   }
 
-  async requestRefresh(accountKey: string): Promise<HistoryCloudDocument> {
-    return document(await this.request("POST", accountKey, "/refresh", {}), accountKey);
+  async requestRefresh(accountKey: string, cached?: HistoryCloudDocument): Promise<HistoryCloudDocument> {
+    const response = await this.request<HistoryCloudSummary & Pick<HistoryCloudDocument, "ownerId"> & Partial<Pick<HistoryCloudDocument, "histories">>>(
+      "POST", accountKey, "/refresh", {}, cached ? { "X-Haneoka-History-Projection": "summary" } : undefined,
+    );
+    if (response.histories) return document({ ...response, histories: response.histories }, accountKey);
+    const row = summary(response);
+    if (row.accountKey !== accountKey) throw new HistoryCloudError("history_account_mismatch", 409);
+    if (
+      cached?.ownerId === response.ownerId &&
+      cached.accountKey === row.accountKey &&
+      row.canonicalAccountKey === undefined &&
+      cached.server === row.server &&
+      row.revision === cached.revision + 1
+    ) return { ...row, ownerId: response.ownerId, histories: cached.histories };
+    return this.read(accountKey);
   }
 
   async fulfillRefresh(accountKey: string, readOfficial: () => Promise<unknown>): Promise<HistoryCloudDocument> {

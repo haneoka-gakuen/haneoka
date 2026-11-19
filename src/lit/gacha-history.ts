@@ -54,6 +54,7 @@ import { formatDate, formatTime } from "../lib/date-format";
 import { GachaLuckClient } from "./shared/gacha-history-luck";
 import type { GachaLuckResult, GachaLuckSummary, GachaLuckValue } from "../lib/gacha-history-luck";
 import {
+  gachaHighStreak,
   gachaRateComparisons,
   isItemOnlyGacha,
   latestGachaHigh,
@@ -1208,6 +1209,12 @@ export class GachaHistory extends LitElement {
     const { byPool } = this.statistics(scoped).rates;
     const highHits = new Map(gachaHistoryHits(scoped, "high").map((row) => [row.poolId, row]));
     const pickupHits = new Map(gachaHistoryHits(scoped, "pickup").map((row) => [row.poolId, row]));
+    const batchesByPool = new Map<string, GachaHistoryBatch[]>();
+    for (const batch of scoped) {
+      const rows = batchesByPool.get(batch.poolId) ?? [];
+      rows.push(batch);
+      batchesByPool.set(batch.poolId, rows);
+    }
     return html`
       <div class="stack stack--loose">
         ${repeat(
@@ -1218,8 +1225,9 @@ export class GachaHistory extends LitElement {
             const rates = byPool.get(pool.poolId ?? "");
             const luck = this.luckSummary(pool.poolId ?? "");
             const expected = luck?.high;
-            const batches = scoped.filter((batch) => (batch.poolId || null) === (pool.poolId || null));
+            const batches = batchesByPool.get(pool.poolId ?? "") ?? [];
             const high = highHits.get(pool.poolId) as GachaPoolHits | undefined;
+            const streak = gachaHighStreak(batches, high, true);
             const pickup = pickupHits.get(pool.poolId) as GachaPoolHits | undefined;
             const owned = new Map(this.collected(batches).map((card) => [card.key, card]));
             const period =
@@ -1254,9 +1262,9 @@ export class GachaHistory extends LitElement {
                   })}
                   ${this.stat({
                     icon: icon("hourglass_bottom", 20),
-                    label: this.t("sinceLastHigh"),
-                    value: this.interval(high?.trailing ?? null),
-                    supporting: pickup?.trailing
+                    label: this.t(streak.hasHit ? "sinceLastHigh" : "consecutiveWithoutHigh"),
+                    value: this.interval(streak.trailing),
+                    supporting: pickup?.trailing && pickup.unknownDraws === 0
                       ? `${this.t("sinceLastPickup")} ${this.interval(pickup.trailing)}`
                       : "",
                   })}

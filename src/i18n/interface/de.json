@@ -1599,6 +1599,7 @@
       "observedRate": "Beobachtete Rate",
       "pullsEach": "1 in {count} ziehen",
       "sinceLastHigh": "Seit dem letzten SSR+",
+      "consecutiveWithoutHigh": "Ziehungen in Folge ohne SSR+",
       "noRecordedHigh": "Kein SSR+-Erhalt erfasst",
       "sinceLastPickup": "Seit dem letzten Pickup",
       "mergeBudgetError": "Die geschichtliche Veränderung ist zu groß; Export nach Datum",

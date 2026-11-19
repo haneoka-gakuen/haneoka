@@ -1599,6 +1599,7 @@
       "observedRate": "Résultats observés",
       "pullsEach": "1 dans {count} tirage",
       "sinceLastHigh": "Depuis le dernier SSR+",
+      "consecutiveWithoutHigh": "Tirages consécutifs sans SSR+",
       "noRecordedHigh": "Aucun SSR+ enregistré",
       "sinceLastPickup": "Depuis le dernier pickup",
       "mergeBudgetError": "L'histoire de la merde est trop grande; l'exportation par date",

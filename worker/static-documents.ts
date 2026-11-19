@@ -3,6 +3,7 @@
 // Output: 文档重定向、压缩／组合内容流、私有页面数据元数据（不含密钥）或未命中。
 // Pos: [Map](L2.md)；静态文档分片在边缘的读取与还原。
 // Effects/Dependencies: ASSETS 最终引用摘要隔离可变索引；旧格式不共享索引，SHA 内容缓存复用；读取 ASSET_BUCKET。
+import { retainRequestRead } from "./request-work";
 import { publishedWebBuildId } from "../src/lib/web-build-id";
 import {
   staticPublicationOutputIdentity,
@@ -47,9 +48,45 @@ export async function staticPublicationContext(
   return pending;
 }
 
-const indices = new Map<string, DocumentIndex>();
 type ContentIndex = { schema: string; entries: Record<string, StaticDocumentContentLocation> };
-const contentIndices = new Map<string, ContentIndex | null>();
+type IndexCache<T> = WeakMap<Fetcher, Map<string, Promise<T | null>>>;
+const indices: IndexCache<DocumentIndex> = new WeakMap();
+const contentIndices: IndexCache<ContentIndex> = new WeakMap();
+const INDEX_CACHE_LIMIT = 16;
+class StaticIndexUnavailable extends Error {}
+
+function staticIndex<T extends { schema: string; entries: Record<string, unknown> }>(
+  request: Request, env: Env, path: string, publicationId: string | null, schema: string, cache: IndexCache<T>,
+): Promise<T | null> {
+  async function read(): Promise<T | null> {
+    const response = await env.ASSETS.fetch(new Request(new URL(path, request.url)));
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return null;
+    }
+    if (!response.ok) throw new StaticIndexUnavailable(`Static document index returned ${response.status}`);
+    const index = await response.json<T>();
+    if (index.schema !== schema || !index.entries) throw new Error("Invalid static document index");
+    return index;
+  }
+  if (!publicationId) return read();
+  let entries = cache.get(env.ASSETS);
+  if (!entries) cache.set(env.ASSETS, entries = new Map());
+  const key = publicationId + ":" + path;
+  let pending = entries.get(key);
+  if (pending) entries.delete(key);
+  else {
+    const current = entries;
+    pending = read().catch((error: unknown) => {
+      if (current.get(key) === pending) current.delete(key);
+      throw error;
+    });
+    retainRequestRead(pending);
+  }
+  entries.set(key, pending);
+  if (entries.size > INDEX_CACHE_LIMIT) entries.delete(entries.keys().next().value!);
+  return pending;
+}
 const packs = new Map<string, Uint8Array>();
 let cachedPackBytes = 0;
 const packCacheLimit = 4 * STATIC_DOCUMENT_PACK_BYTES;
@@ -87,6 +124,7 @@ async function bufferPack(url: string, response: Response, size: number): Promis
     }
   })();
   pendingPacks.set(url, reading);
+  retainRequestRead(reading);
   try {
     return await reading;
   } finally {
@@ -100,25 +138,8 @@ async function contentLocation(
   sha256: string,
   publicationId: string | null,
 ): Promise<StaticDocumentContentLocation | null> {
-  const url = new URL(`${STATIC_DOCUMENT_CONTENT_INDEX_ROOT}/${sha256.slice(0, 2)}.json`, request.url);
-  const cacheKey = publicationId === null ? null : `${publicationId}:${url.href}`;
-  let index = cacheKey === null ? undefined : contentIndices.get(cacheKey);
-  if (index === undefined) {
-    const response = await env.ASSETS.fetch(new Request(url));
-    if (response.status === 404) {
-      await response.body?.cancel();
-      index = null;
-    } else {
-      if (!response.ok) throw new Error(`Static content index returned ${response.status}`);
-      index = await response.json<ContentIndex>();
-      if (index.schema !== STATIC_DOCUMENT_CONTENT_INDEX_SCHEMA || !index.entries)
-        throw new Error("Invalid static content index");
-    }
-    if (cacheKey !== null) {
-      contentIndices.set(cacheKey, index);
-      if (contentIndices.size > 4) contentIndices.delete(contentIndices.keys().next().value!);
-    }
-  }
+  const path = `${STATIC_DOCUMENT_CONTENT_INDEX_ROOT}/${sha256.slice(0, 2)}.json`;
+  const index = await staticIndex(request, env, path, publicationId, STATIC_DOCUMENT_CONTENT_INDEX_SCHEMA, contentIndices);
   const location = index?.entries[sha256];
   if (!location) return null;
   if (
@@ -149,9 +170,14 @@ async function packedContent(
     packs.delete(url.href);
     packs.set(url.href, cached);
     return {
-      body: new Response(cached.slice(location.offset, location.offset + location.gzipBytes)).body!,
+      body: new Response(cached.subarray(location.offset, location.offset + location.gzipBytes)).body!,
       size: location.gzipBytes,
     };
+  }
+  const inFlight = pendingPacks.get(url.href);
+  if (inFlight) {
+    const bytes = await inFlight;
+    return { body: new Response(bytes.subarray(location.offset, location.offset + location.gzipBytes)).body!, size: location.gzipBytes };
   }
   const end = location.offset + location.gzipBytes - 1;
   const response = await env.ASSETS.fetch(new Request(url, { headers: { Range: `bytes=${location.offset}-${end}` } }));
@@ -167,7 +193,7 @@ async function packedContent(
   // Large packs contain exactly one member and can pass through without buffering.
   if (location.packBytes > STATIC_DOCUMENT_PACK_BYTES) return { body: response.body, size: location.gzipBytes };
   const bytes = await bufferPack(url.href, response, location.packBytes);
-  return { body: new Response(bytes.slice(location.offset, end + 1)).body!, size: location.gzipBytes };
+  return { body: new Response(bytes.subarray(location.offset, end + 1)).body!, size: location.gzipBytes };
 }
 
 async function contentStream(
@@ -211,20 +237,12 @@ async function documentRecord(
   publicationId: string | null,
 ): Promise<StaticDocumentRecord | null> {
   const shard = staticDocumentShard(pathname);
-  const indexUrl = new URL(`${STATIC_DOCUMENT_INDEX_ROOT}/${shard}.json`, request.url);
-  const key = publicationId === null ? null : `${publicationId}:${indexUrl.href}`;
-  let index = key === null ? undefined : indices.get(key);
-  if (!index) {
-    const response = await env.ASSETS.fetch(new Request(indexUrl));
-    if (!response.ok) return null;
-    index = await response.json<DocumentIndex>();
-    if (index.schema !== STATIC_DOCUMENT_SCHEMA || !index.entries) throw new Error("Invalid static document index");
-    if (key !== null) {
-      indices.set(key, index);
-      if (indices.size > 4) indices.delete(indices.keys().next().value!);
-    }
-  }
-  const record = index.entries[pathname];
+  const index = await staticIndex(request, env, `${STATIC_DOCUMENT_INDEX_ROOT}/${shard}.json`, publicationId, STATIC_DOCUMENT_SCHEMA, indices)
+    .catch((error: unknown) => {
+      if (error instanceof StaticIndexUnavailable) return null;
+      throw error;
+    });
+  const record = index?.entries[pathname];
   return isStaticDocumentRecord(record) ? record : null;
 }
 

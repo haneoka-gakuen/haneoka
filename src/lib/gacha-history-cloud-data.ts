@@ -85,11 +85,16 @@ export function parseStoredCloudHistory(value: unknown, accountKey: string, serv
   };
 }
 
+/** Merges snapshots already projected at the cloud request and storage boundaries. */
 export function mergeCloudHistory(stored: StoredCloudHistory, incoming: HistorySnapshot): StoredCloudHistory {
-  const history = parseCloudHistory(incoming);
-  const previous = parseStoredCloudHistory(stored, history.source.accountKey!, history.source.server);
+  const sameCapture = stored.histories.find((history) =>
+    history.historyKind === incoming.historyKind &&
+    history.queriedAt === incoming.queriedAt &&
+    history.batches.length === incoming.batches.length,
+  );
+  if (sameCapture && JSON.stringify(sameCapture) === JSON.stringify(incoming)) return stored;
   try {
-    return { schema: HISTORY_CLOUD_SCHEMA, histories: mergeHistoryCollection(previous.histories, history) };
+    return { schema: HISTORY_CLOUD_SCHEMA, histories: mergeHistoryCollection(stored.histories, incoming) };
   } catch {
     throw new HistoryCloudDataError("invalid_history", 422);
   }

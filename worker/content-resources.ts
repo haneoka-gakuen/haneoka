@@ -36,6 +36,22 @@ export interface ContentResourceIndex {
   assetShards?: { prefix: string; count: number };
   eventSongReleasesPrepared?: true;
 }
+const entityReferences = new WeakMap<ContentResourceIndex["records"], Map<string, ContentReference[]>>();
+function referencesFor(index: ContentResourceIndex | null, kind: VisibilityType, id: string): readonly ContentReference[] {
+  if (!index) return [];
+  let byEntity = entityReferences.get(index.records);
+  if (!byEntity) {
+    byEntity = new Map();
+    for (const reference of Object.values(index.records)) {
+      const key = reference.kind + ":" + reference.id;
+      const existing = byEntity.get(key);
+      if (existing) existing.push(reference);
+      else byEntity.set(key, [reference]);
+    }
+    entityReferences.set(index.records, byEntity);
+  }
+  return byEntity.get(kind + ":" + id) ?? [];
+}
 const publicationTimelines = new WeakMap<ContentResourceIndex, number[]>();
 export function contentCacheEpoch(index: ContentResourceIndex | null | undefined, now: number): string {
   if (!index) return `minute-${Math.floor(now / 60_000)}`;
@@ -363,7 +379,7 @@ export async function contentResourceBoundary(
     if (kind) {
       const id = decodeURIComponent(tail.split("/")[1]!);
       const index = await readIndex(server!, url.searchParams.get("release") ?? undefined);
-      const refs = Object.values(index?.records ?? {}).filter((ref) => ref.kind === kind && ref.id === id);
+      const refs = referencesFor(index, kind, id);
       if (refs.length && !refs.some((ref) => contentVisible(view, kind, ref.publication, id))) return notPublic();
     }
   }
@@ -392,6 +408,7 @@ export async function contentResourceBoundary(
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
   headers.delete("Range");
+  headers.delete("Accept-Encoding");
   const source = new Request(request, { method: "GET", headers });
   inheritContentView(source, request);
   const contentIndex = server ? await readIndex(server, url.searchParams.get("release") ?? undefined) : undefined;

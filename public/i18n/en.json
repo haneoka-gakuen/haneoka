@@ -1599,6 +1599,7 @@
       "observedRate": "Observed rate",
       "pullsEach": "1 in {count} draws",
       "sinceLastHigh": "Since last SSR+",
+      "consecutiveWithoutHigh": "Consecutive draws without SSR+",
       "noRecordedHigh": "No recorded SSR+",
       "sinceLastPickup": "Since last pickup",
       "mergeBudgetError": "Merged history is too large; export by date",

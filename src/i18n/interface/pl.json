@@ -1599,6 +1599,7 @@
       "observedRate": "obserwowany poziom",
       "pullsEach": "1 w {count} wyciąg",
       "sinceLastHigh": "Od ostatniego SSR+",
+      "consecutiveWithoutHigh": "Losowania z rzędu bez SSR+",
       "noRecordedHigh": "Brak odnotowanych trafień SSR+",
       "sinceLastPickup": "Od ostatniego pickupu",
       "mergeBudgetError": "Historia mrozu jest zbyt duża; eksport według daty",

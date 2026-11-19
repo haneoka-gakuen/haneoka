@@ -1599,6 +1599,7 @@
       "observedRate": "실제 확률",
       "pullsEach": "평균 {count}회에 1장",
       "sinceLastHigh": "마지막 SSR+ 이후",
+      "consecutiveWithoutHigh": "SSR+ 연속 미획득",
       "noRecordedHigh": "기록된 SSR+ 획득 없음",
       "sinceLastPickup": "마지막 픽업 이후",
       "mergeBudgetError": "병합 기록이 너무 큽니다. 기간별로 내보내세요",

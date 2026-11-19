@@ -1599,6 +1599,7 @@
       "observedRate": "Taxa observada",
       "pullsEach": "1 em {count} tiros",
       "sinceLastHigh": "Desde o último SSR+",
+      "consecutiveWithoutHigh": "Recrutamentos consecutivos sem SSR+",
       "noRecordedHigh": "Nenhum SSR+ registrado",
       "sinceLastPickup": "Desde o último pickup",
       "mergeBudgetError": "História de exportação é muito grande; exportação por data",

@@ -359,7 +359,8 @@ export class HistoryCloudSync extends EventTarget {
       this.busy = true;
       this.errorCode = "";
       this.changed();
-      const document = await this.client.requestRefresh(this.canonicalKey(key));
+      const canonical = this.canonicalKey(key);
+      const document = await this.client.requestRefresh(canonical, this.documents.get(canonical));
       this.guard(owner, generation);
       await this.accept(document, owner, generation);
     } catch (error) {
