@@ -15,14 +15,7 @@ import {
 } from "../lib/static-catalog-source";
 import type { ReleaseServer } from "../lib/resource-route";
 export { skillPageId } from "../lib/skill-page";
-
-const families = {
-  leader: "leader-skills",
-  live: "skills",
-  gekisou: "gekisou-skills",
-  support: "support-skills",
-  gekisouSupport: "gekisou-support-skills",
-} as const;
+import { SKILL_FAMILY_RESOURCES as families } from "../lib/skill-page";
 
 export type SkillFamily = keyof typeof families;
 export interface SkillCatalogEntry {

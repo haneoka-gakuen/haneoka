@@ -64,10 +64,12 @@ const seoDescriptionValues = Object.fromEntries(
       data-static-initial data-prerendered
       set:html={workspacePage.body}
     ></song-ranking>
+    <entity-discussion class="detail-layout__comments" id="entity-comments" entity-type="songs" entity-id={page.id} server={server} locale={locale} target-title={title}></entity-discussion>
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData(cards)}></script>
   </AppShell>
 </Base>
 
 <script>
   import "../../lit/song-ranking";
+  import "../../lit/ui/entity-discussion";
 </script>

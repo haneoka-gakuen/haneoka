@@ -45,7 +45,7 @@ export function communityVisibilityCss(origin: string): string {
   return `@layer utilities {
 html[${COMMUNITY_VISIBILITY_ATTRIBUTE}="0"] :is(
 [data-community-feature], [data-destination="community"],
-.home-board__slot--community, .detail-layout__comments, entity-comments, #entity-comments,
+.home-board__slot--community, .detail-layout__comments, entity-comments, entity-discussion, #entity-comments,
 a[href$="#entity-comments"], ${communityLinks.join(",")}
 ) { display: none !important; }
 }`;

@@ -1,4 +1,7 @@
 @layer pages {
+  entity-discussion {
+    display: block;
+  }
   entity-comments,
   .detail-layout__comments {
     display: block;

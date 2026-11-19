@@ -75,6 +75,8 @@ import type { CatalogCollectionPayload } from "../server/catalog-collection";
 import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
 import { providerDetailHref, type ProviderEntityPayload } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
+import { providerDiscussionIdentity } from "../lib/provider-entity-data";
+import { entityDiscussion } from "./ui/entity-discussion";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
@@ -6374,6 +6376,7 @@ export class CatalogScreen extends LitElement {
     return html`
       <section class="chart-page" aria-label=${this.chartPageTitle(item)}>
         ${this.renderChartPlayer(item, chart, this.chartPageTitle(item))}
+        ${!this.isProvider() ? entityDiscussion({ type: "songs", id: String(item.musicId ?? ""), server: this.itemSourceServer(item), locale: this.settings.locale, title: this.itemTitle(item) }) : nothing}
       </section>
     `;
   }
@@ -6760,8 +6763,11 @@ export class CatalogScreen extends LitElement {
     );
   }
   private detailCommentTarget(item: Item): { type: string; id: string } | null {
+    if (this.isProvider() && typeof window !== "undefined") {
+      const entry = providerEntityFromUrl(navigationDocumentUrl());
+      return entry?.resource === "songs" && entry.id === this.itemId(item) ? providerDiscussionIdentity(entry) : null;
+    }
     if (
-      this.isProvider() ||
       this.settings.chartPage ||
       !["jp", "intl"].includes(this.dataServer()) ||
       !this.isCommentCataloguePage(item)
@@ -6787,6 +6793,8 @@ export class CatalogScreen extends LitElement {
       backgrounds: "backgroundId",
     };
     const resource = this.settings.resource;
+    if ((resource === "arena" || resource === "chat-customizations") && typeof item.id === "string")
+      return { type: resource, id: item.id };
     let type = resource === "song-meta" ? "songs" : resource;
     let id: string | null;
     if (fields[resource]) id = decimal(item[fields[resource]]);
@@ -6854,6 +6862,7 @@ export class CatalogScreen extends LitElement {
   }
   private commentsFocusRequested(): boolean {
     const url = navigationDocumentUrl();
+    if (url.hash === "#entity-comments") return true;
     const value = url.searchParams.get("commentId") || url.hash.match(/^#comment-(.*)$/u)?.[1] || "";
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
   }
@@ -6982,6 +6991,7 @@ export class CatalogScreen extends LitElement {
       `;
     return html`
       <div
+        id="entity-comments"
         ${ref((element) => {
           if (element instanceof HTMLElement)
             queueMicrotask(() => this.observeCommentsPlaceholder(element, key, generation));

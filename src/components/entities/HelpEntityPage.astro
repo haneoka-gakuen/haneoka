@@ -76,6 +76,9 @@ const seoTitleValues = Object.fromEntries(
         )}
       </header>
       <p class="detail-long-copy">{topic.descriptions[locale]}</p>
+      <entity-discussion class="detail-layout__comments" id="entity-comments" entity-type="help" entity-id={topic.id} server={server} locale={locale} target-title={topic.titles[locale]}></entity-discussion>
     </article>
   </AppShell>
 </Base>
+
+<script>import "../../lit/ui/entity-discussion";</script>

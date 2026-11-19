@@ -57,3 +57,7 @@ export function entityThreadEndpoint(target: CommunityEntityTarget): string {
     encodeURIComponent(target.originalId)
   );
 }
+export function missionDiscussionIdentity(routeId: string) {
+  const match = /^(regular|limited|event)-mission-([1-9]\d*)$/u.exec(routeId);
+  return match ? { type: `missions-${match[1]}`, id: match[2]! } : undefined;
+}

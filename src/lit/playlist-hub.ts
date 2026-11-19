@@ -15,6 +15,7 @@
 import { formatDocumentTitle } from "../lib/document-title";
 import { signedInHint } from "../lib/community-viewer";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
+import { entityDiscussion } from "./ui/entity-discussion";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { PlaylistPageData } from "../lib/playlists/page-data";
@@ -1377,6 +1378,9 @@ export class PlaylistHub extends LitElement {
                   `
           }
         </section>
+        ${playlist.kind === "community" && playlist.visibility === "public" ? entityDiscussion({
+          type: "community-playlists", id: playlist.id, server: "intl", locale: this.locale, title: this.titleOf(playlist),
+        }) : nothing}
       </article>
     `;
   }

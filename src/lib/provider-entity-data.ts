@@ -31,6 +31,12 @@ export function providerEntityHtmlPath(entry: ProviderEntityLocator): string {
 export function providerEntityJsonPath(entry: ProviderEntityLocator): string {
   return providerEntityHtmlPath(entry).replace(/\.html$/u, ".json");
 }
+export function providerDiscussionIdentity(entry: ProviderEntityLocator) {
+  return {
+    type: `provider-${entry.resource}`,
+    id: entry.section ? `${entry.provider}:${entry.section}:${entry.id}` : `${entry.provider}:${entry.id}`,
+  };
+}
 export function providerEntityRoute(entry: ProviderEntityLocator): string {
   const { provider, locale, resource, id, section } = entry;
   if (resource === "songs")

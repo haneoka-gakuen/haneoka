@@ -21,6 +21,7 @@ import type { AnnouncementPageData } from "../lib/announcement-page-data";
 import { updateEntityHeading } from "../lib/detail-navigation";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { RequestScope } from "../lib/request-scope";
+import { entityDiscussion } from "./ui/entity-discussion";
 import {
   announcementCategory,
   announcementState,
@@ -258,6 +259,7 @@ export class AnnouncementDetail extends LitElement {
               : nothing
           }
         </section>
+        ${entityDiscussion({ type: "announcements", id: `${this.route.server}-${entry.id}`, server: this.route.server, locale: this.locale, title: entry.title })}
       </article>
     `;
   }

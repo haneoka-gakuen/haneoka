@@ -29,6 +29,7 @@ import { cardRarityName } from "./shared/rarity-icon";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import { catalogLabelPath } from "../config/catalog-labels";
 import { detailLayout } from "./ui/detail-layout";
+import { entityDiscussion } from "./ui/entity-discussion";
 import "./ui/image-gallery";
 import { emptyState } from "./ui/state";
 
@@ -482,6 +483,7 @@ export class SkillsWorkspace extends LitElement {
               : nothing
           }
         `,
+        { comments: entityDiscussion({ type: "skills", id: skillPageId(entry), server: data.server, locale: this.locale, title }), hasMedia: Boolean(entry.image), placement: "media" },
       ),
     });
   }

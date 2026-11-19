@@ -13,6 +13,7 @@ export interface BestdoriDetailState {
   busy: boolean;
   card: Value | null;
   page: boolean;
+  comments?: unknown;
   label(key: string, fallback: string): string;
 }
 export interface BestdoriDetailActions {
@@ -80,6 +81,7 @@ export function renderBestdoriDetail(
             })}
           </section>
         `,
+        state.comments ? { comments: state.comments, hasMedia: gallery.length > 0, placement: "media" } : undefined,
       ),
     });
   }

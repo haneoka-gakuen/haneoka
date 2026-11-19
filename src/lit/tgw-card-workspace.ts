@@ -12,6 +12,7 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
  */
 
 import { LitElement, html, nothing } from "lit";
+import { entityDiscussion } from "./ui/entity-discussion";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import { tgwCardArtwork, type CatalogSystemPayload, type TgwCardArtwork } from "../lib/catalog-system-data";
@@ -602,7 +603,10 @@ export class TgwCardWorkspace extends LitElement {
               : this.tiers.length
                 ? html`
                     ${this.entityId || this.tiers.length < 2 ? nothing : this.picker()}
-                    ${selected ? isContentVisible("tgw-card",selected,String(selected.id)) ? this.tier(selected) : unpublishedState(this.locale) : nothing}
+                    ${selected ? isContentVisible("tgw-card",selected,String(selected.id)) ? html`
+                      ${this.tier(selected)}
+                      ${this.entityId ? entityDiscussion({ type: "tgw-card", id: String(selected.rank), server: this.tierServer(selected), locale: this.locale, title: this.name(selected.title) }) : nothing}
+                    ` : unpublishedState(this.locale) : nothing}
                   `
                 : emptyState({ title: this.text("empty", "No rank data in this release"), icon: "credit_card" })
         }

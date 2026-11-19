@@ -95,7 +95,8 @@ import {
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark } from "./shared/server-availability";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
-import { providerDetailHref, providerEntityRoute } from "../lib/provider-entity-data";
+import { providerDetailHref, providerDiscussionIdentity, providerEntityRoute } from "../lib/provider-entity-data";
+import { entityDiscussion } from "./ui/entity-discussion";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
 import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
@@ -554,6 +555,11 @@ export class StoryWorkspace extends LitElement {
   }
   private storyCommentsTarget(episode: JsonRecord) {
     if (this.reader) return { ...this.reader.comments, server: this.reader.server };
+    if (this.isProvider()) {
+      const entry = providerEntityFromUrl(navigationDocumentUrl());
+      return entry?.resource === "stories" && entry.id === this.episodeId(episode)
+        ? { ...providerDiscussionIdentity(entry), server: "intl" } : undefined;
+    }
     const server = this.detailServer(),
       id = episode.advId;
     if (
@@ -572,6 +578,7 @@ export class StoryWorkspace extends LitElement {
     const view = this.ownerDocument.defaultView;
     if (!view || view.top !== view) return false;
     if (this.reader) return true;
+    if (this.isProvider()) return providerEntityFromUrl(navigationDocumentUrl())?.resource === "stories";
     const logical = this.closest<HTMLElement>("[data-shell]")?.dataset.route;
     if (
       logical !== "/catalog/stories" &&
@@ -2675,6 +2682,13 @@ export class StoryWorkspace extends LitElement {
             busy: this.detailLoading,
             card: this.detailCard,
             page: Boolean(this.entityId),
+              comments: this.entityId && !this.detailLoading ? entityDiscussion({
+                type: "provider-cards",
+                id: `bestdori:${this.detailCard.cardId}`,
+                server: "intl",
+                locale: this.locale,
+                title: this.text(this.detailCard.prefix),
+              }) : undefined,
             // uiText returns the key itself when it has no entry, which would
             // print "close" as a button label; the caller's fallback wins.
             label: (key, fallback) => {

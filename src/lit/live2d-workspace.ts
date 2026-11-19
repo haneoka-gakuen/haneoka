@@ -16,6 +16,7 @@ import { keyed } from "lit/directives/keyed.js";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
 import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { modelTile, modelTitle, modelPreviewSources, subCharacterLabel } from "./ui/model-tile";
+import { entityDiscussion } from "./ui/entity-discussion";
 
 import { EXPANDED, matches, watchMedia } from "./ui/media";
 import { LazyImages } from "./ui/lazy-images";
@@ -2284,6 +2285,9 @@ export class Live2DWorkspace extends LitElement {
             }
             </div>
           </aside>
+          ${page && detail ? entityDiscussion({
+            type: "live2d", id: `model:${this.key(detail)}`, server: readReleaseServer(), locale: this.locale, title: this.modelTitle(detail),
+          }) : nothing}
         </div>
       </aside>
     `;

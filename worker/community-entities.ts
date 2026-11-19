@@ -55,6 +55,7 @@ const thread = (env: Env, target: CommunityEntityTarget) =>
 const knownTypes = new Set([
   "community-stories",
   "community-charts",
+  "community-playlists",
   "cards",
   "support-cards",
   "characters",
@@ -78,11 +79,20 @@ const knownTypes = new Set([
   "passes-monthly",
   "missions-regular",
   "missions-limited",
+  "missions-event",
   "stories",
   "live2d",
   "spine",
   "help",
   "tgw-card",
+  "arena",
+  "chat-customizations",
+  "skills",
+  "announcements",
+  "assets",
+  "provider-songs",
+  "provider-stories",
+  "provider-cards",
 ]);
 
 async function carrierId(target: CommunityEntityTarget): Promise<string> {

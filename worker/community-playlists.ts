@@ -297,6 +297,10 @@ const readPlaylist = (env: Env, id: string, viewerId: string | null) =>
     .bind(viewerId ?? "", id)
     .first<PlaylistRow>();
 
+export async function publicPlaylistTitle(env: Env, id: string): Promise<string | undefined> {
+  return (await readPlaylist(env, id, null))?.title;
+}
+
 const listPlaylists = async (request: Request, env: Env, url: URL): Promise<Response> => {
   const scope = url.searchParams.get("scope") || "public";
   const sort = url.searchParams.get("sort") === "popular" ? "popular" : "new";

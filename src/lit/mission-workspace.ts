@@ -3,6 +3,8 @@ import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { SYSTEM_LABEL_PATHS } from "../i18n/system-labels";
 
 import { LitElement, html, nothing } from "lit";
+import { entityDiscussion } from "./ui/entity-discussion";
+import { missionDiscussionIdentity } from "../lib/entity-comments";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
@@ -606,6 +608,7 @@ export class MissionWorkspace extends LitElement {
   private entityView(mission: Mission) {
     const title = this.name(mission.title) || mission.id;
     const description = this.name(mission.description);
+    const discussion = missionDiscussionIdentity(mission.id);
     return html`
       <section class="mission-group">
         <ul class="mission-list" role="list">
@@ -626,6 +629,7 @@ export class MissionWorkspace extends LitElement {
             </span>
           </li>
         </ul>
+        ${discussion ? entityDiscussion({ ...discussion, server: this.server, locale: this.locale, title }) : nothing}
       </section>
     `;
   }

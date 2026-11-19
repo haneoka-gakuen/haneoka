@@ -61,7 +61,7 @@ import {
 import { serveStaticDocument, staticDocumentRedirect, staticPublicationContext } from "./static-documents";
 import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documents";
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
-import { providerEntityHtmlPath } from "../src/lib/provider-entity-data";
+import { providerEntityHtmlPath, providerEntityJsonPath, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
 import { staticViewFromUrl } from "../src/lib/static-view-routing";
 import { assetStaticDocumentFromUrl, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
 import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
@@ -4432,13 +4432,26 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     const resolveCommunityEntity = createCommunityEntityResolver(
       (catalogEnv, catalogRequest) => handleCatalogApi(catalogEnv, ctx, catalogRequest, new URL(catalogRequest.url).pathname),
       async (catalogEnv, pin, target, match) => {
-        const kind = visibilityType(target.entityType);
+        const kind = visibilityType(target.entityType.startsWith("missions-") ? "missions" : target.entityType.startsWith("passes-") ? "passes" : target.entityType);
         if (!kind) return true;
         const [view, index] = await Promise.all([
           requestContentView(request, env), resourceContentIndex(catalogEnv, ctx, pin.server, pin.releaseId),
         ]);
         const id = match.routeId ?? target.originalId;
         return contentVisible(view, kind, { ...match.row, ...index?.publications?.[`${kind}:${id}`] }, id);
+      },
+      async (server, id, locale) => {
+        const url = new URL(`/api/v1/announcements/${id}`, request.url);
+        url.search = new URLSearchParams({ server, locale }).toString();
+        const response = await handleAnnouncementsRequest(new Request(url), env, (slug) => activeResourceServer(env, slug));
+        if (!response?.ok) return undefined;
+        return response.json<JsonObject>();
+      },
+      async (entry) => {
+        const path = providerEntityJsonPath(entry);
+        const response = await serveStaticDocument(new Request(new URL(path, request.url)), env, ctx, path);
+        if (!response?.ok) return undefined;
+        return response.json<ProviderEntityPayload>();
       },
     );
     const bootstrap = await handleCommunityBootstrap(
