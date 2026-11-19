@@ -6,42 +6,15 @@ import I18nText from "./I18nText.astro";
 import SettingsOption from "./SettingsOption.astro";
 import type { Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
-import { interfaceLanguages, type InterfaceLanguageId } from "../i18n/interface-languages";
+import { languageFlags } from "../i18n/language-flags";
 import { DATE_CHOICES, formatDate, formatTime, type DateChoiceKey, type DatePreferences } from "../lib/date-format";
 import { BIRTHDAY, SEASONS, birthdaySeed, characterSeed, seasonSeed } from "../lib/themes";
 import { themeCharacters } from "../server/theme-characters";
 import "../styles/components/accordion.css";
 import "../styles/settings.css";
-import cnFlag from "circle-flags/flags/cn.svg?url";
-import enUsFlag from "circle-flags/flags/language/en-us.svg?url";
-import hkFlag from "circle-flags/flags/hk.svg?url";
-import jpFlag from "circle-flags/flags/jp.svg?url";
-import krFlag from "circle-flags/flags/kr.svg?url";
-import deFlag from "circle-flags/flags/de.svg?url";
-import esFlag from "circle-flags/flags/es.svg?url";
-import frFlag from "circle-flags/flags/fr.svg?url";
-import idFlag from "circle-flags/flags/id.svg?url";
-import itFlag from "circle-flags/flags/it.svg?url";
-import plFlag from "circle-flags/flags/pl.svg?url";
-import ptFlag from "circle-flags/flags/br.svg?url";
-import ruFlag from "circle-flags/flags/ru.svg?url";
-import thFlag from "circle-flags/flags/th.svg?url";
-import viFlag from "circle-flags/flags/vn.svg?url";
 import bushimo from "../assets/icons/bushimo-circle.svg?url";
 import { svg as bilibiliSvg } from "@thesvg/icons/bilibili";
 
-const interfaceFlags = {
-  de: deFlag,
-  es: esFlag,
-  fr: frFlag,
-  id: idFlag,
-  it: itFlag,
-  pl: plFlag,
-  pt: ptFlag,
-  ru: ruFlag,
-  th: thFlag,
-  vi: viFlag,
-} satisfies Record<InterfaceLanguageId, string>;
 const { locale } = Astro.props as { locale: Locale };
 const characters = await themeCharacters(locale);
 const bandIcon = (id: number) => `/assets/jp/Assets/AddressableResources/Band/${id}/band_small_Icon.png`;
@@ -203,14 +176,7 @@ const groups: Group[] = [
     label: "Language",
     icon: "language",
     initial: locale,
-    options: [
-      { value: "ja", image: jpFlag, label: "日本語" },
-      { value: "en", image: enUsFlag, label: "English" },
-      { value: "zh-TW", image: hkFlag, label: "繁體中文" },
-      { value: "zh-CN", image: cnFlag, label: "简体中文" },
-      { value: "ko", image: krFlag, label: "한국어" },
-      ...interfaceLanguages.map((language) => ({ ...language, image: interfaceFlags[language.value] })),
-    ],
+    options: [...languageFlags],
   },
   {
     name: "release",

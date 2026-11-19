@@ -73,6 +73,10 @@
     align-items: center;
     min-width: 0;
   }
+  .settings-options--locale {
+    display: grid;
+    grid-template-columns: repeat(5, 56px);
+  }
   .settings-option {
     --swatch: #31356e;
     --swatch-container: #dfe0ff;
@@ -308,6 +312,10 @@
     .settings-options--seed {
       gap: 4px;
     }
+    .settings-options--locale {
+      grid-template-columns: repeat(5, 48px);
+      column-gap: clamp(0px, calc((100% - 240px) / 4), 8px);
+    }
     .settings-dates .md-accordion__trigger.button {
       padding-inline: 16px;
     }
@@ -327,8 +335,7 @@
     }
   }
   @media (max-width: 389px) {
-    .settings-options--seed,
-    .settings-options--locale {
+    .settings-options--seed {
       display: grid;
       grid-template-columns: repeat(3, 48px);
       gap: 8px;

@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "Дружественные сайты",
+      "description": "Игровые ресурсы и фанатские проекты BanG Dream!",
+      "resources": "Игровые ресурсы",
+      "creations": "Фанатские проекты",
+      "sites": {
+        "bestdori": "База данных BanG Dream! Girls Band Party! с карточками, песнями, нотными картами и событиями.",
+        "moenotes": "База данных карточек, песен, историй и событий BanG Dream! Our Notes.",
+        "sakiko": "Фанатский сайт Ave Mujica с инструментами для редактирования мимики и движений Live2D и редактором историй."
+      }
+    },
     "about": {
       "eyebrow": "База данных BanG Dream! Our Notes",
       "title": "О Haneoka",

@@ -1,10 +1,10 @@
 ---
-import { Image } from "astro:assets";
 import type { Locale } from "../../i18n/locales";
 import { t } from "../../i18n/messages";
+import { languageFlags } from "../../i18n/language-flags";
 import bestdori from "../../assets/icons/bestdori.png";
-import moenotes from "../../assets/icons/moenotes.png";
-import sakiko from "../../assets/icons/sakiko-app.png";
+import moenotes from "../../assets/icons/moenotes.webp";
+import sakiko from "../../assets/icons/sakiko-app.webp";
 import I18nText from "../I18nText.astro";
 import Icon from "../Icon.astro";
 
@@ -13,13 +13,33 @@ const groups = [
   {
     id: "resources",
     sites: [
-      { id: "bestdori", name: "Bestdori!", href: "https://bestdori.com/", image: bestdori },
-      { id: "moenotes", name: "Moenotes", href: "https://bdon.moe/", image: moenotes },
+      {
+        id: "bestdori",
+        name: "Bestdori!",
+        href: "https://bestdori.com/",
+        image: bestdori,
+        languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "es", "id", "it", "pl", "ru"]),
+      },
+      {
+        id: "moenotes",
+        name: "Moenotes",
+        href: "https://bdon.moe/",
+        image: moenotes,
+        languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "de", "es", "fr", "id", "pt", "ru", "th", "vi"]),
+      },
     ],
   },
   {
     id: "creations",
-    sites: [{ id: "sakiko", name: "sakiko.app", href: "https://sakiko.app/", image: sakiko }],
+    sites: [
+      {
+        id: "sakiko",
+        name: "sakiko.app",
+        href: "https://sakiko.app/",
+        image: sakiko,
+        languages: new Set(["zh-CN"]),
+      },
+    ],
   },
 ] as const;
 ---
@@ -35,9 +55,14 @@ const groups = [
           {sites.map((site) => (
             <li>
               <a class="friend-link" href={site.href} target="_blank" rel="noopener noreferrer">
-                <Image class="friend-link__mark" src={site.image} alt="" width={96} height={96} format="webp" decoding="async" />
+                <img class="friend-link__mark" src={site.image.src} alt="" width={96} height={96} loading="lazy" decoding="async" />
                 <span class="friend-link__copy">
                   <strong>{site.name}</strong>
+                  <span class="friend-link__flags">
+                    {languageFlags.filter(({ value }) => site.languages.has(value)).map(({ value, image, label }) => (
+                      <img src={image} alt={label} lang={value} width={12} height={12} loading="lazy" decoding="async" />
+                    ))}
+                  </span>
                   <I18nText
                     keyName={`legal.friendLinks.sites.${site.id}`}
                     fallback={t(locale, `legal.friendLinks.sites.${site.id}`)}
@@ -135,6 +160,17 @@ const groups = [
     font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
       var(--md-sys-typescale-label-medium-line-height) var(--app-font);
     overflow-wrap: anywhere;
+  }
+  .friend-link__flags {
+    display: flex;
+    gap: 3px;
+    min-width: 0;
+  }
+  .friend-link__flags img {
+    flex: 0 1 12px;
+    min-width: 0;
+    height: 12px;
+    object-fit: contain;
   }
   .friend-link__arrow {
     grid-area: arrow;

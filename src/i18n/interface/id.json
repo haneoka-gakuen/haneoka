@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "Situs mitra",
+      "description": "Jelajahi sumber daya game dan karya penggemar BanG Dream!",
+      "resources": "Sumber daya game",
+      "creations": "Karya penggemar",
+      "sites": {
+        "bestdori": "Basis data BanG Dream! Girls Band Party! yang memuat kartu, lagu, chart, dan event.",
+        "moenotes": "Basis data kartu, lagu, cerita, dan event BanG Dream! Our Notes.",
+        "sakiko": "Situs penggemar Ave Mujica dengan alat untuk mengedit ekspresi dan gerakan Live2D serta editor cerita."
+      }
+    },
     "about": {
       "eyebrow": "Basis data BanG Dream! Our Notes",
       "title": "Tentang Haneoka",

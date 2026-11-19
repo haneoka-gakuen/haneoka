@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "เว็บไซต์เพื่อนบ้าน",
+      "description": "สำรวจแหล่งข้อมูลเกมและผลงานแฟนคลับ BanG Dream!",
+      "resources": "แหล่งข้อมูลเกม",
+      "creations": "ผลงานแฟนคลับ",
+      "sites": {
+        "bestdori": "ฐานข้อมูล BanG Dream! Girls Band Party! ที่รวมการ์ด เพลง ชาร์ต และอีเวนต์",
+        "moenotes": "ฐานข้อมูลการ์ด เพลง เนื้อเรื่อง และอีเวนต์ของ BanG Dream! Our Notes",
+        "sakiko": "เว็บไซต์แฟนคลับ Ave Mujica ที่มีเครื่องมือแก้ไขสีหน้าและท่าทาง Live2D พร้อมตัวแก้ไขเนื้อเรื่อง"
+      }
+    },
     "about": {
       "eyebrow": "ฐานข้อมูล BanG Dream! Our Notes",
       "title": "เกี่ยวกับ Haneoka",

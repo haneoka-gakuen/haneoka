@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "Trang liên kết",
+      "description": "Khám phá tài nguyên trò chơi và dự án của người hâm mộ BanG Dream!",
+      "resources": "Tài nguyên trò chơi",
+      "creations": "Dự án của người hâm mộ",
+      "sites": {
+        "bestdori": "Cơ sở dữ liệu BanG Dream! Girls Band Party! với thẻ, bài hát, biểu đồ nốt và sự kiện.",
+        "moenotes": "Cơ sở dữ liệu thẻ, bài hát, câu chuyện và sự kiện của BanG Dream! Our Notes.",
+        "sakiko": "Trang dành cho người hâm mộ Ave Mujica với công cụ chỉnh sửa biểu cảm, chuyển động Live2D và trình biên tập câu chuyện."
+      }
+    },
     "about": {
       "eyebrow": "Cơ sở dữ liệu BanG Dream! Our Notes",
       "title": "Giới thiệu về Haneoka",

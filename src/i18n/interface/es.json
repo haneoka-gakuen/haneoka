@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "Sitios amigos",
+      "description": "Explora recursos y proyectos de fans de BanG Dream!",
+      "resources": "Recursos de los juegos",
+      "creations": "Proyectos de fans",
+      "sites": {
+        "bestdori": "Base de datos de BanG Dream! Girls Band Party! con cartas, canciones, mapas de notas y eventos.",
+        "moenotes": "Base de datos de cartas, canciones, historias y eventos de BanG Dream! Our Notes.",
+        "sakiko": "Sitio de fans de Ave Mujica con herramientas para editar expresiones y movimientos de Live2D y un editor de historias."
+      }
+    },
     "about": {
       "eyebrow": "Base de datos de BanG Dream! Our Notes",
       "title": "Acerca de Haneoka",
