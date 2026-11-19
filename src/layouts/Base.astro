@@ -130,8 +130,13 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     </script>
     <ClientRouter fallback="none" />
     <script>
+      import { stripDocumentVersion } from "../lib/document-address";
       import { legacyEntityRedirectTarget } from "../lib/resource-route";
       const redirectLegacyEntity = () => {
+        if (location.search) {
+          const url = new URL(location.href);
+          if (stripDocumentVersion(url)) history.replaceState(history.state, "", url);
+        }
         const target = legacyEntityRedirectTarget(location.pathname, location.search);
         if (target) location.replace(target);
       };

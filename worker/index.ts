@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Cloudflare 生产请求和任务组合根。
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
+import { stripDocumentVersion } from "../src/lib/document-address.ts";
 import { CHART_ASSETS_PROJECTION, chartAssets } from "./chart-assets";
 import { contentPublished } from "../src/lib/content-publication";
 import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
@@ -4194,6 +4195,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
   if (restricted)
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   if (request.method === "GET" || request.method === "HEAD") {
+    const cleanedDocument = stripDocumentVersion(canonicalUrl);
     let savedServer: ReturnType<typeof releaseServerFromCookie>;
     let preferredInterface: ReturnType<typeof preferredInterfaceLanguage>;
     const prefix = documentPrefixRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, () => {
@@ -4205,6 +4207,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
       if (language) prefix.href = interfacePath(prefix.href, language);
       return documentPrefixResponse(prefix, savedServer, request.method === "GET" && request.headers.get("accept")?.includes("text/html") === true);
     }
+    if (cleanedDocument)
+      return new Response(null, { status: 308, headers: { Location: canonicalUrl.pathname + canonicalUrl.search, "Cache-Control": "private, max-age=86400" } });
   }
   const latestAlias = /^\/api\/v1\/([^/]+)(?:\/(.*))?$/u.exec(communityUrl.pathname);
   if (latestAlias && visibilityType(latestAlias[1]!) && !(["live2d", "spine"].includes(latestAlias[1]!) && communityUrl.pathname.endsWith("/image.png")) && ["GET", "HEAD"].includes(request.method)) {

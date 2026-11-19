@@ -443,15 +443,12 @@ export class StoryCreationWorkspace extends LitElement {
                   : "haneoka",
             origin: this.resourceOrigin || location.origin,
             server: params.get("importServer") || readReleaseServer(),
-            ...(params.get("importRelease")
-              ? { releaseId: params.get("importRelease"), sourceId: params.get("importSource") }
-              : {}),
           },
         });
         if (client === this.client) {
           this.state = state;
           const url = new URL(location.href);
-          for (const key of ["importStory", "importProvider", "importServer", "importRelease", "importSource"])
+          for (const key of ["importStory", "importProvider", "importServer"])
             url.searchParams.delete(key);
           history.replaceState(null, "", url);
         }
@@ -470,7 +467,7 @@ export class StoryCreationWorkspace extends LitElement {
     const url = new URL(location.href);
     if (this.state?.projectId) {
       url.searchParams.set("project", this.state.projectId);
-      for (const key of ["importStory", "importProvider", "importServer", "importRelease", "importSource"])
+      for (const key of ["importStory", "importProvider", "importServer"])
         url.searchParams.delete(key);
     } else url.searchParams.delete("project");
     if (url.href !== location.href) history.replaceState(null, "", url);

@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md); page navigation latency for the shell's client router.
 // Effects/Dependencies: Fetches HTML documents early and keeps up to four for 30 s in memory; replaces the router loader only on a cache hit.
 import type { TransitionBeforePreparationEvent } from "astro:transitions/client";
+import { stripDocumentVersion } from "./document-address";
 
 interface Prefetched {
   html: string;
@@ -32,8 +33,9 @@ function target(element: EventTarget | null): URL | null {
   )
     return null;
   const url = new URL(anchor.href, location.href);
-  if (url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search))
-    return null;
+  if (url.origin !== location.origin) return null;
+  stripDocumentVersion(url);
+  if (url.pathname === location.pathname && url.search === location.search) return null;
   // Documents only: files, APIs and media are never pages the router swaps in.
   if (
     /^\/(?:api|auth|downloads|assets|runtime|objects|sonolus)\//u.test(url.pathname) ||

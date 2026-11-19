@@ -4,6 +4,8 @@
 // Pos: [Map](L2-2.md); semantic document projection for frontend finalization.
 // Effects/Dependencies: Parses the main content for Markdown, selects owned entity fields and writes bounded buckets.
 import { searchCategory } from "../../src/lib/search-categories.ts";
+import { stripDocumentVersion } from "../../src/lib/document-address.ts";
+import { isSiteOrigin, CANONICAL_ORIGIN } from "../../src/lib/site-origin.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 import { parse, parseFragment, serialize } from "parse5";
 import { decodePageData, PAGE_DATA_WRAPPER, PAGE_DATA_REFERENCE } from "../../src/lib/page-data-codec.ts";
@@ -42,7 +44,7 @@ function markdownPageData(raw) {
   const root = valueOf(shared ? data.value : data);
   if (!root || typeof root !== "object" || Array.isArray(root)) return root;
   const selected = Object.fromEntries(
-    ["schema", "id", "server", "releaseId", "item"]
+    ["schema", "id", "server", "item"]
       .filter((key) => Object.hasOwn(root, key))
       .map((key) => [key, root[key]]),
   );
@@ -271,12 +273,13 @@ export function markdownDocument(html, sourcePath, readSeed) {
   };
   collectHeadings(main);
   const headingOffset = Math.max(0, Math.min(...headingLevels) - 2);
-  const canonical = `https://haneoka.org/${sourcePath.replace(/index\.html$/u, "")}`;
+  const canonical = `${CANONICAL_ORIGIN}/${sourcePath.replace(/index\.html$/u, "")}`;
   const href = (value) => {
     if (!value) return "";
     try {
       const url = new URL(value, canonical);
       if (!["https:", "http:", "mailto:"].includes(url.protocol)) return "";
+      if (isSiteOrigin(url.origin)) stripDocumentVersion(url);
       url.searchParams.delete("return");
       return url.href.replace(/\(/gu, "%28").replace(/\)/gu, "%29");
     } catch {
@@ -405,9 +408,8 @@ export function markdownDocument(html, sourcePath, readSeed) {
       records.push({
         id: payload.id,
         server: payload.server,
-        releaseId: payload.releaseId,
         ...(episode && {
-          source: `https://haneoka.org/api/v1/servers/${payload.server}/catalog/stories/${encodeURIComponent(payload.id)}?release=${encodeURIComponent(payload.releaseId)}`,
+          source: `${CANONICAL_ORIGIN}/api/v1/servers/${payload.server}/catalog/stories/${encodeURIComponent(payload.id)}`,
         }),
         item,
       });

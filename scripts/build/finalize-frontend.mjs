@@ -493,7 +493,7 @@ if (!materializeOnly) {
     entries.sort((a, b) => a.canonical.localeCompare(b.canonical, "en"));
     const groups = Map.groupBy(entries, (entry) => entry.section);
     const body =
-      `# haneoka - ${prefix}\n\n> Public BanG Dream! Our Notes database documents in Markdown. Each document links to its canonical web page and related resources. Entity documents include structured records with stable IDs and release identities.\n\n` +
+      `# haneoka - ${prefix}\n\n> Public BanG Dream! Our Notes database documents in Markdown. Each document links to its canonical web page and related resources. Entity documents include structured records with stable IDs.\n\n` +
       [...groups]
         .map(
           ([section, documents]) =>

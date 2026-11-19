@@ -2711,11 +2711,6 @@ export class StoryWorkspace extends LitElement {
       this.isProvider() ? String(episode.sourceServer || (server === "intl" ? "en" : server)) : server,
     );
     if (this.isProvider()) url.searchParams.set("importProvider", this.origin);
-    const identity = this.episodeEntry(episode)?.perServer[server]?.identity;
-    if (identity) {
-      url.searchParams.set("importRelease", identity.releaseId);
-      url.searchParams.set("importSource", identity.sourceId);
-    }
     return url.pathname + url.search;
   }
   private renderDetailModes() {

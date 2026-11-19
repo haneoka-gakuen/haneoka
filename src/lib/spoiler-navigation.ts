@@ -1,5 +1,6 @@
 import { setSpoilerContentEnabled, spoilerContentEnabled, SPOILER_STORAGE_KEY } from "./spoiler-content";
 import { navigationDocumentUrl } from "./document-url";
+import { stripDocumentVersion } from "./document-address";
 
 let installed = false;
 const pageUrl = (url: URL) =>
@@ -11,10 +12,16 @@ function syncLink(anchor: HTMLAnchorElement) {
   const raw = anchor.getAttribute("href");
   if (!raw) return;
   const target = new URL(raw, location.href);
-  if (!pageUrl(target)) return;
-  const value = navigationDocumentUrl().searchParams.get("spoiler");
-  if (value === null || target.searchParams.has("spoiler")) return;
-  target.searchParams.set("spoiler", value);
+  if (target.origin !== location.origin) return;
+  let changed = stripDocumentVersion(target);
+  if (pageUrl(target) && !target.searchParams.has("spoiler")) {
+    const value = navigationDocumentUrl().searchParams.get("spoiler");
+    if (value !== null) {
+      target.searchParams.set("spoiler", value);
+      changed = true;
+    }
+  }
+  if (!changed) return;
   const href = `${target.pathname}${target.search}${target.hash}`;
   if (href !== raw) anchor.setAttribute("href", href);
 }

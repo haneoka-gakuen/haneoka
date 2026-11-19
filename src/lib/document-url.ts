@@ -1,4 +1,5 @@
 import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
+import { stripDocumentVersion } from "./document-address.ts";
 
 /** Destination identity stays available throughout Astro's document swap. */
 let pendingDocumentUrl: URL | undefined;
@@ -52,6 +53,7 @@ function returnUrl(value: string, base: URL): URL | undefined {
   try {
     const url = new URL(value, base);
     if (url.origin !== base.origin || !/^https?:$/u.test(url.protocol)) return;
+    stripDocumentVersion(url);
     url.searchParams.delete("return");
     if (accountPath(url)) url.searchParams.delete("next");
     return url;
@@ -64,7 +66,11 @@ function loadReturns(): void {
   returnsLoaded = true;
   try {
     const saved: [string, string][] = JSON.parse(sessionStorage.getItem(RETURN_STORAGE) || "[]");
-    for (const [key, value] of saved) if (returnUrl(value, new URL(location.href))) returns.set(key, value);
+    const base = new URL(location.href);
+    for (const [key, value] of saved) {
+      const target = returnUrl(value, base);
+      if (target) returns.set(key, localPath(target));
+    }
   } catch {}
 }
 /** Keep link-specific return context out of shared and copied URLs. */
