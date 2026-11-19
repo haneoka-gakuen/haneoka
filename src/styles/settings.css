@@ -107,6 +107,22 @@
     opacity: 0;
     cursor: inherit;
   }
+  .settings-option.settings-option--language {
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    flex-basis: auto;
+  }
+  .settings-option--language .settings-option__face {
+    width: auto;
+    min-width: 48px;
+    min-height: 48px;
+    padding-inline: var(--md-sys-spacing-4);
+  }
+  .settings-option__language {
+    overflow-wrap: anywhere;
+  }
+
   .settings-option__face {
     display: grid;
     width: 100%;
@@ -327,8 +343,7 @@
     }
   }
   @media (max-width: 389px) {
-    .settings-options--seed,
-    .settings-options--locale {
+    .settings-options--seed {
       display: grid;
       grid-template-columns: repeat(3, 48px);
       gap: 8px;

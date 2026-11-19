@@ -1784,6 +1784,18 @@
     }
   },
   "story": {
+    "share": {
+      "exportVideo": "导出入场视频",
+      "cancelVideo": "取消录制",
+      "videoFailed": "无法导出视频",
+      "selectLine": "选择对白",
+      "selectExcerpt": "选段分享",
+      "tooLong": "请选择更短的片段",
+      "selected": "已选 {count} 句",
+      "chooseEnd": "选择最后一句",
+      "chooseStart": "选择第一句",
+      "exportImage": "导出长图"
+    },
     "labels": {
       "scenes": "场景",
       "perspectiveCharacter": "视角角色",

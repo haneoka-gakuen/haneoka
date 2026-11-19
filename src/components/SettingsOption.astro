@@ -28,7 +28,7 @@ const text = keyName ? t(locale, keyName, label) : label;
 ---
 
 <label
-  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample, "settings-option--portrait": ring }]}
+  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample, "settings-option--portrait": ring, "settings-option--language": name === "locale" }]}
   style={
     swatch && swatch !== "haneoka"
       ? `--swatch: var(--md-ref-${swatch}); --swatch-container: var(--md-ref-${swatch}-container); --swatch-on: var(--md-ref-${swatch}-on-container)`
@@ -37,6 +37,7 @@ const text = keyName ? t(locale, keyName, label) : label;
         : undefined
   }
   hidden={hidden}
+  lang={name === "locale" ? value : undefined}
   {...dataAttributes}
 >
   <input
@@ -49,7 +50,9 @@ const text = keyName ? t(locale, keyName, label) : label;
     data-i18n-aria-label-fallback={keyName ? label : undefined}
   />
   <span class="settings-option__face" aria-hidden="true">
-    {swatch ? (
+    {name === "locale" ? (
+      <span class="settings-option__language">{text}</span>
+    ) : swatch ? (
       <span class="settings-option__palette">
         <i></i>
         <i></i>
@@ -70,7 +73,7 @@ const text = keyName ? t(locale, keyName, label) : label;
       </span>
     ) : null}
   </span>
-  <span class="settings-option__tooltip" aria-hidden="true" data-i18n={keyName} data-i18n-fallback={keyName ? label : undefined}>
+  {name !== "locale" && <span class="settings-option__tooltip" aria-hidden="true" data-i18n={keyName} data-i18n-fallback={keyName ? label : undefined}>
     {text}
-  </span>
+  </span>}
 </label>

@@ -1784,6 +1784,18 @@
     }
   },
   "story": {
+    "share": {
+      "exportVideo": "Export entrance video",
+      "cancelVideo": "Cancel recording",
+      "videoFailed": "The video could not be exported",
+      "selectLine": "Select dialogue line",
+      "selectExcerpt": "Select excerpt",
+      "tooLong": "Select a shorter excerpt",
+      "selected": "{count} lines selected",
+      "chooseEnd": "Choose the last line",
+      "chooseStart": "Choose the first line",
+      "exportImage": "Download image"
+    },
     "labels": {
       "scenes": "Scenes",
       "perspectiveCharacter": "Perspective character",

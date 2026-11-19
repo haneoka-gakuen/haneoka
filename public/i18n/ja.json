@@ -1784,6 +1784,18 @@
     }
   },
   "story": {
+    "share": {
+      "exportVideo": "登場動画を保存",
+      "cancelVideo": "録画をキャンセル",
+      "videoFailed": "動画を保存できませんでした",
+      "selectLine": "台詞を選択",
+      "selectExcerpt": "台詞を抜粋",
+      "tooLong": "範囲を短くしてください",
+      "selected": "{count} 行を選択",
+      "chooseEnd": "最後の台詞を選択",
+      "chooseStart": "最初の台詞を選択",
+      "exportImage": "画像を保存"
+    },
     "labels": {
       "scenes": "シーン",
       "perspectiveCharacter": "視点キャラクター",

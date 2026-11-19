@@ -145,6 +145,8 @@ export class MainI18nClient {
   private readonly bundleInFlight = new Map<string, SharedRequest<I18nNamespaceBundle>>();
   private readonly listeners = new Set<(catalog: Catalog) => void>();
   private currentCatalog: Catalog;
+  private displayCatalog?: Catalog;
+  private overlay?: (base: Catalog) => Catalog;
   private currentLocale: UiLocale;
   private pendingLocale: UiLocale | null = null;
   private requiredNamespaces: readonly string[];
@@ -192,7 +194,18 @@ export class MainI18nClient {
   }
 
   current(): Catalog {
-    return this.currentCatalog;
+    return this.displayCatalog ?? this.currentCatalog;
+  }
+
+  setInterfaceOverlay(overlay?: (base: Catalog) => Catalog): void {
+    this.overlay = overlay;
+    this.displayCatalog = this.currentLocale === "en" ? overlay?.(this.currentCatalog) : undefined;
+    this.notify();
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener(this.current());
+    if (typeof globalThis.dispatchEvent === "function") globalThis.dispatchEvent(new CustomEvent(LOCALE_READY_EVENT));
   }
 
   /** Adopt the next Astro document before its custom elements connect. */
@@ -309,8 +322,8 @@ export class MainI18nClient {
     this.currentCatalog = catalog;
     this.currentLocale = catalog.locale;
     this.pendingLocale = null;
-    for (const listener of this.listeners) listener(catalog);
-    if (typeof globalThis.dispatchEvent === "function") globalThis.dispatchEvent(new CustomEvent(LOCALE_READY_EVENT));
+    this.displayCatalog = this.currentLocale === "en" ? this.overlay?.(catalog) : undefined;
+    this.notify();
     return true;
   }
 

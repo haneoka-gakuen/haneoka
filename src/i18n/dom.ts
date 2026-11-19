@@ -1,6 +1,15 @@
 import { isLocale, languageTagFor } from "@haneoka/i18n";
 import { initializeI18nClient, readI18nSeed } from "./client";
 
+import {
+  INTERFACE_LANGUAGE_EVENT,
+  interfaceLanguages,
+  loadInterfaceLanguage,
+  localizedInterfaceCatalog,
+  readInterfaceLanguage,
+  type InterfaceLanguageId,
+} from "./interface-languages";
+
 let installed = false;
 
 export function installI18nDom(): void {
@@ -8,6 +17,38 @@ export function installI18nDom(): void {
   installed = true;
   const client = initializeI18nClient();
   let request: AbortController | undefined;
+  let preference = readInterfaceLanguage();
+  let activeLanguage: typeof preference;
+  let languageRequest = 0;
+  const refreshWorkspaces = () => {
+    for (const node of document.querySelectorAll<HTMLElement & { requestUpdate?: () => void }>("[data-prerendered]"))
+      node.requestUpdate?.();
+  };
+  const syncInterface = async () => {
+    const next = client.committed === "en" ? preference : undefined;
+    const generation = ++languageRequest;
+    if (next === activeLanguage) return;
+    if (!next) {
+      activeLanguage = undefined;
+      client.setInterfaceOverlay();
+      refreshWorkspaces();
+      return;
+    }
+    try {
+      const messages = await loadInterfaceLanguage(next);
+      if (generation !== languageRequest || client.committed !== "en") return;
+      activeLanguage = next;
+      client.setInterfaceOverlay((base) => localizedInterfaceCatalog(base, next, messages));
+      refreshWorkspaces();
+    } catch (error) {
+      console.error("[i18n]", error);
+    }
+  };
+  window.addEventListener(INTERFACE_LANGUAGE_EVENT, (event) => {
+    const value = (event as CustomEvent<InterfaceLanguageId | undefined>).detail;
+    preference = interfaceLanguages.find((locale) => locale.value === value);
+    void syncInterface();
+  });
   const message = (key: string, fallback: string) => {
     const catalog = client.current();
     const resolved = catalog.resolve(key);
@@ -18,7 +59,9 @@ export function installI18nDom(): void {
   const applyBindings = () => {
     const locale = client.committed;
     document.documentElement.dataset.locale = locale;
-    document.documentElement.lang = languageTagFor(locale);
+    const interfaceLocale = locale === "en" ? activeLanguage : undefined;
+    document.documentElement.dataset.interfaceLocale = interfaceLocale?.value ?? locale;
+    document.documentElement.lang = interfaceLocale?.tag ?? languageTagFor(locale);
     for (const node of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
       const key = node.dataset.i18n;
       if (key) {
@@ -53,10 +96,17 @@ export function installI18nDom(): void {
     const next = (event as Event & { newDocument: Document }).newDocument;
     if (next) acceptDocument(next);
   });
-  document.addEventListener("astro:after-swap", applyBindings);
+  document.addEventListener("astro:after-swap", () => {
+    applyBindings();
+    if (activeLanguage && client.committed === "en") refreshWorkspaces();
+    void syncInterface();
+  });
   void client
     .ready()
-    .then(applyBindings)
+    .then(() => {
+      applyBindings();
+      void syncInterface();
+    })
     .catch((error: unknown) => console.error("[i18n]", error));
 
   (window as Window & { __haneokaApplyLocale?: (locale: string) => Promise<boolean> }).__haneokaApplyLocale = async (

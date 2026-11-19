@@ -94,14 +94,13 @@
   .story-scene__runtime.failed > :is(md-circular-progress, .loading-indicator) {
     display: none;
   }
-  .story-scene__replay {
+  .story-scene__actions {
     position: absolute;
+    display: flex;
+    gap: var(--md-sys-spacing-2);
     z-index: 3;
-    top: 12px;
-    right: 12px;
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-    box-shadow: none;
+    inset-block-start: var(--md-sys-spacing-3);
+    inset-inline-end: var(--md-sys-spacing-3);
   }
   .story-scene__label {
     position: absolute;
@@ -154,6 +153,39 @@
     padding-top: 8px;
     min-width: 0;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .story-transcript__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md-sys-spacing-2);
+    min-width: 0;
+  }
+  .story-transcript__toolbar[data-selecting] {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--md-sys-color-surface);
+  }
+  .story-transcript__excerpt-actions {
+    margin-inline-start: auto;
+    justify-content: end;
+  }
+  .story-transcript__excerpt-actions [role="status"] {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .story-transcript__entry.is-excerpt-selected .dialogue-row__bubble {
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+  }
+  @media (max-width: 599px) {
+    .story-detail__transcript:has([data-selecting]) .dialogue-row__action {
+      flex-wrap: wrap;
+      max-inline-size: var(--md-comp-runtime-control-size-touch);
+    }
   }
 
   /* ---------- Transcript ----------

@@ -1,8 +1,9 @@
 // L3 — GEB
 // Input: 官方、GBP、世界计划及社区故事的集合或独立实体载荷。
-// Output: 故事集合链接、独立阅读页、共享文本与 Vega 播放控制。
+// Output: 故事集合链接、独立阅读页、共享文本、选段导出与 Vega 播放控制。
 // Pos: [Map](L2-2.md)；各来源故事阅读与播放的统一宿主。
 // Effects/Dependencies: 按需请求资源与播放器，接管实体应用栏，离开释放媒体和请求。
+import { clientText } from "../i18n/client";
 import { formatDocumentTitle } from "../lib/document-title";
 import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
@@ -112,6 +113,8 @@ import { eventStoryStarts, withEventStart } from "../lib/content-publication";
 import type { StoryPayload } from "../lib/entity-graph";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { loadingIndicator } from "./ui/loading-indicator";
+import { downloadBlob } from "../lib/canvas-capture";
+import { snackbar } from "../lib/snackbar";
 import { formatDate } from "../lib/date-format";
 import type { VegaProject } from "@haneoka/vega-protocol";
 
@@ -254,6 +257,10 @@ export class StoryWorkspace extends LitElement {
     detailError: { state: true },
     detailMode: { state: true },
     transcriptQuery: { state: true },
+    excerptSelection: { state: true },
+    excerptExporting: { state: true },
+    homeVideoReady: { state: true },
+    homeVideoRecording: { state: true },
     transcriptSpeakers: { state: true },
     storyCommentsReady: { state: true },
     storyCommentsFailed: { state: true },
@@ -285,6 +292,8 @@ export class StoryWorkspace extends LitElement {
   declare detailError: string;
   declare detailMode: "text" | "play";
   declare private transcriptQuery: string;
+  declare private excerptSelection?: { episode: JsonRecord; start?: string; end?: string };
+  declare private excerptExporting?: boolean;
   declare private transcriptSpeakers: string[];
   declare private storyCommentsReady: boolean;
   declare private storyCommentsFailed: boolean;
@@ -302,6 +311,8 @@ export class StoryWorkspace extends LitElement {
   private pageReleaseId = "";
   private appBarRegistered = false;
   private homeStage?: HomeSpotStage;
+  declare private homeVideoReady?: boolean;
+  declare private homeVideoRecording?: boolean;
   private homeStageSpot = "";
   private storyAudio?: HTMLAudioElement;
   private releaseLocation?: () => void;
@@ -714,6 +725,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.excerptSelection = undefined;
     if (this.initializationTimer !== undefined) window.clearTimeout(this.initializationTimer);
     this.initializationTimer = undefined;
     removeEventListener("haneoka:locale-ready", this.onLocale);
@@ -724,6 +736,10 @@ export class StoryWorkspace extends LitElement {
     clearBrowseBar();
     this.lazyImages.disconnect();
     this.homeStage?.dispose();
+    this.homeStage = undefined;
+    this.homeStageSpot = "";
+    this.homeVideoReady = false;
+    this.homeVideoRecording = false;
     this.storyAudio?.pause();
     this.paneFocus.detach();
     clearAppBarActions(this.appBarOwner);
@@ -2563,14 +2579,20 @@ export class StoryWorkspace extends LitElement {
             : nothing
         }
         <div class="story-scene__runtime" data-home-spine-stage>${loadingIndicator()}</div>
-        <button
-          class="icon-button story-scene__replay"
-          type="button"
-          @click=${() => this.homeStage?.replay()}
-          aria-label=${uiText(this.locale, "common.actions.replay")}
-        >
-          <svg class="material-icon" width="20" height="20"><use href="/icons.svg#replay"></use></svg>
-        </button>
+        <div class="story-scene__actions">
+          <button class="icon-button icon-button--tonal" type="button" @click=${() => this.homeStage?.replay()}
+            ?disabled=${this.homeVideoRecording}
+            aria-label=${uiText(this.locale, "common.actions.replay")} title=${uiText(this.locale, "common.actions.replay")}>
+            ${icon("replay", 20)}
+          </button>
+          <button class="icon-button icon-button--tonal" type="button"
+            ?disabled=${!this.homeVideoReady}
+            aria-label=${uiText(this.locale, this.homeVideoRecording ? "story.share.cancelVideo" : "story.share.exportVideo")}
+            title=${uiText(this.locale, this.homeVideoRecording ? "story.share.cancelVideo" : "story.share.exportVideo")}
+            @click=${() => this.homeVideoRecording ? this.homeStage?.cancelRecording() : void this.exportHomeVideo(spot)}>
+            ${this.homeVideoRecording ? icon("stop_circle", 20) : icon("movie", 20)}
+          </button>
+        </div>
         <div class="story-scene__label">
           <strong>${this.text(spot.name)}</strong>
           <small>${this.text(spot.bandName) || this.bandName(Number(spot.bandId))}</small>
@@ -2599,6 +2621,22 @@ export class StoryWorkspace extends LitElement {
       image.style.removeProperty("--tilt-y");
     }
   }
+  private async exportHomeVideo(spot: JsonRecord) {
+    const stage = this.homeStage;
+    if (!stage?.ready || this.homeVideoRecording) return;
+    this.homeVideoRecording = true;
+    try {
+      const video = await stage.exportVideo();
+      if (this.isConnected && this.homeStage === stage)
+        await downloadBlob(video.blob, `haneoka - ${this.text(spot.name)}.${video.extension}`);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError") && this.isConnected && this.homeStage === stage)
+        snackbar(uiText(this.locale, "story.share.videoFailed"), { error: true });
+    } finally {
+      if (this.homeStage === stage) this.homeVideoRecording = false;
+    }
+  }
+
   private async syncHomeStage() {
     if (!(this.origin === "release" && this.mode === "home" && this.phase === "ready")) return;
     const host = this.querySelector<HTMLElement>("[data-home-spine-stage]");
@@ -2606,15 +2644,21 @@ export class StoryWorkspace extends LitElement {
     const key = String(spot?.spotId || "");
     if (!host || !spot || !key || this.homeStageSpot === key) return;
     this.homeStage?.dispose();
+    this.homeVideoReady = false;
+    this.homeVideoRecording = false;
     this.homeStageSpot = key;
     const { HomeSpotStage } = await import("./runtime/home-spot-stage");
     if (!this.isConnected || this.homeStageSpot !== key || !host.isConnected) return;
-    this.homeStage = new HomeSpotStage(host);
+    const stage = new HomeSpotStage(host);
+    this.homeStage = stage;
     host.classList.remove("ready", "failed");
-    void this.homeStage
-      .load(spot)
-      .then(() => host.classList.add("ready"))
-      .catch(() => host.classList.add("failed"));
+    void stage.load(spot).then(() => {
+      if (this.homeStage !== stage || !stage.ready) return;
+      host.classList.add("ready");
+      this.homeVideoReady = typeof MediaRecorder !== "undefined" && typeof HTMLCanvasElement.prototype.captureStream === "function";
+    }).catch(() => {
+      if (this.homeStage === stage) host.classList.add("failed");
+    });
   }
   /* ---------------------------------------------------------- detail layer */
 
@@ -2776,7 +2820,9 @@ export class StoryWorkspace extends LitElement {
   private renderDetail(episode: JsonRecord) {
     const ids = this.characterIds(episode);
     const commands = this.transcript(episode);
-    const visibleCommands = this.searchTranscript(commands);
+    const selecting = this.excerptSelection?.episode === episode;
+    const visibleCommands = selecting ? commands : this.searchTranscript(commands);
+    const range = selecting ? this.excerptRange(commands) : undefined;
     const dialogueCount = (entries: readonly HaneokaTranscriptEntry[]) =>
       entries.filter((entry) => ["dialogue", "message", "subtitle"].includes(entry.kind)).length;
     return html`
@@ -2891,10 +2937,13 @@ export class StoryWorkspace extends LitElement {
                     commands.length
                       ? html`
                           <section class="story-detail__transcript">
-                            ${renderDetailSectionHeading(uiText(this.locale, "navigation.storyText"), "storyText", {
-                              count: dialogueCount(visibleCommands),
-                              level: 2,
-                            })}
+                            <div class="story-transcript__toolbar" data-selecting=${selecting ? "" : nothing}>
+                              ${renderDetailSectionHeading(uiText(this.locale, "navigation.storyText"), "storyText", {
+                                count: dialogueCount(visibleCommands),
+                                level: 2,
+                              })}
+                              ${this.renderExcerptActions(episode, range)}
+                            </div>
                             <div class="field-stack">
                               <md-outlined-text-field
                                 class="is-search"
@@ -2975,7 +3024,7 @@ export class StoryWorkspace extends LitElement {
                               visibleCommands.length
                                 ? html`
                                     <div class="story-transcript dialogue-list">
-                                      ${this.renderTranscript(visibleCommands)}
+                                      ${this.renderTranscript(visibleCommands, episode, range)}
                                     </div>
                                   `
                                 : emptyState({ title: uiText(this.locale, "common.states.empty"), icon: "search_off" })
@@ -2996,6 +3045,85 @@ export class StoryWorkspace extends LitElement {
       </section>
     `;
   }
+  private selectExcerptLine(episode: JsonRecord, id: string) {
+    const selection = this.excerptSelection;
+    this.excerptSelection =
+      selection?.episode === episode && selection.start && !selection.end
+        ? { ...selection, end: id }
+        : { episode, start: id };
+  }
+
+  private excerptRange(entries: readonly HaneokaTranscriptEntry[]) {
+    const { start, end } = this.excerptSelection ?? {};
+    const first = entries.findIndex((entry) => entry.id === start);
+    if (first < 0) return;
+    const last = end ? entries.findIndex((entry) => entry.id === end) : first;
+    if (last < 0) return;
+    return entries
+      .slice(Math.min(first, last), Math.max(first, last) + 1)
+      .filter((entry) => ["dialogue", "message", "subtitle"].includes(entry.kind) &&
+        resolveLocalizedText(entry.command.text, this.locale).text);
+  }
+
+  private renderExcerptActions(episode: JsonRecord, range?: readonly HaneokaTranscriptEntry[]) {
+    if (this.excerptSelection?.episode !== episode)
+      return html`<button class="button button--tonal" type="button" @click=${() => {
+        this.excerptSelection = { episode };
+      }}>${icon("image", 20)}${uiText(this.locale, "story.share.selectExcerpt")}</button>`;
+    const count = range?.length ?? 0;
+    return html`<div class="cluster story-transcript__excerpt-actions">
+      <span role="status">${count > 60
+        ? uiText(this.locale, "story.share.tooLong")
+        : count
+          ? clientText(this.locale, this.excerptSelection.end ? "story.share.selected" : "story.share.chooseEnd", "{count}", { count })
+          : uiText(this.locale, "story.share.chooseStart")}</span>
+      <button class="button button--text" type="button" @click=${() => {
+        this.excerptSelection = undefined;
+      }}>${uiText(this.locale, "common.actions.cancel")}</button>
+      <button class="button" type="button" ?disabled=${!count || count > 60 || this.excerptExporting}
+        @click=${() => range && void this.exportExcerpt(episode, range)}>
+        ${icon("download", 20)}${uiText(this.locale, "story.share.exportImage")}
+      </button>
+    </div>`;
+  }
+
+  private async exportExcerpt(episode: JsonRecord, entries: readonly HaneokaTranscriptEntry[]) {
+    const selection = this.excerptSelection;
+    if (!selection || this.excerptExporting) return;
+    this.excerptExporting = true;
+    try {
+      const { exportStoryExcerpt } = await import("../lib/story-excerpt-image");
+      const current = navigationDocumentUrl();
+      const url = this.entityId ? new URL(current) : new URL(this.storyHref(episode) || current, current);
+      for (const key of ["playback", "view", "commentId", "return", "spoiler"]) url.searchParams.delete(key);
+      url.hash = "";
+      const lines = entries.map((entry) => {
+        const row = this.querySelector(`.story-transcript [data-dialogue-key="${CSS.escape(entry.id)}"]`);
+        const portraits = Array.from(row?.querySelectorAll<HTMLImageElement>(".dialogue-row__avatar img") ?? [])
+          .filter((source) => source.complete && source.naturalWidth && !source.hidden);
+        return {
+          speaker: this.transcriptVisibleText(this.transcriptSpeaker(entry.command).text),
+          text: this.transcriptVisibleText(resolveLocalizedText(entry.command.text, this.locale).text, "\n"),
+          portraits,
+        };
+      });
+      await exportStoryExcerpt({
+        title: this.episodeTitle(episode),
+        chapter: this.text(this.chapterOf(episode)?.chapterName || episode.chapterName),
+        source: url.href,
+        lines,
+        style: getComputedStyle(this),
+        locale: this.locale,
+        active: () => this.isConnected && this.excerptSelection === selection && isReleasedContent(episode),
+      });
+    } catch (error) {
+      if (this.isConnected && this.excerptSelection === selection)
+        snackbar(uiText(this.locale, error instanceof RangeError ? "story.share.tooLong" : "common.states.captureFailed"), { error: true });
+    } finally {
+      this.excerptExporting = false;
+    }
+  }
+
   private transcript(episode: JsonRecord) {
     let entries = this.transcriptCache.get(episode);
     if (!entries) {
@@ -3004,13 +3132,14 @@ export class StoryWorkspace extends LitElement {
     }
     return entries;
   }
-  private transcriptVisibleText(value: string): string {
+  private transcriptVisibleText(value: string, lineBreak = " "): string {
     const visibleText = (nodes: readonly AdvRichTextNode[]): string =>
       nodes
         .map((node): string => {
           if (node.type === "text") return node.value;
           if (node.type === "ruby") return node.base;
-          if (node.type === "break" || node.type === "space") return " ";
+          if (node.type === "break") return lineBreak;
+          if (node.type === "space") return " ";
           return visibleText(node.children);
         })
         .join("");
@@ -3034,13 +3163,18 @@ export class StoryWorkspace extends LitElement {
           ).includes(query)),
     );
   }
-  private renderTranscript(entries: readonly HaneokaTranscriptEntry[]) {
+  private renderTranscript(
+    entries: readonly HaneokaTranscriptEntry[],
+    episode: JsonRecord,
+    range?: readonly HaneokaTranscriptEntry[],
+  ) {
+    const selected = range ? new Set(range) : undefined;
     const textKinds = new Set(["dialogue", "message", "location", "conversation", "subtitle", "choices"]);
     const content = [];
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index]!;
       if (textKinds.has(entry.kind)) {
-        content.push(this.renderTranscriptEntry(entry));
+        content.push(this.renderTranscriptEntry(entry, episode, selected?.has(entry) ?? false));
         continue;
       }
       const media = [entry];
@@ -3071,7 +3205,7 @@ export class StoryWorkspace extends LitElement {
             </span>
             ${icon("expand_more", 20)}
           </summary>
-          <div class="story-transcript__media-body">${media.map((item) => this.renderTranscriptEntry(item))}</div>
+          <div class="story-transcript__media-body">${media.map((item) => this.renderTranscriptEntry(item, episode, false))}</div>
         </details>
       `);
     }
@@ -3186,7 +3320,7 @@ export class StoryWorkspace extends LitElement {
     });
     return { ...speaker, content };
   }
-  private renderTranscriptEntry(entry: HaneokaTranscriptEntry) {
+  private renderTranscriptEntry(entry: HaneokaTranscriptEntry, episode: JsonRecord, selected: boolean) {
     const command = entry.command;
     const speaker = this.transcriptSpeaker(command);
     const names = speaker.text;
@@ -3282,8 +3416,11 @@ export class StoryWorkspace extends LitElement {
             </div>
           `
         : nothing;
+      const selecting = this.excerptSelection?.episode === episode;
+      const selectLabel = uiText(this.locale, "story.share.selectLine");
       return dialogueRow({
-        className: `story-transcript__entry story-transcript__entry--${entry.kind}`,
+        key: selecting ? entry.id : undefined,
+        className: `story-transcript__entry story-transcript__entry--${entry.kind}${selected ? " is-excerpt-selected" : ""}`,
         commandIndex: entry.commandIndex,
         avatar: this.transcriptAvatars(entry),
         speaker: names,
@@ -3291,7 +3428,13 @@ export class StoryWorkspace extends LitElement {
         speakerLanguage: speaker.lang,
         text: advText(text, entry.kind === "message" ? NATIVE_CHAT_FONT_SIZE : undefined),
         textLanguage: resolved.locale,
-        action: actions,
+        action: selecting
+          ? html`${actions}
+              <button class="icon-button" type="button" aria-pressed=${selected} aria-label=${selectLabel}
+                title=${selectLabel} @click=${() => this.selectExcerptLine(episode, entry.id)}>
+                ${selected ? icon("check_circle", 20) : icon("add_circle", 20)}
+              </button>`
+          : actions,
         state: entry.voices.some((voice) => {
           const url = String(voice.playableUrl || voice.url || "");
           return url && this.storyAudio?.src === new URL(url, location.href).href && !this.storyAudio.paused;

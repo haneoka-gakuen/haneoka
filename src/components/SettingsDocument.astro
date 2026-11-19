@@ -6,6 +6,7 @@ import I18nText from "./I18nText.astro";
 import SettingsOption from "./SettingsOption.astro";
 import type { Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
+import { interfaceLanguages } from "../i18n/interface-languages";
 import { DATE_CHOICES, formatDate, formatTime, type DateChoiceKey, type DatePreferences } from "../lib/date-format";
 import { BIRTHDAY, SEASONS, birthdaySeed, characterSeed, seasonSeed } from "../lib/themes";
 import { themeCharacters } from "../server/theme-characters";
@@ -186,6 +187,7 @@ const groups: Group[] = [
       { value: "zh-TW", image: hkFlag, label: "繁體中文" },
       { value: "zh-CN", image: cnFlag, label: "简体中文" },
       { value: "ko", image: krFlag, label: "한국어" },
+      ...interfaceLanguages,
     ],
   },
   {
@@ -424,6 +426,7 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
   import { setPageSpoilers } from "../lib/spoiler-navigation";
   import { isReleaseServer, readSelectedReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
+  import { interfaceLanguages, writeInterfaceLanguage } from "../i18n/interface-languages";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   let disposeSettings: (() => void) | undefined;
@@ -511,7 +514,7 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
       updateSummary(name);
     };
     const syncLocale = () => {
-      select("locale", document.documentElement.dataset.locale || "ja");
+      select("locale", document.documentElement.dataset.interfaceLocale || document.documentElement.dataset.locale || "ja");
       settings
         .querySelectorAll<HTMLElement>("[data-settings-group]")
         .forEach((group) => updateSummary(group.dataset.settingsGroup!));
@@ -598,8 +601,13 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
           const key = name.slice(5);
           if (isDateChoiceKey(key) && isDateChoice(key, value)) setDatePreferences({ [key]: value });
           showDatePreview();
-        } else if (name === "locale" && isLocale(value)) {
-          location.assign(`${localePath(location.pathname, value)}${location.search}${location.hash}`);
+        } else if (name === "locale") {
+          const overlay = interfaceLanguages.find((language) => language.value === value);
+          const base = overlay ? "en" : value;
+          if (!isLocale(base)) return;
+          writeInterfaceLanguage(overlay?.value);
+          if (document.documentElement.dataset.locale !== base)
+            location.assign(`${localePath(location.pathname, base)}${location.search}${location.hash}`);
           return;
         } else if (name === "release" && isReleaseServer(value)) {
           // The URL prefix is the release server's address: a change of server

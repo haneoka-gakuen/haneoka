@@ -1784,6 +1784,18 @@
     }
   },
   "story": {
+    "share": {
+      "exportVideo": "등장 영상 저장",
+      "cancelVideo": "녹화 취소",
+      "videoFailed": "영상을 저장할 수 없습니다",
+      "selectLine": "대사 선택",
+      "selectExcerpt": "대사 발췌",
+      "tooLong": "범위를 줄여 주세요",
+      "selected": "{count}줄 선택",
+      "chooseEnd": "마지막 대사 선택",
+      "chooseStart": "첫 대사 선택",
+      "exportImage": "이미지 저장"
+    },
     "labels": {
       "scenes": "장면",
       "perspectiveCharacter": "시점 캐릭터",

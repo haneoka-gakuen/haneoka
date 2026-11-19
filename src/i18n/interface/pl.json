@@ -1,0 +1,713 @@
+{
+  "common": {
+    "appAccounts": {
+      "close": "Zamknij"
+    },
+    "actions": {
+      "search": "Szukaj",
+      "filter": "Filtruj",
+      "play": "Odtwórz",
+      "pause": "Wstrzymaj",
+      "previous": "Poprzedni",
+      "next": "Dalej",
+      "open": "Otwórz",
+      "close": "Zamknij",
+      "cancel": "Anuluj",
+      "clear": "Wyczyść",
+      "remove": "Usuń",
+      "download": "Pobierz",
+      "reset": "Przywróć",
+      "replay": "Odtwórz ponownie",
+      "details": "Szczegóły",
+      "retry": "Spróbuj ponownie",
+      "back": "Wstecz",
+      "stop": "Zatrzymaj",
+      "confirm": "Potwierdź",
+      "moreActions": "Więcej opcji"
+    },
+    "fields": {
+      "duration": "Czas trwania",
+      "minimum": "Minimum",
+      "maximum": "Maksimum",
+      "title": "Tytuł",
+      "level": "Poziom",
+      "total": "Łącznie",
+      "current": "Bieżące",
+      "source": "Źródło",
+      "category": "Kategoria",
+      "time": "Czas trwania"
+    },
+    "states": {
+      "all": "Wszystko",
+      "loading": "Wczytywanie",
+      "empty": "Brak wyników",
+      "unavailable": "Niedostępne",
+      "unknown": "Nieznane"
+    },
+    "layout": {
+      "ascending": "Rosnąco",
+      "descending": "Malejąco",
+      "grid": "Siatka",
+      "list": "Lista",
+      "table": "Tabela",
+      "comfortable": "Wygodny",
+      "compact": "Kompaktowy"
+    },
+    "help": {
+      "manual": "Pomoc",
+      "category": "Kategoria"
+    }
+  },
+  "navigation": {
+    "home": "Strona główna",
+    "catalog": "Katalog",
+    "tools": "Narzędzia",
+    "songs": "Utwory",
+    "memberCards": "Karty członkiń",
+    "story": "Historia",
+    "stories": "Historie",
+    "homeStories": "Sceny domowe",
+    "storyText": "Tekst",
+    "chart": "Mapa nut",
+    "settings": "Ustawienia",
+    "about": "O stronie",
+    "account": "Konto",
+    "community": "Społeczność",
+    "help": "Pomoc",
+    "chartEditor": "Edytor map",
+    "storyEditor": "Edytor historii",
+    "library": "Biblioteka",
+    "music": "Muzyka",
+    "player": "Odtwarzacz",
+    "cards": "Karty",
+    "supportCards": "Migawki",
+    "support": "Migawka",
+    "characters": "Postacie",
+    "bandStories": "Historie zespołów",
+    "afterlive": "Po koncercie",
+    "linkStories": "Historie więzi",
+    "tutorial": "Samouczek",
+    "storyViewer": "Czytnik historii",
+    "comics": "Komiksy",
+    "stamps": "Naklejki",
+    "assets": "Zasoby",
+    "assetImages": "Obrazy",
+    "assetAudio": "Dźwięk",
+    "assetVideo": "Wideo",
+    "assetModels": "Modele i animacje",
+    "assetData": "Tekst i dane",
+    "assetOther": "Inne",
+    "menu": "Menu",
+    "models": "Modele",
+    "primaryNavigation": "Nawigacja główna",
+    "breadcrumb": "Ścieżka nawigacji",
+    "section": "Sekcja",
+    "voice": "Głos",
+    "voiceActor": "Aktorka głosowa",
+    "voices": "Głosy",
+    "audio": "Dźwięk",
+    "videos": "Filmy",
+    "items": "Przedmioty",
+    "characterMissions": "Misje postaci",
+    "bandItems": "Przedmioty zespołu",
+    "events": "Wydarzenia",
+    "gacha": "Rekrutacja",
+    "loginCampaigns": "Nagrody za logowanie",
+    "shop": "Sklep",
+    "exchange": "Wymiana",
+    "circle": "Krąg",
+    "challenge": "Challenge LIVE",
+    "construction": "W przygotowaniu",
+    "gameSystems": "Systemy gry",
+    "systemNavMissions": "Misje",
+    "systemNavPasses": "Karnety",
+    "realLives": "Koncerty",
+    "stickers": "Naklejki",
+    "backgrounds": "Tła",
+    "gekisouStages": "Sekcje GEKISO",
+    "missions": "Misje",
+    "battle": "Starcie",
+    "media": "Multimedia",
+    "games": "Gry",
+    "gbpArchive": "Archiwum GBP",
+    "chatCustomizations": "Personalizacja czatu",
+    "arena": "Arena GEKISO"
+  },
+  "settings": {
+    "labels": {
+      "themeLight": "Jasny",
+      "themeDark": "Ciemny",
+      "language": "Język",
+      "server": "Serwer",
+      "timeZone": "Strefa czasowa",
+      "appUpdates": "Aktualizacje aplikacji",
+      "checkAppUpdate": "Sprawdź aktualizacje",
+      "appUpToDate": "Masz aktualną wersję",
+      "appCheckingUpdate": "Sprawdzanie aktualizacji",
+      "appUpdateUnavailable": "Nie udało się sprawdzić aktualizacji",
+      "appInstallFailed": "Nie udało się zainstalować aktualizacji",
+      "appearance": "Wygląd",
+      "themeSystem": "Jak w systemie",
+      "releaseServer": "Serwer gry",
+      "settingsGlobal": "Globalny",
+      "catalogServerDifferences": "Różnice dla serwera {server}",
+      "settingsJapan": "Japonia",
+      "songTitles": "Tytuły utworów",
+      "forceJapaneseTitles": "Pokazuj japońskie tytuły utworów",
+      "showDifficultyEstimates": "Pokazuj szacowaną trudność",
+      "difficultyEstimateBeta": "Szacowana trudność · Beta",
+      "themeColor": "Kolor motywu",
+      "tuneDefault": "Oryginalna tonacja",
+      "manual": "Ręcznie",
+      "loadingTips": "Wskazówki podczas wczytywania",
+      "showSpoilerContent": "Pokazuj spoilery",
+      "zoneLocal": "Czas lokalny",
+      "dateAuto": "Automatycznie",
+      "dateOrder": "Kolejność daty",
+      "dateMonth": "Miesiąc",
+      "dateDay": "Dzień",
+      "dateSeparator": "Separator",
+      "dateYear": "Rok",
+      "yearAuto": "Inne lata",
+      "yearAlways": "Zawsze",
+      "yearNever": "Nigdy",
+      "dateYearDigits": "Cyfry roku",
+      "dateWeekday": "Dzień tygodnia",
+      "timeFormat": "Format czasu",
+      "timeHour": "Godzina",
+      "timeSeconds": "Sekundy",
+      "timeZoneName": "Nazwa strefy czasowej",
+      "dateTime": "Data i godzina",
+      "seasonEffects": "Efekty sezonowe"
+    }
+  },
+  "home": {
+    "dashboard": {
+      "stories": "Historie",
+      "songs": "Utwory",
+      "character": "Postać",
+      "about": "O stronie",
+      "compact": "Kompaktowy",
+      "comfortable": "Wygodny"
+    },
+    "announcements": {
+      "retry": "Spróbuj ponownie"
+    }
+  },
+  "catalog": {
+    "fields": {
+      "band": "Zespół",
+      "character": "Postać",
+      "type": "Typ",
+      "description": "Opis"
+    },
+    "songs": {
+      "gekisou": {
+        "gekisouMissionAll": "Wszystko"
+      },
+      "analysis": {
+        "skill": "Umiejętność"
+      }
+    },
+    "anonTokyo": {
+      "source": "Źródło",
+      "details": "Szczegóły",
+      "category": "Kategoria",
+      "band": "Zespół",
+      "rarity": "Rzadkość",
+      "attributeDesc": "Opis",
+      "skill": "Umiejętność",
+      "name": "Nazwa",
+      "member": "Członkini",
+      "level": "Poziom",
+      "duration": "Czas trwania",
+      "chapter": "Rozdział",
+      "type": "Typ",
+      "characterId": "Postać",
+      "isDefault": "Domyślny"
+    },
+    "cards": {
+      "fields": {
+        "rarity": "Rzadkość",
+        "skills": "Umiejętności"
+      },
+      "costs": {
+        "current": "Bieżące"
+      }
+    },
+    "analysis": {
+      "fields": {
+        "metaTierCurrent": "Bieżące",
+        "deckPlay": "Odtwórz"
+      }
+    },
+    "items": {
+      "total": "Łącznie"
+    },
+    "rankings": {
+      "songs": {
+        "retry": "Spróbuj ponownie",
+        "level": "Poziom"
+      },
+      "analysis": {
+        "rankMin": "Minimum",
+        "rankMax": "Maksimum",
+        "applyRange": "Zastosuj",
+        "clearRange": "Wyczyść",
+        "search": "Szukaj",
+        "resetGrowth": "Przywróć"
+      }
+    },
+    "progression": {
+      "level": "Poziom"
+    },
+    "recruitments": {
+      "reset": "Przywróć",
+      "total": "Łącznie"
+    },
+    "missions": {
+      "categoryCharacter": "Postać"
+    },
+    "resources": {
+      "types": {
+        "MemberCard": "Członkini"
+      }
+    },
+    "songProgress": {
+      "counts": {
+        "songShort": "Łącznie"
+      }
+    },
+    "songGuess": {
+      "next": "Dalej"
+    },
+    "gachaHistory": {
+      "filter": "Filtry",
+      "close": "Zamknij",
+      "reset": "Przywróć",
+      "remove": "Usuń",
+      "rarity": "Rzadkość",
+      "allKinds": "Wszystko",
+      "resetType": "Przywróć",
+      "tabSettings": "Ustawienia"
+    },
+    "chatCustomizations": {
+      "theme": "Motyw"
+    },
+    "arena": {
+      "tabs": {
+        "songs": "Utwory"
+      },
+      "unavailable": "Niedostępne",
+      "song": "Utwór",
+      "play": "Odtwórz"
+    }
+  },
+  "story": {
+    "labels": {
+      "searchStories": "Szukaj historii",
+      "episodes": "Odcinki",
+      "episode": "Odcinek",
+      "chapter": "Rozdział",
+      "chapters": "Rozdziały",
+      "subtitles": "Napisy",
+      "playVoice": "Odtwórz głos",
+      "firstCharacter": "Postać"
+    },
+    "reading": {
+      "speakers": "Rozmówcy"
+    },
+    "share": {
+      "exportVideo": "Eksportuj film z wejścia",
+      "cancelVideo": "Anuluj nagrywanie",
+      "videoFailed": "Nie udało się wyeksportować filmu",
+      "selectLine": "Wybierz kwestię",
+      "selectExcerpt": "Udostępnij fragment",
+      "tooLong": "Wybierz krótszy fragment",
+      "selected": "Wybrano: {count}",
+      "chooseStart": "Wybierz pierwszą kwestię",
+      "chooseEnd": "Wybierz ostatnią kwestię",
+      "exportImage": "Pobierz obraz"
+    }
+  },
+  "media": {
+    "models": {
+      "labels": {
+        "family": "Kategoria"
+      }
+    },
+    "audio": {
+      "volume": "Głośność"
+    },
+    "voice": {
+      "stop": "Zatrzymaj",
+      "loading": "Wczytywanie",
+      "replay": "Odtwórz ponownie"
+    },
+    "chartPlayer": {
+      "play": "Odtwórz",
+      "pause": "Wstrzymaj",
+      "reset": "Przywróć",
+      "close": "Zamknij",
+      "volume": "Głośność",
+      "loading": "Wczytywanie…"
+    }
+  },
+  "tools": {
+    "teamBuilder": {
+      "members": "Członkinie",
+      "level": "Poziom",
+      "song": "Utwór",
+      "unavailable": "Niedostępne",
+      "selected": "Wybrano",
+      "memoryCharacter": "Postać",
+      "pickerFilters": "Filtry",
+      "goalUnavailable": "Niedostępne",
+      "screenshotImport": {
+        "level": "Poziom",
+        "unknown": "Nieznane"
+      },
+      "boxImport": {
+        "notice": {
+          "unknown": "Nieznane"
+        },
+        "groupText": "Tekst"
+      },
+      "catalogSongs": "Katalog",
+      "selectedSongs": "Wybrano",
+      "play": "Odtwórz",
+      "manualEvent": {
+        "band": "Zespół",
+        "character": "Postać"
+      },
+      "route": "Odtwórz",
+      "songs": "Utwory",
+      "filters": "Filtry",
+      "editorPreview": {
+        "terms": {
+          "level": "Poziom"
+        }
+      },
+      "moreDetail": "Szczegóły",
+      "apply": "Zastosuj",
+      "delete": "Usuń",
+      "showAll": "Wszystko",
+      "character": "Postać",
+      "rarity": "Rzadkość",
+      "done": "Gotowe",
+      "clearAll": "Wyczyść",
+      "pt": {
+        "fixInput": "Edytuj",
+        "stop": "Zatrzymaj",
+        "back": "Wstecz"
+      },
+      "parking": {
+        "song": "Utwór"
+      },
+      "timingInputAction": "Wejście",
+      "sc": {
+        "stop": "Zatrzymaj",
+        "retry": "Spróbuj ponownie",
+        "unavailable": "Niedostępne",
+        "sourceValue": "Źródło",
+        "song": "Utwór",
+        "details": "Szczegóły"
+      },
+      "conditionsDone": "Gotowe",
+      "trainingPlan": {
+        "retry": "Spróbuj ponownie"
+      },
+      "arena": {
+        "server": "Serwer"
+      },
+      "skillRoles": {
+        "member": "Członkinie",
+        "min": "Minimum",
+        "max": "Maksimum",
+        "apply": "Zastosuj"
+      },
+      "analysis": {
+        "all": "Wszystko"
+      },
+      "planner": {
+        "edit": "Edytuj",
+        "save": "Zapisz",
+        "basic": "Szczegóły"
+      }
+    },
+    "calendar": {
+      "title": "Kalendarz",
+      "date": "Data"
+    },
+    "eventTracker": {
+      "totalTab": "Łącznie",
+      "challengeTab": "Utwory",
+      "retry": "Spróbuj ponownie"
+    },
+    "stampMaker": {
+      "text": "Tekst"
+    },
+    "playerProfile": {
+      "presenceUnknown": "Nieznane"
+    },
+    "songPuzzle": {
+      "song": "Utwór",
+      "play": "Odtwórz",
+      "edit": "Edytuj",
+      "cancel": "Anuluj",
+      "replay": "Odtwórz ponownie",
+      "pause": "Wstrzymaj",
+      "loading": "Wczytywanie",
+      "retry": "Spróbuj ponownie",
+      "confirm": "Zastosuj",
+      "advanced": "Ustawienia",
+      "level": "Poziom"
+    }
+  },
+  "editors": {
+    "chart": {
+      "edit": "Edytuj",
+      "chartOnly": "Mapa nut",
+      "title": "Tytuł",
+      "enabled": "Włączone",
+      "disabled": "Wyłączone",
+      "creation": {
+        "copy": "Kopiuj"
+      },
+      "patterns": {
+        "apply": "Zastosuj"
+      },
+      "collections": {
+        "previous": "Poprzedni",
+        "next": "Dalej"
+      },
+      "markers": {
+        "skill": "Umiejętność"
+      }
+    },
+    "story": {
+      "save": "Zapisz",
+      "title": "Tytuł",
+      "type": "Typ",
+      "resourceStories": "Historie",
+      "stories": "Historie",
+      "categoryCharacter": "Postać",
+      "enabled": "Włączone",
+      "disabled": "Wyłączone"
+    }
+  },
+  "account": {
+    "page": {
+      "signOut": "Wyloguj się",
+      "loading": "Wczytywanie…",
+      "signIn": "Zaloguj się",
+      "roleMember": "Członkini",
+      "remove": "Usuń",
+      "apiTokenCopy": "Kopiuj"
+    },
+    "app": {
+      "cancel": "Anuluj"
+    }
+  },
+  "community": {
+    "page": {
+      "copyLink": "Kopiuj link",
+      "close": "Zamknij",
+      "filters": "Filtry",
+      "search": "Szukaj",
+      "all": "Wszystko",
+      "clear": "Wyczyść",
+      "retry": "Spróbuj ponownie",
+      "unavailable": "Niedostępne",
+      "member": "Członkini",
+      "ascending": "Rosnąco",
+      "descending": "Malejąco",
+      "playlistPage": {
+        "masterUnavailable": "Niedostępne",
+        "sourceCatalog": "Katalog",
+        "allBands": "Wszystko",
+        "backAction": "Wstecz",
+        "cancel": "Anuluj",
+        "close": "Zamknij",
+        "collect": "Zapisz",
+        "deleteAction": "Usuń",
+        "description": "Opis",
+        "done": "Gotowe",
+        "edit": "Edytuj",
+        "member": "Członkini",
+        "name": "Nazwa",
+        "next": "Dalej",
+        "play": "Odtwórz",
+        "previous": "Poprzedni",
+        "removeSong": "Usuń",
+        "retry": "Spróbuj ponownie",
+        "saveAction": "Zapisz",
+        "share": "Udostępnij",
+        "signIn": "Zaloguj się",
+        "bgm": {
+          "sound_bgm_home": "Strona główna"
+        }
+      },
+      "allNotifications": "Wszystko",
+      "list": "Lista",
+      "edit": "Edytuj",
+      "cancel": "Anuluj",
+      "loading": "Wczytywanie…",
+      "tagPage": {
+        "search": "Szukaj"
+      },
+      "signInAction": "Zaloguj się",
+      "save": "Zapisz",
+      "delete": "Usuń",
+      "reportDialog": {
+        "details": "Szczegóły",
+        "cancel": "Anuluj"
+      },
+      "gameTotal": "Łącznie"
+    },
+    "charts": {
+      "summary": "Opis",
+      "chart": "Mapa nut",
+      "community": "Społeczność",
+      "share": "Kopiuj link",
+      "signIn": "Zaloguj się"
+    },
+    "stories": {
+      "search": "Szukaj historii",
+      "titleField": "Tytuł",
+      "edit": "Edytuj",
+      "delete": "Usuń",
+      "cancel": "Anuluj",
+      "close": "Zamknij",
+      "back": "Wstecz",
+      "filters": "Filtry",
+      "reset": "Przywróć",
+      "loading": "Wczytywanie",
+      "previous": "Poprzedni",
+      "next": "Dalej",
+      "retry": "Spróbuj ponownie",
+      "assetSource": "Źródło",
+      "assetCategory": "Kategoria",
+      "reviewColumns": {
+        "type": "Typ"
+      },
+      "assetServer": "Serwer"
+    }
+  },
+  "legal": {
+    "about": {
+      "title": "O Haneoka"
+    },
+    "join": {
+      "eyebrow": "Dołącz do nas",
+      "title": "Dołącz do nas",
+      "communityTitle": "Społeczność"
+    },
+    "sponsor": {
+      "retry": "Spróbuj ponownie"
+    }
+  },
+  "admin": {
+    "page": {
+      "creations": {
+        "all": "Wszystko",
+        "stories": "Historie"
+      },
+      "sponsors": {
+        "filters": {
+          "all": "Wszystko",
+          "active": "Bieżące"
+        },
+        "retry": "Spróbuj ponownie",
+        "current": "Bieżące",
+        "save": "Zapisz",
+        "cancel": "Anuluj",
+        "label": "Nazwa"
+      },
+      "roles": {
+        "member": "Członkini"
+      },
+      "actions": {
+        "apply": "Zastosuj",
+        "save": "Zapisz"
+      },
+      "history": {
+        "close": "Zamknij"
+      },
+      "resources": {
+        "server": "Serwer"
+      },
+      "loading": "Wczytywanie…",
+      "retry": "Spróbuj ponownie",
+      "ip": {
+        "timezone": "Strefa czasowa",
+        "unknown": "Nieznane"
+      },
+      "workspace": {
+        "total": "Łącznie"
+      },
+      "forum": {
+        "language": "Język",
+        "name": "Nazwa",
+        "description": "Opis",
+        "enabled": "Włączone",
+        "disabled": "Wyłączone",
+        "symbol": {
+          "auto_stories": "Historie",
+          "help": "Pomoc"
+        }
+      },
+      "save": "Zapisz",
+      "cancel": "Anuluj",
+      "visibilityCategory": "Kategoria",
+      "visibilityTypes": {
+        "cards": "Członkinie",
+        "songs": "Utwory",
+        "stories": "Historie",
+        "help": "Pomoc",
+        "bands": "Zespół",
+        "skills": "Umiejętności"
+      },
+      "platform": {
+        "login": "Zaloguj się",
+        "edit": "Edytuj",
+        "save": "Zapisz",
+        "clearSessions": "Wyczyść"
+      },
+      "pool": {
+        "deleteStored": "Usuń",
+        "account": "Konto",
+        "remove": "Usuń",
+        "status": {
+          "disabled": "Wyłączone"
+        }
+      }
+    },
+    "comments": {
+      "filterAll": "Wszystko",
+      "targetAll": "Wszystko"
+    }
+  },
+  "download": {
+    "download": "Pobierz"
+  },
+  "app": {
+    "offline": {
+      "download": "Pobierz",
+      "pause": "Wstrzymaj"
+    }
+  },
+  "saveWorkspace": {
+    "loading": "Wczytywanie",
+    "server": "Serwer",
+    "unknown": "Nieznane",
+    "cancel": "Anuluj",
+    "confirm": "Usuń",
+    "close": "Zamknij",
+    "level": "Poziom",
+    "song": "Utwór",
+    "name": "Nazwa",
+    "_level": "Poziom",
+    "_name": "Nazwa"
+  }
+}
