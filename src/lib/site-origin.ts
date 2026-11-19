@@ -30,9 +30,8 @@ export function siteAssetUrl(value: string, origin = siteOrigin()): string {
 export function publicArtworkUrl(value: string, origin = siteOrigin()): string | undefined {
   try {
     const url = new URL(siteAssetUrl(value, origin));
-    if (url.origin === origin && /^\/public-media\/[a-f0-9]{64}\.(?:avif|gif|jpe?g|png|webp)$/u.test(url.pathname)) {
-      return url.href;
-    }
+    return url.origin === new URL(origin).origin &&
+      /^\/public-media\/[a-f0-9]{64}\.(?:avif|gif|jpe?g|png|webp)$/u.test(url.pathname) ? url.href : undefined;
   } catch {
     return undefined;
   }
