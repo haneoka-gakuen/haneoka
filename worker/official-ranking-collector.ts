@@ -1835,6 +1835,7 @@ export class OfficialRankingCollector extends Container<Env> {
         if (retained) {
           this.resolveArenaInterests(state, observation);
           state.lastSuccessfulObservationAtMs = Math.max(state.lastSuccessfulObservationAtMs ?? 0, observation.observedAtMs);
+          if (state.status === "no_available_account") state.status = "ok";
           state.arenaStoredReads = (state.arenaStoredReads ?? 0) + 1;
           state.arenaParallelReads = (state.arenaParallelReads ?? 0) + 1;
         } else state.arenaProbeReads = (state.arenaProbeReads ?? 0) + 1;
@@ -2029,14 +2030,20 @@ export class OfficialRankingCollector extends Container<Env> {
   }
 
   private async unavailablePool(state: CollectorState, pool: OfficialCollectorPool): Promise<void> {
-    const times = pool.accounts.filter((account) => account.enabled && account.ready
-      && !state.accounts?.[account.identity]?.blocked[account.authGeneration])
-      .map((account) => Math.max(account.availableAtMs, state.accounts?.[account.identity]?.cooldownUntilMs ?? 0, state.accounts?.[account.identity]?.leaseUntilMs ?? 0))
-      .filter((time) => time > Date.now());
-    if (state.permissionPause || state.legacyPermissionBlock || pool.accounts.some((account) => state.accounts?.[account.identity]?.blocked[account.authGeneration])) state.status = "auth_paused";
-    else state.status = "no_available_account";
-    if (times.length && !state.permissionPause && !state.legacyPermissionBlock) state.nextAtMs = Math.max(state.nextAtMs, Math.min(...times));
-    await this.persist(state, times.length > 0 && !state.permissionPause && !state.legacyPermissionBlock);
+    const now = Date.now();
+    const eligible = pool.accounts.filter((account) => account.enabled && account.ready && !account.initialPause
+      && !state.accounts?.[account.identity]?.held && !state.accounts?.[account.identity]?.blocked[account.authGeneration]);
+    const times = eligible.map((account) => {
+      const health = state.accounts?.[account.identity];
+      return Math.max(account.availableAtMs, health?.cooldownUntilMs ?? 0, health?.leaseUntilMs ?? 0);
+    }).filter((time) => time > now);
+    const paused = state.permissionPause || state.legacyPermissionBlock;
+    const working = eligible.some((account) => poolAccountStatus(account, state.accounts?.[account.identity], now) === "working");
+    if (paused || !eligible.length && pool.accounts.some((account) => state.accounts?.[account.identity]?.blocked[account.authGeneration]))
+      state.status = "auth_paused";
+    else if (!working) state.status = "no_available_account";
+    if (times.length && !paused) state.nextAtMs = Math.max(state.nextAtMs, Math.min(...times));
+    await this.persist(state, times.length > 0 && !paused);
   }
 
   async ensureScheduled(region: GameRecordsRegion): Promise<void> {
@@ -2333,11 +2340,11 @@ export class OfficialRankingCollector extends Container<Env> {
       if (!pool) { state.status = "not_configured"; await this.persist(state, false); return null; }
       this.synchronizePool(state, pool);
       if (this.expireRun(state)) { state.nextAtMs = Math.max(state.nextAtMs, (state.run?.deadlineMs ?? 0) + 15_000); await this.persist(state); return null; }
-      const config = this.accountFor(state, pool);
-      if (!config) { await this.unavailablePool(state, pool); return null; }
       const now = Date.now();
       state.nextAtMs = Math.max(state.nextAtMs, (state.lastRunAtMs ?? 0) + INTERVAL_MS);
       if (state.nextAtMs > now) { await this.persist(state); return null; }
+      const config = this.accountFor(state, pool);
+      if (!config) { await this.unavailablePool(state, pool); return null; }
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const runId = crypto.randomUUID().replaceAll("-", "");
       const final = now >= (state.nextFinalAtMs ?? 0) ? await takeOfficialFinalTarget(this.env, region, now) : null;
