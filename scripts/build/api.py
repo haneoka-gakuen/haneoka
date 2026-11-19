@@ -42,6 +42,7 @@ from core.paths import build_layout
 from core.unity_objects import iter_unity_object_archive
 from build.anon_tokyo import build_anon_tokyo_catalog
 from build.collectibles import build_backgrounds, build_stickers, build_chat_customizations
+from build.card_acquisition import set_card_types
 from build.card_videos import build_card_videos
 from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
@@ -1535,7 +1536,6 @@ def _cards(data: BuildData, table: str, support: bool = False) -> dict[str, Any]
             rarity=int(row.get("_rarity") or 0),
             cardType=int(row.get("_cardType") or 0),
             assetId=int(row.get("_assetID") or 0),
-            type="initial",
             releasedAt=_timestamp(row.get("_startAt")),
             skillId=skill_id,
             liveSkillId=skill_id if not support else None,
@@ -8865,7 +8865,10 @@ def build_api(
         "provenance": project("provenance", _provenance, data, source_id),
         "feature-status": project("feature-status", _feature_status, data),
     }
-    documents.update(project("game systems", build_game_systems, data, documents, RESOURCE_TYPES, _timestamp))
+    systems = project("game systems", build_game_systems, data, documents, RESOURCE_TYPES, _timestamp)
+    set_card_types(data, documents["cards"], systems, resource_type=2)
+    set_card_types(data, documents["support-cards"], systems, resource_type=3)
+    documents.update(systems)
     if data.server == "jp":
         documents["shop"] = bind_jp_shop_metadata(documents["shop"], data.rows("MasterShop"))
     documents["stickers"] = project("stickers", build_stickers, data, _timestamp)

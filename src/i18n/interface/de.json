@@ -755,6 +755,19 @@
       "at_elite_helper": "Elite-Helfer"
     },
     "cards": {
+      "acquisition": {
+        "label": "Erwerbsquelle",
+        "permanent": "Dauerhaft",
+        "limited": "Zeitlich begrenzt",
+        "birthday": "Geburtstagslimitiert",
+        "event": "Eventbelohnung",
+        "pass": "Pass-Belohnung",
+        "gift": "Geschenk",
+        "dreamfes": "DreamFes-limitiert",
+        "campaign": "Kollaboration",
+        "unknown": "Unbestätigt",
+        "announcement": "Ankündigung"
+      },
       "fields": {
         "rarity": "Seltenheit",
         "rank": "Rang",

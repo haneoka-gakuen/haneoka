@@ -755,6 +755,19 @@
       "at_elite_helper": "Assistant d'élite"
     },
     "cards": {
+      "acquisition": {
+        "label": "Obtention",
+        "permanent": "Permanent",
+        "limited": "Limité",
+        "birthday": "Limité d’anniversaire",
+        "event": "Récompense d’événement",
+        "pass": "Récompense de passe",
+        "gift": "Cadeau",
+        "dreamfes": "Limité DreamFes",
+        "campaign": "Collaboration",
+        "unknown": "À confirmer",
+        "announcement": "Annonce source"
+      },
       "fields": {
         "rarity": "Rareté",
         "rank": "Rang",

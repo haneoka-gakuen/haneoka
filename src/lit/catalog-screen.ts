@@ -185,6 +185,7 @@ import {
   parseEntitySelection,
   parseResourceRoute,
   resourceKindForCollection,
+  resourcePath,
   returnStateFromLocation,
   type ResourceKind,
 } from "../lib/resource-route";
@@ -351,6 +352,8 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   yes: "common.states.yes",
 };
 
+const CARD_ACQUISITIONS = ["permanent", "limited", "birthday", "event", "pass", "gift", "dreamfes", "campaign", "unknown"] as const;
+
 const EXTRA_FILTERS = [
   "shopServer",
   "shopPayment",
@@ -370,6 +373,7 @@ const EXTRA_FILTERS = [
   "maxRarity",
   "minRarityRank",
   "maxRarityRank",
+  "acquisition",
   "school",
   "part",
   "birthdayMonth",
@@ -3940,6 +3944,33 @@ export class CatalogScreen extends LitElement {
       );
     return kind === "character" ? this.character(Number(value)) : this.band(Number(value));
   }
+  private cardAcquisition(item: Item) {
+    if (this.isProvider() || !["member", "support"].includes(this.profile.presentation)) return undefined;
+    return CARD_ACQUISITIONS.find((kind) => item.type === kind);
+  }
+  private cardAcquisitionLabel(kind: (typeof CARD_ACQUISITIONS)[number]) {
+    return uiText(this.settings.locale, `catalog.cards.acquisition.${kind}`);
+  }
+  private renderCardAcquisitionSources(item: Item) {
+    const labels: Record<string, string> = {
+      events: "events", gacha: "gacha", exchange: "exchange", passes: "passes",
+      "login-campaigns": "loginCampaigns",
+    };
+    const server = this.unionDetail?.activeServer ?? this.itemSourceServer(item);
+    const links = asItems(item.acquisitionSources).flatMap((source) => {
+      if (typeof source.id !== "string" || typeof source.resource !== "string") return [];
+      if (source.resource === "announcement") {
+        if (!source.id.startsWith("https://www.fromtyo.jp/news/") && !source.id.startsWith("https://haneoka.org/jp/ja/announcements/")) return [];
+        const label = uiText(this.settings.locale, "catalog.cards.acquisition.announcement");
+        return [html`<a class="link" href=${source.id} target="_blank" rel="noopener noreferrer">${label}</a>`];
+      }
+      const label = labels[source.resource], kind = resourceKindForCollection(source.resource);
+      if (!label || !kind || !/^[a-z0-9-]+$/u.test(source.id)) return [];
+      const href = resourcePath({ server, kind, locale: this.settings.locale as Locale, id: source.id });
+      return [html`<a class="link" href=${href}>${this.label(label, source.resource)} #${source.id}</a>`];
+    });
+    return links.length ? html`<small class="cluster">${links}</small>` : nothing;
+  }
   private shopVariants(item: Item, facets?: CatalogQueryFacets) {
     const entry = this.unionEntry(item);
     const variants = entry
@@ -3973,6 +4004,10 @@ export class CatalogScreen extends LitElement {
       const ids = this.itemBandIds(item).map((id) => this.facetToken(item, id, "collectionBand"));
       const credit = String(item.artistId || this.creditKey(item.artistName || item.bandName));
       return ids.length ? ids : credit ? [`credit:${credit}`] : [];
+    }
+    if (key === "acquisition") {
+      const value = this.cardAcquisition(item);
+      return value ? [value] : [];
     }
     if (key === "type") return [String(item.cardType ?? item.musicType ?? item.itemTypeName ?? "")].filter(Boolean);
     if (key === "category") return (Array.isArray(item.musicCategories) ? item.musicCategories : []).map(String);
@@ -4221,6 +4256,16 @@ export class CatalogScreen extends LitElement {
             });
         }
       groups.push({ key: facet.key, label: this.detailLabel(facet.key), options: [...options.values()] });
+    }
+    if (["member", "support"].includes(kind) && !this.isProvider()) {
+      const counts = tally((item) => this.facetValues(item, "acquisition"));
+      if (counts.size) groups.push({
+        key: "acquisition",
+        label: uiText(this.settings.locale, "catalog.cards.acquisition.label"),
+        options: CARD_ACQUISITIONS.filter((value) => counts.has(value)).map((value) => ({
+          value, label: this.cardAcquisitionLabel(value),
+        })),
+      });
     }
     if (kind === "song" && !this.isProvider())
       groups.push({
@@ -6996,6 +7041,8 @@ export class CatalogScreen extends LitElement {
       const value = this.fieldValue(item, key);
       return value ? [{ key, value }] : [];
     });
+    const acquisition = this.cardAcquisition(item);
+    if (acquisition) fields.push({ key: "acquisition", value: this.cardAcquisitionLabel(acquisition) });
     const skillOrder = ["leader", "live", "gekisou", "support", "gekisouSupport"];
     const skills = (
       item.resolvedSkills && typeof item.resolvedSkills === "object" ? Object.entries(item.resolvedSkills as Item) : []
@@ -7067,7 +7114,7 @@ export class CatalogScreen extends LitElement {
                         ${fields.map(
                           ({ key, value }) => html`
                             <div>
-                              <dt>${this.detailLabel(key)}</dt>
+                              <dt>${key === "acquisition" ? uiText(this.settings.locale, "catalog.cards.acquisition.label") : this.detailLabel(key)}</dt>
                               <dd lang=${this.localizedLanguage(readPath(item, key))}>
                                 ${
                                   key === "rarity"
@@ -7082,6 +7129,7 @@ export class CatalogScreen extends LitElement {
                                         `
                                       : value
                                 }
+                                ${key === "acquisition" ? this.renderCardAcquisitionSources(item) : nothing}
                               </dd>
                             </div>
                           `,

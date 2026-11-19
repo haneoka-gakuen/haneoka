@@ -755,6 +755,19 @@
       "at_elite_helper": "精英帮工"
     },
     "cards": {
+      "acquisition": {
+        "label": "获取来源",
+        "permanent": "常驻",
+        "limited": "期间限定",
+        "birthday": "生日限定",
+        "event": "活动奖励",
+        "pass": "通行证奖励",
+        "gift": "赠送",
+        "dreamfes": "DreamFes 限定",
+        "campaign": "联动",
+        "unknown": "待确认",
+        "announcement": "来源公告"
+      },
       "fields": {
         "rarity": "稀有度",
         "rank": "阶级",
