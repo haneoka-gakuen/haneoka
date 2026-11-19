@@ -987,9 +987,11 @@ async function edgeCached(
   producer: () => Promise<Response>,
   cacheControl?: string,
   opaqueGzip = false,
+  options?: { cache?: Cache; checked?: boolean },
 ): Promise<Response> {
   if (request.method !== "GET" && request.method !== "HEAD") return producer();
-  const hit = await readEdgeCache(request, ctx, cacheControl, opaqueGzip);
+  const cache = options?.cache ?? caches.default;
+  const hit = options?.checked ? null : await readEdgeCache(request, ctx, cacheControl, opaqueGzip, cache);
   if (hit) return hit;
   const headers = new Headers(request.headers);
   for (const name of ["Range", "If-Range", "If-None-Match", "If-Modified-Since"]) headers.delete(name);
@@ -1034,7 +1036,7 @@ async function edgeCached(
       encodeBody: cacheResponseHeaders.has("Content-Encoding") ? "manual" : "automatic",
     });
     ctx.waitUntil(
-      caches.default.put(cacheKey, stored).catch((error: unknown) => {
+      cache.put(cacheKey, stored).catch((error: unknown) => {
         console.warn("edge_cache_write_failed", error instanceof Error ? error.message : String(error));
       }),
     );
@@ -1043,7 +1045,8 @@ async function edgeCached(
   return response;
 }
 
-async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheControl?: string, opaqueGzip = false): Promise<Response | null> {
+async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheControl?: string,
+  opaqueGzip = false, cache = caches.default): Promise<Response | null> {
   const headers = new Headers(request.headers);
   if (request.method === "HEAD") headers.delete("Range");
   const ifRange = headers.get("If-Range");
@@ -1052,13 +1055,13 @@ async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheContr
   for (const name of ["Range", "If-None-Match", "If-Modified-Since"]) cacheHeaders.delete(name);
   const cacheKey = new Request(request.url, { method: "GET", headers: cacheHeaders });
   if (headers.has("Range") && ifRange) {
-    const whole = await caches.default.match(cacheKey);
+    const whole = await cache.match(cacheKey);
     if (!whole) return null;
     if (ifRange.trim() !== whole.headers.get("ETag")) headers.delete("Range");
     if (whole.body) ctx.waitUntil(whole.body.cancel());
   }
   const lookup = new Request(request.url, { method: "GET", headers });
-  const hit = await caches.default.match(lookup);
+  const hit = await cache.match(lookup);
   if (hit) {
     const responseHeaders = new Headers(hit.headers);
     if (opaqueGzip && responseHeaders.get("X-Haneoka-Cache-Encoding") === "gzip") {
@@ -1095,7 +1098,8 @@ async function readEdgeCache(request: Request, ctx: ExecutionContext, cacheContr
   return null;
 }
 
-const R2_TEXT_CACHE = "https://r2-text.haneoka.internal/";
+const R2_TEXT_CACHE = "haneoka-r2-metadata-v1";
+const R2_MEDIA_CACHE = "haneoka-r2-media-v1";
 const pendingR2Texts = new WeakMap<object, Map<string, Promise<string | null>>>();
 
 /**
@@ -1104,14 +1108,14 @@ const pendingR2Texts = new WeakMap<object, Map<string, Promise<string | null>>>(
  * release documents never change.
  */
 async function cachedR2Text(env: Env, key: string, ttl: number, variant?: string): Promise<string | null> {
-  const cache = ttl > 0 && typeof caches !== "undefined" ? caches.default : null;
-  const cacheKey = new Request(R2_TEXT_CACHE + encodeURIComponent(key) + (variant ? `?revision=${encodeURIComponent(variant)}` : ""));
+  const cacheKey = new Request(`${CANONICAL_ORIGIN}/.haneoka-cache/r2/${encodeURIComponent(key)}${variant ? `?revision=${encodeURIComponent(variant)}` : ""}`);
   let pending = pendingR2Texts.get(env.ASSET_BUCKET);
   if (!pending) pendingR2Texts.set(env.ASSET_BUCKET, (pending = new Map()));
   const identity = `${ttl}:${cacheKey.url}`;
   const existing = pending.get(identity);
   if (existing) return existing;
   const read = (async () => {
+    const cache = ttl > 0 && typeof caches !== "undefined" ? await caches.open(R2_TEXT_CACHE).catch(() => null) : null;
     const hit = await cache?.match(cacheKey).catch(() => undefined);
     if (hit) return hit.status === 404 ? null : hit.text();
     const object = await env.ASSET_BUCKET.get(key);
@@ -3043,6 +3047,20 @@ async function handleReleaseMedia(
   const clientEncoding = request.cf?.clientAcceptEncoding;
   const gzip = moc && !request.headers.has("Range") &&
     acceptsGzip(typeof clientEncoding === "string" ? clientEncoding : request.headers.get("Accept-Encoding"));
+  let pinnedCacheKey: Request | null = null;
+  if (requested && !stampDiagnostics) {
+    const releaseKey = releaseCacheRequest(request, requested);
+    const key = new URL(releaseKey.url);
+    key.searchParams.set("__media", gzip ? "gzip-v1" : "identity-v2");
+    pinnedCacheKey = new Request(key, releaseKey);
+    const hit = await readEdgeCache(pinnedCacheKey, ctx, PINNED_MEDIA_CACHE_CONTROL, gzip);
+    if (hit) {
+      if (hit.headers.get("X-Haneoka-Release-Id") === requested &&
+        SOURCE_ID_PATTERN.test(hit.headers.get("X-Haneoka-Source-Id") || "") &&
+        (!hit.headers.has("Content-Encoding") || gzip && hit.headers.get("Content-Encoding") === "gzip")) return hit;
+      if (hit.body) ctx.waitUntil(hit.body.cancel());
+    }
+  }
   let release: Release | null;
   try {
     release = requested ? await requestedRelease(env, server, requested) : await currentRelease(env, server);
@@ -3052,6 +3070,7 @@ async function handleReleaseMedia(
     // those files follow this server's current release instead.
     if (error.code !== "release_identity_missing") return errorResponse(request, error.status, error.code, error.message);
     requested = undefined;
+    pinnedCacheKey = null;
     release = await currentRelease(env, server);
   }
   if (!release) {
@@ -3094,13 +3113,34 @@ async function handleReleaseMedia(
   // jacket on every visit. Unpinned URLs follow the moving current pointer
   // for at most an hour.
   const cacheControl = requested ? PINNED_MEDIA_CACHE_CONTROL : UNPINNED_MEDIA_CACHE_CONTROL;
-  const readMedia = async (path: string, encoded = false) => {
+  const locate = async (read: (path: string, encoded?: boolean) => Promise<Response | null>): Promise<Response> => {
+    for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
+      if (gzip) {
+        const compressed = await read(`${candidate}.gz`, true);
+        if (compressed && compressed.status !== 404) return compressed;
+      }
+      const response = await read(candidate);
+      if (response && response.status !== 404) return response;
+    }
+    return new Response("not found", { status: 404, headers: CORS });
+  };
+  if (pinnedCacheKey) {
+    return edgeCached(pinnedCacheKey, ctx, MEDIA_CACHE_TTL, async () => releaseResponseHeaders(await locate((path, encoded) =>
+      serveReleaseObject(env, request, release, path, encoded ? "application/octet-stream" : undefined, {
+        cacheControl,
+        ...(encoded ? { contentEncoding: "gzip" } : {}),
+        varyAcceptEncoding: moc,
+      })), release), cacheControl, gzip, { checked: true });
+  }
+  const namedCache = await caches.open(R2_MEDIA_CACHE).catch(() => null);
+  const response = await locate(async (path, encoded = false) => {
     const entry = await releaseEntry(env, release, path);
     if (!entry) return null;
     const mediaType = encoded ? "application/octet-stream" : entry.mediaType;
     // Resolve the release mapping after the access boundary. Only byte-identical
     // representations are shared, with release headers attached on the way out.
-    const key = new URL(`https://release-bytes.haneoka.internal/v1/${entry.key}`);
+    const origin = namedCache ? `${CANONICAL_ORIGIN}/.haneoka-cache/bytes/v1` : "https://release-bytes.haneoka.internal/v1";
+    const key = new URL(`${origin}/${entry.key}`);
     key.searchParams.set("type", mediaType);
     key.searchParams.set("bytes", String(entry.bytes));
     if (encoded) key.searchParams.set("encoding", "gzip");
@@ -3117,18 +3157,10 @@ async function handleReleaseMedia(
       })) ?? new Response(null, { status: 404, headers: CORS }),
       cacheControl,
       encoded,
+      namedCache ? { cache: namedCache } : undefined,
     );
-  };
-
-  for (const candidate of localizedReleasePaths(`${servedTree}/${relative}`)) {
-    if (gzip) {
-      const compressed = await readMedia(`${candidate}.gz`, true);
-      if (compressed && compressed.status !== 404) return releaseResponseHeaders(compressed, release);
-    }
-    const response = await readMedia(candidate);
-    if (response && response.status !== 404) return releaseResponseHeaders(response, release);
-  }
-  return releaseResponseHeaders(new Response("not found", { status: 404, headers: CORS }), release);
+  });
+  return releaseResponseHeaders(response, release);
 }
 
 async function handleArtifact(
@@ -4295,6 +4327,11 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     return new Response(null, { status: 308, headers: { Location: legacyChart, "Cache-Control": "public, max-age=86400" } });
   const resourceImage = await handleResourceImage(request, env);
   if (resourceImage) return resourceImage;
+  if ((request.method === "GET" || request.method === "HEAD") && /^\/(?:assets|runtime|objects)\//u.test(url.pathname)) {
+    if (isSiteHostname(url.hostname) && url.protocol !== "https:") return redirectToHttps(url);
+    const media = await handleReleaseMedia(env, ctx, request, url.pathname);
+    if (media) return media;
+  }
   const segments = url.pathname.split("/").filter(Boolean);
   const documentSource =
     SERVER_FIRST_LOCALES.has(segments[1] || "") && segments[0] && !isPublicResourceServer(segments[0])
@@ -4548,8 +4585,6 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (latestCatalog) return latestCatalog;
   const api = await handleCatalogApi(env, ctx, request, url.pathname);
   if (api) return api;
-  const media = await handleReleaseMedia(env, ctx, request, url.pathname);
-  if (media) return media;
   const artifact = await handleArtifact(env, ctx, request, url.pathname);
   if (artifact) return artifact;
   const staticViewResponse = await handlePublicStaticViewRequest(request, env, ctx, async (canonical, view) => {
