@@ -1599,6 +1599,7 @@
       "observedRate": "Tasso osservato",
       "pullsEach": "1 in {count} ritratto",
       "sinceLastHigh": "Da quando SSR+",
+      "noRecordedHigh": "Nessun SSR+ registrato",
       "sinceLastPickup": "Da quando l'ultimo pickup",
       "mergeBudgetError": "La storia di un'immagine è troppo grande; esportazione per data",
       "mergeAsAccount": "Uniti come un conto",

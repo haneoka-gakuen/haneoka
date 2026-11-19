@@ -1599,6 +1599,7 @@
       "observedRate": "Заметная ставка",
       "pullsEach": "1 в {count} вытягивает",
       "sinceLastHigh": "С последней SSR+",
+      "noRecordedHigh": "Нет записей о получении SSR+",
       "sinceLastPickup": "После последней пикапы",
       "mergeBudgetError": "История перемещения слишком велика; экспорт по дате",
       "mergeAsAccount": "Соблюдайте как один счет",

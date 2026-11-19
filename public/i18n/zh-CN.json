@@ -1599,6 +1599,7 @@
       "observedRate": "实际出率",
       "pullsEach": "平均 {count} 抽一张",
       "sinceLastHigh": "距上次 SSR+",
+      "noRecordedHigh": "暂无 SSR+ 出货记录",
       "sinceLastPickup": "距上次 UP",
       "mergeBudgetError": "合并后记录过大，请分段导出",
       "mergeAsAccount": "作为同一账号合并",

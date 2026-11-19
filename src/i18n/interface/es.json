@@ -1599,6 +1599,7 @@
       "observedRate": "Rata observada",
       "pullsEach": "1 en {count} atraer",
       "sinceLastHigh": "Desde el último SSR+",
+      "noRecordedHigh": "Sin registros de SSR+ obtenidos",
       "sinceLastPickup": "Desde el último pickup",
       "mergeBudgetError": "La historia de la marea es demasiado grande; exportación por fecha",
       "mergeAsAccount": "Combinar como una cuenta",

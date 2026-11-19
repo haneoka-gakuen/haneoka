@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 工作区提供的账号、规范记录、卡池规则、统计及云状态。
-// Output: 账号概览、运气、卡池、收获、明细与趋势分页，统一卡牌、兑换进度和显式操作事件。
+// Output: 账号概览、运气、卡池、收获、明细与趋势分页，统一卡牌、兑换进度和显式操作事件；总览显示跨池出货间隔，实际出率与公示概率共用可识别样本。
 // Pos: [Map](L2-2.md)；抽卡历史展示与资料边界。
 // Effects/Dependencies: light DOM 与 SSR 共用；消费共享分析／图表／卡牌，导入及云状态由工作区持有。
 import { scrollableTabBar } from "./ui/scrollable-tabs";
@@ -53,6 +53,13 @@ import { renderLocalSaveSourcePicker } from "./shared/local-save-source-picker";
 import { formatDate, formatTime } from "../lib/date-format";
 import { GachaLuckClient } from "./shared/gacha-history-luck";
 import type { GachaLuckResult, GachaLuckSummary, GachaLuckValue } from "../lib/gacha-history-luck";
+import {
+  gachaRateComparisons,
+  isItemOnlyGacha,
+  latestGachaHigh,
+  type GachaRateComparison,
+  type GachaRateSample,
+} from "../lib/gacha-history-statistics";
 
 type Axis = "category" | "pool" | "kind" | "rarity" | "pickup";
 type Tab = "overview" | "pools" | "collection" | "records" | "trends" | "settings";
@@ -174,6 +181,10 @@ export class GachaHistory extends LitElement {
   private scopeInputs: unknown[] = [];
   private scopeRows: readonly GachaHistoryBatch[] = [];
   private analysisCache = new WeakMap<readonly GachaHistoryBatch[], ReturnType<typeof analyzeGachaHistory>>();
+  private statisticsCache = new WeakMap<readonly GachaHistoryBatch[], {
+    streak: ReturnType<typeof latestGachaHigh>;
+    rates: ReturnType<typeof gachaRateComparisons>;
+  }>();
   private reportInputs: unknown[] = [];
   private reportValue?: GachaHistoryReport;
   private indexedPools?: readonly GachaHistoryPool[];
@@ -289,9 +300,14 @@ export class GachaHistory extends LitElement {
     });
     return this.scopeRows;
   }
-  private pureItemPool(id: string | null) { return (this.poolMap.get(id ?? "")?.rates?.rarities.item ?? 0) >= 1 - 1e-12; }
-  private cardDraws(stats: ReturnType<GachaHistory["analysis"]>) {
-    return stats.pools.reduce((total, pool) => total + (this.pureItemPool(pool.poolId) ? 0 : pool.total), 0);
+  private statistics(batches: readonly GachaHistoryBatch[]) {
+    let value = this.statisticsCache.get(batches);
+    if (!value) {
+      const pools = this.poolMap;
+      value = { streak: latestGachaHigh(batches, pools), rates: gachaRateComparisons(batches, pools) };
+      this.statisticsCache.set(batches, value);
+    }
+    return value;
   }
   private serverTime(value: string, kind: "time" | "date" | "dateTime") {
     const shifted = new Date(value).getTime() + this.offsetMinutes * 60000;
@@ -441,20 +457,10 @@ export class GachaHistory extends LitElement {
       </span>
     `;
   }
-  /** Draw-weighted official rate across the pools that publish one. */
-  private officialRate(
-    stats: ReturnType<GachaHistory["analysis"]>,
-    rate: (rates: NonNullable<GachaHistoryPool["rates"]>) => number,
-  ) {
-    let draws = 0,
-      sum = 0;
-    for (const pool of stats.pools) {
-      const rates = this.poolMap.get(pool.poolId ?? "")?.rates;
-      if (!rates || this.pureItemPool(pool.poolId)) continue;
-      draws += pool.total;
-      sum += rate(rates) * pool.total;
-    }
-    return draws ? sum / draws : null;
+  private rateText(sample?: GachaRateSample) {
+    return sample?.draws
+      ? `${this.percent(sample.hits, sample.draws)} / ${this.t("officialRate")} ${this.percent(sample.expected, sample.draws)}`
+      : "—";
   }
   private luckSummary(poolId?: string): GachaLuckSummary | undefined {
     return poolId === undefined ? this.luckResult?.overall : this.luckResult?.pools[poolId];
@@ -784,17 +790,11 @@ export class GachaHistory extends LitElement {
       .sort();
     const summary = this.luckSummary();
     const luck = summary?.combined?.variable ? summary.combined : null;
-    const official = stats ? this.officialRate(stats, (rates) => rates.high) : null;
+    const statistics = stats ? this.statistics(scoped) : null;
+    const rates = statistics?.rates.overall;
+    const streak = statistics?.streak;
+    const pools = streak?.poolIds.map((poolId) => this.poolName(poolId)) ?? [];
     const gems = stats ? (stats.cost.freeGems.value ?? 0) + (stats.cost.paidGems.value ?? 0) : 0;
-    const latest = [...scoped]
-      .filter((batch) => batch.pulledAt && !this.pureItemPool(batch.poolId))
-      .sort((a, b) => (b.pulledAt! > a.pulledAt! ? 1 : -1))[0];
-    const streak = latest
-      ? gachaHistoryHits(
-          scoped.filter((batch) => batch.poolId === latest.poolId),
-          "high",
-        )[0]?.trailing
-      : null;
     const money =
       stats && this.currencyConversion ? summarizeGachaHistoryMoney(stats.cost, this.currencyConversion) : null;
     const status =
@@ -915,15 +915,15 @@ export class GachaHistory extends LitElement {
                     icon: icon("star", 24),
                     label: "SSR+",
                     value: this.number(stats.high),
-                    supporting: `${this.percent(stats.high, this.cardDraws(stats))}${official == null ? "" : ` / ${this.t("officialRate")} ${this.percent(official)}`}`,
+                    supporting: this.rateText(rates?.high),
                     tone: "tertiary",
                   })}
                   ${this.stat({
                     icon: icon("trending_up", 24),
                     label: this.t("pickup"),
                     value: this.number(stats.pickup),
-                    supporting: stats.pickup
-                      ? this.t("pullsEach", { count: this.number(this.cardDraws(stats) / stats.pickup, 1) })
+                    supporting: rates?.pickup.hits
+                      ? this.t("pullsEach", { count: this.number(rates.pickup.draws / rates.pickup.hits, 1) })
                       : stats.pickupUnknown
                         ? `${this.t("unknown")} ${this.number(stats.pickupUnknown)}`
                         : "",
@@ -932,8 +932,10 @@ export class GachaHistory extends LitElement {
                   ${this.stat({
                     icon: icon("hourglass_bottom", 24),
                     label: this.t("sinceLastHigh"),
-                    value: streak ? this.interval(streak) : "—",
-                    supporting: latest ? this.poolName(latest.poolId) : "",
+                    value: this.interval(streak?.trailing ?? null),
+                    supporting: pools.length
+                      ? new Intl.ListFormat(this.locale).format(pools)
+                      : streak?.hasHit ? "" : this.t("noRecordedHigh"),
                   })}
                   ${this.stat({
                     icon: icon("auto_awesome", 24),
@@ -1067,40 +1069,17 @@ export class GachaHistory extends LitElement {
   }
 
   private renderOverview(scoped: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]>) {
-    const rows: Array<[string, number, number | null]> = [
-      ["SSR+", stats.high, this.officialRate(stats, (r) => r.high)],
-      [
-        `${this.t("member")} SSR+`,
-        stats.kinds.find((k) => k.kind === "member")!.high,
-        this.officialRate(stats, (r) => r.memberHigh),
-      ],
-      [
-        `${this.t("support")} SSR+`,
-        stats.kinds.find((k) => k.kind === "support")!.high,
-        this.officialRate(stats, (r) => r.supportHigh),
-      ],
-      [
-        "SSR",
-        stats.distribution.find((row) => row.rarity === "SSR")!.count,
-        this.officialRate(stats, (r) => r.rarities.SSR),
-      ],
-      [
-        "BD",
-        stats.distribution.find((row) => row.rarity === "BD")!.count,
-        this.officialRate(stats, (r) => r.rarities.BD),
-      ],
-      [
-        "EX",
-        stats.distribution.find((row) => row.rarity === "EX")!.count,
-        this.officialRate(stats, (r) => r.rarities.EX),
-      ],
-      [
-        "SR",
-        stats.distribution.find((row) => row.rarity === "SR")!.count,
-        this.officialRate(stats, (r) => r.rarities.SR),
-      ],
-      ["R", stats.distribution.find((row) => row.rarity === "R")!.count, this.officialRate(stats, (r) => r.rarities.R)],
-      [this.t("pickup"), stats.pickup, this.officialRate(stats, (r) => r.pickup)],
+    const { overall } = this.statistics(scoped).rates;
+    const rows: readonly [string, keyof GachaRateComparison][] = [
+      ["SSR+", "high"],
+      [`${this.t("member")} SSR+`, "memberHigh"],
+      [`${this.t("support")} SSR+`, "supportHigh"],
+      ["SSR", "SSR"],
+      ["BD", "BD"],
+      ["EX", "EX"],
+      ["SR", "SR"],
+      ["R", "R"],
+      [this.t("pickup"), "pickup"],
     ];
     const hits = gachaHistoryHits(scoped, "high")
       .flatMap((pool) => pool.hits.map((hit) => ({ ...hit, poolId: pool.poolId })))
@@ -1120,13 +1099,16 @@ export class GachaHistory extends LitElement {
             this.t("rateComparison"),
             [this.t("resultType"), this.t("quantity"), this.t("observedRate"), this.t("officialRate")],
             rows
-              .filter(([, count, official], index) => index < 3 || count > 0 || (official ?? 0) > 0)
-              .map(([label, count, official]) => [
-                label,
-                this.number(count),
-                this.percent(count, this.cardDraws(stats)),
-                official == null ? "—" : this.percent(official),
-              ]),
+              .filter(([, key], index) => index < 3 || overall[key].hits > 0 || overall[key].expected > 0)
+              .map(([label, key]) => {
+                const { draws, hits, expected } = overall[key];
+                return [
+                  label,
+                  draws ? this.number(hits) : "—",
+                  this.percent(hits, draws),
+                  this.percent(expected, draws),
+                ];
+              }),
             { numeric: true },
           )}
         </section>
@@ -1223,6 +1205,7 @@ export class GachaHistory extends LitElement {
   }
 
   private renderPools(scoped: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]>) {
+    const { byPool } = this.statistics(scoped).rates;
     const highHits = new Map(gachaHistoryHits(scoped, "high").map((row) => [row.poolId, row]));
     const pickupHits = new Map(gachaHistoryHits(scoped, "pickup").map((row) => [row.poolId, row]));
     return html`
@@ -1232,6 +1215,9 @@ export class GachaHistory extends LitElement {
           (pool) => pool.poolId ?? "unknown",
           (pool) => {
             const view = this.poolMap.get(pool.poolId ?? "");
+            const rates = byPool.get(pool.poolId ?? "");
+            const luck = this.luckSummary(pool.poolId ?? "");
+            const expected = luck?.high;
             const batches = scoped.filter((batch) => (batch.poolId || null) === (pool.poolId || null));
             const high = highHits.get(pool.poolId) as GachaPoolHits | undefined;
             const pickup = pickupHits.get(pool.poolId) as GachaPoolHits | undefined;
@@ -1251,19 +1237,19 @@ export class GachaHistory extends LitElement {
                   </div>
                   <span class="gacha-pool__total">${this.t("draws", { count: this.number(pool.total) })}</span>
                 </header>
-                <div class="gacha-pool__stats" ?hidden=${this.pureItemPool(pool.poolId)}>
+                <div class="gacha-pool__stats" ?hidden=${isItemOnlyGacha(view?.rates)}>
                   ${this.stat({
                     icon: icon("star", 20),
                     label: "SSR+",
                     value: this.number(pool.high),
-                    supporting: `${this.percent(pool.high, pool.total)}${view?.rates ? ` / ${this.t("officialRate")} ${this.percent(view.rates.high)}` : ""}`,
+                    supporting: this.rateText(rates?.high),
                     tone: "tertiary",
                   })}
                   ${this.stat({
                     icon: icon("trending_up", 20),
                     label: this.t("pickup"),
                     value: this.number(pool.pickup),
-                    supporting: `${this.percent(pool.pickup, pool.total)}${view?.rates?.pickup ? ` / ${this.t("officialRate")} ${this.percent(view.rates.pickup)}` : ""}`,
+                    supporting: this.rateText(rates?.pickup),
                     tone: "secondary",
                   })}
                   ${this.stat({
@@ -1277,14 +1263,13 @@ export class GachaHistory extends LitElement {
                   ${this.stat({
                     icon: icon("functions", 20),
                     label: this.t("pullsPerHigh"),
-                    value: pool.pullsPerHigh == null ? "—" : this.number(pool.pullsPerHigh, 1),
-                    supporting:
-                      pool.expectedHigh == null
-                        ? ""
-                        : `${this.t("expected")} ${this.number(pool.expectedHigh, 2)} / ${this.t("difference")} ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2, signDisplay: "always" }).format(pool.delta ?? 0)}`,
+                    value: pool.high ? this.number((pool.total - pool.unknown - pool.unknownRarity) / pool.high, 1) : "—",
+                    supporting: expected
+                      ? `${this.t("expected")} ${this.number(expected.expected, 2)} / ${this.t("difference")} ${new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2, signDisplay: "always" }).format(expected.observed - expected.expected)}`
+                      : "",
                   })}
                 </div>
-                ${this.luckMeter(this.t("luckCombined"), this.luckSummary(pool.poolId ?? "")?.combined, this.luckSummary(pool.poolId ?? ""), true)}
+                ${this.luckMeter(this.t("luckCombined"), luck?.combined, luck, true)}
                 ${
                   view?.featured?.length
                     ? html`
