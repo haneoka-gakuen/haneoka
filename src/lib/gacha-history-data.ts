@@ -8,6 +8,7 @@ import type {
   GachaHistoryPool,
   GachaHistoryPrize,
   GachaHistoryConversion,
+  GachaHistoryItemArt,
 } from "./gacha-history-view";
 import { localizedText } from "../lit/shared/catalog";
 import { resourcePath } from "./resource-route";
@@ -35,6 +36,13 @@ export interface HistoryCatalogData {
 }
 
 export const historyBaseTopUpId = (server: string) => (server === "jp" ? "2" : "1000000101");
+
+export function historyItemArt(catalog: HistoryCatalogData | undefined, id: unknown, locale: string): GachaHistoryItemArt | undefined {
+  if (typeof id !== "number" && typeof id !== "string") return;
+  const item = historyObject(catalog?.items[String(id)]);
+  if (typeof item.image === "string" && item.image)
+    return { imageUrl: item.image, name: localizedText(item.name, locale) };
+}
 
 export function historyDefaultGemConversion(
   catalog: HistoryCatalogData | undefined,
@@ -258,6 +266,7 @@ export function historyBatchViews(
       paidGems: batch.paidGems ?? undefined,
       tickets: batch.tickets ?? undefined,
     },
+    ticketItem: batch.tickets ? historyItemArt(catalog, historyObject(poolMap[batch.poolId ?? ""]).ticketItemId, locale) : undefined,
     source: snapshot.source.server,
     prizes: batch.prizes.map((prize): GachaHistoryPrize => {
       const row = historyObject(prizeMap[prize.prizeId]),

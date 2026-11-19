@@ -20,6 +20,7 @@ import {
   historyPoolViews,
   historyBaseTopUpId,
   historyDefaultGemConversion,
+  historyItemArt,
   historyOffsetMinutes,
   type HistoryCatalogData,
 } from "../lib/gacha-history-data";
@@ -489,6 +490,7 @@ class GachaHistoryWorkspace extends HTMLElement {
             ? "KRW"
             : "TWD";
     view.currencyConversion = this.conversion ?? historyDefaultGemConversion(catalog, currencyCode);
+    view.gemItems = { free: historyItemArt(catalog, 1, view.locale), paid: historyItemArt(catalog, 2, view.locale) };
     view.pools = catalog
       ? historyPoolViews(
           catalog,

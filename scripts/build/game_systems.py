@@ -998,9 +998,10 @@ def _gacha(
     prize_groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for row in data.rows("MasterGachaPrize"):
         prize_groups[_number(row, "_groupId")].append(row)
+    items = documents["items"]["items"]
     currency_by_type = {
         int(item.get("itemType") or 0): item
-        for item in documents["items"]["items"].values()
+        for item in items.values()
         if isinstance(item, dict)
     }
     entries = {}
@@ -1055,13 +1056,17 @@ def _gacha(
             )
         draw_options = []
         currencies: set[int] = set()
+        ticket_id = _number(row, "_gachaTicketItemId")
+        ticket = items.get(str(ticket_id))
+        if not isinstance(ticket, dict) or ticket.get("itemType") != 2:
+            ticket = None
         for key in ("_productId1", "_productId2", "_productId3", "_productId4"):
             product = products.get(str(row.get(key) or ""))
             if not product:
                 continue
             item_type = _number(product, "_itemType")
             currencies.add(item_type)
-            currency = currency_by_type.get(item_type)
+            currency = ticket if item_type == 2 else currency_by_type.get(item_type)
             draw_options.append(
                 {
                     "id": str(_number(product, "_id")),
@@ -1081,8 +1086,7 @@ def _gacha(
                     ],
                 }
             )
-        ticket = currency_by_type.get(_number(row, "_gachaTicketItemId"))
-        if 2 in currencies or ticket:
+        if 2 in currencies:
             category = "ticket"
         elif 15 in currencies:
             category = "ad"
@@ -1094,6 +1098,8 @@ def _gacha(
             option["monthlyPassIds"] for option in draw_options
         ):
             category = "pass"
+        elif ticket:
+            category = "ticket"
         else:
             category = "other"
         entries[str(identity)] = _entry(
@@ -1118,6 +1124,7 @@ def _gacha(
             limited=bool(row.get("_isLimited")),
             displayCondition=_number(row, "_gachaDisplayCondition"),
             ticketItem={
+                "id": ticket_id,
                 "name": ticket.get("name"),
                 "image": ticket.get("image"),
             }
@@ -1173,6 +1180,7 @@ def build_gacha_history_metadata(
             "guaranteeRule": entry["guaranteeRule"],
             "pickUpSelectCount": entry["pickUpSelectCount"],
             "productIds": [option["id"] for option in entry["drawOptions"]],
+            "ticketItemId": (entry.get("ticketItem") or {}).get("id"),
             "rates": rates,
             "prizeGroupIds": sorted({
                 _number(lot, "_prizeGroupId")

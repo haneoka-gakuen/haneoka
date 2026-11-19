@@ -35,6 +35,7 @@ import type {
   GachaHistoryEvents,
   GachaHistoryConversion,
   GachaHistoryCost,
+  GachaHistoryItemArt,
   GachaHistoryImportSource,
 } from "../lib/gacha-history-view";
 import { renderBrowse, clearBrowseBar } from "./ui/browse";
@@ -95,6 +96,7 @@ export class GachaHistory extends LitElement {
     importSources: { attribute: false },
     importSourceOpen: { state: true },
     currencyConversion: { attribute: false },
+    gemItems: { attribute: false },
     exportingImage: { state: true },
     imageError: { state: true },
     locale: {},
@@ -145,6 +147,7 @@ export class GachaHistory extends LitElement {
   declare importSources: readonly GachaHistoryImportSource[];
   declare private importSourceOpen: boolean;
   declare currencyConversion?: GachaHistoryConversion;
+  declare gemItems?: { free?: GachaHistoryItemArt; paid?: GachaHistoryItemArt };
   declare private exportingImage: boolean;
   declare private imageError: string;
   declare locale: string;
@@ -513,6 +516,15 @@ export class GachaHistory extends LitElement {
         <span class="gacha-stat__supporting">${options.supporting ?? nothing}</span>
       </div>
     `;
+  }
+  private itemArt(item?: GachaHistoryItemArt, size = 24) {
+    return item ? html`<img class="gacha-item-art" src=${item.imageUrl} width=${size} height=${size} alt="" loading="lazy" decoding="async" />` : nothing;
+  }
+  private costChip(value: number | undefined, label: string, item?: GachaHistoryItemArt) {
+    if (!value) return nothing;
+    return html`<span class="gacha-chip" title=${item?.name || label} aria-label=${`${item?.name || label} ${this.number(value)}`}>
+      ${item ? this.itemArt(item) : label} ${this.number(value)}
+    </span>`;
   }
   private collected(batches: readonly GachaHistoryBatch[]) {
     const cards = new Map<string, CollectedCard>();
@@ -949,7 +961,7 @@ export class GachaHistory extends LitElement {
                     tone: luck ? `luck-${luck.tier}` : "neutral",
                   })}
                   ${this.stat({
-                    icon: icon("diamond", 24),
+                    icon: html`${this.itemArt(!stats.cost.freeGems.value && stats.cost.paidGems.value ? this.gemItems?.paid : this.gemItems?.free, 30)}`,
                     label: this.t("gemsSpent"),
                     value:
                       stats.cost.freeGems.value == null && stats.cost.paidGems.value == null ? "—" : this.number(gems),
@@ -1584,7 +1596,6 @@ export class GachaHistory extends LitElement {
                         (batch) => batch.id,
                         (batch) => {
                           const high = batch.prizes.filter(isHigh).length;
-                          const gems = (batch.cost?.freeGems ?? 0) + (batch.cost?.paidGems ?? 0);
                           return html`
                             <article class="gacha-batch stack">
                               <header class="gacha-batch__header">
@@ -1615,22 +1626,9 @@ export class GachaHistory extends LitElement {
                                         `
                                       : nothing
                                   }
-                                  ${
-                                    gems
-                                      ? html`
-                                          <span class="gacha-chip">${icon("diamond", 16)}${this.number(gems)}</span>
-                                        `
-                                      : nothing
-                                  }
-                                  ${
-                                    batch.cost?.tickets
-                                      ? html`
-                                          <span class="gacha-chip">
-                                            ${icon("confirmation_number", 16)}${this.number(batch.cost.tickets)}
-                                          </span>
-                                        `
-                                      : nothing
-                                  }
+                                  ${this.costChip(batch.cost?.freeGems, this.t("freeGems"), this.gemItems?.free)}
+                                  ${this.costChip(batch.cost?.paidGems, this.t("paidGems"), this.gemItems?.paid)}
+                                  ${this.costChip(batch.cost?.tickets, this.t("tickets"), batch.ticketItem)}
                                 </span>
                               </header>
                               ${this.renderPrizes(this.prizes(batch))}

@@ -61,8 +61,13 @@ export interface GachaHistoryBatch {
   prizes: readonly GachaHistoryPrize[];
   source?: string;
   cost?: GachaHistoryCost;
+  ticketItem?: GachaHistoryItemArt;
   expected?: GachaHistoryExpectation;
   luckLaw?: GachaLuckLaw;
+}
+export interface GachaHistoryItemArt {
+  imageUrl: string;
+  name: string;
 }
 export interface GachaHistoryExpectation {
   high: number;

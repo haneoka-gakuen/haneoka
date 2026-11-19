@@ -361,6 +361,10 @@
   .gacha-batch__chips {
     gap: 6px;
   }
+  .gacha-item-art {
+    object-fit: contain;
+    flex: none;
+  }
   .gacha-chip {
     display: inline-flex;
     align-items: center;
