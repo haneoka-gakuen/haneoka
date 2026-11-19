@@ -123,22 +123,47 @@ export type ReplicaOperation =
   | { table: string; upsert: Record<string, unknown> }
   | { table: string; remove: Record<string, unknown> };
 
+const BATCH_TABLE = "official_observation_batches";
+const PAYLOAD_TABLE = "official_observation_payloads";
+
+function readReplicaRow(db: DatabaseSync, table: string, key: Record<string, unknown>): Row | undefined {
+  const columns = Object.keys(key);
+  return db.prepare(`SELECT * FROM "${table}" WHERE ${columns.map((column) => `"${column}" IS ?`).join(" AND ")}`)
+    .get(...(Object.values(key) as SQLInputValue[])) as Row | undefined;
+}
+
 /** The next run of queued changes: each row as it is now, or its removal. */
 export function takeOutbox(db: DatabaseSync, tables: Map<string, ReplicatedTable>, limit: number, byteBudget: number) {
   const queued = db.prepare("SELECT seq, tbl, pk FROM _replica_outbox ORDER BY seq LIMIT ?").all(limit) as { seq: number; tbl: string; pk: string }[];
   const operations: ReplicaOperation[] = [];
+  const includedBatches = new Set<string>();
   let bytes = 0, last = 0;
+  const append = (operation: ReplicaOperation) => {
+    operations.push(operation);
+    bytes += Buffer.byteLength(JSON.stringify(operation)) + 1;
+  };
   for (const entry of queued) {
     const table = tables.get(entry.tbl);
     last = entry.seq;
     if (!table) continue;
     const values = JSON.parse(entry.pk) as unknown[];
     const where = Object.fromEntries(table.key.map((column, index) => [column, values[index]]));
-    const row = db.prepare(`SELECT * FROM "${table.name}" WHERE ${table.key.map((column) => `"${column}" IS ?`).join(" AND ")}`)
-      .get(...(values as SQLInputValue[])) as Row | undefined;
-    const operation: ReplicaOperation = row ? { table: table.name, upsert: { ...row } } : { table: table.name, remove: where };
-    bytes += JSON.stringify(operation).length;
-    operations.push(operation);
+    const row = readReplicaRow(db, table.name, where);
+    const key = row?.payload_key;
+    if (row && typeof key === "string") {
+      // Appending a payload updates the parent's byte size and moves its outbox entry.
+      // Include the parent even if a byte-limited chunk ends before that entry.
+      if (table.name === PAYLOAD_TABLE && !includedBatches.has(key)) {
+        const batch = readReplicaRow(db, BATCH_TABLE, { payload_key: key });
+        if (!batch) throw new Error("replica_observation_batch_missing");
+        append({ table: BATCH_TABLE, upsert: { ...batch } });
+        includedBatches.add(key);
+      } else if (table.name === BATCH_TABLE) {
+        if (includedBatches.has(key)) continue;
+        includedBatches.add(key);
+      }
+    }
+    append(row ? { table: table.name, upsert: { ...row } } : { table: table.name, remove: where });
     if (bytes >= byteBudget) break;
   }
   return { operations, last };
