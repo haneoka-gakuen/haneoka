@@ -164,6 +164,7 @@ export const ROUTES: RouteDefinition[] = [
     titleKey,
   })),
   { route: "/about", kind: "legal", key: "about", page: "aboutPage", titleKey: "legal.about.title" },
+  { route: "/friend-links", kind: "legal", key: "friend-links", page: "friendLinksPage", titleKey: "legal.friendLinks.title" },
   { route: "/join", kind: "legal", key: "join", page: "joinPage", titleKey: "legal.join.title" },
   { route: "/sponsor", kind: "legal", key: "sponsor", page: "sponsorPage", titleKey: "legal.sponsor.title" },
   { route: "/license", kind: "legal", key: "license", page: "licensePage", titleKey: "legal.license.title" },
@@ -173,6 +174,7 @@ export const ROUTES: RouteDefinition[] = [
 
 const LEGAL_PAGE_MESSAGES: Readonly<Record<string, string>> = {
   aboutPage: "legal.about",
+  friendLinksPage: "legal.friendLinks",
   joinPage: "legal.join",
   sponsorPage: "legal.sponsor",
   licensePage: "legal.license",

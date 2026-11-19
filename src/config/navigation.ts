@@ -75,6 +75,7 @@ export const UTILITY_DESTINATIONS = [
 ] as const;
 
 export const INFORMATION_DESTINATIONS = [
+  { route: "/friend-links", icon: "link", label: "legal.friendLinks.title" },
   { route: "/license", icon: "copyright", label: "legal.license.title" },
   { route: "/terms", icon: "description", label: "legal.terms.title" },
   { route: "/privacy", icon: "privacy_tip", label: "legal.privacy.title" },

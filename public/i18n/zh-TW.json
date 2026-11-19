@@ -5895,6 +5895,17 @@
     }
   },
   "legal": {
+    "friendLinks": {
+      "title": "友情連結",
+      "description": "瀏覽 BanG Dream! 遊戲資料站與同人創作。",
+      "resources": "遊戲資料",
+      "creations": "同人創作",
+      "sites": {
+        "bestdori": "BanG Dream! Girls Band Party! 資料站，提供卡牌、樂曲、譜面與活動查詢。",
+        "moenotes": "BanG Dream! Our Notes 資料站，收錄卡牌、歌曲、劇情與活動，提供譜面預覽和組卡工具。",
+        "sakiko": "以 Ave Mujica 為主題的同人互動網站，包含 Live2D 人偶舞臺與《滿月降臨》等網頁體驗。"
+      }
+    },
     "about": {
       "eyebrow": "BanG Dream! Our Notes 資料庫",
       "title": "關於 Haneoka",

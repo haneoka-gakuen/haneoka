@@ -1,0 +1,185 @@
+---
+import { Image } from "astro:assets";
+import type { Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import bestdori from "../../assets/icons/bestdori.png";
+import moenotes from "../../assets/icons/moenotes.png";
+import sakiko from "../../assets/icons/sakiko-app.png";
+import I18nText from "../I18nText.astro";
+import Icon from "../Icon.astro";
+
+const { locale } = Astro.props as { locale: Locale };
+const groups = [
+  {
+    id: "resources",
+    sites: [
+      { id: "bestdori", name: "Bestdori!", href: "https://bestdori.com/", image: bestdori },
+      { id: "moenotes", name: "Moenotes", href: "https://bdon.moe/", image: moenotes },
+    ],
+  },
+  {
+    id: "creations",
+    sites: [{ id: "sakiko", name: "sakiko.app", href: "https://sakiko.app/", image: sakiko }],
+  },
+] as const;
+---
+
+<div class="friend-links">
+  <div class="friend-links__groups">
+    {groups.map(({ id, sites }) => (
+      <section class="friend-links__section" aria-labelledby={`friend-links-${id}`}>
+        <h2 id={`friend-links-${id}`}>
+          <I18nText keyName={`legal.friendLinks.${id}`} fallback={t(locale, `legal.friendLinks.${id}`)} locale={locale} />
+        </h2>
+        <ul class:list={["friend-links__list", sites.length === 2 && "friend-links__list--pair"]}>
+          {sites.map((site) => (
+            <li>
+              <a class="friend-link" href={site.href} target="_blank" rel="noopener noreferrer">
+                <Image class="friend-link__mark" src={site.image} alt="" width={96} height={96} format="webp" decoding="async" />
+                <span class="friend-link__copy">
+                  <strong>{site.name}</strong>
+                  <I18nText
+                    keyName={`legal.friendLinks.sites.${site.id}`}
+                    fallback={t(locale, `legal.friendLinks.sites.${site.id}`)}
+                    locale={locale}
+                  />
+                </span>
+                <bdi class="friend-link__host" dir="ltr">{new URL(site.href).hostname}</bdi>
+                <span class="friend-link__arrow"><Icon name="open_in_new" size={20} /></span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+  </div>
+</div>
+
+<style>
+  .friend-links {
+    width: min(100%, 1200px);
+    margin-inline: auto;
+    padding: clamp(24px, 5vw, 64px) var(--pane-gutter);
+    container-type: inline-size;
+  }
+  .friend-links__groups {
+    display: grid;
+    gap: 28px;
+  }
+  .friend-links__section {
+    display: grid;
+    min-width: 0;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+  }
+  .friend-links__section h2 {
+    margin: 0;
+    font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
+      var(--md-sys-typescale-headline-small-line-height) var(--app-font);
+  }
+  .friend-links__list {
+    display: grid;
+    gap: 4px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+  .friend-link {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas: "mark copy arrow" "mark host arrow";
+    align-content: center;
+    align-items: center;
+    gap: 6px 14px;
+    height: 100%;
+    padding: 16px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    text-decoration: none;
+    transition: background-color var(--motion-effects-fast);
+  }
+  .friend-link:hover {
+    background: var(--md-sys-color-surface-container-high);
+  }
+  .friend-link:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
+  }
+  .friend-link__mark {
+    grid-area: mark;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .friend-link__copy {
+    grid-area: copy;
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
+      var(--md-sys-typescale-body-medium-line-height) var(--app-font);
+    overflow-wrap: anywhere;
+  }
+  .friend-link__copy strong {
+    color: var(--md-sys-color-on-surface);
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+  }
+  .friend-link__host {
+    grid-area: host;
+    justify-self: start;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+    overflow-wrap: anywhere;
+  }
+  .friend-link__arrow {
+    grid-area: arrow;
+    display: grid;
+    color: var(--md-sys-color-primary);
+  }
+  .friend-links__list--pair li:first-child .friend-link {
+    border-end-start-radius: var(--md-sys-shape-corner-small);
+    border-end-end-radius: var(--md-sys-shape-corner-small);
+  }
+  .friend-links__list--pair li:last-child .friend-link {
+    border-start-start-radius: var(--md-sys-shape-corner-small);
+    border-start-end-radius: var(--md-sys-shape-corner-small);
+  }
+  @container (min-width: 840px) {
+    .friend-links__groups {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+    .friend-links__list--pair {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .friend-link {
+      min-block-size: 216px;
+      padding: 24px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto 1fr auto;
+      grid-template-areas: "mark mark" "copy copy" "host arrow";
+      align-items: start;
+      gap: 14px;
+    }
+    .friend-link__mark {
+      width: 56px;
+      height: 56px;
+    }
+    .friend-link__host, .friend-link__arrow {
+      align-self: center;
+    }
+    .friend-links__list--pair li:first-child .friend-link {
+      border-end-start-radius: var(--md-sys-shape-corner-extra-large);
+      border-start-end-radius: var(--md-sys-shape-corner-small);
+    }
+    .friend-links__list--pair li:last-child .friend-link {
+      border-start-end-radius: var(--md-sys-shape-corner-extra-large);
+      border-end-start-radius: var(--md-sys-shape-corner-small);
+    }
+  }
+</style>
