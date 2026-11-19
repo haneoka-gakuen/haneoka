@@ -51,7 +51,14 @@ const text = keyName ? t(locale, keyName, label) : label;
   />
   <span class="settings-option__face" aria-hidden="true">
     {name === "locale" ? (
-      <span class="settings-option__language">{text}</span>
+      <>
+        {image && (
+          <span class="settings-option__image">
+            <img src={image} width="28" height="28" alt="" loading="lazy" decoding="async" />
+          </span>
+        )}
+        <span class="settings-option__language">{text}</span>
+      </>
     ) : swatch ? (
       <span class="settings-option__palette">
         <i></i>

@@ -24,8 +24,21 @@ export function installI18nDom(): void {
   let activeLanguage: typeof preference;
   let languageRequest = 0;
   const refreshWorkspaces = () => {
-    for (const node of document.querySelectorAll<HTMLElement & { requestUpdate?: () => void }>("[data-prerendered]"))
-      node.requestUpdate?.();
+    const language = activeLanguage;
+    type Workspace = HTMLElement & { requestUpdate?: () => void; updateComplete?: Promise<unknown> };
+    const workspaces = document.querySelectorAll<Workspace>("[data-prerendered], [data-page-data], [locale]");
+    for (const node of workspaces) {
+      if (!node.localName.includes("-")) continue;
+      // Lit removes its prerender marker after hydration. Wait for the first
+      // render so an already-loaded or late-defined workspace reads the overlay.
+      void customElements
+        .whenDefined(node.localName)
+        .then(async () => {
+          await node.updateComplete;
+          if (node.isConnected && activeLanguage === language) node.requestUpdate?.();
+        })
+        .catch((error: unknown) => console.error("[i18n]", error));
+    }
   };
   const syncInterface = async () => {
     const next = client.committed === "en" ? preference : undefined;
