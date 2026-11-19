@@ -1,5 +1,5 @@
 import { DEFAULT_LOCALE, isLocale } from "@haneoka/i18n";
-import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route";
+import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
 import { navigationDocumentUrl } from "./document-url";
 import { homePath, isReleaseServer, releaseServerFromPath, releaseServerFromCookie, RELEASE_SERVER_COOKIE, type ReleaseServer } from "./resource-route";
 import { PUBLIC_RELEASE_SERVERS } from "./temporary-public-routing";

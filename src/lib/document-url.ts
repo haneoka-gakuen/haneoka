@@ -1,4 +1,4 @@
-import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route";
+import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
 
 /** Destination identity stays available throughout Astro's document swap. */
 let pendingDocumentUrl: URL | undefined;

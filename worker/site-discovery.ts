@@ -4,7 +4,7 @@
 // Pos: [Map](L2.md)；公开搜索发现文档的 Worker 适配器。
 // Effects/Dependencies: sitemap 规范化至主站；扩展语言只读取已有的英文 ASSETS。
 import { CANONICAL_ORIGIN, isSiteHostname } from "../src/lib/site-origin";
-import { interfaceLanguageFromPath, interfacePath } from "../src/i18n/interface-route";
+import { interfaceLanguageFromPath, interfacePath } from "../src/i18n/interface-route.ts";
 import type { InterfaceLanguageId } from "../src/i18n/interface-language-options";
 
 function localizedSitemap(body: ReadableStream<Uint8Array>, locale: InterfaceLanguageId): ReadableStream<Uint8Array> {

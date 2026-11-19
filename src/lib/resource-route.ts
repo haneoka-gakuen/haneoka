@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md)；站点与服务共享的资源路由契约。
 // Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
-import { englishInterfacePath } from "../i18n/interface-route";
+import { englishInterfacePath } from "../i18n/interface-route.ts";
 import { CONTENT_SOURCE_IDS, isContentSourceId } from "./content-sources.ts";
 import { communityStoryPath, legacyCommunityStoryRedirectTarget } from "./community-story-route.ts";
 import { communityChartPath, legacyCommunityChartRedirectTarget } from "./community-chart-route.ts";

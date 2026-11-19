@@ -449,7 +449,7 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
   import { isReleaseServer, readSelectedReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
   import { interfaceLanguages } from "../i18n/interface-languages";
-  import { englishInterfacePath, interfacePath } from "../i18n/interface-route";
+  import { englishInterfacePath, interfacePath } from "../i18n/interface-route.ts";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   let disposeSettings: (() => void) | undefined;

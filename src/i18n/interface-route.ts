@@ -3,9 +3,9 @@
 // Output: 扩展语言地址及其英文内容地址。
 // Pos: [Map](L2-2.md)；区分界面语言路由和静态内容路由。
 // Effects/Dependencies: Worker 与浏览器共用纯路径和链接转换。
-import groups from "../config/interface-share.json";
-import { isSiteOrigin } from "../lib/site-origin";
-import { interfaceLanguages, type InterfaceLanguage, type InterfaceLanguageId } from "./interface-language-options";
+import groups from "../config/interface-share.json" with { type: "json" };
+import { isSiteOrigin } from "../lib/site-origin.ts";
+import { interfaceLanguages, type InterfaceLanguage, type InterfaceLanguageId } from "./interface-language-options.ts";
 
 const interfaceById = new Map<string, InterfaceLanguage>(
   interfaceLanguages.map((language) => [language.value, language]),

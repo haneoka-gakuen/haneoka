@@ -1,4 +1,4 @@
-import { englishInterfacePath } from "../i18n/interface-route";
+import { englishInterfacePath } from "../i18n/interface-route.ts";
 import { normalizeAuthorLocale, matchLocale } from "@haneoka/i18n";
 import { localizedFallbacks } from "./localized-text";
 import { preferredDeviceLocale } from "../i18n/negotiation";

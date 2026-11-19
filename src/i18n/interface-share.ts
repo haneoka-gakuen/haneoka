@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md); sharing for interface languages that reuse English documents.
 // Effects/Dependencies: Legacy previews continue to link to the canonical language URL.
 import { type InterfaceLanguageId } from "./interface-language-options";
-import { interfacePath } from "./interface-route";
+import { interfacePath } from "./interface-route.ts";
 
 const englishPage = /^\/(?:(?:jp|intl)\/)?en(?:\/|$)/u;
 

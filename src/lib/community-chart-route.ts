@@ -3,7 +3,7 @@
 // Output: Cross-server chart paths, legacy redirects, shell lookup and preview metadata.
 // Pos: [Map](L2-2.md); shared by browser, static rendering and request handlers.
 // Effects/Dependencies: Pure URL and HTML transformations; no network or storage.
-import { englishInterfacePath } from "../i18n/interface-route";
+import { englishInterfacePath } from "../i18n/interface-route.ts";
 import { rewriteCommunityDocument, rewriteCommunityStructuredData } from "./community-document-meta.ts";
 const LOCALE = "(?:ja|en|zh-TW|zh-CN|ko)";
 const CHART_ID = "[0-9a-f-]{36}";

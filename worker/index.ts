@@ -17,7 +17,7 @@ import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest }
 import { serveSiteDiscovery } from "./site-discovery";
 import { interfaceDocument, translateInterfaceDocument } from "./interface-documents";
 import type { InterfaceLanguageId } from "../src/i18n/interface-language-options";
-import { interfaceLanguageFromPath, interfacePath } from "../src/i18n/interface-route";
+import { interfaceLanguageFromPath, interfacePath } from "../src/i18n/interface-route.ts";
 import { CANONICAL_ORIGIN, isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";

@@ -1,6 +1,6 @@
 import { isLocale, languageTagFor } from "@haneoka/i18n";
 import { initializeI18nClient, readI18nSeed } from "./client";
-import { interfaceHref, interfaceLanguageFromPath, interfacePath } from "./interface-route";
+import { interfaceHref, interfaceLanguageFromPath, interfacePath } from "./interface-route.ts";
 import { interfaceShareUrl } from "./interface-share";
 import { formatDocumentTitle } from "../lib/document-title";
 import { snackbar } from "../lib/snackbar";

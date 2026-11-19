@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md); build-time discovery for the public sitemap endpoints.
 // Effects/Dependencies: Reads route files and existing static data producers; excludes private and noindex documents.
 import fs from "node:fs";
-import { interfaceLanguages } from "../i18n/interface-language-options";
+import { interfaceLanguages } from "../i18n/interface-language-options.ts";
 import { LOCALES, localePath, type Locale } from "../i18n/locales";
 import { ROUTES } from "../config/routes";
 import { NAV_SECTIONS } from "../config/navigation";

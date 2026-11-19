@@ -9,7 +9,7 @@ import {
   interfaceHref,
   interfaceLanguageFromPath,
   interfaceSocialGroup,
-} from "../src/i18n/interface-route";
+} from "../src/i18n/interface-route.ts";
 import type { InterfaceLanguage, InterfaceLanguageId } from "../src/i18n/interface-language-options";
 import { formatDocumentTitle, withoutSiteSuffix } from "../src/lib/document-title";
 import { CANONICAL_ORIGIN } from "../src/lib/site-origin";

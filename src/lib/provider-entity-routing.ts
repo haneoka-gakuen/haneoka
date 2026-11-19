@@ -1,4 +1,4 @@
-import { englishInterfacePath } from "../i18n/interface-route";
+import { englishInterfacePath } from "../i18n/interface-route.ts";
 import { isLocale } from "@haneoka/i18n";
 import { providerEntityHtmlPath, providerEntityRoute, type ProviderEntityLocator } from "./provider-entity-data.ts";
 import { PROVIDER_STORY_SECTIONS } from "./provider-page-data.ts";
