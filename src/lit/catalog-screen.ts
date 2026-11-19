@@ -185,6 +185,7 @@ import {
   parseEntitySelection,
   parseResourceRoute,
   resourceKindForCollection,
+  resourcePath,
   returnStateFromLocation,
   type ResourceKind,
 } from "../lib/resource-route";
