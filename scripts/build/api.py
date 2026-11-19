@@ -26,7 +26,7 @@ from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from core.config import ServerConfig
 from core.server_policy import is_validation_source, project_catalog
@@ -1446,9 +1446,15 @@ def _skills(
     return output
 
 
+# dreamfes and campaign are reserved until Master provides evidence for those releases.
+MemberCardAcquisitionType = Literal[
+    "permanent", "limited", "birthday", "event", "unknown", "dreamfes", "campaign",
+]
+
+
 def _set_member_card_types(data: BuildData, cards: dict[str, Any], systems: dict[str, Any]) -> None:
     """Classify member acquisition from the same server's draw pools and event rewards."""
-    debut: dict[str, set[str]] = {}
+    debut: dict[str, set[MemberCardAcquisitionType]] = {}
     regular_pool: set[str] = set()
     pools = systems.get("gacha", {}).get("entries", {})
     for row in data.rows("MasterGacha"):
@@ -1472,7 +1478,7 @@ def _set_member_card_types(data: BuildData, cards: dict[str, Any], systems: dict
             if regular:
                 regular_pool.add(key)
             if start and prize["pickup"] and start == cards[key]["releasedAt"][0]:
-                kind = "permanent"
+                kind: MemberCardAcquisitionType = "permanent"
                 if limited:
                     kind = "birthday" if cards[key]["rarity"] == 20 else "limited"
                 debut.setdefault(key, set()).add(kind)
