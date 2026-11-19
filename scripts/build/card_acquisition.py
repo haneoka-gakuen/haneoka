@@ -67,9 +67,8 @@ def set_card_types(
     for event in events.values():
         start = event["startAt"][0]
         for reward in event["rewards"]:
-            if reward["sourceTable"] != "MasterEventAchievementReward" or reward["resourceType"] != resource_type:
-                continue
-            record_reward(reward["reward"], start, "event")
+            if reward["resourceType"] == resource_type:
+                record_reward(reward["reward"], start, "event")
 
     exchanges = systems.get("exchange", {}).get("entries", {})
     for row in data.rows("MasterExchange"):
