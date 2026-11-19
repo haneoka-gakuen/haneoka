@@ -320,7 +320,7 @@ export class BoxStore {
   flushNow(keepalive = false) {
     clearTimeout(this.flushTimer);
     if (!this.owner || !this.replica.outbox.length || this.disposed) return;
-    if (this.inflight && !keepalive) return;
+    if (this.inflight && !keepalive) return this.inflight;
     const owner = this.owner;
     const sent = this.replica.outbox.slice(0, 4000);
     const since = this.replica.revision;
@@ -367,6 +367,21 @@ export class BoxStore {
       if (this.inflight === wrapped) this.inflight = null;
     });
     const wrapped = this.inflight;
+    return wrapped;
+  }
+  /** Wait for this owner's queued edits to be acknowledged before closing a background replica. */
+  async flushPending(): Promise<boolean> {
+    const owner = this.owner;
+    if (!owner) return this.owner === null;
+    await this.inflight;
+    while (owner === this.owner && this.replica.outbox.length) {
+      const pending = this.replica.outbox.length;
+      const flush = this.flushNow();
+      if (!flush) return false;
+      await flush;
+      if (this.replica.outbox.length >= pending || this.status === "offline" || this.status === "signed-out") return false;
+    }
+    return owner === this.owner;
   }
   private get pullFloor() {
     return this.options.pullIntervalMs ?? 90_000;

@@ -202,12 +202,23 @@ export class HistoryCloudSync extends EventTarget {
     this.changed();
     void this.foreground(true);
   };
-  start() {
+  start(initialSync = true) {
     if (this.active) return;
     this.active = true;
     this.lifetime = new AbortController();
     window.addEventListener("haneoka:session-changed", this.revoke, { signal: this.lifetime.signal });
-    void this.foreground(true);
+    if (initialSync) void this.foreground(true);
+  }
+  async syncImported(records: StoredHistory[]): Promise<boolean> {
+    this.setLocal(records);
+    try {
+      await this.session();
+      if (records.some(({ key }) => this.isLinked(key))) await this.syncCurrent(true);
+      return true;
+    } catch (error) {
+      this.fail(error);
+      return false;
+    }
   }
   stop() {
     this.active = false;

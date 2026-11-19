@@ -317,6 +317,8 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
         runSaveImports();
         window.addEventListener("pageshow", (event) => { if (event.persisted) runSaveImports(); });
         addEventListener("haneoka-app-accounts", runSaveImports);
+        addEventListener("haneoka:session-changed", runSaveImports);
+        addEventListener("online", runSaveImports);
       }
       if ("serviceWorker" in navigator)
         addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });

@@ -13,6 +13,9 @@ import { BoxStore } from "./team-builder/sync/box-store";
 import { MAX_BOX_KEYS, validEntry } from "./team-builder/sync/box-doc";
 
 let running = false;
+let rerun = false;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let retryCount = 0;
 
 function overwrite(store: BoxStore, changes: CountChanges, matches: (key: string) => boolean) {
   const entries = store.snapshot.entries;
@@ -23,7 +26,6 @@ function overwrite(store: BoxStore, changes: CountChanges, matches: (key: string
       [...next].some(([key, value]) => !validEntry(key, value)))
     throw new Error("save_import_box");
   store.set([...next].map(([key, value]) => ({ key, value })));
-  store.flushNow();
 }
 
 async function importTeam(job: SaveImportJob, text: string, store: BoxStore) {
@@ -62,7 +64,7 @@ async function importSongs(progress: AppSongProgress, store: BoxStore, job: Save
   const owner = store.snapshot.owner;
   const account = (await appCall("gameAccounts", {}).catch(() => [])).find((save) => save.key === job.key);
   saveSongProgressProfile(job.server, owner ?? null, account ? songProgressProfile({ ...account, uid: account.profileId }) : undefined);
-  if (!counts.length && progress.countError) throw new Error(progress.countError);
+  return counts.length ? undefined : progress.countError;
 }
 
 async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<string, BoxStore>) {
@@ -77,35 +79,61 @@ async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<s
       stores.set(job.server, store);
       await store.start();
     }
+    let countError: string | undefined;
     if (action === "team") await importTeam(job, (result as { text: string }).text, store);
-    else await importSongs(result as AppSongProgress, store, job);
+    else countError = await importSongs(result as AppSongProgress, store, job);
+    if (!await store.flushPending()) return false;
+    if (countError) throw new Error(countError);
+    return true;
   }
   else if (action === "history") {
-    const { historyStore } = await import("./gacha-history-store");
-    for (const file of (result as { files: { name: string; text: string }[] }).files)
-      await historyStore.import(JSON.parse(file.text), file.name.replace(/\.json$/u, ""), true);
+    const [{ historyStore }, { HistoryCloudSync }] = await Promise.all([
+      import("./gacha-history-store"), import("./gacha-history-cloud-sync"),
+    ]);
+    const records = [];
+    for (const file of (result as { files: { name: string; text: string }[] }).files) {
+      records.push(await historyStore.import(JSON.parse(file.text), file.name.replace(/\.json$/u, ""), true));
+    }
+    const cloud = new HistoryCloudSync();
+    cloud.start(false);
+    try {
+      return await cloud.syncImported(records);
+    } finally {
+      cloud.stop();
+    }
+  } else if (action === "link") {
+    const status = result as { signedIn?: boolean; link?: unknown };
+    return status.signedIn === true && Boolean(status.link);
   }
   return true;
 }
 
 export async function runAppSaveImports() {
-  if (running) return;
+  if (running) {
+    rerun = true;
+    return;
+  }
+  clearTimeout(retryTimer);
   running = true;
   const stores = new Map<string, BoxStore>();
+  let retry = false;
   try {
     const jobs = await appCall("saveImportJobs", {});
     const options = jobs.length ? await appCall("saveImportOptions", {}) : null;
     const signedIn = options?.link && jobs.some((job) => job.actions.includes("link"))
-      ? await fetch("/api/auth/get-session", { credentials: "same-origin", cache: "no-store" })
+      ? fetch("/api/auth/get-session", { credentials: "same-origin", cache: "no-store" })
         .then((response) => response.ok ? response.json() : null)
         .then((session) => Boolean(session?.user?.id))
         .catch(() => false)
-      : false;
+      : Promise.resolve(false);
     let expired = false, failed = false;
-    for (const job of jobs) for (const action of job.actions) {
-      if (action === "link" && options?.link && !signedIn) continue;
+    const importAction = async (job: SaveImportJob, action: SaveImportAction) => {
+      if (action === "link" && options?.link && !await signedIn) return;
       try {
-        if (options?.[action] && !(await apply(job, action, stores))) continue;
+        if (options?.[action] && !(await apply(job, action, stores))) {
+          retry = true;
+          return;
+        }
       } catch (error) {
         const code = error instanceof Error ? error.message : String(error);
         if (!code.includes("save_import_obsolete")) {
@@ -114,7 +142,18 @@ export async function runAppSaveImports() {
         }
       }
       await appCall("completeSaveImport", { id: job.id, action });
-    }
+    };
+    const importActions = async (accept: (action: SaveImportAction) => boolean) => {
+      for (const job of jobs) for (const action of job.actions) {
+        if (accept(action)) await importAction(job, action);
+      }
+    };
+    const results = await Promise.allSettled([
+      importActions((action) => action === "team" || action === "songs"),
+      importActions((action) => action === "link"),
+      importActions((action) => action === "history"),
+    ]);
+    retry ||= results.some((result) => result.status === "rejected");
     const locale = preferredLocale();
     if (expired) snackbar(clientText(locale, "account.page.importSessionExpired", "Game session expired. Read the latest save again."));
     if (failed) snackbar(clientText(locale, "account.page.autoImportFailed", "Some save data could not be imported"), { error: true });
@@ -122,5 +161,14 @@ export async function runAppSaveImports() {
   } finally {
     for (const store of stores.values()) store.dispose();
     running = false;
+    if (rerun) {
+      rerun = false;
+      queueMicrotask(() => void runAppSaveImports().catch(() => {}));
+    } else if (retry) {
+      const delay = Math.min(60_000, 2000 * 2 ** Math.min(retryCount++, 5));
+      retryTimer = setTimeout(() => void runAppSaveImports().catch(() => {}), delay);
+    } else {
+      retryCount = 0;
+    }
   }
 }
