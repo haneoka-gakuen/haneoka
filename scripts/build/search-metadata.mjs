@@ -1,64 +1,19 @@
 // L3 — GEB
-// Input: Complete public HTML, canonical paths and optional external entity data.
+// Input: Published HTML and its canonical path.
 // Output: Search-only metadata and complete public Markdown records and buckets.
 // Pos: [Map](L2-2.md); semantic document projection for frontend finalization.
-// Effects/Dependencies: Parses the main content for Markdown, selects owned entity fields and writes bounded buckets.
+// Effects/Dependencies: Parses public main content for Markdown and excludes page-data scripts.
 import { searchCategory } from "../../src/lib/search-categories.ts";
 import { stripDocumentVersion } from "../../src/lib/document-address.ts";
 import { isSiteOrigin, CANONICAL_ORIGIN } from "../../src/lib/site-origin.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
 import { parse, parseFragment, serialize } from "parse5";
-import { decodePageData, PAGE_DATA_WRAPPER, PAGE_DATA_REFERENCE } from "../../src/lib/page-data-codec.ts";
-import { mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
 
 const plainText = (node) => (node.nodeName === "#text" ? node.value : (node.childNodes || []).map(plainText).join(""));
 const compact = (text) => text.replace(/\s+/gu, " ").trim();
 const SCRIPT_START = /<!--|<script\b[^>]*>/giu;
 const SCRIPT_END = /<\/script\s*>/giu;
 const JSON_TYPE = /\stype\s*=\s*(?:"application\/json"|'application\/json'|application\/json(?=[\s>]))/iu;
-
-function markdownPageData(raw) {
-  const data = JSON.parse(raw);
-  const shared =
-    data &&
-    typeof data === "object" &&
-    !Array.isArray(data) &&
-    Object.keys(data).length === 2 &&
-    Array.isArray(data[PAGE_DATA_WRAPPER]) &&
-    "value" in data
-      ? data[PAGE_DATA_WRAPPER]
-      : undefined;
-  const valueOf = (value) => {
-    while (
-      shared &&
-      value &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.keys(value).length === 1 &&
-      typeof value[PAGE_DATA_REFERENCE] === "number"
-    )
-      value = shared[value[PAGE_DATA_REFERENCE]];
-    return value;
-  };
-  const root = valueOf(shared ? data.value : data);
-  if (!root || typeof root !== "object" || Array.isArray(root)) return root;
-  const selected = Object.fromEntries(
-    ["schema", "id", "server", "item"]
-      .filter((key) => Object.hasOwn(root, key))
-      .map((key) => [key, root[key]]),
-  );
-  if (root.schema === "haneoka-story-payload-v1") {
-    const episode = valueOf(valueOf(root.episodes)?.[root.id]);
-    if (episode)
-      selected.episodes = {
-        [root.id]: Object.fromEntries(
-          Object.entries(episode).filter(([key]) => key !== "commands" && key !== "assets"),
-        ),
-      };
-  }
-  return decodePageData(shared ? { [PAGE_DATA_WRAPPER]: shared, value: selected } : selected);
-}
 
 function withoutInlineJson(html) {
   const parts = [];
@@ -181,105 +136,55 @@ export function withSearchMetadata(html, sourcePath) {
 
 const attrsOf = (node) => Object.fromEntries((node.attrs || []).map(({ name, value }) => [name, value]));
 const markdownEscape = (value) => value.replace(/([\\`*_[\]<>|])/gu, "\\$1");
-export function markdownPath(pathname) {
-  return pathname === "/" ? "/index.md" : `${pathname.replace(/\/+$/u, "")}.md`;
-}
-/** Nest an entity beneath the file title without changing code blocks. */
-export function markdownRecord(markdown, anchor) {
-  let fenced = false;
-  const body = markdown
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("```")) fenced = !fenced;
-      return !fenced && /^#{1,5} /u.test(line) ? `#${line}` : line;
-    })
-    .join("\n");
-  return `\n<a id="${anchor}"></a>\n\n${body}`;
-}
-/** Stable bucket anchors survive splitting; detail files stay bounded and directly cacheable. */
-export function writeMarkdownBucket(outputRoot, pathname, records, readRecord) {
-  records.sort((a, b) => a.canonical.localeCompare(b.canonical, "en"));
-  const title = `# haneoka - ${pathname.split("/").slice(2, -1).join("/")}\n\n`;
-  const limit = 256 * 1024;
-  let files = 0,
-    bytes = 0,
-    maxBytes = 0;
-  const publish = (target, body) => {
-    const size = Buffer.byteLength(body);
-    if (size > 25 * 1024 * 1024) throw new Error(`Markdown exceeds the static asset limit: ${target}`);
-    const file = path.join(outputRoot, target.slice(1));
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, body);
-    files++;
-    bytes += size;
-    maxBytes = Math.max(maxBytes, size);
-  };
-  const total = Buffer.byteLength(title) + records.reduce((sum, record) => sum + record.bytes, 0);
-  if (total <= limit) {
-    publish(pathname, title + records.map(readRecord).join(""));
-  } else {
-    let part = title,
-      partBytes = Buffer.byteLength(title),
-      first,
-      pending = [];
-    const flush = () => {
-      if (!first) return;
-      const target = pathname.replace(/\.md$/u, `-${first.anchor.slice(7)}.md`);
-      publish(target, part);
-      for (const record of pending) record.detail = `${target}#${record.anchor}`;
-      part = title;
-      partBytes = Buffer.byteLength(title);
-      first = undefined;
-      pending = [];
-    };
-    for (const record of records) {
-      const body = readRecord(record);
-      if (first && partBytes + record.bytes > limit) flush();
-      first ||= record;
-      part += body;
-      partBytes += record.bytes;
-      pending.push(record);
-    }
-    flush();
-    publish(
-      pathname,
-      title +
-        records
-          .map(
-            (record) =>
-              `\n<a id="${record.anchor}"></a>\n\n## ${markdownEscape(record.title)}\n\n[Markdown](https://haneoka.org${record.detail}) · [Web](${record.canonical})\n`,
-          )
-          .join("\n"),
-    );
+const hasClass = (attrs, name) => (attrs.class || "").split(/\s+/u).includes(name);
+const excludedBodyNode = (attrs) =>
+  (attrs.hidden !== undefined && !hasClass(attrs, "md-accordion__panel")) ||
+  attrs["aria-hidden"] === "true" || attrs.inert !== undefined || attrs.role === "dialog" ||
+  attrs["data-content-view"] === "full" || attrs["data-pagefind-ignore"] === "all" ||
+  /(?:^|\s)(?:browse__filters|browse__filter-group|detail-level-switch|story-transcript__media)(?:\s|$)/u.test(attrs.class || "");
+
+function galleryImage(node) {
+  if (node.tagName === "img") return attrsOf(node);
+  for (const child of node.childNodes || []) {
+    const image = galleryImage(child);
+    if (image) return image;
   }
-  return { files, bytes, maxBytes };
 }
+
 function semanticMain(html) {
   const opening = /<main\b[^>]*\bid="main-content"[^>]*>/iu.exec(html);
   if (!opening) return;
   const end = html.indexOf("</main>", opening.index + opening[0].length);
   if (end < 0) return;
-  return parseFragment(html.slice(opening.index, end + 7)).childNodes[0];
+  return parseFragment(withoutInlineJson(html.slice(opening.index, end + 7))).childNodes[0];
 }
 /** Render the public semantic document, including tables and collapsed detail sections, without UI or page-data scripts. */
-export function markdownDocument(html, sourcePath, readSeed) {
-  const main = semanticMain(withoutInlineJson(html));
+export function markdownDocument(html, sourcePath) {
+  const main = semanticMain(html);
   if (!main) return;
+  const title = documentTitle(html);
+  if (!title) return;
   const headingLevels = [];
   const collectHeadings = (node) => {
-    if (attrsOf(node)["data-content-view"] === "full") return;
+    if (excludedBodyNode(attrsOf(node))) return;
     if (/^h[1-6]$/u.test(node.tagName || "")) headingLevels.push(Number(node.tagName[1]));
     (node.childNodes || []).forEach(collectHeadings);
   };
   collectHeadings(main);
-  const headingOffset = Math.max(0, Math.min(...headingLevels) - 2);
+  const headingOffset = Math.max(0, (headingLevels.length ? Math.min(...headingLevels) : 2) - 2);
   const canonical = `${CANONICAL_ORIGIN}/${sourcePath.replace(/index\.html$/u, "")}`;
   const href = (value) => {
-    if (!value) return "";
+    if (!value || value.startsWith("#")) return "";
     try {
       const url = new URL(value, canonical);
       if (!["https:", "http:", "mailto:"].includes(url.protocol)) return "";
-      if (isSiteOrigin(url.origin)) stripDocumentVersion(url);
+      if (isSiteOrigin(url.origin)) {
+        if (/^\/(?:_astro|api|entity-data|playback-data|provider-static|static-views)\//u.test(url.pathname)) return "";
+        if (/^\/(?:assets|runtime|objects)\/(?:jp|intl)\//u.test(url.pathname)) {
+          url.searchParams.delete("release");
+          url.searchParams.delete("asset");
+        } else stripDocumentVersion(url);
+      }
       url.searchParams.delete("return");
       return url.href.replace(/\(/gu, "%28").replace(/\)/gu, "%29");
     } catch {
@@ -295,7 +200,6 @@ export function markdownDocument(html, sourcePath, readSeed) {
         "script",
         "style",
         "svg",
-        "button",
         "input",
         "select",
         "textarea",
@@ -304,37 +208,61 @@ export function markdownDocument(html, sourcePath, readSeed) {
         "template",
         "noscript",
         "nav",
+        "form",
+        "menu",
       ].includes(tag) ||
-      attrs["aria-hidden"] === "true" ||
-      attrs["data-content-view"] === "full"
+      excludedBodyNode(attrs)
     )
       return "";
     const children = () => (node.childNodes || []).map(render).join("");
+    if (tag === "button") {
+      const label = hasClass(attrs, "md-accordion__trigger") && compact(children());
+      return label ? `\n\n### ${label}\n\n` : "";
+    }
     if (tag === "br") return "\n";
-    if (tag === "img") return attrs.alt && href(attrs.src) ? `![${markdownEscape(attrs.alt)}](${href(attrs.src)})` : "";
+    if (tag === "image-gallery") {
+      const image = galleryImage(node);
+      const mirrored = /"(\/public-media\/[a-f0-9]{64}\.[a-z0-9]+)"/u.exec(image?.["data-candidates"] || "")?.[1];
+      const source = href(mirrored || image?.["data-src"] || image?.src);
+      return source ? `\n\n![${markdownEscape(image.alt || title)}](${source})\n\n` : "";
+    }
+    if (tag === "img") return markdownEscape(attrs.alt || "");
+    if (tag === "time" && attrs.datetime) {
+      const text = compact(children());
+      return text && text !== attrs.datetime ? `${text} (${markdownEscape(attrs.datetime)})` : markdownEscape(attrs.datetime);
+    }
     if (tag === "a") {
       const text = compact(children());
-      return text && href(attrs.href) ? `[${text}](${href(attrs.href)})` : text;
+      const target = href(attrs.href);
+      return text && target ? `[${text}](${target})` : text;
     }
-    if (/^h[1-6]$/u.test(tag || ""))
-      return `\n\n${"#".repeat(Math.max(2, Number(tag[1]) - headingOffset))} ${compact(children())}\n\n`;
+    if (/^h[1-6]$/u.test(tag || "")) {
+      const heading = compact(children());
+      return heading && heading !== markdownEscape(title)
+        ? `\n\n${"#".repeat(Math.max(2, Number(tag[1]) - headingOffset))} ${heading}\n\n`
+        : "";
+    }
     if (tag === "pre") return `\n\n\`\`\`\n${plainText(node).trim()}\n\`\`\`\n\n`;
     if (tag === "code") return `\`${plainText(node).replace(/`/gu, "\\`")}\``;
-    if (tag === "strong" || tag === "b") return `**${children().trim()}**`;
-    if (tag === "em" || tag === "i") return `*${children().trim()}*`;
+    if (["strong", "b", "em", "i"].includes(tag)) {
+      const text = children().trim();
+      const mark = tag === "strong" || tag === "b" ? "**" : "*";
+      return text ? `${mark}${text}${mark}` : "";
+    }
     if (tag === "table") {
       const rows = [];
       const collect = (parent) => {
+        if (excludedBodyNode(attrsOf(parent))) return;
         if (parent.tagName === "tr")
           rows.push(
             (parent.childNodes || [])
-              .filter((child) => ["td", "th"].includes(child.tagName))
+              .filter((child) => ["td", "th"].includes(child.tagName) && !excludedBodyNode(attrsOf(child)))
               .map((cell) => compact(render(cell))),
           );
         else (parent.childNodes || []).forEach(collect);
       };
       collect(node);
-      if (!rows.length) return "";
+      if (!rows.some((row) => row.some(Boolean))) return "";
       const width = Math.max(...rows.map((row) => row.length));
       const line = (row) => `| ${Array.from({ length: width }, (_, index) => row[index] || "").join(" | ")} |`;
       return `\n\n${line(rows[0])}\n${line(Array(width).fill("---"))}\n${rows.slice(1).map(line).join("\n")}\n\n`;
@@ -360,62 +288,17 @@ export function markdownDocument(html, sourcePath, readSeed) {
       "summary",
       "blockquote",
     ].includes(tag)
-      ? `\n\n${body}\n\n`
+      ? `\n\n${body.trim()}\n\n`
       : body;
   };
-  const title = documentTitle(html);
   const body = render(main)
     .replace(/[ \t]+\n/gu, "\n")
     .replace(/\n[ \t]+\n/gu, "\n\n")
     .replace(/\n{3,}/gu, "\n\n")
-    .replace(/^ +/gmu, "")
     .trim();
-  const records = [];
-  const seeds = new Set();
-  const collectSeeds = (node) => {
-    const id = attrsOf(node)["data-page-data"];
-    if (id) seeds.add(id);
-    (node.childNodes || []).forEach(collectSeeds);
-  };
-  if (/^(?:jp|intl)\/[^/]+\/[^/]+\/[^/]+\/index\.html$/u.test(sourcePath)) collectSeeds(main);
-  SCRIPT_START.lastIndex = 0;
-  for (let match; seeds.size && (match = SCRIPT_START.exec(html));) {
-    if (match[0] === "<!--") {
-      const end = html.indexOf("-->", SCRIPT_START.lastIndex);
-      if (end < 0) break;
-      SCRIPT_START.lastIndex = end + 3;
-      continue;
-    }
-    const opening = match[0];
-    const from = SCRIPT_START.lastIndex;
-    SCRIPT_END.lastIndex = from;
-    const end = SCRIPT_END.exec(html);
-    if (!end) break;
-    SCRIPT_START.lastIndex = SCRIPT_END.lastIndex;
-    const attrs = attrsOf(parseFragment(`${opening}</script>`).childNodes[0]);
-    if (attrs.type !== "application/json" || !seeds.has(attrs.id)) continue;
-    const raw = attrs["data-src"] ? readSeed?.(attrs["data-src"]) : html.slice(from, end.index);
-    if (!raw) continue;
-    const payload = markdownPageData(raw);
-    const episode = payload?.schema === "haneoka-story-payload-v1" ? payload.episodes?.[payload.id] : undefined;
-    const item =
-      payload?.schema === "haneoka-entity-payload-v1"
-        ? payload.item
-        : episode
-          ? Object.fromEntries(Object.entries(episode).filter(([key]) => key !== "commands" && key !== "assets"))
-          : undefined;
-    if (item)
-      records.push({
-        id: payload.id,
-        server: payload.server,
-        ...(episode && {
-          source: `${CANONICAL_ORIGIN}/api/v1/servers/${payload.server}/catalog/stories/${encodeURIComponent(payload.id)}`,
-        }),
-        item,
-      });
-  }
-  const data = records.length
-    ? `\n## Structured data\n\n\`\`\`json\n${JSON.stringify(records.length === 1 ? records[0] : records, null, 2)}\n\`\`\`\n`
-    : "";
-  return { title, canonical, markdown: `# ${markdownEscape(title)}\n\n<${canonical}>\n\n${body}\n${data}` };
+  if (!body) return;
+  const language = /<html\b[^>]*\blang="([^"]+)"/iu.exec(html)?.[1];
+  const metadata = { title, canonical, ...(language && { lang: language }) };
+  const frontmatter = Object.entries(metadata).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n");
+  return { title, canonical, markdown: `---\n${frontmatter}\n---\n\n# ${markdownEscape(title)}\n\n${body}\n` };
 }

@@ -6,9 +6,6 @@
 // Effects/Dependencies: Writes local outputs; public image fetching remains one complete pass per locale.
 import {
   assertPublicStaticDocumentPath,
-  markdownPath,
-  markdownRecord,
-  writeMarkdownBucket,
   withSearchMetadata,
 } from "./search-metadata.mjs";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -21,6 +18,7 @@ import * as pagefind from "pagefind";
 import { parseFragment } from "parse5";
 import { copyCalendarStaticAssets } from "./calendar-static-assets.mjs";
 import { addModulePreloads } from "./module-preload.mjs";
+import { publishMarkdownDocuments, stageMarkdownDocument } from "./markdown-publication.mjs";
 import { StaticDocumentWorkers } from "./static-document-workers.mjs";
 import {
   finalizeStaticDocuments,
@@ -357,13 +355,11 @@ if (!carriedMaterialization.length)
   console.log(`added module preloads to ${await addModulePreloads(output, files)} documents`);
 const publicStatic = await loadPublicStatic();
 if (!materializeOnly) {
-  const markdownIndexes = new Map();
-  const markdownBuckets = new Map();
+  const markdownEntries = [];
   const markdownStaging = path.join(documentsRoot, "markdown-staging");
   rmSync(markdownStaging, { recursive: true, force: true });
   rmSync(path.join(output, "markdown"), { recursive: true, force: true });
-  let markdownCount = 0;
-  let markdownFiles = 0;
+  mkdirSync(markdownStaging, { recursive: true });
   let index;
   const markdownWorkers = new StaticDocumentWorkers({ output, documentsRoot, ...publicStatic?.rewriteOptions });
   try {
@@ -400,59 +396,20 @@ if (!materializeOnly) {
               locale: localeOf(sourcePath),
               contentsOnly: true,
             });
-          // Only a proven public document may produce a directly accessible Markdown counterpart.
-          if ((staged || isPublicStaticDocument(content)) && !/^static-views\//u.test(sourcePath)) {
+          // Markdown inherits the public snapshot's publication filter.
+          if (
+            (staged || isPublicStaticDocument(content)) &&
+            /^(?:(?:jp|intl)\/)?(?:en|ja|ko|zh-CN|zh-TW)\//u.test(sourcePath)
+          ) {
             const markdown = await markdownWorkers.run({ kind: "markdown", content, sourcePath });
             if (markdown) {
-              const entity = publicStatic?.module.publicStaticTarget(sourcePath);
-              const canonicalMarkdown = markdownPath(new URL(markdown.canonical).pathname);
-              let pathname = canonicalMarkdown;
-              if (entity?.scope === "entity") {
-                const digest = createHash("sha256").update(entity.path).digest("hex");
-                const bucket = (Number.parseInt(digest.slice(0, 2), 16) & 63).toString(16).padStart(2, "0");
-                const bucketPath = `/markdown/${entity.route.server}/${entity.route.locale}/${entity.route.kind}/${bucket}.md`;
-                const anchor = `entity-${digest.slice(0, 16)}`;
-                const body = markdownRecord(markdown.markdown, anchor);
-                const file = path.join(markdownStaging, `${digest}.md`);
-                mkdirSync(markdownStaging, { recursive: true });
-                writeFileSync(file, body);
-                if (!markdownBuckets.has(bucketPath)) markdownBuckets.set(bucketPath, []);
-                markdownBuckets.get(bucketPath).push({
-                  file,
-                  anchor,
-                  title: markdown.title,
-                  canonical: markdown.canonical,
-                  bytes: Buffer.byteLength(body),
-                });
-                pathname = `${bucketPath}#${anchor}`;
-                rmSync(path.join(output, canonicalMarkdown.slice(1)), { force: true });
-              } else {
-                const file = path.join(output, pathname.slice(1));
-                mkdirSync(path.dirname(file), { recursive: true });
-                writeFileSync(file, markdown.markdown);
-                markdownFiles++;
-              }
-              const prefix = sourcePath
-                .split("/")
-                .slice(0, /^(?:jp|intl)\//u.test(sourcePath) ? 2 : 1)
-                .join("/");
-              if (!markdownIndexes.has(prefix)) markdownIndexes.set(prefix, []);
-              const relative = sourcePath.slice(prefix.length + 1).split("/");
-              markdownIndexes.get(prefix).push({
-                pathname,
-                title: markdown.title,
-                canonical: markdown.canonical,
-                id: entity?.scope === "entity" ? entity.route.id : "",
-                section: relative[0] === "index.html" ? "overview" : relative[0],
-              });
-              const alternate = `<link rel="alternate" type="text/markdown" href="${pathname}">`;
+              const alternate = stageMarkdownDocument(markdownStaging, markdownEntries, sourcePath, markdown);
               if (!content.includes(alternate)) {
                 content = content
-                  .replace(/<link rel="alternate" type="text\/markdown" href="[^"]*">/gu, "")
+                  .replace(/<link rel="(?:alternate" type="text\/markdown|describedby)" href="[^"]*">/gu, "")
                   .replace("</head>", `${alternate}</head>`);
                 writeFileSync(path.join(staged ? publicStaticStagingRoot(documentsRoot) : output, sourcePath), content);
               }
-              markdownCount++;
             }
           }
           const result = await index.addHTMLFile({ sourcePath, content: withServerFilter(content, sourcePath) });
@@ -484,40 +441,8 @@ if (!materializeOnly) {
       }
     }
   }
-  for (const [pathname, records] of markdownBuckets)
-    markdownFiles += writeMarkdownBucket(output, pathname, records, (record) =>
-      readFileSync(record.file, "utf8"),
-    ).files;
-  rmSync(markdownStaging, { recursive: true, force: true });
-  for (const [prefix, entries] of markdownIndexes) {
-    entries.sort((a, b) => a.canonical.localeCompare(b.canonical, "en"));
-    const groups = Map.groupBy(entries, (entry) => entry.section);
-    const body =
-      `# haneoka - ${prefix}\n\n> Public BanG Dream! Our Notes database documents in Markdown. Each document links to its canonical web page and related resources. Entity documents include structured records with stable IDs.\n\n` +
-      [...groups]
-        .map(
-          ([section, documents]) =>
-            `## ${section}\n\n${documents
-              .map(
-                ({ pathname, title, id }) =>
-                  `- [${`${title}${id ? ` (${id})` : ""}`.replace(/[\[\]\\]/gu, "\\$&").replace(/\s+/gu, " ") || pathname}](https://haneoka.org${pathname})`,
-              )
-              .join("\n")}\n`,
-        )
-        .join("\n");
-    writeFileSync(path.join(output, prefix, "llms.txt"), body);
-  }
-  const markdownLocales = ["en", "ja", "ko", "zh-CN", "zh-TW"];
-  const markdownRoots = ["jp", "intl"]
-    .flatMap((server) => markdownLocales.map((locale) => `${server}/${locale}`))
-    .concat(markdownLocales);
-  writeFileSync(
-    path.join(output, "llms.txt"),
-    `# haneoka\n\n> Unofficial BanG Dream! Our Notes database, resource archive and browser tools.\n\nMarkdown documents are static snapshots of publicly displayed content. Follow the language and source indexes below for collections and complete entity records. Fragment links identify records in bounded static files; every record includes its canonical web URL. Game data sources are jp and intl; language does not change the data source.\n\n## Document indexes\n\n${markdownRoots.map((prefix) => `- [${prefix}](https://haneoka.org/${prefix}/llms.txt)`).join("\n")}\n\n## Machine interfaces\n\n- [OpenAPI](https://haneoka.org/api/v1/openapi.json): API schemas and request contracts.\n- [Browser tools](https://haneoka.org/tools/manifest.json): local computation and rendering modules.\n- [Sitemap](https://haneoka.org/sitemap.xml): canonical web routes.\n`,
-  );
-  console.log(
-    `generated ${markdownCount} public Markdown records in ${markdownFiles} files and ${markdownIndexes.size} indexes`,
-  );
+  const markdownShards = publishMarkdownDocuments(output, markdownStaging, markdownEntries);
+  console.log(`generated ${markdownEntries.length} public Markdown documents with ${markdownShards} entity shards`);
   console.log(`packed ${await packCoreStaticDocuments(output, files)} complete Astro pages`);
   if (process.env.STATIC_BUILD_LOCALE) {
     if (process.env.STATIC_BUILD_INPUT_MODE !== "frozen") throw new Error("Locale finalization requires frozen inputs");

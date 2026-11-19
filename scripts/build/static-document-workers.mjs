@@ -172,10 +172,7 @@ if (!isMainThread) {
           value = true;
         }
       } else if (job.kind === "markdown") {
-        value = markdownDocument(job.content, job.sourcePath, (url) => {
-          if (!/^\/entity-data\/v1\/[a-f0-9]{64}\.json$/u.test(url)) return;
-          return fs.readFileSync(path.join(output, url.slice(1)), "utf8");
-        });
+        value = markdownDocument(job.content, job.sourcePath);
       } else throw new Error(`Unknown static document operation: ${job.kind}`);
       parentPort.postMessage({ value });
     } catch (error) {

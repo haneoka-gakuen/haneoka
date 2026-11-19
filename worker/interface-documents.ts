@@ -41,8 +41,10 @@ export function interfaceDocument(request: Request): InterfaceDocument | undefin
   const source = new URL(url);
   source.pathname = englishInterfacePath(url.pathname);
   const headers = new Headers(request.headers);
-  headers.set("Accept-Encoding", "identity");
-  for (const name of ["If-None-Match", "If-Modified-Since", "Range", "If-Range"]) headers.delete(name);
+  if (!source.pathname.endsWith(".md")) {
+    headers.set("Accept-Encoding", "identity");
+    for (const name of ["If-None-Match", "If-Modified-Since", "Range", "If-Range"]) headers.delete(name);
+  }
   return { url, language, request: new Request(source, { headers, method: request.method }) };
 }
 

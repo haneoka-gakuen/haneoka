@@ -5,6 +5,7 @@
 // Effects/Dependencies: HTML 更新基准与 ASSETS 发布绑定；连接 D1、R2、缓存、认证、外部服务与队列／容器。
 import { rejectedResourceClient } from "./resource-clients";
 import { stripDocumentVersion } from "../src/lib/document-address.ts";
+import { serveMarkdownEntity } from "./markdown-documents";
 import { CHART_ASSETS_PROJECTION, chartAssets } from "./chart-assets";
 import { contentPublished } from "../src/lib/content-publication";
 import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
@@ -4209,6 +4210,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
     }
     if (cleanedDocument)
       return new Response(null, { status: 308, headers: { Location: canonicalUrl.pathname + canonicalUrl.search, "Cache-Control": "private, max-age=86400" } });
+    if (canonicalUrl.pathname.endsWith(".md") && parseResourceRoute(canonicalUrl.pathname.slice(0, -3))) {
+      const markdown = await serveMarkdownEntity(request, canonicalUrl, env.ASSETS);
+      return markdown ?? env.ASSETS.fetch(request);
+    }
   }
   const latestAlias = /^\/api\/v1\/([^/]+)(?:\/(.*))?$/u.exec(communityUrl.pathname);
   if (latestAlias && visibilityType(latestAlias[1]!) && !(["live2d", "spine"].includes(latestAlias[1]!) && communityUrl.pathname.endsWith("/image.png")) && ["GET", "HEAD"].includes(request.method)) {
