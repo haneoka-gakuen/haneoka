@@ -152,6 +152,36 @@ def validate_job(job):
     capabilities = job.get('capabilities', [])
     if not isinstance(capabilities, list) or len(capabilities) > 16 or any(not isinstance(value, str) for value in capabilities):
         raise ValueError('invalid capabilities')
+    excluded = job.get('arenaPopulationExcluded', [])
+    if not isinstance(excluded, list) or len(excluded) > 32 or any(not isinstance(band, str) for band in excluded):
+        raise ValueError('invalid Arena population exclusions')
+    if any(key in job for key in ('arenaSweepCatalog', 'arenaSweepKey', 'arenaSweepPopulationBand')) or 'arena-sweep-v1' in capabilities:
+        catalog, windows = job.get('arenaSweepCatalog'), job.get('arenaWindows')
+        arena = catalog.get('arena') if isinstance(catalog, dict) else None
+        population = job.get('arenaSweepPopulationBand')
+        capabilities_with_population = {'arena-population-v1', 'arena-progress-v1', 'arena-probes-v1'}
+        if (job.get('mode') != 'lookup' or 'arena-sweep-v1' not in capabilities
+                or not isinstance(job.get('arenaSweepKey'), str) or not re.fullmatch(r'[a-f0-9]{64}', job['arenaSweepKey'])
+                or not isinstance(arena, dict) or not isinstance(arena.get('bandIds'), list)
+                or type(arena.get('startAtMs')) is not int or type(arena.get('rankingEndAtMs')) is not int
+                or not isinstance(catalog.get('masterVersion'), str)
+                or not isinstance(windows, list) or len(windows) > 12 or not windows and population is None
+                or population is not None and (not isinstance(population, str) or population not in arena['bandIds']
+                    or not arena.get('thresholdsByBand', {}).get(population)
+                    or not capabilities_with_population.issubset(capabilities))
+                or population is None and any(capability in capabilities for capability in capabilities_with_population)
+                or any(job.get(key) for key in ('playerLookups', 'songRankings', 'cardImages'))):
+            raise ValueError('invalid Arena sweep job')
+        seen = set()
+        for row in windows:
+            if not isinstance(row, dict):
+                raise ValueError('invalid Arena sweep window')
+            start, band = row.get('startRank'), row.get('bandId')
+            if (row.get('seasonId') != arena.get('seasonId') or band not in arena['bandIds']
+                    or type(start) is not int or start < 101 or (start - 1) % 100
+                    or row.get('endRank') != start + 99 or (band, start) in seen):
+                raise ValueError('invalid Arena sweep window')
+            seen.add((band, start))
     if 'finalEvent' in job:
         event, boards = job['finalEvent'], job.get('finalBoards')
         windows = job.get('eventWindows', [])
@@ -210,7 +240,7 @@ def validate_job(job):
 
 
 def run_lookup(job, origin):
-    """Demand only: no catalog or boards, so a player lookup answers in seconds."""
+    """Run on a spare account using the current catalog identity without a Master download."""
     updates = Updates(job, origin)
     region = job['region']
     configured = region_config(region)
@@ -223,23 +253,43 @@ def run_lookup(job, origin):
         identity, _, auth = read_credentials(credentials, region)
         deadline = job['deadlineMs'] / 1000 - 10
         demand = None
+        sweep = job.get('arenaSweepCatalog')
         try:
             sampler = Sampler(SimpleNamespace(region=region, descriptors=Path(__file__).parent/configured.descriptor,
                 output=root/'receipts', client_version=job['clientVersion'], proxy='', connect_ip=None,
                 credentials=credentials, credential_identity=identity, stop_file=None, deadline=deadline,
                 api_origin=auth['origin']))
             sampler.version()
-            demand = Demand(job, sampler, updates, deadline)
-            stopped = demand.run()
-            if stopped:
-                fields = {'status': failure_status(stopped),
-                          'failure': failure_info('demand', RuntimeError('demand rejected'), stopped)}
+            if sweep:
+                if sweep['masterVersion'] == sampler.master_version and sweep.get('resourceVersion') == sampler.resource_version:
+                    arena = ArenaCollector(job, sweep, sampler, updates, deadline, failure_status, failure_info, retry_delay)
+                    if job.get('arenaSweepPopulationBand'):
+                        arena.population(budget=20)
+                    arena.top()
+            else:
+                demand = Demand(job, sampler, updates, deadline)
+                stopped = demand.run()
+                if stopped:
+                    fields = {'status': failure_status(stopped),
+                              'failure': failure_info('demand', RuntimeError('demand rejected'), stopped)}
+                    if fields['status'] == 'rate_limited':
+                        fields['retryAfterSeconds'] = retry_delay(stopped, 300)
+        except VersionError as error:
+            if not sweep:
+                fields = {'status': 'failed', 'failure': failure_info('demand', error)}
+            else:
+                fields = {'status': failure_status(error.receipt), 'failure': failure_info('version', error, error.receipt)}
                 if fields['status'] == 'rate_limited':
-                    fields['retryAfterSeconds'] = retry_delay(stopped, 300)
+                    fields['retryAfterSeconds'] = retry_delay(error.receipt, 300)
+            report_failure(region, fields['failure'])
+        except ArenaStopped as error:
+            fields = {'status': error.status, 'failure': error.failure}
+            if error.retry_after is not None:
+                fields['retryAfterSeconds'] = error.retry_after
         except CallbackError:
             raise
         except Exception as error:
-            fields = {'status': 'failed', 'failure': failure_info('demand', error)}
+            fields = {'status': 'failed', 'failure': failure_info('arena_board' if sweep else 'demand', error)}
             report_failure(region, fields['failure'])
         if demand is not None and 'demand-progress-v1' in job.get('capabilities', []):
             fields['processedDemand'] = demand.attempted
