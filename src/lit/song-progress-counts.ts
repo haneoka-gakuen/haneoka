@@ -105,10 +105,9 @@ export class ProgressCounts {
     const changes = countImportChanges(record.snapshot.player._missionCounters, record.label, record.snapshot.savedAt ?? record.importedAt);
     const marks = this.options.marks(record.snapshot.player);
     this.invalidFields.clear();
-    if (changes.length || marks.length) {
-      this.options.write([...marks, ...changes]);
+    if (changes.length || marks.length) this.options.write([...marks, ...changes]);
+    if (changes.length || marks.length || Array.isArray(record.snapshot.player._liveMusicResults))
       this.options.profile(record.profile);
-    }
     this.error = changes.length ? "" : this.t("missing", "This save has no count records");
     this.records = null; this.changed();
   }
