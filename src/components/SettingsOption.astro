@@ -28,7 +28,7 @@ const text = keyName ? t(locale, keyName, label) : label;
 ---
 
 <label
-  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample, "settings-option--portrait": ring, "settings-option--language": name === "locale" }]}
+  class:list={["settings-option", { "settings-option--swatch": swatch, "settings-option--sample": sample, "settings-option--portrait": ring }]}
   style={
     swatch && swatch !== "haneoka"
       ? `--swatch: var(--md-ref-${swatch}); --swatch-container: var(--md-ref-${swatch}-container); --swatch-on: var(--md-ref-${swatch}-on-container)`
@@ -50,16 +50,7 @@ const text = keyName ? t(locale, keyName, label) : label;
     data-i18n-aria-label-fallback={keyName ? label : undefined}
   />
   <span class="settings-option__face" aria-hidden="true">
-    {name === "locale" ? (
-      <>
-        {image && (
-          <span class="settings-option__image">
-            <img src={image} width="28" height="28" alt="" loading="lazy" decoding="async" />
-          </span>
-        )}
-        <span class="settings-option__language">{text}</span>
-      </>
-    ) : swatch ? (
+    {swatch ? (
       <span class="settings-option__palette">
         <i></i>
         <i></i>
