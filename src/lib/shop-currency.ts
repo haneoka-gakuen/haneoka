@@ -93,6 +93,28 @@ export function shopPaymentPrices(payment: unknown, server: string): unknown {
   return amount === undefined ? source.prices : { jpy: amount };
 }
 
+export const SHOP_PAYMENT_KINDS = ["cash", "stars", "paidStars", "free", "ad", "other"] as const;
+export type ShopPaymentKind = (typeof SHOP_PAYMENT_KINDS)[number];
+
+export function shopPaymentKind(payment: Record<string, unknown>): ShopPaymentKind {
+  if (payment.advertisement === true || payment.paymentType === 15) return "ad";
+  if (availableShopCurrencies(payment.prices).length || payment.paymentType === 16) return "cash";
+  const image = String(payment.currencyImage ?? "");
+  const nativeType = payment.paymentType === 13 || image.includes("/item_icon_star_purchase.")
+    ? "paidStars"
+    : payment.paymentType === 12 || image.includes("/item_icon_star.") ? "stars" : null;
+  if (nativeType) return Number(payment.price) === 0 ? "free" : nativeType;
+  if (payment.storePurchase) return "cash";
+  return Number(payment.price) === 0 ? "free" : "other";
+}
+
+export function officialIntlShopUrl(server: string, payment: Record<string, unknown>): string | null {
+  // Biligame's public route selects the game. Its product picker opens after login and role selection.
+  return server === "intl" && availableShopCurrencies(payment.prices).length > 0
+    ? "https://www.biligames.com/#/paygame_datail?game_base_id=118241&isFastCharge=0"
+    : null;
+}
+
 export interface ShopStarRewards {
   paid: number;
   free: number;

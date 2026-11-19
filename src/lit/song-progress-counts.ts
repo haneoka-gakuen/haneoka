@@ -18,9 +18,11 @@ import { formatDate } from "../lib/date-format";
 import { chartCountChanges, countImportChanges, playCount, playCountKey, songPlayCount, storedPlayCount, type CountChanges, type CountEntries } from "../lib/song-progress-counts";
 import type { StoredSave } from "../lib/save-workspace/snapshot";
 import type { BoxSnapshot } from "../lib/team-builder/sync/box-store";
-import { appCall, appSupports, inApp, type DeviceSave } from "../lib/app-bridge";
+import { clientText } from "../i18n/client";
+import { appCall, appSaveImportHref, appSupports, inApp } from "../lib/app-bridge";
 import { chooseAppAccount } from "./ui/app-account-chooser";
 import { snackbar } from "../lib/snackbar";
+import { songProgressProfile, type SongProgressProfile } from "../lib/song-progress-profile";
 
 interface Options {
   locale(): string;
@@ -28,7 +30,7 @@ interface Options {
   text(key: string, fallback: string): string;
   write(changes: CountChanges): void;
   marks(player: Record<string, unknown>): CountChanges;
-  profile(account: DeviceSave): void;
+  profile(account?: SongProgressProfile): void;
   difficulties(song: number): readonly number[];
 }
 export class ProgressCounts {
@@ -75,11 +77,12 @@ export class ProgressCounts {
       if (context !== this.context || this.controller !== controller || controller.signal.aborted) return false;
       const value = values.find(value => value.snapshot.server === this.options.server());
       if (!value) throw new Error("counts_server");
-      const record: StoredSave = { ...value, id: crypto.randomUUID(), label: account.name || this.t("gameSave", "Game save"), importedAt: new Date().toISOString() };
+      const record: StoredSave = { ...value, id: crypto.randomUUID(), label: account.name || this.t("gameSave", "Game save"), importedAt: new Date().toISOString(),
+        profile: songProgressProfile({ ...account, uid: account.profileId }) };
       const { saveRecords } = await import("../lib/save-workspace/snapshot");
       await saveRecords("put", record);
       if (context !== this.context || this.controller !== controller || controller.signal.aborted) return false;
-      this.use(record); this.options.profile(account);
+      this.use(record);
       return true;
     } catch (error) {
       if (!options.fallback && context === this.context && this.controller === controller && !controller.signal.aborted) this.error = error instanceof Error && error.message === "counts_server"
@@ -102,7 +105,10 @@ export class ProgressCounts {
     const changes = countImportChanges(record.snapshot.player._missionCounters, record.label, record.snapshot.savedAt ?? record.importedAt);
     const marks = this.options.marks(record.snapshot.player);
     this.invalidFields.clear();
-    if (changes.length || marks.length) this.options.write([...marks, ...changes]);
+    if (changes.length || marks.length) {
+      this.options.write([...marks, ...changes]);
+      this.options.profile(record.profile);
+    }
     this.error = changes.length ? "" : this.t("missing", "This save has no count records");
     this.records = null; this.changed();
   }
@@ -157,10 +163,14 @@ export class ProgressCounts {
         ? this.t("wrongServer", "Save region does not match") : this.t("readFailed", "Could not read the original save");
     } finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
   };
-  renderImportMenu(onGameImport: () => void) {
+  renderImportMenu() {
     return actionMenu({ id: "song-progress-import", label: html`${icon("folder_open", 24)}<span>${uiText(this.options.locale(), "common.actions.import")}</span>`,
       items: [
-        ...(inApp() ? [{ label: this.t("fromApp", "Read game save"), leading: icon("sports_esports", 20), run: onGameImport }] : []),
+        ...(inApp() ? [{
+          label: clientText(this.options.locale(), "account.page.openSaveImport", "Import a save in Account"),
+          leading: icon("sports_esports", 20),
+          run: () => location.assign(appSaveImportHref(this.options.locale())),
+        }] : []),
         { label: this.t("import", "Read original save"), leading: icon("folder_open", 20), run: () => this.openFiles() },
         { label: this.t("pick", "Choose saved data"), leading: icon("description", 20), run: () => void this.pick() },
       ],

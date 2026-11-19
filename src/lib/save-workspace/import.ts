@@ -3,17 +3,17 @@
 // Output: Decoded, sanitized save snapshots.
 // Pos: [Map](../L2-2.md); shared save workspace.
 // Effects/Dependencies: Owns a bounded decoding Worker and terminates it on completion or cancellation.
-import type { SaveSnapshot } from "./snapshot";
+import type { StoredSave } from "./snapshot";
 export function importSaves(
   files: File[],
   server: "jp" | "intl",
   signal: AbortSignal,
-): Promise<{ label: string; snapshot: SaveSnapshot }[]> {
+): Promise<Omit<StoredSave, "id" | "importedAt">[]> {
   signal.throwIfAborted();
   const worker = new Worker(new URL("./import-worker.ts", import.meta.url), { type: "module" });
   return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (error?: unknown, value?: { label: string; snapshot: SaveSnapshot }[]) => {
+    const finish = (error?: unknown, value?: Omit<StoredSave, "id" | "importedAt">[]) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);

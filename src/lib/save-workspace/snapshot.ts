@@ -4,6 +4,7 @@
 // Pos: [Map](../L2-2.md); shared save workspace.
 // Effects/Dependencies: Filters account credentials and persists independent local copies.
 import { losslessJson } from "@haneoka/game-data-exporter/save-document";
+import type { SongProgressProfile } from "../song-progress-profile";
 export interface SaveSnapshot {
   schema: "haneoka-game-save-v1";
   server: "jp" | "intl";
@@ -71,6 +72,7 @@ export interface StoredSave {
   label: string;
   importedAt: string;
   snapshot: SaveSnapshot;
+  profile?: SongProgressProfile;
 }
 async function database(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

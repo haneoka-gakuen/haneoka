@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Own Box snapshot, frozen R1 benchmark and the current published catalogue.
-// Output: Locally certified current/potential roster ratings and a legal witness team.
+// Output: Locally certified current/potential roster rating values.
 // Pos: [Map](L2-2.md); lazy song-progress calculation adapter.
 // Effects/Dependencies: Shares the team builder's Rust/WASM pool, batches independent cases, resumes partial proofs and caches compact reports; no account queries or polling.
 import { EngineClient } from "./team-builder/engine/client";
@@ -14,25 +14,15 @@ import type { BoxSnapshot } from "./team-builder/sync/box-store";
 import { contentPublished } from "./content-publication";
 import { rosterRequest, type RosterReference } from "./song-progress-rating";
 import type { TeamBuilderData } from "./team-builder/data";
-import type { EngineHit, SongResult } from "./team-builder/engine/api";
+import type { SongResult } from "./team-builder/engine/api";
 import { compileFromTeamData, type EngineMaster } from "./team-builder/engine/master";
 import { maxMemberGrowth, maxSnapGrowth, memberGrowth, snapGrowth } from "./team-builder/engine/box";
 import engineUrl from "./team-builder/engine/generated/team-engine.wasm?url";
 import intlReferenceUrl from "../config/roster-rating-r1-intl.json?url";
 import jpReferenceUrl from "../config/roster-rating-r1-jp.json?url";
 
-export interface RosterCard {
-  id: number;
-  name: unknown;
-  image: string;
-}
-export interface RosterResult {
+interface RosterResult {
   value: number;
-  witness: EngineHit;
-  team: (RosterCard | null)[];
-  referenceId: string;
-  dataId: string;
-  key: string;
 }
 export interface RosterRatings {
   current: RosterResult | null;
@@ -52,7 +42,7 @@ function readCache(key: string): CacheEntry | undefined {
   } catch {
     /* Optional cache. */
   }
-  return entry?.key === key ? entry : undefined;
+  return entry?.key === key ? { key, result: entry.result ? { value: entry.result.value } : null, incomplete: entry.incomplete } : undefined;
 }
 function writeCache(entry: CacheEntry) {
   memory.delete(entry.key);
@@ -193,11 +183,9 @@ export class SongProgressRoster {
         };
     const grownCache = potentialCache?.result ?? currentCache?.result;
     if (grownCache && resolvedCurrent && JSON.stringify(resolvedCurrent) === JSON.stringify(potentialInput)) {
-      const current = { ...grownCache, key: currentKey },
-        potential = { ...grownCache, key: potentialKey };
-      writeCache({ key: currentKey, result: current, incomplete: false });
-      writeCache({ key: potentialKey, result: potential, incomplete: false });
-      return { current, potential, incomplete: false };
+      writeCache({ key: currentKey, result: grownCache, incomplete: false });
+      writeCache({ key: potentialKey, result: grownCache, incomplete: false });
+      return { current: grownCache, potential: grownCache, incomplete: false };
     }
     const groups = new Map<string, Work>();
     const add = (key: string, input: Inputs) => {
@@ -260,24 +248,8 @@ export class SongProgressRoster {
       const lower = mean(scores),
         upper = mean(bounds);
       if (Math.round(lower * 10) !== Math.round(upper * 10)) continue;
-      const witness = rows[0]!.hits[0]!;
-      const team = [
-        ...witness.members.map((key) => data.members[key.slice(1)]!),
-        ...witness.snaps.map((key) => (key ? data.snapshots[key.slice(1)] : undefined)),
-      ].map((row) => (row ? { id: Number(row.id), name: row.name, image: String(row.image || "") } : null));
-      for (const key of work.aliases)
-        writeCache({
-          key,
-          incomplete: false,
-          result: {
-            value: Math.round(lower * 10) / 10,
-            witness,
-            team,
-            referenceId: reference.id,
-            dataId: identity.releaseId,
-            key,
-          },
-        });
+      const result = { value: Math.round(lower * 10) / 10 };
+      for (const key of work.aliases) writeCache({ key, incomplete: false, result });
       for (const key of work.aliases) this.partials.delete(key);
     }
     while (this.partials.size > 4) this.partials.delete(this.partials.keys().next().value!);

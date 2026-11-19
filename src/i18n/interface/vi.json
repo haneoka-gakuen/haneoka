@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "Phương thức thanh toán",
+      "paymentKinds": {
+        "cash": "Tiền mặt",
+        "stars": "Sao",
+        "paidStars": "Sao trả phí",
+        "free": "Miễn phí",
+        "ad": "Xem quảng cáo",
+        "other": "Đơn vị khác"
+      },
+      "officialRecharge": "Nạp chính thức qua Biligame",
       "paidStars": "Trò chơi Stars",
       "freeStars": "Tự do ngôi sao mua",
       "passStars": "Pass ngôi sao",
@@ -1353,7 +1363,6 @@
       "profilename": "Tên cầu thủ",
       "profileuid": "Trò chơi UID",
       "profilerank": "Game Đánh giá Rank",
-      "benchmarkTeam": "Đội Benchmark",
       "exportFailed": "Hình ảnh xuất khẩu thất bại",
       "importSave": "nhập khẩu từ game save",
       "imported": "Chế độ {count}",
@@ -4940,6 +4949,8 @@
       "autoLink": "Tự động liên kết tài khoản game",
       "importSessionExpired": "Game session hết hạn. đọc lại tiết kiệm mới nhất.",
       "autoImportFailed": "Một số dữ liệu lưu không thể được nhập khẩu",
+      "openSaveImport": "Nhập bản lưu tại trang Tài khoản",
+      "saveImportGuide": "Đọc bản lưu trò chơi tại trang Tài khoản. Các mục bật tự động nhập sẽ được cập nhật trong nền.",
       "addGameSave": "Đọc game Save",
       "unblockUser": "Bỏ chặn",
       "unmute": "Bật tiếng",

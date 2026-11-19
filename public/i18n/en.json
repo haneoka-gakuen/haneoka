@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "Payment method",
+      "paymentKinds": {
+        "cash": "Cash",
+        "stars": "Stars",
+        "paidStars": "Paid Stars",
+        "free": "Free",
+        "ad": "Watch an ad",
+        "other": "Other currencies"
+      },
+      "officialRecharge": "Biligame official recharge",
       "paidStars": "Paid Stars",
       "freeStars": "Free Stars at purchase",
       "passStars": "Pass Stars",
@@ -1353,7 +1363,6 @@
       "profilename": "Player name",
       "profileuid": "Game UID",
       "profilerank": "Player rank",
-      "benchmarkTeam": "Benchmark team",
       "exportFailed": "Image export failed",
       "importSave": "Import from game save",
       "imported": "Imported {count} charts",
@@ -4940,6 +4949,8 @@
       "autoLink": "Automatically link game account",
       "importSessionExpired": "Game session expired. Read the latest save again.",
       "autoImportFailed": "Some save data could not be imported",
+      "openSaveImport": "Import a save in Account",
+      "saveImportGuide": "Read the game save in Account. The enabled automatic imports update in the background.",
       "addGameSave": "Read game save",
       "unblockUser": "Unblock",
       "unmute": "Unmute",

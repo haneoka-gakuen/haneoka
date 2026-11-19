@@ -8,6 +8,7 @@ import { clientText } from "../i18n/client";
 import { preferredLocale } from "../lit/shared/catalog";
 import { snackbar } from "./snackbar";
 import { countImportChanges, type CountChanges } from "./song-progress-counts";
+import { saveSongProgressProfile, songProgressProfile } from "./song-progress-profile";
 import { BoxStore } from "./team-builder/sync/box-store";
 import { MAX_BOX_KEYS, validEntry } from "./team-builder/sync/box-doc";
 
@@ -53,11 +54,14 @@ async function importTeam(job: SaveImportJob, text: string, store: BoxStore) {
   overwrite(store, changes, (key) => /^(m|s|bi|cr)\./u.test(key));
 }
 
-function importSongs(progress: AppSongProgress, store: BoxStore) {
+async function importSongs(progress: AppSongProgress, store: BoxStore, job: SaveImportJob) {
   const label = clientText(preferredLocale(), "catalog.songProgress.counts.gameSave", "Game save");
   const counts = countImportChanges(progress.missionCounters, label, new Date().toISOString());
   const changes = Object.entries(progress.marks).map(([key, value]) => ({ key, value }));
   overwrite(store, [...changes, ...counts], (key) => key.startsWith("l.") || (counts.length > 0 && key.startsWith("pref.pc-")));
+  const owner = store.snapshot.owner;
+  const account = (await appCall("gameAccounts", {}).catch(() => [])).find((save) => save.key === job.key);
+  saveSongProgressProfile(job.server, owner ?? null, account ? songProgressProfile({ ...account, uid: account.profileId }) : undefined);
   if (!counts.length && progress.countError) throw new Error(progress.countError);
 }
 
@@ -74,7 +78,7 @@ async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<s
       await store.start();
     }
     if (action === "team") await importTeam(job, (result as { text: string }).text, store);
-    else importSongs(result as AppSongProgress, store);
+    else await importSongs(result as AppSongProgress, store, job);
   }
   else if (action === "history") {
     const { historyStore } = await import("./gacha-history-store");

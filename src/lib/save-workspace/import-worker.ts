@@ -2,13 +2,14 @@
 // Input: Local raw saves, archives or versioned snapshots.
 // Output: Sanitized snapshots with source labels.
 // Pos: [Map](../L2-2.md); shared save workspace.
-// Effects/Dependencies: Decodes in the Worker; profile identity is used for server detection then discarded.
+// Effects/Dependencies: Decodes in the Worker; Public profile fields travel separately from the sanitized snapshot.
 import { readSaveDocuments } from "@haneoka/game-data-exporter/save-document";
-import { parseSnapshot, type SaveSnapshot } from "./snapshot";
+import { parseSnapshot, type StoredSave } from "./snapshot";
+import { songProgressProfile } from "../song-progress-profile";
 self.onmessage = async (event: MessageEvent<{ files: File[]; server: "jp" | "intl" }>) => {
   try {
     const documents = await readSaveDocuments(event.data.files);
-    const snapshots: { label: string; snapshot: SaveSnapshot }[] = [];
+    const snapshots: Omit<StoredSave, "id" | "importedAt">[] = [];
     for (const document of documents) {
       const value = document.value as Record<string, unknown>;
       if (!value || typeof value !== "object") continue;
@@ -28,7 +29,11 @@ self.onmessage = async (event: MessageEvent<{ files: File[]; server: "jp" | "int
       const id = String(player._profileId ?? "");
       const inferred = /^[2-5]\d{10}$/.test(id) ? (id[0] === "5" ? "jp" : "intl") : undefined;
       root = { schema: "haneoka-game-save-v1", server: inferred ?? event.data.server, savedAt: null, player };
-      snapshots.push({ label: document.name, snapshot: parseSnapshot(JSON.stringify(root)) });
+      const profile = songProgressProfile({
+        name: player._name, uid: player._profileId,
+        rank: (player._playerRankUpData as Record<string, unknown> | undefined)?._afterRank,
+      });
+      snapshots.push({ label: document.name, snapshot: parseSnapshot(JSON.stringify(root)), profile });
     }
     if (!snapshots.length) throw new Error("box_no_player");
     self.postMessage({ snapshots });

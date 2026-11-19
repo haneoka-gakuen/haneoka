@@ -489,7 +489,14 @@ async function reusableBatch(
     ids.some((id) => !(storage.shards as unknown[]).includes(fnv1a32Shard(id)))
   )
     return undefined;
-  const current = asRecord(await fetchJson("release", release.server, release));
+  let current: RecordValue | undefined;
+  try {
+    current = asRecord(await fetchJson("release", release.server, release));
+  } catch (error) {
+    // Release manifests require build authorization. Public development still uses the pinned batch.
+    if (error instanceof StaticCatalogHttpError && error.status === 403) return undefined;
+    throw error;
+  }
   if (
     current?.server !== release.server ||
     current.releaseId !== release.releaseId ||

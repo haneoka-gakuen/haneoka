@@ -513,6 +513,7 @@
     "src/server/skill-catalog.ts",
     "src/lit/song-progress.ts",
     "src/lib/song-progress-image.ts",
+    "src/lib/song-progress-profile.ts",
     "src/lib/song-progress-rating.ts",
     "src/lib/song-progress-roster.ts",
     "src/lib/song-progress-counts.ts",

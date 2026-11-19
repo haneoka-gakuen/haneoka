@@ -235,7 +235,15 @@ export class AccountWorkspace extends LitElement {
   }
 
   private announced = { error: "", message: "" };
+  private deviceSaveTargetFocused = false;
   protected updated() {
+    if (!this.deviceSaveTargetFocused && location.hash === "#device-game-saves") {
+      const target = this.querySelector("#device-game-saves");
+      if (target) {
+        this.deviceSaveTargetFocused = true;
+        target.scrollIntoView({ block: "start" });
+      }
+    }
     if (this.error !== this.announced.error) {
       this.announced.error = this.error;
       if (this.error) snackbar(this.error, { error: true });
@@ -1307,7 +1315,7 @@ export class AccountWorkspace extends LitElement {
     const locale = preferredLocale();
     const number = (value: number) => new Intl.NumberFormat(locale).format(value);
     return html`
-      <section class="surface account-block">
+      <section id="device-game-saves" class="surface account-block">
         ${this.heading(icon("save", 18), this.label("deviceSaves", "Saves on this device"), this.deviceSaves.length)}
         ${
           this.deviceSaves.length

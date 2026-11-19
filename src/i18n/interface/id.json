@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "Metode pembayaran",
+      "paymentKinds": {
+        "cash": "Uang",
+        "stars": "Bintang",
+        "paidStars": "Bintang berbayar",
+        "free": "Gratis",
+        "ad": "Tonton iklan",
+        "other": "Mata uang lain"
+      },
+      "officialRecharge": "Isi ulang resmi Biligame",
       "paidStars": "Bintang yang dibayar",
       "freeStars": "Bintang Gratis untuk Membeli",
       "passStars": "Pas bintang",
@@ -1353,7 +1363,6 @@
       "profilename": "Nama Pemain",
       "profileuid": "Permainan UID",
       "profilerank": "Pemain Rank",
-      "benchmarkTeam": "Tim Benchmark",
       "exportFailed": "Ekspor Foto gagal",
       "importSave": "Penghasilan dari game save",
       "imported": "Daftar {count}",
@@ -4940,6 +4949,8 @@
       "autoLink": "Konten Game secara otomatis",
       "importSessionExpired": "Sesi permainan berakhir. baca penyimpanan terbaru lagi.",
       "autoImportFailed": "Beberapa data yang disimpan tidak dapat diimport",
+      "openSaveImport": "Impor simpanan melalui Akun",
+      "saveImportGuide": "Baca data simpanan game di Akun. Impor otomatis yang diaktifkan berjalan di latar belakang.",
       "addGameSave": "Baca Game Selamatkan",
       "unblockUser": "Buka blokir",
       "unmute": "Membunyikan",

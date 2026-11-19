@@ -140,7 +140,7 @@ const RULES: Record<string, Rule> = {
     prefix: "limited-mission-",
   },
   "tgw-card": { resource: "tgw-card", routeKind: "tgw-card", field: "rank", sourceTable: "MasterVip" },
-  shop: { resource: "shop", routeKind: "shop", field: "id", kind: "shop", sourceTable: "MasterShop" },
+  shop: { resource: "shop", routeKind: "shop", field: "id", kind: "shop" },
 };
 const object = (value: unknown): value is Row => !!value && typeof value === "object" && !Array.isArray(value);
 const decimal = (value: unknown): string | null => {

@@ -14,7 +14,7 @@ export const GAME_RECORDS_REGIONS = [
   { value: "kr", key: "regionKr", flag: krFlag },
 ] as const;
 
-export const GAME_REGION_NAMES: Readonly<Record<GameRecordsRegion, string>> = { jp: "JP", tw: "TW/HK/MO", en: "EN Regions", kr: "KR" };
+export { GAME_REGION_NAMES } from "../../lib/game-records";
 
 /** A linked game account's region comes from its player ID; older non-numeric IDs follow the stored server. */
 export const gameAccountRegion = (server: string, locale: string, profileId = ""): GameRecordsRegion =>

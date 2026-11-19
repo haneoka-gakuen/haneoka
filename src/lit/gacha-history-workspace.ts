@@ -30,7 +30,7 @@ import { readCompanionHistory } from "../lib/gacha-history-device";
 import { downloadBlob } from "../lib/canvas-capture";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { formatDate } from "../lib/date-format";
-import { appAccountCall, appCall, inApp } from "../lib/app-bridge";
+import { appAccountCall, appCall, appSaveImportHref, inApp } from "../lib/app-bridge";
 import { chooseAppAccount } from "./ui/app-account-chooser";
 
 class GachaHistoryWorkspace extends HTMLElement {
@@ -300,7 +300,8 @@ class GachaHistoryWorkspace extends HTMLElement {
       return;
     }
     if (source === "game") {
-      void this.game();
+      if (inApp()) location.assign(appSaveImportHref(this.view.locale));
+      else void this.game();
       return;
     }
     const input = document.createElement("input");
@@ -354,10 +355,15 @@ class GachaHistoryWorkspace extends HTMLElement {
           true,
         );
     } catch (error) {
-      this.error = this.t(gameHistoryErrorKey(error));
+      const kind = gameHistoryErrorKey(error);
+      this.error = this.t(kind);
       if (this.isConnected) {
         this.update();
-        snackbar(this.error, { error: true, action: { label: this.t("readHelp"), run: () => { if (this.isConnected) this.view.openReadHelp(); } } });
+        const goToAccount = inApp() && (kind === "errorMissingSession" || kind === "errorSessionExpired");
+        snackbar(this.error, { error: true, action: goToAccount ? {
+          label: clientText(this.view.locale, "account.page.openSaveImport", "Import a save in Account"),
+          run: () => location.assign(appSaveImportHref(this.view.locale)),
+        } : { label: this.t("readHelp"), run: () => { if (this.isConnected) this.view.openReadHelp(); } } });
       }
     }
   }

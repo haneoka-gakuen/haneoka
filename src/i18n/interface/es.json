@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "Forma de pago",
+      "paymentKinds": {
+        "cash": "Dinero",
+        "stars": "Estrellas",
+        "paidStars": "Estrellas de pago",
+        "free": "Gratis",
+        "ad": "Ver un anuncio",
+        "other": "Otras monedas"
+      },
+      "officialRecharge": "Recarga oficial de Biligame",
       "paidStars": "Las estrellas pagadas",
       "freeStars": "Estrellas gratis a la compra",
       "passStars": "Pasar estrellas",
@@ -1353,7 +1363,6 @@
       "profilename": "Nombre de jugador",
       "profileuid": "Juego UID",
       "profilerank": "El juego Rank",
-      "benchmarkTeam": "Equipo de Benchmark",
       "exportFailed": "Imagen de exportación fracasado",
       "importSave": "Importación del juego Save",
       "imported": "Importación de gráficos {count}",
@@ -4940,6 +4949,8 @@
       "autoLink": "Automaticamente conectar el cuenta de juego",
       "importSessionExpired": "La sesión del juego ha terminado.Leer la última recuperación de nuevo.",
       "autoImportFailed": "Algunos datos salvos no podrían importarse",
+      "openSaveImport": "Importar una partida desde Cuenta",
+      "saveImportGuide": "Lee la partida guardada en Cuenta. Las importaciones automáticas activadas se actualizan en segundo plano.",
       "addGameSave": "Leer el juego Save",
       "unblockUser": "Desatascar",
       "unmute": "Dejar de silenciar",

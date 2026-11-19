@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "결제 수단",
+      "paymentKinds": {
+        "cash": "현금",
+        "stars": "스타",
+        "paidStars": "유료 스타",
+        "free": "무료",
+        "ad": "광고 시청",
+        "other": "기타 재화"
+      },
+      "officialRecharge": "Biligame 공식 충전",
       "paidStars": "유료 스타",
       "freeStars": "구매 시 무료 스타",
       "passStars": "패스 스타",
@@ -1353,7 +1363,6 @@
       "profilename": "플레이어 이름",
       "profileuid": "게임 UID",
       "profilerank": "플레이어 랭크",
-      "benchmarkTeam": "기준곡 편성",
       "exportFailed": "이미지 내보내기 실패",
       "importSave": "게임 저장 데이터에서 가져오기",
       "imported": "채보 {count}개를 가져왔습니다",
@@ -4940,6 +4949,8 @@
       "autoLink": "게임 계정 자동 연결",
       "importSessionExpired": "게임 인증이 만료되었습니다. 최신 저장 데이터를 다시 읽어 주세요.",
       "autoImportFailed": "일부 저장 데이터를 가져오지 못했습니다",
+      "openSaveImport": "계정에서 저장 데이터 가져오기",
+      "saveImportGuide": "계정에서 게임 저장 데이터를 읽으면 자동 가져오기를 켠 항목이 백그라운드에서 업데이트됩니다.",
       "addGameSave": "게임 저장 데이터 읽기",
       "unblockUser": "차단 해제",
       "unmute": "뮤트 해제",

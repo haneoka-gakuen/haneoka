@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: A frozen localized rating report and the current theme.
-// Output: Overview or Best 20 PNG with player identity, team and site branding.
+// Output: Overview or Best 20 PNG with player identity, song marks and site branding.
 // Pos: [Map](L2-2.md); song-progress image export.
 // Effects/Dependencies: Loads only report artwork with bounded concurrency and renders locally to Canvas.
 import { drawExportBrand, HANEOKA_EXPORT_BRAND } from "./export-brand";
@@ -8,13 +8,11 @@ import { drawExportBrand, HANEOKA_EXPORT_BRAND } from "./export-brand";
 export interface SongProgressImageReport {
   title: string;
   generated: string;
-  version: string;
-  server: string;
   profile: {
     name: string;
     uid: string;
     rank: string;
-    avatar?: string;
+    region: string;
   };
   metrics: {
     label: string;
@@ -31,14 +29,10 @@ export interface SongProgressImageReport {
   songs: {
     title: string;
     level: string;
-    status: string;
-    image?: string;
+    image: string;
+    attributeIcon: string;
+    bandIcons: string[];
   }[];
-  team: {
-    label: string;
-    image?: string;
-  }[];
-  teamLabel: string;
   bestTitle: string;
 }
 
@@ -55,14 +49,12 @@ interface ThemePalette {
 }
 
 const CANVAS_WIDTH = 1080;
-const MAIN_HEIGHT = 1600;
 const PAD = 40;
 const CONTENT_WIDTH = CANVAS_WIDTH - PAD * 2;
 const IMAGE_TIMEOUT_MS = 8000;
 const IMAGE_CONCURRENCY = 4;
 const MAIN_SONGS_LIMIT = 8;
 const DETAILED_SONGS_LIMIT = 20;
-const TEAM_LIMIT = 10;
 const COUNTS_LIMIT = 5;
 const METRICS_LIMIT = 6;
 
@@ -258,29 +250,34 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
   const theme = captureTheme();
 
   const songs = report.songs.slice(0, detailed ? DETAILED_SONGS_LIMIT : MAIN_SONGS_LIMIT);
-  const team = detailed ? [] : report.team.slice(0, TEAM_LIMIT);
   const metrics = report.metrics.slice(0, METRICS_LIMIT);
   const counts = report.counts.slice(0, COUNTS_LIMIT);
   const brandLogoUrl = getBrandLogoUrl();
 
-  const sourcesToLoad: (string | undefined)[] = [
+  const images = await loadImagesBounded([
     brandLogoUrl,
-    report.profile.avatar,
-    ...songs.map((s) => s.image),
-    ...team.map((t) => t.image),
-  ];
-  const images = await loadImagesBounded(sourcesToLoad);
+    ...songs.flatMap((song) => [song.image, song.attributeIcon, ...song.bandIcons]),
+  ]);
   const brandLogo = brandLogoUrl ? (images.get(brandLogoUrl) ?? null) : null;
-
-  const rowHeightDetailed = 84;
-  const rowGapDetailed = 10;
-  const detailedListStart = 758;
-  const detailedFooterHeight = 76;
-  const detailedSongsHeight =
-    songs.length > 0 ? songs.length * rowHeightDetailed + (songs.length - 1) * rowGapDetailed : 0;
-  const canvasHeight = detailed
-    ? Math.max(960, detailedListStart + detailedSongsHeight + detailedFooterHeight)
-    : MAIN_HEIGHT;
+  const profileY = 96;
+  const hasProfile = Object.values(report.profile).some(Boolean);
+  const profileH = 80;
+  const metricsStartY = profileY + (hasProfile ? profileH + 18 : 0);
+  const metricGap = 16;
+  const metricW = (CONTENT_WIDTH - metricGap * 2) / 3;
+  const metricH = 88;
+  const tableY = metricsStartY + Math.ceil(metrics.length / 3) * (metricH + metricGap) + 8;
+  const tableHeaderH = 40;
+  const tableRowH = 42;
+  const tableH = tableHeaderH + counts.length * tableRowH + 8;
+  const nextSectionY = tableY + tableH + 22;
+  const songsStartY = nextSectionY + 32;
+  const songGapX = 16;
+  const songGapY = detailed ? 10 : 12;
+  const songCardW = detailed ? CONTENT_WIDTH : (CONTENT_WIDTH - songGapX) / 2;
+  const songCardH = detailed ? 84 : 110;
+  const songRows = Math.ceil(songs.length / (detailed ? 1 : 2));
+  const canvasHeight = songsStartY + songRows * (songCardH + songGapY) + 60;
 
   const canvas = document.createElement("canvas");
   canvas.width = CANVAS_WIDTH;
@@ -310,46 +307,29 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
   ctx.font = `700 32px ${theme.font}`;
   drawTextFit(ctx, report.title, PAD, 34, headerTextMaxWidth, "left");
 
-  ctx.fillStyle = theme.variant;
-  ctx.font = `500 18px ${theme.font}`;
-  drawTextFit(ctx, report.server, PAD, 76, headerTextMaxWidth, "left");
-
-  const profileY = 122;
-  const profileH = 96;
-  drawCard(ctx, PAD, profileY, CONTENT_WIDTH, profileH, 20, theme.surfaceContainer, theme.outlineVariant);
-
-  const avatarSize = 68;
-  const avatarImg = report.profile.avatar ? images.get(report.profile.avatar) : null;
-  drawImageOrPlaceholder(
-    ctx,
-    avatarImg,
-    PAD + 16,
-    profileY + 14,
-    avatarSize,
-    avatarSize,
-    16,
-    theme,
-    report.profile.name,
-  );
-
-  const profileTextX = PAD + 16 + avatarSize + 18;
-  const profileNameMaxW = CONTENT_WIDTH - (profileTextX - PAD) - 360;
-  ctx.fillStyle = theme.onSurface;
-  ctx.font = `700 26px ${theme.font}`;
-  drawTextFit(ctx, report.profile.name, profileTextX, profileY + 20, profileNameMaxW, "left");
-
-  ctx.fillStyle = theme.variant;
-  ctx.font = `500 18px ${theme.font}`;
-  drawTextFit(ctx, report.profile.uid, profileTextX, profileY + 54, profileNameMaxW, "left");
-
-  ctx.fillStyle = theme.primary;
-  ctx.font = `700 22px ${theme.font}`;
-  drawTextFit(ctx, report.profile.rank, PAD + CONTENT_WIDTH - 20, profileY + 35, 330, "right");
-
-  const metricsStartY = 236;
-  const metricGap = 16;
-  const metricW = (CONTENT_WIDTH - metricGap * 2) / 3;
-  const metricH = 88;
+  if (hasProfile) {
+    drawCard(ctx, PAD, profileY, CONTENT_WIDTH, profileH, 20, theme.surfaceContainer, theme.outlineVariant);
+    const left = PAD + 20;
+    const right = PAD + CONTENT_WIDTH - 20;
+    const paired = Boolean(report.profile.name && report.profile.uid);
+    ctx.fillStyle = theme.onSurface;
+    ctx.font = `700 26px ${theme.font}`;
+    drawTextFit(ctx, report.profile.name || report.profile.uid, left, profileY + (paired ? 12 : 26), CONTENT_WIDTH - 400);
+    if (paired) {
+      ctx.fillStyle = theme.variant;
+      ctx.font = `500 18px ${theme.font}`;
+      drawTextFit(ctx, report.profile.uid, left, profileY + 47, CONTENT_WIDTH - 400);
+    }
+    ctx.fillStyle = theme.primary;
+    ctx.font = `700 22px ${theme.font}`;
+    const hasTwo = Boolean(report.profile.region && report.profile.rank);
+    drawTextFit(ctx, report.profile.region || report.profile.rank, right, profileY + (hasTwo ? 13 : 27), 330, "right");
+    if (hasTwo) {
+      ctx.fillStyle = theme.variant;
+      ctx.font = `500 18px ${theme.font}`;
+      drawTextFit(ctx, report.profile.rank, right, profileY + 45, 330, "right");
+    }
+  }
 
   metrics.forEach((metric, index) => {
     const col = index % 3;
@@ -375,10 +355,6 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
     }
   });
 
-  const tableY = 446;
-  const tableHeaderH = 40;
-  const tableRowH = 42;
-  const tableH = tableHeaderH + counts.length * tableRowH + 8;
   drawCard(ctx, PAD, tableY, CONTENT_WIDTH, tableH, 18, theme.surfaceContainer, theme.outlineVariant);
 
   const colLabelX = PAD + 20;
@@ -414,117 +390,55 @@ export async function renderSongProgressImage(report: SongProgressImageReport, d
     drawTextFit(ctx, String(row.ap), col3X, ry + 12, 140, "right");
   });
 
-  let nextSectionY = tableY + tableH + 22;
-
-  if (!detailed && team.length > 0) {
-    ctx.fillStyle = theme.onSurface;
-    ctx.font = `700 20px ${theme.font}`;
-    drawTextFit(ctx, report.teamLabel, PAD, nextSectionY, CONTENT_WIDTH, "left");
-
-    const teamStartY = nextSectionY + 32;
-    const teamGapX = 14;
-    const teamGapY = 12;
-    const teamCardW = (CONTENT_WIDTH - teamGapX * 4) / 5;
-    const teamCardH = 108;
-
-    team.forEach((member, index) => {
-      const col = index % 5;
-      const row = Math.floor(index / 5);
-      const x = PAD + col * (teamCardW + teamGapX);
-      const y = teamStartY + row * (teamCardH + teamGapY);
-
-      drawCard(ctx, x, y, teamCardW, teamCardH, 14, theme.surfaceContainer, theme.outlineVariant);
-      const thumbSize = 64;
-      const thumbImg = member.image ? images.get(member.image) : null;
-      drawImageOrPlaceholder(
-        ctx,
-        thumbImg,
-        x + (teamCardW - thumbSize) / 2,
-        y + 10,
-        thumbSize,
-        thumbSize,
-        12,
-        theme,
-        member.label,
-      );
-
-      ctx.fillStyle = theme.onSurface;
-      ctx.font = `500 14px ${theme.font}`;
-      drawTextFit(ctx, member.label, x + teamCardW / 2, y + 82, teamCardW - 16, "center");
-    });
-
-    nextSectionY = teamStartY + 2 * teamCardH + teamGapY + 22;
-  }
-
   ctx.fillStyle = theme.onSurface;
   ctx.font = `700 20px ${theme.font}`;
   drawTextFit(ctx, report.bestTitle, PAD, nextSectionY, CONTENT_WIDTH, "left");
-  const songsStartY = nextSectionY + 32;
+  songs.forEach((song, index) => {
+    const col = detailed ? 0 : index % 2;
+    const row = detailed ? index : Math.floor(index / 2);
+    const x = PAD + col * (songCardW + songGapX);
+    const y = songsStartY + row * (songCardH + songGapY);
+    drawCard(ctx, x, y, songCardW, songCardH, 16, theme.surfaceContainer, theme.outlineVariant);
 
-  if (detailed) {
-    songs.forEach((song, index) => {
-      const y = songsStartY + index * (rowHeightDetailed + rowGapDetailed);
-      drawCard(ctx, PAD, y, CONTENT_WIDTH, rowHeightDetailed, 14, theme.surfaceContainer, theme.outlineVariant);
+    const thumbSize = detailed ? 60 : 78;
+    const thumbX = x + 14;
+    const thumbY = y + (songCardH - thumbSize) / 2;
+    drawImageOrPlaceholder(ctx, images.get(song.image), thumbX, thumbY, thumbSize, thumbSize, 10, theme, song.title);
 
-      const thumbSize = 60;
-      const songImg = song.image ? images.get(song.image) : null;
-      drawImageOrPlaceholder(ctx, songImg, PAD + 14, y + 12, thumbSize, thumbSize, 10, theme, song.title);
-
+    if (detailed) {
       ctx.fillStyle = theme.variant;
       ctx.font = `700 18px ${theme.font}`;
-      drawTextFit(ctx, String(index + 1), PAD + 88, y + 32, 36, "left");
+      drawTextFit(ctx, String(index + 1), x + 88, y + 32, 32);
+    }
 
-      ctx.fillStyle = theme.onSurface;
-      ctx.font = `600 20px ${theme.font}`;
-      drawTextFit(ctx, song.title, PAD + 130, y + 18, CONTENT_WIDTH - 330, "left");
+    const textX = detailed ? x + 130 : thumbX + thumbSize + 14;
+    const textMaxW = x + songCardW - 16 - textX;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = theme.onSurface;
+    ctx.font = `600 ${detailed ? 20 : 18}px ${theme.font}`;
+    const titleY = y + (detailed ? 18 : 28);
+    const attribute = images.get(song.attributeIcon);
+    if (attribute) ctx.drawImage(attribute, textX, titleY, 20, 20);
+    const titleIndent = attribute ? 26 : 0;
+    drawTextFit(ctx, song.title, textX + titleIndent, titleY, textMaxW - titleIndent);
 
-      ctx.fillStyle = theme.variant;
-      ctx.font = `500 16px ${theme.font}`;
-      drawTextFit(ctx, song.level, PAD + 130, y + 48, CONTENT_WIDTH - 330, "left");
-
-      ctx.fillStyle = theme.primary;
-      ctx.font = `700 20px ${theme.font}`;
-      drawTextFit(ctx, song.status, PAD + CONTENT_WIDTH - 20, y + 31, 170, "right");
-    });
-  } else {
-    const songGapX = 16;
-    const songGapY = 12;
-    const songCardW = (CONTENT_WIDTH - songGapX) / 2;
-    const songCardH = 110;
-
-    songs.forEach((song, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const x = PAD + col * (songCardW + songGapX);
-      const y = songsStartY + row * (songCardH + songGapY);
-
-      drawCard(ctx, x, y, songCardW, songCardH, 16, theme.surfaceContainer, theme.outlineVariant);
-      const thumbSize = 78;
-      const songImg = song.image ? images.get(song.image) : null;
-      drawImageOrPlaceholder(ctx, songImg, x + 14, y + 16, thumbSize, thumbSize, 12, theme, song.title);
-
-      const textX = x + 14 + thumbSize + 14;
-      const textMaxW = songCardW - (textX - x) - 16;
-
-      ctx.fillStyle = theme.onSurface;
-      ctx.font = `600 18px ${theme.font}`;
-      drawTextFit(ctx, song.title, textX, y + 18, textMaxW, "left");
-
-      ctx.fillStyle = theme.variant;
-      ctx.font = `500 15px ${theme.font}`;
-      drawTextFit(ctx, song.level, textX, y + 48, textMaxW, "left");
-
-      ctx.fillStyle = theme.primary;
-      ctx.font = `700 16px ${theme.font}`;
-      drawTextFit(ctx, song.status, textX, y + 74, textMaxW, "left");
-    });
-  }
+    const bandY = y + (detailed ? 48 : 58);
+    let metadataX = textX;
+    for (const icon of song.bandIcons) {
+      const band = images.get(icon);
+      if (!band || metadataX + 20 > x + songCardW - 80) continue;
+      ctx.drawImage(band, metadataX, bandY - 1, 20, 20);
+      metadataX += 24;
+    }
+    ctx.fillStyle = theme.variant;
+    ctx.font = `500 16px ${theme.font}`;
+    drawTextFit(ctx, song.level, metadataX, bandY, textMaxW - (metadataX - textX));
+  });
 
   const footerY = canvasHeight - 40;
   ctx.fillStyle = theme.variant;
   ctx.font = `500 15px ${theme.font}`;
-  const footerLeft = [report.generated, report.version, report.server].filter(Boolean).join(" / ");
-  drawTextFit(ctx, footerLeft, PAD, footerY, CONTENT_WIDTH - 240, "left");
+  drawTextFit(ctx, report.generated, PAD, footerY, CONTENT_WIDTH - 240, "left");
 
   const brandUrl =
     typeof (HANEOKA_EXPORT_BRAND as Record<string, unknown>).url === "string"

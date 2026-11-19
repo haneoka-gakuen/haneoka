@@ -1236,6 +1236,16 @@
       }
     },
     "shop": {
+      "paymentMethod": "支付方式",
+      "paymentKinds": {
+        "cash": "现金",
+        "stars": "星钻",
+        "paidStars": "付费星钻",
+        "free": "免费",
+        "ad": "观看广告",
+        "other": "其他道具"
+      },
+      "officialRecharge": "Biligame 官方充值",
       "paidStars": "付费星石",
       "freeStars": "购买时免费星石",
       "passStars": "月卡星石",
@@ -1353,7 +1363,6 @@
       "profilename": "玩家昵称",
       "profileuid": "游戏 UID",
       "profilerank": "玩家等级",
-      "benchmarkTeam": "基准曲目队伍",
       "exportFailed": "图片导出失败",
       "importSave": "从游戏存档导入",
       "imported": "已导入 {count} 个谱面",
@@ -4940,6 +4949,8 @@
       "autoLink": "自动绑定游戏账号",
       "importSessionExpired": "游戏登录凭据已失效，请重新导入最新存档。",
       "autoImportFailed": "部分存档数据未能导入",
+      "openSaveImport": "在账号页导入存档",
+      "saveImportGuide": "在账号页读取游戏存档，已开启自动导入的项目会在后台更新。",
       "addGameSave": "读取游戏存档",
       "unblockUser": "取消屏蔽",
       "unmute": "取消静音",

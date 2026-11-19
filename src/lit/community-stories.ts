@@ -23,7 +23,8 @@ import { collectionList, collectionTable, viewSwitch, type CollectionView } from
 import { tile } from "./ui/tile";
 import { facet } from "./ui/facet";
 import { renderPane, paneSection } from "./ui/pane";
-import { detailLayout } from "./ui/detail-layout";
+import { detailLayout, DETAIL_LAYOUT_STACKED } from "./ui/detail-layout";
+import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
@@ -59,6 +60,7 @@ export class CommunityStories extends LitElement {
     playing: { state: true },
     versions: { state: true },
     revision: { state: true },
+    commentsCompact: { state: true },
   };
   declare locale: string;
   declare server: string;
@@ -77,6 +79,8 @@ export class CommunityStories extends LitElement {
   declare private playing: boolean;
   declare private versions: Version[];
   declare private revision: number;
+  declare private commentsCompact: boolean;
+  private stopMedia?: () => void;
   private lifetime = new AbortController();
   private stopLocale?: () => void;
   private images = new LazyImages();
@@ -100,6 +104,7 @@ export class CommunityStories extends LitElement {
     this.playing = false;
     this.versions = [];
     this.revision = 0;
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
   }
   createRenderRoot() {
     return this;
@@ -108,6 +113,8 @@ export class CommunityStories extends LitElement {
   private href = (id = "") => communityStoryPath(this.server, this.locale, id);
   override connectedCallback() {
     super.connectedCallback();
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
+    this.stopMedia = watchMedia(DETAIL_LAYOUT_STACKED, (stacked) => { this.commentsCompact = stacked; });
     const url = new URL(location.href),
       route = parseCommunityStoryDocument(url.pathname);
     this.storyId = route?.id || "";
@@ -131,6 +138,7 @@ export class CommunityStories extends LitElement {
   override disconnectedCallback() {
     this.lifetime.abort();
     this.stopLocale?.();
+    this.stopMedia?.();
     this.images.disconnect();
     clearBrowseBar();
     clearAppBarSearch("community-stories");
@@ -527,7 +535,7 @@ export class CommunityStories extends LitElement {
                   server=${this.server}
                 ></entity-comments>
               `,
-              placement: "bottom",
+              placement: this.commentsCompact ? "bottom" : "media",
               hasMedia: !!row.coverUrl,
             },
           ),

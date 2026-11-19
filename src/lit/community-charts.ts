@@ -26,7 +26,7 @@ import { songChartSummary, songDetailSection } from "./ui/song-summary";
 import { difficultyBadge } from "./ui/difficulty-picker";
 import { facet } from "./ui/facet";
 import { renderPane, paneSection } from "./ui/pane";
-import { detailLayout } from "./ui/detail-layout";
+import { detailLayout, DETAIL_LAYOUT_STACKED } from "./ui/detail-layout";
 import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
@@ -115,7 +115,7 @@ export class CommunityCharts extends LitElement {
     this.versionsExpanded = false;
     this.versions = [];
     this.chartMode = "simple";
-    this.commentsCompact = matches("(max-width: 959px)");
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
   }
   createRenderRoot() {
     return this;
@@ -129,8 +129,8 @@ export class CommunityCharts extends LitElement {
   }
   override connectedCallback() {
     super.connectedCallback();
-    this.commentsCompact = matches("(max-width: 959px)");
-    this.unmedia = watchMedia("(max-width: 959px)", (value) => {
+    this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
+    this.unmedia = watchMedia(DETAIL_LAYOUT_STACKED, (value) => {
       this.commentsCompact = value;
     });
     this.server = readReleaseServer();
