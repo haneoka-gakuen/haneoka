@@ -1,79 +1,541 @@
 {
-  "/": "haneoka-social-card.png?v=26ca834924",
-  "/announcements": "social/announcements.png?v=5427b3e27e",
-  "/calendar": "social/calendar.png?v=b07f53bfb2",
-  "/join": "social/join.png?v=e8c32e38cd",
-  "/sponsor": "social/sponsor.png?v=de84fe81e2",
-  "/download": "social/download.png?v=2be9f2171b",
-  "/catalog/songs": "social/catalog-songs.png?v=d39086c218",
-  "/catalog/song-meta": "social/catalog-song-meta.png?v=53f3ec6741",
-  "/catalog/events": "social/catalog-events.png?v=ad0ac954ca",
-  "/catalog/events/tracker": "social/catalog-events-tracker.png?v=188d509a27",
-  "/catalog/arena": "social/catalog-arena.png?v=91cc6b4b75",
-  "/catalog/characters": "social/catalog-characters.png?v=d4e9679e00",
-  "/catalog/member-cards": "social/catalog-member-cards.png?v=88be23561d",
-  "/catalog/support-cards": "social/catalog-support-cards.png?v=140c6d611e",
-  "/catalog/skills": "social/catalog-skills.png?v=3ebba0ed85",
-  "/catalog/comics": "social/catalog-comics.png?v=50a9ba707f",
-  "/catalog/gacha": "social/catalog-gacha.png?v=b3f0334e76",
-  "/catalog/login-campaigns": "social/catalog-login-campaigns.png?v=6094a6ef78",
-  "/catalog/missions": "social/catalog-missions.png?v=7dcd509adb",
-  "/catalog/passes": "social/catalog-passes.png?v=1f0c5add43",
-  "/catalog/tgw-card": "social/catalog-tgw-card.png?v=04c1dda3a8",
-  "/catalog/studio": "social/catalog-studio.png?v=28685bc862",
-  "/catalog/player-ranks": "social/catalog-player-ranks.png?v=3f6e6b15cd",
-  "/catalog/friendship-ranks": "social/catalog-friendship-ranks.png?v=7038e72e04",
-  "/catalog/band-rating": "social/catalog-band-rating.png?v=bb38b1af26",
-  "/catalog/high-score-rating": "social/catalog-high-score-rating.png?v=1aefdc70d6",
-  "/catalog/shop": "social/catalog-shop.png?v=40c76a3525",
-  "/catalog/exchange": "social/catalog-exchange.png?v=f84c2be161",
-  "/catalog/stamps": "social/catalog-stamps.png?v=628752de0d",
-  "/catalog/stickers": "social/catalog-stickers.png?v=694a0d09f7",
-  "/catalog/backgrounds": "social/catalog-backgrounds.png?v=8dfe7d26c6",
-  "/catalog/chat-customizations": "social/catalog-chat-customizations.png?v=d27fa0f6cc",
-  "/catalog/items": "social/catalog-items.png?v=a905715693",
-  "/catalog/band-items": "social/catalog-band-items.png?v=d354a3d72e",
-  "/catalog/real-lives": "social/catalog-real-lives.png?v=6d937701fa",
-  "/catalog/stories/event": "social/catalog-stories-event.png?v=c35bbaa9b7",
-  "/catalog/stories/band": "social/catalog-stories-band.png?v=554ed57d6e",
-  "/catalog/stories/link": "social/catalog-stories-link.png?v=7cc9984107",
-  "/catalog/stories/birthday": "social/catalog-stories-birthday.png?v=801fcc6016",
-  "/catalog/stories/home": "social/catalog-stories-home.png?v=4e8f2ace29",
-  "/catalog/stories/afterlive": "social/catalog-stories-afterlive.png?v=ba04d539e5",
-  "/catalog/stories/tutorial": "social/catalog-stories-tutorial.png?v=a315c9e491",
-  "/catalog/live2d": "social/catalog-live2d.png?v=883cc7a298",
-  "/catalog/spine": "social/catalog-spine.png?v=39eb83bcdb",
-  "/catalog/assets": "social/catalog-assets.png?v=d679ea7316",
-  "/catalog/help": "social/catalog-help.png?v=50d03a0bb6",
-  "/player-profile": "social/player-profile.png?v=7a389e4d86",
-  "/team-builder": "social/team-builder.png?v=f3cb51fc7b",
-  "/song-progress": "social/song-progress.png?v=b2e0832321",
-  "/gacha-history": "social/gacha-history.png?v=c25a71c411",
-  "/stamp-maker": "social/stamp-maker.png?v=e3da44a49d",
-  "/story-editor/create": "social/story-editor-create.png?v=6c041ec9b2",
-  "/chart-editor/create": "social/chart-editor-create.png?v=7c93bfe84b",
-  "/sonolus": "social/sonolus.png?v=111a0f6dc5",
-  "/song-puzzle": "social/song-puzzle.png?v=584ec3e305",
-  "/song-guess": "social/song-guess.png?v=53b7f55197",
-  "/community/feeds": "social/community-feeds.png?v=1d8724319c",
-  "/community/mine": "social/community-mine.png?v=952c32110b",
-  "/community/playlists": "social/community-playlists.png?v=73270b4874",
-  "/community/stories": "social/community-stories.png?v=e2e95849fe",
-  "/community/charts": "social/community-charts.png?v=c9bbfe1847",
-  "/community/forums": "social/community-forums.png?v=a9c39edc7b",
-  "/community/gbp/songs": "social/community-gbp-songs.png?v=700d19c501",
-  "/community/gbp/stories/event": "social/community-gbp-stories-event.png?v=1bf8fcc78a",
-  "/community/gbp/stories/band": "social/community-gbp-stories-band.png?v=5e57eb01e0",
-  "/community/gbp/stories/main": "social/community-gbp-stories-main.png?v=3321a03013",
-  "/community/gbp/stories/afterlive": "social/community-gbp-stories-afterlive.png?v=f1c5fa6724",
-  "/community/gbp/stories/card": "social/community-gbp-stories-card.png?v=317334edec",
-  "/community/sekai/songs": "social/community-sekai-songs.png?v=84122bc19f",
-  "/community/sekai/stories/event": "social/community-sekai-stories-event.png?v=13f503806c",
-  "/community/sekai/stories/unit": "social/community-sekai-stories-unit.png?v=bab0fc56f5",
-  "/community/sekai/stories/character": "social/community-sekai-stories-character.png?v=fd4307ba7a",
-  "/community/sekai/stories/card": "social/community-sekai-stories-card.png?v=b843048c13",
-  "/community/sekai/stories/area": "social/community-sekai-stories-area.png?v=f4ff69145d",
-  "/community/sekai/stories/special": "social/community-sekai-stories-special.png?v=a9f1bdd4fa",
-  "/community/sekai/stories/mysekai": "social/community-sekai-stories-mysekai.png?v=d0108194e6",
-  "/community/sekai/stories/live": "social/community-sekai-stories-live.png?v=aeb225b35b"
+  "/": {
+    "en": "social/en/home.png?v=e2d95eaf86",
+    "ja": "social/ja/home.png?v=7d32685de8",
+    "zh-TW": "social/zh-TW/home.png?v=2e47278cf7",
+    "zh-CN": "social/zh-CN/home.png?v=7c629d96a5",
+    "ko": "social/ko/home.png?v=ff97777a46"
+  },
+  "/announcements": {
+    "en": "social/en/announcements.png?v=bc9a7e27f0",
+    "ja": "social/ja/announcements.png?v=fb6dc0d311",
+    "zh-TW": "social/zh-TW/announcements.png?v=d4b5fef803",
+    "zh-CN": "social/zh-CN/announcements.png?v=819403454f",
+    "ko": "social/ko/announcements.png?v=2f2868f5ed"
+  },
+  "/calendar": {
+    "en": "social/en/calendar.png?v=b5f51bcef8",
+    "ja": "social/ja/calendar.png?v=ec4f168825",
+    "zh-TW": "social/zh-TW/calendar.png?v=38a71a7674",
+    "zh-CN": "social/zh-CN/calendar.png?v=3fb439a553",
+    "ko": "social/ko/calendar.png?v=838064f688"
+  },
+  "/join": {
+    "en": "social/en/join.png?v=cf653b63d0",
+    "ja": "social/ja/join.png?v=07bd514d43",
+    "zh-TW": "social/zh-TW/join.png?v=34316dc5a7",
+    "zh-CN": "social/zh-CN/join.png?v=44a1cbca09",
+    "ko": "social/ko/join.png?v=59a16ddece"
+  },
+  "/sponsor": {
+    "en": "social/en/sponsor.png?v=4888342ab5",
+    "ja": "social/ja/sponsor.png?v=33030687f3",
+    "zh-TW": "social/zh-TW/sponsor.png?v=e8686a2b73",
+    "zh-CN": "social/zh-CN/sponsor.png?v=f17c6ebc8e",
+    "ko": "social/ko/sponsor.png?v=4b04f7b890"
+  },
+  "/download": {
+    "en": "social/en/download.png?v=72c198b3a8",
+    "ja": "social/ja/download.png?v=5340416a9b",
+    "zh-TW": "social/zh-TW/download.png?v=087833d72e",
+    "zh-CN": "social/zh-CN/download.png?v=6527bbcdef",
+    "ko": "social/ko/download.png?v=7f8d7ce6ae"
+  },
+  "/about": {
+    "en": "social/en/about.png?v=50420831e1",
+    "ja": "social/ja/about.png?v=e7b0504149",
+    "zh-TW": "social/zh-TW/about.png?v=cdd9922873",
+    "zh-CN": "social/zh-CN/about.png?v=56c04f3bed",
+    "ko": "social/ko/about.png?v=96b736f02c"
+  },
+  "/catalog/songs": {
+    "en": "social/en/catalog-songs.png?v=19d4bab79b",
+    "ja": "social/ja/catalog-songs.png?v=6c256f1f93",
+    "zh-TW": "social/zh-TW/catalog-songs.png?v=a8d87abc48",
+    "zh-CN": "social/zh-CN/catalog-songs.png?v=db2ecb6f87",
+    "ko": "social/ko/catalog-songs.png?v=29b080968e"
+  },
+  "/catalog/song-meta": {
+    "en": "social/en/catalog-song-meta.png?v=57418a70ec",
+    "ja": "social/ja/catalog-song-meta.png?v=6b3e03c32e",
+    "zh-TW": "social/zh-TW/catalog-song-meta.png?v=ec8eb0c8e8",
+    "zh-CN": "social/zh-CN/catalog-song-meta.png?v=d997545fd2",
+    "ko": "social/ko/catalog-song-meta.png?v=c66454e084"
+  },
+  "/catalog/events": {
+    "en": "social/en/catalog-events.png?v=7497973c34",
+    "ja": "social/ja/catalog-events.png?v=d58af8939c",
+    "zh-TW": "social/zh-TW/catalog-events.png?v=f5f062e25f",
+    "zh-CN": "social/zh-CN/catalog-events.png?v=38a9a49a46",
+    "ko": "social/ko/catalog-events.png?v=24c875846e"
+  },
+  "/catalog/events/tracker": {
+    "en": "social/en/catalog-events-tracker.png?v=64be26d008",
+    "ja": "social/ja/catalog-events-tracker.png?v=dcec011541",
+    "zh-TW": "social/zh-TW/catalog-events-tracker.png?v=9fc4ea5d13",
+    "zh-CN": "social/zh-CN/catalog-events-tracker.png?v=da77f7c6dd",
+    "ko": "social/ko/catalog-events-tracker.png?v=b5293f8b10"
+  },
+  "/catalog/arena": {
+    "en": "social/en/catalog-arena.png?v=3c0209dd49",
+    "ja": "social/ja/catalog-arena.png?v=596ae7e480",
+    "zh-TW": "social/zh-TW/catalog-arena.png?v=05acf96137",
+    "zh-CN": "social/zh-CN/catalog-arena.png?v=8e14bbc77d",
+    "ko": "social/ko/catalog-arena.png?v=a7eaaacd65"
+  },
+  "/catalog/characters": {
+    "en": "social/en/catalog-characters.png?v=f8ae597351",
+    "ja": "social/ja/catalog-characters.png?v=ebd88176e1",
+    "zh-TW": "social/zh-TW/catalog-characters.png?v=7e04749567",
+    "zh-CN": "social/zh-CN/catalog-characters.png?v=2101b5c01e",
+    "ko": "social/ko/catalog-characters.png?v=a5bdb2243f"
+  },
+  "/catalog/member-cards": {
+    "en": "social/en/catalog-member-cards.png?v=42a5e4f632",
+    "ja": "social/ja/catalog-member-cards.png?v=eebf1246ae",
+    "zh-TW": "social/zh-TW/catalog-member-cards.png?v=4682d0c022",
+    "zh-CN": "social/zh-CN/catalog-member-cards.png?v=dc04bad1b4",
+    "ko": "social/ko/catalog-member-cards.png?v=1b8138ce6e"
+  },
+  "/catalog/support-cards": {
+    "en": "social/en/catalog-support-cards.png?v=3e818e9708",
+    "ja": "social/ja/catalog-support-cards.png?v=85b1859ef6",
+    "zh-TW": "social/zh-TW/catalog-support-cards.png?v=69d43896df",
+    "zh-CN": "social/zh-CN/catalog-support-cards.png?v=5d300b0401",
+    "ko": "social/ko/catalog-support-cards.png?v=246e9c72c0"
+  },
+  "/catalog/skills": {
+    "en": "social/en/catalog-skills.png?v=3d94435fa0",
+    "ja": "social/ja/catalog-skills.png?v=0e695e5e00",
+    "zh-TW": "social/zh-TW/catalog-skills.png?v=edc50ab3c7",
+    "zh-CN": "social/zh-CN/catalog-skills.png?v=09ba0e9c72",
+    "ko": "social/ko/catalog-skills.png?v=221defbdc7"
+  },
+  "/catalog/comics": {
+    "en": "social/en/catalog-comics.png?v=a8d4943c67",
+    "ja": "social/ja/catalog-comics.png?v=b0169a26be",
+    "zh-TW": "social/zh-TW/catalog-comics.png?v=b3b0542a32",
+    "zh-CN": "social/zh-CN/catalog-comics.png?v=257dff2dea",
+    "ko": "social/ko/catalog-comics.png?v=4d852f9f68"
+  },
+  "/catalog/gacha": {
+    "en": "social/en/catalog-gacha.png?v=142f8de0bf",
+    "ja": "social/ja/catalog-gacha.png?v=5377936898",
+    "zh-TW": "social/zh-TW/catalog-gacha.png?v=3ecfe834f0",
+    "zh-CN": "social/zh-CN/catalog-gacha.png?v=01d31c4935",
+    "ko": "social/ko/catalog-gacha.png?v=48ae2abb39"
+  },
+  "/catalog/login-campaigns": {
+    "en": "social/en/catalog-login-campaigns.png?v=ec0c8b7fa9",
+    "ja": "social/ja/catalog-login-campaigns.png?v=ea720241e2",
+    "zh-TW": "social/zh-TW/catalog-login-campaigns.png?v=b828b3d5ae",
+    "zh-CN": "social/zh-CN/catalog-login-campaigns.png?v=0f20ec63b2",
+    "ko": "social/ko/catalog-login-campaigns.png?v=2b8dde3236"
+  },
+  "/catalog/missions": {
+    "en": "social/en/catalog-missions.png?v=81b0a55a75",
+    "ja": "social/ja/catalog-missions.png?v=23a40fefc8",
+    "zh-TW": "social/zh-TW/catalog-missions.png?v=3fbadd185d",
+    "zh-CN": "social/zh-CN/catalog-missions.png?v=2b4c793bb0",
+    "ko": "social/ko/catalog-missions.png?v=ac70f7b397"
+  },
+  "/catalog/passes": {
+    "en": "social/en/catalog-passes.png?v=47469dfc6d",
+    "ja": "social/ja/catalog-passes.png?v=2e3bddd001",
+    "zh-TW": "social/zh-TW/catalog-passes.png?v=784789c7d6",
+    "zh-CN": "social/zh-CN/catalog-passes.png?v=a1529bdc53",
+    "ko": "social/ko/catalog-passes.png?v=d8213568b0"
+  },
+  "/catalog/tgw-card": {
+    "en": "social/en/catalog-tgw-card.png?v=65c3ba19ab",
+    "ja": "social/ja/catalog-tgw-card.png?v=6975b72b01",
+    "zh-TW": "social/zh-TW/catalog-tgw-card.png?v=c0e0504fc3",
+    "zh-CN": "social/zh-CN/catalog-tgw-card.png?v=3d167daad6",
+    "ko": "social/ko/catalog-tgw-card.png?v=91f852a9c4"
+  },
+  "/catalog/studio": {
+    "en": "social/en/catalog-studio.png?v=e1e30ed884",
+    "ja": "social/ja/catalog-studio.png?v=88cc672480",
+    "zh-TW": "social/zh-TW/catalog-studio.png?v=7725ce45df",
+    "zh-CN": "social/zh-CN/catalog-studio.png?v=1563497f21",
+    "ko": "social/ko/catalog-studio.png?v=ff6892d3cc"
+  },
+  "/catalog/player-ranks": {
+    "en": "social/en/catalog-player-ranks.png?v=2f0954c4df",
+    "ja": "social/ja/catalog-player-ranks.png?v=c37b750fa0",
+    "zh-TW": "social/zh-TW/catalog-player-ranks.png?v=5cc7242bde",
+    "zh-CN": "social/zh-CN/catalog-player-ranks.png?v=7ad29675ed",
+    "ko": "social/ko/catalog-player-ranks.png?v=38b6bd8d9e"
+  },
+  "/catalog/friendship-ranks": {
+    "en": "social/en/catalog-friendship-ranks.png?v=7a0540181a",
+    "ja": "social/ja/catalog-friendship-ranks.png?v=a9f1478cc4",
+    "zh-TW": "social/zh-TW/catalog-friendship-ranks.png?v=40b03dc413",
+    "zh-CN": "social/zh-CN/catalog-friendship-ranks.png?v=6f1e4283b3",
+    "ko": "social/ko/catalog-friendship-ranks.png?v=2cd7bb51e1"
+  },
+  "/catalog/band-rating": {
+    "en": "social/en/catalog-band-rating.png?v=c4ab64a799",
+    "ja": "social/ja/catalog-band-rating.png?v=a39136df12",
+    "zh-TW": "social/zh-TW/catalog-band-rating.png?v=bd81e947fb",
+    "zh-CN": "social/zh-CN/catalog-band-rating.png?v=ca2a5174af",
+    "ko": "social/ko/catalog-band-rating.png?v=de9891189b"
+  },
+  "/catalog/high-score-rating": {
+    "en": "social/en/catalog-high-score-rating.png?v=f4bf66cddb",
+    "ja": "social/ja/catalog-high-score-rating.png?v=a25e71cb44",
+    "zh-TW": "social/zh-TW/catalog-high-score-rating.png?v=805ca43996",
+    "zh-CN": "social/zh-CN/catalog-high-score-rating.png?v=87e853acff",
+    "ko": "social/ko/catalog-high-score-rating.png?v=a68cc12c59"
+  },
+  "/catalog/shop": {
+    "en": "social/en/catalog-shop.png?v=531f145e88",
+    "ja": "social/ja/catalog-shop.png?v=8f1ce0e8fe",
+    "zh-TW": "social/zh-TW/catalog-shop.png?v=ae89fee53f",
+    "zh-CN": "social/zh-CN/catalog-shop.png?v=649b743cb9",
+    "ko": "social/ko/catalog-shop.png?v=2c4feba152"
+  },
+  "/catalog/exchange": {
+    "en": "social/en/catalog-exchange.png?v=298549d473",
+    "ja": "social/ja/catalog-exchange.png?v=2e3acdf6aa",
+    "zh-TW": "social/zh-TW/catalog-exchange.png?v=e6253a318b",
+    "zh-CN": "social/zh-CN/catalog-exchange.png?v=9352589862",
+    "ko": "social/ko/catalog-exchange.png?v=698b7f4333"
+  },
+  "/catalog/stamps": {
+    "en": "social/en/catalog-stamps.png?v=e4fc99ce0b",
+    "ja": "social/ja/catalog-stamps.png?v=6d6818676c",
+    "zh-TW": "social/zh-TW/catalog-stamps.png?v=f06ce0fa4f",
+    "zh-CN": "social/zh-CN/catalog-stamps.png?v=d30923ca03",
+    "ko": "social/ko/catalog-stamps.png?v=70f1e6a4bc"
+  },
+  "/catalog/stickers": {
+    "en": "social/en/catalog-stickers.png?v=0531bb0930",
+    "ja": "social/ja/catalog-stickers.png?v=603c1f48ba",
+    "zh-TW": "social/zh-TW/catalog-stickers.png?v=501b2cf2d4",
+    "zh-CN": "social/zh-CN/catalog-stickers.png?v=1f4a8f7182",
+    "ko": "social/ko/catalog-stickers.png?v=4deebd311b"
+  },
+  "/catalog/backgrounds": {
+    "en": "social/en/catalog-backgrounds.png?v=196e38e319",
+    "ja": "social/ja/catalog-backgrounds.png?v=f7d1a574a8",
+    "zh-TW": "social/zh-TW/catalog-backgrounds.png?v=82847af27c",
+    "zh-CN": "social/zh-CN/catalog-backgrounds.png?v=766e9e1cd2",
+    "ko": "social/ko/catalog-backgrounds.png?v=8cd4d1b9fc"
+  },
+  "/catalog/chat-customizations": {
+    "en": "social/en/catalog-chat-customizations.png?v=77d9efb3c1",
+    "ja": "social/ja/catalog-chat-customizations.png?v=5803102865",
+    "zh-TW": "social/zh-TW/catalog-chat-customizations.png?v=8cbf144395",
+    "zh-CN": "social/zh-CN/catalog-chat-customizations.png?v=4d1c89bc23",
+    "ko": "social/ko/catalog-chat-customizations.png?v=d8a88e05cd"
+  },
+  "/catalog/items": {
+    "en": "social/en/catalog-items.png?v=15552b52f4",
+    "ja": "social/ja/catalog-items.png?v=21cfca730a",
+    "zh-TW": "social/zh-TW/catalog-items.png?v=b5cd998336",
+    "zh-CN": "social/zh-CN/catalog-items.png?v=c696a59f20",
+    "ko": "social/ko/catalog-items.png?v=0efd164e10"
+  },
+  "/catalog/band-items": {
+    "en": "social/en/catalog-band-items.png?v=e7679c1b5d",
+    "ja": "social/ja/catalog-band-items.png?v=053a6b19d2",
+    "zh-TW": "social/zh-TW/catalog-band-items.png?v=d0111b7b4b",
+    "zh-CN": "social/zh-CN/catalog-band-items.png?v=bd6b74cbd5",
+    "ko": "social/ko/catalog-band-items.png?v=48b12f9cda"
+  },
+  "/catalog/real-lives": {
+    "en": "social/en/catalog-real-lives.png?v=cfcfdaad4c",
+    "ja": "social/ja/catalog-real-lives.png?v=3d3bb91460",
+    "zh-TW": "social/zh-TW/catalog-real-lives.png?v=4c19693eae",
+    "zh-CN": "social/zh-CN/catalog-real-lives.png?v=1d23753198",
+    "ko": "social/ko/catalog-real-lives.png?v=20a317394f"
+  },
+  "/catalog/stories/event": {
+    "en": "social/en/catalog-stories-event.png?v=0ab504689e",
+    "ja": "social/ja/catalog-stories-event.png?v=757dd8c1d6",
+    "zh-TW": "social/zh-TW/catalog-stories-event.png?v=21b43b2d19",
+    "zh-CN": "social/zh-CN/catalog-stories-event.png?v=77e5046701",
+    "ko": "social/ko/catalog-stories-event.png?v=9a8483e353"
+  },
+  "/catalog/stories/band": {
+    "en": "social/en/catalog-stories-band.png?v=9e5d42aa51",
+    "ja": "social/ja/catalog-stories-band.png?v=3373c15a25",
+    "zh-TW": "social/zh-TW/catalog-stories-band.png?v=3b986de877",
+    "zh-CN": "social/zh-CN/catalog-stories-band.png?v=69315b3ae5",
+    "ko": "social/ko/catalog-stories-band.png?v=a5df56ce1a"
+  },
+  "/catalog/stories/link": {
+    "en": "social/en/catalog-stories-link.png?v=e71d16d148",
+    "ja": "social/ja/catalog-stories-link.png?v=93326a35c2",
+    "zh-TW": "social/zh-TW/catalog-stories-link.png?v=8800260dbb",
+    "zh-CN": "social/zh-CN/catalog-stories-link.png?v=33fa28879d",
+    "ko": "social/ko/catalog-stories-link.png?v=866adaec66"
+  },
+  "/catalog/stories/birthday": {
+    "en": "social/en/catalog-stories-birthday.png?v=a74c3bce0c",
+    "ja": "social/ja/catalog-stories-birthday.png?v=e7bb21f691",
+    "zh-TW": "social/zh-TW/catalog-stories-birthday.png?v=add37a1a81",
+    "zh-CN": "social/zh-CN/catalog-stories-birthday.png?v=1059c4787c",
+    "ko": "social/ko/catalog-stories-birthday.png?v=f995367e99"
+  },
+  "/catalog/stories/home": {
+    "en": "social/en/catalog-stories-home.png?v=ea9e4c635c",
+    "ja": "social/ja/catalog-stories-home.png?v=02a55ec55e",
+    "zh-TW": "social/zh-TW/catalog-stories-home.png?v=08e20c9e57",
+    "zh-CN": "social/zh-CN/catalog-stories-home.png?v=8f5b11ba5c",
+    "ko": "social/ko/catalog-stories-home.png?v=ec6d4d0e13"
+  },
+  "/catalog/stories/afterlive": {
+    "en": "social/en/catalog-stories-afterlive.png?v=9e105077ac",
+    "ja": "social/ja/catalog-stories-afterlive.png?v=0941159e64",
+    "zh-TW": "social/zh-TW/catalog-stories-afterlive.png?v=e1844431e2",
+    "zh-CN": "social/zh-CN/catalog-stories-afterlive.png?v=15dcc126bf",
+    "ko": "social/ko/catalog-stories-afterlive.png?v=2353d53a9a"
+  },
+  "/catalog/stories/tutorial": {
+    "en": "social/en/catalog-stories-tutorial.png?v=fc09d3d081",
+    "ja": "social/ja/catalog-stories-tutorial.png?v=2643a8e426",
+    "zh-TW": "social/zh-TW/catalog-stories-tutorial.png?v=976a7c6264",
+    "zh-CN": "social/zh-CN/catalog-stories-tutorial.png?v=839a84f2fa",
+    "ko": "social/ko/catalog-stories-tutorial.png?v=3ed67b65b4"
+  },
+  "/catalog/live2d": {
+    "en": "social/en/catalog-live2d.png?v=c61c5131b4",
+    "ja": "social/ja/catalog-live2d.png?v=e3a0719b71",
+    "zh-TW": "social/zh-TW/catalog-live2d.png?v=b041c34088",
+    "zh-CN": "social/zh-CN/catalog-live2d.png?v=cda6762fe2",
+    "ko": "social/ko/catalog-live2d.png?v=f8a29ef879"
+  },
+  "/catalog/spine": {
+    "en": "social/en/catalog-spine.png?v=5ef6c3b8a1",
+    "ja": "social/ja/catalog-spine.png?v=2e43863fd4",
+    "zh-TW": "social/zh-TW/catalog-spine.png?v=172e307a89",
+    "zh-CN": "social/zh-CN/catalog-spine.png?v=07eedf6477",
+    "ko": "social/ko/catalog-spine.png?v=0357db8f20"
+  },
+  "/catalog/assets": {
+    "en": "social/en/catalog-assets.png?v=00a30d863e",
+    "ja": "social/ja/catalog-assets.png?v=9fc667df55",
+    "zh-TW": "social/zh-TW/catalog-assets.png?v=dff0eebef0",
+    "zh-CN": "social/zh-CN/catalog-assets.png?v=d0fe2fe3cf",
+    "ko": "social/ko/catalog-assets.png?v=a9f302ee50"
+  },
+  "/catalog/help": {
+    "en": "social/en/catalog-help.png?v=a0b69c03ba",
+    "ja": "social/ja/catalog-help.png?v=fb615366e2",
+    "zh-TW": "social/zh-TW/catalog-help.png?v=af2638a8d1",
+    "zh-CN": "social/zh-CN/catalog-help.png?v=610a4cfa73",
+    "ko": "social/ko/catalog-help.png?v=09f2a47ddb"
+  },
+  "/team-builder": {
+    "en": "social/en/team-builder.png?v=7116289b61",
+    "ja": "social/ja/team-builder.png?v=58c155df9d",
+    "zh-TW": "social/zh-TW/team-builder.png?v=bc6b6c6c7c",
+    "zh-CN": "social/zh-CN/team-builder.png?v=fbd0bc6598",
+    "ko": "social/ko/team-builder.png?v=62fce11307"
+  },
+  "/song-progress": {
+    "en": "social/en/song-progress.png?v=81c1f0d4e7",
+    "ja": "social/ja/song-progress.png?v=44434a8e8e",
+    "zh-TW": "social/zh-TW/song-progress.png?v=d0b02306d7",
+    "zh-CN": "social/zh-CN/song-progress.png?v=c9718424b1",
+    "ko": "social/ko/song-progress.png?v=1563772b64"
+  },
+  "/gacha-history": {
+    "en": "social/en/gacha-history.png?v=5e5642466c",
+    "ja": "social/ja/gacha-history.png?v=cdb237137a",
+    "zh-TW": "social/zh-TW/gacha-history.png?v=e7be32729b",
+    "zh-CN": "social/zh-CN/gacha-history.png?v=0a8a3e3044",
+    "ko": "social/ko/gacha-history.png?v=442fe6c009"
+  },
+  "/stamp-maker": {
+    "en": "social/en/stamp-maker.png?v=b8c8c692a2",
+    "ja": "social/ja/stamp-maker.png?v=4244ec78e3",
+    "zh-TW": "social/zh-TW/stamp-maker.png?v=09b38a367c",
+    "zh-CN": "social/zh-CN/stamp-maker.png?v=5b7d72612e",
+    "ko": "social/ko/stamp-maker.png?v=2b60c5303d"
+  },
+  "/story-editor/create": {
+    "en": "social/en/story-editor-create.png?v=0bbd48531a",
+    "ja": "social/ja/story-editor-create.png?v=834c053959",
+    "zh-TW": "social/zh-TW/story-editor-create.png?v=2f0dbac072",
+    "zh-CN": "social/zh-CN/story-editor-create.png?v=9bf5628cb7",
+    "ko": "social/ko/story-editor-create.png?v=2b82eb4969"
+  },
+  "/chart-editor/create": {
+    "en": "social/en/chart-editor-create.png?v=05f82ce636",
+    "ja": "social/ja/chart-editor-create.png?v=e0246ffa89",
+    "zh-TW": "social/zh-TW/chart-editor-create.png?v=9a7b19d78f",
+    "zh-CN": "social/zh-CN/chart-editor-create.png?v=bc6858b29c",
+    "ko": "social/ko/chart-editor-create.png?v=dcee7a2b38"
+  },
+  "/sonolus": {
+    "en": "social/en/sonolus.png?v=88cd50b873",
+    "ja": "social/ja/sonolus.png?v=05197cde0a",
+    "zh-TW": "social/zh-TW/sonolus.png?v=f8f3f6d20e",
+    "zh-CN": "social/zh-CN/sonolus.png?v=93648e979a",
+    "ko": "social/ko/sonolus.png?v=04fdae8bfa"
+  },
+  "/song-puzzle": {
+    "en": "social/en/song-puzzle.png?v=31daafb02e",
+    "ja": "social/ja/song-puzzle.png?v=44d9a2f315",
+    "zh-TW": "social/zh-TW/song-puzzle.png?v=84f8e63094",
+    "zh-CN": "social/zh-CN/song-puzzle.png?v=5071e85eea",
+    "ko": "social/ko/song-puzzle.png?v=4bbdcb1531"
+  },
+  "/song-guess": {
+    "en": "social/en/song-guess.png?v=287ccb1931",
+    "ja": "social/ja/song-guess.png?v=64881fac87",
+    "zh-TW": "social/zh-TW/song-guess.png?v=56af1bd515",
+    "zh-CN": "social/zh-CN/song-guess.png?v=3f345da1ce",
+    "ko": "social/ko/song-guess.png?v=44ed37f683"
+  },
+  "/community/feeds": {
+    "en": "social/en/community-feeds.png?v=bd4ea2e0cc",
+    "ja": "social/ja/community-feeds.png?v=f06eb9d663",
+    "zh-TW": "social/zh-TW/community-feeds.png?v=9c2652a53c",
+    "zh-CN": "social/zh-CN/community-feeds.png?v=95aa8d53d9",
+    "ko": "social/ko/community-feeds.png?v=b5ba01696e"
+  },
+  "/community/mine": {
+    "en": "social/en/community-mine.png?v=04a644649d",
+    "ja": "social/ja/community-mine.png?v=2ab9ce1bd7",
+    "zh-TW": "social/zh-TW/community-mine.png?v=731b9a689e",
+    "zh-CN": "social/zh-CN/community-mine.png?v=f77d53a8c4",
+    "ko": "social/ko/community-mine.png?v=e3455e183f"
+  },
+  "/community/playlists": {
+    "en": "social/en/community-playlists.png?v=c0ec717bee",
+    "ja": "social/ja/community-playlists.png?v=c9c9ab000f",
+    "zh-TW": "social/zh-TW/community-playlists.png?v=a50e9ba62f",
+    "zh-CN": "social/zh-CN/community-playlists.png?v=b986505b8f",
+    "ko": "social/ko/community-playlists.png?v=51f6384a7c"
+  },
+  "/community/stories": {
+    "en": "social/en/community-stories.png?v=4d586061fe",
+    "ja": "social/ja/community-stories.png?v=6fee225b3c",
+    "zh-TW": "social/zh-TW/community-stories.png?v=99ee2a794d",
+    "zh-CN": "social/zh-CN/community-stories.png?v=67f76597c2",
+    "ko": "social/ko/community-stories.png?v=7c834358da"
+  },
+  "/community/charts": {
+    "en": "social/en/community-charts.png?v=4abcaa4037",
+    "ja": "social/ja/community-charts.png?v=f3c9135f13",
+    "zh-TW": "social/zh-TW/community-charts.png?v=9a583e7845",
+    "zh-CN": "social/zh-CN/community-charts.png?v=3e2b99f956",
+    "ko": "social/ko/community-charts.png?v=18dc217849"
+  },
+  "/community/forums": {
+    "en": "social/en/community-forums.png?v=feb2dd6b08",
+    "ja": "social/ja/community-forums.png?v=4cc63299fd",
+    "zh-TW": "social/zh-TW/community-forums.png?v=da22125c4b",
+    "zh-CN": "social/zh-CN/community-forums.png?v=584fca8322",
+    "ko": "social/ko/community-forums.png?v=7799d9ed30"
+  },
+  "/community/gbp/songs": {
+    "en": "social/en/community-gbp-songs.png?v=e8c9a3a9a9",
+    "ja": "social/ja/community-gbp-songs.png?v=66da1416d2",
+    "zh-TW": "social/zh-TW/community-gbp-songs.png?v=6d4cc4fa0a",
+    "zh-CN": "social/zh-CN/community-gbp-songs.png?v=8a72e8c812",
+    "ko": "social/ko/community-gbp-songs.png?v=4b600717d6"
+  },
+  "/community/gbp/stories/event": {
+    "en": "social/en/community-gbp-stories-event.png?v=4b40aae0f1",
+    "ja": "social/ja/community-gbp-stories-event.png?v=24c99f90f4",
+    "zh-TW": "social/zh-TW/community-gbp-stories-event.png?v=176dcf7aba",
+    "zh-CN": "social/zh-CN/community-gbp-stories-event.png?v=459ac9dda6",
+    "ko": "social/ko/community-gbp-stories-event.png?v=6345f6b42c"
+  },
+  "/community/gbp/stories/band": {
+    "en": "social/en/community-gbp-stories-band.png?v=c5ae503f3d",
+    "ja": "social/ja/community-gbp-stories-band.png?v=68cb088b16",
+    "zh-TW": "social/zh-TW/community-gbp-stories-band.png?v=41a6ea47fa",
+    "zh-CN": "social/zh-CN/community-gbp-stories-band.png?v=8cc11379ed",
+    "ko": "social/ko/community-gbp-stories-band.png?v=19f0ed8863"
+  },
+  "/community/gbp/stories/main": {
+    "en": "social/en/community-gbp-stories-main.png?v=c7a39bb9ea",
+    "ja": "social/ja/community-gbp-stories-main.png?v=441354b5c3",
+    "zh-TW": "social/zh-TW/community-gbp-stories-main.png?v=f1e56ae269",
+    "zh-CN": "social/zh-CN/community-gbp-stories-main.png?v=857bc031a8",
+    "ko": "social/ko/community-gbp-stories-main.png?v=6b5ecc8d06"
+  },
+  "/community/gbp/stories/afterlive": {
+    "en": "social/en/community-gbp-stories-afterlive.png?v=3be3a5ffb3",
+    "ja": "social/ja/community-gbp-stories-afterlive.png?v=e58fc3ca3e",
+    "zh-TW": "social/zh-TW/community-gbp-stories-afterlive.png?v=1db24bdd02",
+    "zh-CN": "social/zh-CN/community-gbp-stories-afterlive.png?v=e531aa13a8",
+    "ko": "social/ko/community-gbp-stories-afterlive.png?v=c46ccdb3fd"
+  },
+  "/community/gbp/stories/card": {
+    "en": "social/en/community-gbp-stories-card.png?v=b69e792908",
+    "ja": "social/ja/community-gbp-stories-card.png?v=9bc1f84cb4",
+    "zh-TW": "social/zh-TW/community-gbp-stories-card.png?v=52cd494423",
+    "zh-CN": "social/zh-CN/community-gbp-stories-card.png?v=6335209385",
+    "ko": "social/ko/community-gbp-stories-card.png?v=4df8bb3f1b"
+  },
+  "/community/sekai/songs": {
+    "en": "social/en/community-sekai-songs.png?v=5d006ecb70",
+    "ja": "social/ja/community-sekai-songs.png?v=6fee618499",
+    "zh-TW": "social/zh-TW/community-sekai-songs.png?v=1215f8835b",
+    "zh-CN": "social/zh-CN/community-sekai-songs.png?v=cea159bfc9",
+    "ko": "social/ko/community-sekai-songs.png?v=132e8cd903"
+  },
+  "/community/sekai/stories/event": {
+    "en": "social/en/community-sekai-stories-event.png?v=c67e038651",
+    "ja": "social/ja/community-sekai-stories-event.png?v=0f69c6a8c7",
+    "zh-TW": "social/zh-TW/community-sekai-stories-event.png?v=a472b458e5",
+    "zh-CN": "social/zh-CN/community-sekai-stories-event.png?v=8d18a13a5f",
+    "ko": "social/ko/community-sekai-stories-event.png?v=df2139a64a"
+  },
+  "/community/sekai/stories/unit": {
+    "en": "social/en/community-sekai-stories-unit.png?v=9a3e22a187",
+    "ja": "social/ja/community-sekai-stories-unit.png?v=5fd2fc9422",
+    "zh-TW": "social/zh-TW/community-sekai-stories-unit.png?v=12387d2f90",
+    "zh-CN": "social/zh-CN/community-sekai-stories-unit.png?v=a1f060188a",
+    "ko": "social/ko/community-sekai-stories-unit.png?v=ad494b8d7a"
+  },
+  "/community/sekai/stories/character": {
+    "en": "social/en/community-sekai-stories-character.png?v=5ee7080f9e",
+    "ja": "social/ja/community-sekai-stories-character.png?v=04ac543208",
+    "zh-TW": "social/zh-TW/community-sekai-stories-character.png?v=91090712a0",
+    "zh-CN": "social/zh-CN/community-sekai-stories-character.png?v=5cf1e90de1",
+    "ko": "social/ko/community-sekai-stories-character.png?v=494b9985a3"
+  },
+  "/community/sekai/stories/card": {
+    "en": "social/en/community-sekai-stories-card.png?v=462553b9c6",
+    "ja": "social/ja/community-sekai-stories-card.png?v=6f12ff7e87",
+    "zh-TW": "social/zh-TW/community-sekai-stories-card.png?v=c2cac9f176",
+    "zh-CN": "social/zh-CN/community-sekai-stories-card.png?v=452ce5aae5",
+    "ko": "social/ko/community-sekai-stories-card.png?v=1fa39d6655"
+  },
+  "/community/sekai/stories/area": {
+    "en": "social/en/community-sekai-stories-area.png?v=bbd50774d1",
+    "ja": "social/ja/community-sekai-stories-area.png?v=c1af237ae1",
+    "zh-TW": "social/zh-TW/community-sekai-stories-area.png?v=19104bf7f3",
+    "zh-CN": "social/zh-CN/community-sekai-stories-area.png?v=7c0932a869",
+    "ko": "social/ko/community-sekai-stories-area.png?v=8ac46eb7b4"
+  },
+  "/community/sekai/stories/special": {
+    "en": "social/en/community-sekai-stories-special.png?v=9af7b10d47",
+    "ja": "social/ja/community-sekai-stories-special.png?v=34fe441b84",
+    "zh-TW": "social/zh-TW/community-sekai-stories-special.png?v=b010725bf9",
+    "zh-CN": "social/zh-CN/community-sekai-stories-special.png?v=98ff122278",
+    "ko": "social/ko/community-sekai-stories-special.png?v=de11fa40bc"
+  },
+  "/community/sekai/stories/mysekai": {
+    "en": "social/en/community-sekai-stories-mysekai.png?v=1175d3e530",
+    "ja": "social/ja/community-sekai-stories-mysekai.png?v=6338e5bf34",
+    "zh-TW": "social/zh-TW/community-sekai-stories-mysekai.png?v=bd3cc6b906",
+    "zh-CN": "social/zh-CN/community-sekai-stories-mysekai.png?v=ad9d591008",
+    "ko": "social/ko/community-sekai-stories-mysekai.png?v=67054be68b"
+  },
+  "/community/sekai/stories/live": {
+    "en": "social/en/community-sekai-stories-live.png?v=91a678b023",
+    "ja": "social/ja/community-sekai-stories-live.png?v=08638308ab",
+    "zh-TW": "social/zh-TW/community-sekai-stories-live.png?v=63f20932ad",
+    "zh-CN": "social/zh-CN/community-sekai-stories-live.png?v=c8e7c5f8e1",
+    "ko": "social/ko/community-sekai-stories-live.png?v=96d4ba64ac"
+  }
 }

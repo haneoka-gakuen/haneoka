@@ -9,6 +9,7 @@ import { t } from "../i18n/messages";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
 import { renderUnavailableContent } from "../server/render-workspace";
 import { themeCharacters } from "../server/theme-characters";
+import { localizedSocialImage } from "../server/social-image";
 import { contentPublished, publicationFields } from "../lib/content-publication";
 import { communityVisibilityCss, DEFAULT_COMMUNITY_HIDDEN_HOSTS } from "../lib/site-community";
 import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
@@ -62,8 +63,8 @@ const languageAlternates = isLocalizedRoute
       href: `${origin}${canonicalPath(canonicalRoute ? localePath(publicRoute, target) : localePath(route, target))}`,
     }))
   : [];
-const entityImage = searchImage?.trim() ? new URL(searchImage.trim(), origin).href : undefined;
-const socialImage = entityImage ?? `${origin}${socialCardPath(publicRoute)}`;
+const entityImage = await localizedSocialImage(searchImage, locale, origin);
+const socialImage = entityImage ?? `${origin}${socialCardPath(publicRoute, locale)}`;
 const structuredData = JSON.stringify(
   pageStructuredData(origin, route, locale, fullTitle, summary, isLocalizedRoute, publicRoute, entityImage, keywords),
 ).replaceAll("<", "\\u003c");
@@ -234,7 +235,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     <meta property="og:image:alt" content={searchTitle || localizedTitle} />
     <!-- Pagefind's automatic image is the first image after an h1 (often a UI icon or scene background). -->
     <meta data-pagefind-meta="image:" />
-    {searchImage?.trim() && <meta data-pagefind-meta="image[content]" content={searchImage.trim()} />}
+    {entityImage && <meta data-pagefind-meta="image[content]" content={entityImage} />}
     <meta data-pagefind-meta="label[content]" content={searchTitle || localizedTitle} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={fullTitle} />

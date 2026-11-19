@@ -1,4 +1,4 @@
-import { LOCALES, localePath, localeTag, type Locale } from "../i18n/locales";
+import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { CATALOG_HUB, PRIMARY_DESTINATIONS, isDestinationActive } from "../config/navigation";
 import { t } from "../i18n/messages";
 import { serverText } from "../i18n/server";
@@ -208,8 +208,8 @@ export function pageDescription(locale: Locale, route: string, title: string): s
 }
 
 /** The designed card of the page's closest navigation destination; server pages sit under /catalog. */
-export function socialCardPath(route: string): string {
-  const cards = SOCIAL_CARDS as Record<string, string>;
+export function socialCardPath(route: string, locale: Locale = localeFromPath(route) ?? "en"): string {
+  const cards = SOCIAL_CARDS as Record<string, Record<Locale, string>>;
   const path = canonicalPath(route).replace(/\/$/u, "") || "/";
   const server = /^\/(?:jp|intl)(?=\/)/u.test(path);
   const logical = path.replace(/^\/(?:jp|intl)(?=\/)/u, "").replace(/^\/(?:ja|en|ko|zh-CN|zh-TW)(?=\/|$)/u, "") || "/";
@@ -218,5 +218,5 @@ export function socialCardPath(route: string): string {
   for (const candidate of candidates)
     for (const key of Object.keys(cards))
       if (key.length > best.length && (candidate === key || candidate.startsWith(`${key}/`))) best = key;
-  return `/images/${cards[best]}`;
+  return `/images/${cards[best]![locale]}`;
 }
