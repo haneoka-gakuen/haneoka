@@ -2,7 +2,10 @@ FROM python:3.13-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 COPY requirements.txt build-requirements.txt account-requirements.txt ./
-RUN pip install --no-cache-dir --require-hashes -r build-requirements.txt \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends optipng \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --require-hashes -r build-requirements.txt \
     && pip install --no-cache-dir --require-hashes --no-build-isolation -r requirements.txt -r account-requirements.txt \
     && useradd --create-home --uid 10001 collector
 COPY cloud.py ./cloud.py

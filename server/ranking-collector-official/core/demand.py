@@ -1,10 +1,12 @@
 # L3 — GEB
 # Input: A job's bounded player and song demand, its sampler and the update channel.
-# Output: Player profiles, song rankings and the subset of demand actually attempted, sent as durable callbacks.
+# Output: Player profiles, song rankings, losslessly compressed profile card PNGs and the attempted demand.
 # Pos: [Map](../../L2.md); on-demand reads that share a run with ranking collection.
 # Effects/Dependencies: Authenticated game RPCs at the sampler's pace; a rejected read ends demand and returns its receipt for caller classification.
 import base64
 import re
+from subprocess import DEVNULL, SubprocessError, run
+from tempfile import TemporaryDirectory
 import time
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -23,8 +25,31 @@ CARD_FILE = re.compile(r'(\d{1,19})_[A-Za-z0-9_.-]{1,200}')
 CARD_BYTES = 4 * 1024 * 1024
 CARD_SECONDS = 2
 CARD_BUDGET_SECONDS = 15
+CARD_OPTIMIZE_SECONDS = 1.5
+CARD_OPTIMIZE_PIXELS = 2_500_000
 PNG = b'\x89PNG\r\n\x1a\n'
 PACE_SECONDS = 2
+
+
+def compact_card_png(body):
+    if len(body) < 65_536 or body[12:16] != b'IHDR':
+        return body
+    width = int.from_bytes(body[16:20], 'big')
+    height = int.from_bytes(body[20:24], 'big')
+    if not 0 < width * height <= CARD_OPTIMIZE_PIXELS:
+        return body
+    try:
+        with TemporaryDirectory(prefix='profile-card-') as tmp:
+            source = Path(tmp) / 'card.png'
+            source.write_bytes(body)
+            run(['optipng', '-quiet', '-nx', '-o1', '-f5', '-zc9', '-zm8', '-zs0', source], stdin=DEVNULL,
+                stdout=DEVNULL, stderr=DEVNULL, timeout=CARD_OPTIMIZE_SECONDS, check=True)
+            optimized = source.read_bytes()
+            if optimized.startswith(PNG) and len(optimized) < len(body):
+                return optimized
+    except (OSError, SubprocessError):
+        pass
+    return body
 
 
 class DemandStopped(Exception):
@@ -101,7 +126,7 @@ class Demand:
             return None
         return 'Basic ' + base64.b64encode((username + ':' + password).encode()).decode()
 
-    def card(self, file, authorization):
+    def card(self, file, authorization, stop):
         match = CARD_FILE.fullmatch(file)
         if not match:
             return
@@ -111,6 +136,8 @@ class Demand:
             body = response.read(CARD_BYTES + 1)
         if len(body) > CARD_BYTES or not body.startswith(PNG):
             raise ValueError('invalid card image')
+        if time.time() + CARD_OPTIMIZE_SECONDS < stop:
+            body = compact_card_png(body)
         self.updates.send('card-image', file=file, data=base64.b64encode(body).decode())
 
     def cards(self):
@@ -130,7 +157,7 @@ class Demand:
             if time.time() + CARD_SECONDS >= stop:
                 return
             try:
-                self.card(file, authorization)
+                self.card(file, authorization, stop)
             except OSError:
                 continue
 
