@@ -15,6 +15,9 @@ import { contentVisible, filterContentData, type ContentView } from "../src/lib/
 import { ARENA_PROJECTION } from "../src/lib/arena";
 import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
 import { serveSiteDiscovery } from "./site-discovery";
+import { interfaceDocument, translateInterfaceDocument } from "./interface-documents";
+import type { InterfaceLanguageId } from "../src/i18n/interface-language-options";
+import { interfaceLanguageFromPath, interfacePath } from "../src/i18n/interface-route";
 import { CANONICAL_ORIGIN, isLocalHostname, isSiteHostname, isSiteOrigin, siteAssetUrl, siteLink, siteOrigin } from "../src/lib/site-origin";
 import { communityStoryDocumentEtag, communityStoryDocumentPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument } from "../src/lib/community-story-route";
 import { rewriteCommunityStructuredData } from "../src/lib/community-document-meta";
@@ -4145,6 +4148,12 @@ function negotiateLocale(request: Request): "ja" | "en" | "zh-TW" | "zh-CN" | "k
   return negotiateRequestLocale(request.headers.get("cookie") || "", request.headers.get("accept-language") || "");
 }
 
+function preferredInterfaceLanguage(request: Request) {
+  const value = /(?:^|;\s*)haneoka\.locale=([a-z]{2})(?:;|$)/u.exec(request.headers.get("cookie") || "")?.[1];
+  return value ? interfaceLanguageFromPath(`/${value}/`) : undefined;
+}
+
+
 const WORKER_FIRST_PREFIXES = [
   "/stamp-maker-fonts/",
   "/embed/",
@@ -4162,7 +4171,7 @@ const WORKER_FIRST_PREFIXES = [
   "/playlist-static/",
 ];
 
-async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, interfaceLocale?: InterfaceLanguageId): Promise<Response> {
   const canonicalUrl = new URL(request.url);
   let decodedPath: string;
   try { decodedPath = decodeURIComponent(canonicalUrl.pathname); }
@@ -4186,10 +4195,16 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
   if (request.method === "GET" || request.method === "HEAD") {
     let savedServer: ReturnType<typeof releaseServerFromCookie>;
-    const prefix = documentPrefixRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, () => negotiateLocale(request),
-      () => savedServer = releaseServerFromCookie(request.headers.get("cookie") || ""));
-    if (prefix && !sonolusShareRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, new URL(siteOrigin(canonicalUrl)).host))
+    let preferredInterface: ReturnType<typeof preferredInterfaceLanguage>;
+    const prefix = documentPrefixRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, () => {
+      preferredInterface = preferredInterfaceLanguage(request);
+      return preferredInterface ? "en" : negotiateLocale(request);
+    }, () => savedServer = releaseServerFromCookie(request.headers.get("cookie") || ""));
+    if (prefix && !sonolusShareRedirectTarget(canonicalUrl.pathname, canonicalUrl.search, new URL(siteOrigin(canonicalUrl)).host)) {
+      const language = interfaceLocale ?? preferredInterface?.value;
+      if (language) prefix.href = interfacePath(prefix.href, language);
       return documentPrefixResponse(prefix, savedServer, request.method === "GET" && request.headers.get("accept")?.includes("text/html") === true);
+    }
   }
   const latestAlias = /^\/api\/v1\/([^/]+)(?:\/(.*))?$/u.exec(communityUrl.pathname);
   if (latestAlias && visibilityType(latestAlias[1]!) && !(["live2d", "spine"].includes(latestAlias[1]!) && communityUrl.pathname.endsWith("/image.png")) && ["GET", "HEAD"].includes(request.method)) {
@@ -4203,7 +4218,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   }
   let response = await contentResourceBoundary(request, env, ctx,
     (server, release, path) => resourceContentIndex(env, ctx, server, release, path),
-    (source) => handleScopedRequest(source, env, ctx));
+    (source) => handleScopedRequest(source, env, ctx, Boolean(interfaceLocale)));
   const chartDocument = parseCommunityChartDocument(new URL(request.url).pathname);
   const storyDocument = parseCommunityStoryDocument(new URL(request.url).pathname);
   if ((chartDocument || storyDocument) && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
@@ -4266,7 +4281,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   return response;
 }
 
-async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionContext, preferAssets = false): Promise<Response> {
   const url = new URL(request.url);
   const officialHost = /^\/api\/internal\/official-host\/(.+)$/u.exec(url.pathname);
   if (officialHost) {
@@ -4307,7 +4322,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (stampFonts) return stampFonts;
   if (isReleaseServer(segments[0], documentSources) && (request.method === "GET" || request.method === "HEAD")) {
     if (segments.length === 1) {
-      url.pathname = `/${segments[0]}/${negotiateLocale(request)}/`;
+      url.pathname = `/${segments[0]}/${preferredInterfaceLanguage(request)?.value ?? negotiateLocale(request)}/`;
       return new Response(null, {
         status: 302,
         headers: { Location: url.toString(), "Cache-Control": "no-store", Vary: "Cookie, Accept-Language" },
@@ -4349,9 +4364,9 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     const target = new URL(url);
     if (url.pathname === "/") {
       const server = url.searchParams.get("server");
-      target.pathname = `/${isReleaseServer(server) ? server : "intl"}/${negotiateLocale(request)}/`;
+      target.pathname = `/${isReleaseServer(server) ? server : "intl"}/${preferredInterfaceLanguage(request)?.value ?? negotiateLocale(request)}/`;
       target.searchParams.delete("server");
-    } else target.pathname = `/${negotiateLocale(request)}${url.pathname.replace(/\/+$/, "")}/`;
+    } else target.pathname = `/${preferredInterfaceLanguage(request)?.value ?? negotiateLocale(request)}${url.pathname.replace(/\/+$/, "")}/`;
     return new Response(null, {
       status: 302,
       headers: { Location: target.toString(), "Cache-Control": "no-store", Vary: "Cookie, Accept-Language" },
@@ -4571,6 +4586,16 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     return restrictedResourceRequest(request)
       ? new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } })
       : serveStaticAsset(request, env);
+  // Mirror the English asset-first path for these documents. Paths protected
+  // by the Worker-first routing rules still use the existing document pipeline.
+  if (
+    preferAssets &&
+    !segments.some((segment) => /^(?:admin|auth|community|catalog|calendar|announcements|assets|chart-editor|gacha-history|player-profile|404|charts|community-stories)$/u.test(segment))
+  ) {
+    const asset = await env.ASSETS.fetch(request);
+    if (asset.status !== 404) return asset;
+    void asset.body?.cancel();
+  }
   const headers = new Headers(request.headers);
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
@@ -4841,7 +4866,11 @@ const worker: ExportedHandler<Env> = {
             const epochs = await Promise.all(["jp", "intl"].map(async (server) => contentCacheEpoch(await resourceContentIndex(routedEnv, ctx, server), view.now)));
             communityVisibility = `${view.key}:${epochs.join(",")}`;
           }
-          const response = await cachedCommunityRead(request, ctx, () => handleRequest(request, routedEnv, ctx), communityVisibility);
+          const localized = interfaceDocument(request);
+          const response = await cachedCommunityRead(request, ctx,
+            () => handleRequest(localized?.request ?? request, routedEnv, ctx, localized?.language.value),
+            communityVisibility);
+          if (localized) return openToEveryOrigin(await translateInterfaceDocument(localized, response));
           if (
             request.method !== "GET" &&
             request.method !== "HEAD" &&

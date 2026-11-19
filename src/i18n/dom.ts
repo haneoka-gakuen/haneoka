@@ -1,17 +1,11 @@
 import { isLocale, languageTagFor } from "@haneoka/i18n";
 import { initializeI18nClient, readI18nSeed } from "./client";
+import { interfaceHref, interfaceLanguageFromPath, interfacePath } from "./interface-route";
 import { interfaceShareUrl } from "./interface-share";
 import { formatDocumentTitle } from "../lib/document-title";
 import { snackbar } from "../lib/snackbar";
 
-import {
-  INTERFACE_LANGUAGE_EVENT,
-  interfaceLanguages,
-  loadInterfaceLanguage,
-  localizedInterfaceCatalog,
-  readInterfaceLanguage,
-  type InterfaceLanguageId,
-} from "./interface-languages";
+import { consumeLegacyShareLanguage, loadInterfaceLanguage, localizedInterfaceCatalog } from "./interface-languages";
 
 let installed = false;
 
@@ -20,8 +14,18 @@ export function installI18nDom(): void {
   installed = true;
   const client = initializeI18nClient();
   let request: AbortController | undefined;
-  let preference = readInterfaceLanguage();
-  let activeLanguage: typeof preference;
+  const legacyShare = consumeLegacyShareLanguage();
+  const legacyLanguage = legacyShare && interfaceLanguageFromPath(`/${legacyShare}/`);
+  if (legacyLanguage) {
+    const legacyPath = interfacePath(location.pathname, legacyLanguage.value);
+    if (legacyPath !== location.pathname) {
+      location.replace(legacyPath + location.search + location.hash);
+      return;
+    }
+  }
+
+  let pathLanguage = interfaceLanguageFromPath(location.pathname);
+  let activeLanguage: typeof pathLanguage;
   let languageRequest = 0;
   const refreshWorkspaces = () => {
     const language = activeLanguage;
@@ -41,7 +45,7 @@ export function installI18nDom(): void {
     }
   };
   const syncInterface = async () => {
-    const next = client.committed === "en" ? preference : undefined;
+    const next = client.committed === "en" ? pathLanguage : undefined;
     const generation = ++languageRequest;
     if (next === activeLanguage) return;
     if (!next) {
@@ -60,11 +64,28 @@ export function installI18nDom(): void {
       console.error("[i18n]", error);
     }
   };
-  window.addEventListener(INTERFACE_LANGUAGE_EVENT, (event) => {
-    const value = (event as CustomEvent<InterfaceLanguageId | undefined>).detail;
-    preference = interfaceLanguages.find((locale) => locale.value === value);
-    void syncInterface();
+  const retargetLink = (event: Event) => {
+    if (!pathLanguage || !(event.target instanceof Element)) return;
+    const anchor = event.target.closest<HTMLAnchorElement>("a[href]:not([hreflang]):not([download])");
+    const href = anchor?.getAttribute("href");
+    if (!href || !anchor) return;
+    const localized = interfaceHref(href, pathLanguage.value, location.origin);
+    if (localized !== href) anchor.setAttribute("href", localized);
+  };
+  for (const type of ["click", "auxclick", "contextmenu"])
+    document.addEventListener(type, retargetLink, { capture: true });
+
+  document.addEventListener("astro:before-preparation", (event) => {
+    const { to, sourceElement } = event as Event & { to: URL; sourceElement?: Element };
+    if (
+      pathLanguage &&
+      to?.origin === location.origin &&
+      !interfaceLanguageFromPath(to.pathname) &&
+      !sourceElement?.hasAttribute("hreflang")
+    )
+      to.pathname = interfacePath(to.pathname, pathLanguage.value);
   });
+
   const message = (key: string, fallback: string) => {
     const catalog = client.current();
     const resolved = catalog.resolve(key);
@@ -94,7 +115,7 @@ export function installI18nDom(): void {
   const applyBindings = () => {
     const locale = client.committed;
     document.documentElement.dataset.locale = locale;
-    const interfaceLocale = locale === "en" ? activeLanguage : undefined;
+    const interfaceLocale = locale === "en" ? pathLanguage : undefined;
     document.documentElement.dataset.interfaceLocale = interfaceLocale?.value ?? locale;
     document.documentElement.lang = interfaceLocale?.tag ?? languageTagFor(locale);
     const share = document.querySelector<HTMLButtonElement>("[data-interface-share]");
@@ -107,12 +128,18 @@ export function installI18nDom(): void {
     }
     const title = document.head.querySelector<HTMLTitleElement>("title[data-interface-title-key]");
     if (title) {
-      const { interfaceTitleKey, interfaceTitleOriginal } = title.dataset;
+      const { interfaceTitleKey } = title.dataset;
       const localized = interfaceLocale && interfaceTitleKey ? message(interfaceTitleKey, "").text : "";
-      title.textContent = localized
-        ? formatDocumentTitle(localized, message("common.seo.siteTitle", "BanG Dream! Our Notes Database").text)
-        : (interfaceTitleOriginal ?? title.textContent);
+      if (localized && activeLanguage === interfaceLocale) {
+        title.textContent = formatDocumentTitle(
+          localized,
+          message("common.seo.siteTitle", "BanG Dream! Our Notes Database").text,
+        );
+      }
     }
+    // The initial interface document already has localized text. Do not
+    // overwrite it with the English seed while its dictionary is loading.
+    if (interfaceLocale && activeLanguage !== interfaceLocale) return;
     for (const node of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
       const key = node.dataset.i18n;
       if (key) {
@@ -132,7 +159,7 @@ export function installI18nDom(): void {
     try {
       localStorage.setItem("haneoka.locale", locale);
     } catch {}
-    document.cookie = `haneoka.locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    document.cookie = `haneoka.locale=${encodeURIComponent(interfaceLocale?.value ?? locale)}; Path=/; Max-Age=31536000; SameSite=Lax`;
   };
 
   const acceptDocument = (next: Document) => {
@@ -144,8 +171,14 @@ export function installI18nDom(): void {
 
   client.subscribe(applyBindings);
   document.addEventListener("astro:before-swap", (event) => {
-    const next = (event as Event & { newDocument: Document }).newDocument;
-    if (next) acceptDocument(next);
+    const { newDocument: next, to } = event as Event & { newDocument?: Document; to?: URL };
+    if (next) {
+      const nextLanguage = next.documentElement.dataset.interfaceLocale;
+      pathLanguage = nextLanguage
+        ? interfaceLanguageFromPath(`/${nextLanguage}/`)
+        : interfaceLanguageFromPath(to?.pathname ?? location.pathname);
+      acceptDocument(next);
+    }
   });
   document.addEventListener("astro:after-swap", () => {
     applyBindings();

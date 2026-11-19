@@ -164,12 +164,12 @@ export function pageStructuredData(
   };
 }
 
-export function pageDescription(locale: Locale, route: string, title: string): string {
-  if (route === "/tools") return serverText(locale, "common.seo.descriptions.tools", { title }, title).trim();
+export function pageDescriptionKey(locale: Locale, route: string): string {
+  if (route === "/tools") return "common.seo.descriptions.tools";
   const kind =
     parseResourceRoute(route)?.kind ?? (route.startsWith("/catalog/") ? route.slice(9).split("/")[0] : undefined);
-  const resource = kind ? serverText(locale, `common.seo.resources.${kind}`, undefined, "") : "";
-  if (resource) return resource;
+  const resource = kind ? `common.seo.resources.${kind}` : "";
+  if (resource && serverText(locale, resource, undefined, "")) return resource;
   const key =
     route === "/"
       ? "home"
@@ -204,7 +204,11 @@ export function pageDescription(locale: Locale, route: string, title: string): s
                               : route === "/privacy"
                                 ? "privacy"
                                 : "general";
-  return serverText(locale, `common.seo.descriptions.${key}`, { title }, title).trim();
+  return `common.seo.descriptions.${key}`;
+}
+
+export function pageDescription(locale: Locale, route: string, title: string): string {
+  return serverText(locale, pageDescriptionKey(locale, route), { title }, title).trim();
 }
 
 /** The designed card of the page's closest navigation destination; server pages sit under /catalog. */

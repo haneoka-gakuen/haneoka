@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md)；站点与服务共享的资源路由契约。
 // Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
+import { englishInterfacePath } from "../i18n/interface-route";
 import { CONTENT_SOURCE_IDS, isContentSourceId } from "./content-sources.ts";
 import { communityStoryPath, legacyCommunityStoryRedirectTarget } from "./community-story-route.ts";
 import { communityChartPath, legacyCommunityChartRedirectTarget } from "./community-chart-route.ts";
@@ -185,7 +186,7 @@ export function parseResourceRoute(
   sources: readonly string[] = CONTENT_SOURCE_IDS,
 ): ResourceRoute | undefined {
   if (!pathname.startsWith("/") || pathname.includes("?") || pathname.includes("#")) return undefined;
-  const parts = pathname.slice(1).replace(/\/$/u, "").split("/");
+  const parts = englishInterfacePath(pathname).slice(1).replace(/\/$/u, "").split("/");
   if (parts.length !== 3 && parts.length !== 4 && parts.length !== 5) return undefined;
   const [server, locale, kind, encodedId, child] = parts;
   if (!isReleaseServer(server, sources) || !isLocale(locale) || !isResourceKind(kind)) return undefined;

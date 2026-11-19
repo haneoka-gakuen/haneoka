@@ -3,6 +3,7 @@
 // Output: Cross-server story, reader and editor paths, redirects and entity metadata.
 // Pos: [Map](L2-2.md); shared by navigation, editors, static rendering and servers.
 // Effects/Dependencies: Pure URL and HTML transformations; preserves revision and draft queries.
+import { englishInterfacePath } from "../i18n/interface-route";
 import { rewriteCommunityDocument } from "./community-document-meta.ts";
 const LOCALE = "(?:ja|en|zh-TW|zh-CN|ko)";
 const ID = "[0-9a-f-]{36}";
@@ -19,6 +20,7 @@ export function storyCreationPath(locale: string, id?: string): string {
   return `/${locale}/story-editor/create/${id ? `?community=${encodeURIComponent(id)}` : ""}`;
 }
 export function parseCommunityStoryDocument(pathname: string) {
+  pathname = englishInterfacePath(pathname);
   const match = DOCUMENT.exec(pathname);
   return match ? { locale: match[1]!, id: match[2]!, reader: !!match[3] } : undefined;
 }

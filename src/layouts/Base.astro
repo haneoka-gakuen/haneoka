@@ -6,13 +6,15 @@ import { ClientRouter } from "astro:transitions";
 import { uiFontStyles } from "../lib/ui-fonts";
 import { LOCALES, localeFromPath, localePath, localeTag, type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
+import { interfaceLanguages } from "../i18n/interface-language-options";
+import { interfaceHref } from "../i18n/interface-route";
 import { createServerI18nContext, serializeI18nSeed } from "../i18n/server";
 import { renderUnavailableContent } from "../server/render-workspace";
 import { themeCharacters } from "../server/theme-characters";
 import { localizedSocialImage } from "../server/social-image";
 import { contentPublished, publicationFields } from "../lib/content-publication";
 import { communityVisibilityCss, DEFAULT_COMMUNITY_HIDDEN_HOSTS } from "../lib/site-community";
-import { canonicalPath, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
+import { canonicalPath, pageDescriptionKey, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
 interface Props {
   locale: Locale;
   title: string;
@@ -50,6 +52,8 @@ const isLocalizedRoute = canonicalRoute
 const localizedTitle = seoTitleValues?.[locale] ?? (titleKey ? t(locale, titleKey, title) : title);
 const fullTitle = pageTitle(locale, route, localizedTitle);
 const summary = pageSummary(locale, route, localizedTitle, seoDescriptionValues?.[locale] ?? description);
+const interfaceDescriptionKey =
+  locale === "en" && !(seoDescriptionValues?.[locale] ?? description)?.trim() ? pageDescriptionKey(locale, route) : undefined;
 const keywords = pageKeywords(locale, route, localizedTitle);
 const publicRoute = canonicalRoute ?? (isLocalizedRoute ? localePath(route, locale) : route);
 // Each locale's page canonicalizes to itself and points at its language
@@ -58,10 +62,13 @@ const canonicalHref = isLocalizedRoute
   ? `${origin}${canonicalPath(publicRoute)}`
   : `${origin}${canonicalPath(route)}`;
 const languageAlternates = isLocalizedRoute
-  ? LOCALES.map((target) => ({
-      locale: target,
-      href: `${origin}${canonicalPath(canonicalRoute ? localePath(publicRoute, target) : localePath(route, target))}`,
-    }))
+  ? LOCALES.flatMap((target) => {
+      const href = `${origin}${canonicalPath(canonicalRoute ? localePath(publicRoute, target) : localePath(route, target))}`;
+      const base = { locale: target, tag: localeTag(target), href };
+      return target === "en"
+        ? [base, ...interfaceLanguages.map(({ value, tag }) => ({ locale: value, tag, href: interfaceHref(href, value, origin) }))]
+        : [base];
+    })
   : [];
 const entityImage = await localizedSocialImage(searchImage, locale, origin);
 const socialImage = entityImage ?? `${origin}${socialCardPath(publicRoute, locale)}`;
@@ -220,8 +227,8 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       })();
     </script>
     <title data-interface-title-key={locale === "en" && !seoTitleValues && route !== "/" ? titleKey : undefined}
-      data-interface-title-original={locale === "en" && !seoTitleValues && route !== "/" && titleKey ? fullTitle : undefined}>{fullTitle}</title>
-    <meta name="description" content={summary} />
+      data-interface-title-original={locale === "en" ? fullTitle : undefined}>{fullTitle}</title>
+    <meta name="description" content={summary} data-interface-description-key={interfaceDescriptionKey} />
     {!noindex && keywords && <meta name="keywords" content={keywords} />}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="haneoka" />
@@ -229,6 +236,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     <meta
       property="og:description"
       content={summary}
+      data-interface-description-key={interfaceDescriptionKey}
 
     />
     <meta property="og:url" content={canonicalHref} />
@@ -243,6 +251,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     <meta
       name="twitter:description"
       content={summary}
+      data-interface-description-key={interfaceDescriptionKey}
 
     />
     <meta name="twitter:image" content={socialImage} />
@@ -252,7 +261,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
     <link rel="canonical" href={canonicalHref} />
     {!noindex &&
       languageAlternates.map((alternate) => (
-        <link rel="alternate" hreflang={localeTag(alternate.locale)} href={alternate.href} />
+        <link rel="alternate" hreflang={alternate.tag} href={alternate.href} />
       ))}
     {!noindex && languageAlternates.length > 0 && (
       <link

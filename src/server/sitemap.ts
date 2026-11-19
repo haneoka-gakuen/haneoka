@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md); build-time discovery for the public sitemap endpoints.
 // Effects/Dependencies: Reads route files and existing static data producers; excludes private and noindex documents.
 import fs from "node:fs";
+import { interfaceLanguages } from "../i18n/interface-language-options";
 import { LOCALES, localePath, type Locale } from "../i18n/locales";
 import { ROUTES } from "../config/routes";
 import { NAV_SECTIONS } from "../config/navigation";
@@ -88,7 +89,11 @@ async function buildDocuments(): Promise<SitemapDocument[]> {
   });
 }
 
-export const sitemapIndexXml = (entries: SitemapDocument[]) =>
-  `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries.map(({ name }) => `<sitemap><loc>${ORIGIN}/sitemap-${name}.xml</loc></sitemap>`).join("")}</sitemapindex>`;
+export const sitemapIndexXml = (entries: SitemapDocument[]) => {
+  const names = entries.flatMap(({ name }) => /^en-[1-9]\d*$/u.test(name)
+    ? [name, ...interfaceLanguages.map(({ value }) => `${value}${name.slice(2)}`)]
+    : [name]);
+  return `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${names.map((name) => `<sitemap><loc>${ORIGIN}/sitemap-${name}.xml</loc></sitemap>`).join("")}</sitemapindex>`;
+};
 export const sitemapUrlXml = (entry: SitemapDocument) =>
   `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entry.urls.map((url) => `<url><loc>${xml(url)}</loc></url>`).join("")}</urlset>`;

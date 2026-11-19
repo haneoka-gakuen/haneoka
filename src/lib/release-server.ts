@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, isLocale } from "@haneoka/i18n";
+import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route";
 import { navigationDocumentUrl } from "./document-url";
 import { homePath, isReleaseServer, releaseServerFromPath, releaseServerFromCookie, RELEASE_SERVER_COOKIE, type ReleaseServer } from "./resource-route";
 import { PUBLIC_RELEASE_SERVERS } from "./temporary-public-routing";
@@ -82,6 +83,8 @@ export function releaseServerPath(route: string, server: ReleaseServer): string 
   if (parts.length > 0 && isReleaseServer(parts[0])) {
     return `/${[server, ...parts.slice(1)].join("/")}/${search}${hash}`;
   }
-  const locale = parts.length > 0 && isLocale(parts[0]) ? parts[0] : DEFAULT_LOCALE;
-  return `${homePath(server, locale)}${search}${hash}`;
+  const interfaceLanguage = interfaceLanguageFromPath(path);
+  const locale = interfaceLanguage ? "en" : parts.length > 0 && isLocale(parts[0]) ? parts[0] : DEFAULT_LOCALE;
+  const target = homePath(server, locale);
+  return `${interfaceLanguage ? interfacePath(target, interfaceLanguage.value) : target}${search}${hash}`;
 }

@@ -1,3 +1,5 @@
+import { interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route";
+
 /** Destination identity stays available throughout Astro's document swap. */
 let pendingDocumentUrl: URL | undefined;
 let documentUrlListening = false;
@@ -71,6 +73,9 @@ export function returnLink(href: string, returnTo?: string): string {
   const base = browser ? navigationDocumentUrl() : new URL("https://route.invalid");
   const target = returnUrl(href, base);
   if (!target) return href;
+  const language = interfaceLanguageFromPath(base.pathname);
+  if (language && !interfaceLanguageFromPath(target.pathname))
+    target.pathname = interfacePath(target.pathname, language.value);
   const source = returnTo && returnUrl(returnTo, base);
   if (browser && source) {
     linkReturns.delete(returnKey(target));

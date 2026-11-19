@@ -1,3 +1,4 @@
+import { englishInterfacePath } from "../i18n/interface-route";
 import { normalizeAuthorLocale, matchLocale } from "@haneoka/i18n";
 import { localizedFallbacks } from "./localized-text";
 import { preferredDeviceLocale } from "../i18n/negotiation";
@@ -53,6 +54,7 @@ export function announcementPath(server: ReleaseServer, locale: Locale, id?: num
   return `/${server}/${locale}/announcements/${id === undefined ? "" : `${id}/`}`;
 }
 export function parseAnnouncementRoute(pathname: string) {
+  pathname = englishInterfacePath(pathname);
   const parts = pathname.split("/").filter(Boolean);
   if (!isReleaseServer(parts[0]) || !isLocale(parts[1]) || parts[2] !== "announcements") return undefined;
   if (parts.length === 3) return { server: parts[0], locale: parts[1] };

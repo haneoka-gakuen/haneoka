@@ -448,7 +448,8 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
   import { setPageSpoilers } from "../lib/spoiler-navigation";
   import { isReleaseServer, readSelectedReleaseServer, releaseServerPath, writeReleaseServer } from "../lib/release-server";
   import { isLocale, localePath } from "../i18n/locales";
-  import { interfaceLanguages, writeInterfaceLanguage } from "../i18n/interface-languages";
+  import { interfaceLanguages } from "../i18n/interface-languages";
+  import { englishInterfacePath, interfacePath } from "../i18n/interface-route";
 
   type SettingsWindow = Window & { __haneokaApplyLocale?: (locale: string) => void; __haneokaApplyTheme?: () => void };
   let disposeSettings: (() => void) | undefined;
@@ -627,9 +628,9 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
           const overlay = interfaceLanguages.find((language) => language.value === value);
           const base = overlay ? "en" : value;
           if (!isLocale(base)) return;
-          writeInterfaceLanguage(overlay?.value);
-          if (document.documentElement.dataset.locale !== base)
-            location.assign(`${localePath(location.pathname, base)}${location.search}${location.hash}`);
+          const path = localePath(englishInterfacePath(location.pathname), base);
+          const target = overlay ? interfacePath(path, overlay.value) : path;
+          if (target !== location.pathname) location.assign(`${target}${location.search}${location.hash}`);
           return;
         } else if (name === "release" && isReleaseServer(value)) {
           // The URL prefix is the release server's address: a change of server

@@ -70,6 +70,7 @@
   "core_files": [
     "scripts/ingest/api_egress.py",
     "worker/site-discovery.ts",
+    "worker/interface-documents.ts",
     "src/lib/site-community.ts",
     "src/lib/site-origin.ts",
     "src/server/render-provider.ts",
@@ -176,6 +177,7 @@
     "src/lit/runtime/vega-story-stage.ts",
     "src/i18n/client.ts",
     "src/i18n/interface-languages.ts",
+    "src/i18n/interface-route.ts",
     "src/i18n/interface-share.ts",
     "src/i18n/server.ts",
     "src/lib/team-builder/data.ts",

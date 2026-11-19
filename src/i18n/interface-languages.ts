@@ -15,36 +15,19 @@ import {
   type MessageTree,
 } from "@haneoka/i18n";
 
-import {
-  interfaceLanguages,
-  SHARE_LANGUAGE_STORAGE_KEY,
-  type InterfaceLanguage,
-  type InterfaceLanguageId,
-} from "./interface-language-options";
+import { SHARE_LANGUAGE_STORAGE_KEY, type InterfaceLanguage } from "./interface-language-options";
 export { interfaceLanguages, type InterfaceLanguageId } from "./interface-language-options";
 
-export const INTERFACE_LANGUAGE_EVENT = "haneoka:interface-language";
-const STORAGE_KEY = "haneoka.interface-language";
 const sources = import.meta.glob<MessageCatalog>("./interface/*.json", { import: "default" });
 
-export function readInterfaceLanguage(): InterfaceLanguage | undefined {
+export function consumeLegacyShareLanguage(): string | null {
   try {
-    const value = sessionStorage.getItem(SHARE_LANGUAGE_STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
-    return interfaceLanguages.find((language) => language.value === value);
+    const value = sessionStorage.getItem(SHARE_LANGUAGE_STORAGE_KEY);
+    if (value) sessionStorage.removeItem(SHARE_LANGUAGE_STORAGE_KEY);
+    return value;
   } catch {
-    return undefined;
+    return null;
   }
-}
-
-export function writeInterfaceLanguage(value?: InterfaceLanguageId): void {
-  try {
-    sessionStorage.removeItem(SHARE_LANGUAGE_STORAGE_KEY);
-    if (value) localStorage.setItem(STORAGE_KEY, value);
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // In-place changes still work when storage is blocked.
-  }
-  window.dispatchEvent(new CustomEvent(INTERFACE_LANGUAGE_EVENT, { detail: value }));
 }
 
 export async function loadInterfaceLanguage(language: InterfaceLanguage): Promise<MessageCatalog> {
