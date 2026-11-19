@@ -2878,6 +2878,8 @@
       "tabAccount": "Konto Bonus",
       "tabTeams": "Teams",
       "syncLocal": "auf diesem Gerät gespeichert · sign in to sync",
+      "resetOptions": "Standardeinstellungen wiederherstellen",
+      "resetOptionsConfirm": "Die Optionen für die Teamerstellung werden zurückgesetzt. Deine Karten, gespeicherten Teams und Kontoboni bleiben erhalten.",
       "syncSignIn": "Sign in to Sync",
       "syncOfflineShort": "Offline",
       "syncing": "Synchronisierung...",

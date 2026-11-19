@@ -18,19 +18,26 @@
 .tabs::-webkit-scrollbar {
   display: none;
 }
-.scrollable-tabs {
+.tab-scroll {
   display: flex;
   min-width: 0;
   align-items: center;
 }
-.scrollable-tabs > .tabs {
-  flex: 1;
+.tab-scroll > nav {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow-anchor: none;
 }
-.scrollable-tabs > .icon-button {
+.tab-scroll > .tabs--pills {
+  flex-grow: 0;
+}
+.tab-scroll > .icon-button {
   flex: 0 0 48px;
   width: 48px;
   height: 48px;
+}
+.tab-scroll:not([data-overflow]) > .icon-button {
+  display: none;
 }
 .tab {
   position: relative;

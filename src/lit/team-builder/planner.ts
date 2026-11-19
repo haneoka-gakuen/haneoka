@@ -2,7 +2,7 @@
 // Input: Public catalogue, local scenario definitions and explicit editor actions.
 // Output: Versioned custom cards/events, private preferences and a projected calculation catalogue.
 // Pos: [Map](../L2-2.md); local planning controller for the team workspace.
-// Effects/Dependencies: Device storage and user-selected JSON files; never syncs fictional ownership.
+// Effects/Dependencies: Device storage and user-selected JSON files; clears local option overrides when restoring defaults. Fictional ownership stays on device.
 import type { TeamBuilder } from "../team-builder";
 import { dataRows, objectRow } from "../../lib/team-builder/data";
 import {
@@ -204,6 +204,14 @@ export class Planner {
     if (!changes.length) return true;
     const next = { ...this.document, entries: { ...this.document.entries } };
     for (const { key, value } of changes) next.entries[key] = { v: value, t: this.clock.next(), c: "planner", r: 0 };
+    if (!this.persist(next)) return false;
+    this.document = next;
+    return true;
+  }
+  clearPreferenceOverrides(keys: readonly string[]) {
+    if (!keys.some((key) => Object.hasOwn(this.document.entries, key))) return true;
+    const next = { ...this.document, entries: { ...this.document.entries } };
+    for (const key of keys) delete next.entries[key];
     if (!this.persist(next)) return false;
     this.document = next;
     return true;

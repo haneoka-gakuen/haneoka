@@ -1,3 +1,4 @@
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { clientText } from "../i18n/client";
 import { rememberedReturn } from "../lib/document-url";
 import { GAME_REGION_NAMES, gameAccountRegion } from "./shared/game-records";
@@ -1283,15 +1284,17 @@ export class AccountWorkspace extends LitElement {
       <div class="account-workspace">
         <aside class="account-aside">
           ${this.renderSummary()}
-          <nav class="account-navigation" role="tablist">
-            ${this.sectionButton("profile", icon("person"), this.label("profile", "Profile"))}
-            ${this.sectionButton("games", icon("sports_esports"), this.label("gameAccounts", "Game accounts"), this.games.length)}
-            ${this.sectionButton("security", icon("verified_user"), this.label("security", "Sign-in & security"))}
-            ${this.sectionButton("sessions", icon("devices"), this.label("sessions", "Sessions"), this.sessions.length)}
-            ${this.sectionButton("relationships", icon("block"), this.label("relationships", "Blocks & mutes"), this.relationships.length)}
-            ${this.sectionButton("moderation", icon("policy"), this.label("moderation", "Restrictions & appeals"), restrictions + this.appeals.length)}
-            ${this.sectionButton("management", icon("settings"), this.label("accountManagement", "Account management"))}
-          </nav>
+          ${scrollableTabBar(preferredLocale(), html`
+            <nav class="account-navigation" role="tablist">
+              ${this.sectionButton("profile", icon("person"), this.label("profile", "Profile"))}
+              ${this.sectionButton("games", icon("sports_esports"), this.label("gameAccounts", "Game accounts"), this.games.length)}
+              ${this.sectionButton("security", icon("verified_user"), this.label("security", "Sign-in & security"))}
+              ${this.sectionButton("sessions", icon("devices"), this.label("sessions", "Sessions"), this.sessions.length)}
+              ${this.sectionButton("relationships", icon("block"), this.label("relationships", "Blocks & mutes"), this.relationships.length)}
+              ${this.sectionButton("moderation", icon("policy"), this.label("moderation", "Restrictions & appeals"), restrictions + this.appeals.length)}
+              ${this.sectionButton("management", icon("settings"), this.label("accountManagement", "Account management"))}
+            </nav>
+          `)}
         </aside>
         <main class="account-content">${sections[this.section]()}</main>
       </div>

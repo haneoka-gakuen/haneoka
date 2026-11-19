@@ -9,6 +9,7 @@ import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIde
 import { icon } from "./icon";
 import { iconButton, rovingKeydown } from "./controls";
 import { tile } from "./tile";
+import { scrollableTabBar } from "./scrollable-tabs";
 import { nextImageCandidate } from "./lazy-images";
 
 /**
@@ -51,6 +52,7 @@ export interface BrowseRailItem {
  * there is never a rail and a facet competing for the same choice.
  */
 export interface BrowseRail {
+  locale: string;
   label: string;
   value: string;
   items: ReadonlyArray<BrowseRailItem>;
@@ -150,7 +152,7 @@ function renderRailSkeleton(rail: BrowseRail): TemplateResult {
 
 /** The rail, as a one-column collection of tiles in a tablist. */
 function renderRail(rail: BrowseRail): TemplateResult {
-  return html`
+  return scrollableTabBar(rail.locale, html`
     <nav
       class="browse__rail"
       role="tablist"
@@ -184,7 +186,7 @@ function renderRail(rail: BrowseRail): TemplateResult {
         })}
       </div>
     </nav>
-  `;
+  `, "browse__rail-frame");
 }
 
 /** The rail alone, for a screen that draws its own pane beside it; the pane is `browseResultsId`. */
@@ -255,7 +257,7 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
     .join(" ");
   return html`
     <section class=${classes} style=${options.style || nothing}>
-      ${railed && rail ? (rail.pending && !rail.items.length ? renderRailSkeleton(rail) : renderRail(rail)) : nothing}
+      ${railed && rail ? browseRail(rail) : nothing}
       <div class="browse__main">
         ${
           heading

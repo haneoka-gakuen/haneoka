@@ -4699,12 +4699,10 @@ export class CommunityWorkspace extends LitElement {
         </header>
         <section class="community-user-section community-user-activity">
           <scrollable-tabs
-            class="scrollable-tabs"
             .items=${tabs}
             .value=${this.profileTab}
             .label=${String(profile.displayName || "")}
-            .previousLabel=${this.label("common.actions.previous", "Previous")}
-            .nextLabel=${this.label("common.actions.next", "Next")}
+            .locale=${this.locale}
             .onSelect=${(tab: string) => void this.openProfileTab(tab)}
           ></scrollable-tabs>
           ${

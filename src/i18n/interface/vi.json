@@ -2878,6 +2878,8 @@
       "tabAccount": "Tài khoản Bonus",
       "tabTeams": "Nhóm",
       "syncLocal": "Lưu trên thiết bị này · Đăng nhập để đồng bộ",
+      "resetOptions": "Khôi phục cài đặt mặc định",
+      "resetOptionsConfirm": "Các tùy chọn xếp đội sẽ trở về mặc định. Thẻ, đội đã lưu và phần thưởng cộng thêm của tài khoản sẽ được giữ lại.",
       "syncSignIn": "Đăng ký Sync",
       "syncOfflineShort": "Offline",
       "syncing": "Synchronic...",

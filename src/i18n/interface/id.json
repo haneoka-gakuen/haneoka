@@ -2878,6 +2878,8 @@
       "tabAccount": "Akun Bonus",
       "tabTeams": "Tim",
       "syncLocal": "disimpan pada perangkat ini · sign in to sync",
+      "resetOptions": "Pulihkan pengaturan bawaan",
+      "resetOptionsConfirm": "Opsi penyusunan tim akan kembali ke pengaturan bawaan. Kartu, tim tersimpan, dan bonus akun tetap tersimpan.",
       "syncSignIn": "Tuliskan untuk Sync",
       "syncOfflineShort": "Offline",
       "syncing": "Sync...",

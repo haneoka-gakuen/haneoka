@@ -1,3 +1,4 @@
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import "./character-voices";
 import { characterSignatures } from "../config/character-signatures";
 import { isListedContent } from "../lib/content-release";
@@ -127,12 +128,6 @@ export class CharacterDetailArchive extends LitElement {
   private lazyImages = new LazyImages();
   protected updated() {
     this.lazyImages.observe(this);
-    const tabs = this.querySelector<HTMLElement>(".character-detail-tabs");
-    const selected = tabs?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (tabs && selected) {
-      const offset = selected.getBoundingClientRect().left - tabs.getBoundingClientRect().left;
-      if (offset < 0 || offset + selected.offsetWidth > tabs.clientWidth) tabs.scrollLeft += offset;
-    }
   }
   private collections() {
     const c = this.controller;
@@ -719,9 +714,9 @@ export class CharacterDetailArchive extends LitElement {
   }
   private renderTabs(tabs: ReadonlyArray<readonly [string, string, string, number]>, active: string) {
     const c = this.controller;
-    return html`
+    return scrollableTabBar(c.contentLocale, html`
       <nav
-        class="tabs tabs--pills tabs--sticky character-detail-tabs"
+        class="tabs tabs--pills character-detail-tabs"
         role="tablist"
         aria-label=${c.label("details", "Details")}
         @keydown=${rovingKeydown(
@@ -755,7 +750,7 @@ export class CharacterDetailArchive extends LitElement {
           `,
         )}
       </nav>
-    `;
+    `, "tabs--sticky");
   }
 }
 

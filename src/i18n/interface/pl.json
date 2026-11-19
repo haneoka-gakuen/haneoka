@@ -2878,6 +2878,8 @@
       "tabAccount": "Konto bonusowe",
       "tabTeams": "Zespół",
       "syncLocal": "Został zapisany na tym urządzeniu · zaloguj się do synchronizacji",
+      "resetOptions": "Przywróć ustawienia domyślne",
+      "resetOptionsConfirm": "Opcje tworzenia drużyn wrócą do wartości domyślnych. Twoje karty, zapisane drużyny i bonusy konta zostaną zachowane.",
       "syncSignIn": "Zarejestruj się w Sync",
       "syncOfflineShort": "offline",
       "syncing": "Synchronizacja...",

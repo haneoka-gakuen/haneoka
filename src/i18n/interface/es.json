@@ -2878,6 +2878,8 @@
       "tabAccount": "Bonos de cuenta",
       "tabTeams": "Equipos",
       "syncLocal": "Salvo en este dispositivo · sinalarse para sincronizar",
+      "resetOptions": "Restaurar los ajustes predeterminados",
+      "resetOptionsConfirm": "Las opciones de formación de equipos volverán a sus valores predeterminados. Se conservarán tus cartas, equipos guardados y bonificaciones de cuenta.",
       "syncSignIn": "Encuentra en Sync",
       "syncOfflineShort": "Offline",
       "syncing": "Sinceros...",

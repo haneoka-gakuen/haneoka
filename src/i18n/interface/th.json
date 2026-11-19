@@ -2878,6 +2878,8 @@
       "tabAccount": "บัญชีโบนัส",
       "tabTeams": "ทีมงาน",
       "syncLocal": "โซฟท์บนอุปกรณ์นี้ · sign in to sync",
+      "resetOptions": "คืนค่าการตั้งค่าเริ่มต้น",
+      "resetOptionsConfirm": "ตัวเลือกการจัดทีมจะกลับเป็นค่าเริ่มต้น การ์ด ทีมที่บันทึกไว้ และโบนัสบัญชีจะยังคงอยู่",
       "syncSignIn": "ลงชื่อเข้าสู่ Sync",
       "syncOfflineShort": "ออฟไลน์",
       "syncing": "การสังเคราะห์",

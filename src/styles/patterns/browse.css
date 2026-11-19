@@ -42,6 +42,9 @@
    can be traversed without losing the collection beside it. `height` rather
    than `max-height`, because a sticky box only holds its position for as far
    as it actually extends. */
+.browse__rail-frame {
+  display: contents;
+}
 .browse__rail {
   position: sticky;
   z-index: var(--md-sys-z-index-local-sticky);
@@ -302,6 +305,9 @@ fieldset.browse__filter-group {
   }
   .browse--railed {
     min-height: 0;
+  }
+  .browse__rail-frame {
+    display: flex;
   }
   .browse__rail {
     position: static;

@@ -2878,6 +2878,8 @@
       "tabAccount": "アカウントボーナス",
       "tabTeams": "編成一覧",
       "syncLocal": "この端末に保存済み · ログインで同期",
+      "resetOptions": "初期設定に戻す",
+      "resetOptionsConfirm": "編成オプションを初期設定に戻します。所持カード、保存済みの編成、アカウントボーナスは保持されます。",
       "syncSignIn": "ログインして同期",
       "syncOfflineShort": "オフライン",
       "syncing": "同期中…",

@@ -2,7 +2,8 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、按命名空间恢复配队默认选项，复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { observeSongDisplay } from "../lib/song-display";
 import { isContentVisible } from "../lib/content-release";
 import { observeSpoilerContent } from "../lib/spoiler-content";
@@ -57,8 +58,9 @@ import type {
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
 import { cardIdOf, engineInputs, readBox, type BoxView } from "../lib/team-builder/sync/box-view";
 import type { BoxValue } from "../lib/team-builder/sync/box-doc";
-import { rovingKeydown, segmented } from "./ui/controls";
+import { iconButton, rovingKeydown, segmented } from "./ui/controls";
 import { clearAppBarActions, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
+import { modal } from "./ui/modal";
 import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import {
@@ -100,6 +102,7 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 };
 
 const SETTINGS_KEY = "pref.build";
+const BUILD_PREFERENCES = [SETTINGS_KEY, "pref.arena", "pref.song-comparison", "pref.song-picker"] as const;
 const SYNC_OWNER = "team-builder-sync";
 const SEARCH_OWNER = "team-builder-search";
 export interface ManualTeam {
@@ -161,6 +164,7 @@ export class TeamBuilder extends LitElement {
     this.running = false;
     this.requestUpdate();
   }
+  private confirmReset = false;
   private resetTasks() {
     this.catalog?.dispose();
     this.skillRoleEditor = null;
@@ -910,6 +914,56 @@ export class TeamBuilder extends LitElement {
     this.settings = this.readBuildPreferences();
     this.arena.restore();this.songComparison.restore();this.requestUpdate();
   }
+  private restoreDefaultOptions() {
+    if (!this.store) return;
+    this.confirmReset = false;
+    if (!this.planner.clearPreferenceOverrides(BUILD_PREFERENCES)) {
+      this.error = this.t("saveRejected", "That value cannot be saved.");
+      this.requestUpdate();
+      return;
+    }
+    this.resetTasks();
+    this.expanded.clear();
+    this.pt.showIssues = false;
+    this.songComparison.submitted = false;
+    this.requiredPicker = null;
+    this.excludedPicker = null;
+    this.buildMode = "automatic";
+    this.requestedArenaLeague = 0;
+    const url = new URL(location.href);
+    if (url.searchParams.has("league")) {
+      url.searchParams.delete("league");
+      history.replaceState(history.state, "", url);
+    }
+    const changes = BUILD_PREFERENCES
+      .filter((key) => this.persistentView?.prefs[key.slice(5)] != null)
+      .map((key) => ({ key, value: null }));
+    this.write(changes);
+    this.refreshTemporaryView();
+    this.restorePlanningPreferences();
+    this.engine?.prefetch(this.searchSettings.songs);
+    void this.pt.restore();
+  }
+  private renderResetOptions() {
+    if (!this.confirmReset) return nothing;
+    const close = () => {
+      this.confirmReset = false;
+      this.requestUpdate();
+    };
+    const title = this.t("resetOptions", "Restore default settings");
+    return html`
+      <dialog class="dialog" aria-labelledby="tb-reset-options-title" ${modal(close)}>
+        <header class="dialog__header"><h2 id="tb-reset-options-title">${title}</h2></header>
+        <div class="dialog__body">
+          <p>${this.t("resetOptionsConfirm", "Team-building options will return to their defaults. Your cards, saved teams and account bonuses will be kept.")}</p>
+        </div>
+        <footer class="dialog__actions">
+          <button class="button button--text" type="button" @click=${close} autofocus>${this.common("common.actions.cancel", "Cancel")}</button>
+          <button class="button" type="button" @click=${() => this.restoreDefaultOptions()}>${title}</button>
+        </footer>
+      </dialog>
+    `;
+  }
   updateSettings(patch: Partial<BuildSettings>) {
     if (this.tab === "arena") {
       this.arena.updateBuild(patch);
@@ -962,7 +1016,7 @@ export class TeamBuilder extends LitElement {
       config: this.querySelector(".tb-config-body")?.scrollTop ?? 0,
     });
   }
-  private async restoreScroll() {
+  private async restoreScroll(focusPanel = true) {
     const key = this.scrollScope();
     await this.updateComplete;
     await Promise.all(
@@ -977,7 +1031,7 @@ export class TeamBuilder extends LitElement {
       config = this.querySelector(".tb-config-body");
     if (main) main.scrollTop = saved?.main ?? 0;
     if (config) config.scrollTop = saved?.config ?? 0;
-    this.querySelector<HTMLElement>(".tb-tabpanel")?.focus({ preventScroll: true });
+    if (focusPanel) this.querySelector<HTMLElement>(".tb-tabpanel")?.focus({ preventScroll: true });
   }
   renderBuildMode() {
     return segmented({
@@ -996,7 +1050,7 @@ export class TeamBuilder extends LitElement {
       },
     });
   }
-  setTab(tab: Tab) {
+  setTab(tab: Tab, { focusPanel = true } = {}) {
     if (this.tab === tab) return;
     this.songPicker?.recommendationRequest?.abort();
     this.songPicker = null;
@@ -1013,7 +1067,7 @@ export class TeamBuilder extends LitElement {
     if (tab !== "arena") url.searchParams.delete("league");
     history.replaceState(history.state, "", url);
     this.requestUpdate();
-    void this.restoreScroll();
+    void this.restoreScroll(focusPanel);
   }
 
   /** Cards taking part in a search, after the candidate filters. */
@@ -1928,7 +1982,7 @@ export class TeamBuilder extends LitElement {
       { id: "account", icon: "trending_up", label: this.t("tabAccount", "Account bonuses"), count: 0 },
       { id: "teams", icon: "bookmarks", label: this.t("tabTeams", "Teams"), count: this.view?.teams.length ?? 0 },
     ] as const;
-    return html`
+    return scrollableTabBar(this.locale, html`
       <nav
         class="tabs tb-tabs"
         role="tablist"
@@ -1936,7 +1990,8 @@ export class TeamBuilder extends LitElement {
         @keydown=${rovingKeydown(
           tabs.map(({ id }) => id as Tab),
           this.tab,
-          (tab) => this.setTab(tab),
+          (tab) => this.setTab(tab, { focusPanel: false }),
+          { preventScroll: true },
         )}
       >
         ${tabs.map(
@@ -1957,9 +2012,9 @@ export class TeamBuilder extends LitElement {
           `,
         )}
       </nav>
-    `;
+    `);
   }
-  /** Sync status lives in the app bar; the box search uses the app-bar search field. */
+  /** Register the team builder actions and card search with the shared app bar. */
   private syncAppBar() {
     clearAppBarActions("team-builder-planner");
     if (this.tab === "box") setAppBarActions("team-builder-quick-entry", html`
@@ -1985,6 +2040,15 @@ export class TeamBuilder extends LitElement {
     setAppBarActions(
       SYNC_OWNER,
       html`
+        ${iconButton({
+          icon: "restart_alt",
+          label: this.t("resetOptions", "Restore default settings"),
+          disabled: !this.view,
+          onClick: () => {
+            this.confirmReset = true;
+            this.requestUpdate();
+          },
+        })}
         <span class=${`tb-sync tb-sync--${status}`} ?data-app-bar-keep=${this.tab !== "box" || !signedOut}>
           ${
             signedOut
@@ -2097,7 +2161,7 @@ export class TeamBuilder extends LitElement {
           ${panel}
         </section>
         ${renderSkillRoleEditor(this)} ${this.analysis.render()} ${this.comparison.dialog(this)} ${this.teamGrowth.render()} ${renderCardPicker(this)} ${renderCardEditor(this)} ${this.songPicker ? renderSongPicker(this) : nothing}
-        ${this.imports.render()} ${renderGekisoHelp(this)} ${renderPlanner(this)} ${this.renderSnackbar()}
+        ${this.renderResetOptions()} ${this.imports.render()} ${renderGekisoHelp(this)} ${renderPlanner(this)} ${this.renderSnackbar()}
       </div>
     `;
   }

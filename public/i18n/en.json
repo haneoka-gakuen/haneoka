@@ -2878,6 +2878,8 @@
       "tabAccount": "Account bonuses",
       "tabTeams": "Teams",
       "syncLocal": "Saved on this device · sign in to sync",
+      "resetOptions": "Restore default settings",
+      "resetOptionsConfirm": "Team-building options will return to their defaults. Your cards, saved teams and account bonuses will be kept.",
       "syncSignIn": "Sign in to sync",
       "syncOfflineShort": "Offline",
       "syncing": "Syncing…",

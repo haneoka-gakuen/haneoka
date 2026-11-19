@@ -2878,6 +2878,8 @@
       "tabAccount": "Bonuses de compte",
       "tabTeams": "équipes",
       "syncLocal": "Économisé sur ce dispositif · sign in to sync",
+      "resetOptions": "Rétablir les paramètres par défaut",
+      "resetOptionsConfirm": "Les options de composition d’équipe seront réinitialisées. Vos cartes, vos équipes enregistrées et vos bonus de compte seront conservés.",
       "syncSignIn": "Signature à sync",
       "syncOfflineShort": "Offline",
       "syncing": "Synchronisation...",

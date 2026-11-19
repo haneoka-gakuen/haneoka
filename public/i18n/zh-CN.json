@@ -2878,6 +2878,8 @@
       "tabAccount": "账号加成",
       "tabTeams": "队伍",
       "syncLocal": "已保存在本设备，登录后可同步",
+      "resetOptions": "恢复默认设置",
+      "resetOptionsConfirm": "配队选项将恢复默认值。卡池、已保存的队伍和账号加成会保留。",
       "syncSignIn": "登录后云同步",
       "syncOfflineShort": "离线",
       "syncing": "同步中…",

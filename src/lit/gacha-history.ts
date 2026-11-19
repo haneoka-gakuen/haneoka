@@ -3,6 +3,7 @@
 // Output: 账号概览、运气、卡池、收获、明细与趋势分页，统一卡牌、兑换进度和显式操作事件。
 // Pos: [Map](L2-2.md)；抽卡历史展示与资料边界。
 // Effects/Dependencies: light DOM 与 SSR 共用；消费共享分析／图表／卡牌，导入及云状态由工作区持有。
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { cardRarityRank } from "../lib/card-rarity";
 import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import { modal } from "./ui/modal";
@@ -972,7 +973,7 @@ export class GachaHistory extends LitElement {
       trends: [this.t("tabTrends"), icon("show_chart", 18)],
       settings: [this.t("tabSettings"), icon("tune", 18)],
     };
-    return html`
+    return scrollableTabBar(this.locale, html`
       <nav
         class="tabs tabs--pills gacha-history__tabs"
         role="tablist"
@@ -997,7 +998,7 @@ export class GachaHistory extends LitElement {
           `,
         )}
       </nav>
-    `;
+    `);
   }
 
   private renderPanel(

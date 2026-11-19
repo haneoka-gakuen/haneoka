@@ -4966,6 +4966,7 @@ export class CatalogScreen extends LitElement {
         },
         rail: this.hasBandRail()
           ? {
+              locale: this.settings.locale,
               pending: this.phase === "loading",
               label: this.label("band", "Band"),
               value: String(this.activeBand),

@@ -87,6 +87,7 @@
     "src/lib/official-ranking.ts",
     "src/lib/team-builder/pt-checkpoint.ts",
     "src/lib/team-builder/planner-data.ts",
+    "src/lit/ui/scrollable-tabs.ts",
     "src/lit/team-builder/planner.ts",
     "src/lit/team-builder/planner-view.ts",
     "src/lit/shared/skill-text.ts",

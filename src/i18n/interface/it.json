@@ -2878,6 +2878,8 @@
       "tabAccount": "Contato bonus",
       "tabTeams": "team",
       "syncLocal": "Salvo su questo dispositivo · iscriviti a sincronizzare",
+      "resetOptions": "Ripristina le impostazioni predefinite",
+      "resetOptionsConfirm": "Le opzioni di composizione della squadra torneranno ai valori predefiniti. Le tue carte, le squadre salvate e i bonus dell’account verranno mantenuti.",
       "syncSignIn": "Iscriviti a sincronizzare",
       "syncOfflineShort": "Offline",
       "syncing": "Il sinistro...",

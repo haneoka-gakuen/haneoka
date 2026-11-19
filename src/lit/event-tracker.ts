@@ -1,3 +1,4 @@
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { LitElement, html, nothing } from "lit";
 import { clientText } from "../i18n/client";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
@@ -440,6 +441,7 @@ export class EventTracker extends LitElement {
     return html`
       <section class="browse browse--railed">
         ${browseRail({
+          locale: this.locale,
           label: clientText(this.locale, "navigation.events", "Events"),
           value: this.shownId(),
           items,
@@ -529,16 +531,18 @@ export class EventTracker extends LitElement {
             </div>
           </header>
         </div>
-        <nav class="tabs" role="tablist" aria-label=${this.label("title", "Event tracker")}
-          @keydown=${rovingKeydown(boards, activeBoard, (view) => this.selectRanking(view))}>
-          ${boards.map((view) => html`
-            <button class="tab" type="button" role="tab" id=${`event-board-${view}`}
-              aria-controls=${`event-ranking-${view}`} aria-selected=${String(activeBoard === view)}
-              tabindex=${activeBoard === view ? 0 : -1} @click=${() => this.selectRanking(view)}>
-              <span>${boardLabels[view]}</span><span class="tab__indicator"></span>
-            </button>
-          `)}
-        </nav>
+        ${scrollableTabBar(this.locale, html`
+          <nav class="tabs" role="tablist" aria-label=${this.label("title", "Event tracker")}
+            @keydown=${rovingKeydown(boards, activeBoard, (view) => this.selectRanking(view))}>
+            ${boards.map((view) => html`
+              <button class="tab" type="button" role="tab" id=${`event-board-${view}`}
+                aria-controls=${`event-ranking-${view}`} aria-selected=${String(activeBoard === view)}
+                tabindex=${activeBoard === view ? 0 : -1} @click=${() => this.selectRanking(view)}>
+                <span>${boardLabels[view]}</span><span class="tab__indicator"></span>
+              </button>
+            `)}
+          </nav>
+        `)}
         <section class="detail-section" role="tabpanel" id="event-ranking-challenge"
           aria-labelledby="event-board-challenge" ?hidden=${activeBoard !== "challenge"}>
           ${renderDetailSectionHeading(this.label("challengeRanking", "Challenge song ranking"), "works")}

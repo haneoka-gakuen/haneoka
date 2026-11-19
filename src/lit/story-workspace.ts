@@ -2059,6 +2059,7 @@ export class StoryWorkspace extends LitElement {
           label: episodes.length !== total ? `/ ${total.toLocaleString()}` : "",
         },
         rail: {
+          locale: this.locale,
           // Sections organised by a rail draw its column while loading.
           pending:
             this.phase === "loading" && this.origin === "release" && !["tutorial", "afterlive"].includes(this.mode),

@@ -2878,6 +2878,8 @@
       "tabAccount": "Contas Bônus",
       "tabTeams": "Equipas",
       "syncLocal": "Salvo neste dispositivo · sinalize para sincronizar",
+      "resetOptions": "Restaurar configurações padrão",
+      "resetOptionsConfirm": "As opções de montagem da equipe voltarão aos valores padrão. Suas cartas, equipes salvas e bônus da conta serão mantidos.",
       "syncSignIn": "Inscreva-se para sincronizar",
       "syncOfflineShort": "Offline",
       "syncing": "Sinceros...",

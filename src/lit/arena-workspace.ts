@@ -3,6 +3,7 @@
 // Output: Season and league overview, leaderboard, schedule, songs, ranks and rewards, and rules tabs.
 // Pos: [Map](L2-2.md); standalone Arena workspace using shared app bar, tabs, tables and the song-ranking rows.
 // Effects/Dependencies: Embedded static data; reads ranking and population APIs; owns app-bar actions, URL state and the boundary timer.
+import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { clientText } from "../i18n/client";
@@ -580,7 +581,7 @@ export class ArenaWorkspace extends LitElement {
       ranks: [this.t("tabs.ranks"), icon("military_tech", 18)],
       rules: [this.t("tabs.rules"), icon("gavel", 18)],
     };
-    return html`
+    return scrollableTabBar(this.locale, html`
       <nav
         class="tabs tabs--pills arena-tabs"
         role="tablist"
@@ -605,7 +606,7 @@ export class ArenaWorkspace extends LitElement {
           `,
         )}
       </nav>
-    `;
+    `);
   }
 
   /* ---------- overview ---------- */

@@ -2878,6 +2878,8 @@
       "tabAccount": "계정 보너스",
       "tabTeams": "팀",
       "syncLocal": "이 기기에 저장됨 · 로그인하면 동기화",
+      "resetOptions": "기본 설정 복원",
+      "resetOptionsConfirm": "팀 편성 옵션을 기본값으로 되돌립니다. 보유 카드, 저장한 팀, 계정 보너스는 유지됩니다.",
       "syncSignIn": "로그인 후 동기화",
       "syncOfflineShort": "오프라인",
       "syncing": "동기화 중…",
