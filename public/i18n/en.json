@@ -755,6 +755,19 @@
       "at_elite_helper": "Elite helper"
     },
     "cards": {
+      "acquisition": {
+        "label": "Acquisition",
+        "permanent": "Permanent",
+        "limited": "Limited",
+        "birthday": "Birthday limited",
+        "event": "Event reward",
+        "pass": "Pass reward",
+        "gift": "Gift",
+        "dreamfes": "DreamFes limited",
+        "campaign": "Collaboration",
+        "unknown": "Unconfirmed",
+        "announcement": "Source announcement"
+      },
       "fields": {
         "rarity": "Rarity",
         "rank": "Rank",

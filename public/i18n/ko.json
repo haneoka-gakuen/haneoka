@@ -755,6 +755,19 @@
       "at_elite_helper": "정예 도우미"
     },
     "cards": {
+      "acquisition": {
+        "label": "획득 방법",
+        "permanent": "상시",
+        "limited": "기간 한정",
+        "birthday": "생일 한정",
+        "event": "이벤트 보상",
+        "pass": "패스 보상",
+        "gift": "선물",
+        "dreamfes": "드림 페스티벌 한정",
+        "campaign": "콜라보",
+        "unknown": "미확인",
+        "announcement": "관련 공지"
+      },
       "fields": {
         "rarity": "희귀도",
         "rank": "랭크",

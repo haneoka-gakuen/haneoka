@@ -755,6 +755,19 @@
       "at_elite_helper": "Pembantu elit"
     },
     "cards": {
+      "acquisition": {
+        "label": "Cara mendapatkan",
+        "permanent": "Permanen",
+        "limited": "Terbatas",
+        "birthday": "Terbatas ulang tahun",
+        "event": "Hadiah acara",
+        "pass": "Hadiah pass",
+        "gift": "Hadiah",
+        "dreamfes": "Terbatas DreamFes",
+        "campaign": "Kolaborasi",
+        "unknown": "Belum dikonfirmasi",
+        "announcement": "Pengumuman resmi"
+      },
       "fields": {
         "rarity": "Keanehan",
         "rank": "Pangkat",

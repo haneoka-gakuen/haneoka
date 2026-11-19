@@ -755,6 +755,19 @@
       "at_elite_helper": "エリートヘルパー"
     },
     "cards": {
+      "acquisition": {
+        "label": "入手方法",
+        "permanent": "恒常",
+        "limited": "期間限定",
+        "birthday": "誕生日限定",
+        "event": "イベント報酬",
+        "pass": "パス報酬",
+        "gift": "プレゼント",
+        "dreamfes": "ドリフェス限定",
+        "campaign": "コラボ",
+        "unknown": "未確認",
+        "announcement": "関連のお知らせ"
+      },
       "fields": {
         "rarity": "レアリティ",
         "rank": "ランク",

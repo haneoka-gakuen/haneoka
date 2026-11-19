@@ -755,6 +755,19 @@
       "at_elite_helper": "ผู้ช่วยชั้นยอด"
     },
     "cards": {
+      "acquisition": {
+        "label": "วิธีรับ",
+        "permanent": "ถาวร",
+        "limited": "จำกัดเวลา",
+        "birthday": "จำกัดวันเกิด",
+        "event": "รางวัลกิจกรรม",
+        "pass": "รางวัลพาส",
+        "gift": "ของขวัญ",
+        "dreamfes": "จำกัด DreamFes",
+        "campaign": "คอลแลบ",
+        "unknown": "ยังไม่ยืนยัน",
+        "announcement": "ประกาศที่เกี่ยวข้อง"
+      },
       "fields": {
         "rarity": "ความหายาก",
         "rank": "อันดับ",

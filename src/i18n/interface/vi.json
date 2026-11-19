@@ -755,6 +755,19 @@
       "at_elite_helper": "Người trợ giúp ưu tú"
     },
     "cards": {
+      "acquisition": {
+        "label": "Cách nhận",
+        "permanent": "Thường trực",
+        "limited": "Giới hạn",
+        "birthday": "Giới hạn sinh nhật",
+        "event": "Thưởng sự kiện",
+        "pass": "Thưởng vé",
+        "gift": "Quà tặng",
+        "dreamfes": "Giới hạn DreamFes",
+        "campaign": "Hợp tác",
+        "unknown": "Chưa xác nhận",
+        "announcement": "Thông báo nguồn"
+      },
       "fields": {
         "rarity": "Độ hiếm",
         "rank": "Thứ hạng",
