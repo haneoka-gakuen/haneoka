@@ -7,7 +7,7 @@ import { communityChartPath } from "../src/lib/community-chart-route";
 import { publicationFields } from "../src/lib/content-publication";
 import { SKILL_FAMILY_RESOURCES } from "../src/lib/skill-page";
 import { announcementPath } from "../src/lib/announcements";
-import { providerEntityRoute, type ProviderEntityLocator, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
+import { providerEntityRoute, type ProviderEntityLocator } from "../src/lib/provider-entity-data";
 import { PROVIDER_STORY_SECTIONS } from "../src/lib/provider-page-data";
 import { assetPublicDocumentUrl, assetStaticLocation } from "../src/lib/asset-static-routing";
 
@@ -175,7 +175,7 @@ export function createCommunityEntityResolver(
   readCatalog: CommunityEntityCatalogReader,
   canRead?: (env: Env, pin: Pin, target: CommunityEntityTarget, match: Match) => Promise<boolean>,
   readAnnouncement?: (server: Server, id: string, locale: Locale) => Promise<Row | undefined>,
-  readProvider?: (entry: ProviderEntityLocator) => Promise<ProviderEntityPayload | undefined>,
+  readProvider?: (entry: ProviderEntityLocator) => Promise<Row | undefined>,
 ) {
   const pins = new Map<Server, Promise<Pin | null>>();
   const indexes = new Map<string, Promise<unknown>>();
@@ -419,16 +419,14 @@ export function createCommunityEntityResolver(
       const provider = match[1] as ProviderEntityLocator["provider"];
       const { section, id } = match.groups;
       if (!id) return null;
-      if (resource === "stories" ? !(PROVIDER_STORY_SECTIONS[provider] as readonly string[]).includes(section ?? "") :
+      if (resource === "stories" ? !(PROVIDER_STORY_SECTIONS[provider] as readonly string[]).includes(section ?? "") || !id.startsWith(`${section}.`) :
         !!section || !decimal(id) || (resource === "cards" && provider !== "bestdori")) return null;
       const locale = context.locale ?? "en";
       const entry: ProviderEntityLocator = {
         provider, locale, resource: resource as ProviderEntityLocator["resource"], id, ...(section ? { section } : {}),
       };
-      const payload = await readProvider(entry);
-      if (!payload || payload.schema !== "haneoka-provider-entity-v1" || payload.provider !== provider ||
-          payload.resource !== resource || payload.id !== id || (resource === "stories" && payload.section !== section)) return null;
-      const value = payload.detail;
+      const value = await readProvider(entry);
+      if (!value) return null;
       const rawTitle = value.musicTitle ?? value.prefix ?? value.title ?? value.name;
       const title = Array.isArray(rawTitle) ? rawTitle[LOCALES.indexOf(locale)] ?? rawTitle.find((part) => typeof part === "string" && part) : rawTitle;
       const locator = { routeKind: target.entityType, routeId: id, detailPath: providerEntityRoute(entry) };

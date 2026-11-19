@@ -62,6 +62,7 @@ import { serveStaticDocument, staticDocumentRedirect, staticPublicationContext }
 import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documents";
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { providerEntityHtmlPath, providerEntityJsonPath, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
+import { providerCatalogBase } from "../src/lib/provider-page-data";
 import { staticViewFromUrl } from "../src/lib/static-view-routing";
 import { assetStaticDocumentFromUrl, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
 import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
@@ -4450,8 +4451,24 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
       async (entry) => {
         const path = providerEntityJsonPath(entry);
         const response = await serveStaticDocument(new Request(new URL(path, request.url)), env, ctx, path);
-        if (!response?.ok) return undefined;
-        return response.json<ProviderEntityPayload>();
+        if (response?.ok) {
+          const payload = await response.json<ProviderEntityPayload>();
+          if (payload.schema === "haneoka-provider-entity-v1" && payload.provider === entry.provider &&
+              payload.resource === entry.resource && payload.id === entry.id && payload.section === entry.section)
+            return payload.detail;
+        }
+        await response?.body?.cancel().catch(() => {});
+        const url = new URL(`${providerCatalogBase(entry.provider, entry.locale)}/${entry.resource}/${encodeURIComponent(entry.id)}`, request.url);
+        const lookup = new Request(url);
+        const live = await (entry.provider === "sekai" ? handleSekaiApi(ctx, lookup, url)
+          : handleGarupaBestdoriApi(ctx, lookup, url, env.BESTDORI_UPSTREAM_BASE));
+        if (!live?.ok) {
+          await live?.body?.cancel();
+          return undefined;
+        }
+        const row = await live.json<JsonObject>();
+        const field = entry.resource === "songs" ? "musicId" : entry.resource === "cards" ? "cardId" : "storyId";
+        return String(row[field]) === entry.id ? row : undefined;
       },
     );
     const bootstrap = await handleCommunityBootstrap(
