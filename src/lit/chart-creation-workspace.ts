@@ -65,7 +65,7 @@ import type { ChartSkin } from "../../packages/embed-cassiopeia/src/types";
 import type { ChartSimulator, ChartSimulatorPlayback } from "./runtime/chart-simulator";
 import { AuthorNativeSpeedError } from "../lib/chart-creation/native-speed-plan";
 import type { HaneokaReleaseIdentity, HaneokaLocale } from "../../packages/api-client/src/haneoka";
-import { listPublicCreationSongs, pinnedPublicUrl } from "../lib/chart-creation/public-songs";
+import { listPublicCreationSongs, creationArtworkUrl } from "../lib/chart-creation/public-songs";
 import { readReleaseServer } from "../lib/release-server";
 import { compileOurNotesCreation } from "../lib/chart-creation/our-notes";
 import { loadOurNotesCreationCanvasSkin, ourNotesCreationCanvasNoteAppearance, createChartCanvasRibbonStyle, drawChartCanvasLanePlane, drawChartCanvasRibbon, interpolateNoteLine, type OurNotesCreationCanvasSkin } from "../lib/chart-creation/native-canvas-skin";
@@ -1085,7 +1085,7 @@ export class ChartCreationWorkspace extends LitElement {
         ? this.pageData?.variants[this.previewIdentity!.server]?.songs[stored.songId] : undefined;
       this.previewBandId = Number(song?.bandId ?? 0);
       this.previewJacketUrl = this.previewCoverUrl ?? (typeof song?.jacketUrl === "string"
-        ? pinnedPublicUrl(song.jacketUrl, this.previewIdentity!) : undefined);
+        ? creationArtworkUrl(song.jacketUrl, this.previewIdentity!) : undefined);
       this.previewPlayback = playback;
       this.closePanels();
       this.stageMode = "preview";

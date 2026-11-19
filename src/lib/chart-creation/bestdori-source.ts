@@ -1,4 +1,4 @@
-import { siteOrigin } from "../site-origin";
+import { publicArtworkUrl, siteOrigin } from "../site-origin";
 import { BESTDORI_SS_LANE_BASIS, bestdoriChartToSs } from "../../../packages/bestdori/src/chart";
 import { BESTDORI_CATALOG_VERSION } from "../../../packages/bestdori/src/resources";
 import { isBestdoriServer, type BestdoriServer } from "../../../packages/bestdori/src/transport";
@@ -112,10 +112,13 @@ export async function loadBestdoriCreationSongCardData(options: BestdoriCreatorO
     marks: {},
     assetUrl: (value) => {
       if (typeof value !== "string" || !value) return "";
-      const url = new URL(value, scope);
-      if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname))
-        throw new Error("bestdori_visual_url_mismatch");
-      return url.href;
+      try {
+        const url = new URL(value, scope);
+        return publicArtworkUrl(value, scope.origin) ??
+          (url.origin === scope.origin && url.pathname.startsWith(scope.pathname) ? url.href : "");
+      } catch {
+        return "";
+      }
     },
   });
 }

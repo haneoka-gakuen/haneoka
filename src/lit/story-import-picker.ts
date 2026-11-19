@@ -6,6 +6,7 @@
 import { LitElement, html, nothing } from "lit";
 import type { StudioAssetSource } from "@haneoka/altair/studio-host";
 import { haneokaResourceRequestUrl } from "@haneoka/altair-plugin-haneoka/public-resource-url";
+import { publicArtworkUrl } from "../lib/site-origin";
 import { clientText } from "../i18n/client";
 import { episodeArtwork, episodeIdentityArtwork, spotArtwork } from "../lib/story-artwork";
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
@@ -165,16 +166,16 @@ export class StoryImportPicker extends LitElement {
       };
       const [stories, characters, bands] = await Promise.all([
         read(`stories?release=${source.releaseId}`),
-        read(`characters?release=${source.releaseId}`),
-        read(`bands?release=${source.releaseId}`),
+        read(`characters?release=${source.releaseId}`).catch(() => ({})),
+        read(`bands?release=${source.releaseId}`).catch(() => ({})),
       ]);
       controller.signal.throwIfAborted();
       this.source = source;
-      this.chapters = stories.chapters;
+      this.chapters = stories.chapters ?? {};
       this.characters = characters;
       this.bands = bands;
       this.spots = new Map(
-        Object.values(stories.homeSpots as Record<string, Row>).flatMap((spot) =>
+        Object.values((stories.homeSpots ?? {}) as Record<string, Row>).flatMap((spot) =>
           ((spot.talks as Row[]) ?? []).map((talk) => [String(talk.storyKey), spot]),
         ),
       );
@@ -204,25 +205,25 @@ export class StoryImportPicker extends LitElement {
       this.provider === "sekai"
         ? ["event", "unit", "character", "card", "area", "special", "mysekai", "live"]
         : ["event", "band", "main", "afterlive"];
+    const optionalMetadata = (resource: string) => this.provider === "bestdori" ? read(resource).catch(() => ({})) : {};
     const [collections, characters, bands, cards] = await Promise.all([
-      Promise.all(
-        sections.map(async (section) =>
-          Object.values(await read(`stories/${section}`)).map((row) => ({ ...row, templateCategory: section })),
-        ),
-      ),
-      this.provider === "bestdori" ? read("characters") : {},
-      this.provider === "bestdori" ? read("bands") : {},
-      this.provider === "bestdori" ? read("cards") : {},
+      Promise.allSettled(sections.map(async (section) =>
+        Object.values(await read(`stories/${section}`)).map((row) => ({ ...row, templateCategory: section })),
+      )),
+      optionalMetadata("characters"),
+      optionalMetadata("bands"),
+      this.provider === "bestdori" ? Promise.allSettled([read("cards")]) : [],
     ]);
     signal.throwIfAborted();
     this.source = { provider: this.provider, origin: this.origin, server: this.server };
     this.characters = characters;
     this.bands = bands;
     this.spots = new Map();
-    this.filters = { ...this.filters, category: this.provider === "sekai" ? "unit" : "band" };
+    const cardCatalog = cards[0];
+    const preferred = this.provider === "sekai" ? "unit" : "band";
     this.rows = [
-      ...collections.flat(),
-      ...Object.values(cards as Record<string, Row>)
+      ...collections.flatMap((result) => result.status === "fulfilled" ? result.value : []),
+      ...Object.values(cardCatalog?.status === "fulfilled" ? cardCatalog.value : {})
         .filter((card) => card.hasStory)
         .map((card) => ({
           ...card,
@@ -236,6 +237,9 @@ export class StoryImportPicker extends LitElement {
           isCardTemplate: true,
         })),
     ];
+    this.filters = { ...this.filters, category: this.rows.some((row) => row.templateCategory === preferred) ? preferred : "" };
+    if (collections.some((result) => result.status === "rejected") || cardCatalog?.status === "rejected")
+      this.error = this.t("assetLoadFailed");
     this.chapters = Object.fromEntries(
       this.rows.map((row) => [
         String(row.chapterKey || row.chapterId),
@@ -311,15 +315,19 @@ export class StoryImportPicker extends LitElement {
         for (const value of this.values(row, axis)) counts.set(value, (counts.get(value) || 0) + 1);
     return counts;
   }
-  private url = (source: unknown) =>
-    source && this.source
-      ? this.provider !== "haneoka"
-        ? new URL(String(source), this.origin).href
-        : haneokaResourceRequestUrl(new URL(String(source), this.origin).href, {
-            ...this.source,
-            releaseId: this.source.releaseId!,
-          })
-      : "";
+  private url = (source: unknown) => {
+    if (typeof source !== "string" || !source || !this.source) return "";
+    try {
+      const url = new URL(source, this.origin).href;
+      if (this.provider !== "haneoka") return url;
+      return publicArtworkUrl(url, this.origin) ?? haneokaResourceRequestUrl(url, {
+        ...this.source,
+        releaseId: this.source.releaseId!,
+      });
+    } catch {
+      return "";
+    }
+  };
   private close = () => {
     if (!this.importing) this.dispatchEvent(new CustomEvent("story-picker-close", { bubbles: true }));
   };
@@ -412,7 +420,7 @@ export class StoryImportPicker extends LitElement {
       quickFilters: chooserGroup(
         uiText(this.locale, "catalog.fields.type"),
         html`
-          ${[...(this.provider === "haneoka" ? [""] : []), ...this.counts("category").keys()].map((value) =>
+          ${["", ...this.counts("category").keys()].map((value) =>
             filterChip({
               label: value
                 ? `${this.label("category", value)} (${this.counts("category").get(value)})`

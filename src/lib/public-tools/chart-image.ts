@@ -9,7 +9,7 @@ import { ApiClientError } from "../../../packages/api-client/src/index";
 import { buildChart, parseScore } from "@haneoka/cassiopeia-plugin-our-notes";
 import { chartCanvasOverviewPresentation } from "@haneoka/cassiopeia-ui-vue/overview";
 import { loadOurNotesCreationCanvasSkin } from "../chart-creation/native-canvas-skin";
-import { createPinnedPublicFetcher, pinnedPublicUrl } from "../chart-creation/public-songs";
+import { createPinnedPublicFetcher, creationArtworkUrl, pinnedPublicUrl } from "../chart-creation/public-songs";
 import { readBytes } from "../../../packages/embed-core/src/io";
 import { resolveLocalizedText } from "../localized-text";
 import { drawDetailedChartOverview, loadChartCanvasFonts } from "../../lit/runtime/chart-overview-renderer";
@@ -93,9 +93,9 @@ export async function renderChartImage(options: NativeChartImageOptions) {
     const publishedText = publishedAt ? new Intl.DateTimeFormat(locale, { ...(options.timeZone ? { timeZone: options.timeZone } : {}), year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(Number(publishedAt))) : "";
     const meta = createChartOverviewMeta({ song, difficulty, chartMeta: row(row(songMeta[String(difficulty.difficulty)]).chart), locale, label, localized,
       bandName: localized(band.bandName), publishedAt: publishedText,
-      bandIcon: typeof band.icon === "string" ? pinnedPublicUrl(band.icon, identity, { apiBase: apiBase.href }) : undefined,
-      attributeIcon: typeof mark === "string" ? pinnedPublicUrl(`/runtime/${server}/${mark.replace(/^runtime\//u, "")}`, identity, { apiBase: apiBase.href }) : undefined,
-      jacket: typeof song.jacketUrl === "string" ? pinnedPublicUrl(song.jacketUrl, identity, { apiBase: apiBase.href }) : undefined,
+      bandIcon: creationArtworkUrl(band.icon, identity, { apiBase: apiBase.href }) || undefined,
+      attributeIcon: creationArtworkUrl(mark, identity, { apiBase: apiBase.href }) || undefined,
+      jacket: creationArtworkUrl(song.jacketUrl, identity, { apiBase: apiBase.href }) || undefined,
     });
     const canvas = document.createElement("canvas");
     const fontFamily = await loadChartCanvasFonts(locale);

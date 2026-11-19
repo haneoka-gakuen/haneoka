@@ -3,7 +3,7 @@ import { withUiMarksProjection } from "../ui-marks";
 import type { HaneokaLocale, HaneokaReleaseIdentity } from "../../../packages/api-client/src/haneoka";
 import { readBytes } from "../../../packages/embed-core/src/io";
 import { resolveLocalizedText, resolveRelationshipText } from "../localized-text";
-import { createPinnedPublicFetcher, pinnedPublicUrl, type PublicSongSourceOptions } from "./public-songs";
+import { createPinnedPublicFetcher, creationArtworkUrl, type PublicSongSourceOptions } from "./public-songs";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../song-performer";
 
 type Row = Record<string, unknown>;
@@ -91,13 +91,7 @@ export async function loadPublicCreationSongCardData(
     bands,
     characters,
     marks,
-    assetUrl: (value) => {
-      if (typeof value !== "string" || !value) return "";
-      const source = value.startsWith("runtime/")
-        ? `/runtime/${options.identity.server}/${value.slice("runtime/".length)}`
-        : value;
-      return pinnedPublicUrl(source, options.identity, options);
-    },
+    assetUrl: (value) => creationArtworkUrl(value, options.identity, options),
   });
 }
 const difficultyNames = new Set(["easy", "normal", "hard", "expert", "master", "special"]);
@@ -111,10 +105,13 @@ export function defaultCreationDifficulty<T extends Row>(rows: readonly T[]) {
   return available.find((entry) => entry.key === "expert") ?? available[0];
 }
 /** A source-complete song DTO for the existing songTile; the original full-resolution jacket leads. */
-export function creationSongCard<T extends Row>(row: T, context: CreationSongCardData, locale: string) {
+export function creationSongCredits(row: Row, context: CreationSongCardData, locale: string) {
   const performer = resolveSongPerformer(row, context.performers);
   const authored = resolveLocalizedText(row.artistName, locale).text || resolveLocalizedText(row.bandName, locale).text;
-  const artist = authored || resolveRelationshipText(performer.names, locale).text;
+  return { performer, artist: authored || resolveRelationshipText(performer.names, locale).text };
+}
+export function creationSongCard<T extends Row>(row: T, context: CreationSongCardData, locale: string) {
+  const { performer, artist } = creationSongCredits(row, context, locale);
   const musicType = Number(row.musicType),
     color = ["", "Red", "Blue", "Green", "Yellow", "Purple"][musicType];
   const attributeIconUrl = color

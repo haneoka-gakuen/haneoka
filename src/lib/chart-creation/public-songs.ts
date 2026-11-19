@@ -1,4 +1,4 @@
-import { siteAssetUrl, siteOrigin } from "../site-origin";
+import { publicArtworkUrl, siteAssetUrl, siteOrigin } from "../site-origin";
 import {
   createHaneokaClient,
   type HaneokaLocale,
@@ -102,6 +102,21 @@ export function createPinnedPublicFetcher(
     }
     return response;
   };
+}
+/** Visual decorations can use the site publication or the selected game release. */
+export function creationArtworkUrl(
+  value: unknown, identity: HaneokaReleaseIdentity, options: PublicSongSourceOptions = {},
+): string {
+  if (typeof value !== "string" || !value) return "";
+  const origin = new URL(options.apiBase ?? siteOrigin()).origin;
+  const artwork = publicArtworkUrl(value, origin);
+  if (artwork) return artwork;
+  const source = value.startsWith("runtime/") ? `/runtime/${identity.server}/${value.slice(8)}` : value;
+  try {
+    return pinnedPublicUrl(source, identity, options);
+  } catch {
+    return "";
+  }
 }
 async function bytes(response: Response, signal: AbortSignal, maxBytes: number) {
   return readBytes(response, { signal, maxBytes, locale: "en", fetcher: fetch, progress: () => {} });

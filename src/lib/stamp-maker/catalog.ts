@@ -78,8 +78,10 @@ export function stampChoices(catalog: JsonRecord, locale: string, imageLanguage 
       });
       if (original && !Object.keys(variants).length)
         versions.push(...languages.map((language) => ({ language, url: original })));
-      const source = versions.find((version) => version.language === language)?.url;
-      if (!source) return [];
+      const requested = versions.find((version) => version.language === language)?.url;
+      const sources = [...new Set([requested, original, ...versions.map((version) => version.url)])]
+        .filter((url): url is string => Boolean(url));
+      if (!sources.length) return [];
       const resourceName =
         image
           .split(/[?#]/u)[0]!
@@ -91,7 +93,7 @@ export function stampChoices(catalog: JsonRecord, locale: string, imageLanguage 
           id,
           resourceName,
           label: localizedText(stamp.name, locale) || resourceName,
-          sources: [source],
+          sources,
           variants: versions,
           characterIds: Array.isArray(stamp.characterIds) ? stamp.characterIds.map(String) : [],
         },

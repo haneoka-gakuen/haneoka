@@ -872,8 +872,8 @@ export class StoryCreationWorkspace extends LitElement {
       select: selectAsset,
       countLabel: this.assetLibraryBusy
         ? this.t("loading")
-        : this.t("assetCount").replace("{count}", String(nodes.length)),
-      emptyLabel: this.assetLibraryBusy ? this.t("loading") : this.t("assetEmpty"),
+        : this.assetCatalogue ? this.t("assetCount").replace("{count}", String(nodes.length)) : "",
+      emptyLabel: this.assetLibraryBusy || !this.assetCatalogue ? "" : this.t("assetEmpty"),
       preview: html`
         ${this.assetLibraryBusy ? loadingState(this.t("loading"), { local: true }) : nothing}
         ${

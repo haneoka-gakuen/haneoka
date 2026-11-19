@@ -11,7 +11,7 @@ import { difficultyPicker } from "./ui/difficulty-picker";
 import { LazyImages } from "./ui/lazy-images";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { localizedFallbacks, resolveLocalizedText } from "../lib/localized-text";
-import { creationSongCard, createCreationSongCardData, defaultCreationDifficulty, loadPublicCreationSongCardData, type CreationSongCardData } from "../lib/chart-creation/song-card";
+import { creationSongCard, creationSongCredits, createCreationSongCardData, defaultCreationDifficulty, loadPublicCreationSongCardData, type CreationSongCardData } from "../lib/chart-creation/song-card";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { isReleasedContent } from "../lib/content-release";
 import { needsEventSongRelease, withEventSongRelease } from "../lib/event-song-release";
@@ -24,6 +24,7 @@ import { loadingState } from "./ui/state";
 import {
   PublicCreationCatalogueReader,
   loadPublicCreationSong,
+  creationArtworkUrl,
   pinnedPublicUrl,
   type PublicCreationSong,
 } from "../lib/chart-creation/public-songs";
@@ -293,7 +294,7 @@ export class ChartCreationLibrary extends LitElement {
         : provider === "sekai" ? await loadSekaiCreationSongCardData({ locale, signal: controller.signal })
         : seed ? createCreationSongCardData({ provider: "haneoka", identity: seed.identity,
           bands: seed.bands, characters: seed.characters, marks: seed.marks,
-          assetUrl: value => typeof value === "string" && value ? pinnedPublicUrl(value.startsWith("runtime/") ? `/runtime/${seed.identity.server}/${value.slice("runtime/".length)}` : value, seed.identity) : "" })
+          assetUrl: value => creationArtworkUrl(value, seed.identity) })
         : await loadPublicCreationSongCardData({ identity: identity!, locale: this.apiLocale(), signal: controller.signal });
       controller.signal.throwIfAborted();
       if (this.filterController !== controller || this.identity !== identity || this.provider !== provider || this.bestdoriRegion !== region || this.locale !== locale || this.items !== items || !this.opened || !this.isConnected) return;
@@ -314,7 +315,7 @@ export class ChartCreationLibrary extends LitElement {
   private image(source: unknown) {
     if (typeof source !== "string" || !source) return "";
     if (this.filterCatalog) return this.filterCatalog.assetUrl(source);
-    return this.provider !== "haneoka" ? siteAssetUrl(source) : this.identity ? pinnedPublicUrl(source, this.identity) : "";
+    return this.provider !== "haneoka" ? siteAssetUrl(source) : this.identity ? creationArtworkUrl(source, this.identity) : "";
   }
   private renderFilters() {
     const { bands: fallbackBands, rows } = this.searchIndex();
@@ -374,7 +375,10 @@ export class ChartCreationLibrary extends LitElement {
         const ref: Extract<ChartMediaRef, { kind: "server" }> = this.provider === "bestdori"
           ? { kind: "server", provider: "bestdori", server: this.bestdoriRegion, songId: this.chosen }
           : { kind: "server", provider: "our-notes", server: this.identity!.server, releaseId: this.identity!.releaseId, songId: this.chosen };
-        await this.onChooseMedia({ ref, url: this.provider === "haneoka" ? pinnedPublicUrl(url, this.identity!) : siteAssetUrl(url), title: songTitle(selected as CatalogueRecord, this.locale).text }, controller.signal);
+        const mediaUrl = this.provider !== "haneoka" ? siteAssetUrl(url) : this.mediaKind === "cover"
+          ? creationArtworkUrl(url, this.identity!) : pinnedPublicUrl(url, this.identity!);
+        if (!mediaUrl) throw new Error("resource_source_mismatch");
+        await this.onChooseMedia({ ref, url: mediaUrl, title: songTitle(selected as CatalogueRecord, this.locale).text }, controller.signal);
         controller.signal.throwIfAborted(); this.close();
       } catch { if (!controller.signal.aborted) this.error = this.t("loadFailed"); }
       finally { if (this.controller === controller) { this.busy = false; this.controller = undefined; } }
@@ -439,7 +443,7 @@ export class ChartCreationLibrary extends LitElement {
       searchText: [id, String(value.musicId),
         songTitle(value as unknown as Record<string, unknown>, this.locale).text,
         resolveLocalizedText(value.musicTitle, this.locale).text,
-        this.filterCatalog ? creationSongCard(value, this.filterCatalog, this.locale).artist : resolveLocalizedText(value.bandName, this.locale).text,
+        this.filterCatalog ? creationSongCredits(value, this.filterCatalog, this.locale).artist : resolveLocalizedText(value.bandName, this.locale).text,
       ].join(" ").normalize("NFKC").toLocaleLowerCase(),
     }));
     const bands = [...new Map(rows.map(({ value }) => [
@@ -499,8 +503,8 @@ export class ChartCreationLibrary extends LitElement {
       items,
       selected: this.chosen,
       select: (id) => this.choose(id),
-      countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "common.states.loading") : String(matching.length),
-      emptyLabel: this.busy ? "" : clientText(this.locale, "common.states.empty"),
+      countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "common.states.loading") : this.indexLoaded ? String(matching.length) : "",
+      emptyLabel: this.busy || !this.indexLoaded ? "" : clientText(this.locale, "common.states.empty"),
       filters: this.renderFilters(),
       preview: html`
         ${this.busy ? loadingState(clientText(this.locale, "common.states.loading"), { local: true }) : nothing}
@@ -517,7 +521,7 @@ export class ChartCreationLibrary extends LitElement {
             ? html`
                 <strong lang=${songTitle(selected as unknown as Record<string, unknown>, this.locale).locale}>${songTitle(selected as unknown as Record<string, unknown>, this.locale).text}</strong>
                 ${this.mediaKind ? nothing : difficultyPicker({ rows: selected.difficulty as unknown as Record<string, unknown>[], selected: this.difficulty, locale: this.locale, onSelect: (key) => (this.difficulty = key) })}
-                <button class="button button--filled" ?disabled=${this.busy || !this.difficulty} @click=${() => void this.importChosen()}>
+                <button class="button button--filled" ?disabled=${this.busy || (!this.mediaKind && !this.difficulty)} @click=${() => void this.importChosen()}>
                   ${this.mediaKind ? clientText(this.locale, `community.charts.${this.mediaKind === "audio" ? "useAudio" : "useCover"}`) : this.t("importServerBoth")}
                 </button>
               `

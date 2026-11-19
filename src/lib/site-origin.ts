@@ -26,6 +26,17 @@ export function siteAssetUrl(value: string, origin = siteOrigin()): string {
   return isSiteOrigin(url.origin) ? new URL(`${url.pathname}${url.search}${url.hash}`, origin).href : url.href;
 }
 
+/** Static publication artwork has a content hash and is independent of the game release. */
+export function publicArtworkUrl(value: string, origin = siteOrigin()): string | undefined {
+  try {
+    const url = new URL(siteAssetUrl(value, origin));
+    if (url.origin === origin && /^\/public-media\/[a-f0-9]{64}\.(?:avif|gif|jpe?g|png|webp)$/u.test(url.pathname)) {
+      return url.href;
+    }
+  } catch {
+    return undefined;
+  }
+}
 export function siteLink(value: string, origin = siteOrigin()): string {
   if (!/^(?:https?:)?\/\//u.test(value)) return value;
   const url = new URL(value, origin);
