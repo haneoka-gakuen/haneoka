@@ -256,6 +256,7 @@
     "scripts/core/contracts.py",
     "scripts/core/manifests.py",
     "scripts/build/api.py",
+    "scripts/build/card_acquisition.py",
     "scripts/build/card_videos.py",
     "scripts/build/voice_catalog.py",
     "scripts/build/game_systems.py",

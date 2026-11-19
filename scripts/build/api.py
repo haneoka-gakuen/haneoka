@@ -26,7 +26,7 @@ from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Literal
+from typing import Any, Iterable
 
 from core.config import ServerConfig
 from core.server_policy import is_validation_source, project_catalog
@@ -42,6 +42,7 @@ from core.paths import build_layout
 from core.unity_objects import iter_unity_object_archive
 from build.anon_tokyo import build_anon_tokyo_catalog
 from build.collectibles import build_backgrounds, build_stickers, build_chat_customizations
+from build.card_acquisition import set_card_types
 from build.card_videos import build_card_videos
 from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
@@ -1446,62 +1447,6 @@ def _skills(
     return output
 
 
-# dreamfes and campaign are reserved until Master provides evidence for those releases.
-MemberCardAcquisitionType = Literal[
-    "permanent", "limited", "birthday", "event", "unknown", "dreamfes", "campaign",
-]
-
-
-def _set_member_card_types(data: BuildData, cards: dict[str, Any], systems: dict[str, Any]) -> None:
-    """Classify member acquisition from the same server's draw pools and event rewards."""
-    debut: dict[str, set[MemberCardAcquisitionType]] = {}
-    regular_pool: set[str] = set()
-    pools = systems.get("gacha", {}).get("entries", {})
-    for row in data.rows("MasterGacha"):
-        pool = pools.get(str(row.get("_id")))
-        limited = row.get("_isLimited")
-        if not pool or pool["category"] != "stars" or not isinstance(limited, bool):
-            continue
-        # An open, unrestricted star pool provides permanent availability even for
-        # launch cards whose master release predates the first pickup banners.
-        regular = (
-            not limited
-            and "_endAt" in row and row["_endAt"] in ("", None, "null")
-            and pool["displayCondition"] == 1
-            and not pool["beginnerHours"] and not pool["comebackHours"]
-        )
-        start = pool["startAt"][0]
-        for prize in pool["rewards"]:
-            key = str(prize["resourceId"])
-            if prize["resourceType"] != 2 or key not in cards or prize["rate"] <= 0:
-                continue
-            if regular:
-                regular_pool.add(key)
-            if start and prize["pickup"] and start == cards[key]["releasedAt"][0]:
-                kind: MemberCardAcquisitionType = "permanent"
-                if limited:
-                    kind = "birthday" if cards[key]["rarity"] == 20 else "limited"
-                debut.setdefault(key, set()).add(kind)
-
-    for event in systems.get("events", {}).get("entries", {}).values():
-        start = event["startAt"][0]
-        for reward in event["rewards"]:
-            if reward["sourceTable"] != "MasterEventAchievementReward" or reward["resourceType"] != 2:
-                continue
-            key = str(reward["resourceId"])
-            if start and key in cards and start == cards[key]["releasedAt"][0] and reward["resourceCount"] > 0:
-                debut.setdefault(key, set()).add("event")
-
-    for key, card in cards.items():
-        kinds = debut.get(key, set())
-        if len(kinds) == 1:
-            card["type"] = next(iter(kinds))
-        elif not kinds and key in regular_pool:
-            card["type"] = "permanent"
-        else:
-            card["type"] = "unknown"
-
-
 def _cards(data: BuildData, table: str, support: bool = False) -> dict[str, Any]:
     def resolve_skill(
         identity: int,
@@ -1591,7 +1536,6 @@ def _cards(data: BuildData, table: str, support: bool = False) -> dict[str, Any]
             rarity=int(row.get("_rarity") or 0),
             cardType=int(row.get("_cardType") or 0),
             assetId=int(row.get("_assetID") or 0),
-            type="initial" if support else None,
             releasedAt=_timestamp(row.get("_startAt")),
             skillId=skill_id,
             liveSkillId=skill_id if not support else None,
@@ -8922,7 +8866,8 @@ def build_api(
         "feature-status": project("feature-status", _feature_status, data),
     }
     systems = project("game systems", build_game_systems, data, documents, RESOURCE_TYPES, _timestamp)
-    _set_member_card_types(data, documents["cards"], systems)
+    set_card_types(data, documents["cards"], systems, resource_type=2)
+    set_card_types(data, documents["support-cards"], systems, resource_type=3)
     documents.update(systems)
     if data.server == "jp":
         documents["shop"] = bind_jp_shop_metadata(documents["shop"], data.rows("MasterShop"))
