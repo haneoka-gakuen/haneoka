@@ -310,6 +310,11 @@ const publicForumsDataId = "shell-public-forums";
         {entity?.menuFirst && <div class="top-app-bar__group" data-entity-menu-first-group><button class="icon-button top-app-bar__menu" type="button" data-entity-menu-first data-nav-toggle aria-controls="global-navigation" aria-expanded="false" aria-label={t(locale, "navigation.menu", "Menu")} data-i18n-aria-label="navigation.menu" data-i18n-aria-label-fallback="Menu"><Icon name="menu" /></button></div>}
         <div class="top-app-bar__player" data-app-bar-player></div>
         {appBar && <Fragment set:html={appBar.actions} />}
+        {locale === "en" && (
+          <button class="icon-button" type="button" data-interface-share hidden>
+            <Icon name="share" />
+          </button>
+        )}
         {entity && (!entity.menuFirst || entity.previous || entity.next) && (
           <div class="top-app-bar__secondary-actions">
             {!entity.menuFirst && <button

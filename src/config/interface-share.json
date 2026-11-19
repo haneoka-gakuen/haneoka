@@ -1,0 +1,40 @@
+{
+  "home": { "key": "navigation.home", "icon": "home", "section": "home", "paths": [] },
+  "songs": {
+    "key": "navigation.songs",
+    "icon": "library_music",
+    "section": "library",
+    "paths": ["/songs", "/catalog/songs", "/music", "/community/gbp/songs", "/community/sekai/songs"]
+  },
+  "cards": {
+    "key": "navigation.cards",
+    "icon": "cards",
+    "section": "library",
+    "paths": ["/member-cards", "/support-cards", "/catalog/member-cards", "/catalog/support-cards"]
+  },
+  "stories": {
+    "key": "navigation.stories",
+    "icon": "auto_stories",
+    "section": "stories",
+    "paths": ["/stories", "/catalog/stories", "/community/gbp/stories", "/community/sekai/stories"]
+  },
+  "events": {
+    "key": "navigation.events",
+    "icon": "event",
+    "section": "library",
+    "paths": ["/events", "/catalog/events", "/calendar", "/announcements"]
+  },
+  "catalog": {
+    "key": "navigation.catalog",
+    "icon": "category",
+    "section": "library",
+    "paths": ["/catalog", "/characters", "/items", "/skills"]
+  },
+  "tools": {
+    "key": "navigation.tools",
+    "icon": "construction",
+    "section": "tools",
+    "paths": ["/tools", "/team-builder", "/chart-editor", "/song-puzzle", "/stamp-maker", "/live2d", "/spine"]
+  },
+  "community": { "key": "navigation.community", "icon": "forum", "section": "community", "paths": ["/community"] }
+}

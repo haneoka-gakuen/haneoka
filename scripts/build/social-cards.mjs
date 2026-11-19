@@ -22,10 +22,15 @@ const FONT = {
   "zh-CN": "Noto Sans SC Variable",
   ko: "Noto Sans KR Variable",
 };
+const interfaceOnly = process.argv.includes("--interface");
+const latinFont = interfaceOnly ? "Roboto Variable" : "Roboto";
 const catalogs = Object.fromEntries(
   LOCALES.map((locale) => [locale, JSON.parse(fs.readFileSync(`public/i18n/${locale}.json`, "utf8"))]),
 );
-const label = (locale, key) => key.split(".").reduce((value, part) => value?.[part], catalogs[locale]);
+const label = (locale, key) =>
+  key.split(".").reduce((value, part) => value?.[part], catalogs[locale]) ??
+  key.split(".").reduce((value, part) => value?.[part], catalogs.en);
+const socialLabels = JSON.parse(fs.readFileSync("src/config/interface-share.json", "utf8"));
 const sprite = fs.readFileSync(".generated-public/icons.svg", "utf8");
 const symbol = (name) =>
   new RegExp(`<symbol id="${name}-filled"[^>]*>[\\s\\S]*?</symbol>`)
@@ -124,10 +129,13 @@ function page({ width, height, icons, art, copy, extraCss = "" }) {
         `<link rel="stylesheet" href="${file(`node_modules/@fontsource-variable/noto-sans-${name}/wght.css`)}">`,
     )
     .join("");
-  return `<!doctype html><html><head><meta charset="utf-8">${fonts}<style>
+  const extendedFont = interfaceOnly
+    ? `<link rel="stylesheet" href="${file("node_modules/@fontsource-variable/roboto/wght.css")}">`
+    : "";
+  return `<!doctype html><html><head><meta charset="utf-8">${fonts}${extendedFont}<style>
 @font-face{font-family:Roboto;src:url("${file("node_modules/@fontsource-variable/roboto/files/roboto-latin-wght-normal.woff2")}") format("woff2");font-weight:100 900}
 *{margin:0;box-sizing:border-box}
-html,body{width:${width}px;height:${height}px;overflow:hidden;background:${C.surface};font-family:Roboto,sans-serif}
+html,body{width:${width}px;height:${height}px;overflow:hidden;background:${C.surface};font-family:'${latinFont}',sans-serif}
 .art{position:absolute;inset:0}
 .brand{display:flex;align-items:center;gap:14px;font-size:30px;font-weight:650;color:${C.onSurface}}
 .brand img{width:56px;height:56px}
@@ -156,7 +164,7 @@ document.fonts.ready.then(() => {
 </script></body></html>`;
 }
 const names = (values, size) =>
-  `<ul class="names">${values.map(([locale, text]) => `<li lang="${locale}" style="font-family:'${FONT[locale]}';font-size:${size}px;line-height:${size + 7}px">${escape(text)}</li>`).join("")}</ul>`;
+  `<ul class="names">${values.map(([locale, text]) => `<li lang="${locale}" style="font-family:'${FONT[locale] || latinFont}',sans-serif;font-size:${size}px;line-height:${size + 7}px">${escape(text)}</li>`).join("")}</ul>`;
 const LOCALIZED_SITE = Object.fromEntries(
   ["ja", "zh-TW", "zh-CN", "ko"].map((locale) => [
     locale,
@@ -227,7 +235,7 @@ function localizedSiteCard(locale) {
           `<span class="chip">${image}</svg>${escape(label(locale, FEATURE_LABELS[index++]))}</span>`;
       })(),
     )
-    .replace("h2{font-weight", `h2{font-family:'${FONT[locale] || "Roboto"}';font-weight`);
+    .replace("h2{font-weight", `h2{font-family:'${FONT[locale] || latinFont}',sans-serif;font-weight`);
 }
 
 function headerCard() {
@@ -265,7 +273,7 @@ ${icon(entry.icon, 785, 192, 240, palette.icon)}
 <image href="${file("public/favicon.svg")}" x="1050" y="468" width="120" height="120"/>`;
   const copy = `<div style="position:absolute;left:64px;top:44px;width:600px">
 <div class="brand"><img src="${file("public/favicon.svg")}" alt="">haneoka</div>
-<h1 data-fit="76,2" lang="${locale || "en"}" style="font-family:'${FONT[locale] || "Roboto"}';margin-top:34px;font-size:76px;width:600px">${escape(title)}</h1>
+<h1 data-fit="76,2" lang="${locale || "en"}" style="font-family:'${FONT[locale] || latinFont}',sans-serif;margin-top:34px;font-size:76px;width:600px">${escape(title)}</h1>
 <h2 style="margin-top:12px;font-size:30px">BanG Dream! Our Notes</h2>
 <div style="margin-top:18px">${locale ? names([[locale, siteSubtitle(locale)]], 24) : names(localized, 22)}</div>
 ${locale ? `<div style="margin-top:32px;font-size:24px;color:${C.onSurfaceVariant}">haneoka.org</div>` : ""}</div>`;
@@ -299,6 +307,89 @@ function render(html, width, height, output) {
     output,
   ]);
   return crypto.createHash("sha256").update(fs.readFileSync(output)).digest("hex").slice(0, 10);
+}
+
+async function interfacePreviews() {
+  const localesBundle = path.join(work, "interface-options.mjs");
+  await build({
+    entryPoints: ["src/i18n/interface-language-options.ts"],
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    outfile: localesBundle,
+  });
+  const { interfaceLanguages } = await import(pathToFileURL(localesBundle).href);
+  const { outputFiles } = await build({
+    stdin: {
+      contents:
+        'import { openInterfaceShare } from "./src/i18n/interface-share"; openInterfaceShare(document.documentElement.dataset.interface);',
+      resolveDir: root,
+    },
+    bundle: true,
+    minify: true,
+    write: false,
+    legalComments: "none",
+  });
+  const redirect = outputFiles[0].text.replaceAll("</script", "<\\/script");
+  const attr = (value) => escape(value).replaceAll('"', "&quot;");
+  let count = 0;
+  for (const { value: locale, tag } of interfaceLanguages) {
+    catalogs[locale] = JSON.parse(fs.readFileSync(`src/i18n/interface/${locale}.json`, "utf8"));
+    let index = 0;
+    for (const [id, entry] of Object.entries(socialLabels)) {
+      const home = id === "home";
+      const title = home
+        ? label(locale, "common.seo.homeTitle")
+        : `${label(locale, entry.key)} - ${label(locale, "common.seo.siteTitle")}`;
+      const filename = `images/social/${locale}/${id}.png`;
+      const image = home
+        ? localizedSiteCard(locale)
+        : sectionCard({ label: entry.key, icon: entry.icon }, entry.section, index++, locale);
+      const digest = render(image, 1200, 630, `public/${filename}`);
+      const src = attr(`https://haneoka.org/${filename}?v=${digest}`);
+      const directory = `public/share-preview/${locale}/p-${id}`;
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(
+        `${directory}/index.html`,
+        `<!doctype html>
+<html lang="${tag}" data-interface="${locale}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, follow">
+<title>${escape(title)}</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="haneoka">
+<meta property="og:locale" content="${tag.replace("-", "_")}">
+<meta property="og:title" content="${attr(title)}">
+<meta property="og:image" content="${src}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${attr(title)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${attr(title)}">
+<meta name="twitter:image" content="${src}">
+<script>${redirect}</script>
+</head>
+<body>
+<h1>${escape(title)}</h1>
+<a href="/en/">${escape(label(locale, "navigation.home"))}</a>
+</body>
+</html>
+`,
+      );
+      count++;
+    }
+  }
+  console.log(`rendered ${count} interface share previews`);
+}
+if (interfaceOnly) {
+  try {
+    await interfacePreviews();
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  process.exit(0);
 }
 
 const manifest = {};

@@ -219,7 +219,8 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
         }
       })();
     </script>
-    <title>{fullTitle}</title>
+    <title data-interface-title-key={locale === "en" && !seoTitleValues && route !== "/" ? titleKey : undefined}
+      data-interface-title-original={locale === "en" && !seoTitleValues && route !== "/" && titleKey ? fullTitle : undefined}>{fullTitle}</title>
     <meta name="description" content={summary} />
     {!noindex && keywords && <meta name="keywords" content={keywords} />}
     <meta property="og:type" content="website" />

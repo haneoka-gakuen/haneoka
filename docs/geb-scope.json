@@ -176,6 +176,7 @@
     "src/lit/runtime/vega-story-stage.ts",
     "src/i18n/client.ts",
     "src/i18n/interface-languages.ts",
+    "src/i18n/interface-share.ts",
     "src/i18n/server.ts",
     "src/lib/team-builder/data.ts",
     "src/lib/team-builder/arena.ts",

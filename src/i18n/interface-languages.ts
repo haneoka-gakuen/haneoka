@@ -15,28 +15,21 @@ import {
   type MessageTree,
 } from "@haneoka/i18n";
 
-export const interfaceLanguages = [
-  { value: "de", label: "Deutsch", tag: "de-DE" },
-  { value: "es", label: "Español", tag: "es-ES" },
-  { value: "fr", label: "Français", tag: "fr-FR" },
-  { value: "id", label: "Bahasa Indonesia", tag: "id-ID" },
-  { value: "it", label: "Italiano", tag: "it-IT" },
-  { value: "pl", label: "Polski", tag: "pl-PL" },
-  { value: "pt", label: "Português (Brasil)", tag: "pt-BR" },
-  { value: "ru", label: "Русский", tag: "ru-RU" },
-  { value: "th", label: "ไทย", tag: "th-TH" },
-  { value: "vi", label: "Tiếng Việt", tag: "vi-VN" },
-] as const;
+import {
+  interfaceLanguages,
+  SHARE_LANGUAGE_STORAGE_KEY,
+  type InterfaceLanguage,
+  type InterfaceLanguageId,
+} from "./interface-language-options";
+export { interfaceLanguages, type InterfaceLanguageId } from "./interface-language-options";
 
-type InterfaceLanguage = (typeof interfaceLanguages)[number];
-export type InterfaceLanguageId = InterfaceLanguage["value"];
 export const INTERFACE_LANGUAGE_EVENT = "haneoka:interface-language";
 const STORAGE_KEY = "haneoka.interface-language";
 const sources = import.meta.glob<MessageCatalog>("./interface/*.json", { import: "default" });
 
 export function readInterfaceLanguage(): InterfaceLanguage | undefined {
   try {
-    const value = localStorage.getItem(STORAGE_KEY);
+    const value = sessionStorage.getItem(SHARE_LANGUAGE_STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
     return interfaceLanguages.find((language) => language.value === value);
   } catch {
     return undefined;
@@ -45,6 +38,7 @@ export function readInterfaceLanguage(): InterfaceLanguage | undefined {
 
 export function writeInterfaceLanguage(value?: InterfaceLanguageId): void {
   try {
+    sessionStorage.removeItem(SHARE_LANGUAGE_STORAGE_KEY);
     if (value) localStorage.setItem(STORAGE_KEY, value);
     else localStorage.removeItem(STORAGE_KEY);
   } catch {
