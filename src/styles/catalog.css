@@ -1,5 +1,6 @@
 @import "./patterns/song.css";
 @import "./patterns/chart.css";
+@import "./patterns/announcement-link.css";
 
 @layer pages {
   /* ==========================================================================

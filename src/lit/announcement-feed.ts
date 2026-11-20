@@ -85,7 +85,7 @@ export class AnnouncementFeed extends LitElement {
   render() {
     return this.phase === "ready" && this.entries.length
       ? html`
-          <ul class="list list--divided announcement-list" role="list">
+          <ul class=${this.limit > 0 ? "list announcement-list announcement-list--compact" : "list announcement-list"} role="list">
             ${(this.limit > 0 ? this.entries.slice(0, this.limit) : this.entries).map((entry) => announcementRow(entry, this.server, this.locale))}
           </ul>
         `

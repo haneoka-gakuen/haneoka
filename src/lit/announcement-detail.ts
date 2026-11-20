@@ -4,16 +4,15 @@ import { clientText } from "../i18n/client";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { isLocale, type Locale } from "../i18n/locales";
 import {
-  announcementDate,
-  announcementDatetime,
   announcementLanguage,
   announcementPath,
   AnnouncementRequestError,
   fetchAnnouncement,
   parseAnnouncementRoute,
+  safeAnnouncementUrl,
   type Announcement,
 } from "../lib/announcements";
-import { announcementBodyFragment, announcementBodyMarkup, safeAnnouncementUrl } from "../lib/announcement-body";
+import { announcementBodyFragment, announcementBodyMarkup, isAnnouncementIllustration } from "../lib/announcement-body";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
@@ -23,7 +22,8 @@ import { navigationDocumentUrl } from "../lib/document-url";
 import { RequestScope } from "../lib/request-scope";
 import { entityDiscussion } from "./ui/entity-discussion";
 import {
-  announcementCategory,
+  announcementBanner,
+  announcementMetadata,
   announcementState,
   announcementText,
   type AnnouncementPhase,
@@ -193,41 +193,28 @@ export class AnnouncementDetail extends LitElement {
         </div>
       `;
     const image = entry.bodyImage ? safeAnnouncementUrl(entry.bodyImage, true) : "";
-    const includesImage =
-      image && (this.staticBody?.images.includes(image) || [...(this.body?.querySelectorAll("img") || [])].some((node) => node.getAttribute("src") === image));
+    const bodyImages = [...(this.body?.querySelectorAll("img") || [])];
+    const images = this.staticBody?.images ?? bodyImages.map(node => node.getAttribute("src"));
+    const illustrated = this.staticBody?.illustrated ?? bodyImages.some(node => isAnnouncementIllustration(node.getAttribute("width")));
+    const banner = entry.banner ? safeAnnouncementUrl(entry.banner, true) : "";
+    const fallbackImage = image && !illustrated && !images.includes(image) && image !== banner;
+    const headerBanner = banner && !illustrated && !images.includes(banner) && !fallbackImage;
+    const hasBody = Boolean(this.staticBody?.text.trim() || this.body?.textContent?.trim() || images.length || fallbackImage || headerBanner);
     return html`
       <article class="announcement-page announcement-detail" aria-labelledby="announcement-title">
-        <section
-          class="detail-section announcement-detail__meta"
+        <header
+          class="announcement-detail__header"
           aria-label=${announcementText(this.locale, "information", "Announcement information")}
         >
-          <div class="cluster">
-            <span class="chip">${announcementCategory(entry, this.locale)}</span>
-            ${
-              entry.pinned
-                ? html`
-                    <span class="chip">${announcementText(this.locale, "pinned", "Pinned")}</span>
-                  `
-                : nothing
-            }
-          </div>
-          <dl class="spec-list spec-list--split spec-list--numeric">
-            <div>
-              <dt>${announcementText(this.locale, "published", "Published")}</dt>
-              <dd>
-                <time datetime=${announcementDatetime(entry.startAt)}>
-                  ${announcementDate(entry.startAt, this.locale, true)}
-                </time>
-              </dd>
-            </div>
-          </dl>
-        </section>
+          <div class="announcement-meta">${announcementMetadata(entry, this.locale, undefined, true)}</div>
+          ${headerBanner ? announcementBanner(entry) : nothing}
+        </header>
         <section
           class="detail-section announcement-detail__content"
           aria-label=${announcementText(this.locale, "content", "Announcement content")}
         >
           ${
-            image && !includesImage
+            fallbackImage
               ? html`
                   <img
                     class="announcement-detail__image"
@@ -250,7 +237,7 @@ export class AnnouncementDetail extends LitElement {
           }
           ${this.body || (this.staticBody ? html`<div class="prose announcement-body" lang=${announcementLanguage(entry, this.route.server)}>${unsafeHTML(this.staticBody.markup)}</div>` : nothing)}
           ${
-            !image && !this.staticBody?.text.trim() && !this.staticBody?.images.length && !this.body?.textContent?.trim() && !this.body?.querySelector("img")
+            !hasBody
               ? html`
                   <p class="md-body-medium md-on-surface-variant" role="status">
                     ${announcementText(this.locale, "bodyUnavailable", "The announcement content is unavailable.")}

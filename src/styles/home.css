@@ -523,15 +523,6 @@
     white-space: nowrap;
     font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
   }
-  .home-info .announcement-row__meta {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 8px;
-  }
-  .home-info .announcement-row__thumbnail {
-    width: 56px;
-    height: 32px;
-  }
   .home-info__body > li {
     flex: none;
     min-width: 0;

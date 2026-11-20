@@ -124,6 +124,7 @@
     "src/lit/admin-workspace.ts",
     "src/lib/card-growth.ts",
     "src/lib/card-growth-data.ts",
+    "src/lib/card-acquisition.ts",
     "src/lib/growth-comparison.ts",
     "src/server/growth-page-data.ts",
     "src/server/high-score-rating-page-data.ts",

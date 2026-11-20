@@ -37,6 +37,9 @@ import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
 import { cardTile } from "./shared/card-tile";
+import { announcementLink } from "./shared/announcement";
+import { announcementPath, parseAnnouncementRoute } from "../lib/announcements";
+import { loadCardAcquisitionSources, readCardAcquisitionCatalogue, type CardAcquisitionSource } from "../lib/card-acquisition";
 import { catalogCharacterRelationship } from "./shared/catalog-relationships";
 import {
   serverAvailabilityBadge,
@@ -116,7 +119,7 @@ import {
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import { songDetailActions, chartPageActions } from "./ui/song-actions";
 import { RequestScope } from "../lib/request-scope";
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { clientText } from "../i18n/client";
 import {
   catalogUrl,
@@ -191,7 +194,7 @@ import {
   type ResourceKind,
 } from "../lib/resource-route";
 import { isPublicReleaseServer, normalizeReleaseServer, type ReleaseServer } from "../lib/release-server";
-import { LOCALES, type Locale } from "../i18n/locales";
+import { isLocale, LOCALES, type Locale } from "../i18n/locales";
 import { metaScatter } from "./shared/meta-scatter";
 
 /** Collections whose detail is a picture and a few facts: comments go below, full width. */
@@ -2595,13 +2598,13 @@ export class CatalogScreen extends LitElement {
     if (changed) this.prepareCollection({ ...payload, catalogs: { ...payload.catalogs, songs: { ...dto, entries } } }, config);
   }
   async prepareEntity(payload: EntityPayload, config: string = this.config, signal?: AbortSignal): Promise<void> {
-    const commit = await this.stageEntity(payload, config);
+    const commit = await this.stageEntity(payload, config, false, signal);
     if (signal && (!this.isConnected || !this.catalogRequests.current(signal))) return;
     commit();
     if (signal) this.restoreDetailQuery();
     if (this.settings.chartPage && typeof window !== "undefined" && this.isConnected) await this.ensureChartPlayer();
   }
-  async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false): Promise<() => void> {
+  async stageEntity(payload: EntityPayload, config: string = this.config, preserveInput = false, signal?: AbortSignal): Promise<() => void> {
     const identity = nativeMetaIdentity(payload), relatedSongs = payload.aux?.songs as Record<string, Item> | undefined;
     const frozenRates = payload.aux?.chartRates;
     if (payload.resource === "songs" && identity && frozenRates) {
@@ -2620,12 +2623,15 @@ export class CatalogScreen extends LitElement {
     const settings = JSON.parse(config || "{}") as Config;
     const profile = profiles[settings.resource] ?? fallbackProfile;
     const card = ["member", "support"].includes(profile.presentation);
-    const [skill, cards, rewards, systems] = await Promise.all([
+    const [skill, cards, rewards, systems, , acquisitionSources] = await Promise.all([
       card ? import("./shared/skill-text") : undefined,
       card ? import("./card-detail") : undefined,
       profile.presentation === "song" ? import("./song-detail-rewards") : undefined,
       profile.presentation === "system" ? import("./game-system-detail") : undefined,
       profile.presentation === "character" ? import("./character-detail-archive") : undefined,
+      card && this.isConnected && payload.server && !payload.aux?.cardAcquisitionSources
+        ? this.readCardAcquisitionSources(payload.item, payload.server, identity, signal)
+        : undefined,
     ]);
     return () => {
       this.unionRequests.cancel();
@@ -2654,7 +2660,7 @@ export class CatalogScreen extends LitElement {
           ? { server: payload.server, releaseId: payload.releaseId, sourceId: payload.sourceId }
           : undefined;
       this.songMetaProvision = Promise.resolve();
-      this.detailAux = { ...(payload.aux || {}) };
+      this.detailAux = { ...(payload.aux || {}), ...(acquisitionSources ? { cardAcquisitionSources: acquisitionSources } : {}) };
       this.unionDetail = undefined;
       this.unionDetailBase = undefined;
       const cross = this.detailAux.crossServer as
@@ -3226,6 +3232,8 @@ export class CatalogScreen extends LitElement {
       this.settings.resource === "events" && Array.isArray(this.selected?.recruitments)
         ? (this.selected.recruitments as Item[])
         : [];
+    const acquisition = this.detailAux.cardAcquisitionSources as CardAcquisitionSource[] | undefined;
+    const sourceRows = acquisition?.flatMap(source => source.resource === "announcement" ? [] : [source.row]) ?? [];
     const clear = () => {
       window.clearTimeout(this.relativeTimeClock);
       this.relativeTimeClock = 0;
@@ -3234,7 +3242,7 @@ export class CatalogScreen extends LitElement {
       this.relativeTimeBoundaries = [];
       this.relativeTimeVisible = false;
     };
-    if (!this.isConnected || (!grid && !timeOrder && !timeStatus && !recruitments.length)) {
+    if (!this.isConnected || (!grid && !timeOrder && !timeStatus && !recruitments.length && !sourceRows.length)) {
       clear();
       return;
     }
@@ -3242,6 +3250,7 @@ export class CatalogScreen extends LitElement {
       this.items,
       this.selected,
       this.selected?.recruitments,
+      acquisition,
       this.query,
       this.facets,
       this.sort,
@@ -3252,10 +3261,10 @@ export class CatalogScreen extends LitElement {
     ];
     if (inputs.some((value, index) => value !== this.relativeTimeInputs[index])) {
       const displayed = collection ? this.filtered() : [];
-      this.relativeTimeVisible = (grid && displayed.length > 0) || recruitments.length > 0;
+      this.relativeTimeVisible = (grid && displayed.length > 0) || recruitments.length > 0 || sourceRows.length > 0;
       // An empty time-state filter still needs the next real source boundary
       // to reveal a newly matching row. It does not need minute-only repaints.
-      const rows = [...(timeStatus ? this.items : displayed), ...recruitments];
+      const rows = [...(timeStatus ? this.items : displayed), ...recruitments, ...sourceRows];
       this.relativeTimeBoundaries = rows
         .filter((row) => {
           if (timeOrder || timeStatus || recruitments.includes(row)) return true;
@@ -3952,25 +3961,67 @@ export class CatalogScreen extends LitElement {
   private cardAcquisitionLabel(kind: (typeof CARD_ACQUISITIONS)[number]) {
     return uiText(this.settings.locale, `catalog.cards.acquisition.${kind}`);
   }
-  private renderCardAcquisitionSources(item: Item) {
-    const labels: Record<string, string> = {
-      events: "events", gacha: "gacha", exchange: "exchange", passes: "passes",
-      "login-campaigns": "loginCampaigns",
-    };
-    const server = this.unionDetail?.activeServer ?? this.itemSourceServer(item);
-    const links = asItems(item.acquisitionSources).flatMap((source) => {
-      if (typeof source.id !== "string" || typeof source.resource !== "string") return [];
-      if (source.resource === "announcement") {
-        if (!source.id.startsWith("https://www.fromtyo.jp/news/") && !source.id.startsWith("https://haneoka.org/jp/ja/announcements/")) return [];
-        const label = uiText(this.settings.locale, "catalog.cards.acquisition.announcement");
-        return [html`<a class="link" href=${source.id} target="_blank" rel="noopener noreferrer">${label}</a>`];
-      }
-      const label = labels[source.resource], kind = resourceKindForCollection(source.resource);
-      if (!label || !kind || !/^[a-z0-9-]+$/u.test(source.id)) return [];
-      const href = resourcePath({ server, kind, locale: this.settings.locale as Locale, id: source.id });
-      return [html`<a class="link" href=${href}>${this.label(label, source.resource)} #${source.id}</a>`];
+  private readCardAcquisitionSources(item: Item, server: ReleaseServer, identity?: NativeMetaIdentity, signal?: AbortSignal) {
+    const cache = crossServerPublicCache();
+    return loadCardAcquisitionSources(item, (resource) => {
+      if (identity && identity.server === server && isPublicReleaseServer(server))
+        return readCardAcquisitionCatalogue(resource, identity, {
+          readIdentity: source => cache.readIdentity(source, signal),
+          readCollection: (name, source) => cache.readCollection(name, source, signal),
+        }).catch(() => undefined);
+      const path = catalogUrl(resource, "", server);
+      return cachedDetail(path, signal).catch(() => undefined);
     });
-    return links.length ? html`<small class="cluster">${links}</small>` : nothing;
+  }
+  private renderCardAcquisitionSources(item: Item) {
+    if (this.isProvider() || !["member", "support"].includes(this.profile.presentation)) return nothing;
+    const labels = {
+      events: "navigation.events", gacha: "navigation.gacha", exchange: "navigation.exchange",
+      passes: "navigation.systemNavPasses", "login-campaigns": "navigation.loginCampaigns", shop: "navigation.shop",
+    } as const;
+    const server = this.unionDetail?.activeServer ?? this.itemSourceServer(item);
+    const sources = (this.detailAux.cardAcquisitionSources as CardAcquisitionSource[] | undefined) ?? [];
+    const groups = new Map<CardAcquisitionSource["resource"], TemplateResult[]>();
+    const announcement = uiText(this.settings.locale, "catalog.cards.acquisition.announcement");
+    for (const source of sources) {
+      let rendered: TemplateResult;
+      if (source.resource === "announcement") {
+        const url = new URL(source.id);
+        const route = url.hostname === "haneoka.org" ? parseAnnouncementRoute(url.pathname) : undefined;
+        const locale = this.settings.locale;
+        rendered = announcementLink({
+          title: source.title, language: "ja", locale, label: announcement, startAt: source.startAt,
+          href: route ? announcementPath(route.server, isLocale(locale) ? locale : route.locale, route.id) : source.id,
+          external: !route,
+        });
+      } else {
+        const kind = resourceKindForCollection(source.resource);
+        if (!kind) continue;
+        const href = resourcePath({ server, kind, locale: this.settings.locale as Locale, id: source.id });
+        const pin = this.nativeCatalogPin?.server === server ? this.nativeCatalogPin : undefined;
+        rendered = this.renderSystemTile(source.row, source.resource, { href }, pin);
+      }
+      const group = groups.get(source.resource) ?? [];
+      group.push(rendered);
+      groups.set(source.resource, group);
+    }
+    return html`
+      <section class="detail-section" id="card-acquisition">
+        ${renderDetailSectionHeading(uiText(this.settings.locale, "catalog.cards.acquisition.label"), "rewards", { level: 2 })}
+        <div class="stack">
+          <span>${this.cardAcquisitionLabel(this.cardAcquisition(item) ?? "unknown")}</span>
+          ${[...groups].map(([resource, tiles]) => html`
+            <div class="stack">
+              ${groups.size > 1 ? html`<h3 class="detail-section-title">${resource === "announcement" ? announcement : uiText(this.settings.locale, labels[resource])}</h3>` : nothing}
+              ${resource === "announcement"
+                ? html`<ul class="list stack">${tiles.map(link => html`<li>${link}</li>`)}</ul>`
+                : html`<div class="collection collection--system">${tiles}</div>`}
+            </div>
+          `)}
+          ${!groups.size && asItems(item.acquisitionSources).length ? html`<span>${this.label("unavailable", "Unavailable")}</span>` : nothing}
+        </div>
+      </section>
+    `;
   }
   private shopVariants(item: Item, facets?: CatalogQueryFacets) {
     const entry = this.unionEntry(item);
@@ -4571,12 +4622,13 @@ export class CatalogScreen extends LitElement {
     }
     if (kind === "item") return String(item.itemTypeName || "");
     if (kind === "background") return this.plainGameText(item.description);
-    if (kind === "system") {
-      if (this.settings.resource === "challenge") return this.localized(item.band);
-      if (this.settings.resource === "shop") return this.shopPriceLabel(item);
-      return this.systemRelativeSubtitle(item);
-    }
+    if (kind === "system") return this.systemTileSubtitle(item, this.settings.resource);
     return "";
+  }
+  private systemTileSubtitle(item: Item, resource: string) {
+    if (resource === "challenge") return this.localized(item.band);
+    if (resource === "shop") return this.shopPriceLabel(item);
+    return this.systemRelativeSubtitle(item);
   }
   private plainGameText(value: unknown) {
     return this.localized(value)
@@ -4846,7 +4898,7 @@ export class CatalogScreen extends LitElement {
     if (relations) void import("./character-detail-archive");
     const card = ["member", "support"].includes(this.profile.presentation);
     try {
-      const [viewResults, relationResults, progression, skillReference, skillText, cardDetail, gameSystemDetail, gachaVoice] =
+      const [viewResults, relationResults, progression, skillReference, skillText, cardDetail, gameSystemDetail, gachaVoice, acquisitionSources] =
         await Promise.all([
           Promise.all(
             views.map(async (view) => {
@@ -4897,6 +4949,9 @@ export class CatalogScreen extends LitElement {
                 response.ok ? await response.json() : undefined,
               )
             : undefined,
+          card && !this.isProvider() && !payload && this.selected
+            ? this.readCardAcquisitionSources(this.selected, growthPin?.server ?? this.dataServer(), nativeMetaIdentity(growthPin), signal)
+            : undefined,
         ]);
       if (this.detailRequests.current(signal) && this.selectedId === id) {
         this.skillText = skillText;
@@ -4909,6 +4964,7 @@ export class CatalogScreen extends LitElement {
               ...Object.fromEntries([...viewResults, ...relationResults]),
               progression,
               gachaVoice,
+              cardAcquisitionSources: acquisitionSources,
               "skill-reference": skillReference,
               ...(growthPin ? { growthIdentity: { ...growthPin } } : {}),
             };
@@ -5734,10 +5790,11 @@ export class CatalogScreen extends LitElement {
 
   private renderTile(item: Item, offscreen = false) {
     const kind = this.profile.presentation;
-    const image = this.image(item);
-    const title = this.itemTitle(item);
     const href = this.itemEntityLink(item);
     const onOpen = href ? undefined : () => this.open(item);
+    if (kind === "system") return this.renderSystemTile(item, this.settings.resource, { href, onOpen, itemId: this.itemKey(item) });
+    const image = this.image(item);
+    const title = this.itemTitle(item);
     if (kind === "member" || kind === "support")
       return tile(
         this.unionTile({ ...this.cardTileOptions(item, kind), href, onOpen, itemId: this.itemKey(item) }, item),
@@ -5798,11 +5855,6 @@ export class CatalogScreen extends LitElement {
           label: title,
           image,
           imageFallback: this.imageFallback(item),
-          media:
-            this.settings.resource === "events" && item.logo
-              ? eventArtwork(String(item.backgroundImage || image), String(item.logo), title)
-              : undefined,
-          aspectRatio: this.settings.resource === "events" ? "16 / 9" : undefined,
           placeholder: kind === "band-item" ? icon("piano", 32) : icon("image", 32),
           // Source art is heterogeneous across the catalogue. A stable media
           // box keeps the grid rhythmic, while contain preserves the source when
@@ -5822,9 +5874,6 @@ export class CatalogScreen extends LitElement {
                   label: this.fieldValue(item, "cardType"),
                 }
               : null,
-            kind === "system" && this.entryState(item) === "ended"
-              ? { at: "bottom-end" as const, text: this.label("ended", "Ended"), accent: "var(--md-sys-color-error)" }
-              : null,
             kind === "stamp" && this.settings.resource === "stickers" && this.isRetired(item)
               ? {
                   at: "bottom-end" as const,
@@ -5837,6 +5886,39 @@ export class CatalogScreen extends LitElement {
         item,
       ),
     );
+  }
+  private renderSystemTile(
+    item: Item,
+    resource: string,
+    link: Pick<TileOptions, "href" | "onOpen" | "itemId">,
+    pin?: { server: string; releaseId: string },
+  ) {
+    const asset = (value: unknown) => {
+      const path = this.imageSource(value);
+      return pin ? this.pinnedUnionAsset(path, pin) : path;
+    };
+    const name = resolveLocalizedText(item.title, this.settings.locale);
+    const title = cleanMarkup(name.text) || "—";
+    const image = asset(item.image);
+    const event = resource === "events";
+    return tile(this.unionTile({
+      ...link,
+      kind: "system",
+      title,
+      titleLanguage: name.locale,
+      label: title,
+      subtitle: this.systemTileSubtitle(item, resource),
+      image,
+      imageFallback: image,
+      media: event && item.logo ? eventArtwork(asset(item.backgroundImage) || image, asset(item.logo), title) : undefined,
+      aspectRatio: event ? "16 / 9" : undefined,
+      placeholder: icon("image", 32),
+      fit: "contain",
+      onImageError: this.imageError,
+      marks: this.entryState(item) === "ended"
+        ? [{ at: "bottom-end", text: this.label("ended", "Ended"), accent: "var(--md-sys-color-error)" }]
+        : undefined,
+    }, item));
   }
   private async toggleSong(id: string, url: string, bulk = false, clicked?: Item) {
     const item =
@@ -7049,8 +7131,6 @@ export class CatalogScreen extends LitElement {
       const value = this.fieldValue(item, key);
       return value ? [{ key, value }] : [];
     });
-    const acquisition = this.cardAcquisition(item);
-    if (acquisition) fields.push({ key: "acquisition", value: this.cardAcquisitionLabel(acquisition) });
     const skillOrder = ["leader", "live", "gekisou", "support", "gekisouSupport"];
     const skills = (
       item.resolvedSkills && typeof item.resolvedSkills === "object" ? Object.entries(item.resolvedSkills as Item) : []
@@ -7122,7 +7202,7 @@ export class CatalogScreen extends LitElement {
                         ${fields.map(
                           ({ key, value }) => html`
                             <div>
-                              <dt>${key === "acquisition" ? uiText(this.settings.locale, "catalog.cards.acquisition.label") : this.detailLabel(key)}</dt>
+                              <dt>${this.detailLabel(key)}</dt>
                               <dd lang=${this.localizedLanguage(readPath(item, key))}>
                                 ${
                                   key === "rarity"
@@ -7137,7 +7217,6 @@ export class CatalogScreen extends LitElement {
                                         `
                                       : value
                                 }
-                                ${key === "acquisition" ? this.renderCardAcquisitionSources(item) : nothing}
                               </dd>
                             </div>
                           `,
@@ -7373,6 +7452,7 @@ export class CatalogScreen extends LitElement {
                   `
                 : nothing
             }${this.renderExtendedDetail(item)}${this.renderSourceReference(item)}${this.viewingServerNotice()}
+            ${this.renderCardAcquisitionSources(item)}
           `,
           this.detailDiscussion(item),
         ),

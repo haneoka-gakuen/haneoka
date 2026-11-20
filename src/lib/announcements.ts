@@ -53,6 +53,33 @@ export function announcementPath(server: ReleaseServer, locale: Locale, id?: num
     throw new TypeError("Invalid announcement route");
   return `/${server}/${locale}/announcements/${id === undefined ? "" : `${id}/`}`;
 }
+const mediaPath = /^\/api\/v1\/announcements\/media\/[a-z0-9-]+\/[a-f0-9]+\.(?:png|jpe?g|webp|gif|avif)$/i;
+
+export function safeAnnouncementUrl(value: string, image = false): string {
+  const candidate = value.trim();
+  if (!candidate || /[\u0000-\u001f\u007f\\]/.test(candidate)) return "";
+  if (image && mediaPath.test(candidate)) return candidate;
+  if (!image && (/^\/(?!\/)/.test(candidate) || candidate.startsWith("#"))) {
+    try {
+      const url = new URL(candidate, "https://haneoka.invalid");
+      return url.origin === "https://haneoka.invalid" ? candidate : "";
+    } catch {
+      return "";
+    }
+  }
+  if (!/^https?:\/\//i.test(candidate)) return "";
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    if (url.username || url.password) return "";
+    if (image && url.hostname === "haneoka.org" && mediaPath.test(url.pathname) && !url.search && !url.hash)
+      return url.pathname;
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
 export function parseAnnouncementRoute(pathname: string) {
   pathname = englishInterfacePath(pathname);
   const parts = pathname.split("/").filter(Boolean);

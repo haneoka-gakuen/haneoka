@@ -1,4 +1,5 @@
 import { projectCardGrowth } from "./card-growth-data";
+import { loadCardAcquisitionSources, readCardAcquisitionCatalogue, type CardAcquisitionCollection } from "./card-acquisition";
 import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
 import { resolveSongPerformer } from "./song-performer";
 import { storyCharacterIds } from "./story-characters";
@@ -638,6 +639,18 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
     collectionSummaries(graph, resource),
   ]);
   const output = new Map<string, EntityPayload>();
+  const acquisitionCatalogues = new Map<string, Promise<unknown>>();
+  const readAcquisitionCatalogue = (name: CardAcquisitionCollection) => {
+    let document = acquisitionCatalogues.get(name);
+    if (!document) {
+      document = readCardAcquisitionCatalogue(name, graph.release, {
+        readIdentity: staticCatalogRelease,
+        readCollection: (resource, identity) => fetchStaticCatalog(resource, identity.server, identity),
+      });
+      acquisitionCatalogues.set(name, document);
+    }
+    return document;
+  };
   for (const id of ids) {
     const detail = details.get(id);
     if (!detail) throw new Error(`Entity payload source missing: ${server}/${resource}/${id}`);
@@ -668,6 +681,7 @@ async function projectEntityPayloads(graph: Graph, resource: EntityPayloadResour
 
     if (resource === "cards" || resource === "support-cards") {
       aux = cardAux(graph, item, resource === "support-cards");
+      aux.cardAcquisitionSources = await loadCardAcquisitionSources(item, readAcquisitionCatalogue);
       if (resource === "cards") {
         const voice = graph.voices.find(([, entry]) => Number(entry.cardId) === Number(item.cardId))?.[1]
           ?? asRecord((await fetchOptionalStaticCatalog(`voices/member-card:${id}`, server, graph.release)).value);

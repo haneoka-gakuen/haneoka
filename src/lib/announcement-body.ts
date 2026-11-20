@@ -1,4 +1,5 @@
 import { parseFragment, type DefaultTreeAdapterTypes } from "parse5";
+import { safeAnnouncementUrl } from "./announcements";
 
 export type AnnouncementBodyNode =
   | { type: "text"; value: string }
@@ -78,33 +79,7 @@ const discardedTags = new Set([
   "select",
   "button",
 ]);
-const mediaPath = /^\/api\/v1\/announcements\/media\/[a-z0-9-]+\/[a-f0-9]+\.(?:png|jpe?g|webp|gif|avif)$/i;
 const htmlNamespace = "http://www.w3.org/1999/xhtml";
-
-export function safeAnnouncementUrl(value: string, image = false): string {
-  const candidate = value.trim();
-  if (!candidate || /[\u0000-\u001f\u007f\\]/.test(candidate)) return "";
-  if (image && mediaPath.test(candidate)) return candidate;
-  if (!image && (/^\/(?!\/)/.test(candidate) || candidate.startsWith("#"))) {
-    try {
-      const url = new URL(candidate, "https://haneoka.invalid");
-      return url.origin === "https://haneoka.invalid" ? candidate : "";
-    } catch {
-      return "";
-    }
-  }
-  if (!/^https?:\/\//i.test(candidate)) return "";
-  try {
-    const url = new URL(candidate);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
-    if (url.username || url.password) return "";
-    if (image && url.hostname === "haneoka.org" && mediaPath.test(url.pathname) && !url.search && !url.hash)
-      return url.pathname;
-    return url.href;
-  } catch {
-    return "";
-  }
-}
 
 function integerAttribute(value: string, minimum: number, maximum: number): string {
   if (!/^-?\d+$/.test(value)) return "";
@@ -165,6 +140,51 @@ function safeAttributes(element: DefaultTreeAdapterTypes.Element): Record<string
   return attributes;
 }
 
+function presentation(element: DefaultTreeAdapterTypes.Element, attributes: Record<string, string>): string {
+  const authored = new Set(element.attrs.find(({ name }) => name === "class")?.value.split(/\s+/u));
+  const rawStyle = element.attrs.find(({ name }) => name === "style")?.value ?? "";
+  const declarations = new Map<string, string>();
+  for (const entry of rawStyle.split(";")) {
+    const separator = entry.indexOf(":");
+    if (separator < 0) continue;
+    declarations.set(entry.slice(0, separator).trim().toLowerCase(), entry.slice(separator + 1).trim().toLowerCase());
+  }
+  const classes = [];
+  const style = [];
+  let tag = element.tagName === "h1" ? "h2" : element.tagName;
+  if (authored.has("news-title") || authored.has("news-subtitle")) {
+    const title = authored.has("news-title");
+    classes.push(title ? "announcement-body__section-title" : "announcement-body__subtitle");
+    if (tag === "div" || tag === "p") tag = title ? "h2" : "h3";
+  }
+  if (authored.has("margin-left")) classes.push("announcement-body__left-image");
+  if (authored.has("horizontal-splitline")) tag = "hr";
+  const align = declarations.get("text-align") ?? element.attrs.find(({ name }) => name === "align")?.value ??
+    [...authored].find(name => /^text-align-type-(?:left|right|center|justify)$/u.test(name))?.slice("text-align-type-".length);
+  if (align && ["left", "right", "center", "justify", "start", "end"].includes(align)) style.push(`text-align:${align}`);
+  if (["p", "div", "span", "strong", "h2", "h3", "li"].includes(tag)) {
+    const rawSize = /^(1[2-9]|2[0-4])px$/u.exec(declarations.get("font-size") ?? "");
+    const size = Number(rawSize?.[1] ?? 16);
+    if (rawSize) style.push(`font-size:${size / 16}rem`);
+    const leading = /^(\d+(?:\.\d{1,3})?)(px|em|%)?$/u.exec(declarations.get("line-height") ?? "");
+    if (leading) {
+      const scale = leading[2] === "px" ? size : leading[2] === "%" ? 100 : 1;
+      const ratio = Number(leading[1]) / scale;
+      if (ratio >= 1.2 && ratio <= 2.2) style.push(`line-height:${Math.round(ratio * 1000) / 1000}`);
+    }
+    const weight = declarations.get("font-weight");
+    if (weight && /^(?:bold|normal|[4-9]00)$/u.test(weight)) style.push(`font-weight:${weight}`);
+    const margin = declarations.get("margin");
+    if (tag === "p" && margin && /^4px 0(?:px)?(?: 4px 22px)?$/u.test(margin)) {
+      classes.push("announcement-body__compact");
+      if (margin.endsWith("22px")) classes.push("announcement-body__indent");
+    }
+  }
+  if (classes.length) attributes.class = classes.join(" ");
+  if (style.length) attributes.style = style.join(";");
+  return tag;
+}
+
 /** Parse authored HTML into an exact allowlist, independent of the browser DOM. */
 export function parseAnnouncementBody(html: string): AnnouncementBodyNode[] {
   const fragment = parseFragment(html);
@@ -178,14 +198,8 @@ export function parseAnnouncementBody(html: string): AnnouncementBodyNode[] {
       if (!allowedTags.has(node.tagName)) return children;
       const attributes = safeAttributes(node);
       if (node.tagName === "img" && !attributes.src) return [];
-      const authoredClasses = node.attrs.find((attribute) => attribute.name === "class")?.value.split(/\s+/) || [];
-      const tag =
-        node.tagName === "h1" || (node.tagName === "div" && authoredClasses.includes("news-title"))
-          ? "h2"
-          : node.tagName === "div" && authoredClasses.includes("news-subtitle")
-            ? "h3"
-            : node.tagName;
-      return [{ type: "element", tag, attributes, children }];
+      const tag = presentation(node, attributes);
+      return [{ type: "element", tag, attributes, children: tag === "hr" ? [] : children }];
     });
   };
   return sanitize(fragment.childNodes);
@@ -194,6 +208,7 @@ export function parseAnnouncementBody(html: string): AnnouncementBodyNode[] {
 /** Static markup uses the same parsed allowlist as native browser nodes. */
 export function announcementBodyMarkup(source: string, tableLabel: string, title: string) {
   const nodes = parseAnnouncementBody(source), images: string[] = [];
+  let illustrated = false;
   const text = (rows: AnnouncementBodyNode[]): string => rows.map(node => node.type === "text" ? node.value : text(node.children)).join("");
   let firstHeading = true;
   const omitDuplicateHeading = (rows: AnnouncementBodyNode[]): AnnouncementBodyNode[] => rows.flatMap<AnnouncementBodyNode>(node => {
@@ -209,13 +224,18 @@ export function announcementBodyMarkup(source: string, tableLabel: string, title
   const voidTags = new Set(["br", "hr", "wbr", "img", "col"]);
   const markup = (rows: AnnouncementBodyNode[]): string => rows.map(node => {
     if (node.type === "text") return escape(node.value);
-    if (node.tag === "img" && node.attributes.src) images.push(node.attributes.src);
+    if (node.tag === "img" && node.attributes.src) {
+      images.push(node.attributes.src);
+      illustrated ||= isAnnouncementIllustration(node.attributes.width);
+    }
     const tag = `<${node.tag}${Object.entries(node.attributes).map(([name, value]) => ` ${name}="${escape(value)}"`).join("")}>`;
     const element = tag + (voidTags.has(node.tag) ? "" : markup(node.children) + `</${node.tag}>`);
     return node.tag === "table" ? `<div class="announcement-table-scroll" role="region" aria-label="${escape(tableLabel)}" tabindex="0">${element}</div>` : element;
   }).join("");
-  return { markup: markup(clean), text: text(clean), images };
+  return { markup: markup(clean), text: text(clean), images, illustrated };
 }
+
+export const isAnnouncementIllustration = (width: string | null | undefined) => !width || Number(width) >= 240;
 
 /** Construct safe native nodes; authored markup never enters an HTML DOM sink. */
 export function announcementBodyFragment(html: string, tableLabel: string): DocumentFragment {
