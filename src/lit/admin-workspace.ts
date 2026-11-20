@@ -27,6 +27,7 @@ import { PaneFocus } from "./ui/pane";
 import { loadingState } from "./ui/state";
 import { accordion } from "./ui/accordion";
 import { fetchJson, JsonResponseError, preferredLocale } from "./shared/catalog";
+import { providerSongRoute } from "../lib/provider-entity-data";
 import { RequestScope } from "../lib/request-scope";
 import { beginLoading } from "../lib/loading-progress";
 import { navigationDocumentUrl } from "../lib/document-url";
@@ -2090,7 +2091,7 @@ export class AdminWorkspace extends LitElement {
                   </section>`)}
                   ` : html`
                   <h3>${this.label("creations.tracks", "Tracks")} / ${details.length}</h3>
-                  <ol>${details.map(track => html`<li><a href=${track.provider === "bestdori" ? `/${preferredLocale()}/community/gbp/songs/detail/?song=${encodeURIComponent(String(track.musicId))}` : ["jp", "intl"].includes(String(track.server)) ? `/${track.server}/${preferredLocale()}/songs/${encodeURIComponent(String(track.musicId))}/` : `/catalog/songs?song=${encodeURIComponent(String(track.musicId))}`}>${String(track.provider)} / ${String(track.server)} / ${String(track.musicId)}</a></li>`)}</ol>`}
+                  <ol>${details.map(track => html`<li><a href=${track.provider === "bestdori" ? providerSongRoute("bestdori", preferredLocale(), String(track.musicId)) : ["jp", "intl"].includes(String(track.server)) ? `/${track.server}/${preferredLocale()}/songs/${encodeURIComponent(String(track.musicId))}/` : `/catalog/songs?song=${encodeURIComponent(String(track.musicId))}`}>${String(track.provider)} / ${String(track.server)} / ${String(track.musicId)}</a></li>`)}</ol>`}
               </main>
               <aside class="admin-review-context">
                 <dl class="spec-list">

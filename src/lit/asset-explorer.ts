@@ -367,10 +367,14 @@ export class AssetExplorer extends LitElement {
       this.error = error instanceof Error ? error.message : String(error);
     }
   }
-  private url(file: string) {
+  private assetPath(file: string) {
     const [root, ...parts] = this.localized(file).split("/").filter(Boolean);
     if (!["assets", "runtime", "objects"].includes(root || "")) return "";
-    const path = `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}`;
+    return `/${root}/${encodeURIComponent(this.server())}/${parts.map(encodeURIComponent).join("/")}`;
+  }
+  private previewRequestUrl(file: string) {
+    const path = this.assetPath(file);
+    if (!path) return "";
     return contentRequestUrl(`${path}?asset=1${this.sourceRelease ? `&release=${encodeURIComponent(this.sourceRelease)}` : ""}`);
   }
   private server() {
@@ -391,7 +395,7 @@ export class AssetExplorer extends LitElement {
     if (this.kind(file) !== "text") return;
     const unavailable = uiText(preferredLocale(), "common.states.unavailable");
     try {
-      const response = await fetch(this.url(file), { signal });
+      const response = await fetch(this.previewRequestUrl(file), { signal });
       const text = response.ok ? (await response.text()).slice(0, 200000) : unavailable;
       if (this.previewRequest.current(signal)) this.textPreview = text;
     } catch {
@@ -441,7 +445,7 @@ export class AssetExplorer extends LitElement {
         ${back}
         ${this.files.map((file) => {
           const name = AssetExplorer.plainName(this.displayName(file).split("/").at(-1) || "");
-          const image = this.view !== "table" && this.kind(file) === "image" ? this.url(file) : "";
+          const image = this.view !== "table" && this.kind(file) === "image" ? this.assetPath(file) : "";
           return assetItem({
             name, image, icon: this.fileIcon(file), selected: this.selected === file,
             meta: assetKindText(this.kind(file), preferredLocale()),
@@ -505,7 +509,7 @@ export class AssetExplorer extends LitElement {
     `;
   }
   private renderPreview() {
-    const url = this.url(this.selected),
+    const url = this.assetPath(this.selected),
       kind = this.kind(this.selected);
     const title = AssetExplorer.plainName(this.displayName(this.selected).split("/").at(-1) || "");
     return html`
@@ -552,7 +556,7 @@ export class AssetExplorer extends LitElement {
                     `
                   : kind === "model"
                     ? html`
-                        <model-preview-stage src=${url}></model-preview-stage>
+                        <model-preview-stage src=${this.previewRequestUrl(this.selected)}></model-preview-stage>
                       `
                     : kind === "text"
                       ? html`

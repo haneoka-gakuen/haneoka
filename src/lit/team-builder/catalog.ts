@@ -69,8 +69,7 @@ export class Catalog {
       ).then((assets) => {
         if (controller.signal.aborted || this.host.catalog !== this) return;
         const descriptor = Object.entries(assets.sources).find(([path]) => path.endsWith("/LiveAtlas.spriteatlasv2"))![1];
-        this.missionIcons = Object.fromEntries(Object.entries(gekisouMissionIcons(descriptor, server))
-          .map(([key, path]) => [key, `${path}?release=${encodeURIComponent(releaseId)}`]));
+        this.missionIcons = gekisouMissionIcons(descriptor, server);
         this.host.requestUpdate();
       }).catch(() => {});
     }
@@ -81,8 +80,8 @@ export class Catalog {
       const item = this.data.events[String(eventId)]?.eventItem as Record<string, unknown> | undefined;
       return String(item?.image ?? "");
     }
-    const { server, releaseId } = this.data.identity;
-    return `/assets/${server}/Assets/AddressableResources/Item/event/item_icon_event_point_00${metric === "points" ? 1 : 2}.png?release=${encodeURIComponent(releaseId)}`;
+    const { server } = this.data.identity;
+    return `/assets/${server}/Assets/AddressableResources/Item/event/item_icon_event_point_00${metric === "points" ? 1 : 2}.png`;
   }
   dispose() {
     this.missionIconRequest?.abort();

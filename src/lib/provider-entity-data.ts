@@ -37,10 +37,12 @@ export function providerDiscussionIdentity(entry: ProviderEntityLocator) {
     id: entry.section ? `${entry.provider}:${entry.section}:${entry.id}` : `${entry.provider}:${entry.id}`,
   };
 }
+export function providerSongRoute(provider: CatalogProvider, locale: string, id: string): string {
+  return `/${locale}/community/${provider === "bestdori" ? "gbp" : "sekai"}/songs/${encodeURIComponent(id)}/`;
+}
 export function providerEntityRoute(entry: ProviderEntityLocator): string {
   const { provider, locale, resource, id, section } = entry;
-  if (resource === "songs")
-    return `/${locale}/community/${provider === "bestdori" ? "gbp/songs" : "sekai/songs"}/detail/?${new URLSearchParams({ song: id })}`;
+  if (resource === "songs") return providerSongRoute(provider, locale, id);
   if (resource === "cards") {
     if (provider !== "bestdori") throw new TypeError("This provider has no card entity view");
     return `/${locale}/community/gbp/stories/card/${encodeURIComponent(id)}/`;

@@ -7,6 +7,7 @@ import { iconButton, rovingKeydown } from "./controls";
 import { icon } from "./icon";
 import { nextImageCandidate } from "./lazy-images";
 import { knownImageSize, rememberImageSize } from "../../lib/image-dimensions";
+import { publicMediaAddress } from "../../lib/document-address";
 import "../../styles/image-gallery.css";
 import "photoswipe/style.css";
 
@@ -382,7 +383,7 @@ export class ImageGallery extends LitElement {
         <div class="dialog__body stack">
           ${clips.map(
             (clip) => html`
-              <a class="button button--tonal" href=${clip.url} download=${clip.filename}>
+              <a class="button button--tonal" href=${publicMediaAddress(clip.url)} download=${clip.filename}>
                 ${icon("download", 20)}${clip.label}
               </a>
             `,
@@ -432,8 +433,9 @@ export class ImageGallery extends LitElement {
     const cached = this.dimensions.get(entry.source);
     if (cached) return { ...cached, alt: entry.label };
     if (entry.width && entry.height)
-      return { src: entry.source, width: entry.width, height: entry.height, alt: entry.label };
-    for (const source of entry.candidates || [entry.source]) {
+      return { src: publicMediaAddress(entry.source), width: entry.width, height: entry.height, alt: entry.label };
+    for (const candidate of entry.candidates || [entry.source]) {
+      const source = publicMediaAddress(candidate);
       try {
         const image = new Image();
         image.src = source;
@@ -510,7 +512,7 @@ export class ImageGallery extends LitElement {
           aria-hidden=${thumbnail ? "true" : nothing}
         >
           <image
-            href=${source}
+            href=${publicMediaAddress(source)}
             width=${entry.width}
             height=${entry.height}
             @error=${() => {
@@ -521,8 +523,8 @@ export class ImageGallery extends LitElement {
       `;
     return html`
       <img
-        src=${source}
-        data-candidates=${JSON.stringify(entry.candidates || [entry.source])}
+        src=${publicMediaAddress(source)}
+        data-candidates=${JSON.stringify((entry.candidates || [entry.source]).map(publicMediaAddress))}
         data-candidate-index="0"
         alt=${thumbnail ? "" : entry.label}
         decoding="async"
@@ -549,7 +551,7 @@ export class ImageGallery extends LitElement {
           <div class="image-gallery__stage image-gallery__stage--cinema">
             <img
               class="image-gallery__cinema-poster${this.movieReady ? "" : " is-visible"}"
-              src=${active.source}
+              src=${publicMediaAddress(active.source)}
               alt=""
               decoding="async"
             />
@@ -581,7 +583,7 @@ export class ImageGallery extends LitElement {
                 ? html`
                     <a
                       class="image-gallery__download icon-button"
-                      href=${overlay.url}
+                      href=${publicMediaAddress(overlay.url)}
                       download=${overlay.filename}
                       aria-label=${uiText(this.locale, "common.actions.download")}
                       title=${uiText(this.locale, "common.actions.download")}
@@ -619,7 +621,7 @@ export class ImageGallery extends LitElement {
             ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "media.images.actions.nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
             <a
               class="icon-button"
-              href=${active.videoSequence?.clips[0]?.url || candidates[0]}
+              href=${publicMediaAddress(active.videoSequence?.clips[0]?.url || candidates[0] || active.source)}
               target="_blank"
               rel="noopener"
               aria-label=${uiText(this.locale, "media.images.actions.originalImage")}
@@ -645,7 +647,7 @@ export class ImageGallery extends LitElement {
           <a
             class="image-gallery__stage"
             style=${this.natural ? `--gallery-ratio:${this.stageRatio(active)}` : nothing}
-            href=${candidates[0]}
+            href=${publicMediaAddress(candidates[0] || active.source)}
             target="_blank"
             rel="noopener"
             aria-label=${`${uiText(this.locale, "media.models.labels.zoom")} / ${active.label}`}
@@ -687,7 +689,7 @@ export class ImageGallery extends LitElement {
           ${this.images.length > 1 ? iconButton({ icon: "chevron_right", label: uiText(this.locale, "media.images.actions.nextImage"), disabled: index === this.images.length - 1, onClick: () => this.select(index + 1) }) : nothing}
           <a
             class="icon-button"
-            href=${this.dimensions.get(active.source)?.src || candidates[0]}
+            href=${publicMediaAddress(this.dimensions.get(active.source)?.src || candidates[0] || active.source)}
             target="_blank"
             rel="noopener"
             aria-label=${uiText(this.locale, "media.images.actions.originalImage")}

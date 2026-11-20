@@ -367,10 +367,9 @@ export class SongProgress extends LitElement {
       characters: visuals?.characters,
     });
     const marks = new Map<string, string>();
-    const pin = source ? `?release=${encodeURIComponent(source.identity.releaseId)}` : "";
     for (const [name, path] of Object.entries(visuals?.marks ?? {})) {
       if (typeof path === "string") {
-        marks.set(name, `/runtime/${this.server}/${path.replace(/^runtime\//u, "")}${pin}`);
+        marks.set(name, `/runtime/${this.server}/${path.replace(/^runtime\//u, "")}`);
       }
     }
     this.charts = Object.values(songs).flatMap((song) => {

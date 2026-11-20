@@ -1,6 +1,7 @@
 type RecordValue = Record<string, unknown>;
 import { resolveSongPerformer, type PerformerRegistry, type PerformerPortrait } from "./song-performer";
 import { resourcePath, isReleaseServer } from "./resource-route";
+import { providerSongRoute } from "./provider-entity-data";
 import { preferredLocale } from "../lit/shared/catalog";
 import type { Locale } from "../i18n/locales";
 export interface PlaylistCatalogSource {
@@ -131,7 +132,7 @@ export async function resolvePlaylistTracks(tracks: RecordValue[], defaultServer
         musicUrl: song?.musicUrl || track.musicUrl || "",
         ...(performer ? { displayPerformer: performer } : {}),
         detailPath: bestdori
-          ? `/${preferredLocale()}/community/gbp/songs/detail/?song=${encodeURIComponent(id)}`
+          ? providerSongRoute("bestdori", preferredLocale(), id)
           : isReleaseServer(server)
             ? resourcePath({ server, locale: preferredLocale() as Locale, kind: "songs", id })
             : `/catalog/songs?song=${encodeURIComponent(id)}`,

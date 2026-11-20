@@ -622,9 +622,7 @@ export class SaveWorkspace extends LitElement {
     const row = saveEntity(this.catalog, resource, id);
     const images = object(row.images);
     const url = images.thumbnail ?? images.jacket ?? row.jacket ?? row.image;
-    return typeof url === "string" && url.startsWith("/assets/")
-      ? `${url}?release=${encodeURIComponent(this.catalog?.releaseId ?? "")}`
-      : undefined;
+    return typeof url === "string" && url.startsWith("/assets/") ? url : undefined;
   }
   private details(record: StoredSave, fields: readonly string[]) {
     return fields.filter(field => Object.hasOwn(record.snapshot.player, field)).map(field => {

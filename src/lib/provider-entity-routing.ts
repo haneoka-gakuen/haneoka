@@ -1,7 +1,9 @@
-import { englishInterfacePath } from "../i18n/interface-route.ts";
+import { englishInterfacePath, interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
 import { isLocale } from "@haneoka/i18n";
-import { providerEntityHtmlPath, providerEntityRoute, type ProviderEntityLocator } from "./provider-entity-data.ts";
+import { providerEntityHtmlPath, providerEntityRoute, providerSongRoute, type ProviderEntityLocator } from "./provider-entity-data.ts";
 import { PROVIDER_STORY_SECTIONS } from "./provider-page-data.ts";
+
+const songId = (value: string | null | undefined) => value && /^[1-9]\d{0,15}$/u.test(value) ? value : undefined;
 
 function entityId(value: string | null): string | undefined {
   return value && value.length <= 768 && value !== "." && value !== ".." && !/[\\/\u0000-\u001f\u007f]/u.test(value)
@@ -10,6 +12,7 @@ function entityId(value: string | null): string | undefined {
 }
 /** Preserve the original public URL while serving its generated document. */
 export function providerEntityFromUrl(url: URL): ProviderEntityLocator | undefined {
+  if (!url.pathname.includes("/community/")) return;
   const parts = englishInterfacePath(url.pathname)
     .replace(/\/index\.html$/u, "/")
     .split("/")
@@ -21,9 +24,8 @@ export function providerEntityFromUrl(url: URL): ProviderEntityLocator | undefin
   const provider = namespace === "gbp" ? "bestdori" : "sekai";
   const tail = parts.slice(3);
   if (tail.length !== 2 && tail.length !== 3) return;
-  const song = tail[0] === "songs" && tail[1] === "detail";
-  if (song && tail.length === 2) {
-    const id = entityId(url.searchParams.get("song"));
+  if (tail[0] === "songs" && tail.length === 2) {
+    const id = songId(tail[1]);
     return id ? { provider, locale, resource: "songs", id } : undefined;
   }
   if (tail[0] !== "stories" || !/^[a-z]+$/u.test(tail[1]!)) return;
@@ -46,8 +48,11 @@ export function providerEntityFromUrl(url: URL): ProviderEntityLocator | undefin
   if (cardId) return { provider, locale, resource: "cards", id: cardId };
   return;
 }
-/** Keep bookmarked GBP addresses while the public namespace follows the game. */
+/** Redirect bookmarked provider addresses to their current public paths. */
 export function legacyProviderRedirectTarget(pathname: string, search = ""): string | undefined {
+  if (!pathname.includes("/community/")) return;
+  const songRedirect = providerSongRedirectTarget(pathname, search);
+  if (songRedirect) return songRedirect;
   const parts = pathname.split("/").filter(Boolean);
   if (!isLocale(parts[0]) || parts[1] !== "community") return;
   if (parts.length === 6 && parts[3] === "stories" && !pathname.endsWith("/")) {
@@ -64,20 +69,42 @@ export function legacyProviderRedirectTarget(pathname: string, search = ""): str
     query.delete("card");
     return `${pathname.replace(/\/+$/u, "")}/${encodeURIComponent(id)}/${query.size ? `?${query}` : ""}`;
   }
-  const song = parts[2] === "songs-bestdori" && (parts.length === 3 || (parts.length === 4 && parts[3] === "detail"));
   const story =
     parts[2] === "stories-bestdori" &&
     parts.length === 4 &&
     ["event", "band", "main", "afterlive", "card"].includes(parts[3]!);
-  if (!song && !story) return;
-  return `/${parts[0]}/community/gbp/${song ? `songs${parts[3] ? "/detail" : ""}` : `stories/${parts[3]}`}/${search}`;
+  if (!story) return;
+  return `/${parts[0]}/community/gbp/stories/${parts[3]}/${search}`;
+}
+
+function providerSongRedirectTarget(pathname: string, search: string): string | undefined {
+  const parts = englishInterfacePath(pathname).replace(/\/index\.html$/u, "/").split("/").filter(Boolean);
+  const [locale, community, namespace] = parts;
+  if (!isLocale(locale) || community !== "community") return;
+  const oldNamespace = namespace === "songs-bestdori";
+  const legacy = oldNamespace && (parts.length === 3 || parts.length === 4 && parts[3] === "detail");
+  if (!legacy && ((namespace !== "gbp" && namespace !== "sekai") || parts[3] !== "songs" || parts.length > 5)) return;
+  const provider = namespace === "sekai" ? "sekai" : "bestdori";
+  const selection = legacy ? parts[3] : parts[4];
+  const query = new URLSearchParams(search);
+  const id = songId(selection) || ((!selection || selection === "detail") ? songId(query.get("song")) : undefined);
+  if (!id && !legacy && selection !== "detail") return;
+  const language = interfaceLanguageFromPath(pathname);
+  const target = id
+    ? providerSongRoute(provider, locale, id)
+    : `/${locale}/community/${provider === "bestdori" ? "gbp" : "sekai"}/songs/`;
+  const route = language ? interfacePath(target, language.value) : target;
+  if (route === pathname && !query.has("song")) return;
+  query.delete("song");
+  return `${route}${query.size ? `?${query}` : ""}`;
 }
 export function providerEntityPhysicalPath(entry: ProviderEntityLocator): string {
   return providerEntityHtmlPath(entry).replace(/\.html$/u, "/");
 }
-export function providerStoryShellPath(pathname: string): string | undefined {
+export function providerEntityShellPath(pathname: string): string | undefined {
   const entry = providerEntityFromUrl(new URL(pathname, "https://haneoka.org"));
-  if (!entry || entry.resource === "songs" || entry.id === "_") return;
+  if (!entry || entry.id === "_") return;
+  if (entry.resource === "songs") return providerSongRoute(entry.provider, entry.locale, "_");
   const section = entry.resource === "cards" ? "card" : entry.section!;
   if (!(PROVIDER_STORY_SECTIONS[entry.provider] as readonly string[]).includes(section)) return;
   return `/${entry.locale}/community/${entry.provider === "bestdori" ? "gbp" : "sekai"}/stories/${section}/_/`;

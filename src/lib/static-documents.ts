@@ -8,7 +8,7 @@ import { assetStaticLookupPath } from "./asset-static-routing.ts";
 import { playlistStaticLookupPath } from "./playlists/static-routing.ts";
 import { communityStoryShellPath } from "./community-story-route.ts";
 import { communityChartShellPath } from "./community-chart-route.ts";
-import { providerStoryShellPath } from "./provider-entity-routing.ts";
+import { providerEntityShellPath } from "./provider-entity-routing.ts";
 
 export const STATIC_DOCUMENT_SCHEMA = "haneoka-static-documents-v2";
 export const STATIC_DOCUMENT_INDEX_ROOT = "/provider-static/index";
@@ -174,7 +174,7 @@ export function isCoreFallbackShell(pathname: string): boolean {
   return false;
 }
 export function staticDocumentLookupPath(pathname: string): string | undefined {
-  const providerShell = providerStoryShellPath(pathname);
+  const providerShell = providerEntityShellPath(pathname);
   if (providerShell) return coreStaticDocumentPath(providerShell);
   const storyShell = communityStoryShellPath(pathname);
   if (storyShell) return coreStaticDocumentPath(storyShell);

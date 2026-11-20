@@ -5,6 +5,7 @@ import { icon } from "./icon";
 import { loadingIndicator } from "./loading-indicator";
 import { nextImageCandidate } from "./lazy-images";
 import { knownImageSize, rememberImageSize } from "../../lib/image-dimensions";
+import { publicMediaAddress } from "../../lib/document-address";
 import "@material/web/progress/circular-progress.js";
 
 /** Media loading state: the Expressive loading indicator while waiting, native determinate progress once a value is known. */
@@ -199,7 +200,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
                 ${
                   mark.image
                     ? html`
-                        <img src=${mark.image} alt="" width="16" height="16" />
+                        <img src=${publicMediaAddress(mark.image)} alt="" width="16" height="16" />
                       `
                     : nothing
                 }
@@ -211,7 +212,7 @@ export function tileMedia(options: TileOptions): TemplateResult {
       ${options.mediaOverlay ?? nothing}
       ${options.serverMark?.image
         ? html`<span class="tile__server-mark" style=${`--server-mark-size:${options.serverMark.size || 18}px`} title=${options.serverMark.label}>
-            <img src=${options.serverMark.image} alt=${options.serverMark.label} width=${options.serverMark.size || 18} height=${options.serverMark.size || 18} decoding="async" />
+            <img src=${publicMediaAddress(options.serverMark.image)} alt=${options.serverMark.label} width=${options.serverMark.size || 18} height=${options.serverMark.size || 18} decoding="async" />
           </span>`
         : nothing}
     </span>

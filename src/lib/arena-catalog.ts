@@ -95,7 +95,7 @@ export async function readArenaCatalog(identity: ArenaCatalog["identity"], reade
           .at(-1)!
           .replace(/--Sprite-?-?\d+\.png$/u, "");
         return [
-          [name, `/runtime/${identity.server}/${path.slice("runtime/".length)}?release=${identity.releaseId}`] as const,
+          [name, `/runtime/${identity.server}/${path.slice("runtime/".length)}`] as const,
         ];
       }),
     );
@@ -124,7 +124,7 @@ export async function readArenaCatalog(identity: ArenaCatalog["identity"], reade
   };
   const asset = (path: unknown): string =>
     path
-      ? `/assets/${identity.server}/Assets/AddressableResources/${String(path).replace(/\.png$/u, "")}.png?release=${identity.releaseId}`
+      ? `/assets/${identity.server}/Assets/AddressableResources/${String(path).replace(/\.png$/u, "")}.png`
       : "";
   const items = record(documents.items.items);
   const degrees = new Map(masters.MasterDegree.map((row) => [number(row, "_id"), row]));

@@ -76,9 +76,9 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { readPageData, waitForPageData } from "../lib/page-data";
 import type { CatalogCollectionPayload } from "../server/catalog-collection";
 import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
-import { providerDetailHref, type ProviderEntityPayload } from "../lib/provider-entity-data";
+import { providerDetailHref, providerDiscussionIdentity, providerSongRoute, type ProviderEntityPayload } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
-import { providerDiscussionIdentity } from "../lib/provider-entity-data";
+import { publicMediaAddress } from "../lib/document-address";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
@@ -585,7 +585,7 @@ const profiles: Record<string, Profile> = {
    * The songs table flattened by difficulty: one row per chart, so the
    * efficiency ranking reads across difficulties without a picker. It browses
    * the songs projection and joins song-meta for the per-chart metrics;
-   * detail navigation still targets the song itself (?song=<musicId>).
+   * detail navigation targets the song's own document.
    */
   "song-meta": {
     id: ["metaId", "musicId", "songId", "id"],
@@ -1069,7 +1069,7 @@ export class CatalogScreen extends LitElement {
     return this.localized(this.itemBand(item, id)?.bandName) || (id ? `${this.label("band", "Band")} ${id}` : "—");
   }
   private itemMark(item: Item, name: string): string {
-    return (
+    return publicMediaAddress(
       this.unionMarks[this.itemSourceServer(item) as OfficialCatalogServer]?.get(name) ||
       (this.itemSourceServer(item) === this.dataServer() ? this.gameMarks.get(name) || "" : "")
     );
@@ -1712,7 +1712,8 @@ export class CatalogScreen extends LitElement {
     this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.defaultSortOrder();
     this.ensureSongMeta();
     this.syncBestdoriChartPage(params);
-    const id = this.settings.entityId || params.get(this.selectionParam()) || "";
+    const id = (providerEntity?.resource === "songs" && providerEntity.provider === this.settings.origin ? providerEntity.id : "") ||
+      this.settings.entityId || params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
       this.restoreDetailQuery(true);
       this.restoreLocationState();
@@ -2020,11 +2021,8 @@ export class CatalogScreen extends LitElement {
     this.view = this.profile.perDifficulty ? "table" : collectionView(params.get("view"));
     if (this.profile.presentation === "song") this.restoreMetaReference(params);
     this.restoreFacets(params);
-    this.selectedId = this.settings.entityId || params.get(this.selectionParam()) || "";
-    if (this.settings.entityContext && !this.selectedId && /\/detail\/?$/u.test(location.pathname)) {
-      location.replace(location.pathname.replace(/detail\/?$/u, ""));
-      return;
-    }
+    this.selectedId = (providerEntity?.resource === "songs" && providerEntity.provider === this.settings.origin ? providerEntity.id : "") ||
+      this.settings.entityId || params.get(this.selectionParam()) || "";
     if (this.isProvider() && this.profile.presentation === "song") {
       if (this.settings.entityContext) this.syncBestdoriChartPage(params);
       else if (this.selectedId) {
@@ -2338,9 +2336,11 @@ export class CatalogScreen extends LitElement {
       const returnTo = this.settings.entityContext
         ? entityReturnHref() || collection
         : this.isConnected ? returnStateFromLocation(location.pathname, location.search, kind) : collection;
-      const query = new URLSearchParams({ song: id, chartDifficulty: this.selectedSongDifficulty });
+      const query = new URLSearchParams();
+      if (this.selectedSongDifficulty !== "expert") query.set("chartDifficulty", this.selectedSongDifficulty);
       if (difficulty !== undefined) query.set("difficulty", String(difficulty));
-      return returnLink(`${collection}detail/?${query}`, returnTo);
+      const path = providerSongRoute(this.settings.origin === "sekai" ? "sekai" : "bestdori", this.settings.locale, id);
+      return returnLink(`${path}${query.size ? `?${query}` : ""}`, returnTo);
     }
     const returnTo = this.isConnected
       ? returnStateFromLocation(location.pathname, location.search, kind)
@@ -2454,7 +2454,7 @@ export class CatalogScreen extends LitElement {
           ? String((value as Item).url ?? (value as Item).path ?? "")
           : "";
     if (!source) return "";
-    if (/^(?:https?:|data:|blob:|\/)/.test(source)) return source;
+    if (/^(?:https?:|data:|blob:|\/)/.test(source)) return publicMediaAddress(source);
     return `/assets/${source.replace(/^\/+/, "")}`;
   }
   private detailImage(item: Item) {
@@ -2472,10 +2472,10 @@ export class CatalogScreen extends LitElement {
             : this.profile.presentation === "comic"
               ? item.image
               : undefined;
-    return typeof preferred === "string" && preferred ? preferred : this.image(item);
+    return typeof preferred === "string" && preferred ? publicMediaAddress(preferred) : this.image(item);
   }
   private imageFallback(item: Item) {
-    if (this.profile.presentation === "song" && typeof item.jacketThumbUrl === "string") return item.jacketThumbUrl;
+    if (this.profile.presentation === "song" && typeof item.jacketThumbUrl === "string") return publicMediaAddress(item.jacketThumbUrl);
     return this.image(item);
   }
   async prepareProviderEntity(payload: ProviderEntityPayload, config: string = this.config): Promise<void> {
@@ -4986,7 +4986,7 @@ export class CatalogScreen extends LitElement {
         this.initializeCardDetailState(this.selected || summary);
         this.restoreDetailQuery();
         if (["member", "support"].includes(this.profile.presentation)) this.persistCardDetailQuery();
-        else
+        else if (!this.isProvider())
           this.setDetailQueries({
             media: this.activeMedia,
             ...(this.profile.presentation === "song" ? { difficulty: this.detailDifficulty } : {}),

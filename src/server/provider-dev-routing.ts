@@ -7,7 +7,7 @@ import {
   legacyProviderRedirectTarget,
   providerEntityFromUrl,
   providerEntityPhysicalPath,
-  providerStoryShellPath,
+  providerEntityShellPath,
 } from "../lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "../lib/provider-entity-data";
 import { providerEntityManifestEntry, providerEntityRoot } from "./provider-entity-manifest";
@@ -64,7 +64,7 @@ export function installProviderDevRouting(server: DevServer): void {
           : undefined;
         if (entry) request.url = `${providerEntityPhysicalPath(entry)}${url.search}`;
         else {
-          const shell = providerStoryShellPath(url.pathname);
+          const shell = providerEntityShellPath(url.pathname);
           if (shell) request.url = `${shell}${url.search}`;
         }
       } else {

@@ -1,5 +1,7 @@
 import { navigationReturnHref } from "./resource-route";
 import { isLocale, localeFromPath, localePath } from "../i18n/locales";
+import { providerSongRoute } from "./provider-entity-data";
+import { legacyProviderRedirectTarget } from "./provider-entity-routing";
 
 export function audioTrackDetailPath(
   track: { id: string; songKey?: string; detailPath?: string },
@@ -12,12 +14,13 @@ export function audioTrackDetailPath(
     const returnTo = url.searchParams.get("return");
     const parent = returnTo && localeFromPath(returnTo) ? localePath(returnTo, locale) : returnTo;
     url.searchParams.delete("return");
-    return navigationReturnHref(`${url.pathname}${url.search}${url.hash}`, parent || undefined);
+    const target = legacyProviderRedirectTarget(url.pathname, url.search) ?? `${url.pathname}${url.search}`;
+    return navigationReturnHref(`${target}${url.hash}`, parent || undefined);
   }
 
   // Older saved queues have game identity but no catalogue detail path.
   const provider = /^(gbp|sekai):(?:[^:]+:)?([^:]+)$/u.exec(track.songKey || "");
-  if (provider) return `/${locale}/community/${provider[1]}/songs/detail/?song=${encodeURIComponent(provider[2]!)}`;
+  if (provider) return providerSongRoute(provider[1] === "gbp" ? "bestdori" : "sekai", locale, provider[2]!);
 
   return `/catalog/songs?song=${encodeURIComponent(track.id)}`;
 }

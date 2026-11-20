@@ -9,13 +9,13 @@ import "../../../../../lit/catalog-screen";
 import "../../../../../styles/catalog.css";
 
 export function getStaticPaths() {
-  return staticBuildPaths("src/pages/[locale]/community/sekai/songs/detail.astro", LOCALES.map((locale) => ({ params: { locale }, props: { locale } })));
+  return staticBuildPaths("src/pages/[locale]/community/gbp/songs/[id].astro", LOCALES.map((locale) => ({ params: { locale, id: "_" }, props: { locale } })));
 }
 const { locale } = Astro.props as { locale: Locale };
-const route = "/community/sekai/songs";
-const title = t(locale, "community.page.sekai.title", "Project Sekai songs");
-const config = catalogConfig({ resource: "songs", locale, origin: "sekai", entityContext: true });
-const entity = { title, backHref: `/${locale}/community/sekai/songs/` };
+const route = "/community/gbp/songs";
+const title = t(locale, "community.page.songsBestDori", "GBP Songs");
+const config = catalogConfig({ resource: "songs", locale, origin: "bestdori", entityContext: true });
+const entity = { title, backHref: `/${locale}/community/gbp/songs/` };
 ---
 
 <Base locale={locale} route={route} title={title} description={title} noindex>

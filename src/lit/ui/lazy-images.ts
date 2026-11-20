@@ -1,4 +1,5 @@
 import { contentRequestUrl } from "../../lib/content-request";
+import { publicMediaAddress, publicMediaPath } from "../../lib/document-address";
 import { localizedImageCandidates } from "../../lib/localized-image";
 import { createLoadingIndicator } from "./loading-indicator";
 
@@ -31,7 +32,7 @@ import { createLoadingIndicator } from "./loading-indicator";
  * the loader that consumes it.
  */
 export function localeTaggedCandidates(source: string, locale: string): string[] {
-  return localizedImageCandidates(contentRequestUrl(source), locale);
+  return localizedImageCandidates(publicMediaPath(source) ?? contentRequestUrl(source), locale);
 }
 
 export function localizedAssetUrl(source: string, locale: string): string {
@@ -191,7 +192,7 @@ export class LazyImages {
       ...fallbacks,
       ...(image.dataset.fallback ? [image.dataset.fallback] : []),
     ]
-      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .map((value) => (typeof value === "string" ? publicMediaAddress(value.trim()) : ""))
       .filter((value, index, values) => value && values.indexOf(value) === index);
     image.classList.remove("is-loaded", "is-error");
     this.observed.delete(image);
@@ -233,7 +234,8 @@ export class LazyImages {
       syncMediaFrame(image);
       if (frame && frame !== image.closest(".media-loading")) syncMediaFrame(image, frame);
     };
-    const request: PendingImage = { owner: this, inputSource: source, source: contentRequestUrl(candidates[0]), finish: settle };
+    const first = candidates[0];
+    const request: PendingImage = { owner: this, inputSource: source, source: publicMediaPath(first) ?? contentRequestUrl(first), finish: settle };
     pendingImageFinishes.set(image, request);
     this.pending.add(image);
     delete image.dataset.cancelled;
@@ -305,7 +307,8 @@ export function nextImageCandidate(event: Event) {
   const next = Number(image.dataset.candidateIndex || 0) + 1;
   if (candidates[next]) {
     image.dataset.candidateIndex = String(next);
-    const source = contentRequestUrl(candidates[next]!);
+    const candidate = candidates[next]!;
+    const source = publicMediaPath(candidate) ?? contentRequestUrl(candidate);
     if (request) request.source = source;
     image.src = source;
     return;

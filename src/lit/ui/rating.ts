@@ -1,11 +1,11 @@
 import { html } from "lit";
 
-export function bandRatingIcon(server: string, releaseId: string, rank: number) {
+export function bandRatingIcon(server: string, rank: number) {
   // UIBandRankIcon._type maps ranks 1–24 to D1–SS4.
   const name = `${["D", "C", "B", "A", "S", "SS"][Math.floor((rank - 1) / 4)]}${((rank - 1) % 4) + 1}`;
   return html`
     <img
-      src=${`/assets/${server}/Assets/AddressableResources/UI/Texture/BandRank/ImgScorerank_${name}.png?release=${releaseId}`}
+      src=${`/assets/${server}/Assets/AddressableResources/UI/Texture/BandRank/ImgScorerank_${name}.png`}
       alt=${name}
       width="64"
       height="53"

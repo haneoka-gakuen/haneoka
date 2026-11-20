@@ -49,7 +49,7 @@ export function arenaRuleText(locale: string, rule: ArenaRuleView) {
 const markUrl = (context: ArenaRuleContext, name: string) => {
   const source = context.marks[name];
   return source
-    ? `/runtime/${context.server}/${source.replace(/^runtime\//u, "")}?release=${context.catalog.identity.releaseId}`
+    ? `/runtime/${context.server}/${source.replace(/^runtime\//u, "")}`
     : "";
 };
 
