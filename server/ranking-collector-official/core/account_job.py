@@ -180,6 +180,27 @@ def run_account_job(job):
         remaining()
 
     try:
+        sdk = cached
+        if job['action'] == 'sdk':
+            stage = 'sdk'
+            client = GlobalEmailLogin(sdk_profile, deadline=deadline)
+            if cached is None:
+                sdk = client.login(job['email'], job['password'])
+            else:
+                try:
+                    sdk = client.resume(cached)
+                except SdkLoginError as error:
+                    if error.kind != 'sdk_cache_rejected' or error.code != -101:
+                        raise
+                    base['sdkSession'] = None
+                    sdk = client.login(job['email'], job['password'])
+                    if sdk.uid != cached.uid:
+                        raise SdkLoginError('sdk_identity_mismatch')
+        if job.get('expectedSdkUid') is not None and sdk.uid != job['expectedSdkUid']:
+            raise SdkLoginError('sdk_identity_mismatch')
+        if job['action'] == 'sdk':
+            return dict(base, status='sdk_ready', sdkSession=asdict(sdk))
+
         with tempfile.TemporaryDirectory(prefix='official-account-') as temporary:
             root = Path(temporary)
             master_file = root/'master.json'
@@ -190,30 +211,9 @@ def run_account_job(job):
                 catalog = provider()
             except ValueError:
                 raise AccountVerificationError('account_catalog_invalid') from None
-            boards = verification_boards(catalog, int(time.time()*1000))
-            if not boards:
+            if not verification_boards(catalog, int(time.time()*1000)):
                 raise AccountVerificationError('verification_unavailable')
             remaining()
-            sdk = cached
-            if job['action'] == 'sdk':
-                stage = 'sdk'
-                client = GlobalEmailLogin(sdk_profile, deadline=deadline)
-                if cached is None:
-                    sdk = client.login(job['email'], job['password'])
-                else:
-                    try:
-                        sdk = client.resume(cached)
-                    except SdkLoginError as error:
-                        if error.kind != 'sdk_login_rejected' or error.code != -101:
-                            raise
-                        base['sdkSession'] = None
-                        sdk = client.login(job['email'], job['password'])
-                        if sdk.uid != cached.uid:
-                            raise SdkLoginError('sdk_identity_mismatch')
-            if job.get('expectedSdkUid') is not None and sdk.uid != job['expectedSdkUid']:
-                raise SdkLoginError('sdk_identity_mismatch')
-            if job['action'] == 'sdk':
-                return dict(base, status='sdk_ready', sdkSession=asdict(sdk))
             stage = 'game'
             role = login_player(job['region'], sdk, profile, expected_player_id=job.get('expectedPlayerId'),
                 api_origin=job['apiOrigin'], timeout=remaining(), check_control=check_control)
@@ -222,11 +222,14 @@ def run_account_job(job):
             return dict(base, status='ready', playerId=role.player_id, credentials=dict(
                 player_id=role.player_id, credential=role.credential, device_id=role.device_id, bid=role.bid))
     except SdkLoginError as error:
-        return dict(base, status='auth_required' if error.kind in ('sdk_login_rejected','sdk_identity_mismatch') else 'failed', errorCode=str(error))
+        status = 'auth_required' if error.kind in ('sdk_login_rejected', 'sdk_account_not_found', 'sdk_identity_mismatch') else 'failed'
+        return dict(base, status=status, errorCode=str(error))
     except PlayerLoginError as error:
         status = 'auth_required' if error.kind == 'game_player_mismatch' or error.http_status == 401 or error.grpc_status == '16' else 'auth_uncertain'
         return dict(base, status=status, errorCode=error.kind)
     except AccountVerificationError as error:
+        if role and role.is_new_user and error.code == 'ranking_permission_denied':
+            return dict(base, status='needs_initialization', playerId=role.player_id)
         return dict(base, status='auth_required' if error.code == 'ranking_authentication_failed' else 'failed',
             errorCode=error.code, **({'playerId':role.player_id} if role else {}))
     except (CatalogRequestError, VersionError):

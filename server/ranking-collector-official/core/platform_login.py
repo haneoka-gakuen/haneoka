@@ -130,7 +130,10 @@ class GlobalEmailLogin:
         if not isinstance(envelope, dict) or type(envelope.get('code')) is not int:
             raise SdkLoginError('sdk_invalid_response')
         if envelope['code'] != 0:
-            raise SdkLoginError('sdk_login_rejected', envelope['code'])
+            phase = {'/gapi/client/rsa': 'rsa', '/gapi/client/cache.login': 'cache', '/gapi/client/login': 'login'}[path]
+            if phase == 'login' and envelope['code'] == 500003:
+                raise SdkLoginError('sdk_account_not_found')
+            raise SdkLoginError(f'sdk_{phase}_rejected', envelope['code'])
         data = envelope.get('data')
         if not isinstance(data, dict):
             raise SdkLoginError('sdk_invalid_response')

@@ -1093,6 +1093,24 @@ export class OfficialRankingCollector extends Container<Env> {
     await this.schedule(new Date(Date.now() + 1_000), "runGuestJob", "jp");
   }
 
+  private async recoverLegacyGuestVerification() {
+    if (await this.ctx.storage.get("guestJob")) return;
+    const key = "guestDeviceVerificationRecovery";
+    const attempted = await this.ctx.storage.get<string[] | null>(key);
+    if (attempted === null) return;
+    const guests = await listGuestAccounts(this.env);
+    for (const guest of guests) {
+      if (guest.status !== "created" || guest.lastErrorCode !== "guest_verification_incomplete" || attempted?.includes(guest.id)) continue;
+      const configuration = await readGuestConfiguration(this.env, guest.id);
+      if (!configuration || !await readGuestRequest(this.env, guest.id)) continue;
+      if (object(object(configuration.credentials).credentials).device_id) continue;
+      await this.queueGuestVerification(guest.id, guest.version);
+      await this.ctx.storage.put(key, [...(attempted ?? []), guest.id]);
+      return;
+    }
+    await this.ctx.storage.put(key, null);
+  }
+
   private async finishGuestWork(lease: GuestLease) {
     const pending = await this.ctx.storage.get<PendingGuestJob>("guestJob");
     if (pending?.guestId !== lease.guestId || pending.runId !== lease.runId) return;
@@ -2061,6 +2079,10 @@ export class OfficialRankingCollector extends Container<Env> {
         state.status = "disabled";
         await this.persist(state, false);
         return;
+      }
+      if (region === "jp") {
+        try { await this.recoverLegacyGuestVerification(); }
+        catch { console.warn(JSON.stringify({ event: "official_guest_recovery_failed", code: "guest_verification_recovery_failed" })); }
       }
       if (state.playerInterests?.length || state.songInterests?.length || state.cardInterests?.length)
         await this.queueLookup(region, Date.now() + 1_000);

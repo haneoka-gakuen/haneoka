@@ -43,7 +43,10 @@ def validate_guest_job(job):
         credentials = job.get('credentials')
         if not isinstance(credentials, dict):
             raise ValueError('invalid_guest_credentials')
-        player, secret, device = (credentials.get(key) for key in ('player_id', 'credential', 'device_id'))
+        player, secret = (credentials.get(key) for key in ('player_id', 'credential'))
+        device = credentials.get('device_id')
+        if device is None:
+            device = ''
         if (any(not isinstance(value, str) or not value for value in (player, secret))
                 or not isinstance(device, str)
                 or any(not 32 <= ord(c) < 127 for value in (player, secret, device) for c in value)):
