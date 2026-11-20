@@ -207,11 +207,12 @@
     display: flex;
     min-height: 48px;
     align-items: center;
+    justify-content: flex-start;
     gap: 12px;
     padding: 0 16px;
     border-radius: var(--md-sys-shape-corner-full);
     color: var(--md-sys-color-on-surface-variant);
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
   .account-navigation > button:hover {

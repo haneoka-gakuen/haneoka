@@ -13,7 +13,6 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
-import { entityDiscussion } from "./ui/entity-discussion";
 import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
 import { tile } from "./ui/tile";
@@ -1213,10 +1212,6 @@ export class SpineWorkspace extends LitElement {
             }
             </div>
           </aside>
-          ${page && typeof detail?.resourceKey === "string" ? entityDiscussion({
-            type: "spine", id: this.entityId.includes("~") ? `model:${this.entityId}` : detail.resourceKey,
-            server: readReleaseServer(), locale: this.locale, title: this.modelTitle(detail),
-          }) : nothing}
         </div>
       </aside>
     `;

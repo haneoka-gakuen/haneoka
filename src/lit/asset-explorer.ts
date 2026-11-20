@@ -3,8 +3,6 @@ import { contentRequestUrl } from "../lib/content-request";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { RequestScope } from "../lib/request-scope";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
-import { entityDiscussion } from "./ui/entity-discussion";
-import { assetStaticId } from "../lib/asset-static-routing";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import { assetOutputKind, type AssetPageData, type AssetViewData } from "../lib/asset-page-data";
@@ -510,8 +508,6 @@ export class AssetExplorer extends LitElement {
     const url = this.url(this.selected),
       kind = this.kind(this.selected);
     const title = AssetExplorer.plainName(this.displayName(this.selected).split("/").at(-1) || "");
-    const discussionId = this.files.includes(this.selected) && this.path.length
-      ? assetStaticId(this.localized(this.path.join("/")).split("/"), this.selected).replaceAll("/", "") : "";
     return html`
       <section class="asset-preview">
         <header class="asset-preview__header">
@@ -570,7 +566,6 @@ export class AssetExplorer extends LitElement {
                         `
           }
         </div>
-        ${entityDiscussion({ type: "assets", id: discussionId, server: this.server(), locale: preferredLocale(), title })}
       </section>
     `;
   }
