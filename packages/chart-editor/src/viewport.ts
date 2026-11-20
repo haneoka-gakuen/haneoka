@@ -1,13 +1,10 @@
-/**
- * A vertical rhythm-editor viewport whose time axis runs from bottom to top.
- *
- * `startSeconds` is the time at the bottom edge (`y === height`). Later
- * timestamps are rendered higher on screen, at smaller y coordinates.
- */
+/** A vertical rhythm-editor viewport. Time runs upwards by default. */
 export interface VerticalTimeViewport {
+  /** Earliest visible time, at the bottom edge by default or the top edge in top-down mode. */
   startSeconds: number;
   pixelsPerSecond: number;
   height: number;
+  topDown?: boolean;
 }
 
 const finite = (value: number, label: string): number => {
@@ -27,14 +24,16 @@ const validateViewport = (viewport: VerticalTimeViewport): void => {
 export const timeToViewportY = (seconds: number, viewport: VerticalTimeViewport): number => {
   finite(seconds, "Time");
   validateViewport(viewport);
-  return viewport.height - (seconds - viewport.startSeconds) * viewport.pixelsPerSecond;
+  const distance = (seconds - viewport.startSeconds) * viewport.pixelsPerSecond;
+  return viewport.topDown ? distance : viewport.height - distance;
 };
 
 /** Convert a canvas y coordinate to an authored/audio timestamp. */
 export const viewportYToTime = (y: number, viewport: VerticalTimeViewport): number => {
   finite(y, "Viewport y");
   validateViewport(viewport);
-  return viewport.startSeconds + (viewport.height - y) / viewport.pixelsPerSecond;
+  const distance = viewport.topDown ? y : viewport.height - y;
+  return viewport.startSeconds + distance / viewport.pixelsPerSecond;
 };
 
 /**
@@ -49,25 +48,19 @@ export const panVerticalTimeViewport = (
   finite(contentDeltaY, "Content drag delta");
   return {
     ...viewport,
-    startSeconds: viewport.startSeconds + contentDeltaY / viewport.pixelsPerSecond,
+    startSeconds: viewport.startSeconds + (viewport.topDown ? -contentDeltaY : contentDeltaY) / viewport.pixelsPerSecond,
   };
 };
 
 /**
- * Scroll a bottom-up timeline using the platform wheel convention.
- * Positive `scrollDeltaY` moves the document towards later content, so the
- * rendered chart travels up the screen.
+ * Scroll the timeline using the platform wheel convention.
+ * Positive `scrollDeltaY` moves the rendered chart up the screen.
  */
 export const scrollVerticalTimeViewport = (
   viewport: VerticalTimeViewport,
   scrollDeltaY: number,
 ): VerticalTimeViewport => {
-  validateViewport(viewport);
-  finite(scrollDeltaY, "Wheel scroll delta");
-  return {
-    ...viewport,
-    startSeconds: viewport.startSeconds - scrollDeltaY / viewport.pixelsPerSecond,
-  };
+  return panVerticalTimeViewport(viewport, -scrollDeltaY);
 };
 
 /**
@@ -85,9 +78,10 @@ export const zoomVerticalTimeViewportAtY = (
   if (nextPixelsPerSecond <= 0) throw new RangeError("Next viewport scale must be positive");
 
   const anchorSeconds = viewportYToTime(anchorY, viewport);
+  const distance = viewport.topDown ? anchorY : viewport.height - anchorY;
   return {
     ...viewport,
-    startSeconds: anchorSeconds - (viewport.height - anchorY) / nextPixelsPerSecond,
+    startSeconds: anchorSeconds - distance / nextPixelsPerSecond,
     pixelsPerSecond: nextPixelsPerSecond,
   };
 };

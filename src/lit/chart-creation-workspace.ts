@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
-// Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；预览复用 chart-simulator。
+// Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；编辑视图可切换时间轴方向；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
 // Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何与路径采样索引随原生谱面及节奏映射缓存；静态谱面与指针分层绘制，命中投影随视口缓存，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
@@ -94,6 +94,7 @@ import {
 } from "../../packages/chart-editor/src/creation/actions";
 import {
   timeToViewportY,
+  viewportYToTime,
   panVerticalTimeViewport,
   scrollVerticalTimeViewport,
   zoomVerticalTimeViewportAtY,
@@ -237,6 +238,7 @@ interface TouchViewport {
 }
 
 let chartCreationOwnerSequence = 0;
+const timelineDirectionKey = "haneoka-chart-timeline-direction";
 const paletteTools = ["select", "tap", "flick_up", "flick_left", "flick_right", "hold", "erase", "trace", "guide", "pan", "brush", "node"];
 
 export class ChartCreationWorkspace extends LitElement {
@@ -258,6 +260,7 @@ export class ChartCreationWorkspace extends LitElement {
     documents: { state: true },
     revisions: { state: true },
     windowStart: { state: true },
+    topDownTime: { state: true },
     leftOpen: { state: true },
     rightOpen: { state: true },
     narrow: { state: true },
@@ -355,7 +358,7 @@ export class ChartCreationWorkspace extends LitElement {
   private paintBackdrop?: {
     project: Project; base: Project; scope: ChartCollectionScope; theme: OurNotesCreationCanvasSkin | undefined; waveform: unknown;
     width: number; height: number; ratio: number; start: number; span: number; laneStart: number; laneSpan: number;
-    snap: number; locale: string; selected: ReadonlySet<string>; scale: number;
+    snap: number; locale: string; selected: ReadonlySet<string>; scale: number; topDown: boolean;
     hits: { id: string; left: number; right: number; y: number }[];
   };
   private tempoSnapshot?: { project: Project; value: TempoMap };
@@ -386,6 +389,7 @@ export class ChartCreationWorkspace extends LitElement {
   declare private documents: CreationDocument[];
   declare private revisions: CreationRevision[];
   declare private windowStart: number;
+  declare private topDownTime: boolean;
   private pending?: { tick: number; lane: number; size: number };
   declare private nodeMode: LinePointMode;
   private seconds = 0;
@@ -501,6 +505,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.documents = [];
     this.revisions = [];
     this.windowStart = 0;
+    this.topDownTime = false;
     this.leftOpen = false;
     this.rightOpen = true;
     this.narrow = false;
@@ -558,6 +563,7 @@ export class ChartCreationWorkspace extends LitElement {
     if (!this.isConnected) return;
     this.shortcutOverrides = readChartShortcuts();
     this.audioSettings = readEditorAudioSettings();
+    try { this.topDownTime = localStorage.getItem(timelineDirectionKey) === "down"; } catch {}
     this.requestUpdate();
     if (this.pageData) this.previewIdentity = this.pageData.variants[readReleaseServer()]?.identity;
     document.addEventListener("fullscreenchange", this.fullscreenChanged);
@@ -1327,7 +1333,7 @@ export class ChartCreationWorkspace extends LitElement {
       else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         const direction = event.key === "ArrowUp" || event.key === "ArrowRight" ? 1 : -1;
         const time = event.key === "ArrowUp" || event.key === "ArrowDown";
-        const tick = time ? Math.max(0, placement.tick + direction * (event.altKey ? 1 : Math.max(1, Math.round(this.chart.resolution * 4 / this.snap)))) : placement.tick;
+        const tick = time ? Math.max(0, placement.tick + this.verticalTimeStep(event.key === "ArrowUp") * (event.altKey ? 1 : Math.max(1, Math.round(this.chart.resolution * 4 / this.snap)))) : placement.tick;
         this.updatePaste(tick, placement.laneShift + (time ? 0 : direction * (event.altKey ? 0.25 : 1)));
       } else return;
       event.preventDefault();
@@ -1374,7 +1380,7 @@ export class ChartCreationWorkspace extends LitElement {
         if (!canvas) return false;
         const rect = canvas.getBoundingClientRect(), { clientX, clientY } = this.cursor;
         if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
-        const seconds = this.windowStart + (1 - (clientY - rect.top) / rect.height) * this.secondsPerScreen;
+        const seconds = viewportYToTime(clientY - rect.top, this.timeViewport(rect.height));
         this.place(Math.max(0, this.gridTick(this.map().secondsToTick(seconds))),
           Math.round(viewportXToAuthoredLane(clientX - rect.left, rect.width, this.laneView(this.chart))));
         break;
@@ -1397,8 +1403,8 @@ export class ChartCreationWorkspace extends LitElement {
       case "remove_nodes": this.removeSelectedNodes(); break;
       case "generate_traces": case "convert_traces": this.createLineTraces(command === "generate_traces"); break;
       case "compress_first": case "compress_last": this.compressSelection(command === "compress_first" ? "first" : "last"); break;
-      case "nudge_up": case "nudge_down": this.nudgeSelection(command === "nudge_up" ? 1 : -1); break;
-      case "tick_up": case "tick_down": this.nudgeSelection(command === "tick_up" ? 1 : -1, true); break;
+      case "nudge_up": case "nudge_down": this.nudgeSelection(this.verticalTimeStep(command === "nudge_up")); break;
+      case "tick_up": case "tick_down": this.nudgeSelection(this.verticalTimeStep(command === "tick_up"), true); break;
       case "width_up": this.stepWidth(0.25); break;
       case "width_down": this.stepWidth(-0.25); break;
       case "width_up_large": this.stepWidth(1); break;
@@ -1406,11 +1412,11 @@ export class ChartCreationWorkspace extends LitElement {
       case "zoom_in": this.setVerticalZoom(this.secondsPerScreen / 2); break;
       case "zoom_out": this.setVerticalZoom(this.secondsPerScreen * 2); break;
       case "pan_up": case "pan_down":
-        this.windowStart = this.clampStart(this.windowStart + (command === "pan_up" ? 1 : -1) * 0.25); this.requestUpdate(); break;
+        this.windowStart = this.clampStart(this.windowStart + this.verticalTimeStep(command === "pan_up") * 0.25); this.requestUpdate(); break;
       case "pan_left": case "pan_right":
         this.laneStart = this.clampLaneStart(this.laneStart + (command === "pan_right" ? 1 : -1) * this.laneSpan() * 0.1); break;
       case "page_up": case "page_down":
-        this.windowStart = this.clampStart(this.windowStart + (command === "page_up" ? 1 : -1) * this.secondsPerScreen); break;
+        this.windowStart = this.clampStart(this.windowStart + this.verticalTimeStep(command === "page_up") * this.secondsPerScreen); break;
       case "home": case "end": this.windowStart = command === "home" ? 0 : this.clampStart(this.timelineDuration() - this.secondsPerScreen); break;
       case "previous_waypoint": case "next_waypoint": this.stepWaypoint(command === "next_waypoint" ? 1 : -1); break;
       case "audio_settings": void this.showAudioSettings(); break;
@@ -1619,21 +1625,30 @@ export class ChartCreationWorkspace extends LitElement {
     return duration;
   }
   private clampStart(value: number) { return Math.max(0, value); }
+  private timeViewport(height: number, startSeconds = this.windowStart, span = this.secondsPerScreen) {
+    return { startSeconds, pixelsPerSecond: height / span, height, topDown: this.topDownTime };
+  }
+  private verticalTimeStep(up: boolean): -1 | 1 {
+    return up !== this.topDownTime ? 1 : -1;
+  }
+  private setTimelineDirection(topDown: boolean) {
+    if (this.busy || this.gesture || this.pan || this.touchViewport || this.topDownTime === topDown) return;
+    this.topDownTime = topDown;
+    try { localStorage.setItem(timelineDirectionKey, topDown ? "down" : "up"); } catch {}
+  }
   private setVerticalZoom(span: number, pixel?: number) {
     if (this.busy || this.gesture || !this.hasProject || this.stageMode !== "edit" || !Number.isFinite(span)) return;
     const canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
     if (!canvas?.clientHeight) return;
-    const height = canvas.clientHeight;
+    const height = canvas.clientHeight, viewport = this.timeViewport(height);
     if (pixel === undefined) {
       const selected = this.selectionNodes().find((item) => item.note.id === this.selected);
       const time = selected ? this.map().tickToSeconds(selected.note.tick) : this.seconds;
-      const at = timeToViewportY(time, { startSeconds: this.windowStart, pixelsPerSecond: height / this.secondsPerScreen, height });
+      const at = timeToViewportY(time, viewport);
       pixel = at >= 0 && at <= height ? at : height / 2;
     }
     const nextSpan = Math.max(0.5, Math.min(16, span));
-    const next = zoomVerticalTimeViewportAtY({
-      startSeconds: this.windowStart, pixelsPerSecond: height / this.secondsPerScreen, height,
-    }, height / nextSpan, pixel);
+    const next = zoomVerticalTimeViewportAtY(viewport, height / nextSpan, pixel);
     this.secondsPerScreen = nextSpan;
     this.windowStart = this.clampStart(next.startSeconds);
     this.requestUpdate();
@@ -1656,11 +1671,7 @@ export class ChartCreationWorkspace extends LitElement {
       );
       return;
     }
-    const viewport = {
-      startSeconds: this.windowStart,
-      pixelsPerSecond: canvas.clientHeight / this.secondsPerScreen,
-      height: canvas.clientHeight,
-    };
+    const viewport = this.timeViewport(canvas.clientHeight);
     if (event.ctrlKey || event.metaKey) {
       this.setVerticalZoom(this.secondsPerScreen * Math.exp(event.deltaY * 0.002), event.clientY - canvas.getBoundingClientRect().top);
     } else this.windowStart = this.clampStart(scrollVerticalTimeViewport(viewport, event.deltaY).startSeconds);
@@ -1701,11 +1712,7 @@ export class ChartCreationWorkspace extends LitElement {
     );
     this.windowStart = this.clampStart(
       panVerticalTimeViewport(
-        {
-          startSeconds: this.pan.start,
-          pixelsPerSecond: canvas.clientHeight / this.secondsPerScreen,
-          height: canvas.clientHeight,
-        },
+        this.timeViewport(canvas.clientHeight, this.pan.start),
         event.clientY - this.pan.y,
       ).startSeconds,
     );
@@ -1767,9 +1774,9 @@ export class ChartCreationWorkspace extends LitElement {
     if (!gesture.moved) return;
     this.zoomX = Math.max(1, Math.min(8, gesture.zoom * (gesture.zoomX ? nextX / initialX : 1)));
     this.secondsPerScreen = Math.max(.5, Math.min(16, gesture.span / (gesture.zoomY ? nextY / initialY : 1)));
-    const time = gesture.start + (1 - (before.y - gesture.rect.top) / gesture.rect.height) * gesture.span;
+    const time = viewportYToTime(before.y - gesture.rect.top, this.timeViewport(gesture.rect.height, gesture.start, gesture.span));
     const lane = gesture.lane + (before.x - gesture.rect.left) / gesture.rect.width * gesture.laneSpan;
-    this.windowStart = this.clampStart(time - (1 - (center.y - gesture.rect.top) / gesture.rect.height) * this.secondsPerScreen);
+    this.windowStart = this.clampStart(time - viewportYToTime(center.y - gesture.rect.top, this.timeViewport(gesture.rect.height, 0)));
     this.laneStart = this.clampLaneStart(lane - (center.x - gesture.rect.left) / gesture.rect.width * this.laneSpan());
     this.paint(); this.requestUpdate();
   }
@@ -1797,7 +1804,7 @@ export class ChartCreationWorkspace extends LitElement {
       return;
     }
     const rect = canvas.getBoundingClientRect(), chart = this.chart, map = this.map();
-    const seconds = this.windowStart + (1 - (event.clientY - rect.top) / rect.height) * this.secondsPerScreen;
+    const seconds = viewportYToTime(event.clientY - rect.top, this.timeViewport(rect.height));
     const laneSpan = this.laneSpan(chart);
     const pointerLane = viewportXToAuthoredLane(event.clientX - rect.left, rect.width, this.laneView(chart));
     const tick = Math.max(0, this.gridTick(map.secondsToTick(seconds))), lane = Math.round(pointerLane);
@@ -1894,7 +1901,7 @@ export class ChartCreationWorkspace extends LitElement {
   private applyGesture() {
     const g = this.gesture;
     if (!g || !g.moved && g.kind !== "create" && g.kind !== "erase") return;
-    const seconds = g.startSeconds + (1 - (g.endY - g.rect.top) / g.rect.height) * g.span;
+    const seconds = viewportYToTime(g.endY - g.rect.top, this.timeViewport(g.rect.height, g.startSeconds, g.span));
     const tick = g.map.secondsToTick(seconds),
       lane = g.laneStart + ((g.endX - g.rect.left) / g.rect.width) * g.laneSpan;
     if (g.kind === "create" && g.placement) {
@@ -2103,7 +2110,8 @@ export class ChartCreationWorkspace extends LitElement {
     if (!anchor || !this.cursor || this.gesture || this.pan || this.touchViewport || this.stageMode !== "edit") return;
     const rect = canvas.getBoundingClientRect(), point = this.cursor;
     if (point.clientX < rect.left || point.clientX > rect.right || point.clientY < rect.top || point.clientY > rect.bottom) return;
-    const tick = Math.max(0, this.gridTick(this.map().secondsToTick(this.windowStart + (1 - (point.clientY - rect.top) / rect.height) * this.secondsPerScreen)));
+    const seconds = viewportYToTime(point.clientY - rect.top, this.timeViewport(rect.height));
+    const tick = Math.max(0, this.gridTick(this.map().secondsToTick(seconds)));
     if (tick <= anchor.tick) return;
     const lane = Math.round(viewportXToAuthoredLane(point.clientX - rect.left, rect.width, this.laneView()));
     const key = JSON.stringify([tick, lane, this.pending, this.continuingLine, this.defaultWidth, this.critical, this.tool, this.collectionScope]);
@@ -2142,24 +2150,20 @@ export class ChartCreationWorkspace extends LitElement {
     let ctx = backgroundContext;
     const style = getComputedStyle(this),
       color = (name: string) => style.getPropertyValue(`--md-sys-color-${name}`).trim();
+    const viewport = this.timeViewport(height);
     const chart = this.pastePlacement?.candidate ?? this.gesture?.candidate ?? this.widthSession?.candidate ?? this.continuationCandidate(canvas) ?? this.chart,
       map = this.map(),
       laneSpan = this.laneSpan(chart),
       x = (lane: number) => authoredLaneToViewportX(lane, width, this.laneView(chart)),
       w = (size: number) => (size / laneSpan) * width,
-      y = (tick: number) =>
-        timeToViewportY(map.tickToSeconds(tick), {
-          startSeconds: this.windowStart,
-          pixelsPerSecond: height / this.secondsPerScreen,
-          height,
-        });
+      y = (tick: number) => timeToViewportY(map.tickToSeconds(tick), viewport);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     const fullStageWidth=width*chart.laneBasis/laneSpan;
     const stageLeft = Math.max(0, x(0)), stageRight = Math.min(width, x(chart.laneBasis));
     const display = this.editingProject(chart), cached = this.paintBackdrop;
     const waveform = this.audio?.analysis.waveform;
     const reuse = Boolean(cached && cached.project === display && cached.base === this.chart && cached.scope === this.collectionScope && cached.theme === this.canvasTheme &&
-      cached.waveform === waveform && cached.width === width && cached.height === height && cached.ratio === ratio &&
+      cached.waveform === waveform && cached.width === width && cached.height === height && cached.ratio === ratio && cached.topDown === viewport.topDown &&
       cached.start === this.windowStart && cached.span === this.secondsPerScreen && cached.laneStart === this.laneStart &&
       cached.laneSpan === laneSpan && cached.snap === this.snap && cached.locale === this.locale && cached.selected === this.selectedIds);
     const skin = this.canvasTheme?.skin;
@@ -2186,7 +2190,7 @@ export class ChartCreationWorkspace extends LitElement {
       if (major) {
         ctx.fillStyle = this.laneStart >= 0 && this.laneStart < chart.laneBasis ? (this.canvasTheme?.assets.palette.outsideLine ?? color("on-surface-variant")) : color("on-surface-variant");
         ctx.font = `11px ${style.getPropertyValue("--app-font").trim() || "sans-serif"}`;
-        ctx.fillText(String(beat), 4, at - 14);
+        ctx.fillText(String(beat), 4, at + (viewport.topDown ? 18 : -14));
       }
     };
     for (let beat = first; beat <= last; beat++) drawGridLine(beat, true);
@@ -2202,10 +2206,10 @@ export class ChartCreationWorkspace extends LitElement {
     ctx.fillStyle = this.canvasTheme?.assets.palette.outsideLine ?? color("secondary");
     if (this.audio) {
       const wave = this.audio.analysis.waveform;
+      const start = viewportYToTime(0, viewport);
+      const step = (viewportYToTime(height, viewport) - start) / height;
       for (let row = 0; row < height; row++) {
-        const at = Math.floor(
-          ((this.windowStart + (1 - row / height) * this.secondsPerScreen) / wave.duration) * wave.length,
-        );
+        const at = Math.floor((start + row * step) / wave.duration * wave.length);
         if (at < 0 || at >= wave.length) continue;
         ctx.fillRect(0, row, (Math.max(0, wave.max[at] - wave.min[at]) * width) / 12, 1);
       }
@@ -2253,8 +2257,9 @@ export class ChartCreationWorkspace extends LitElement {
         label = label.slice(0, low) + "…";
       }
       const labelWidth = ctx.measureText(label).width;
-      ctx.fillStyle = color("surface-container-high"); ctx.fillRect(8, at - 24, labelWidth + 8, 20);
-      ctx.fillStyle = color("on-surface"); ctx.fillText(label, 12, at - 10);
+      const labelTop = at + (viewport.topDown ? 4 : -24);
+      ctx.fillStyle = color("surface-container-high"); ctx.fillRect(8, labelTop, labelWidth + 8, 20);
+      ctx.fillStyle = color("on-surface"); ctx.fillText(label, 12, labelTop + 14);
       ctx.restore();
     }
     const previewing = chart !== this.chart;
@@ -2265,7 +2270,7 @@ export class ChartCreationWorkspace extends LitElement {
       return !old || old.lane !== item.lane || old.size !== item.size || old.note.tick !== item.note.tick ||
         old.note.type !== item.note.type || old.note.direction !== item.note.direction || old.note.visible !== item.note.visible;
     }).map(item => item.note.id) : []);
-    const nativeY=(timeMs:number)=>timeToViewportY(timeMs/1000+chart.audioOffset,{startSeconds:this.windowStart,pixelsPerSecond:height/this.secondsPerScreen,height});
+    const nativeY=(timeMs:number)=>timeToViewportY(timeMs/1000+chart.audioOffset,viewport);
     if(skin&&projection){
       ctx.save();
       const changedNative = new Set([...changed].flatMap(id => projection.sourceMap.notesForCanonical(id)));
@@ -2280,7 +2285,8 @@ export class ChartCreationWorkspace extends LitElement {
       for(const line of this.flatLines.lines){
         const points=line.points;
         if(points.length<2)continue;
-        const top=nativeY(points.at(-1)!.timeMs),bottom=nativeY(points[0].timeMs);
+        const startY=nativeY(points[0].timeMs),endY=nativeY(points.at(-1)!.timeMs);
+        const top=Math.min(startY,endY),bottom=Math.max(startY,endY);
         if(top>height||bottom<0)continue;
         ctx.globalAlpha = previewing && !line.noteIds.some(id => changedNative.has(id)) ? 0.4 : 1;
         const lineHeight=bottom-top;
@@ -2337,7 +2343,7 @@ export class ChartCreationWorkspace extends LitElement {
       }
       this.paintBackdrop = { project: display, base: this.chart, scope: this.collectionScope, theme: this.canvasTheme, waveform,
         width, height, ratio, start: this.windowStart, span: this.secondsPerScreen, laneStart: this.laneStart, laneSpan,
-        snap: this.snap, locale: this.locale, selected: this.selectedIds, scale, hits };
+        snap: this.snap, locale: this.locale, selected: this.selectedIds, scale, hits, topDown: viewport.topDown };
     }
     const hits = this.paintBackdrop!.hits;
     ctx = interactionContext;
@@ -2364,7 +2370,7 @@ export class ChartCreationWorkspace extends LitElement {
       ctx.strokeRect(x, y, w, h);
       ctx.setLineDash([]);
     }
-    const playhead = timeToViewportY(this.seconds, {startSeconds:this.windowStart,pixelsPerSecond:height/this.secondsPerScreen,height});
+    const playhead = timeToViewportY(this.seconds, viewport);
     if (playhead >= 0 && playhead <= height) {
       ctx.strokeStyle = color("primary");ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,playhead);ctx.lineTo(width,playhead);ctx.stroke();
       ctx.fillStyle=color("primary");ctx.beginPath();ctx.moveTo(0,playhead-5);ctx.lineTo(8,playhead);ctx.lineTo(0,playhead+5);ctx.closePath();ctx.fill();
@@ -2376,7 +2382,7 @@ export class ChartCreationWorkspace extends LitElement {
       cursorX >= 0 && cursorX <= width && cursorY >= 0 && cursorY <= height);
     if (cursorOutput) cursorOutput.hidden = !showCursor;
     if (showCursor) {
-      const seconds = this.windowStart + (1 - cursorY / height) * this.secondsPerScreen;
+      const seconds = viewportYToTime(cursorY, viewport);
       const action = this.gesture;
       const edited = action && ["move", "resize-left", "resize-right"].includes(action.kind)
         ? this.selectionNodes(chart).find(item => item.note.id === (action.resizeId ?? action.primary)) : undefined;
@@ -2572,7 +2578,7 @@ export class ChartCreationWorkspace extends LitElement {
     const placement = this.pastePlacement, canvas = this.querySelector<HTMLCanvasElement>(".chart-creation__editor");
     if (!placement || !canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const seconds = this.windowStart + (1 - (point.clientY - rect.top) / rect.height) * this.secondsPerScreen;
+    const seconds = viewportYToTime(point.clientY - rect.top, this.timeViewport(rect.height));
     const lane = viewportXToAuthoredLane(point.clientX - rect.left, rect.width, this.laneView());
     const tick = Math.max(0, this.gridTick(this.map().secondsToTick(seconds)));
     const shift = Math.round((lane - placement.width / 2 - placement.left) * 4) / 4;
@@ -3062,7 +3068,7 @@ export class ChartCreationWorkspace extends LitElement {
           waypoints.sort((a, b) => a.tick - b.tick);
         })}>${this.t("creation.add_waypoint")}</button>
         ${([-1, 1] as const).map(direction => iconButton({ label: this.t(direction < 0 ? "creation.previous_waypoint" : "creation.next_waypoint"),
-          shortcut: this.shortcutLabel(direction < 0 ? "previous_waypoint" : "next_waypoint"), icon: direction < 0 ? "arrow_downward" : "arrow_upward",
+          shortcut: this.shortcutLabel(direction < 0 ? "previous_waypoint" : "next_waypoint"), icon: direction === this.verticalTimeStep(true) ? "arrow_upward" : "arrow_downward",
           disabled: this.busy || !this.hasProject || !this.chart.waypoints?.length, onClick: () => this.stepWaypoint(direction) }))}
       </div>
       ${(this.chart.waypoints ?? []).map(point => html`<div class="chart-creation__form">
@@ -3621,10 +3627,10 @@ export class ChartCreationWorkspace extends LitElement {
                 ${this.widthControl(this.selectionNodes(chart).find((item) => item.note.id === selection.id)?.size ?? selection.size, true)}
                 <div class="chart-creation__actions">
                   ${([-1, 1] as const).map(direction => iconButton({
-                    label: `${this.t("beat")} ${direction > 0 ? "+" : "−"} / ${this.t("snap")}`,
+                    label: this.t(direction > 0 ? "shortcuts.nudge_up" : "shortcuts.nudge_down"),
                     icon: direction > 0 ? "arrow_upward" : "arrow_downward",
                     disabled: this.busy || !!this.gesture || !this.hasProject,
-                    onClick: () => this.nudgeSelection(direction),
+                    onClick: () => this.nudgeSelection(this.verticalTimeStep(direction > 0)),
                   }))}
                   <button
                     class="button button--text"
@@ -4109,6 +4115,18 @@ export class ChartCreationWorkspace extends LitElement {
     `;
     const viewControls = html`
       <div class="chart-creation__form">
+        <div class="chart-studio__setting">
+          <span>${this.t("creation.timeline_direction")}</span>
+          ${segmented({
+            label: this.t("creation.timeline_direction"),
+            value: this.topDownTime ? "down" : "up",
+            options: [
+              { value: "up", label: this.t("creation.timeline_up") },
+              { value: "down", label: this.t("creation.timeline_down") },
+            ],
+            onSelect: value => this.setTimelineDirection(value === "down"),
+          })}
+        </div>
         <label class="chart-studio__setting">
           <span>
             ${this.t("creation.zoom_x")}

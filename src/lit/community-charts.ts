@@ -27,7 +27,6 @@ import { difficultyBadge } from "./ui/difficulty-picker";
 import { facet } from "./ui/facet";
 import { renderPane, paneSection } from "./ui/pane";
 import { detailLayout, DETAIL_LAYOUT_STACKED } from "./ui/detail-layout";
-import { entityDiscussion } from "./ui/entity-discussion";
 import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
@@ -355,9 +354,6 @@ export class CommunityCharts extends LitElement {
           server=${this.server}
           .mode=${this.chartMode}
         ></chart-simulator>
-        ${row.publishedRevision ? entityDiscussion({
-          type: "community-charts", id: row.id, server: this.server || "intl", locale: this.locale, title: row.title,
-        }) : nothing}
       </section>
     `;
   }

@@ -76,7 +76,6 @@ import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPa
 import { providerDetailHref, type ProviderEntityPayload } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { providerDiscussionIdentity } from "../lib/provider-entity-data";
-import { entityDiscussion } from "./ui/entity-discussion";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
@@ -6376,7 +6375,6 @@ export class CatalogScreen extends LitElement {
     return html`
       <section class="chart-page" aria-label=${this.chartPageTitle(item)}>
         ${this.renderChartPlayer(item, chart, this.chartPageTitle(item))}
-        ${!this.isProvider() ? entityDiscussion({ type: "songs", id: String(item.musicId ?? ""), server: this.itemSourceServer(item), locale: this.settings.locale, title: this.itemTitle(item) }) : nothing}
       </section>
     `;
   }
