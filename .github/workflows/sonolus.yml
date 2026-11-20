@@ -181,6 +181,13 @@ jobs:
       - name: Stamp engine distribution with licenses
         run: node .dependencies/sonolus-our-notes/scripts/copy-upstream-license.ts
 
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+          command -v ffprobe
+          command -v ffmpeg
+
       - name: Build the global Sonolus payload
         run: pnpm sonolus:payload
 
