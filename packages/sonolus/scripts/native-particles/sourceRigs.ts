@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
+import { constants, gunzipSync, gzipSync } from "node:zlib";
 import {
   bakeRadianceFieldCarrierPair, bakeRadianceFieldTile, fitHdrCarrierSamples, packAtlas,
   partitionRadianceField, rasterizeCompositeRadiance, rasterizeProjectedRadiance,
@@ -9,9 +10,14 @@ import {
 } from "./bake.ts";
 import { EffectTracer, effectPixelOrigin, unitsPerPixel, W_TO_H, type QuadSample } from "./trace.ts";
 import { durationBeforeNextPhase, fitSourceAlphaTrajectory, type TrajectoryParticle } from "./trajectory.ts";
-import { decodeRgba8Png } from "../pack-original-note-skins.ts";
+import { decodePng, encodeRgbaPng } from "./textureBake.ts";
 import { repackParticleAtlas } from "./repack.ts";
+import { NATIVE_EFFECT_WIDTHS } from "./compile.ts";
+import { refreshNativeParticlePackReports } from "./packs.ts";
 import type { ParticleData } from "./merge.ts";
+import {
+  nativeLoopEffectDuration, nativeNoteEffectDuration, NATIVE_SHORT_EFFECT_DURATION, NATIVE_SHORT_SLIDE_EFFECT,
+} from "../../../../.dependencies/sonolus-our-notes/shared/src/engine/data/nativeEffects.ts";
 
 type JsonRecord = Record<string, unknown>;
 type ParticleGroup = { count: number; particles: TrajectoryParticle[] };
@@ -20,10 +26,13 @@ interface RigTarget {
   direction?: "left" | "right"; family?: string; width: number; name: string;
   judgement?: "perfect" | "great" | "good" | "bad";
   frameOnly?: boolean;
+  playbackSeconds?: number;
 }
 interface RigProfile {
   key: string; quality: number; renderingScale: number; nativeFrameGroupCount?: number;
-  noteEffectSkin?: "effect001" | "effect001Simple"; frameOnly?: boolean;
+  noteEffectSkin?: "effect001" | "effect001Simple"; frameOnly?: boolean; maximumAtlasHeight?: number;
+  unslicedFrameMaxWidth?: number;
+  wallsOnly?: boolean;
   baselineDataSha256: string; baselineJsonSha256: string; baselineTextureSha256: string;
   baselineTextureRgbaSha256: string; baselineTextureSize: [number, number]; effects: RigTarget[];
 }
@@ -41,12 +50,34 @@ const span = (quads: CompositeQuad[]) => {
   return Math.max(...xs) - Math.min(...xs);
 };
 
+/** Encode the wall's emitted light over the stage instead of tinting the stage black at its edges. */
+function wallRadianceTile(tile: Tile): Tile {
+  const background = [10, 22, 49];
+  const pixels = tile.image.pixels.slice();
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const alpha = pixels[offset + 3]! / 255;
+    if (!alpha) continue;
+    const light = background.map((value, channel) => Math.min(255 - value, pixels[offset + channel]! * alpha));
+    const opacity = Math.ceil(255 * Math.max(...light.map((value, channel) => value / (255 - background[channel]!))));
+    pixels[offset + 3] = opacity;
+    if (!opacity) continue;
+    // Coarser stored color in transparent texels changes their light by less than one displayed level.
+    const step = Math.floor(255 / opacity);
+    for (let channel = 0; channel < 3; channel++) {
+      const color = background[channel]! + 255 * light[channel]! / opacity;
+      pixels[offset + channel] = Math.min(255, Math.round(color / step) * step);
+    }
+  }
+  return { ...tile, image: { ...tile.image, pixels } };
+}
+
 /** Produce dynamic material fields from the formal evaluator; projection and draw order remain separate. */
 export async function buildSourceRigDelta(options: {
-  destination: string; baseline: string; releaseRoot: string; recipePath: string;
+  destination: string; baseline: string; releaseRoot: string; proofFile?: string;
   runtimeFiles: { renderer: string; authored: string; contract: string };
-}) {
-  const recipe: RigRecipe = JSON.parse(readFileSync(options.recipePath, "utf8"));
+} & ({ recipePath: string } | { recipe: RigRecipe })) {
+  const recipeBytes = "recipePath" in options ? readFileSync(options.recipePath) : Buffer.from(JSON.stringify(options.recipe));
+  const recipe: RigRecipe = "recipePath" in options ? JSON.parse(recipeBytes.toString()) : options.recipe;
   if (recipe.schema !== "our-notes-source-rigs-v1" || recipe.atlasSide !== 1024 || recipe.referenceWidth !== 8)
     throw new Error("Invalid Source rig recipe");
   if (hash(readFileSync(options.runtimeFiles.renderer)) !== recipe.sourceRendererSha256 ||
@@ -63,7 +94,7 @@ export async function buildSourceRigDelta(options: {
     const input = resolve(options.baseline, "particles", profile.key);
     const bytes = readFileSync(resolve(input, "particle.data")), png = readFileSync(resolve(input, "particle.texture.png"));
     const json = gunzipSync(bytes);
-    const image = decodeRgba8Png(png, "Source rig baseline");
+    const image = decodePng(png, "Source rig baseline");
     if (hash(json) !== profile.baselineJsonSha256 || hash(image.pixels) !== profile.baselineTextureRgbaSha256 ||
         image.width !== profile.baselineTextureSize[0] || image.height !== profile.baselineTextureSize[1])
       throw new Error("Source rig baseline changed");
@@ -97,7 +128,9 @@ export async function buildSourceRigDelta(options: {
       const prefab = tracer.assets.particles.effect001Prefabs[slot as "Normal"];
       if (!prefab) throw new Error("Missing Source rig prefab");
       const judgement = target.judgement ?? "perfect";
-      const clip = target.kind === "slide-loop" ? contract.nativeEffects.timings.loopParticles[2] : await tracer.clipDuration(prefab.animationClipUrls?.[judgement] ?? prefab.animationClipUrl);
+      const clip = target.playbackSeconds ?? (target.kind === "slide-loop"
+        ? contract.nativeEffects.timings.loopParticles[2]
+        : await tracer.clipDuration(prefab.animationClipUrls?.[judgement] ?? prefab.animationClipUrl));
       durations.set(familyKey, clip);
       if (target.kind === "slide-loop") loopPeriods.set(familyKey, await tracer.clipDuration(prefab.animationClipUrl));
       const result = tracer.trace({ kind: target.kind, direction: target.direction ?? "none", judgement, lifetime: clip, ...(target.kind === "slide-loop" ? { loop: true } : {}) },
@@ -114,7 +147,8 @@ export async function buildSourceRigDelta(options: {
       cases.set(`${familyKey}:${target.width}`, [...result.meshes].map(([name, samples]) => ({ name, samples })));
     }
     const family = (kind: string, width: number, name: string, plane: number) => {
-      const meshes = cases.get(`${kind}:${width}`)!.filter((mesh) => mesh.name.startsWith(name + "#") && mesh.samples[0]!.plane === plane);
+      const meshes = cases.get(`${kind}:${width}`)!.filter((mesh) =>
+        mesh.name.startsWith(name + "#") && (profile.wallsOnly || mesh.samples[0]!.plane === plane));
       if (!meshes.length) throw new Error("Source rig family missing");
       const envelope = meshes[0]!.samples, units = unitsPerPixel(width / 4), p = contract.nativeEffects.planes[plane];
       for (const mesh of meshes) for (const [index, sample] of mesh.samples.entries()) {
@@ -126,8 +160,10 @@ export async function buildSourceRigDelta(options: {
       }
       const quads: CompositeQuad[] = meshes.map(({ samples }) => {
         const sample = samples[0]!;
+        const sourcePlane = contract.nativeEffects.planes[sample.plane];
+        const alpha = (projection: typeof p, y: number) => projection.alpha1 - projection.slope * W_TO_H * (1 + y);
         return { file: sample.file, uv: sample.uv, emission: [1, 1, 1],
-          corners: sample.corners.map((point) => [point.x / units.x, point.y / units.y]),
+          corners: sample.corners.map(({ x, y }) => [x * (sample.plane === plane ? 1 : alpha(sourcePlane, y) / alpha(p, y)) / units.x, y / units.y]),
           projection: { originX: 0, originY: 0, alphaOrigin: p.alpha1 - p.slope * W_TO_H,
             alphaSlope: -p.slope * W_TO_H * units.y, inverseDepths: sample.inverseDepths! } };
       });
@@ -139,12 +175,13 @@ export async function buildSourceRigDelta(options: {
       const source = family(kind, width, name, plane), { envelope, units } = source, clip = durations.get(kind)!;
       const maximum = name === "frame" ? frameMaterials.get(`${kind} W${width}`)!
         : [0, 1, 2].map((c) => Math.max(...envelope.map((sample) => sample.emission[c]!))) as [number, number, number];
-      const sourceDensity = profile.renderingScale / (name === "frame" ? 1 : 2);
-      const nativeDensity = name === "frame" ? 1 : .25;
+      const sourceDensity = profile.renderingScale * (name === "frame" ? 1 : profile.wallsOnly ? .375 : .5);
+      const nativeDensity = name === "frame" ? 1 : profile.wallsOnly ? profile.renderingScale < 1 ? .16 : .18 : .25;
       const nearBloom = name === "frame" ? 1 : 0;
       const field = rasterizeProjectedRadiance(source.quads, sourceDensity, nativeDensity, effectPixelOrigin(), nearBloom * 3);
       const visiblePixels = name === "frame" ? bakeRadianceFieldTile("frame-visibility", field, maximum, nearBloom, nearBloom).image.pixels : undefined;
-      const parts = partitionRadianceField(field, visiblePixels), groups: ParticleGroup[] = [];
+      const parts = profile.wallsOnly ? [field] : partitionRadianceField(field, visiblePixels);
+      const groups: ParticleGroup[] = [];
       const emissionAt = (q: number): [number, number, number] => {
         const time = q * clip; if (time < envelope[0]!.t) return [0, 0, 0];
         let a = envelope[0]!;
@@ -155,6 +192,7 @@ export async function buildSourceRigDelta(options: {
         return a.emission.map((value) => value * Math.max(0, 1 - (time - a.t) / (clip - a.t))) as [number, number, number];
       };
       const gainAt = (q: number) => Math.max(...emissionAt(q).map((v, c) => v / Math.max(1e-12, maximum[c]!)));
+      const sampleByGain = name === "frame" || (profile.wallsOnly && profile.key === "simple" && loopPeriods.has(kind));
       const alphaKnots = new Set([0, 1, ...envelope.map((sample) => sample.t / clip)]);
       if (name === "frame") {
         const envelopeKnots = [...alphaKnots].sort((a, b) => a - b);
@@ -179,20 +217,22 @@ export async function buildSourceRigDelta(options: {
       }
       for (const [partIndex, part] of parts.entries()) {
         const sourcePair = bakeRadianceFieldCarrierPair(`${profile.key}|${kind}|${name}|${plane}|${partIndex}`, part, maximum, nearBloom, nearBloom);
-        const singlePeak = (name === "wall" && plane === 0) && sourcePair.core !== undefined;
+        const singlePeak = name === "wall" && (plane === 0 || profile.wallsOnly) && sourcePair.core !== undefined;
         const pair = singlePeak ? { critical: 1, body: sourcePair.peak, peak: sourcePair.peak } : sourcePair;
         const responses = fitHdrCarrierSamples(pair, (q) => bakeRadianceFieldTile("clock", part,
-          name === "frame" ? maximum.map((v) => v * q) as [number, number, number] : emissionAt(q), nearBloom, nearBloom).image.pixels,
-        96, name === "frame" ? (q) => q : gainAt, name === "frame");
+          sampleByGain ? maximum.map((v) => v * q) as [number, number, number] : emissionAt(q), nearBloom, nearBloom).image.pixels,
+        profile.wallsOnly ? 24 : 96, sampleByGain ? (q) => q : gainAt, name === "frame");
         const responseAt = (time: number) => {
-          const q = Math.max(0, Math.min(1, name === "frame" ? gainAt(time) : time)), i = Math.min(95, Math.floor(q * 96)), f = q * 96 - i;
+          const steps = responses.length - 1;
+          const q = Math.max(0, Math.min(1, sampleByGain ? gainAt(time) : time));
+          const i = Math.min(steps - 1, Math.floor(q * steps)), f = q * steps - i;
           const a = responses[i]!, b = responses[i + 1]!;
           return { bodyAlpha: a.bodyAlpha * (1 - f) + b.bodyAlpha * f, coreAlpha: a.coreAlpha * (1 - f) + b.coreAlpha * f,
             coreTint: a.coreTint.map((v, c) => v * (1 - f) + b.coreTint[c]! * f) as [number, number, number] };
         };
         const program: TrajectoryParticle[] = [];
         for (const [layer, original] of [[0, pair.body], [1, pair.core]] as const) if (original) {
-          const tile = trimTile(original), sprite = 0;
+          const tile = trimTile(profile.wallsOnly ? wallRadianceTile(original) : original), sprite = 0;
           const r = part.rect, w = (r.x1 - r.x0) / 2 * units.x, h = (r.y1 - r.y0) / 2 * units.y;
           const motion = [{ sprite, color: "#ffffff", start: envelope[0]!.t / clip, duration: 1 - envelope[0]!.t / clip,
             x: channel((r.x0 + r.x1) / 2 * units.x + 2 * w * tile.offset[0]),
@@ -225,7 +265,11 @@ export async function buildSourceRigDelta(options: {
             }
             for (const zero of zeroKnots) if (zero > particle.start && Math.abs(particle.start + duration - zero) < 1e-7)
               duration = Math.min(duration, durationBeforeNextPhase(particle.start, zero));
-            for (const piece of splitConstantTileColumns({ ...tile, expand: [1, 1], offset: [0, 0] })) {
+            const fieldTile = { ...tile, expand: [1, 1] as [number, number], offset: [0, 0] as [number, number] };
+            const pieces = (profile.wallsOnly && width < 12) || (name === "frame" && width <= (profile.unslicedFrameMaxWidth ?? 0))
+              ? [fieldTile]
+              : splitConstantTileColumns(fieldTile);
+            for (const piece of pieces) {
               program.push({ ...particle, duration, sprite: register(piece),
                 x: channel(motion[0]!.x.from.c! + 2 * motion[0]!.w.from.c! * piece.offset[0]),
                 w: channel(motion[0]!.w.from.c! * piece.expand[0]) });
@@ -248,7 +292,10 @@ export async function buildSourceRigDelta(options: {
       return { groups, source };
     };
     const replacements = new Map<string, ParticleGroup[]>(), backgrounds: ParticleData["effects"] = [];
-    for (const kind of [...new Set(profile.effects.map((target) => target.family ?? target.kind))]) {
+    if (profile.wallsOnly) for (const target of profile.effects) {
+      replacements.set(`${target.name} P1`, build(target.family ?? target.kind, target.width, "wall", 1).groups);
+    }
+    for (const kind of profile.wallsOnly ? [] : [...new Set(profile.effects.map((target) => target.family ?? target.kind))]) {
       const targets = profile.effects.filter((target) => (target.family ?? target.kind) === kind);
       const frameOnly = profile.frameOnly || targets.every((target) => target.frameOnly);
       const reference = frameOnly ? [] : [0, 1].map((plane) => build(kind, recipe.referenceWidth, "wall", plane));
@@ -276,32 +323,233 @@ export async function buildSourceRigDelta(options: {
       const replacement = replacements.get(effect.name as string);
       const groups = effect.groups as ParticleGroup[];
       return { ...effect, groups: replacement ? String(effect.name).endsWith(" P1")
-        ? [...replacement, ...groups.slice(recipe.wallGroupCount).map(copyGroup)] : replacement : groups.map(copyGroup) };
+        ? [...replacement, ...groups.slice(profile.wallsOnly ? wallGroupCount(groups) : recipe.wallGroupCount).map(copyGroup)]
+        : replacement : groups.map(copyGroup) };
     });
     const atlas = packAtlas(tiles), packed = repackParticleAtlas({ ...baseline, width: atlas.width, height: atlas.height,
       sprites: atlas.sprites, effects: [...effects, ...backgrounds] } as ParticleData, atlas.png, recipe.atlasSide,
-    { denseSearch: true, factorConstantTint: true, decode: decodeRgba8Png });
+    { denseSearch: true, factorConstantTint: !profile.wallsOnly, decode: decodePng, maximumHeight: profile.maximumAtlasHeight ?? recipe.atlasSide });
     const output = resolve(options.destination, "particles", profile.key); mkdirSync(output, { recursive: true });
-    const data = gzipSync(JSON.stringify(packed.data), { level: 9 });
-    writeFileSync(resolve(output, "particle.data"), data); writeFileSync(resolve(output, "particle.texture.png"), packed.png);
+    const data = gzipSync(JSON.stringify(packed.data), { level: 9, ...(profile.wallsOnly ? { strategy: constants.Z_FILTERED } : {}) });
+    const filtered = profile.wallsOnly ? encodeRgbaPng(decodePng(packed.png, "Source wall atlas"), true) : packed.png;
+    const texture = filtered.length < packed.png.length ? filtered : packed.png;
+    writeFileSync(resolve(output, "particle.data"), data); writeFileSync(resolve(output, "particle.texture.png"), texture);
     const pack = JSON.parse(readFileSync(resolve(input, "particle-pack-report.json"), "utf8"));
     pack.effects = packed.data.effects.length;
     pack.groups = packed.data.effects.reduce((n, effect) => n + (effect.groups as ParticleGroup[]).length, 0);
     pack.instances = packed.data.effects.reduce((n, effect) => n + (effect.groups as ParticleGroup[]).reduce((m, group) => m + group.count, 0), 0);
     pack.definitions = packed.data.effects.reduce((n, effect) => n + (effect.groups as ParticleGroup[]).reduce((m, group) => m + group.count * group.particles.length, 0), 0);
     pack.atlas = { width: packed.data.width, height: packed.data.height, sprites: packed.data.sprites.length };
-    pack.artifacts = { data: { bytes: data.length, sha1: hash(data, "sha1") }, texture: { bytes: packed.png.length, sha1: hash(packed.png, "sha1") } };
+    pack.artifacts = { data: { bytes: data.length, sha1: hash(data, "sha1") }, texture: { bytes: texture.length, sha1: hash(texture, "sha1") } };
     writeFileSync(resolve(output, "particle-pack-report.json"), JSON.stringify(pack, null, 2));
     manifest.packs = manifest.packs.map((item: { key: string }) => item.key === profile.key ? pack : item);
     tracer.dispose();
   }
   const simple = resolve(options.destination, "particles/simple"); mkdirSync(simple, { recursive: true });
-  if (!recipe.profiles.some((profile) => profile.key === "simple")) for (const file of ["particle.data", "particle.texture.png", "particle-pack-report.json"])
+  if (options.baseline !== options.destination && !recipe.profiles.some((profile) => profile.key === "simple"))
+    for (const file of ["particle.data", "particle.texture.png", "particle-pack-report.json"])
     copyFileSync(resolve(options.baseline, "particles/simple", file), resolve(simple, file));
   writeFileSync(resolve(options.destination, "particle-packs.json"), JSON.stringify(manifest, null, 2));
   for (const [file, expected] of Object.entries(sourceHashes))
     if (hash(readFileSync(resolve(import.meta.dirname, file))) !== expected) throw new Error("Source rig producer changed during generation");
-  writeFileSync(resolve(options.destination, "source-rigs-proof.json"), JSON.stringify({ schema: recipe.schema,
-    recipeSha256: hash(readFileSync(options.recipePath)), sourceRendererSha256: recipe.sourceRendererSha256,
+  writeFileSync(resolve(options.destination, options.proofFile ?? "source-rigs-proof.json"), JSON.stringify({ schema: recipe.schema,
+    recipeSha256: hash(recipeBytes), sourceRendererSha256: recipe.sourceRendererSha256,
     sourceHashes, textureHashes: Object.fromEntries(textureHashes), reports }, null, 2));
+}
+
+function wallGroupCount(groups: ParticleGroup[]): number {
+  const [left, middle, right] = groups.map(({ particles }) => particles[0]);
+  if ((left?.w.from?.c ?? 0) > 0.55) return 1;
+  if ((middle?.w.from?.c ?? 0) > 0.55 && Math.abs((left?.x.from?.c ?? 0) - (right?.x.from?.c ?? 0)) > 1)
+    return 3;
+  throw new Error("Cannot identify the baseline wall groups");
+}
+
+function sourceRigRuntimeFiles() {
+  return {
+    renderer: fileURLToPath(import.meta.resolve("@haneoka/cassiopeia-renderer-three")),
+    authored: fileURLToPath(import.meta.resolve("@haneoka/cassiopeia-plugin-our-notes/authored")),
+    contract: fileURLToPath(import.meta.resolve("@haneoka/sonolus-our-notes/contract/native-effects.json")),
+  };
+}
+
+const wallNotes = {
+  Normal: { kind: "tap", operateType: 10 },
+  Slide: { kind: "slide", operateType: 20 },
+  Connect: { kind: "connect", operateType: 61 },
+  Flick: { kind: "flick", operateType: 40 },
+  "Flick Left": { kind: "flick", operateType: 41, direction: "left" },
+  "Flick Right": { kind: "flick", operateType: 42, direction: "right" },
+  "Slide Loop": { kind: "slide-loop", operateType: 0 },
+} as const;
+const wallJudgements = { perfect: 5, great: 4, good: 3, bad: 2 } as const;
+
+/** Project the source wall faces and fit their authored material for each Sonolus profile. */
+export async function buildNativeNoteWalls(
+  directory: string,
+  releaseRoot: string,
+  profiles: readonly ("standard" | "light" | "simple")[] = ["standard", "light", "simple"],
+) {
+  const runtimeFiles = sourceRigRuntimeFiles();
+  const builtProfiles: RigProfile[] = profiles.map((key) => {
+    const input = resolve(directory, "particles", key);
+    const bytes = readFileSync(resolve(input, "particle.data"));
+    const texture = readFileSync(resolve(input, "particle.texture.png"));
+    const json = gunzipSync(bytes);
+    const data = JSON.parse(json.toString()) as ParticleData;
+    const image = decodePng(texture, "Source wall baseline");
+    const profile = key === "simple" ? 2 : 1;
+    const effects = data.effects.flatMap(({ name }): RigTarget[] => {
+      const match = /^Our Notes Native (Normal|Slide Loop|Slide|Connect|Flick Left|Flick Right|Flick)(?: (Great|Good|Bad|Short))? W(\d+) P1$/u.exec(String(name));
+      if (!match) return [];
+      const [, label, grade, width] = match;
+      const { kind, operateType, ...direction } = wallNotes[label as keyof typeof wallNotes];
+      const judgement = grade && grade !== "Short" ? grade.toLowerCase() as keyof typeof wallJudgements : "perfect";
+      const playbackSeconds = kind === "slide-loop" ? nativeLoopEffectDuration(profile)
+        : grade === "Short" ? key === "simple" ? NATIVE_SHORT_EFFECT_DURATION : NATIVE_SHORT_SLIDE_EFFECT.duration
+        : nativeNoteEffectDuration(profile, operateType, wallJudgements[judgement]);
+      return [{ kind, ...direction, judgement, playbackSeconds, width: Number(width),
+        name: String(name).slice(0, -3), family: `${label}-${grade ?? "perfect"}` }];
+    });
+    return {
+      key,
+      quality: key === "light" ? 2 : 0,
+      renderingScale: key === "light" ? 0.71 : 1,
+      noteEffectSkin: key === "simple" ? "effect001Simple" : "effect001",
+      wallsOnly: true,
+      maximumAtlasHeight: key === "light" ? 1984 : 1792,
+      baselineDataSha256: hash(bytes),
+      baselineJsonSha256: hash(json),
+      baselineTextureSha256: hash(texture),
+      baselineTextureRgbaSha256: hash(image.pixels),
+      baselineTextureSize: [image.width, image.height],
+      effects,
+    };
+  });
+  await buildSourceRigDelta({
+    baseline: directory, destination: directory, releaseRoot, runtimeFiles, proofFile: "source-wall-materials-proof.json",
+    recipe: {
+      schema: "our-notes-source-rigs-v1", atlasSide: 1024, referenceWidth: 8, wallGroupCount: 3, sourceSeed: 4660,
+      sourceRendererSha256: hash(readFileSync(runtimeFiles.renderer)),
+      sourceAuthoredSha256: hash(readFileSync(runtimeFiles.authored)),
+      profiles: builtProfiles,
+    },
+  });
+}
+
+// Least-squares fit of the rendered frame against the original material at
+// W4/W6/W12/W24 and 384/1280 pixels. Each viewport contributes per unit area.
+const SIMPLE_BAD_TAP_OPACITY = 0.6214134384024382;
+const SIMPLE_BAD_SLIDE_OPACITY = 0.6393760811745367;
+const SIMPLE_GOOD_OPACITY = 0.85;
+
+async function buildSimpleSourceFrames(
+  directory: string,
+  releaseRoot: string,
+  effects: RigTarget[],
+  options: Pick<RigProfile, "maximumAtlasHeight" | "unslicedFrameMaxWidth"> & { proofFile: string },
+) {
+  const pack = resolve(directory, "particles/simple");
+  const data = readFileSync(resolve(pack, "particle.data"));
+  const texture = readFileSync(resolve(pack, "particle.texture.png"));
+  const image = decodePng(texture, "Simple frame baseline");
+  const runtimeFiles = sourceRigRuntimeFiles();
+  await buildSourceRigDelta({
+    baseline: directory,
+    destination: directory,
+    releaseRoot,
+    proofFile: options.proofFile,
+    runtimeFiles,
+    recipe: {
+      schema: "our-notes-source-rigs-v1",
+      atlasSide: 1024,
+      referenceWidth: 8,
+      wallGroupCount: 3,
+      sourceSeed: 4660,
+      sourceRendererSha256: hash(readFileSync(runtimeFiles.renderer)),
+      sourceAuthoredSha256: hash(readFileSync(runtimeFiles.authored)),
+      profiles: [{
+        key: "simple",
+        quality: 0,
+        renderingScale: 1,
+        noteEffectSkin: "effect001Simple",
+        frameOnly: true,
+        ...(options.unslicedFrameMaxWidth ? { unslicedFrameMaxWidth: options.unslicedFrameMaxWidth } : {}),
+        nativeFrameGroupCount: 3,
+        ...(options.maximumAtlasHeight ? { maximumAtlasHeight: options.maximumAtlasHeight } : {}),
+        baselineDataSha256: hash(data),
+        baselineJsonSha256: hash(gunzipSync(data)),
+        baselineTextureSha256: hash(texture),
+        baselineTextureRgbaSha256: hash(image.pixels),
+        baselineTextureSize: [image.width, image.height],
+        effects,
+      }],
+    },
+  });
+}
+
+/** Fit ordinary and slide frames against their judgement-specific materials. */
+export async function buildSimpleJudgementFrames(directory: string, releaseRoot: string, judgement: "good" | "bad") {
+  const label = judgement === "good" ? "Good" : "Bad";
+  const effects = ([
+    ["tap", "Normal"],
+    ["slide", "Slide"],
+    ["connect", "Connect"],
+  ] as const).flatMap(([kind, name]) =>
+    NATIVE_EFFECT_WIDTHS.map((width): RigTarget => ({
+      kind,
+      width,
+      name: `Our Notes Native ${name} ${label} W${width}`,
+      judgement,
+    })),
+  );
+  await buildSimpleSourceFrames(directory, releaseRoot, effects, {
+    proofFile: `source-simple-${judgement}-frames-proof.json`,
+    ...(judgement === "good" ? { unslicedFrameMaxWidth: 8 } : {}),
+    maximumAtlasHeight: judgement === "good" ? 1248 : 1152,
+  });
+  const dataFile = resolve(directory, "particles/simple/particle.data");
+  const built = JSON.parse(gunzipSync(readFileSync(dataFile)).toString()) as ParticleData;
+  const opacity = new Map<string, number>();
+  for (const effect of effects) {
+    const frameOpacity = judgement === "good" ? SIMPLE_GOOD_OPACITY
+      : effect.kind === "tap" ? SIMPLE_BAD_TAP_OPACITY : SIMPLE_BAD_SLIDE_OPACITY;
+    opacity.set(`${effect.name} P3`, frameOpacity);
+    if (judgement === "good") opacity.set(`${effect.name} P1`, SIMPLE_GOOD_OPACITY);
+  }
+  for (const effect of built.effects) {
+    const gain = opacity.get(String(effect.name));
+    if (gain === undefined) continue;
+    for (const group of effect.groups as ParticleGroup[]) {
+      for (const particle of group.particles) {
+        for (const endpoint of [particle.a.from, particle.a.to]) {
+          for (const [coefficient, value] of Object.entries(endpoint)) {
+            endpoint[coefficient] = Math.fround(value * gain);
+          }
+        }
+      }
+    }
+  }
+  writeFileSync(dataFile, gzipSync(JSON.stringify(built), { level: 9 }));
+  refreshNativeParticlePackReports(directory);
+}
+
+/** Match the thin Simple right-flick frame for widths that fit without horizontal slices. */
+export async function buildSimpleRightFlickFrames(directory: string, releaseRoot: string) {
+  const effects = NATIVE_EFFECT_WIDTHS.filter((width) => width <= 8).flatMap((width) =>
+    [false, true].map((short): RigTarget => ({
+      kind: "flick",
+      direction: "right",
+      width,
+      name: `Our Notes Native Flick Right${short ? " Short" : ""} W${width}`,
+      judgement: "perfect",
+      family: short ? "right-short" : "right",
+      playbackSeconds: short ? NATIVE_SHORT_EFFECT_DURATION : nativeNoteEffectDuration(2, 42, 5),
+    })),
+  );
+  await buildSimpleSourceFrames(directory, releaseRoot, effects, {
+    proofFile: "source-simple-right-flick-frames-proof.json",
+    unslicedFrameMaxWidth: 8,
+    maximumAtlasHeight: 1792,
+  });
 }

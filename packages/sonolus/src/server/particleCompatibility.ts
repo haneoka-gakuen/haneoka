@@ -7,7 +7,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { gunzipSync } from "node:zlib";
-import { NATIVE_PARTICLE_OPTIONAL_EFFECTS } from "../shared/nativeDrawCapabilities.ts";
+import {
+  NATIVE_LOOP_FRAME_REPLACEMENTS,
+  NATIVE_PARTICLE_OPTIONAL_EFFECTS,
+} from "../shared/nativeDrawCapabilities.ts";
 import {
   NATIVE_PARTICLE_PACKS,
   NATIVE_PARTICLE_SEMANTIC_PREFIX,
@@ -15,7 +18,7 @@ import {
 } from "../shared/particlePacks.ts";
 
 type Effect = { name: string; transform?: unknown; groups: unknown[] };
-type Particle = { effects: Effect[] };
+type Particle = { width: number; height: number; effects: Effect[] };
 type Identity = { bytes: number; sha1: string };
 type PackReport = {
   key: string;
@@ -194,6 +197,8 @@ export function verifyParticleEffects(
       report.artifacts.texture,
     );
     const particle = readParticle(resolve(directory, "particle.data"));
+    if (Math.max(particle.width, particle.height) > 2048 || report.artifacts.data.bytes + report.artifacts.texture.bytes > 2 * 1024 * 1024)
+      fail(`${pack.key} particle pack exceeds its 2048px / 2 MiB budget`);
     const names = effectNames(particle, pack.key);
     for (const effect of particle.effects)
       if (!effect.transform)
@@ -224,7 +229,11 @@ export function verifyParticleEffects(
           `${pack.key} source-empty omission is not empty in frozen source: ${name}`,
         );
     }
+    const replacedLoops = [...NATIVE_LOOP_FRAME_REPLACEMENTS].flatMap(([legacy, compact]) =>
+      names.has(compact) ? [legacy] : [],
+    );
     const allowedMissing = new Set([
+      ...replacedLoops,
       ...policy.absent,
       ...omitted,
       ...optionalCapabilities,

@@ -3,8 +3,7 @@ name: Sonolus engine payload
 # The Sonolus engine + presentation payload is server-agnostic, so it is built
 # and published independently of the resource pipeline. Charts stay per-release
 # and are projected dynamically, so this workflow only rebuilds when the engine
-# or its build inputs change. A manual dispatch republishes after a game update
-# refreshes the note-se / NoteEffect presentation assets.
+# or its bundled presentation inputs change.
 #
 # The four engine facets (play/watch/preview/tutorial) compile on separate
 # runners in the `engine` matrix job, then the `payload` fan-in merges them and
@@ -18,13 +17,11 @@ on:
       - .dependencies/cassiopeia-plugin-sonolus
       - .dependencies/sonolus-our-notes
       - .dependencies/cassiopeia-plugin-our-notes
-      - .dependencies/cassiopeia-renderer-three
       - .dependencies/cassiopeia
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - packages/sonolus/**
-      - scripts/pipeline.py
       - scripts/publish/sonolus.py
       - scripts/publish/r2.py
       - scripts/requirements.txt
@@ -121,14 +118,12 @@ jobs:
     needs: engine
     runs-on: ubuntu-latest
     env:
-      RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_EC2_METADATA_DISABLED: "true"
       PYTHONPATH: scripts
       R2_BUCKET: hotdori-assets
-      RELEASE_SERVER: intl
 
     steps:
       - name: Check out repository
@@ -158,7 +153,6 @@ jobs:
         run: |
           pnpm --filter @haneoka/cassiopeia build:web
           pnpm --filter @haneoka/cassiopeia-plugin-our-notes build
-          pnpm --filter @haneoka/cassiopeia-renderer-three build
           pnpm --filter @haneoka/cassiopeia-plugin-sonolus build
 
       - name: Set up Python
@@ -170,23 +164,6 @@ jobs:
 
       - name: Install the R2 client and pipeline dependencies
         run: python -m pip install --disable-pip-version-check --require-hashes --requirement scripts/requirements.txt
-
-      - name: Install FFmpeg
-        timeout-minutes: 10
-        run: |
-          apt_options=(
-            -o Acquire::ForceIPv4=true
-            -o Acquire::Retries=3
-            -o Acquire::http::Timeout=30
-            -o Acquire::https::Timeout=30
-          )
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            if ! sudo apt-get "${apt_options[@]}" install --yes --no-install-recommends ffmpeg; then
-              sudo apt-get "${apt_options[@]}" update
-              sudo apt-get "${apt_options[@]}" install --yes --no-install-recommends ffmpeg
-            fi
-          fi
-          ffmpeg -version
 
       - name: Typecheck engine tooling
         # Runs once here (was bundled into the per-machine build before).
@@ -204,44 +181,8 @@ jobs:
       - name: Stamp engine distribution with licenses
         run: node .dependencies/sonolus-our-notes/scripts/copy-upstream-license.ts
 
-      - name: Fetch release presentation assets
-        # Materialize only the runtime slices the build reads (note-se audio,
-        # NoteEffect definitions, the lane mask) from the current Intl release.
-        run: |
-          python scripts/pipeline.py --server intl fetch-sonolus-inputs \
-            --output "$RUNNER_TEMP/sonolus-release"
-
-      - name: Identify particle content inputs
-        id: particle-key
-        run: |
-          key="$(node packages/sonolus/scripts/build-original-assets.ts --particle-cache-key | tail -n 1)"
-          base_key="$(node packages/sonolus/scripts/build-original-assets.ts --particle-base-cache-key | tail -n 1)"
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "base-key=$base_key" >> "$GITHUB_OUTPUT"
-        env:
-          RESOURCE_BUILD_ROOT: ${{ runner.temp }}/sonolus-release
-
-      - name: Restore native particle bake
-        id: particle-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: .cache/sonolus-native-particles
-          key: sonolus-particles-v2-${{ runner.os }}-${{ steps.particle-key.outputs.base-key }}-${{ steps.particle-key.outputs.key }}
-          restore-keys: |
-            sonolus-particles-v2-${{ runner.os }}-${{ steps.particle-key.outputs.base-key }}-
-            sonolus-particles-v1-${{ runner.os }}-${{ steps.particle-key.outputs.base-key }}
-
       - name: Build the global Sonolus payload
         run: pnpm sonolus:payload
-        env:
-          RESOURCE_BUILD_ROOT: ${{ runner.temp }}/sonolus-release
-
-      - name: Save verified native particle bake
-        if: steps.particle-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: .cache/sonolus-native-particles
-          key: sonolus-particles-v2-${{ runner.os }}-${{ steps.particle-key.outputs.base-key }}-${{ steps.particle-key.outputs.key }}
 
       - name: Publish the payload to R2
         run: python scripts/publish/sonolus.py

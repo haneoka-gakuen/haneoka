@@ -2,17 +2,13 @@
 // atlas tiles for Sonolus' SrcAlpha/OneMinusSrcAlpha particle shader.
 // The Source One/One HDR composition is approximated on the LDR atlas.
 
-import { deflateSync, inflateSync } from "node:zlib";
+import { deflateSync } from "node:zlib";
+import { decode } from "fast-png";
 
 export interface RgbaImage {
   width: number;
   height: number;
   pixels: Uint8Array;
-}
-
-interface PngChunk {
-  type: string;
-  data: Buffer;
 }
 
 function crc32(buffer: Uint8Array): number {
@@ -25,40 +21,14 @@ function crc32(buffer: Uint8Array): number {
 }
 
 export function decodePng(input: Buffer, sourceName: string): RgbaImage {
-  if (input.readUInt32BE(0) !== 0x89504e47) throw new Error(`${sourceName}: not a PNG`);
-  const chunks: PngChunk[] = [];
-  let offset = 8;
-  while (offset + 8 <= input.length) {
-    const length = input.readUInt32BE(offset);
-    const type = input.subarray(offset + 4, offset + 8).toString("ascii");
-    chunks.push({ type, data: input.subarray(offset + 8, offset + 8 + length) });
-    offset += 12 + length;
-    if (type === "IEND") break;
+  if (
+    input.length < 33 || input.readUInt32BE(0) !== 0x89504e47 ||
+    input[24] !== 8 || input[25] !== 6 || input[28] !== 0
+  ) {
+    throw new Error(`${sourceName}: expected non-interlaced RGBA8 PNG`);
   }
-  const header = chunks.find((chunk) => chunk.type === "IHDR")?.data;
-  if (!header || header.length < 13) throw new Error(`${sourceName}: missing IHDR`);
-  const width = header.readUInt32BE(0);
-  const height = header.readUInt32BE(4);
-  const bitDepth = header[8]!;
-  const colorType = header[9]!;
-  const interlace = header[12]!;
-  if (bitDepth !== 8 || colorType !== 6 || interlace !== 0)
-    throw new Error(`${sourceName}: expected 8-bit RGBA PNG (got depth ${bitDepth} type ${colorType})`);
-  const compressed = Buffer.concat(chunks.filter((chunk) => chunk.type === "IDAT").map((chunk) => chunk.data));
-  const raw = inflateAll(compressed, width, height);
-  const pixels = new Uint8Array(width * height * 4);
-  const stride = width * 4;
-  for (let y = 0; y < height; y += 1) {
-    const row = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
-    pixels.set(row, y * stride);
-  }
-  return { width, height, pixels };
-}
-
-function inflateAll(compressed: Buffer, width: number, height: number): Buffer {
-  void width;
-  void height;
-  return inflateSync(compressed);
+  const parsed = decode(input);
+  return { width: parsed.width, height: parsed.height, pixels: new Uint8Array(parsed.data) };
 }
 
 function encodeChunk(type: string, data: Buffer): Buffer {
@@ -70,12 +40,55 @@ function encodeChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([length, typeAndData, crc]);
 }
 
-export function encodeRgbaPng(image: RgbaImage): Buffer {
-  const stride = image.width * 4;
+function paeth(left: number, up: number, upperLeft: number): number {
+  const estimate = left + up - upperLeft;
+  const a = Math.abs(estimate - left);
+  const b = Math.abs(estimate - up);
+  const c = Math.abs(estimate - upperLeft);
+  return a <= b && a <= c ? left : b <= c ? up : upperLeft;
+}
+
+function encodeFilteredRows(image: RgbaImage, stride: number): Buffer {
   const raw = Buffer.alloc((stride + 1) * image.height);
+  const rows = Array.from({ length: 5 }, () => new Uint8Array(stride));
+  const scores = new Float64Array(rows.length);
   for (let y = 0; y < image.height; y += 1) {
-    raw[y * (stride + 1)] = 0;
-    Buffer.from(image.pixels.subarray(y * stride, y * stride + stride)).copy(raw, y * (stride + 1) + 1);
+    scores.fill(0);
+    const start = y * stride;
+    for (let x = 0; x < stride; x += 1) {
+      const index = start + x;
+      const value = image.pixels[index]!;
+      const left = x >= 4 ? image.pixels[index - 4]! : 0;
+      const up = y ? image.pixels[index - stride]! : 0;
+      const upperLeft = y && x >= 4 ? image.pixels[index - stride - 4]! : 0;
+      rows[0]![x] = value;
+      rows[1]![x] = value - left;
+      rows[2]![x] = value - up;
+      rows[3]![x] = value - ((left + up) >>> 1);
+      rows[4]![x] = value - paeth(left, up, upperLeft);
+      for (let filter = 0; filter < rows.length; filter += 1) {
+        const residual = rows[filter]![x]!;
+        scores[filter]! += Math.min(residual, 256 - residual);
+      }
+    }
+    let best = 0;
+    for (let filter = 1; filter < scores.length; filter += 1) {
+      if (scores[filter]! < scores[best]!) best = filter;
+    }
+    const offset = y * (stride + 1);
+    raw[offset] = best;
+    raw.set(rows[best]!, offset + 1);
+  }
+  return raw;
+}
+
+export function encodeRgbaPng(image: RgbaImage, filterRows = false): Buffer {
+  const stride = image.width * 4;
+  const raw = filterRows ? encodeFilteredRows(image, stride) : Buffer.alloc((stride + 1) * image.height);
+  if (!filterRows) {
+    for (let y = 0; y < image.height; y += 1) {
+      raw.set(image.pixels.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
+    }
   }
   const header = Buffer.alloc(13);
   header.writeUInt32BE(image.width, 0);

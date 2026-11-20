@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Validated release/Source assets, compiled engine facets and native packing contracts.
-// Output: Original Sonolus resources and thumbnails with compact skin references and engine-reference coverage checks.
+// Output: Sonolus skin, particle, sound and background resources with engine-reference coverage checks.
 // Pos: [Map](../L2-2.md); original Sonolus resource generator.
 // Effects/Dependencies: Reads release caches and engine artifacts; writes resource packs, engine draw tables and cache receipts.
 import {
@@ -32,6 +32,7 @@ import {
   nativeParticlePresencePolicy,
 } from "../src/shared/particlePacks.ts";
 import { buildPresentationThumbnails } from "./presentation-thumbnails.ts";
+import { buildSonolusBackgrounds } from "./build-background.ts";
 import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 import {
   particleCacheKey,
@@ -45,7 +46,12 @@ import { buildConnectWallDrawAssets } from "./connect-wall-draw-assets.ts";
 import { buildConnectFrameDrawAssets } from "./connect-frame-draw-assets.ts";
 import { buildNativeRowSliceAssets } from "./native-row-slice-assets.ts";
 import { buildNativeLoopFrameAssets } from "./native-loop-frame-assets.ts";
-import { NATIVE_PARTICLE_OPTIONAL_EFFECTS } from "../src/shared/nativeDrawCapabilities.ts";
+import { buildNativeSideFlickAssets } from "./build-native-side-flick-assets.ts";
+import { buildNativeNoteWalls, buildSimpleJudgementFrames, buildSimpleRightFlickFrames } from "./native-particles/sourceRigs.ts";
+import {
+  NATIVE_LOOP_FRAME_REPLACEMENTS,
+  NATIVE_PARTICLE_OPTIONAL_EFFECTS,
+} from "../src/shared/nativeDrawCapabilities.ts";
 
 type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -100,8 +106,7 @@ function byteAt(buffer: Uint8Array, index: number, context: string): number {
 }
 
 const root = resolve(process.env.OUR_NOTES_ROOT || process.cwd());
-const releaseServer = process.env.RELEASE_SERVER || "intl";
-const workspace = resolveSonolusReleaseWorkspace(releaseServer, root);
+const workspace = resolveSonolusReleaseWorkspace(process.env.RELEASE_SERVER || "intl", root);
 const inputProvenance = validateSonolusInputProvenance(workspace, root);
 const source = resolve(
   process.env.SONOLUS_ORIGINAL_ASSETS_DIR ||
@@ -434,9 +439,16 @@ try {
 
   const rows = buildNativeRowSliceAssets(out);
   console.log(`Simple row slices: ${rows.mergedTriples} triples merged, unchanged atlas dimensions`);
+  const sideFlicks = await buildNativeSideFlickAssets(out, workspace.releaseRoot);
+  console.log(`Side flick billboards: ${sideFlicks} effects rebuilt from source`);
+  await buildSimpleJudgementFrames(out, workspace.releaseRoot, "bad");
+  await buildSimpleJudgementFrames(out, workspace.releaseRoot, "good");
+  await buildSimpleRightFlickFrames(out, workspace.releaseRoot);
   const loopFrames = buildNativeLoopFrameAssets(out);
   console.log(`Slide loop frames: ${loopFrames.length} single-cycle effects`);
+  await buildNativeNoteWalls(out, workspace.releaseRoot);
   buildPresentationThumbnails(out);
+  buildSonolusBackgrounds(workspace.assetsRoot, resolve(out, "backgrounds"));
 
   for (const pack of nativeSkinPacks) {
     const file = resolve(pack.outputDirectory, "skin.data");
@@ -521,13 +533,15 @@ try {
   let particleEffectCount = 0;
   for (const pack of NATIVE_PARTICLE_PACKS) {
     const directory = resolve(out, "particles", pack.key);
-    const data = JSON.parse(
-      gunzipSync(readFileSync(resolve(directory, "particle.data"))).toString(
-        "utf8",
-      ),
-    ) as {
+    const compressed = readFileSync(resolve(directory, "particle.data"));
+    const texture = readFileSync(resolve(directory, "particle.texture.png"));
+    const data = JSON.parse(gunzipSync(compressed).toString("utf8")) as {
+      width: number;
+      height: number;
       effects: Array<{ name: string }>;
     };
+    if (Math.max(data.width, data.height) > 2048 || compressed.length + texture.length > 2 * 1024 * 1024)
+      throw new Error(`Sonolus ${pack.key} particle pack exceeds its 2048px / 2 MiB budget`);
     const report = JSON.parse(
       readFileSync(resolve(directory, "particle-pack-report.json"), "utf8"),
     ) as {
@@ -540,6 +554,7 @@ try {
       (name) =>
         !absent.has(name) &&
         !available.has(name) &&
+        !available.has(NATIVE_LOOP_FRAME_REPLACEMENTS.get(name) ?? "") &&
         !omitted.has(name) &&
         !optionalCapabilities.has(name),
     );

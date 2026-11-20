@@ -1,52 +1,26 @@
-// Build the Sonolus background (image + thumbnail) from the ORIGINAL BanG
-// Dream! Our Notes pre-rendered concert-stage backdrop. Brightness is applied
-// by BackgroundConfiguration so standalone and Worker builds use one image.
-//
-// Output: packages/sonolus/dist/background/<stage>/{image.png,thumbnail.png}.
-// Run: node packages/sonolus/scripts/build-background.ts   (requires `magick`).
-
-import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+// L3 — GEB
+// Input: Stage images selected by the asset author.
+// Output: Content for each band's Sonolus background image and square thumbnail.
+// Pos: [Map](../L2-2.md); stage asset preparation shared by both local and Worker hosts.
+// Effects/Dependencies: Reads the authored PNGs and writes the generated presentation directory.
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { buildSquareThumbnail } from "./presentation-thumbnails.ts";
 import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(here, "../../..");
-const OUT = resolve(here, "../dist/background");
-const releaseServer = process.env.RELEASE_SERVER || "intl";
-const workspace = resolveSonolusReleaseWorkspace(releaseServer, ROOT);
-
-const magick = (args: readonly string[]): Buffer => execFileSync("magick", args, { stdio: ["ignore", "pipe", "pipe"] });
-
-// Every native lightweight stage, keyed by the MasterBand id that names it.
-const BACKGROUNDS = [
-  { name: "stage", band: 0 },
-  { name: "mygo", band: 1 },
-  { name: "ave-mujica", band: 2 },
-  { name: "mugendai-mewtype", band: 3 },
-  { name: "millsage", band: 4 },
-  { name: "ikka-dumb-rock", band: 5 },
-].map((entry) => ({
-  ...entry,
-  source: resolve(
-    workspace.assetsRoot,
-    `Assets/AddressableResources/Band/${entry.band}/live_stage/lightweight_background.png`,
-  ),
-}));
-
-rmSync(OUT, { recursive: true, force: true });
-for (const background of BACKGROUNDS) {
-  if (!existsSync(background.source)) {
-    throw new Error(`background source missing: ${background.source}`);
+export function buildSonolusBackgrounds(assetsRoot: string, output: string) {
+  for (const bandId of [0, 1, 2, 3, 4, 5]) {
+    const path = resolve(assetsRoot, `Assets/AddressableResources/Band/${bandId}/live_stage/lightweight_background.png`);
+    const image = readFileSync(path);
+    const directory = resolve(output, String(bandId));
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(resolve(directory, "image.png"), image);
+    writeFileSync(resolve(directory, "thumbnail.png"), buildSquareThumbnail(image, path));
   }
-  const target = resolve(OUT, background.name);
-  mkdirSync(target, { recursive: true });
-  // Keep the authored alpha and colors intact. Sonolus applies the native
-  // BackgroundBrightness=.7 through a separate 30% black mask.
-  magick([background.source, "-resize", "1920x", resolve(target, "image.png")]);
-  writeFileSync(resolve(target, "thumbnail.png"), buildSquareThumbnail(readFileSync(background.source), background.source));
 }
 
-console.log(`background built → ${OUT}`);
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+  const root = resolve(process.env.OUR_NOTES_ROOT || process.cwd());
+  const workspace = resolveSonolusReleaseWorkspace(process.env.RELEASE_SERVER || "intl", root);
+  buildSonolusBackgrounds(workspace.assetsRoot, resolve(root, "packages/sonolus/dist/our-notes/backgrounds"));
+}

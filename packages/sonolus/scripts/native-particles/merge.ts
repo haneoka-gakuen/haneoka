@@ -65,7 +65,12 @@ const subtract = (free: Rect[], used: Rect): Rect[] =>
         ),
     );
 
-export function mergeNativeParticleDelta(baseline: ParticleData, baselinePng: Buffer, delta: ParticleDelta) {
+export function mergeNativeParticleDelta(
+  baseline: ParticleData,
+  baselinePng: Buffer,
+  delta: ParticleDelta,
+  retainGroups: ReadonlySet<string> = new Set(),
+) {
   const original = decodePng(baselinePng, "baseline particle texture");
   const update = decodePng(delta.atlas.png, "delta particle texture");
   if (original.width !== baseline.width || original.height !== baseline.height)
@@ -83,7 +88,7 @@ export function mergeNativeParticleDelta(baseline: ParticleData, baselinePng: Bu
   const remap = new Map<number, number>();
   const protectedSprites = new Set<number>();
   for (const effect of baseline.effects)
-    if (!replacements.has(effect.name))
+    if (!replacements.has(effect.name) || retainGroups.has(String(effect.name)))
       for (const group of effect.groups as Array<{ particles: Array<{ sprite: number }> }>)
         for (const particle of group.particles) protectedSprites.add(particle.sprite);
   // Append only referenced tiles. The compiler also bakes optional halo tiles.
@@ -150,16 +155,17 @@ export function mergeNativeParticleDelta(baseline: ParticleData, baselinePng: Bu
   const effects = baseline.effects.map((effect) => {
     const replacement = replacements.get(effect.name);
     if (!replacement) return effect;
+    const groups = (replacement.groups as Array<Record<string, unknown>>).map((group) => ({
+      ...group,
+      particles: (group.particles as Array<Record<string, unknown>>).map((particle) => {
+        const sprite = remap.get(particle.sprite as number);
+        if (sprite === undefined) throw new Error("Unmapped delta sprite");
+        return { ...particle, sprite };
+      }),
+    }));
     return {
       ...replacement,
-      groups: (replacement.groups as Array<Record<string, unknown>>).map((group) => ({
-        ...group,
-        particles: (group.particles as Array<Record<string, unknown>>).map((particle) => {
-          const sprite = remap.get(particle.sprite as number);
-          if (sprite === undefined) throw new Error("Unmapped delta sprite");
-          return { ...particle, sprite };
-        }),
-      })),
+      groups: retainGroups.has(String(effect.name)) ? [...groups, ...(effect.groups as unknown[])] : groups,
     };
   });
   const affected = effects

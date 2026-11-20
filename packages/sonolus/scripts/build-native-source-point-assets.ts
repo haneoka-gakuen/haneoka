@@ -68,10 +68,62 @@ export function retireEarlyPointPhases(data: ParticleData, rebuiltEffects: reado
 }
 
 
-function visibleCore(tile:Tile):Tile {
-  const pixels=new Uint8Array(tile.image.pixels);
-  for(let i=3;i<pixels.length;i+=4)if(pixels[i]!<=2)pixels[i]=0;
-  return trimTile({...tile,image:{...tile.image,pixels}});
+function visibleCore(tile: Tile): Tile {
+  const pixels = new Uint8Array(tile.image.pixels);
+  for (let i = 3; i < pixels.length; i += 4) if (pixels[i]! <= 2) pixels[i] = 0;
+  return trimTile({ ...tile, image: { ...tile.image, pixels } });
+}
+
+// Measured lower stage color used by the other Sonolus material fits.
+const POINT_STAGE_RGB = [10 / 255, 22 / 255, 49 / 255] as const;
+
+/** Encode the baked additive radiance as the least opaque source-over color at the stage. */
+export function encodePointStageRadiance(tile: Tile): Tile {
+  const pixels = new Uint8Array(tile.image.pixels);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const sourceAlpha = pixels[offset + 3]! / 255;
+    if (!sourceAlpha) continue;
+    const emission = POINT_STAGE_RGB.map((channel, index) =>
+      Math.min(1 - channel, (pixels[offset + index]! / 255) * sourceAlpha),
+    );
+    const opacity = Math.ceil(255 * Math.max(
+      ...emission.map((channel, index) => channel / (1 - POINT_STAGE_RGB[index]!)),
+    ));
+    pixels[offset + 3] = opacity;
+    if (!opacity) continue;
+    for (const [index, channel] of emission.entries()) {
+      pixels[offset + index] = Math.round(255 * (POINT_STAGE_RGB[index]! + (255 * channel) / opacity));
+    }
+  }
+  return { ...tile, image: { ...tile.image, pixels } };
+}
+
+/** Bilinear filtering in Sonolus samples straight RGBA before applying SrcAlpha. */
+export function extendPointEdgeColor(tile: Tile): Tile {
+  const { width, height, pixels } = tile.image;
+  const output = new Uint8Array(pixels);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      if (pixels[offset + 3]) continue;
+      let coverage = 0;
+      const rgb = [0, 0, 0];
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (x + dx < 0 || x + dx >= width || y + dy < 0 || y + dy >= height) continue;
+          const neighbor = ((y + dy) * width + x + dx) * 4;
+          const weight = pixels[neighbor + 3]! / (1 + Math.abs(dx) + Math.abs(dy));
+          coverage += weight;
+          for (let channel = 0; channel < 3; channel += 1)
+            rgb[channel]! += pixels[neighbor + channel]! * weight;
+        }
+      }
+      if (coverage === 0) continue;
+      for (let channel = 0; channel < 3; channel += 1)
+        output[offset + channel] = Math.round(rgb[channel]! / coverage);
+    }
+  }
+  return { ...tile, image: { width, height, pixels: output } };
 }
 
 const sourceTexels=new Map<string,{pixels:number[][];area:number}>(),coreResponses=new Map<string,number>();
@@ -220,7 +272,9 @@ export async function buildSourcePointAssets(options: {
             const field = atom?undefined:rasterizeProjectedRadiance(quads, renderingScale / 2, .5, effectPixelOrigin(), 4);
             const name = `${key}|${effectName}|${patches.length}`;
             const fullTile=atom?.tile??visibleCore(bakeRadianceFieldTile(name, field!, [1, 1, 1], 1, 1, 1 / renderingScale));
-            const tile=members.length>1?visibleCore(downsamplePremultipliedTile(fullTile,4)):fullTile;
+            const tile = atom?.tile ?? extendPointEdgeColor(encodePointStageRadiance(
+              members.length > 1 ? visibleCore(downsamplePremultipliedTile(fullTile, 4)) : fullTile,
+            ));
             if (!tile.image.pixels.some((v, i) => i % 4 === 3 && v > 0)) continue;
             const sprite=atom?.sprite??tiles.length;
             if(!atom) {

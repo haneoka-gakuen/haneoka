@@ -1,20 +1,19 @@
 // Input: authored particle packs and the engine's short-loop contract.
 // Output: optional single-cycle slide frames with the original sprites and channels.
 // Pos: late-stage Sonolus resource producer; direct map: ../L2-2.md.
-// Effects: appends particle effects and refreshes pack identities; writes a reduction report.
+// Effects: replaces verified repeated timelines and refreshes pack identities; writes a reduction report.
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { isDeepStrictEqual } from "node:util";
 import {
   LOOP_FRAME_DURATION,
-  LOOP_FRAME_EFFECTS,
 } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/loopFrameContract.ts";
 import {
-  NATIVE_EFFECT_WIDTHS,
   nativeLoopEffectDuration,
 } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/nativeEffects.ts";
 import { NATIVE_PARTICLE_PACKS } from "../src/shared/particlePacks.ts";
+import { NATIVE_LOOP_FRAME_REPLACEMENTS } from "../src/shared/nativeDrawCapabilities.ts";
 import type { ParticleData } from "./native-particles/merge.ts";
 import { refreshNativeParticlePackReports } from "./native-particles/packs.ts";
 import { durationBeforeNextPhase, type TrajectoryParticle } from "./native-particles/trajectory.ts";
@@ -28,6 +27,30 @@ type Effect = {
 const phaseTolerance = 0.00001;
 const channels = ({ start: _start, duration: _duration, ...body }: TrajectoryParticle) => body;
 const phase = (value: number) => Math.round(value * 1e6) / 1e6;
+const holdPlaneOpacity = {
+  standard: [1, 1, 1, 0.75],
+  light: [0.8, 0.8, 0.8, 1.03],
+  simple: [1, 1, 1, 1],
+};
+
+/** Calibrate the sustained slide against the source at phone and desktop resolutions. */
+export function calibrateHoldLoopExposure(data: ParticleData, profile: keyof typeof holdPlaneOpacity): void {
+  for (const effect of data.effects as Effect[]) {
+    const plane = /^Our Notes Native Slide Loop W\d+ P([0-3])$/u.exec(effect.name)?.[1];
+    if (plane === undefined) continue;
+    const opacity = holdPlaneOpacity[profile][Number(plane)]!;
+    if (opacity === 1) continue;
+    for (const group of effect.groups) {
+      for (const particle of group.particles) {
+        for (const endpoint of [particle.a.from, particle.a.to]) {
+          for (const [key, value] of Object.entries(endpoint)) {
+            endpoint[key] = Math.fround(value * opacity);
+          }
+        }
+      }
+    }
+  }
+}
 
 /** Fold only timelines whose ordered particle programs repeat for every source cycle. */
 export function compactLoopFrame(effect: Effect, duration: number): Effect | undefined {
@@ -69,29 +92,31 @@ export function compactLoopFrame(effect: Effect, duration: number): Effect | und
 
 export function buildNativeLoopFrameAssets(directory: string) {
   const reports = [];
-  const names = Object.values(LOOP_FRAME_EFFECTS);
-  const generatedNames = new Set<string>(names);
   for (const pack of NATIVE_PARTICLE_PACKS) {
     const file = resolve(directory, "particles", pack.key, "particle.data");
     const data = JSON.parse(gunzipSync(readFileSync(file)).toString()) as ParticleData;
-    data.effects = (data.effects as Effect[]).filter((effect) => !generatedNames.has(effect.name));
-    const effects = data.effects as Effect[];
+    calibrateHoldLoopExposure(data, pack.key);
+    const effects = new Map((data.effects as Effect[]).map((effect) => [effect.name, effect]));
     const duration = nativeLoopEffectDuration(pack.key === "simple" ? 2 : 1);
-    for (const [index, width] of NATIVE_EFFECT_WIDTHS.entries()) {
-      const source = effects.find((effect) => effect.name === `Our Notes Native Slide Loop W${width} P3`);
+    for (const [legacyName, compactName] of NATIVE_LOOP_FRAME_REPLACEMENTS) {
+      const source = effects.get(legacyName);
       if (!source) continue;
       const compact = compactLoopFrame(source, duration);
-      if (!compact) continue;
-      compact.name = names[index]!;
-      effects.push(compact);
+      if (!compact) {
+        effects.delete(compactName);
+        continue;
+      }
+      effects.set(compactName, { ...compact, name: compactName });
+      effects.delete(legacyName);
       reports.push({
         profile: pack.key,
-        width,
+        effect: compactName,
         duration: LOOP_FRAME_DURATION,
         definitionsBefore: source.groups.reduce((n, group) => n + group.particles.length, 0),
         definitionsAfter: compact.groups.reduce((n, group) => n + group.particles.length, 0),
       });
     }
+    data.effects = [...effects.values()];
     writeFileSync(file, gzipSync(JSON.stringify(data), { level: 9 }));
   }
   refreshNativeParticlePackReports(directory);

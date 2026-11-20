@@ -3,7 +3,6 @@ import { verifyParticleEffects } from "./particleCompatibility.ts";
 import { DEFAULT_NATIVE_PARTICLE_PACK, NATIVE_PARTICLE_PACKS } from "../shared/particlePacks.ts";
 import { fileURLToPath } from "node:url";
 import { buildServerBanner } from "./serverBanner.ts";
-import { buildSquareThumbnail } from "../../scripts/presentation-thumbnails.ts";
 // Standalone Sonolus server for "BanG Dream! Our Notes" (Live section).
 //
 // Programmatic @sonolus/express server: loads free-pack defaults (skin/effect/
@@ -281,9 +280,13 @@ function main() {
   // the original CRI cues, and supported effect001 ParticleSystem data is
   // projected into Sonolus particle graphs. Missing source-derived artifacts
   // are fatal: no pixel/8bit replacement is visually equivalent.
-  const resourceDir = resolve(ROOT, "packages/sonolus/dist/our-notes");
+  const resourceDir = resolve(process.env.SONOLUS_PRESENTATION_DIR ?? resolve(engineRoot, "resources/presentation"));
   const particleDir = process.env.SONOLUS_PARTICLE_DIR ?? resourceDir;
-  verifyParticleEffects(particleDir, resolve(engineRoot, "dist"));
+  const buildDirectory = resolve(engineRoot, "dist");
+  const engineDirectory = existsSync(resolve(buildDirectory, "EnginePlayData"))
+    ? buildDirectory
+    : resolve(engineRoot, "resources/engine");
+  verifyParticleEffects(particleDir, engineDirectory);
   const requiredResourceFiles = [
     "skins/skin001/skin.data",
     "skins/skin001/skin.texture.png",
@@ -376,38 +379,33 @@ function main() {
   // --- BACKGROUNDS = both original lightweight concert stages. Sonolus can
   // override an engine default per play, so expose both instead of baking a
   // song/video-derived choice into the engine. ---
-  const bgDir = resolve(ROOT, "packages/sonolus/dist/background");
+  const bgDir = resolve(resourceDir, "backgrounds");
   // Every native lightweight stage, named from MasterBand so the local server
   // matches the game's stage list; band 0 is the generic stage. Item ids use
   // the band names (MyGO!!!!!/Ave Mujica/...), not legacy colour codenames.
   const bandNameById = new Map(master("MasterBand").map((row) => [row._id, row._nameTextID]));
   const backgroundSources = (
     [
-      [0, "ourNotesBgStage", "stage", { ja: "ステージ", en: "Stage" }],
-      [1, "ourNotesBgMyGO", "mygo", null],
-      [2, "ourNotesBgAveMujica", "ave-mujica", null],
-      [3, "ourNotesBgMugendaiMewType", "mugendai-mewtype", null],
-      [4, "ourNotesBgMillsage", "millsage", null],
-      [5, "ourNotesBgIkkaDumbRock", "ikka-dumb-rock", null],
+      [0, "ourNotesBgStage", { ja: "ステージ", en: "Stage" }],
+      [1, "ourNotesBgMyGO", null],
+      [2, "ourNotesBgAveMujica", null],
+      [3, "ourNotesBgMugendaiMewType", null],
+      [4, "ourNotesBgMillsage", null],
+      [5, "ourNotesBgIkkaDumbRock", null],
     ] as const
-  ).map(([bandId, name, directory, fallback]) => ({
+  ).map(([bandId, name, fallback]) => ({
     bandId,
     name,
-    directory,
     title: fallback ?? localizedText(bandNameById.get(bandId) ?? ""),
   }));
   const engineBg = "ourNotesBgMyGO";
   for (const background of backgroundSources) {
-    const bgImageFile = resolve(bgDir, background.directory, "image.png");
-    const bgThumbFile = resolve(bgDir, background.directory, "thumbnail.png");
+    const directory = resolve(bgDir, String(background.bandId));
+    const bgImageFile = resolve(directory, "image.png");
+    const bgThumbFile = resolve(directory, "thumbnail.png");
     if (!existsSync(bgImageFile) || !existsSync(bgThumbFile)) {
-      throw new Error(`Our Notes background artifact missing under ${resolve(bgDir, background.directory)}`);
+      throw new Error(`Our Notes background artifact missing under ${directory}`);
     }
-    const thumbnailSource = resolve(
-      workspace.assetsRoot,
-      `Assets/AddressableResources/Band/${background.bandId}/live_stage/lightweight_background.png`,
-    );
-    if (!existsSync(thumbnailSource)) throw new Error(`Background thumbnail source missing: ${thumbnailSource}`);
     const item: BackgroundItemModel = {
       name: background.name,
       version: SONOLUS_ITEM_VERSIONS.background,
@@ -415,7 +413,7 @@ function main() {
       subtitle: { ja: "バンドリ！", en: "BanG Dream!" },
       author: { ja: "haneoka", en: "haneoka" },
       tags: [],
-      thumbnail: s.add(buildSquareThumbnail(readFileSync(thumbnailSource), thumbnailSource)),
+      thumbnail: s.add(readFileSync(bgThumbFile)),
       data: s.add(gzipSync(Buffer.from(JSON.stringify({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" })))),
       image: s.add(readFileSync(bgImageFile)),
       // Match the native BackgroundBrightness=.7 with a separate black layer.
@@ -427,8 +425,7 @@ function main() {
   // --- engine item — play/watch/preview/tutorial data. Settings come from the
   // built EngineConfiguration (speed, mirror, note-speed,
   // effects, connector alpha, preview/tutorial toggles, ...). ---
-  const distDir = resolve(engineRoot, "dist");
-  const resources = loadEngineResources(distDir);
+  const resources = loadEngineResources(engineDirectory);
   const engine: EngineItemModel = {
     name: ENGINE_NAME,
     version: SONOLUS_ITEM_VERSIONS.engine,

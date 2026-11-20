@@ -3,7 +3,6 @@ import { verifyParticleEffects } from "./particleCompatibility.ts";
 import { DEFAULT_NATIVE_PARTICLE_PACK, NATIVE_PARTICLE_PACKS } from "../shared/particlePacks.ts";
 import { fileURLToPath } from "node:url";
 import { buildServerBanner } from "./serverBanner.ts";
-import { buildSquareThumbnail } from "../../scripts/presentation-thumbnails.ts";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -40,7 +39,6 @@ import {
 import { chartToLevelData, convertChart } from "@haneoka/cassiopeia-plugin-sonolus";
 import { SONOLUS_ITEM_VERSIONS, type SonolusItemType } from "./itemVersions";
 import { resolveLocalReleaseFile, resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
-import { validateSonolusInputProvenance } from "./sonolusProvenance";
 import {
   createOurNotesSonolusItemLabels,
   encodeSonolusLocalizedText,
@@ -69,10 +67,9 @@ const repoRoot = resolve(stagedSonolusRoot, "repository");
 const address = sonolusSourceRoot(process.env.SONOLUS_ADDRESS || "https://haneoka.org");
 const haneokaBase = process.env.SONOLUS_HANEOKA_BASE || "https://haneoka.org";
 const releaseServer = process.env.RELEASE_SERVER || "intl";
-const workspace = resolveSonolusReleaseWorkspace(releaseServer, root);
-const inputProvenance = validateSonolusInputProvenance(workspace, root);
+const workspace = engineOnly ? undefined : resolveSonolusReleaseWorkspace(releaseServer, root);
 const songsUrl = process.env.SONOLUS_SONGS_URL || `${haneokaBase}/api/v1/servers/${releaseServer}/songs`;
-const localSongsFile = resolve(workspace.apiRoot, "songs.json");
+const localSongsFile = workspace && resolve(workspace.apiRoot, "songs.json");
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -287,19 +284,6 @@ function addFile(path: string): Srl {
   return addRaw(readFileSync(path));
 }
 
-async function addSquareThumbnail(url: string): Promise<Srl> {
-  const pathname = new URL(url, haneokaBase).pathname;
-  const local = resolveLocalReleaseFile(workspace, pathname);
-  let bytes: Buffer;
-  if (local && existsSync(local)) bytes = readFileSync(local);
-  else {
-    const response = await fetch(new URL(url, haneokaBase), { signal: AbortSignal.timeout(20_000) });
-    if (!response.ok) throw new Error(`Sonolus thumbnail source HTTP ${response.status}: ${url}`);
-    bytes = Buffer.from(await response.arrayBuffer());
-  }
-  return addRaw(buildSquareThumbnail(bytes, url));
-}
-
 function text(value: LocalizedValue | null | undefined, fallback = ""): string {
   if (Array.isArray(value)) {
     return String(value[0] || value[1] || fallback);
@@ -312,6 +296,7 @@ const localMasterCache = new Map<string, JsonValue[]>();
 function localMasterRows(name: string): JsonValue[] {
   const cached = localMasterCache.get(name);
   if (cached) return cached;
+  if (!workspace) return [];
   const path = resolve(workspace.masterRoot, `${name}.json`);
   if (!existsSync(path)) return [];
   const parsed: JsonValue = JSON.parse(readFileSync(path, "utf8"));
@@ -395,7 +380,7 @@ async function fetchJson(url: string): Promise<JsonValue> {
   // present in this workspace. Prefer them so deploying the Worker does not
   // depend on the old production Worker being reachable. An explicit URL
   // override remains remote for staging/fixture builds.
-  if (!process.env.SONOLUS_SONGS_URL && url === songsUrl && existsSync(localSongsFile)) {
+  if (!process.env.SONOLUS_SONGS_URL && url === songsUrl && localSongsFile && existsSync(localSongsFile)) {
     const value: JsonValue = JSON.parse(readFileSync(localSongsFile, "utf8"));
     return value;
   }
@@ -412,7 +397,7 @@ async function fetchText(url: string): Promise<string> {
   } catch {
     // Fall through to fetch so the caller receives the original URL error.
   }
-  const candidate = pathname ? resolveLocalReleaseFile(workspace, pathname) : null;
+  const candidate = pathname && workspace ? resolveLocalReleaseFile(workspace, pathname) : null;
   if (candidate && existsSync(candidate)) {
     return readFileSync(candidate, "utf8");
   }
@@ -529,9 +514,12 @@ async function main() {
   rmSync(stagedSonolusRoot, { recursive: true, force: true });
   mkdirSync(repoRoot, { recursive: true });
 
-  const resourceDir = resolve(pkg, "dist/our-notes");
+  const resourceDir = resolve(process.env.SONOLUS_PRESENTATION_DIR ?? resolve(engineRoot, "resources/presentation"));
   const particleDir = process.env.SONOLUS_PARTICLE_DIR ?? resourceDir;
-  const engineDir = resolve(engineRoot, "dist");
+  const buildDirectory = resolve(engineRoot, "dist");
+  const engineDir = existsSync(resolve(buildDirectory, "EnginePlayData"))
+    ? buildDirectory
+    : resolve(engineRoot, "resources/engine");
   verifyParticleEffects(particleDir, engineDir);
   const resources = loadEngineResources(engineDir);
   const serverBanner = addFile(buildServerBanner(root));
@@ -586,12 +574,12 @@ async function main() {
   const backgroundItems: BackgroundItem[] = [];
   for (const stageId of [0, 1, 2, 3, 4, 5] as const) {
     const name = OUR_NOTES_SONOLUS_ITEM_NAMES.stages[stageId];
-    const image = `/assets/${releaseServer}/Assets/AddressableResources/Band/${stageId}/live_stage/lightweight_background.png`;
+    const backgroundDir = resolve(resourceDir, "backgrounds", String(stageId));
     backgroundItems.push({
       ...itemBase(name, SONOLUS_ITEM_VERSIONS.background, nativeTitle(nativeLabels, name), "BanG Dream!", "haneoka"),
-      thumbnail: await addSquareThumbnail(image),
+      thumbnail: addFile(requireFile(resolve(backgroundDir, "thumbnail.png"))),
       data: addJson({ aspectRatio: 1536 / 1212, fit: "cover", color: "#03030a" }),
-      image: externalSrl(image),
+      image: addFile(requireFile(resolve(backgroundDir, "image.png"))),
       // 0x4d is the closest 8-bit alpha to the native .3 black overlay,
       // preserving MasterOptionDefault BackgroundBrightness=.7.
       configuration: addJson({ blur: 0, mask: "#0000004d" }),
@@ -766,7 +754,7 @@ async function main() {
 
   console.log(
     `built Sonolus ${engineOnly ? "engine payload" : `Worker assets: ${levels.length} levels`} ` +
-      `from ${inputProvenance.sourceId}/${inputProvenance.releaseId} -> ${outRoot}`,
+      `-> ${outRoot}`,
   );
 }
 

@@ -36,7 +36,40 @@ const canonical = (value: unknown): unknown =>
 const mix = (value: number, correction: number) =>
   correction < 0 ? value * (1 + correction) : value + (1 - value) * correction;
 
-/** Apply the admitted material fit after geometry/UV packing, leaving every alpha and other sprite exact. */
+// The first two slots share one atlas tile. The fit covers original single-hit fading at
+// 384px and 1280px across four widths, leaving dense-overlap carriers at their own exposure.
+const simpleWallOpacity = new Map([
+  ["Our Notes Source Connect Draw simple 01", 0.40],
+  ["Our Notes Source Connect Draw simple 02", 0.40],
+  ["Our Notes Source Connect Draw simple 03", 0.34],
+  ["Our Notes Source Connect Draw simple 05", 0.85],
+]);
+
+export function applySimpleConnectWallOpacity(texture: ReturnType<typeof decodeRgba8Png>, sprites: Sprite[]): void {
+  const { width, height, pixels } = texture;
+  const protectedPixels = new Uint8Array(width * height);
+  for (const sprite of sprites) {
+    if (simpleWallOpacity.has(sprite.name) || unusedBody(sprite.name)) continue;
+    for (let y = Math.max(0, sprite.y - 2); y < Math.min(height, sprite.y + sprite.h + 2); y++) {
+      const start = y * width + Math.max(0, sprite.x - 2);
+      protectedPixels.fill(1, start, y * width + Math.min(width, sprite.x + sprite.w + 2));
+    }
+  }
+  for (const sprite of sprites) {
+    const gain = simpleWallOpacity.get(sprite.name);
+    if (gain === undefined) continue;
+    for (let y = Math.max(0, sprite.y - 2); y < Math.min(height, sprite.y + sprite.h + 2); y++) {
+      for (let x = Math.max(0, sprite.x - 2); x < Math.min(width, sprite.x + sprite.w + 2); x++) {
+        const pixel = y * width + x;
+        if (protectedPixels[pixel]) continue;
+        pixels[pixel * 4 + 3] = Math.round(pixels[pixel * 4 + 3]! * gain);
+        protectedPixels[pixel] = 1;
+      }
+    }
+  }
+}
+
+/** Apply source-qualified color and opacity after wall geometry and UV packing. */
 export function buildConnectWallMaterialAssets(directory: string, recipeFile: string, engineRoot: string) {
   const recipe = JSON.parse(readFileSync(recipeFile, "utf8")) as Recipe;
   if (recipe.schema !== "our-notes-connect-wall-material-v1") throw new Error("Unknown wall material recipe");
@@ -137,13 +170,14 @@ export function buildConnectWallMaterialAssets(directory: string, recipeFile: st
       )
         throw new Error("Wall material changed a protected sprite");
     }
+    applySimpleConnectWallOpacity(texture, definition.sprites);
     writeFileSync(resolve(root, "skin.texture.png"), encodeRgba8Png(texture));
     return {
       skin: input.skin,
       width: texture.width,
       height: texture.height,
       metadataExact: true,
-      alphaExact: true,
+      calibratedOpacitySprites: [...simpleWallOpacity.keys()],
       nonWallSpritesAndGuttersExact: !frames.size,
       protectedSpritesAndGuttersExact: true,
       rgbaSha256: hash(texture.pixels),

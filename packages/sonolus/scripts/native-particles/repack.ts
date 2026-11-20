@@ -80,6 +80,8 @@ function factorConstantTints(data: ParticleData, png: Buffer, decode: typeof dec
   };
 }
 
+export class ParticleAtlasCapacityError extends Error {}
+
 /** Keep effect definitions and sprite indices while relocating live RGBA tiles. */
 export function repackParticleAtlas(
   data: ParticleData,
@@ -116,8 +118,8 @@ export function repackParticleAtlas(
     positions = packRectangles(rects, size, options.denseSearch, height);
   }
   if (!positions)
-    throw new Error(
-      `Referenced particle tiles do not fit${size}square (${rects.reduce((n, r) => n + r.width * r.height, 0)}texels)`,
+    throw new ParticleAtlasCapacityError(
+      `Referenced particle tiles do not fit ${size}×${options.maximumHeight ?? size} (${rects.reduce((n, r) => n + r.width * r.height, 0)} texels)`,
     );
   const pixels = new Uint8Array(size * height * 4),
     sentinel = positions.at(-1)!;

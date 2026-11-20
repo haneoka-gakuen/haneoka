@@ -3289,7 +3289,6 @@ async function activeSonolusReleases(env: Env): Promise<readonly Release[]> {
 }
 
 function ourNotesSonolusRevision(releases: readonly Release[]): string {
-  if (!releases.length) throw new Error("No active Our Notes releases are available for Sonolus");
   return `our-notes:${releases.map((release) => `${release.server}@${release.releaseId}`).join(",")}`;
 }
 
@@ -3664,9 +3663,6 @@ async function handleSonolus(
   );
   const releases = await activeSonolusReleases(env);
   const canonicalRelease = releases[0];
-  if (!canonicalRelease) {
-    return new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS });
-  }
   const payloadState = await readR2Json(env, "operation/sonolus/revision.json", 30);
   const payloadRevision =
     payloadState &&
@@ -3700,7 +3696,8 @@ async function handleSonolus(
     // chart data. Choose the first active server slug deterministically; chart
     // data itself remains pinned to the exact release encoded in each data ID.
     const readRawJson = async (releasePath: string) =>
-      (await readGlobalSonolusJson(env, releasePath, payloadRevision)) ?? readReleaseJson(env, canonicalRelease, releasePath);
+      (await readGlobalSonolusJson(env, releasePath, payloadRevision)) ??
+      (canonicalRelease ? readReleaseJson(env, canonicalRelease, releasePath) : null);
     const thumbnail = assetUrl.pathname.startsWith("/sonolus/repository/") ? undefined : await sonolusThumbnailCache.getOrCreate(baseRevision, async () =>
       sonolusFallbackThumbnail(await readRawJson("runtime/sonolus/thumbnail-fallback"), origin),
     );
@@ -3884,7 +3881,7 @@ async function handleSonolus(
     const sourceRequest = staticDocument ? sonolusDocumentSourceRequest(request) : request;
     const source =
       (await serveGlobalSonolusObject(env, sourceRequest, relative, contentType)) ||
-      (await serveReleaseObject(env, sourceRequest, canonicalRelease, `runtime/${relative}`, contentType)) ||
+      (canonicalRelease && await serveReleaseObject(env, sourceRequest, canonicalRelease, `runtime/${relative}`, contentType)) ||
       new Response(JSON.stringify({ message: "Not found" }), { status: 404, headers: SONOLUS_JSON_HEADERS });
     return staticDocument ? localizeStaticSonolusDocument(request, source, localization, fallbackThumbnail) : source;
   });
