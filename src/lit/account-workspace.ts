@@ -1357,7 +1357,7 @@ export class AccountWorkspace extends LitElement {
             ${([
               ["team", "autoTeam", "Automatically import cards"],
               ["songs", "autoSongs", "Automatically import song progress"],
-              ["history", "autoHistory", "Automatically read recruitment records"],
+              ["history", "autoHistory", "Automatically read gacha history"],
               ["link", "autoLink", "Automatically link game account"],
               ...(appSupports("saveAutomationV2") ? [["save", "toolAccounts.syncSave", "Sync game saves"] as const] : []),
             ] as const).map(([action, key, fallback]) => html`

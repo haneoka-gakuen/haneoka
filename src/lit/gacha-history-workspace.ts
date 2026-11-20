@@ -263,7 +263,7 @@ class GachaHistoryWorkspace extends HTMLElement {
   private async assignHistory(account: GameToolAccount) {
     const owner = gameToolOwner();
     const records = this.unassignedHistory(account);
-    const title = clientText(this.view.locale, "account.page.toolAccounts.assignHistory", "Assign recruitment history");
+    const title = clientText(this.view.locale, "account.page.toolAccounts.assignHistory", "Assign gacha history");
     const key = await chooseAppAccount(this.view.locale, records.map(record => {
       const at = record.snapshot.batches.reduce((latest, batch) => Math.max(latest, batch.executedAt ?? 0), 0);
       return { key: record.key, profileId: record.key.slice(0, 8), name: null, region: record.snapshot.source.server,
@@ -564,7 +564,7 @@ class GachaHistoryWorkspace extends HTMLElement {
       }, view);
       if (this.toolAccount && isGameToolAccountId(this.toolAccount.id) && this.unassignedHistory(this.toolAccount).length)
         setAppBarActions("gacha-history-assignment", iconButton({
-          icon: "link", label: clientText(view.locale, "account.page.toolAccounts.assignHistory", "Assign recruitment history"),
+          icon: "link", label: clientText(view.locale, "account.page.toolAccounts.assignHistory", "Assign gacha history"),
           onClick: () => { if (this.toolAccount) void this.assignHistory(this.toolAccount); },
         }), view);
       else clearAppBarActions("gacha-history-assignment");

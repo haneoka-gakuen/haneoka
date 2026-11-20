@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Could not save import settings",
       "autoTeam": "Automatically import cards",
       "autoSongs": "Automatically import song progress",
-      "autoHistory": "Automatically read recruitment records",
+      "autoHistory": "Automatically read gacha history",
       "autoLink": "Automatically link game account",
       "toolAccounts": {
         "title": "Game accounts",
@@ -4995,7 +4995,7 @@
         "syncSave": "Sync game saves",
         "usbRead": "USB / ADB",
         "folder": "Choose a folder",
-        "assignHistory": "Assign recruitment history"
+        "assignHistory": "Assign gacha history"
       },
       "importSessionExpired": "Game session expired. Read the latest save again.",
       "autoImportFailed": "Some save data could not be imported",
