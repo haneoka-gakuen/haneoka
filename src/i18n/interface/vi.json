@@ -2620,7 +2620,7 @@
         "ownershipMode": "Thành viên và snapshots",
         "mergeOwnership": "Mối hợp sở hữu",
         "replaceOwnership": "Thay thế thành viên và Snapshot sở hữu",
-        "replaceScope": "Thay thế tất cả các thành viên và sở hữu snapshot với thẻ được chọn · {count} đã được đánh dấu không sở hữu.",
+        "replaceScope": "Chỉ các thẻ đã chọn được đánh dấu là đang sở hữu. {count} thẻ sẽ được đánh dấu là chưa sở hữu.",
         "groupSave": "Game Giải cứu",
         "tagAll": "Tất cả tiến bộ",
         "sourceFile": "Lưu hoặc xuất file",

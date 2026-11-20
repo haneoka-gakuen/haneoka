@@ -2620,7 +2620,7 @@
         "ownershipMode": "Members and snapshots",
         "mergeOwnership": "Merge ownership",
         "replaceOwnership": "Replace member and snapshot ownership",
-        "replaceScope": "Replace all member and snapshot ownership with selected cards · {count} marked not owned. Account bonuses, teams and preferences stay saved.",
+        "replaceScope": "Only the selected cards will be marked as owned. {count} cards will be marked as not owned.",
         "groupSave": "Game save",
         "tagAll": "All progress",
         "sourceFile": "Save or export file",

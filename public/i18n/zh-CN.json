@@ -2620,7 +2620,7 @@
         "ownershipMode": "成员和留影",
         "mergeOwnership": "合并拥有状态",
         "replaceOwnership": "替换成员和留影拥有状态",
-        "replaceScope": "用所选卡片替换全部成员和留影的拥有状态，{count}张将标记为未持有。保留账号加成、队伍和偏好。",
+        "replaceScope": "仅将所选卡牌标记为已持有。{count} 张卡牌将标记为未持有。",
         "groupSave": "游戏存档",
         "tagAll": "全部养成",
         "sourceFile": "存档或导出文件",

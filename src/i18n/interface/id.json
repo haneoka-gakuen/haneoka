@@ -2620,7 +2620,7 @@
         "ownershipMode": "Membaca dan snapshots",
         "mergeOwnership": "Merger Pemilikan",
         "replaceOwnership": "Mengganti anggota dan pemilikan snapshot",
-        "replaceScope": "Mengganti semua anggota dan pemilikan snapshot dengan kartu yang dipilih · {count} ditandai tidak dimiliki. bonus akun, tim dan preferensi tetap disimpan.",
+        "replaceScope": "Hanya kartu yang dipilih yang akan ditandai sebagai dimiliki. {count} kartu akan ditandai sebagai tidak dimiliki.",
         "groupSave": "Permainan menyelamatkan",
         "tagAll": "Semua kemajuan",
         "sourceFile": "Simpan atau Ekspor File",

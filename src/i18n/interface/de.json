@@ -2620,7 +2620,7 @@
         "ownershipMode": "Mitglieder und Snapshots",
         "mergeOwnership": "Mischung im Eigentum",
         "replaceOwnership": "Ersatzmitglied und Snapshot-Eigentum",
-        "replaceScope": "Ersatz alle Mitglieder und Snapshot-Eigentümer mit ausgewählten Karten · {count} nicht besitzt. Konto-Bonus, Teams und Präferenzen bleiben gespeichert.",
+        "replaceScope": "Nur ausgewählte Karten werden als vorhanden markiert. {count} Karten werden als nicht vorhanden markiert.",
         "groupSave": "Spiel zu retten",
         "tagAll": "Alle Fortschritte",
         "sourceFile": "Speichern oder Exportieren von Dateien",

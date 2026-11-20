@@ -2620,7 +2620,7 @@
         "ownershipMode": "團員和快照",
         "mergeOwnership": "合併擁有狀態",
         "replaceOwnership": "替換團員和快照擁有狀態",
-        "replaceScope": "以所選卡片替換全部團員和快照的擁有狀態，{count}張將標記為未持有。保留帳號加成、隊伍和偏好。",
+        "replaceScope": "僅將所選卡牌標記為已持有。{count} 張卡牌將標記為未持有。",
         "groupSave": "遊戲存檔",
         "tagAll": "全部養成",
         "sourceFile": "存檔或匯出檔案",

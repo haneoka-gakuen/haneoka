@@ -2620,7 +2620,7 @@
         "ownershipMode": "Membros e snapshots",
         "mergeOwnership": "Mergulho de propriedade",
         "replaceOwnership": "Substituição de membro e propriedade snapshot",
-        "replaceScope": "Substituir todos os membros e snapshot de propriedade com cartões selecionados · {count} marcado não proprietário.",
+        "replaceScope": "Apenas as cartas selecionadas terão o status de obtidas. {count} cartas serão marcadas como não obtidas.",
         "groupSave": "Jogo Salvação",
         "tagAll": "Todos os progressos",
         "sourceFile": "Salva ou exporta arquivos",

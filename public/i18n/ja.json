@@ -2620,7 +2620,7 @@
         "ownershipMode": "メンバーとスナップ",
         "mergeOwnership": "所持状況を統合",
         "replaceOwnership": "メンバーとスナップの所持状況を置き換え",
-        "replaceScope": "選択したカードで全メンバーとスナップの所持状況を置き換え・未所持に変更：{count}枚。アカウントボーナス・編成・設定は保持。",
+        "replaceScope": "選択したカードのみ所持済みになります。{count}枚が未所持になります。",
         "groupSave": "ゲームのセーブデータ",
         "tagAll": "育成情報すべて",
         "sourceFile": "セーブまたは書き出しファイル",

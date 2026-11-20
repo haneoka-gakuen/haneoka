@@ -2620,7 +2620,7 @@
         "ownershipMode": "멤버와 스냅",
         "mergeOwnership": "보유 상태 합치기",
         "replaceOwnership": "멤버와 스냅 보유 상태 교체",
-        "replaceScope": "선택한 카드로 모든 멤버와 스냅의 보유 상태 교체 · {count}장 미보유로 변경. 계정 보너스, 편성, 설정 유지.",
+        "replaceScope": "선택한 카드만 보유 상태로 표시됩니다. 카드 {count}장이 미보유 상태로 바뀝니다.",
         "groupSave": "게임 세이브",
         "tagAll": "모든 육성 정보",
         "sourceFile": "세이브 또는 내보낸 파일",

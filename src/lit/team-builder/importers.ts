@@ -431,6 +431,8 @@ export class ImportController {
         selectedCandidateId: id,
         preview,
         confirmation: {
+          ownership: preview.cards.length ? state.confirmation.ownership ?? "replace" : "merge",
+          existingValues: state.confirmation.existingValues ?? "overwrite",
           cards: preview.cards.map((row) => ({ key: row.key, include: true })),
           maps: preview.maps.map((row) => ({ key: row.key, include: true })),
           scalars: preview.scalars?.map((row) => ({ key: row.key, include: true })),

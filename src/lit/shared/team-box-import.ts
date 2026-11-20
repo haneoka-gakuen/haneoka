@@ -351,7 +351,7 @@ export function renderBoxImportDialog(state: BoxImportDialogState, actions: BoxI
                   ${
                     state.confirmation.ownership === "replace" ? html`
                           <p>
-                            ${t("replaceScope", "Replace all member and snapshot ownership with selected cards / {count} marked not owned. Account bonuses, teams and preferences stay saved.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}
+                            ${t("replaceScope", "Only the selected cards will be marked as owned. {count} cards will be marked as not owned.", { count: state.ownedKeys?.filter((key) => !model.cards.some((row) => row.choice.include && key === `${row.proposal.kind === "members" ? "m" : "s"}.${row.proposal.cardId}.own`)).length ?? model.removed })}
                           </p>
                         `
                       : nothing

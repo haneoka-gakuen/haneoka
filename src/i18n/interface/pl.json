@@ -2620,7 +2620,7 @@
         "ownershipMode": "Członkowie i snapshots",
         "mergeOwnership": "Złączenie własności",
         "replaceOwnership": "Zastąpienie członka i własność snapshot",
-        "replaceScope": "Zastąpić wszystkie członków i snapshot własność z wybranych kart · {count} noted nie posiada.",
+        "replaceScope": "Tylko wybrane karty zostaną oznaczone jako posiadane. Liczba kart oznaczonych jako nieposiadane: {count}.",
         "groupSave": "Gry Save",
         "tagAll": "Wszystkie postępy",
         "sourceFile": "Zapisywanie lub eksportowanie plików",
