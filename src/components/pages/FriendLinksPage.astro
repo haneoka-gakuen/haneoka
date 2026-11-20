@@ -1,95 +1,253 @@
 ---
-import type { Locale } from "../../i18n/locales";
+import { isLocale, type Locale } from "../../i18n/locales";
 import { t } from "../../i18n/messages";
 import { languageFlags } from "../../i18n/language-flags";
 import bestdori from "../../assets/icons/bestdori.png";
 import moenotes from "../../assets/icons/moenotes.webp";
+import channelsSprite from "../../assets/icons/our-notes-channels.svg?url";
+import ourNotes from "../../assets/icons/our-notes-official.png";
 import sakiko from "../../assets/icons/sakiko-app.webp";
 import I18nText from "../I18nText.astro";
 import Icon from "../Icon.astro";
 
 const { locale } = Astro.props as { locale: Locale };
-const groups = [
+type Channel = readonly [platform: string, href: string];
+
+const discord = ["discord", "https://discord.gg/ournotes"] as const;
+
+const officialChannels = {
+  ja: [
+    ["website", "https://bang-dream-on.bushimo.jp/"],
+    ["youtube", "https://www.youtube.com/channel/UCN-bFIdJM0gQlgX7h6LKcZA"],
+    ["x", "https://x.com/bang_dream_on"],
+  ],
+  en: [
+    ["website", "https://bdon.biligames.com/?lang=en-us"],
+    ["youtube", "https://www.youtube.com/@bangdreamon_EN"],
+    ["x", "https://x.com/bangdreamon_EN"],
+    ["facebook", "https://www.facebook.com/bangdreamon.EN/"],
+    discord,
+  ],
+  "zh-TW": [
+    ["website", "https://bdon.biligames.com/?lang=zh-tw"],
+    ["youtube", "https://www.youtube.com/@bangdreamon_TCN"],
+    ["facebook", "https://www.facebook.com/bangdreamon.TCN/"],
+    ["instagram", "https://www.instagram.com/bangdreamon_tw/"],
+    ["threads", "https://www.threads.com/@bangdreamon_cht"],
+    discord,
+  ],
+  "zh-CN": [
+    ["website", "https://bdon.biligames.com/?lang=zh-cn"],
+    ["xiaohongshu", "https://xhslink.com/m/AcbkOc6pqHH"],
+    ["bilibili", "https://space.bilibili.com/3706946530052970"],
+  ],
+  ko: [
+    ["website", "https://bdon.biligames.com/?lang=ko-kr"],
+    ["youtube", "https://www.youtube.com/@bangdreamon_KR"],
+    ["x", "https://x.com/bangdreamon_KR"],
+    ["naver", "https://game.naver.com/lounge/BanG_Dream_Our_Notes/board"],
+    discord,
+  ],
+} as const satisfies Record<Locale, readonly Channel[]>;
+
+const officialGroups = languageFlags.flatMap(({ value, image, label }) =>
+  isLocale(value) ? [{ value, image, label, channels: officialChannels[value] }] : [],
+);
+const friendSites = [
   {
-    id: "resources",
-    sites: [
-      {
-        id: "bestdori",
-        name: "Bestdori!",
-        href: "https://bestdori.com/",
-        image: bestdori,
-        languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "es", "id", "it", "pl", "ru"]),
-      },
-      {
-        id: "moenotes",
-        name: "Moenotes",
-        href: "https://bdon.moe/",
-        image: moenotes,
-        languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "de", "es", "fr", "id", "pt", "ru", "th", "vi"]),
-      },
-    ],
+    id: "bestdori",
+    name: "Bestdori!",
+    href: "https://bestdori.com/",
+    image: bestdori,
+    languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "es", "id", "it", "pl", "ru"]),
   },
   {
-    id: "creations",
-    sites: [
-      {
-        id: "sakiko",
-        name: "sakiko.app",
-        href: "https://sakiko.app/",
-        image: sakiko,
-        languages: new Set(["zh-CN"]),
-      },
-    ],
+    id: "sakiko",
+    name: "sakiko.app",
+    href: "https://sakiko.app/",
+    image: sakiko,
+    languages: new Set(["zh-CN"]),
+  },
+  {
+    id: "moenotes",
+    name: "Moenotes",
+    href: "https://bdon.moe/",
+    image: moenotes,
+    languages: new Set(["ja", "en", "zh-TW", "zh-CN", "ko", "de", "es", "fr", "id", "pt", "ru", "th", "vi"]),
   },
 ] as const;
 ---
 
 <div class="friend-links">
-  <div class="friend-links__groups">
-    {groups.map(({ id, sites }) => (
-      <section class="friend-links__section" aria-labelledby={`friend-links-${id}`}>
-        <h2 id={`friend-links-${id}`}>
-          <I18nText keyName={`legal.friendLinks.${id}`} fallback={t(locale, `legal.friendLinks.${id}`)} locale={locale} />
-        </h2>
-        <ul class:list={["friend-links__list", sites.length === 2 && "friend-links__list--pair"]}>
-          {sites.map((site) => (
-            <li>
-              <a class="friend-link" href={site.href} target="_blank" rel="noopener noreferrer">
-                <img class="friend-link__mark" src={site.image.src} alt="" width={96} height={96} loading="lazy" decoding="async" />
-                <span class="friend-link__copy">
-                  <strong>{site.name}</strong>
-                  <span class="friend-link__flags">
-                    {languageFlags.filter(({ value }) => site.languages.has(value)).map(({ value, image, label }) => (
-                      <img src={image} alt={label} lang={value} width={12} height={12} loading="lazy" decoding="async" />
-                    ))}
-                  </span>
-                  <I18nText
-                    keyName={`legal.friendLinks.sites.${site.id}`}
-                    fallback={t(locale, `legal.friendLinks.sites.${site.id}`)}
-                    locale={locale}
-                  />
-                </span>
-                <bdi class="friend-link__host" dir="ltr">{new URL(site.href).hostname}</bdi>
-                <span class="friend-link__arrow"><Icon name="open_in_new" size={20} /></span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
+  <section class="friend-links__section friend-links__official" aria-labelledby="friend-links-official">
+    <h2 id="friend-links-official">
+      <I18nText keyName="legal.friendLinks.official" fallback={t(locale, "legal.friendLinks.official")} locale={locale} />
+    </h2>
+    <dl class="surface official-channels">
+      {officialGroups.map(({ value, image, label, channels }) => (
+        <div class="official-channels__row">
+          <dt id={`official-channels-${value}`} lang={value}>
+            <img src={image} alt={label} title={label} width="24" height="24" decoding="async" />
+          </dt>
+          <dd>
+            <ul class="cluster official-channels__list" role="list">
+              {channels.map(([platform, href]) => {
+                const nameId = `official-channels-${value}-${platform}`;
+                const keyName = `legal.friendLinks.platforms.${platform}`;
+                const website = platform === "website";
+                return (
+                  <li>
+                    <a
+                      class:list={["button official-channels__link", website ? "button--tonal" : "button--text"]}
+                      data-platform={platform}
+                      href={href}
+                      hreflang={website ? value : undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-labelledby={`${nameId} official-channels-${value}`}
+                    >
+                      {website ? (
+                        <img src={ourNotes.src} alt="" width="20" height="20" decoding="async" />
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <use href={`${channelsSprite}#${platform}`} />
+                        </svg>
+                      )}
+                      <span id={nameId}>
+                        <I18nText keyName={keyName} fallback={t(locale, keyName)} locale={locale} />
+                      </span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  </section>
+  <ul class="grid friend-links__list" role="list">
+    {friendSites.map((site) => (
+      <li>
+        <a class="friend-link" href={site.href} target="_blank" rel="noopener noreferrer">
+          <img class="friend-link__mark" src={site.image.src} alt="" width={96} height={96} loading="lazy" decoding="async" />
+          <span class="friend-link__copy">
+            <strong>{site.name}</strong>
+            <span class="friend-link__flags">
+              {languageFlags.filter(({ value }) => site.languages.has(value)).map(({ value, image, label }) => (
+                <img src={image} alt={label} lang={value} width={12} height={12} loading="lazy" decoding="async" />
+              ))}
+            </span>
+            <I18nText
+              keyName={`legal.friendLinks.sites.${site.id}`}
+              fallback={t(locale, `legal.friendLinks.sites.${site.id}`)}
+              locale={locale}
+            />
+          </span>
+          <bdi class="friend-link__host" dir="ltr">{new URL(site.href).hostname}</bdi>
+          <span class="friend-link__arrow"><Icon name="open_in_new" size={20} /></span>
+        </a>
+      </li>
     ))}
-  </div>
+  </ul>
 </div>
 
 <style>
+  @layer pages {
+    .friend-links .friend-links__list {
+      --grid-min: 100%;
+      --grid-gap: 8px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    @container (min-width: 840px) {
+      .friend-links .friend-links__list {
+        --grid-gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    .friend-links .friend-links__official {
+      margin-block-end: var(--pane-gap);
+    }
+    .friend-links .official-channels {
+      --surface-padding: 4px 16px;
+      margin: 0;
+    }
+    .friend-links .official-channels__row {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 8px;
+      padding-block: 2px;
+    }
+    .friend-links .official-channels__row + .official-channels__row {
+      border-block-start: 1px solid var(--md-sys-color-outline-variant);
+    }
+    .friend-links .official-channels__row dt {
+      align-self: start;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-block-size: var(--md-comp-control-height-touch);
+    }
+    .friend-links .official-channels__row dd,
+    .friend-links .official-channels__list {
+      min-width: 0;
+      margin: 0;
+    }
+    .friend-links .official-channels__list {
+      --cluster-gap: 2px;
+      padding: 0;
+      list-style: none;
+    }
+    .friend-links .official-channels__link {
+      --button-height: var(--md-comp-control-height-touch);
+      min-width: var(--md-comp-control-height-touch);
+      padding-inline: 9px;
+      text-decoration: none;
+    }
+    .friend-links .official-channels__link.button--text {
+      color: var(--md-sys-color-on-surface);
+    }
+    .friend-links .official-channels__link :is(svg, img) {
+      flex: none;
+    }
+    .friend-links .official-channels__link img {
+      border-radius: var(--md-sys-shape-corner-extra-small);
+    }
+    @container (max-width: 560px) {
+      .friend-links .official-channels {
+        --surface-padding: 4px 8px;
+      }
+      .friend-links .official-channels__link {
+        flex-direction: column;
+        gap: 3px;
+        padding-inline: 1px;
+        font-size: var(--md-sys-typescale-label-small-size);
+        line-height: var(--md-sys-typescale-label-small-line-height);
+      }
+      .friend-links .official-channels__link.button--text {
+        border-radius: var(--md-sys-shape-corner-medium);
+      }
+      .friend-links .official-channels__link :is(svg, img) {
+        width: 18px;
+        height: 18px;
+      }
+      .friend-links .official-channels__link[data-platform="naver"] {
+        inline-size: var(--md-comp-control-height-touch);
+        gap: 1px;
+        text-align: center;
+        white-space: normal;
+        line-height: 1;
+      }
+    }
+  }
+
   .friend-links {
     width: min(100%, 1200px);
     margin-inline: auto;
-    padding: clamp(24px, 5vw, 64px) var(--pane-gutter);
+    padding: clamp(20px, 3vw, 36px) var(--pane-gutter) clamp(24px, 5vw, 64px);
     container-type: inline-size;
-  }
-  .friend-links__groups {
-    display: grid;
-    gap: 28px;
   }
   .friend-links__section {
     display: grid;
@@ -101,13 +259,6 @@ const groups = [
     margin: 0;
     font: var(--md-sys-typescale-emphasized-headline-weight) var(--md-sys-typescale-headline-small-size) /
       var(--md-sys-typescale-headline-small-line-height) var(--app-font);
-  }
-  .friend-links__list {
-    display: grid;
-    gap: 4px;
-    padding: 0;
-    margin: 0;
-    list-style: none;
   }
   .friend-link {
     display: grid;
@@ -177,22 +328,7 @@ const groups = [
     display: grid;
     color: var(--md-sys-color-primary);
   }
-  .friend-links__list--pair li:first-child .friend-link {
-    border-end-start-radius: var(--md-sys-shape-corner-small);
-    border-end-end-radius: var(--md-sys-shape-corner-small);
-  }
-  .friend-links__list--pair li:last-child .friend-link {
-    border-start-start-radius: var(--md-sys-shape-corner-small);
-    border-start-end-radius: var(--md-sys-shape-corner-small);
-  }
   @container (min-width: 840px) {
-    .friend-links__groups {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-      gap: 16px;
-    }
-    .friend-links__list--pair {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .friend-link {
       min-block-size: 216px;
       padding: 24px;
@@ -208,14 +344,6 @@ const groups = [
     }
     .friend-link__host, .friend-link__arrow {
       align-self: center;
-    }
-    .friend-links__list--pair li:first-child .friend-link {
-      border-end-start-radius: var(--md-sys-shape-corner-extra-large);
-      border-start-end-radius: var(--md-sys-shape-corner-small);
-    }
-    .friend-links__list--pair li:last-child .friend-link {
-      border-start-end-radius: var(--md-sys-shape-corner-extra-large);
-      border-end-start-radius: var(--md-sys-shape-corner-small);
     }
   }
 </style>

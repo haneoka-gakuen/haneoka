@@ -5897,9 +5897,20 @@
   "legal": {
     "friendLinks": {
       "title": "相互リンク",
-      "description": "BanG Dream! のゲーム資料やファン作品を紹介します。",
-      "resources": "ゲーム資料",
-      "creations": "ファン作品",
+      "description": "アワーノーツの公式リンク、バンドリ！のゲーム資料、ファン作品。",
+      "official": "Our Notes 公式リンク",
+      "platforms": {
+        "website": "公式サイト",
+        "youtube": "YouTube",
+        "x": "X",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "threads": "Threads",
+        "discord": "Discord",
+        "naver": "NAVERラウンジ",
+        "bilibili": "bilibili",
+        "xiaohongshu": "小紅書"
+      },
       "sites": {
         "bestdori": "『バンドリ！ ガールズバンドパーティ！』のカード、楽曲、譜面、イベントを調べられるデータベースです。",
         "moenotes": "『BanG Dream! Our Notes』のカード、楽曲、ストーリー、イベントのデータベース。",

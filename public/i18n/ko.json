@@ -5897,9 +5897,20 @@
   "legal": {
     "friendLinks": {
       "title": "관련 사이트",
-      "description": "BanG Dream! 게임 자료와 팬 창작물을 둘러보세요.",
-      "resources": "게임 자료",
-      "creations": "팬 창작",
+      "description": "아워 노트 공식 링크, 뱅드림! 게임 자료와 팬 프로젝트.",
+      "official": "아워 노트 공식 링크",
+      "platforms": {
+        "website": "공식 사이트",
+        "youtube": "YouTube",
+        "x": "X",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "threads": "Threads",
+        "discord": "Discord",
+        "naver": "네이버 라운지",
+        "bilibili": "bilibili",
+        "xiaohongshu": "샤오홍슈"
+      },
       "sites": {
         "bestdori": "BanG Dream! 걸즈 밴드 파티!의 카드, 곡, 채보, 이벤트를 찾아볼 수 있는 데이터베이스입니다.",
         "moenotes": "BanG Dream! Our Notes의 카드, 곡, 스토리, 이벤트를 정리한 데이터베이스입니다.",

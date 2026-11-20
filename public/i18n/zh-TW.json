@@ -5897,9 +5897,20 @@
   "legal": {
     "friendLinks": {
       "title": "友情連結",
-      "description": "瀏覽 BanG Dream! 遊戲資料站與同人創作。",
-      "resources": "遊戲資料",
-      "creations": "同人創作",
+      "description": "Our Notes 官方連結、BanG Dream! 遊戲資料與同人創作。",
+      "official": "Our Notes 官方連結",
+      "platforms": {
+        "website": "官網",
+        "youtube": "YouTube",
+        "x": "X",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "threads": "Threads",
+        "discord": "Discord",
+        "naver": "NAVER 遊戲專區",
+        "bilibili": "bilibili",
+        "xiaohongshu": "小紅書"
+      },
       "sites": {
         "bestdori": "BanG Dream! Girls Band Party! 資料站，提供卡牌、樂曲、譜面與活動查詢。",
         "moenotes": "《BanG Dream! Our Notes》的卡牌、樂曲、劇情與活動資料庫。",

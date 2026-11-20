@@ -5897,9 +5897,20 @@
   "legal": {
     "friendLinks": {
       "title": "Friend links",
-      "description": "Explore BanG Dream! game resources and fan projects.",
-      "resources": "Game resources",
-      "creations": "Fan projects",
+      "description": "Official Our Notes channels, BanG Dream! game resources, and fan projects.",
+      "official": "Our Notes official links",
+      "platforms": {
+        "website": "Website",
+        "youtube": "YouTube",
+        "x": "X",
+        "facebook": "Facebook",
+        "instagram": "Instagram",
+        "threads": "Threads",
+        "discord": "Discord",
+        "naver": "NAVER Lounge",
+        "bilibili": "bilibili",
+        "xiaohongshu": "Xiaohongshu"
+      },
       "sites": {
         "bestdori": "A BanG Dream! Girls Band Party! database with cards, songs, charts, and events.",
         "moenotes": "A database of cards, songs, stories, and events from BanG Dream! Our Notes.",
