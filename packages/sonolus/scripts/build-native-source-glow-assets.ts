@@ -10,11 +10,23 @@ import { extendPointEdgeColor } from "./build-native-source-point-assets.ts";
 import { downsamplePremultipliedTile, packAtlas } from "./native-particles/bake.ts";
 import { mergeNativeParticleDelta, type ParticleData } from "./native-particles/merge.ts";
 import { refreshNativeParticlePackReports } from "./native-particles/packs.ts";
-import { ParticleAtlasCapacityError, repackParticleAtlas } from "./native-particles/repack.ts";
+import { compactUnusedParticleSprites, ParticleAtlasCapacityError, repackParticleAtlas } from "./native-particles/repack.ts";
 import { durationBeforeNextPhase } from "./native-particles/trajectory.ts";
 import { decodePng, encodeRgbaPng } from "./native-particles/textureBake.ts";
 
 const sideFlickLayer = / Flick (Left|Right)(?: Short)? W\d+ P0$/u;
+
+// Holdout fits for the late frames of the existing lightweight up-flick light.
+function lightFlickTailExposure(frame: number): number {
+  const points = [[8, 0.914], [12, 0.81], [24, 0.78]] as const;
+  for (let index = 1; index < points.length; index++) {
+    const [end, high] = points[index]!;
+    if (end < frame) continue;
+    const [start, low] = points[index - 1]!;
+    return low + (high - low) * (frame - start) / (end - start);
+  }
+  return points.at(-1)![1];
+}
 
 interface GlowFrame {
   frame: number;
@@ -27,11 +39,17 @@ interface GlowCapture {
   width: number;
   height: number;
   frameCount: number;
-  effects: { name: string; frames: GlowFrame[] }[];
+  effects: { name: string; frames: GlowFrame[]; keepExistingFromFrame?: number }[];
 }
 
 export function buildNativeSourceGlowAssets(directory: string, capture: GlowCapture) {
-  const { profile, width, height, frameCount, effects } = capture;
+  const { profile, width, height, frameCount } = capture;
+  const effects = capture.effects.map((effect) => ({
+    ...effect,
+    frames: effect.keepExistingFromFrame === undefined
+      ? effect.frames
+      : effect.frames.filter(({ frame }) => frame < effect.keepExistingFromFrame!),
+  }));
   if (!["standard", "light", "simple"].includes(profile) || frameCount !== 25) {
     throw new Error("Expected a 60 Hz source glow capture");
   }
@@ -39,6 +57,23 @@ export function buildNativeSourceGlowAssets(directory: string, capture: GlowCapt
   const dataFile = resolve(pack, "particle.data");
   const textureFile = resolve(pack, "particle.texture.png");
   const original = JSON.parse(gunzipSync(readFileSync(dataFile)).toString()) as ParticleData;
+  const retained = new Map(effects.flatMap(({ name, keepExistingFromFrame }) =>
+    keepExistingFromFrame === undefined ? [] : [[name, keepExistingFromFrame] as const]));
+  for (const effect of original.effects) {
+    const frame = retained.get(String(effect.name));
+    if (frame === undefined) continue;
+    const groups = effect.groups as { count: number; particles: { start: number; a: { from?: { c?: number }; to?: { c?: number } } }[] }[];
+    const isLightFlick = profile === "light" && / Flick W\d+ B0$/u.test(String(effect.name));
+    effect.groups = groups.map((group) => ({
+      ...group,
+      particles: group.particles.filter(({ start }) => Math.round(start * frameCount) >= frame)
+        .map((particle) => {
+          if (!isLightFlick || particle.a.from?.c !== 1 || particle.a.to?.c !== 1) return particle;
+          const c = Math.round(lightFlickTailExposure(Math.round(particle.start * frameCount)) * 1000) / 1000;
+          return { ...particle, a: { from: { c }, to: { c } } };
+        }),
+    })).filter(({ particles }) => particles.length > 0);
+  }
   const originalTexture = readFileSync(textureFile);
   let minimumBytes = Number.POSITIVE_INFINITY;
   const build = (downsample: number) => {
@@ -89,7 +124,7 @@ export function buildNativeSourceGlowAssets(directory: string, capture: GlowCapt
       });
       return { ...base, groups: [{ count: 1, particles }] };
     });
-    const retainGroups = new Set(targets.filter(({ name }) => sideFlickLayer.test(name)).map(({ name }) => name));
+    const retainGroups = new Set(targets.filter(({ name }) => sideFlickLayer.test(name) || retained.has(name)).map(({ name }) => name));
     const merged = mergeNativeParticleDelta(original, originalTexture, { atlas, effects: replacements }, retainGroups);
     const packed = retainGroups.size && merged.data.width === original.width && merged.data.height === original.height
       ? merged
@@ -97,7 +132,7 @@ export function buildNativeSourceGlowAssets(directory: string, capture: GlowCapt
           denseSearch: true,
           maximumHeight: Math.min(2048, Math.max(1536, original.height + 256)),
         });
-    const raw = JSON.stringify(packed.data);
+    const raw = JSON.stringify(compactUnusedParticleSprites(packed.data));
     const originalCompression = gzipSync(raw, { level: 9 });
     const filteredCompression = gzipSync(raw, { level: 9, strategy: constants.Z_FILTERED });
     const data = originalCompression.length < filteredCompression.length ? originalCompression : filteredCompression;

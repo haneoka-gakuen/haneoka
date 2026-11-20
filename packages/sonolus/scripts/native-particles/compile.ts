@@ -23,6 +23,7 @@ import {
   RIG_BLOOM_MIPS,
   bakeKernelTile,
   bakeTile,
+  downsamplePremultipliedTile,
   kernelAlpha,
   packAtlas,
   prefilteredFlux,
@@ -301,10 +302,13 @@ interface TileAccumulator {
   aspects: number[];
 }
 
+const billboardTextures = new Set<TextureKey>(["star", "longStar", "centerPillar", "centerPillar02", "circleIcon"]);
+
 class TileRegistry {
   /** Screen px per effect-camera px of the profile being traced. */
   sigmaScale = 1;
   separateBillboardSystems = false;
+  coreBloomPadding: number | undefined;
   emissionKey = false;
   whitenSourceCore = false;
   readonly accumulators = new Map<string, TileAccumulator>();
@@ -361,9 +365,8 @@ class TileRegistry {
       const image = sourceCore ? decodeRgba8Png(readFileSync(this.files.get(key)!), this.files.get(key)!) : undefined;
       const rawHeight = image ? (acc.uv[3] - acc.uv[1]) * image.height : 0;
       const rawWidth = image ? (acc.uv[2] - acc.uv[0]) * image.width : 0;
-      this.tiles.set(
-        key,
-        bakeTile({
+      const billboard = acc.mipFrom === 0 && billboardTextures.has(acc.texture);
+      const tile = bakeTile({
           key,
           file: this.files.get(key)!,
           uv: acc.uv,
@@ -380,6 +383,8 @@ class TileRegistry {
               }
             : {}),
           ...(sourceCore || acc.texture === "wall" ? { maxDensity: 1 } : {}),
+          ...(this.coreBloomPadding !== undefined && billboard
+            ? { maxBloomPadding: this.coreBloomPadding } : {}),
           mips: acc.mips,
           mipFrom: acc.mipFrom,
           bloomGain: BLOOM_GAIN,
@@ -387,8 +392,8 @@ class TileRegistry {
             (!sourceCore || this.whitenSourceCore) &&
             acc.mips === 0 &&
             !["laneEffect", "frame", "wall", "pillar"].includes(acc.texture),
-        }),
-      );
+        });
+      this.tiles.set(key, tile);
       // The baked tile only needs its reference emission during fitting.
       acc.heights.length = 0;
       acc.aspects.length = 0;
@@ -870,7 +875,9 @@ export async function compileNativeParticles(options: {
   billboardsOnly?: boolean;
   billboardSystemTiles?: boolean;
   /** Core and bounded near bloom share the particle's existing quad. */
-  particleCoreMips?: number;
+  particleCoreMips?: number | ((effectName: string, width: number) => number);
+  particleCoreMaxBloomPadding?: number;
+  particleCoreBloomDownsample?: number;
   particleEmissionKey?: boolean;
   /** Offline LDRstar carrier generation; preserveexistingSourcecore/pointdefaults. */
   particleWhitenSourceCore?: boolean;
@@ -911,7 +918,8 @@ export async function compileNativeParticles(options: {
   if (!(budgetScale > 0 && Number.isFinite(budgetScale))) throw new Error("Invalid particle budget scale");
   if (!(sampleStep > 0 && Number.isFinite(sampleStep)) || !Number.isInteger(sourcePieces) || sourcePieces < 1)
     throw new Error("Invalid particle trajectory resolution");
-  if (!Number.isInteger(particleCoreMips) || particleCoreMips < 0 || particleCoreMips > BLOOM_SIGMAS.length)
+  if (typeof particleCoreMips === "number" &&
+    (!Number.isInteger(particleCoreMips) || particleCoreMips < 0 || particleCoreMips > BLOOM_SIGMAS.length))
     throw new Error("Invalid particle core bloom range");
   const profiles = options.profiles ?? NATIVE_EFFECT_PROFILES;
   const tracers = await Promise.all(
@@ -930,6 +938,7 @@ export async function compileNativeParticles(options: {
   registry.emissionKey = options.particleEmissionKey ?? false;
   registry.whitenSourceCore = options.particleWhitenSourceCore ?? false;
   registry.separateBillboardSystems = options.billboardSystemTiles ?? false;
+  registry.coreBloomPadding = options.particleCoreMaxBloomPadding;
   const compositeHalos = new Map<string, ReturnType<typeof bakeCompositeHalo>>();
   /** Cut a baked composite into its left end, one-column middle and right end. */
   const slicedComposites = new Map<string, Tile>();
@@ -1058,7 +1067,15 @@ export async function compileNativeParticles(options: {
     ),
   );
   const liveTiles = tiles.filter((tile) => used.has(atlas.index.get(tile.key)!));
-  const liveAtlas = packAtlas(liveTiles);
+  // Fit color and trajectories against full-resolution tiles, then reduce
+  // download resolution for near-field bloom without changing its footprint.
+  const downsample = options.particleCoreBloomDownsample;
+  const liveAtlas = packAtlas(downsample === undefined ? liveTiles : liveTiles.map((tile) => {
+    const acc = registry.accumulators.get(tile.key);
+    return acc && acc.mipFrom === 0 && acc.mips >= 2 && billboardTextures.has(acc.texture)
+      ? downsamplePremultipliedTile(tile, downsample)
+      : tile;
+  }));
   const remap = new Map(liveTiles.map((tile) => [atlas.index.get(tile.key)!, liveAtlas.index.get(tile.key)!]));
   for (const effect of effects)
     for (const group of effect.groups as Json[])
@@ -1406,6 +1423,7 @@ export async function compileNativeParticles(options: {
     selection?: SourceParticleSelection,
   ): PendingGroup[] {
     const slots = particleSlots(particles, spec, warm);
+    const coreMips = typeof particleCoreMips === "function" ? particleCoreMips(spec.name, width) : particleCoreMips;
     const sampled =
       selection ?? sampleSourceParticleSlots(slots, spec.lifetime, Boolean(spec.loop), lightBudget, budgetScale, options.preserveSourceParticleCount);
     sourceBudgets.set(`${spec.name} W${width}`, {
@@ -1508,7 +1526,7 @@ export async function compileNativeParticles(options: {
           const samples = members.flat();
           const classWeight = new Map<string, number>();
           for (const sample of samples) {
-            const key = tiles.observe(sample, particleCoreMips);
+            const key = tiles.observe(sample, coreMips);
             classWeight.set(key, (classWeight.get(key) ?? 0) + intensity(sample.emission));
           }
           const key = [...classWeight.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];

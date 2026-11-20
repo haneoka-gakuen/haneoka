@@ -77,6 +77,8 @@ export interface TileRequest {
   sigmaScale?: number;
   /** Bloom margin only on these sides (left, right, bottom, top); 9-slice joins get none. */
   padSides?: readonly [boolean, boolean, boolean, boolean];
+  /** Screen-pixel radius budget for bloom carried by the same billboard. */
+  maxBloomPadding?: number;
   /** Upper bound of tile px per screen px (smooth gradients need less). */
   maxDensity?: number;
   /** Bloom calibration multiplier. */
@@ -99,9 +101,12 @@ export interface Tile {
 }
 
 /** Area-filter premultiplied pixels while retaining the tile's exact geometric bounds. */
-export function downsamplePremultipliedTile(tile: Tile, factor = 2): Tile {
-  if (!(factor >= 1) || !Number.isFinite(factor)) throw new Error("Invalid tile downsampling factor");
-  const source = tile.image, width = Math.max(1, Math.ceil(source.width / factor)), height = Math.max(1, Math.ceil(source.height / factor));
+export function downsamplePremultipliedTile(tile: Tile, factor = 2, verticalFactor = factor): Tile {
+  if ([factor, verticalFactor].some((value) => value < 1 || !Number.isFinite(value)))
+    throw new Error("Invalid tile downsampling factor");
+  const source = tile.image;
+  const width = Math.max(1, Math.ceil(source.width / factor));
+  const height = Math.max(1, Math.ceil(source.height / verticalFactor));
   const pixels = new Uint8Array(width * height * 4), sx = source.width / width, sy = source.height / height;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const totals = [0, 0, 0, 0], x0 = x * sx, x1 = (x + 1) * sx, y0 = y * sy, y1 = (y + 1) * sy;
@@ -259,7 +264,8 @@ export function bakeTile(request: TileRequest): Tile {
   const cropHeight = Math.max(1, (v1 - v0) * image.height);
   const screenHeight = Math.max(1, request.screenHeight);
   const screenWidth = Math.max(1, screenHeight * request.screenAspect);
-  const pad = bloomPad(request.mips) * (request.sigmaScale ?? 1);
+  const naturalPad = bloomPad(request.mips) * (request.sigmaScale ?? 1);
+  const pad = Math.min(naturalPad, request.maxBloomPadding ?? naturalPad);
   // Tile pixels per screen pixel: at least the 1080p footprint (1.5x for
   // high-DPI phones), never above the source texels, bounded tile size.
   const scale = Math.min(
@@ -282,6 +288,19 @@ export function bakeTile(request: TileRequest): Tile {
   const padTop = sides[3] ? padPixels : 0;
   const width = spriteWidth + padLeft + padRight;
   const height = spriteHeight + padBottom + padTop;
+  const feather = pad < naturalPad && padPixels > 0
+    ? Float32Array.from({ length: width * height }, (_, p) => {
+        const x = p % width, y = Math.floor(p / width);
+        const edge = Math.min(
+          padLeft ? x : Infinity,
+          padRight ? width - 1 - x : Infinity,
+          padTop ? y : Infinity,
+          padBottom ? height - 1 - y : Infinity,
+        );
+        const opacity = Math.min(1, edge / Math.max(1, padPixels * 0.25));
+        return opacity * opacity * (3 - 2 * opacity);
+      })
+    : undefined;
   const texels = resample(image, request.uv, spriteWidth, spriteHeight);
   const unit = new Float32Array(width * height * 3);
   for (let y = 0; y < spriteHeight; y += 1)
@@ -313,9 +332,10 @@ export function bakeTile(request: TileRequest): Tile {
   const hdrPeak = Math.max(...request.emission);
   const coreStrength = request.whitenCore ? 0.9 * Math.min(1, Math.max(0, hdrPeak - 1)) : 0;
   for (let p = 0; p < width * height; p += 1) {
-    let r = final[p * 3]!;
-    let g = final[p * 3 + 1]!;
-    let b = final[p * 3 + 2]!;
+    const edge = feather?.[p] ?? 1;
+    let r = final[p * 3]! * edge;
+    let g = final[p * 3 + 1]! * edge;
+    let b = final[p * 3 + 2]! * edge;
     const alpha = Math.max(r, g, b);
     referencePeak = Math.max(referencePeak, alpha);
     reference += r + g + b;
@@ -392,8 +412,9 @@ export function bakeTile(request: TileRequest): Tile {
     let total = 0;
     let peak = 0;
     for (let i = 0; i < composed.length; i += 1) {
-      total += composed[i]!;
-      peak = Math.max(peak, composed[i]!);
+      const value = composed[i]! * (feather?.[Math.floor(i / 3)] ?? 1);
+      total += value;
+      peak = Math.max(peak, value);
     }
     const meanResponse = reference > 0 ? total / reference : step / RESPONSE_STEPS;
     // HDR retains a clipped bright centre while the fringe fades. A single

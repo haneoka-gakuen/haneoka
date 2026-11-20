@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { constants, gunzipSync, gzipSync } from "node:zlib";
 import {
-  bakeRadianceFieldCarrierPair, bakeRadianceFieldTile, fitHdrCarrierSamples, packAtlas,
+  bakeRadianceFieldCarrierPair, bakeRadianceFieldTile, downsamplePremultipliedTile, fitHdrCarrierSamples, packAtlas,
   partitionRadianceField, rasterizeCompositeRadiance, rasterizeProjectedRadiance,
   splitConstantTileColumns, trimTile, type CompositeQuad, type Tile,
 } from "./bake.ts";
@@ -120,7 +120,6 @@ export async function buildSourceRigDelta(options: {
       return { ...particle, sprite };
     }) });
     const cases = new Map<string, Mesh[]>(), durations = new Map<string, number>(), loopPeriods = new Map<string, number>();
-    const frameMaximums = new Map<string, [number, number, number]>();
     const frameMaterials = new Map<string, [number, number, number]>();
     for (const target of profile.effects) {
       const familyKey = target.family ?? target.kind;
@@ -135,10 +134,8 @@ export async function buildSourceRigDelta(options: {
       if (target.kind === "slide-loop") loopPeriods.set(familyKey, await tracer.clipDuration(prefab.animationClipUrl));
       const result = tracer.trace({ kind: target.kind, direction: target.direction ?? "none", judgement, lifetime: clip, ...(target.kind === "slide-loop" ? { loop: true } : {}) },
         target.width, Array.from({ length: Math.ceil(clip * 60) + 1 }, (_, index) => index / 60), [recipe.sourceSeed], { particle: () => false });
-      // Judgements share one frame texture; their material clocks remain separate.
-      const materialKey = `${slot} W${target.width}`;
-      let maximum = frameMaximums.get(materialKey);
-      if (!maximum) frameMaximums.set(materialKey, maximum = [0, 0, 0]);
+      // Frame geometry is shared across judgments. Its material peak belongs to the current clip.
+      const maximum: [number, number, number] = [0, 0, 0];
       for (const mesh of result.meshes.values()) for (const sample of mesh) {
         if (sample.texture !== "frame") continue;
         for (let c = 0; c < 3; c++) maximum[c] = Math.max(maximum[c]!, sample.emission[c]!);
@@ -266,8 +263,12 @@ export async function buildSourceRigDelta(options: {
             for (const zero of zeroKnots) if (zero > particle.start && Math.abs(particle.start + duration - zero) < 1e-7)
               duration = Math.min(duration, durationBeforeNextPhase(particle.start, zero));
             const fieldTile = { ...tile, expand: [1, 1] as [number, number], offset: [0, 0] as [number, number] };
-            const pieces = (profile.wallsOnly && width < 12) || (name === "frame" && width <= (profile.unslicedFrameMaxWidth ?? 0))
-              ? [fieldTile]
+            const unslicedFrame = name === "frame" && width <= (profile.unslicedFrameMaxWidth ?? 0);
+            const horizontallyFittedFrame = unslicedFrame && fieldTile.image.width + 2 > recipe.atlasSide
+              ? downsamplePremultipliedTile(fieldTile, fieldTile.image.width / (recipe.atlasSide - 3), 1)
+              : fieldTile;
+            const pieces = (profile.wallsOnly && width < 12) || unslicedFrame
+              ? [horizontallyFittedFrame]
               : splitConstantTileColumns(fieldTile);
             for (const piece of pieces) {
               program.push({ ...particle, duration, sprite: register(piece),
@@ -443,6 +444,78 @@ const SIMPLE_BAD_TAP_OPACITY = 0.6214134384024382;
 const SIMPLE_BAD_SLIDE_OPACITY = 0.6393760811745367;
 const SIMPLE_GOOD_OPACITY = 0.85;
 
+type FrameEdgeOpacity = readonly [front: number, rear: number, sides: number];
+// Per-edge exposure from the frame-only source comparisons at 384px and 1280px.
+const standardFrameEdgeOpacity: Record<string, FrameEdgeOpacity> = {
+  "Normal Bad": [0.89, 1, 1],
+  "Flick Bad": [0.86, 1, 1],
+  "Flick Left": [0.91, 1, 1],
+  "Flick Left Bad": [0.86, 1, 1],
+  "Slide Bad": [0.77, 0.92, 0.96],
+  "Connect Bad": [0.77, 0.92, 0.96],
+};
+
+function scaleParticleOpacity(particle: TrajectoryParticle, gain: number) {
+  for (const endpoint of [particle.a.from, particle.a.to]) {
+    for (const [coefficient, value] of Object.entries(endpoint ?? {}))
+      endpoint[coefficient] = Math.fround(value * gain);
+  }
+}
+
+function mirrorFrameChannel(channel: TrajectoryParticle["x"]): TrajectoryParticle["x"] {
+  const mirrored = { ...channel };
+  for (const end of ["from", "to"] as const) {
+    if (channel[end]) mirrored[end] = Object.fromEntries(Object.entries(channel[end]).map(([key, value]) => [key, -value]));
+  }
+  return mirrored;
+}
+
+/** Calibrate the sharp edges and reuse the neutral Bad frame on its reflected side. */
+export function buildNativeFrameExposure(directory: string) {
+  for (const profile of ["standard", "light", "simple"] as const) {
+    const dataFile = resolve(directory, "particles", profile, "particle.data");
+    const data = JSON.parse(gunzipSync(readFileSync(dataFile)).toString()) as ParticleData;
+    for (const effect of profile === "standard" ? data.effects : []) {
+      const name = /^Our Notes Native (.+) W\d+ P3$/u.exec(String(effect.name))?.[1];
+      const gains = name ? standardFrameEdgeOpacity[name] : undefined;
+      if (!gains) continue;
+      for (const { particles } of effect.groups as ParticleGroup[]) {
+        for (const particle of particles) {
+          const y0 = particle.y.from?.c ?? 0, y1 = particle.y.to?.c ?? 0;
+          const low = Math.min(y0, y1), high = Math.max(y0, y1);
+          const h = Math.max(particle.h.from?.c ?? 0, particle.h.to?.c ?? 0);
+          if (h > 0.36 || high - low > 0.06) continue;
+          const gain = gains[high < -1.15 ? 0 : low > -0.87 ? 1 : 2];
+          if (gain !== 1) scaleParticleOpacity(particle, gain);
+        }
+      }
+    }
+    const effects = new Map(data.effects.map((effect) => [effect.name, effect]));
+    for (const effect of data.effects) {
+      const name = String(effect.name);
+      if (!/^Our Notes Native Flick Right Bad W\d+ P3$/u.test(name)) continue;
+      const left = effects.get(name.replace("Right", "Left"));
+      if (!left) continue;
+      effect.groups = (left.groups as ParticleGroup[]).map((group) => ({
+        ...group,
+        particles: group.particles.map((particle) => {
+          const mirrored = {
+            ...particle,
+            a: { ...particle.a, from: { ...particle.a.from }, to: { ...particle.a.to } },
+            x: mirrorFrameChannel(particle.x),
+            w: mirrorFrameChannel(particle.w),
+            r: mirrorFrameChannel(particle.r),
+          };
+          if (profile !== "light") scaleParticleOpacity(mirrored, 0.66);
+          return mirrored;
+        }),
+      }));
+    }
+    writeFileSync(dataFile, gzipSync(JSON.stringify(data), { level: 9, strategy: constants.Z_FILTERED }));
+  }
+  refreshNativeParticlePackReports(directory);
+}
+
 async function buildSimpleSourceFrames(
   directory: string,
   releaseRoot: string,
@@ -488,14 +561,14 @@ async function buildSimpleSourceFrames(
   });
 }
 
-/** Fit ordinary and slide frames against their judgement-specific materials. */
-export async function buildSimpleJudgementFrames(directory: string, releaseRoot: string, judgement: "good" | "bad") {
-  const label = judgement === "good" ? "Good" : "Bad";
+/** Fit Great tap frames and Good/Bad tap and slide frames against their own materials. */
+export async function buildSimpleJudgementFrames(directory: string, releaseRoot: string, judgement: "great" | "good" | "bad") {
+  const label = judgement[0]!.toUpperCase() + judgement.slice(1);
   const effects = ([
     ["tap", "Normal"],
     ["slide", "Slide"],
     ["connect", "Connect"],
-  ] as const).flatMap(([kind, name]) =>
+  ] as const).filter(([kind]) => judgement !== "great" || kind === "tap").flatMap(([kind, name]) =>
     NATIVE_EFFECT_WIDTHS.map((width): RigTarget => ({
       kind,
       width,
@@ -505,9 +578,10 @@ export async function buildSimpleJudgementFrames(directory: string, releaseRoot:
   );
   await buildSimpleSourceFrames(directory, releaseRoot, effects, {
     proofFile: `source-simple-${judgement}-frames-proof.json`,
-    ...(judgement === "good" ? { unslicedFrameMaxWidth: 8 } : {}),
-    maximumAtlasHeight: judgement === "good" ? 1248 : 1152,
+    ...(judgement !== "bad" ? { unslicedFrameMaxWidth: judgement === "great" ? 24 : 8 } : {}),
+    maximumAtlasHeight: judgement === "great" ? 1920 : judgement === "good" ? 1248 : 1152,
   });
+  if (judgement === "great") return;
   const dataFile = resolve(directory, "particles/simple/particle.data");
   const built = JSON.parse(gunzipSync(readFileSync(dataFile)).toString()) as ParticleData;
   const opacity = new Map<string, number>();
@@ -522,11 +596,7 @@ export async function buildSimpleJudgementFrames(directory: string, releaseRoot:
     if (gain === undefined) continue;
     for (const group of effect.groups as ParticleGroup[]) {
       for (const particle of group.particles) {
-        for (const endpoint of [particle.a.from, particle.a.to]) {
-          for (const [coefficient, value] of Object.entries(endpoint)) {
-            endpoint[coefficient] = Math.fround(value * gain);
-          }
-        }
+        scaleParticleOpacity(particle, gain);
       }
     }
   }

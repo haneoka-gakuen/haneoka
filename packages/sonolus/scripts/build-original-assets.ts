@@ -47,7 +47,13 @@ import { buildConnectFrameDrawAssets } from "./connect-frame-draw-assets.ts";
 import { buildNativeRowSliceAssets } from "./native-row-slice-assets.ts";
 import { buildNativeLoopFrameAssets } from "./native-loop-frame-assets.ts";
 import { buildNativeSideFlickAssets } from "./build-native-side-flick-assets.ts";
-import { buildNativeNoteWalls, buildSimpleJudgementFrames, buildSimpleRightFlickFrames } from "./native-particles/sourceRigs.ts";
+import { buildScatteredLights } from "./native-particles/scatteredLights.ts";
+import {
+  buildNativeFrameExposure,
+  buildNativeNoteWalls,
+  buildSimpleJudgementFrames,
+  buildSimpleRightFlickFrames,
+} from "./native-particles/sourceRigs.ts";
 import {
   NATIVE_LOOP_FRAME_REPLACEMENTS,
   NATIVE_PARTICLE_OPTIONAL_EFFECTS,
@@ -443,10 +449,14 @@ try {
   console.log(`Side flick billboards: ${sideFlicks} effects rebuilt from source`);
   await buildSimpleJudgementFrames(out, workspace.releaseRoot, "bad");
   await buildSimpleJudgementFrames(out, workspace.releaseRoot, "good");
+  await buildSimpleJudgementFrames(out, workspace.releaseRoot, "great");
   await buildSimpleRightFlickFrames(out, workspace.releaseRoot);
+  buildNativeFrameExposure(out);
   const loopFrames = buildNativeLoopFrameAssets(out);
   console.log(`Slide loop frames: ${loopFrames.length} single-cycle effects`);
   await buildNativeNoteWalls(out, workspace.releaseRoot);
+  const scatteredLights = await buildScatteredLights(out, workspace.releaseRoot);
+  console.log(`Simple scattered lights: ${scatteredLights} effects rebuilt on shared core-and-halo tiles`);
   buildPresentationThumbnails(out);
   buildSonolusBackgrounds(workspace.assetsRoot, resolve(out, "backgrounds"));
 

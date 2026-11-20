@@ -82,6 +82,29 @@ function factorConstantTints(data: ParticleData, png: Buffer, decode: typeof dec
 
 export class ParticleAtlasCapacityError extends Error {}
 
+/** Remove unreachable sprite table entries after every delta has been applied. */
+export function compactUnusedParticleSprites(data: ParticleData): ParticleData {
+  const indices = new Map<number, number>();
+  const sprites: ParticleData["sprites"] = [];
+  const effects = data.effects.map((effect) => ({
+    ...effect,
+    groups: (effect.groups as TintGroup[]).map((group) => ({
+      ...group,
+      particles: group.particles.map((particle) => {
+        const old = particle.sprite;
+        let index = indices.get(old);
+        if (index === undefined) {
+          index = sprites.length;
+          indices.set(old, index);
+          sprites.push(data.sprites[old]!);
+        }
+        return { ...particle, sprite: index };
+      }),
+    })),
+  }));
+  return { ...data, effects, sprites };
+}
+
 /** Keep effect definitions and sprite indices while relocating live RGBA tiles. */
 export function repackParticleAtlas(
   data: ParticleData,
