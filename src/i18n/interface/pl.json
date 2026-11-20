@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "Związek nie powiązany - spróbuj ponownie.",
       "cloudUnavailable": "Synchronizacja chmury nie jest dostępna. spróbuj ponownie.",
       "description": "Analiza lokalnych rekordów gacha według basenu, daty i karty, przegląd gwiazd i zużycie biletów oraz eksportowe obrazy.",
-      "title": "Historia Gachy",
+      "title": "Historia losowań",
       "account": "Konto gry",
       "selectAccount": "Wybierz konto gry",
       "import": "Dodaj",
@@ -1535,7 +1535,7 @@
       "saveImage": "Zachowaj obraz",
       "poolBreakdown": "przez basen",
       "timeBreakdown": "Na datę",
-      "readHistory": "Czytaj historię Gacha",
+      "readHistory": "Odczytaj historię losowań",
       "importSource": "Źródło importu",
       "savedSource": "Konto gry",
       "gameSource": "Gry Save",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Ten zapis nie zawiera żadnych potwierdzeń rejestracyjnych gry.",
       "errorSessionExpired": "Użytkownicy gry nie otrzymali certyfikatu.",
-      "errorServiceUnavailable": "Usługa historyczna Gacha nie jest dostępna.",
+      "errorServiceUnavailable": "Usługa historii losowań jest niedostępna.",
       "errorVersionUnavailable": "Nie można odkryć wersji gry.",
       "errorNetwork": "Nie można połączyć się z serwerem gry.",
       "errorResponseInvalid": "Nie udało się odczytać odpowiedzi z historią losowań.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Zamknij grę, a potem ponownie zaimportuj najnowszy zapis tego konta.",
       "readHelpStep3": "Odczytaj historię losowań zaraz po imporcie. Nie uruchamiaj gry ponownie do zakończenia odczytu.",
       "readHelpOther": "Jeśli czytanie nadal się nie powiodło, sprawdź region, połączenie sieciowe i status konserwacji gier.",
-      "errorGameReadFailed": "Nie można przeczytać historii gacha z serwera gry.",
+      "errorGameReadFailed": "Nie udało się odczytać historii losowań z serwera gry.",
       "cloudSessionExpired": "Twój haneoka podpis wygasł."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Nie można zaoszczędzić importowanych ustawień",
       "autoTeam": "Automatyczne kartki importowe",
       "autoSongs": "Automatycznie wprowadzanie piosenek Progress",
-      "autoHistory": "Automatycznie czytać rekordy rekrutacji",
+      "autoHistory": "Odczytuj historię losowań automatycznie",
       "autoLink": "Automatyczne linkowanie konta gry",
       "toolAccounts": {
         "title": "Konta gry",
@@ -4995,7 +4995,7 @@
         "syncSave": "Synchronizuj zapisy",
         "usbRead": "Debugowanie USB (ADB)",
         "folder": "Wybierz folder",
-        "assignHistory": "Przypisz historię rekrutacji"
+        "assignHistory": "Przypisz historię losowań"
       },
       "importSessionExpired": "Sesja gry wygasła. przeczytaj najnowsze zapisanie ponownie.",
       "autoImportFailed": "Niektóre dane nie mogą być importowane",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Pozwolenia",
       "apiScope_team_read": "Czytaj pudełko i zespoły",
       "apiScope_team_write": "Zmiana pudełka i zespołów",
-      "apiScope_gacha_read": "Czytaj historię Gacha",
+      "apiScope_gacha_read": "Odczytaj historię losowań",
       "apiScope_games_read": "Czytaj gry Konta",
       "apiScope_profile_read": "Czytaj profil",
       "apiScope_resources_read": "Czytaj zasoby",

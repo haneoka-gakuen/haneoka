@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "Kết nối thất bại, thử lại",
       "cloudUnavailable": "Cloud sync không sẵn dùng. thử lại",
       "description": "Phân tích hồ sơ gacha địa phương theo hồ bơi, ngày và thẻ, đánh giá đồ chơi sao và tiêu thụ vé, và xuất khẩu hình ảnh.",
-      "title": "Lịch sử Gacha",
+      "title": "Lịch sử quay",
       "account": "Tài khoản game",
       "selectAccount": "Chọn tài khoản trò chơi",
       "import": "Thêm",
@@ -1535,7 +1535,7 @@
       "saveImage": "Save ảnh",
       "poolBreakdown": "Bể bơi",
       "timeBreakdown": "theo ngày",
-      "readHistory": "Đọc lịch sử Gacha",
+      "readHistory": "Đọc lịch sử quay",
       "importSource": "Nguồn nhập dữ liệu",
       "savedSource": "Tài khoản game",
       "gameSource": "Game Giải cứu",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Lưu trữ này không có chứng nhận đăng nhập trò chơi.",
       "errorSessionExpired": "Các tín hiệu đăng ký game không được chấp nhận.",
-      "errorServiceUnavailable": "Dịch vụ lịch sử Gacha không sẵn dùng.",
+      "errorServiceUnavailable": "Dịch vụ lịch sử quay hiện không khả dụng.",
       "errorVersionUnavailable": "Không thể tìm thấy phiên bản trò chơi.",
       "errorNetwork": "Không thể kết nối với máy chủ trò chơi.",
       "errorResponseInvalid": "Không đọc được phản hồi chứa lịch sử quay.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Thoát trò chơi rồi nhập lại bản lưu mới nhất của tài khoản đó.",
       "readHelpStep3": "Đọc lịch sử quay ngay sau khi nhập. Giữ trò chơi ở trạng thái đã đóng cho đến khi đọc xong.",
       "readHelpOther": "Nếu đọc vẫn thất bại, hãy kiểm tra khu vực, kết nối mạng và tình trạng bảo trì trò chơi.",
-      "errorGameReadFailed": "Không thể đọc lịch sử gacha từ máy chủ trò chơi.",
+      "errorGameReadFailed": "Không thể đọc lịch sử quay từ máy chủ trò chơi.",
       "cloudSessionExpired": "Đăng ký haneoka của bạn đã hết hạn. đăng ký lại."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Không thể tiết kiệm cài đặt nhập khẩu",
       "autoTeam": "Tự động nhập thẻ",
       "autoSongs": "Tự động nhập khẩu bài hát tiến bộ",
-      "autoHistory": "Tự động đọc hồ sơ tuyển dụng",
+      "autoHistory": "Tự động đọc lịch sử quay",
       "autoLink": "Tự động liên kết tài khoản game",
       "toolAccounts": {
         "title": "Tài khoản trò chơi",
@@ -4995,7 +4995,7 @@
         "syncSave": "Đồng bộ bản lưu trò chơi",
         "usbRead": "Gỡ lỗi USB (ADB)",
         "folder": "Chọn thư mục",
-        "assignHistory": "Gán lịch sử tuyển mộ"
+        "assignHistory": "Liên kết lịch sử quay"
       },
       "importSessionExpired": "Game session hết hạn. đọc lại tiết kiệm mới nhất.",
       "autoImportFailed": "Một số dữ liệu lưu không thể được nhập khẩu",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Giấy phép",
       "apiScope_team_read": "Đọc Box và Nhóm",
       "apiScope_team_write": "Thay đổi hộp và đội",
-      "apiScope_gacha_read": "Đọc lịch sử Gacha",
+      "apiScope_gacha_read": "Đọc lịch sử quay",
       "apiScope_games_read": "Đọc tài khoản game",
       "apiScope_profile_read": "Đọc profile",
       "apiScope_resources_read": "Đọc tài nguyên",

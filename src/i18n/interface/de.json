@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "Die Verbindung hat nicht gelungen. versuchen Sie noch einmal.",
       "cloudUnavailable": "Cloud sync nicht verfügbar. versuchen Sie erneut.",
       "description": "Analysieren Sie lokale Gacha-Daten nach Pool, Datum und Karte, prüfen Sie die Star-Game und Ticketverbrauch und Exportbilder.",
-      "title": "Geschichte von Gacha",
+      "title": "Ziehungsverlauf",
       "account": "Spielkonto",
       "selectAccount": "Spielkonto auswählen",
       "import": "Hinzufügen",
@@ -1535,7 +1535,7 @@
       "saveImage": "Bild zu speichern",
       "poolBreakdown": "durch Pool",
       "timeBreakdown": "nach Datum",
-      "readHistory": "Lesen Sie Geschichte von Gacha",
+      "readHistory": "Ziehungsverlauf lesen",
       "importSource": "Importquelle",
       "savedSource": "Spielkonto",
       "gameSource": "Spiel zu retten",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Diese Speicherung hat keine Spiel-Sign-in-Kreditationen.",
       "errorSessionExpired": "Die Spiel-Sign-in-Kreditationen wurden nicht akzeptiert.",
-      "errorServiceUnavailable": "Der Gacha-Historiedienst ist nicht verfügbar.",
+      "errorServiceUnavailable": "Der Dienst für den Ziehungsverlauf ist nicht verfügbar.",
       "errorVersionUnavailable": "Die Version des Spiels kann nicht entdeckt werden.",
       "errorNetwork": "Sie können nicht auf den Game Server verknüpft werden.",
       "errorResponseInvalid": "Die Antwort mit dem Ziehungsverlauf konnte nicht gelesen werden.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Beende das Spiel und importiere erneut den neuesten Spielstand dieses Kontos.",
       "readHelpStep3": "Lies den Ziehungsverlauf direkt nach dem Import. Öffne das Spiel erst wieder, wenn das Lesen abgeschlossen ist.",
       "readHelpOther": "Wenn das Lesen noch nicht funktioniert, überprüfen Sie die Region, Netzwerkverbindung und den Status der Spielehaltung.",
-      "errorGameReadFailed": "Sie konnte nicht die Geschichte von Gacha vom Spiel-Server lesen.",
+      "errorGameReadFailed": "Der Ziehungsverlauf konnte nicht vom Spielserver gelesen werden.",
       "cloudSessionExpired": "Ihr haneoka Sign-in ist abgeschlossen."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Importeinstellungen nicht gespeichert werden können",
       "autoTeam": "Automatische Importkarten",
       "autoSongs": "Automatisch Import Song Progress",
-      "autoHistory": "Automatisch Rekrutierungsregister lesen",
+      "autoHistory": "Ziehungsverlauf automatisch lesen",
       "autoLink": "Automatisch Link-Spielkonto",
       "toolAccounts": {
         "title": "Spielkonten",
@@ -4995,7 +4995,7 @@
         "syncSave": "Spielstände synchronisieren",
         "usbRead": "USB-Debugging (ADB)",
         "folder": "Ordner auswählen",
-        "assignHistory": "Rekrutierungsverlauf zuordnen"
+        "assignHistory": "Ziehungsverlauf zuordnen"
       },
       "importSessionExpired": "Spiel-Session ausgeschlossen. Lesen Sie die neueste Speicherung erneut.",
       "autoImportFailed": "Einige gespeicherten Daten konnten nicht importiert werden",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Erlaubnis",
       "apiScope_team_read": "Lesen Sie Box und Teams",
       "apiScope_team_write": "Veränderung der Box und Teams",
-      "apiScope_gacha_read": "Lesen Sie Geschichte von Gacha",
+      "apiScope_gacha_read": "Ziehungsverlauf lesen",
       "apiScope_games_read": "Lesen Sie Spielkonten",
       "apiScope_profile_read": "Profil lesen",
       "apiScope_resources_read": "Lesen Sie Ressourcen",

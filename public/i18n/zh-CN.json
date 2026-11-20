@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "权限",
       "apiScope_team_read": "读取 Box 和队伍",
       "apiScope_team_write": "修改 Box 和队伍",
-      "apiScope_gacha_read": "读取抽卡记录",
+      "apiScope_gacha_read": "读取招募记录",
       "apiScope_games_read": "读取游戏账号",
       "apiScope_profile_read": "读取个人资料",
       "apiScope_resources_read": "读取资源",

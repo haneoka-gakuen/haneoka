@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "La conexión no funciona, vuelve a probar.",
       "cloudUnavailable": "El sistema de sincronización en la nube no está disponible.Tenta de nuevo.",
       "description": "Analizar los registros de gacha locales por piscina, fecha y tarjeta, revisión de gemas y consumo de billetes y imágenes de exportación.",
-      "title": "Historia de Gacha",
+      "title": "Historial de tiradas",
       "account": "Cuentas de juego",
       "selectAccount": "Elegir una cuenta del juego",
       "import": "Añadir",
@@ -1535,7 +1535,7 @@
       "saveImage": "Salva la imagen",
       "poolBreakdown": "por la piscina",
       "timeBreakdown": "por fecha",
-      "readHistory": "Leer la historia de Gacha",
+      "readHistory": "Leer el historial de tiradas",
       "importSource": "Fuente de importación",
       "savedSource": "Cuentas de juego",
       "gameSource": "Juego Salva",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Este saldo no tiene credenciales de registro del juego.",
       "errorSessionExpired": "Los credenciales de registro del juego no fueron aceptados.",
-      "errorServiceUnavailable": "El servicio de historia de Gacha no está disponible.",
+      "errorServiceUnavailable": "El servicio del historial de tiradas no está disponible.",
       "errorVersionUnavailable": "No se puede encontrar la versión del juego.",
       "errorNetwork": "No se puede conectar al servidor de juego.",
       "errorResponseInvalid": "No se pudo leer la respuesta del historial de tiradas.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Cierra el juego y vuelve a importar la partida guardada más reciente de esa cuenta.",
       "readHelpStep3": "Lee el historial de tiradas inmediatamente después de importar. Mantén cerrado el juego hasta que termine la lectura.",
       "readHelpOther": "Si la lectura todavía no funciona, verifique la región, la conexión de red y el estado de mantenimiento del juego.",
-      "errorGameReadFailed": "No podía leer la historia de Gacha desde el servidor del juego.",
+      "errorGameReadFailed": "No se pudo leer el historial de tiradas del servidor del juego.",
       "cloudSessionExpired": "Su registro de haneoka ha expirado."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "No puede salvar las configuraciones de importación",
       "autoTeam": "Cartas de importación automática",
       "autoSongs": "Automáticamente importar canciones progresivas",
-      "autoHistory": "Lectura automática de los registros de contratación",
+      "autoHistory": "Leer automáticamente el historial de tiradas",
       "autoLink": "Automaticamente conectar el cuenta de juego",
       "toolAccounts": {
         "title": "Cuentas del juego",
@@ -4995,7 +4995,7 @@
         "syncSave": "Sincronizar partidas",
         "usbRead": "Depuración USB (ADB)",
         "folder": "Elegir carpeta",
-        "assignHistory": "Asignar historial de reclutamiento"
+        "assignHistory": "Vincular el historial de tiradas"
       },
       "importSessionExpired": "La sesión del juego ha terminado.Leer la última recuperación de nuevo.",
       "autoImportFailed": "Algunos datos salvos no podrían importarse",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Permisiones",
       "apiScope_team_read": "Leer boxeo y equipos",
       "apiScope_team_write": "Cambiar el cuadro y los equipos",
-      "apiScope_gacha_read": "Leer la historia de Gacha",
+      "apiScope_gacha_read": "Leer el historial de tiradas",
       "apiScope_games_read": "Leer las cuentas de juego",
       "apiScope_profile_read": "Leer el perfil",
       "apiScope_resources_read": "Leer los recursos",

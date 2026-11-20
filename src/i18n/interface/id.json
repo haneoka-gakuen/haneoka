@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "Kegagalan sambungan, coba lagi.",
       "cloudUnavailable": "Cloud sync tidak tersedia. coba lagi.",
       "description": "Analisis rekaman gacha lokal dengan kolam renang, tanggal dan kartu, ulasan bintang jamuan dan konsumsi tiket, dan ekspor gambar.",
-      "title": "Sejarah Gacha",
+      "title": "Riwayat undian",
       "account": "Konto permainan",
       "selectAccount": "Pilih akun gim",
       "import": "Tambah",
@@ -1535,7 +1535,7 @@
       "saveImage": "Simpan Gambar",
       "poolBreakdown": "dengan pool",
       "timeBreakdown": "Dengan tanggal",
-      "readHistory": "Baca Sejarah Gacha",
+      "readHistory": "Baca riwayat undian",
       "importSource": "Sumber impor",
       "savedSource": "Konto permainan",
       "gameSource": "Permainan menyelamatkan",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Penyimpanan ini tidak memiliki pengesahan game.",
       "errorSessionExpired": "Pengakuan game tidak diterima.",
-      "errorServiceUnavailable": "Layanan sejarah Gacha tidak tersedia.",
+      "errorServiceUnavailable": "Layanan riwayat undian tidak tersedia.",
       "errorVersionUnavailable": "Tidak dapat menemukan versi game.",
       "errorNetwork": "Tidak dapat terhubung ke server game.",
       "errorResponseInvalid": "Respons riwayat undian tidak dapat dibaca.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Keluar dari gim, lalu impor kembali simpanan terbaru akun itu.",
       "readHelpStep3": "Segera baca riwayat undian setelah impor. Jangan buka kembali gim sampai proses pembacaan selesai.",
       "readHelpOther": "Jika membaca masih gagal, periksa wilayah, koneksi jaringan dan status pemeliharaan game.",
-      "errorGameReadFailed": "Tidak bisa membaca sejarah gacha dari server game.",
+      "errorGameReadFailed": "Riwayat undian tidak dapat dibaca dari server gim.",
       "cloudSessionExpired": "haneoka sign-in sudah habis."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Tidak bisa menyimpan pengaturan impor",
       "autoTeam": "Kartu impor otomatis",
       "autoSongs": "Automatic Impor Lagu Kemajuan",
-      "autoHistory": "Membaca rekod perekrutan secara otomatis",
+      "autoHistory": "Baca riwayat undian secara otomatis",
       "autoLink": "Konten Game secara otomatis",
       "toolAccounts": {
         "title": "Akun game",
@@ -4995,7 +4995,7 @@
         "syncSave": "Sinkronkan simpanan game",
         "usbRead": "Debug USB (ADB)",
         "folder": "Pilih folder",
-        "assignHistory": "Hubungkan riwayat rekrutmen"
+        "assignHistory": "Tautkan riwayat undian"
       },
       "importSessionExpired": "Sesi permainan berakhir. baca penyimpanan terbaru lagi.",
       "autoImportFailed": "Beberapa data yang disimpan tidak dapat diimport",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Permohonan",
       "apiScope_team_read": "Baca kotak dan tim",
       "apiScope_team_write": "Perubahan kotak dan tim",
-      "apiScope_gacha_read": "Baca Sejarah Gacha",
+      "apiScope_gacha_read": "Baca riwayat undian",
       "apiScope_games_read": "Baca Konta Game",
       "apiScope_profile_read": "Baca Profil",
       "apiScope_resources_read": "Baca Sumber Daya",

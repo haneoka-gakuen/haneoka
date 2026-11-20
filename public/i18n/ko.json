@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "가져오기 설정을 저장하지 못했습니다",
       "autoTeam": "카드 자동 가져오기",
       "autoSongs": "악곡 진행도 자동 가져오기",
-      "autoHistory": "모집 기록 자동 읽기",
+      "autoHistory": "뽑기 기록 자동으로 불러오기",
       "autoLink": "게임 계정 자동 연결",
       "toolAccounts": {
         "title": "게임 계정",
@@ -4995,7 +4995,7 @@
         "syncSave": "게임 저장 데이터 동기화",
         "usbRead": "USB 디버깅(ADB)",
         "folder": "폴더 선택",
-        "assignHistory": "모집 기록 연결"
+        "assignHistory": "뽑기 기록 연결"
       },
       "importSessionExpired": "게임 인증이 만료되었습니다. 최신 저장 데이터를 다시 읽어 주세요.",
       "autoImportFailed": "일부 저장 데이터를 가져오지 못했습니다",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "권한",
       "apiScope_team_read": "박스와 편성 읽기",
       "apiScope_team_write": "박스와 편성 변경",
-      "apiScope_gacha_read": "가챠 기록 읽기",
+      "apiScope_gacha_read": "뽑기 기록 불러오기",
       "apiScope_games_read": "게임 계정 읽기",
       "apiScope_profile_read": "프로필 읽기",
       "apiScope_resources_read": "리소스 읽기",

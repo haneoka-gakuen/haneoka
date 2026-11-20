@@ -1478,7 +1478,7 @@
       "cloudNetworkError": "A conexão falhou, tente novamente.",
       "cloudUnavailable": "A sincronização de nuvem não está disponível. tente novamente.",
       "description": "Analisar registros gacha locais por piscina, data e cartão, revisar gem estrela e consumo de bilhetes, e imagens de exportação.",
-      "title": "História da Gacha",
+      "title": "Histórico de sorteios",
       "account": "Conta do jogo",
       "selectAccount": "Escolher conta do jogo",
       "import": "Adicionar",
@@ -1535,7 +1535,7 @@
       "saveImage": "Salve a imagem",
       "poolBreakdown": "Por piscina",
       "timeBreakdown": "por data",
-      "readHistory": "Leia a história do Gacha",
+      "readHistory": "Ler o histórico de sorteios",
       "importSource": "Origem da importação",
       "savedSource": "Conta do jogo",
       "gameSource": "Jogo Salvação",
@@ -1548,7 +1548,7 @@
       "regionKo": "KR",
       "errorMissingSession": "Este saldo não tem credenciais de inscrição do jogo.",
       "errorSessionExpired": "As credenciais de inscrição do jogo não foram aceitas.",
-      "errorServiceUnavailable": "O serviço de história da Gacha não está disponível.",
+      "errorServiceUnavailable": "O serviço do histórico de sorteios está indisponível.",
       "errorVersionUnavailable": "Não se pode descobrir a versão do jogo.",
       "errorNetwork": "Não se pode conectar ao servidor do jogo.",
       "errorResponseInvalid": "Não foi possível ler a resposta do histórico de sorteios.",
@@ -1681,7 +1681,7 @@
       "readHelpStep2": "Feche o jogo e importe novamente o arquivo salvo mais recente dessa conta.",
       "readHelpStep3": "Leia o histórico de sorteios imediatamente após a importação. Deixe o jogo fechado até a leitura terminar.",
       "readHelpOther": "Se a leitura ainda falhar, verifique a região, conexão de rede e status de manutenção do jogo.",
-      "errorGameReadFailed": "Não podia ler a história do gacha do servidor de jogos.",
+      "errorGameReadFailed": "Não foi possível ler o histórico de sorteios do servidor do jogo.",
       "cloudSessionExpired": "Seu haneoka assinatura expirou. assinatura novamente."
     },
     "chatCustomizations": {
@@ -4961,7 +4961,7 @@
       "importSettingsFailed": "Não pode salvar as configurações de importação",
       "autoTeam": "Cartões automáticos de importação",
       "autoSongs": "Importação automática de canções",
-      "autoHistory": "Leia automaticamente os registros de recrutamento",
+      "autoHistory": "Ler automaticamente o histórico de sorteios",
       "autoLink": "Conteúdo de jogo automaticamente",
       "toolAccounts": {
         "title": "Contas do jogo",
@@ -4995,7 +4995,7 @@
         "syncSave": "Sincronizar dados salvos",
         "usbRead": "Depuração USB (ADB)",
         "folder": "Escolher pasta",
-        "assignHistory": "Vincular histórico de recrutamento"
+        "assignHistory": "Vincular o histórico de sorteios"
       },
       "importSessionExpired": "A sessão do jogo expirou. leia a última saudação novamente.",
       "autoImportFailed": "Alguns dados salvos não poderiam ser importados",
@@ -5037,7 +5037,7 @@
       "apiTokenScopes": "Permissões",
       "apiScope_team_read": "Leia a caixa e equipes",
       "apiScope_team_write": "Mudança de caixa e equipes",
-      "apiScope_gacha_read": "Leia a história do Gacha",
+      "apiScope_gacha_read": "Ler o histórico de sorteios",
       "apiScope_games_read": "Leia as contas do jogo",
       "apiScope_profile_read": "Leia o perfil",
       "apiScope_resources_read": "Leia os recursos",
