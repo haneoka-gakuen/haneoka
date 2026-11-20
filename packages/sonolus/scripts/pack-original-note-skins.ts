@@ -7,6 +7,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { deflateSync, gzipSync, inflateSync } from "node:zlib";
 import {
+  DEFAULT_RENDER_SETTINGS,
   OUR_NOTES_SLIDE_LINE_STYLES,
   OUR_NOTES_BUNDLED_NOTE_ATLASES,
   OUR_NOTES_NOTE_SKINS,
@@ -793,7 +794,6 @@ function validateBounds(
 }
 
 // Legacy September 30 ribbon appearance: midpoint tint over grayscale art.
-const SLIDE_STRIP_X = { normal: 505, pressed: 609, missed: 713 } as const;
 const SLIDE_SOURCE_ROW = 3693;
 const SLIDE_STRIP_WIDTH = 100;
 /** The authored grayscale line art spans x=6..93 of the 100px row. */
@@ -801,7 +801,7 @@ const SLIDE_ART_SPAN = { left: 6, right: 93 } as const;
 
 type SlideGradient = { colors: readonly (readonly number[])[]; alpha: readonly number[] };
 
-function sampleLegacySlideGradient(gradient: SlideGradient, time: number): [number, number, number, number] {
+function sampleSlideGradient(gradient: SlideGradient, time: number): [number, number, number, number] {
   const stops = gradient.colors;
   if (!stops.length) return [1, 1, 1, 1];
   let left = stops[0]!;
@@ -817,12 +817,7 @@ function sampleLegacySlideGradient(gradient: SlideGradient, time: number): [numb
   const amount = Math.min(1, Math.max(0, (time - left[0]!) / span));
   const channel = (offset: number): number =>
     Math.min(1, Math.max(0, left[offset]! + (right[offset]! - left[offset]!) * amount));
-  // Preserve the legacy sampler mapping to reproduce the accepted colors.
-  const alphaKeys = gradient.alpha;
-  const a0 = alphaKeys[1] ?? 1;
-  const a1 = alphaKeys[2] ?? a0;
-  const t0 = alphaKeys[0] ?? 0;
-  const t1 = alphaKeys[3] ?? 1;
+  const [t0 = 0, a0 = 1, t1 = 1, a1 = a0] = gradient.alpha;
   const alphaAmount = Math.min(1, Math.max(0, (time - t0) / Math.max(1e-6, t1 - t0)));
   return [channel(1), channel(2), channel(3), a0 + (a1 - a0) * alphaAmount];
 }
@@ -853,50 +848,69 @@ function hsvToRgb(h: number, s: number, v: number): readonly [number, number, nu
   return table[((i % 6) + 6) % 6]!;
 }
 
-export function bakeSkinSlideStrips(texture: DecodedRgbaPng, skinName: BundledNoteSkin): void {
-  // Restore the September 30 midpoint tint and grayscale cross-section.
-  // Every length sample uses this appearance; the line's state still
-  // selects normal, pressed, or missed colors.
+type SlideStripState = "normal" | "pressed" | "disabled" | "guide";
+const SLIDE_STRIP_ALIASES = /^(Our Notes (?:Active )?Slide Connection (?:Green|Yellow))( Active)?$/u;
+const SLIDE_STRIP_CELL = /^Our Notes Native Line (Normal|Pressed|Missed) (\d+)$/u;
+
+/** Bake the authored opacity at the atlas positions owned by each connector sprite. */
+export function bakeSkinSlideStrips(
+  texture: DecodedRgbaPng,
+  skinName: BundledNoteSkin,
+  sprites: readonly SkinSprite[],
+  source: DecodedRgbaPng = texture,
+): void {
   const style = OUR_NOTES_SLIDE_LINE_STYLES[skinName];
   const stride = texture.width * 4;
-  const sourceOffset = SLIDE_SOURCE_ROW * stride;
-  const states: ReadonlyArray<[keyof typeof SLIDE_STRIP_X, SlideGradient, number]> = [
-    ["normal", style.normal, style.glow.enabledScale],
-    ["pressed", style.pressed, style.glow.pressedScale],
-    ["missed", style.disabled, style.glow.disabledScale],
-  ];
-  for (const [state, gradient, stateScale] of states) {
-    const targetX = SLIDE_STRIP_X[state];
-    const [baseR, baseG, baseB, baseA] = sampleLegacySlideGradient(gradient, 0.5);
-    for (let column = 0; column < SLIDE_STRIP_WIDTH; column += 1) {
-      const sourceOffsetPixel = sourceOffset + Math.min(99, column) * 4;
-      const gray = texture.pixels[sourceOffsetPixel]! / 255;
-      const sourceA = texture.pixels[sourceOffsetPixel + 3]! / 255;
-      // Glow rides the authored art's outer rails: symmetric across the
-      // strip, strongest at the edges, zero from 12.5% inward.
-      const u = Math.min(1, Math.max(0, (column - SLIDE_ART_SPAN.left) / (SLIDE_ART_SPAN.right - SLIDE_ART_SPAN.left)));
+  const sourceOffset = SLIDE_SOURCE_ROW * source.width * 4;
+  const stateScales = { normal: style.glow.enabledScale, pressed: style.glow.pressedScale, disabled: style.glow.disabledScale };
+  const normalAlpha = Math.max(style.normal.alpha[1], style.normal.alpha[3]);
+  const strips = new Map<string, { sprite: SkinSprite; state: SlideStripState; totalTime: number; samples: number }>();
+  const cells = { Normal: "normal", Pressed: "pressed", Missed: "disabled" } as const;
+  for (const sprite of sprites) {
+    const { name, x, y, w, h } = sprite;
+    const cell = SLIDE_STRIP_CELL.exec(name);
+    const alias = cell ? null : SLIDE_STRIP_ALIASES.exec(name);
+    if (!cell && !alias) continue;
+    const state: SlideStripState = cell
+      ? cells[cell[1] as keyof typeof cells]
+      : alias![1]!.startsWith("Our Notes Active") ? alias![2] ? "pressed" : "normal" : "guide";
+    const time = cell ? (Number(cell[2]) + 0.5) / 16 : 0.5;
+    const rect = `${x}:${y}:${w}:${h}`;
+    const strip = strips.get(rect);
+    if (strip) {
+      if (strip.state !== state) throw new Error(`${skinName} shares a texture area between different connector states`);
+      strip.totalTime += time;
+      strip.samples++;
+    } else strips.set(rect, { sprite, state, totalTime: time, samples: 1 });
+  }
+  for (const { sprite: { x, y, w, h }, state, totalTime, samples } of strips.values()) {
+    // Deduplicated atlas cells share one representative gradient sample.
+    const time = totalTime / samples;
+    const [baseR, baseG, baseB, baseA] = state === "guide" ? style.guide : sampleSlideGradient(style[state], time);
+    const [hue, saturation, value] = rgbToHsv(baseR, baseG, baseB);
+    for (let column = 0; column < w; column++) {
+      const sourceColumn = Math.round(column * (SLIDE_STRIP_WIDTH - 1) / Math.max(1, w - 1));
+      const offset = sourceOffset + sourceColumn * 4;
+      const gray = source.pixels[offset]! / 255;
+      const sourceA = source.pixels[offset + 3]! / 255;
+      const u = Math.min(1, Math.max(0, (sourceColumn - SLIDE_ART_SPAN.left) / (SLIDE_ART_SPAN.right - SLIDE_ART_SPAN.left)));
       const edge = Math.abs(2 * u - 1);
       const glowBase = Math.min(1, Math.max(0, edge / 0.125 - 7));
-      const glow =
-        (glowBase <= 0 ? 0 : Math.pow(glowBase, style.glow.falloff)) * style.glow.intensity * stateScale;
-      const [h, s, v] = rgbToHsv(baseR, baseG, baseB);
-      const [ar, ag, ab] = hsvToRgb(h, Math.min(1, Math.max(0, s - glow)), Math.min(1, v + glow));
-      const mixAmount = Math.min(1, glow);
-      const r = (ar + (style.glow.color[0] - ar) * mixAmount) * gray;
-      const g = (ag + (style.glow.color[1] - ag) * mixAmount) * gray;
-      const b = (ab + (style.glow.color[2] - ab) * mixAmount) * gray;
-      const a = (baseA + (1 - baseA) * mixAmount) * sourceA;
-      // All length aliases share the same strip, so clipping or distance
-      // cannot introduce a longitudinal color or brightness gradient.
-      for (let cell = -1; cell < 16; cell += 1) {
-        const targetY = cell < 0 ? SLIDE_SOURCE_ROW : 3720 + cell * 10;
-        for (let y = targetY - 1; y <= targetY + 8; y += 1) {
-          const target = y * stride + (targetX + column) * 4;
-          texture.pixels[target] = Math.round(Math.min(1, Math.max(0, r)) * 255);
-          texture.pixels[target + 1] = Math.round(Math.min(1, Math.max(0, g)) * 255);
-          texture.pixels[target + 2] = Math.round(Math.min(1, Math.max(0, b)) * 255);
-          texture.pixels[target + 3] = Math.round(Math.min(1, Math.max(0, a)) * 255);
-        }
+      const glow = state === "guide"
+        ? Math.exp(-style.glow.falloff * edge / (style.glow.width * style.glow.enabledScale)) * style.glow.intensity * sourceA
+        : Math.min(1, glowBase ** style.glow.falloff * style.glow.intensity * stateScales[state]);
+      const adjusted = state === "guide" ? [baseR, baseG, baseB]
+        : hsvToRgb(hue, Math.max(0, saturation - glow), Math.min(1, value + glow));
+      const rgb = adjusted.map((channel, index) => state === "guide"
+        ? channel * gray + style.glow.color[index]! * glow
+        : (channel + (style.glow.color[index]! - channel) * glow) * gray);
+      const alpha = sourceA * (state === "guide"
+        ? baseA * DEFAULT_RENDER_SETTINGS.guideAlpha
+        : (baseA + (1 - baseA) * glow) * DEFAULT_RENDER_SETTINGS.longAlpha / normalAlpha);
+      for (let row = y - 1; row <= y + h; row++) {
+        const target = row * stride + (x + column) * 4;
+        for (const [index, channel] of [...rgb, alpha].entries())
+          texture.pixels[target + index] = Math.round(Math.min(1, Math.max(0, channel)) * 255);
       }
     }
   }
@@ -1011,7 +1025,7 @@ function packSkin(
   const texture = cloneTexture(commonTexture);
   texture.pixels.fill(0, 0, NATIVE_TEXTURE_SIZE * texture.width * 4);
   for (const sprite of native) copySprite(texture, sprite);
-  bakeSkinSlideStrips(texture, skinName);
+  bakeSkinSlideStrips(texture, skinName, sprites);
   bakeSkinLaneGuidelines(texture);
   // Solid compatibility texels baked by build-original-assets. A transparent
   // texel here silently disables an engine feature (published skins once
