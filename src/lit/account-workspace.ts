@@ -1194,14 +1194,16 @@ export class AccountWorkspace extends LitElement {
   private sectionButton(id: Section, graphic: ReturnType<typeof icon>, label: string, count = 0) {
     return html`
       <button
+        type="button"
         role="tab"
         aria-selected=${this.section === id}
-        class=${this.section === id ? "selected" : ""}
+        class=${this.section === id ? "tab selected" : "tab"}
         @click=${() => (this.section = id)}
       >
         ${graphic}
         <span>${label}</span>
         ${count ? html`<small>${count}</small>` : nothing}
+        <span class="tab__indicator"></span>
       </button>
     `;
   }
@@ -1293,7 +1295,7 @@ export class AccountWorkspace extends LitElement {
         <aside class="account-aside">
           ${this.renderSummary()}
           ${scrollableTabBar(preferredLocale(), html`
-            <nav class="account-navigation" role="tablist">
+            <nav class="account-navigation tabs--secondary" role="tablist">
               ${this.sectionButton("profile", icon("person"), this.label("profile", "Profile"))}
               ${this.sectionButton("games", icon("sports_esports"), this.label("gameAccounts", "Game accounts"), this.games.length)}
               ${this.sectionButton("security", icon("verified_user"), this.label("security", "Sign-in & security"))}

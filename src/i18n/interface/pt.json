@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Detalhes da conta de jogo",
+    "records": "Registros",
+    "saveData": "Dados salvos",
+    "noRecords": "Nenhum registro",
+    "selectCharacters": "Selecionar personagens",
+    "playerData": "Dados do jogador",
+    "saveSettings": "Configurações do jogo",
+    "latestLive": "Última apresentação",
+    "permanentData": "Dados permanentes",
+    "_missionCounters": "Contadores de missões",
     "title": "Dispositivo salva",
     "import": "Importar salva",
     "loading": "Carregando",

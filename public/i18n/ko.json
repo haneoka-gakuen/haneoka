@@ -7171,6 +7171,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "게임 계정 상세 정보",
+    "records": "기록",
+    "saveData": "저장 데이터",
+    "noRecords": "기록 없음",
+    "selectCharacters": "캐릭터 선택",
+    "playerData": "플레이어 데이터",
+    "saveSettings": "게임 설정",
+    "latestLive": "최근 라이브",
+    "permanentData": "영구 데이터",
+    "_missionCounters": "미션 횟수",
     "title": "기기 저장 데이터",
     "import": "저장 데이터 가져오기",
     "loading": "불러오는 중",

@@ -7171,6 +7171,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "游戏账号资料",
+    "records": "记录",
+    "saveData": "存档数据",
+    "noRecords": "暂无记录",
+    "selectCharacters": "选择角色",
+    "playerData": "玩家资料",
+    "saveSettings": "游戏设置",
+    "latestLive": "最近演出",
+    "permanentData": "持久数据",
+    "_missionCounters": "任务计数",
     "title": "本机存档",
     "import": "导入存档",
     "loading": "读取中",

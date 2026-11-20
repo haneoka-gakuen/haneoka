@@ -9,7 +9,8 @@ import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import { facet as renderFacet } from "./ui/facet";
 import { clearBrowseBar, renderBrowse } from "./ui/browse";
-import { inputChip, segmented } from "./ui/controls";
+import { inputChip } from "./ui/controls";
+import "./ui/scrollable-tabs";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { LazyImages, nextImageCandidate } from "./ui/lazy-images";
@@ -917,9 +918,13 @@ export class AnonTokyoWorkspace extends LitElement {
           }
         </section>
         <section class="outfit-closet">
-          <div class="outfit-tabs">
-            ${segmented({ label: uiText(this.locale, "outfitParts"), value: String(this.tab), options: [1, 2, 3, 4, 5].map((kind) => ({ value: String(kind), label: uiText(this.locale, labels[kind]!) })), onSelect: (value) => (this.tab = Number(value)) })}
-          </div>
+          <scrollable-tabs class="outfit-tabs"
+            .locale=${this.locale}
+            .label=${uiText(this.locale, "outfitParts")}
+            .value=${String(this.tab)}
+            .items=${[1, 2, 3, 4, 5].map(kind => ({ id: String(kind), label: uiText(this.locale, labels[kind]!) }))}
+            .onSelect=${(value: string) => { this.tab = Number(value); }}
+          ></scrollable-tabs>
           <div class="collection collection--outfit">
             ${wearables.map((item) =>
               tile({

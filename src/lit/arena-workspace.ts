@@ -583,7 +583,7 @@ export class ArenaWorkspace extends LitElement {
     };
     return scrollableTabBar(this.locale, html`
       <nav
-        class="tabs tabs--pills arena-tabs"
+        class="tabs tabs--secondary arena-tabs"
         role="tablist"
         aria-label=${this.t("title")}
         @keydown=${rovingKeydown(TABS, this.tab, (tab) => this.select({ tab }))}
@@ -602,6 +602,7 @@ export class ArenaWorkspace extends LitElement {
             >
               ${labels[tab][1]}
               <span>${labels[tab][0]}</span>
+              <span class="tab__indicator"></span>
             </button>
           `,
         )}

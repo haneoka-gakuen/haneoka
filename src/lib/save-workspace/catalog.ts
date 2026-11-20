@@ -13,7 +13,7 @@ export type SaveCatalog = {
 };
 export const object = (v: unknown): Row => (v && typeof v === "object" && !Array.isArray(v) ? (v as Row) : {});
 export const text = (v: unknown, locale: string) => resolveLocalizedText(v, locale).text;
-export async function loadSaveCatalog(server: "jp" | "intl", signal: AbortSignal): Promise<SaveCatalog> {
+export async function loadSaveCatalog(server: "jp" | "intl", signal: AbortSignal, accountDetails = false): Promise<SaveCatalog> {
   signal = AbortSignal.any([signal, AbortSignal.timeout(30000)]);
   const base = `/api/v1/servers/${server}/`;
   const pinResponse = await fetch(`${base}release?projection=identity`, { signal });
@@ -21,20 +21,22 @@ export async function loadSaveCatalog(server: "jp" | "intl", signal: AbortSignal
   const pin = await pinResponse.json();
   if (pin.server !== server || typeof pin.releaseId !== "string" || typeof pin.sourceId !== "string")
     throw new Error("catalog_failed");
-  const pairs = await Promise.all(
-    ["cards", "support-cards", "characters", "songs", "items", "band-items", "progression"].map(async (key) => {
-      const response = await fetch(`${base}${key}?release=${encodeURIComponent(pin.releaseId)}`, { signal });
-      if (
-        !response.ok ||
-        response.headers.get("x-haneoka-release-id") !== pin.releaseId ||
-        response.headers.get("x-haneoka-source-id") !== pin.sourceId
-      )
-        throw new Error("catalog_failed");
-      const data = object(await response.json());
-      return [key, object(data.entries ?? data.items ?? data[key] ?? data)] as const;
-    }),
-  );
-  return { ...pin, resources: Object.fromEntries(pairs) };
+  const read = async (key: string) => {
+    const response = await fetch(`${base}${key}?release=${encodeURIComponent(pin.releaseId)}`, { signal });
+    if (
+      !response.ok ||
+      response.headers.get("x-haneoka-release-id") !== pin.releaseId ||
+      response.headers.get("x-haneoka-source-id") !== pin.sourceId
+    )
+      throw new Error("catalog_failed");
+    const data = object(await response.json());
+    return [key, object(data.entries ?? data.items ?? data[key] ?? data)] as const;
+  };
+  const [core, details] = await Promise.all([
+    Promise.all(["cards", "support-cards", "characters", "songs", "items", "band-items", "progression"].map(read)),
+    accountDetails ? Promise.allSettled(["bands", "friendships", "character-missions", "events"].map(read)) : [],
+  ]);
+  return { ...pin, resources: Object.fromEntries([...core, ...details.flatMap(result => result.status === "fulfilled" ? [result.value] : [])]) };
 }
 export function saveEntity(catalog: SaveCatalog | undefined, resource: string, id: unknown): Row {
   return object(catalog?.resources[resource]?.[String(id)]);

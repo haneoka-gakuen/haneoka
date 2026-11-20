@@ -1984,7 +1984,7 @@ export class TeamBuilder extends LitElement {
     ] as const;
     return scrollableTabBar(this.locale, html`
       <nav
-        class="tabs tb-tabs"
+        class="tabs tabs--secondary tb-tabs"
         role="tablist"
         aria-label=${this.t("title", "Team builder")}
         @keydown=${rovingKeydown(

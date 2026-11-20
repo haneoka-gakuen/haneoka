@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Spielkontodetails",
+    "records": "Aufzeichnungen",
+    "saveData": "Spielstanddaten",
+    "noRecords": "Keine Einträge",
+    "selectCharacters": "Figuren auswählen",
+    "playerData": "Spielerdaten",
+    "saveSettings": "Spieleinstellungen",
+    "latestLive": "Letzter Auftritt",
+    "permanentData": "Dauerhafte Daten",
+    "_missionCounters": "Missionszähler",
     "title": "Geräte retten",
     "import": "Einfuhr spart",
     "loading": "Laden",

@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Chi tiết tài khoản trò chơi",
+    "records": "Lịch sử",
+    "saveData": "Dữ liệu lưu",
+    "noRecords": "Không có bản ghi",
+    "selectCharacters": "Chọn nhân vật",
+    "playerData": "Dữ liệu người chơi",
+    "saveSettings": "Cài đặt trò chơi",
+    "latestLive": "Buổi diễn gần nhất",
+    "permanentData": "Dữ liệu cố định",
+    "_missionCounters": "Bộ đếm nhiệm vụ",
     "title": "Thiết bị Save",
     "import": "nhập khẩu save",
     "loading": "Đang tải",

@@ -18,6 +18,7 @@ interface PairOptions {
   bands?: { id: number; label: string; image?: string }[];
   first: string;
   second: string;
+  partnerValues?: ReadonlySet<string>;
   onFirst?: (value: string) => void;
   onSecond: (value: string) => void;
   onSwap?: () => void;
@@ -60,7 +61,8 @@ class CharacterPairBoard extends LitElement {
     const o = this.options;
     const characters = orderFacetOptions(o.characters);
     const first = characters.find((item) => item.value === o.first);
-    const partners = characters.filter((item) => item.value !== o.first && item.bandId === this.activeBand);
+    const partners = characters.filter((item) => item.value !== o.first && item.bandId === this.activeBand &&
+      (!o.partnerValues || o.partnerValues.has(item.value)));
     const sameBand = first?.bandId === this.activeBand;
     const slots = sameBand ? FRIENDSHIP_SELF_SLOTS : FRIENDSHIP_OTHER_SLOTS;
     const bands =

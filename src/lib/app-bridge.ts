@@ -5,8 +5,8 @@
 // Effects/Dependencies: 调用原生存档读取与存档页、游戏服务器读取、系统浏览器登录及全屏方向控制。
 
 export interface AppMethods {
-  /** The chosen save's player document as a `haneoka-game-save-v1` snapshot. */
-  saveSnapshot: { args: { key: string }; result: { text: string } };
+  /** The chosen save as a `haneoka-game-save-v1` snapshot, with companion documents when requested. */
+  saveSnapshot: { args: { key: string; complete?: boolean }; result: { text: string } };
   checkAppUpdate: { args: Record<string, never>; result: "current" | "handled" | "busy" | "unavailable" | "install_failed" };
   /** The chosen game account's card, character and band item progress as `ONPKG1:` text. */
   boxAccount: { args: { server: string; key?: string }; result: { text: string } | null };

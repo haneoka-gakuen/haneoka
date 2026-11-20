@@ -7171,6 +7171,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "遊戲帳號資料",
+    "records": "紀錄",
+    "saveData": "存檔資料",
+    "noRecords": "暫無紀錄",
+    "selectCharacters": "選擇角色",
+    "playerData": "玩家資料",
+    "saveSettings": "遊戲設定",
+    "latestLive": "最近演出",
+    "permanentData": "持久資料",
+    "_missionCounters": "任務計數",
     "title": "本機存檔",
     "import": "匯入存檔",
     "loading": "讀取中",

@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Szczegóły konta gry",
+    "records": "Historia",
+    "saveData": "Dane zapisu",
+    "noRecords": "Brak wpisów",
+    "selectCharacters": "Wybierz postacie",
+    "playerData": "Dane gracza",
+    "saveSettings": "Ustawienia gry",
+    "latestLive": "Ostatni występ",
+    "permanentData": "Dane trwałe",
+    "_missionCounters": "Liczniki misji",
     "title": "Urządzenie uratuje",
     "import": "Importowanie oszczędności",
     "loading": "Wczytywanie",

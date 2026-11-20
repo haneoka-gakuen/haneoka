@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Данные игрового аккаунта",
+    "records": "Записи",
+    "saveData": "Данные сохранения",
+    "noRecords": "Нет записей",
+    "selectCharacters": "Выбрать персонажей",
+    "playerData": "Данные игрока",
+    "saveSettings": "Настройки игры",
+    "latestLive": "Последнее выступление",
+    "permanentData": "Постоянные данные",
+    "_missionCounters": "Счётчики заданий",
     "title": "Устройство спасает",
     "import": "Импорт спасает",
     "loading": "Загрузка",

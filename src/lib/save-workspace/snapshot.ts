@@ -10,14 +10,12 @@ export interface SaveSnapshot {
   server: "jp" | "intl";
   savedAt: string | null;
   player: Record<string, unknown>;
+  settings?: Record<string, unknown> | null;
+  persist?: Record<string, unknown> | null;
+  permanent?: Record<string, unknown> | null;
 }
 const denied =
-  /password|token|secret|certification|accountid|session|credential|friendprofile|friendinvitation|chat|iaptransaction|externalpayment|reportedplayer|world_room|linkedaccount|specialfocus|sendingrequest|pendingapproval/i;
-const fields = new Set(
-  "_memberCards _supportCards _characters _characterFriendships _bandItems _items _liveMusicResults _missionCounters _topHighScoreRatings _challengeMusicResults _events _challengeLives _gachaRecords _storyEpisodeRecords _decks _normalMissions _limitedMissions _characterMissions _playerSeasonPass _monthlyPass _receivedLoginBonuses _unlockedCostumes _currentCostumes _backgrounds _stamps _degrees _playerProfileCards _liveLaneSkins _liveNoteSkins _liveNoteEffectSkins _liveNoteSeGroups _spots _memory _liveBoost _liveSkip _vip _offlineBonus _arenaLeagues _liveMusics _challengeMusics _characterFriendshipRankRewards _stampFavorites _exchange _shop _exp _playerRankUpData".split(
-    " ",
-  ),
-);
+  /password|token|secret|certification|account_?id|session|credential|authorization|cookie|api_?key|device_?id|friendprofile|friendinvitation|chat|iaptransaction|externalpayment|reportedplayer|world_room|linkedaccount|specialfocus|sendingrequest|pendingapproval/i;
 function clean(value: unknown, depth = 0): unknown {
   if (depth > 24) throw new Error("save_invalid");
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
@@ -52,20 +50,22 @@ export function parseSnapshot(text: string): SaveSnapshot {
     )
       throw new Error("save_invalid");
   }
-  const player = Object.fromEntries(
-    Object.entries(value.player)
-      .filter(([k]) => fields.has(k))
-      .map(([k, v]) => [k, clean(v)]),
-  );
-  if (!Object.keys(player).length) throw new Error("save_empty");
   if (value.savedAt != null && (typeof value.savedAt !== "string" || !Number.isFinite(Date.parse(value.savedAt))))
     throw new Error("save_invalid");
-  return {
+  const snapshot: SaveSnapshot = {
     schema: "haneoka-game-save-v1",
     server: value.server as "jp" | "intl",
     savedAt: (value.savedAt as string | null) ?? null,
-    player,
+    player: clean(value.player) as Record<string, unknown>,
   };
+  if (!Object.keys(snapshot.player).length) throw new Error("save_empty");
+  for (const field of ["settings", "persist", "permanent"] as const) {
+    const document = value[field];
+    if (document === undefined) continue;
+    if (document !== null && (typeof document !== "object" || Array.isArray(document))) throw new Error("save_invalid");
+    snapshot[field] = clean(document) as SaveSnapshot[typeof field];
+  }
+  return snapshot;
 }
 export interface StoredSave {
   id: string;

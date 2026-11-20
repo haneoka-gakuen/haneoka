@@ -7171,6 +7171,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "ゲームアカウント詳細",
+    "records": "記録",
+    "saveData": "セーブデータ",
+    "noRecords": "記録がありません",
+    "selectCharacters": "キャラクターを選択",
+    "playerData": "プレイヤーデータ",
+    "saveSettings": "ゲーム設定",
+    "latestLive": "直近のライブ",
+    "permanentData": "永続データ",
+    "_missionCounters": "ミッションカウンター",
     "title": "端末のセーブデータ",
     "import": "セーブデータを読み込む",
     "loading": "読み込み中",

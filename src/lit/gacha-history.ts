@@ -994,7 +994,7 @@ export class GachaHistory extends LitElement {
     };
     return scrollableTabBar(this.locale, html`
       <nav
-        class="tabs tabs--pills gacha-history__tabs"
+        class="tabs tabs--secondary gacha-history__tabs"
         role="tablist"
         aria-label=${this.t("title")}
         @keydown=${rovingKeydown(TABS, this.tab, (tab) => this.selectTab(tab))}
@@ -1013,6 +1013,7 @@ export class GachaHistory extends LitElement {
             >
               ${labels[tab][1]}
               <span>${labels[tab][0]}</span>
+              <span class="tab__indicator"></span>
             </button>
           `,
         )}

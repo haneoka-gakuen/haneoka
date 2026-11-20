@@ -4,6 +4,10 @@ import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import "@material/web/textfield/outlined-text-field.js";
 import { chooserFacet, chooserGroup } from "./ui/chooser-filters";
+import { emptySongPickerFilters, songPickerAppliedFilters, songPickerDifficultyFilters, songPickerFilterGroups, type SongPickerFilters } from "./ui/song-picker-filters";
+import { sortControl } from "./ui/sort-control";
+import { catalogSortOptions, compareCatalogSort } from "../lib/catalog-sort";
+import { matchesSongMissions } from "../lib/catalog-filters";
 import { selectionPane } from "./ui/selection-pane";
 import { songTile } from "./shared/song-tile";
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
@@ -46,6 +50,12 @@ type CatalogueRecord = Record<string, unknown>;
 export type CreationLibraryProvider = "haneoka" | "bestdori" | "sekai";
 export interface CreationMediaSelection { ref: Extract<ChartMediaRef, { kind: "server" }>; url: string; title: string }
 type CreationSong = PublicCreationSong | BestdoriCreatorSong;
+type CreationDifficulty = CreationSong["difficulty"][number];
+const DIFFICULTY_ORDER = ["easy", "normal", "hard", "expert", "master", "special", "append"];
+const OUR_NOTES_DIFFICULTIES = ["easy", "normal", "hard", "expert", "special"];
+const METRIC_SORTS = new Set(["time", "score", "eff", "bpm", "n", "nps", "sr"]);
+const chartDifficulty = (row: CreationDifficulty) => String(row.difficultyName ?? row.difficulty ?? "").toLowerCase();
+const categoryValues = (song: CreationSong) => Array.isArray(song.musicCategories) ? song.musicCategories.map(String) : [];
 export type PublicChartImport = Awaited<ReturnType<typeof loadPublicCreationSong>> | Awaited<ReturnType<typeof loadBestdoriCreatorSong>> | Awaited<ReturnType<typeof loadSekaiCreatorSong>>;
 export class ChartCreationLibrary extends LitElement {
   static properties = {
@@ -62,7 +72,12 @@ export class ChartCreationLibrary extends LitElement {
     difficulty: { state: true },
     query: { state: true },
     filtersOpen: { state: true },
-    bandFilter: { state: true },
+    filters: { state: true },
+    difficultyFilter: { state: true },
+    sort: { state: true },
+    order: { state: true },
+    metricsLoading: { state: true },
+    metricsError: { state: true },
     characterFilter: { state: true },
     filterCatalog: { state: true },
     filtersLoading: { state: true },
@@ -83,13 +98,21 @@ export class ChartCreationLibrary extends LitElement {
   declare private difficulty: string;
   declare private query: string;
   declare private filtersOpen: boolean;
-  declare private bandFilter: string;
+  declare private filters: SongPickerFilters;
+  declare private difficultyFilter: string[] | undefined;
+  declare private sort: string;
+  declare private order: "asc" | "desc";
   private identity?: HaneokaReleaseIdentity;
   declare private characterFilter: string;
   declare private filterCatalog: CreationSongCardData | undefined;
   declare private filtersLoading: boolean;
   declare private filtersError: boolean;
   private filterController?: AbortController;
+  private metricsController?: AbortController;
+  private metricsIdentity?: HaneokaReleaseIdentity;
+  private metrics?: Record<string, Record<string, { chart?: CatalogueRecord }>>;
+  declare private metricsLoading: boolean;
+  declare private metricsError: boolean;
   private readonly catalogue = new PublicCreationCatalogueReader();
   private indexLoaded = false;
   private indexLocale = "";
@@ -121,7 +144,12 @@ export class ChartCreationLibrary extends LitElement {
     this.difficulty = "";
     this.query = "";
     this.filtersOpen = false;
-    this.bandFilter = "";
+    this.filters = emptySongPickerFilters();
+    this.difficultyFilter = undefined;
+    this.sort = "release";
+    this.order = "desc";
+    this.metricsLoading = false;
+    this.metricsError = false;
     this.filtersLoading = false;
     this.filtersError = false;
   }
@@ -149,8 +177,7 @@ export class ChartCreationLibrary extends LitElement {
         this.identity = undefined;
         this.indexLoaded = false;
         this.chosen = "";
-        this.characterFilter = "";
-        this.bandFilter = "";
+        this.resetFilters();
         void this.loadIndex();
       }
       this.requestUpdate();
@@ -183,6 +210,9 @@ export class ChartCreationLibrary extends LitElement {
     this.filterController?.abort();
     this.filterController = undefined;
     this.filtersLoading = false;
+    this.metricsController?.abort();
+    this.metricsController = undefined;
+    this.metricsLoading = false;
     this.controller?.abort();
     this.controller = undefined;
     this.busy = false;
@@ -197,7 +227,7 @@ export class ChartCreationLibrary extends LitElement {
     if (provider === "haneoka") this.server = readReleaseServer();
     this.identity = undefined; this.filterCatalog = undefined;
     this.items = []; this.indexLoaded = false; this.chosen = ""; this.difficulty = "";
-    this.query = ""; this.bandFilter = ""; this.characterFilter = "";
+    this.query = ""; this.resetFilters();
     if (this.opened) void this.loadIndex();
   }
   async show(provider: CreationLibraryProvider = "haneoka", mediaKind?: "audio" | "cover", selection?: { region: BestdoriServer; songId: string; difficulty: string }) {
@@ -211,10 +241,9 @@ export class ChartCreationLibrary extends LitElement {
       this.items = [];
       this.filterCatalog = undefined;
       this.indexLoaded = false;
-      this.characterFilter = "";
       this.chosen = "";
       this.query = "";
-      this.bandFilter = "";
+      this.resetFilters();
       this.server = server;
       this.provider = provider;
       this.difficulty = "";
@@ -227,6 +256,7 @@ export class ChartCreationLibrary extends LitElement {
     if (!dialog.open) dialog.showModal();
     if (!this.indexLoaded) await this.loadIndex();
     else if (!this.filterCatalog) void this.loadFilters();
+    void this.loadMetrics();
     if (selection && this.isConnected && this.opened && this.indexLoaded) {
       this.chosen = selection.songId;
       this.difficulty = selection.difficulty;
@@ -317,7 +347,71 @@ export class ChartCreationLibrary extends LitElement {
     if (this.filterCatalog) return this.filterCatalog.assetUrl(source);
     return this.provider !== "haneoka" ? siteAssetUrl(source) : this.identity ? creationArtworkUrl(source, this.identity) : "";
   }
-  private renderFilters() {
+  private pickerText = (key: string, fallback: string) => clientText(this.locale, `tools.teamBuilder.${key}`, fallback);
+  private common = (key: string, fallback: string) => clientText(this.locale, key, fallback);
+  private categoryName(id: string) {
+    const name = ["original", "virtual", "jpop", "anime", "game"][Number(id) - 1];
+    return name ? this.common(`catalog.songs.types.${name}`, id) : id;
+  }
+  private attributeName(id: string) {
+    const name = ["red", "blue", "green", "yellow", "purple"][Number(id) - 1];
+    return name ? this.common(`catalog.songs.liveTypes.${name}`, id) : id;
+  }
+  private resetFilters() {
+    this.clearFilters();
+    this.difficultyFilter = undefined;
+    this.sort = "release";
+    this.order = "desc";
+  }
+  private clearFilters = () => {
+    this.filters = emptySongPickerFilters();
+    this.characterFilter = "";
+  };
+  private changeFilters(patch: Partial<SongPickerFilters>) {
+    this.filters = { ...this.filters, ...patch };
+    if (patch.band !== undefined) this.characterFilter = "";
+    void this.loadMetrics();
+  }
+  private async loadMetrics() {
+    const identity = this.identity;
+    if (!identity || this.metricsIdentity === identity || this.metricsController ||
+      (this.filters.maxSeconds === null && !METRIC_SORTS.has(this.sort))) return;
+    const controller = (this.metricsController = new AbortController());
+    this.metricsLoading = true;
+    this.metricsError = false;
+    try {
+      const result = await crossServerPublicCache().readCollection("song-meta", identity, controller.signal);
+      if (!controller.signal.aborted && this.identity === identity) {
+        this.metrics = result as typeof this.metrics;
+        this.metricsIdentity = identity;
+      }
+    } catch {
+      if (!controller.signal.aborted) this.metricsError = true;
+    } finally {
+      if (this.metricsController === controller) {
+        this.metricsController = undefined;
+        this.metricsLoading = false;
+      }
+    }
+  }
+  private chartMetrics(id: string, difficulty: CreationDifficulty) {
+    if (this.metricsIdentity !== this.identity) return;
+    const index = Number(difficulty.difficulty);
+    return this.metrics?.[id]?.[String(Number.isFinite(index) ? index : OUR_NOTES_DIFFICULTIES.indexOf(chartDifficulty(difficulty)))]?.chart;
+  }
+  private eligibleDifficulties(id: string, rows: CreationSong["difficulty"]) {
+    const { minLevel, maxLevel, maxSeconds } = this.filters;
+    return rows.filter((row) => {
+      if (!this.mediaKind && this.difficultyFilter && !this.difficultyFilter.includes(chartDifficulty(row))) return false;
+      const level = Number(row.displayLevel ?? row.playLevel ?? row.sortLevel);
+      if ((minLevel !== null || maxLevel !== null) && !Number.isFinite(level)) return false;
+      if (minLevel !== null && level < minLevel || maxLevel !== null && level > maxLevel) return false;
+      if (maxSeconds === null) return true;
+      const time = this.chartMetrics(id, row)?.time;
+      return typeof time === "number" && Number.isFinite(time) && time <= maxSeconds;
+    });
+  }
+  private filterOptions() {
     const { bands: fallbackBands, rows } = this.searchIndex();
     const bandIds = new Set(rows.flatMap((row) => row.bandIds));
     const characterIds = new Set(rows.flatMap((row) => row.characterIds));
@@ -331,9 +425,17 @@ export class ChartCreationLibrary extends LitElement {
       const id = String(characterId);
       const character = this.characterRecord(value);
       const name = resolveLocalizedText(character.characterName ?? character.name, this.locale).text;
-      return characterIds.has(id) && name && (!this.bandFilter || String(character.bandId ?? "") === this.bandFilter)
+      return characterIds.has(id) && name && (!this.filters.band || String(character.bandId ?? "") === this.filters.band)
         ? [{ id, name, image: this.image(character.faceImage ?? character.thumbnailImage) }] : [];
     });
+    const categories = [...new Set(rows.flatMap(row => categoryValues(row.value)))].sort((a, b) => Number(a) - Number(b));
+    const attributes = [...new Set(rows.map(row => Number(row.value.musicType)).filter(value => value >= 1 && value <= 5))].sort();
+    return { bands, characters, categories, attributes };
+  }
+  private renderFilters({ bands, characters, categories, attributes }: ReturnType<ChartCreationLibrary["filterOptions"]>) {
+    const sortOptions = catalogSortOptions("song", this.common)
+      .filter(({ value }) => this.provider === "haneoka" || !METRIC_SORTS.has(value))
+      .filter(({ value }) => value !== "musicType" || attributes.length);
     return html`
       ${chooserFacet({ label: clientText(this.locale, "common.fields.source"), allLabel: "Our Notes", value: this.provider === "haneoka" ? "" : this.provider,
         options: [{ value: "bestdori", label: "Bestdori" }, ...(!this.mediaKind ? [{ value: "sekai", label: "SEKAI" }] : [])],
@@ -343,14 +445,26 @@ export class ChartCreationLibrary extends LitElement {
         options: BESTDORI_SERVERS.filter(region => region !== "jp").map(region => ({ value: region, label: region.toUpperCase() })),
         change: value => { const region = value || "jp"; if (isBestdoriServer(region)) this.switchProvider("bestdori", region); },
       }) : nothing}
-      ${chooserFacet({ label: clientText(this.locale, "catalog.fields.bands"), allLabel: clientText(this.locale, "common.states.all"), value: this.bandFilter,
-        options: bands.map(({ id, name, image }) => ({ value: id, label: name, image })),
-        change: (value) => { this.bandFilter = value; this.characterFilter = ""; },
+      ${songPickerFilterGroups({
+        state: this.filters, t: this.pickerText, common: this.common,
+        categories: categories.map(id => ({ value: id, label: this.categoryName(id) })),
+        bands: bands.map(({ id, name }) => ({ value: id, label: name })),
+        attributes: attributes.map(id => ({ value: String(id), label: this.attributeName(String(id)) })),
+        gekisou: this.provider === "haneoka", duration: this.provider === "haneoka",
+        change: patch => this.changeFilters(patch),
+        sort: sortControl({
+          sort: this.sort, order: this.order, options: sortOptions,
+          label: this.common("common.actions.sort", "Sort"),
+          ascendingLabel: this.common("common.layout.ascending", "Ascending"),
+          descendingLabel: this.common("common.layout.descending", "Descending"),
+          changeSort: sort => { this.sort = sort; void this.loadMetrics(); },
+          changeOrder: order => { this.order = order; },
+        }),
       })}
-      ${chooserFacet({ label: clientText(this.locale, "navigation.characters"), allLabel: clientText(this.locale, "common.states.all"), value: this.characterFilter,
+      ${characters.length ? chooserFacet({ label: clientText(this.locale, "navigation.characters"), allLabel: clientText(this.locale, "common.states.all"), value: this.characterFilter,
         options: characters.map(({ id, name, image }) => ({ value: id, label: name, image })),
         change: (value) => { this.characterFilter = value; },
-      })}
+      }) : nothing}
       ${this.filtersLoading ? chooserGroup(clientText(this.locale, "common.states.loading"), loadingState(clientText(this.locale, "common.states.loading"), { local: true })) : nothing}
       ${this.filtersError ? chooserGroup(this.t("loadFailed"), html`<button class="button button--text" @click=${() => this.loadFilters()}>${clientText(this.locale, "common.actions.retry")}</button>`) : nothing}
     `;
@@ -360,8 +474,8 @@ export class ChartCreationLibrary extends LitElement {
     if (this.busy) return;
     const changed = this.chosen !== id;
     this.chosen = id;
-    const rows = this.items.find((item) => item.id === id)!.value.difficulty;
-    if (changed || !rows.some((row) => (row.difficultyName ?? row.difficulty) === this.difficulty))
+    const rows = this.eligibleDifficulties(id, this.items.find((item) => item.id === id)!.value.difficulty);
+    if (changed || !rows.some((row) => chartDifficulty(row) === this.difficulty))
       this.difficulty = defaultCreationDifficulty<CatalogueRecord>(rows)?.key ?? "";
   }
   private async importChosen() {
@@ -457,14 +571,74 @@ export class ChartCreationLibrary extends LitElement {
       .map((id) => labels[Number(id)]).filter(Boolean).map((key) => clientText(this.locale, `catalog.songs.types.${key}`));
     return names.length ? [{ at: "bottom-start" as const, text: new Intl.ListFormat(this.locale, { type: "unit" }).format(names) }] : [];
   }
+  private sortValue(id: string, song: CreationSong, difficulty?: CreationDifficulty) {
+    const sort = this.sort;
+    switch (sort) {
+      case "title": return songTitle(song, this.locale).text;
+      case "band": return resolveLocalizedText(song.artistName ?? song.bandName, this.locale).text;
+      case "id": return id;
+      case "level": return Number(difficulty?.sortLevel ?? difficulty?.displayLevel ?? difficulty?.playLevel);
+      case "order": return Number(song.displayOrder ?? song.order ?? song.sortOrder ?? id);
+      case "category": return Number(categoryValues(song)[0] || 99);
+      case "release": {
+        const value = song.releasedAt ?? song.publishedAt ?? song.publicStartAt ?? song.startAt;
+        return Number((Array.isArray(value) ? value.find(entry => Number(entry) > 0) : value) || 0);
+      }
+      case "composer": return resolveLocalizedText(song.composer, this.locale).text;
+      case "lyrics": return resolveLocalizedText(song.lyricist, this.locale).text;
+      case "arrangement": return resolveLocalizedText(song.arranger, this.locale).text;
+      case "musicType": return Number(song.musicType || 0);
+      default: {
+        const chart = difficulty ? this.chartMetrics(id, difficulty) : undefined;
+        const value = sort === "bpm" ? chart?.firstBpm ?? chart?.minBpm ?? chart?.maxBpm
+          : sort === "n" ? chart?.n ?? chart?.noteCount ?? chart?.canonicalNoteCount : chart?.[sort];
+        return Number(value ?? Number.NaN);
+      }
+    }
+  }
   render() {
-    const selected = this.items.find((item) => item.id === this.chosen)?.value;
     const { rows } = this.searchIndex();
+    const options = this.filterOptions();
+    const { band, category, attribute, gekisouTypes, gekisouMatch, minLevel, maxLevel, maxSeconds } = this.filters;
     const query = this.query.normalize("NFKC").trim().toLocaleLowerCase();
-    const matching = rows.filter((row) =>
-      (!this.bandFilter || row.bandIds.includes(this.bandFilter)) && (!this.characterFilter || row.characterIds.includes(this.characterFilter)) && row.searchText.includes(query));
+    const matching = rows.flatMap((row) => {
+      if ((band && !row.bandIds.includes(band)) || (category && !categoryValues(row.value).includes(category)) ||
+        (attribute && String(row.value.musicType) !== attribute) ||
+        (this.characterFilter && !row.characterIds.includes(this.characterFilter)) ||
+        !row.searchText.includes(query) || !matchesSongMissions(row.value, gekisouTypes, gekisouMatch)) return [];
+      const difficulties = this.eligibleDifficulties(row.id, row.value.difficulty);
+      const fallback = defaultCreationDifficulty<CreationDifficulty>(difficulties);
+      if (!fallback && (!this.mediaKind || minLevel !== null || maxLevel !== null || maxSeconds !== null)) return [];
+      return [{ ...row, difficulties, fallback, sortValue: this.sortValue(row.id, row.value, fallback?.row) }];
+    }).sort((left, right) => compareCatalogSort(left.sortValue, right.sortValue, {
+      locale: this.locale, order: this.order, leftId: left.id, rightId: right.id,
+      numeric: this.sort === "level" || METRIC_SORTS.has(this.sort),
+    }));
+    const chosen = matching.find(row => row.id === this.chosen);
+    const selected = chosen?.value;
+    const selectedDifficulty = chosen?.difficulties.some(row => chartDifficulty(row) === this.difficulty)
+      ? this.difficulty : chosen?.fallback?.key;
+    const difficulties = [...new Set(rows.flatMap(row => row.value.difficulty.map(chartDifficulty)).filter(Boolean))]
+      .sort((a, b) => DIFFICULTY_ORDER.indexOf(a) - DIFFICULTY_ORDER.indexOf(b));
+    const applied: { label: string; clear: () => void }[] = [];
+    if (band) applied.push({ label: options.bands.find(row => row.id === band)?.name ?? band, clear: () => this.changeFilters({ band: "" }) });
+    if (category) applied.push({ label: this.categoryName(category), clear: () => this.changeFilters({ category: "" }) });
+    if (attribute) applied.push({ label: this.attributeName(attribute), clear: () => this.changeFilters({ attribute: "" }) });
+    if (this.characterFilter) applied.push({
+      label: options.characters.find(row => row.id === this.characterFilter)?.name ?? this.characterFilter,
+      clear: () => { this.characterFilter = ""; },
+    });
+    if (gekisouTypes.length) applied.push({
+      label: gekisouTypes.map(value => value === "Mix" ? this.common("catalog.songs.gekisou.mixed", "Mixed") : value === "JustCount" ? "JUST" : value.toUpperCase()).join(" / "),
+      clear: () => this.changeFilters({ gekisouTypes: [], gekisouMatch: "only" }),
+    });
+    if (minLevel !== null || maxLevel !== null) applied.push({
+      label: `Lv. ${minLevel ?? "—"}–${maxLevel ?? "—"}`, clear: () => this.changeFilters({ minLevel: null, maxLevel: null }),
+    });
+    if (maxSeconds !== null) applied.push({ label: `≤ ${maxSeconds}s`, clear: () => this.changeFilters({ maxSeconds: null }) });
+    const needsMetrics = maxSeconds !== null || METRIC_SORTS.has(this.sort);
     const picture = (value: unknown) => this.image(value);
-    const items = matching.map(({ id, value }) => {
+    const items = matching.map(({ id, value, difficulties, fallback }) => {
       const dto = this.filterCatalog ? creationSongCard(this.record(value), this.filterCatalog, this.locale) : undefined;
       const row = dto?.data ?? { ...value, jacketUrl: picture(value.jacketUrl), jacketThumbUrl: picture(this.record(value).jacketThumbUrl) };
       const tile = songTile(
@@ -482,9 +656,7 @@ export class ChartCreationLibrary extends LitElement {
         },
         "",
         this.categoryMark(row),
-        id === this.chosen
-          ? value.difficulty.find((entry) => String(entry.difficultyName ?? entry.difficulty).toLowerCase() === this.difficulty)
-          : defaultCreationDifficulty<CatalogueRecord>(value.difficulty)?.row,
+        (id === this.chosen ? difficulties.find(entry => chartDifficulty(entry) === selectedDifficulty) : undefined) ?? fallback?.row,
       );
       return { ...tile, aspectRatio: 1, value: id };
     });
@@ -495,17 +667,37 @@ export class ChartCreationLibrary extends LitElement {
       close: () => this.close(),
       searchLabel: this.t("searchServerLibrary"),
       filterLabel: clientText(this.locale, "common.actions.filter"),
+      filterCount: applied.length,
       filtersOpen: this.filtersOpen,
       toggleFilters: () => (this.filtersOpen = !this.filtersOpen),
       query: this.query,
       search: (value) => { this.query = value; },
+      filterLayout: "facets",
+      layout: "grid",
+      quickFilters: html`<div class="stack tb-picker-quick">
+        ${!this.mediaKind && difficulties.length ? songPickerDifficultyFilters({
+          label: this.pickerText("difficulty", "Difficulty"),
+          choices: difficulties.map(value => ({ value, label: value.toUpperCase() })),
+          selected: this.difficultyFilter ?? difficulties,
+          change: selected => { this.difficultyFilter = selected; },
+          allLabel: this.pickerText("allChartDifficulties", "All difficulties"),
+        }) : nothing}
+        ${songPickerAppliedFilters({
+          items: applied, removeLabel: this.common("common.actions.remove", "Remove"),
+          clearLabel: this.pickerText("clearFilters", "Clear filters"), clear: this.clearFilters,
+        })}
+      </div>`,
       kind: "song",
       items,
       selected: this.chosen,
       select: (id) => this.choose(id),
       countLabel: this.busy && !this.indexLoaded ? clientText(this.locale, "common.states.loading") : this.indexLoaded ? String(matching.length) : "",
-      emptyLabel: this.busy || !this.indexLoaded ? "" : clientText(this.locale, "common.states.empty"),
-      filters: this.renderFilters(),
+      emptyLabel: this.busy || !this.indexLoaded || needsMetrics && (this.metricsLoading || this.metricsError)
+        ? "" : clientText(this.locale, "common.states.empty"),
+      status: needsMetrics && this.metricsLoading ? loadingState(this.common("common.states.loading", "Loading"), { local: true })
+        : needsMetrics && this.metricsError ? html`<p role="alert">${this.pickerText("durationFailed", "Duration could not be loaded")}
+          <button class="button button--text" type="button" @click=${() => void this.loadMetrics()}>${this.common("common.actions.retry", "Retry")}</button></p>` : nothing,
+      filters: this.renderFilters(options),
       preview: html`
         ${this.busy ? loadingState(clientText(this.locale, "common.states.loading"), { local: true }) : nothing}
         ${
@@ -520,8 +712,11 @@ export class ChartCreationLibrary extends LitElement {
           selected
             ? html`
                 <strong lang=${songTitle(selected as unknown as Record<string, unknown>, this.locale).locale}>${songTitle(selected as unknown as Record<string, unknown>, this.locale).text}</strong>
-                ${this.mediaKind ? nothing : difficultyPicker({ rows: selected.difficulty as unknown as Record<string, unknown>[], selected: this.difficulty, locale: this.locale, onSelect: (key) => (this.difficulty = key) })}
-                <button class="button button--filled" ?disabled=${this.busy || (!this.mediaKind && !this.difficulty)} @click=${() => void this.importChosen()}>
+                ${this.mediaKind ? nothing : difficultyPicker({ rows: chosen!.difficulties, selected: selectedDifficulty ?? "", locale: this.locale, onSelect: (key) => (this.difficulty = key) })}
+                <button class="button button--filled" ?disabled=${this.busy || (!this.mediaKind && !selectedDifficulty)} @click=${() => {
+                  if (selectedDifficulty) this.difficulty = selectedDifficulty;
+                  void this.importChosen();
+                }}>
                   ${this.mediaKind ? clientText(this.locale, `community.charts.${this.mediaKind === "audio" ? "useAudio" : "useCover"}`) : this.t("importServerBoth")}
                 </button>
               `

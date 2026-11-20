@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "รายละเอียดบัญชีเกม",
+    "records": "บันทึก",
+    "saveData": "ข้อมูลเซฟ",
+    "noRecords": "ไม่มีบันทึก",
+    "selectCharacters": "เลือกตัวละคร",
+    "playerData": "ข้อมูลผู้เล่น",
+    "saveSettings": "การตั้งค่าเกม",
+    "latestLive": "ไลฟ์ล่าสุด",
+    "permanentData": "ข้อมูลถาวร",
+    "_missionCounters": "ตัวนับภารกิจ",
     "title": "อุปกรณ์บันทึก",
     "import": "การส่งออกช่วย",
     "loading": "กำลังโหลด",

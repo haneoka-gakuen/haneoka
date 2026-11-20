@@ -10,6 +10,7 @@ import { renderLevelSwitch } from "./ui/level-switch";
 import { resourceKindForCollection } from "../lib/resource-route";
 import { characterProfile } from "./shared/character-profile";
 import { characterPair } from "./ui/character-pair";
+import { missionDescription } from "../lib/mission-description";
 import { renderDetailSectionHeading, type DetailSectionKind } from "./shared/detail-section-heading";
 import type { GridIdentityAdornment } from "./shared/grid-identity";
 import { tile, tileMedia, type TileOptions } from "./ui/tile";
@@ -59,17 +60,6 @@ const values = (value: unknown, key?: string): Item[] => {
   const source = key && value && typeof value === "object" ? (value as Item)[key] : value;
   if (!source || typeof source !== "object") return [];
   return Object.values(source as Item).filter((entry): entry is Item => !!entry && typeof entry === "object");
-};
-
-/**
- * Mission templates name their values (`{CharacterId}`, `{AchievementCount}`,
- * `{Value}`); older data used positional `{0}`–`{2}`. Unknown tokens stay.
- */
-const missionDescription = (template: string, values: Record<string, string>): string => {
-  const positional = [values.CharacterId, values.AchievementCount, values.Value];
-  return template.replace(/\{(\w+)\}/gu, (token, name: string) =>
-    /^\d$/u.test(name) ? (positional[Number(name)] ?? token) : (values[name] ?? token),
-  );
 };
 
 /** The link-story collection opened on one pair; the screen reads `lead` and `second`. */
@@ -716,7 +706,7 @@ export class CharacterDetailArchive extends LitElement {
     const c = this.controller;
     return scrollableTabBar(c.contentLocale, html`
       <nav
-        class="tabs tabs--pills character-detail-tabs"
+        class="tabs tabs--secondary character-detail-tabs"
         role="tablist"
         aria-label=${c.label("details", "Details")}
         @keydown=${rovingKeydown(
@@ -746,6 +736,7 @@ export class CharacterDetailArchive extends LitElement {
                     `
                   : nothing
               }
+              <span class="tab__indicator"></span>
             </button>
           `,
         )}

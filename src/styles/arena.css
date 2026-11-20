@@ -481,20 +481,6 @@
     }
   }
   @container arena (max-width: 599px) {
-    /* Nothing here scrolls sideways: every block wraps to the phone's width. */
-    .arena-tabs {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 4px;
-      overflow: visible;
-      box-shadow: none;
-    }
-    .arena-tabs .tab {
-      min-inline-size: 0;
-      justify-content: center;
-      padding-inline: 4px;
-      white-space: normal;
-    }
     .arena-grid > * {
       min-inline-size: 0;
     }

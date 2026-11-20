@@ -122,13 +122,8 @@
     gap: 16px;
   }
   .outfit-tabs {
+    display: block;
     min-width: 0;
-    overflow-x: auto;
-    padding: 4px;
-  }
-  .outfit-tabs .segmented {
-    width: 100%;
-    min-width: max-content;
   }
   .collection--outfit {
     --tile-min: 136px;

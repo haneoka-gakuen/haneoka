@@ -532,7 +532,7 @@ export class EventTracker extends LitElement {
           </header>
         </div>
         ${scrollableTabBar(this.locale, html`
-          <nav class="tabs" role="tablist" aria-label=${this.label("title", "Event tracker")}
+          <nav class="tabs tabs--secondary" role="tablist" aria-label=${this.label("title", "Event tracker")}
             @keydown=${rovingKeydown(boards, activeBoard, (view) => this.selectRanking(view))}>
             ${boards.map((view) => html`
               <button class="tab" type="button" role="tab" id=${`event-board-${view}`}
@@ -549,8 +549,8 @@ export class EventTracker extends LitElement {
           ${
             event.challenges.length
               ? html`
-                  <nav
-                    class="collection collection--song"
+                  ${scrollableTabBar(this.locale, html`<nav
+                    class="collection collection--song collection--tab-rail"
                     role="tablist"
                     aria-label=${this.label("song", "Challenge song")}
                     aria-orientation="horizontal"
@@ -605,7 +605,7 @@ export class EventTracker extends LitElement {
                         onOpen: () => this.selectChallenge(row.id),
                       });
                     })}
-                  </nav>
+                  </nav>`)}
                   <div
                     id="event-challenge-ranking"
                     role="tabpanel"

@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Détails du compte de jeu",
+    "records": "Historique",
+    "saveData": "Données de sauvegarde",
+    "noRecords": "Aucun enregistrement",
+    "selectCharacters": "Choisir les personnages",
+    "playerData": "Données du joueur",
+    "saveSettings": "Paramètres du jeu",
+    "latestLive": "Dernier concert",
+    "permanentData": "Données permanentes",
+    "_missionCounters": "Compteurs de missions",
     "title": "Les appareils sauvés",
     "import": "Importation de sauvetage",
     "loading": "Chargement",

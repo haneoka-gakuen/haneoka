@@ -177,6 +177,7 @@
   .account-navigation > button small {
     margin-inline-start: auto;
   }
+  .account-navigation .tab__indicator { display: none; }
   .account-content {
     display: grid;
     min-width: 0;
@@ -542,14 +543,23 @@
     }
     .account-navigation {
       display: flex;
+      gap: 0;
+      padding: 0;
       overflow-x: auto;
-      border-radius: var(--md-sys-shape-corner-full);
+      border-radius: 0;
+      background: transparent;
+      box-shadow: inset 0 -1px 0 var(--md-sys-color-outline-variant);
       scrollbar-width: none;
     }
     .account-navigation > button {
       min-width: max-content;
       min-height: 48px;
     }
+    .account-navigation > button.selected {
+      color: var(--md-sys-color-primary);
+      background: transparent;
+    }
+    .account-navigation .tab__indicator { display: block; }
     .account-password-form {
       grid-template-columns: minmax(0, 1fr);
     }

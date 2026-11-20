@@ -7171,6 +7171,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Game account details",
+    "records": "Records",
+    "saveData": "Save data",
+    "noRecords": "No records",
+    "selectCharacters": "Select characters",
+    "playerData": "Player data",
+    "saveSettings": "Game settings",
+    "latestLive": "Latest Live",
+    "permanentData": "Permanent data",
+    "_missionCounters": "Mission counters",
     "title": "Device saves",
     "import": "Import save",
     "loading": "Loading",

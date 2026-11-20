@@ -7002,6 +7002,16 @@
     }
   },
   "saveWorkspace": {
+    "accountDetails": "Detail akun game",
+    "records": "Riwayat",
+    "saveData": "Data simpanan",
+    "noRecords": "Tidak ada catatan",
+    "selectCharacters": "Pilih karakter",
+    "playerData": "Data pemain",
+    "saveSettings": "Pengaturan game",
+    "latestLive": "Live terakhir",
+    "permanentData": "Data permanen",
+    "_missionCounters": "Penghitung misi",
     "title": "Perangkat yang disimpan",
     "import": "Import Menyelamatkan",
     "loading": "Memuat",

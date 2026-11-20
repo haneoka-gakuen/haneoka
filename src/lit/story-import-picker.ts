@@ -27,6 +27,7 @@ type Axis = "category" | "chapter" | "band" | "character" | "episode";
 const axes: Axis[] = ["category", "chapter", "band", "character", "episode"];
 const categories: Record<string, string> = {
   band: "story.navigation.band",
+  perspective: "story.labels.perspectiveStory",
   event: "story.navigation.event",
   birthday: "story.labels.birthdayStory",
   afterlive: "story.navigation.afterlive",
@@ -260,7 +261,7 @@ export class StoryImportPicker extends LitElement {
         ? "birthday"
         : this.chapters[String(row.chapterId)]?.eventId
           ? "event"
-          : "band";
+          : row.isAnotherEpisode === true ? "perspective" : "band";
   }
   private values(row: Row, axis: Axis): string[] {
     if (axis === "category") return [this.category(row)];
@@ -283,7 +284,7 @@ export class StoryImportPicker extends LitElement {
       if (this.provider === "bestdori")
         return uiText(this.locale, `story.navigation.bestdori${value[0]!.toUpperCase()}${value.slice(1)}`);
       if (this.provider === "sekai") return clientText(this.locale, `community.page.sekai.stories.${value}`);
-      return uiText(this.locale, categories[value]!);
+      return categories[value] ? uiText(this.locale, categories[value]) : value;
     }
     if (axis === "band") return this.text(this.bands[value]?.bandName);
     if (axis === "character") return this.text(this.characters[value]?.characterName);
@@ -332,9 +333,11 @@ export class StoryImportPicker extends LitElement {
     if (!this.importing) this.dispatchEvent(new CustomEvent("story-picker-close", { bubbles: true }));
   };
   private choose(axis: Axis, value: string) {
+    const selected = this.filters[axis] === value && (axis !== "category" || this.provider === "haneoka") ? "" : value;
     this.filters = {
       ...this.filters,
-      [axis]: this.filters[axis] === value && (axis !== "category" || this.provider === "haneoka") ? "" : value,
+      ...(axis === "category" && this.filters.category !== selected ? { chapter: "", episode: "" } : {}),
+      [axis]: selected,
     };
     this.selected = "";
   }
@@ -401,6 +404,11 @@ export class StoryImportPicker extends LitElement {
   }
   override render() {
     const rows = this.rows.filter((row) => this.acceptsStory(row));
+    const categoryCounts = this.counts("category");
+    const categoryOptions = this.provider === "haneoka"
+      ? [...Object.keys(categories).filter((key) => categoryCounts.has(key)), ...[...categoryCounts.keys()].filter((key) => !categories[key])]
+      : [...categoryCounts.keys()];
+    const groupedByCategory = this.provider === "haneoka" && !this.filters.category;
     return selectionPane({
       id: "story-import",
       title: this.selectOnly ? this.t("selectStory") : this.t("importStory"),
@@ -420,10 +428,10 @@ export class StoryImportPicker extends LitElement {
       quickFilters: chooserGroup(
         uiText(this.locale, "catalog.fields.type"),
         html`
-          ${["", ...this.counts("category").keys()].map((value) =>
+          ${["", ...categoryOptions].map((value) =>
             filterChip({
               label: value
-                ? `${this.label("category", value)} (${this.counts("category").get(value)})`
+                ? `${this.label("category", value)} (${categoryCounts.get(value)})`
                 : uiText(this.locale, "common.states.all"),
               selected: this.filters.category === value,
               onToggle: () => {
@@ -465,7 +473,14 @@ export class StoryImportPicker extends LitElement {
           )}
       `,
       groups:
-        this.provider === "haneoka" && ["band", "event"].includes(this.filters.category)
+        groupedByCategory
+          ? categoryOptions
+              .map((category) => ({
+                title: this.label("category", category),
+                values: new Set(rows.filter((row) => this.category(row) === category).map((row) => String(row.storyId))),
+              }))
+              .filter((group) => group.values.size)
+          : this.provider === "haneoka" && ["band", "event"].includes(this.filters.category)
           ? ["main", "extra", "perspective"]
               .map((kind) => ({
                 title: uiText(

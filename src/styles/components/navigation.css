@@ -28,6 +28,14 @@
   flex: 1 1 auto;
   overflow-anchor: none;
 }
+.tab-scroll > nav.collection--tab-rail {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.collection--tab-rail > .tile {
+  flex: 0 0 clamp(124px, 25%, 208px);
+}
 .tab-scroll > .tabs--pills {
   flex-grow: 0;
 }
