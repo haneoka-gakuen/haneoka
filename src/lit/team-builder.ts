@@ -36,7 +36,7 @@ import "@material/web/slider/slider.js";
 import "@material/web/textfield/outlined-text-field.js";
 import { clientText } from "../i18n/client";
 import { beginLoading } from "../lib/loading-progress";
-import { readReleaseServer, writeReleaseServer } from "../lib/release-server";
+import { isPublicReleaseServer, readReleaseServer } from "../lib/release-server";
 import { fetchCatalogVisuals } from "../lib/catalog-visuals";
 import { fetchCrossServerTeamBuilderData, mergeTeamBuilderData } from "../lib/team-builder/data/cross-server";
 import { visibleContentServers } from "../lib/content-sources";
@@ -88,7 +88,10 @@ import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { availableOnServer } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
-import { inApp } from "../lib/app-bridge";
+import { appCall, inApp, type AppBoxImport } from "../lib/app-bridge";
+import { isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "../lib/game-tool-accounts";
+import { captureGameToolSaveByKey, gameToolOwner, GAME_TOOL_ACCOUNTS_CHANGED, getGameToolAccount, refreshGameToolAccounts, selectedGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
+import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -137,6 +140,17 @@ export class TeamBuilder extends LitElement {
   imports: ImportController = new ImportController(this);
   /** Open a native or browser save review once the target Box is ready. */
   private pendingImportChecked = false;
+  private pendingAppBoxImport: AppBoxImport | null = null;
+  private pendingBoxAccount = "";
+  gameAccount?: GameToolAccount;
+  private gameAccountOwner: string | null = null;
+  private gameAccountsChanged = () => {
+    const current = this.gameAccount && getGameToolAccount(this.gameAccount.id, "team");
+    if (isGameToolAccountId(this.gameAccount?.id) && (!current || this.gameAccountOwner !== gameToolOwner())) {
+      void this.load(this.server, legacyToolAccount(this.server === "jp" ? "jp" : "intl", "team"));
+    } else if (current) this.gameAccount = current;
+    this.requestUpdate();
+  };
   skillRoleEditor: SkillRoleEdit | null = null;
   analysis = new ResultAnalysis(this);
   pt = new PtController(this);
@@ -422,8 +436,10 @@ export class TeamBuilder extends LitElement {
   private disposeVisibility?: () => void;
   connectedCallback() {
     if (waitForPageData(this, () => this.connectedCallback())) return;
-    const startTab = navigationDocumentUrl().searchParams.get("tab");
-    const league = Number(navigationDocumentUrl().searchParams.get("league"));
+    const params = navigationDocumentUrl().searchParams;
+    const startTab = params.get("tab");
+    const league = Number(params.get("league"));
+    this.pendingImportChecked = false;
     if (startTab === "arena") this.requestedArenaLeague = Number.isSafeInteger(league) && league > 0 ? league : 0;
     const payload = readPageData<TeamBuilderPageData>(this);
     if (payload?.schema === "haneoka-team-builder-page-v1") this.preparePage(payload);
@@ -447,14 +463,43 @@ export class TeamBuilder extends LitElement {
     });
     this.layoutObserver.observe(this);
     if (this.closest("#main-content")) this.layoutObserver.observe(this.closest("#main-content")!);
-    const linkedServer = navigationDocumentUrl().searchParams.get("server");
-    void this.load(
-      linkedServer && ["jp", "intl"].includes(linkedServer) ? linkedServer : readReleaseServer() || this.server,
-    );
+    const linkedServer = params.get("server");
+    const server = isPublicReleaseServer(linkedServer) ? linkedServer : readReleaseServer();
+    window.addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
+    void this.loadToolEntry(server, params);
     const tabs: readonly string[] = ["arena", "song-comparison", "pt", "box", "account", "teams"];
     if (startTab && tabs.includes(startTab)) void this.updateComplete.then(() => {
       if (this.isConnected) this.setTab(startTab as Tab);
     });
+  }
+  private async loadToolEntry(server: string, params: URLSearchParams) {
+    const requested = params.get("gameAccount");
+    if (requested && !getGameToolAccount(requested, "team")) await refreshGameToolAccounts();
+    const fallback = selectedGameToolAccount("team", server, requested);
+    const pending = inApp() && !params.has("saveImport") ? await appCall("pendingBoxImport", {}).catch(() => null) : null;
+    if (!this.isConnected) return;
+    if (pending && isPublicReleaseServer(pending.server)) {
+      const target = pending.key
+        ? await captureGameToolSaveByKey(pending.key, "team").catch(() => undefined)
+        : legacyToolAccount(pending.server, "team");
+      if (!this.isConnected) return;
+      if (!target || target.server !== pending.server) {
+        this.error = this.t("boxImport.incompatibleServer", "The save account does not match the import target.");
+        await this.load(fallback.server, fallback);
+        return;
+      }
+      this.pendingAppBoxImport = pending;
+      this.pendingBoxAccount = target.id;
+      selectGameToolAccount(target);
+      this.requestUpdate();
+      await this.load(target.server, target);
+    } else if (!this.loadedServer) {
+      const target = !requested && (isPublicReleaseServer(params.get("server")) || params.has("saveImport")) && fallback.server !== server
+        ? legacyToolAccount(server === "jp" ? "jp" : "intl", "team")
+        : fallback;
+      if (requested && target.id === requested) selectGameToolAccount(target);
+      await this.load(target.server, target);
+    }
   }
   preparePage(payload: TeamBuilderPageData, server = payload.server, allowedServers?: readonly string[]) {
     this.pageData = payload;
@@ -514,6 +559,7 @@ export class TeamBuilder extends LitElement {
     super.update(changed);
   }
   disconnectedCallback() {
+    window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     this.songPicker?.recommendationRequest?.abort();
     this.planner.dispose();
     this.disposeVisibility?.();
@@ -527,6 +573,7 @@ export class TeamBuilder extends LitElement {
     clearTimeout(this.noticeTimer);
     super.disconnectedCallback();
     clearAppBarActions(SYNC_OWNER);
+    clearGameToolAccountAction("team");
     clearAppBarActions("team-builder-quick-entry");
     clearAppBarActions("team-builder-planner");
     this.releaseSearch?.();
@@ -606,9 +653,13 @@ export class TeamBuilder extends LitElement {
       this.applyPageData(payload);
       return;
     }
-    if (!this.pendingImportChecked && this.data?.identity.sourceId && this.view && this.snapshot && (inApp() || new URL(location.href).searchParams.has("saveImport"))) {
+    const appImport = this.pendingAppBoxImport;
+    if (!this.pendingImportChecked && this.data?.identity.sourceId && this.store && this.view && this.snapshot &&
+        (appImport ? appImport.server === this.data.identity.server && this.gameAccount?.id === this.pendingBoxAccount : navigationDocumentUrl().searchParams.has("saveImport"))) {
       this.pendingImportChecked = true;
-      void this.imports.takePending();
+      this.pendingAppBoxImport = null;
+      if (appImport) this.setTab("box", { focusPanel: false });
+      void this.imports.takePending(appImport);
     }
     if (!this.isConnected) return;
     if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
@@ -687,12 +738,13 @@ export class TeamBuilder extends LitElement {
     return clientText(this.locale, uiLabelPaths[key] ?? key, fallback);
   }
 
-  switchServer(server: string) {
-    void this.load(writeReleaseServer(server));
-  }
-
-  async load(server: string) {
-    if (this.loadedServer === server) return;
+  async load(server: string, account = this.gameAccount?.server === server ? this.gameAccount : legacyToolAccount(server === "jp" ? "jp" : "intl", "team")) {
+    const scopeOwner = gameToolOwner();
+    if (this.loadedServer === server && this.gameAccount?.id === account.id && this.gameAccountOwner === scopeOwner) return;
+    const retained = this.publicData?.identity.server === server ? this.publicData : null;
+    const reuseEngine = !!retained && this.data === retained && !!this.engine;
+    this.gameAccount = account;
+    this.gameAccountOwner = scopeOwner;
     this.temporary.clear();
     this.temporaryDraft = null;
     this.temporaryPicker = null;
@@ -707,13 +759,15 @@ export class TeamBuilder extends LitElement {
       this.unsubscribe = undefined;
       this.store?.dispose();
       this.store = null;
-      this.engine?.dispose();
-      this.engine = null;
+      if (!reuseEngine) {
+        this.engine?.dispose();
+        this.engine = null;
+      }
       this.snapshot = null;
       this.view = null;
       this.persistentBoxView = null;
-      this.data = null;
-      this.catalog = null;
+      this.data = retained;
+      if (!retained) this.catalog = null;
       this.editing = null;
       this.notice = "";
       this.error = "";
@@ -736,7 +790,7 @@ export class TeamBuilder extends LitElement {
         )
           this.preparePage(this.pageData, server, visible);
       }
-      const seeded = this.data?.identity.server === server && this.pageData?.sources.every((source) => source.arena !== undefined) &&
+      const seeded = retained || this.data?.identity.server === server && this.pageData?.sources.every((source) => source.arena !== undefined) &&
         this.catalog?.visuals;
       const data = seeded ? this.publicData! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
       const working = seeded ? this.data! : data;
@@ -756,8 +810,10 @@ export class TeamBuilder extends LitElement {
       this.pt = new PtController(this);
       await this.updateComplete;
       if (!this.isConnected || loadController.signal.aborted) return;
-      this.engine?.dispose();
-      this.engine = new EngineClient(working, () => this.requestUpdate());
+      if (!reuseEngine || !this.engine) {
+        this.engine?.dispose();
+        this.engine = new EngineClient(working, () => this.requestUpdate());
+      }
       this.engine.prefetch(this.searchSettings.songs);
       const engine = this.engine;
       const warm = () => {
@@ -767,7 +823,7 @@ export class TeamBuilder extends LitElement {
       else setTimeout(warm, 500);
       this.unsubscribe?.();
       this.store?.dispose();
-      this.store = new BoxStore({ server });
+      this.store = new BoxStore({ server, accountId: isGameToolAccountId(account.id) ? account.id : undefined, accountOwner: scopeOwner });
       this.unsubscribe = this.store.subscribe((snapshot) => this.adopt(snapshot));
       void this.store.start();
       if (!this.catalog?.visuals?.marks.size) void this.loadCatalogMetadata();
@@ -2016,9 +2072,13 @@ export class TeamBuilder extends LitElement {
   }
   /** Register the team builder actions and card search with the shared app bar. */
   private syncAppBar() {
+    setGameToolAccountAction({
+      tool: "team", locale: this.locale, account: this.gameAccount,
+      onSelect: account => void this.load(account.server, account),
+    }, this);
     clearAppBarActions("team-builder-planner");
     if (this.tab === "box") setAppBarActions("team-builder-quick-entry", html`
-      <button class="button button--tonal" type="button" aria-pressed=${this.boxQuickEntry} data-app-bar-keep
+      <button class="button button--tonal" type="button" aria-pressed=${this.boxQuickEntry} ?data-app-bar-keep=${this.boxQuickEntry || !this.compactConditions}
         @click=${() => { this.boxQuickEntry = !this.boxQuickEntry; this.editing = null; this.requestUpdate(); }}>
         ${this.boxQuickEntry ? this.t("finishQuickEntry", "Finish adding") : this.t("quickEntry", "Quick add")}
       </button>${renderTemporaryActions(this)}`, this);
@@ -2112,7 +2172,7 @@ export class TeamBuilder extends LitElement {
                       <button
                         class="button button--tonal"
                         type="button"
-                        @click=${() => void this.load(readReleaseServer() || this.server)}
+                        @click=${() => void this.load(this.server)}
                       >
                         ${this.common("common.actions.retry", "Retry")}
                       </button>

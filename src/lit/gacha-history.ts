@@ -106,6 +106,8 @@ export class GachaHistory extends LitElement {
     pools: { attribute: false },
     batches: { attribute: false },
     selectedAccountKey: {},
+    scopedGameAccount: { type: Boolean },
+    scopedGameRead: { type: Boolean },
     busy: { type: Boolean },
     historyLoaded: { type: Boolean },
     catalogLoading: { type: Boolean },
@@ -157,6 +159,8 @@ export class GachaHistory extends LitElement {
   declare pools: readonly GachaHistoryPool[];
   declare batches: readonly GachaHistoryBatch[];
   declare selectedAccountKey: string;
+  declare scopedGameAccount: boolean;
+  declare scopedGameRead: boolean;
   declare busy: boolean;
   declare historyLoaded: boolean;
   declare catalogLoading: boolean;
@@ -773,8 +777,8 @@ export class GachaHistory extends LitElement {
       <span>${[row.batches === undefined ? "" : this.t("batches", { count: row.batches }), row.local === undefined ? "" : this.t(row.local ? "localRecords" : "cloudRecords")].filter(Boolean).join(" / ")}</span>
     </span>`;
     const active = this.accounts.find(row => row.key === this.selectedAccountKey);
-    return html`<dialog class="dialog" aria-label=${this.t(this.mergingAccounts ? "mergeRecords" : "selectAccount")} ${modal(() => { this.accountsOpen = false; })}>
-      <header class="dialog__header"><div class="row row--between"><h2>${this.t(this.mergingAccounts ? "mergeRecords" : "selectAccount")}</h2>
+    return html`<dialog class="dialog" aria-label=${this.t(this.mergingAccounts ? "mergeRecords" : "savedSource")} ${modal(() => { this.accountsOpen = false; })}>
+      <header class="dialog__header"><div class="row row--between"><h2>${this.t(this.mergingAccounts ? "mergeRecords" : "savedSource")}</h2>
         ${iconButton({ icon: "close", label: this.t("close"), onClick: () => { this.accountsOpen = false; } })}</div></header>
       <div class="dialog__body">
         ${this.mergingAccounts ? html`<ul class="list">${this.accounts.map(row => html`<li><label class=${`list-item list-item--three-line list-item--interactive${this.mergeKeys.has(row.key) ? " is-selected" : ""}`}>
@@ -819,10 +823,10 @@ export class GachaHistory extends LitElement {
     return html`
       <section class="gacha-hero surface stack" aria-label=${this.t("account")}>
         <div class="gacha-hero__account">
-          <button class="button button--tonal gacha-account-button" type="button"
-            aria-label=${[this.t("selectAccount"), account?.serverLabel, account?.label].filter(Boolean).join(" / ")} ?disabled=${!this.accounts.length || this.busy} @click=${() => this.openAccountPicker()}>
-            ${icon("person", 24)}<span>${account ? [account.serverLabel, account.label].filter(Boolean).join(" / ") : this.t("selectAccount")}</span>${icon("swap_horiz", 20)}
-          </button>
+          ${!this.scopedGameAccount || this.accounts.length > 1 ? html`<button class="button button--tonal gacha-account-button" type="button"
+            aria-label=${[this.t("savedSource"), account?.serverLabel, account?.label].filter(Boolean).join(" / ")} ?disabled=${!this.accounts.length || this.busy} @click=${() => this.openAccountPicker()}>
+            ${icon("history", 24)}<span>${account ? [account.serverLabel, account.label].filter(Boolean).join(" / ") : this.t("savedSource")}</span>${icon("swap_horiz", 20)}
+          </button>` : nothing}
           <div class="gacha-hero__actions">
             ${
               this.canRefresh
@@ -830,7 +834,7 @@ export class GachaHistory extends LitElement {
                     <button
                       class="button button--filled"
                       type="button"
-                      ?disabled=${this.busy || !this.selectedAccountKey}
+                      ?disabled=${this.busy || !this.selectedAccountKey && !this.scopedGameRead}
                       @click=${() => this.emit("gacha-refresh", { accountKey: this.selectedAccountKey })}
                     >
                       ${icon("history")}${this.t("readHistory")}

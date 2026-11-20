@@ -209,10 +209,11 @@ export class HistoryCloudSync extends EventTarget {
     window.addEventListener("haneoka:session-changed", this.revoke, { signal: this.lifetime.signal });
     if (initialSync) void this.foreground(true);
   }
-  async syncImported(records: StoredHistory[]): Promise<boolean> {
+  async syncImported(records: StoredHistory[], expectedOwner?: string | null): Promise<boolean> {
     this.setLocal(records);
     try {
       await this.session();
+      if (expectedOwner !== undefined && expectedOwner !== this.ownerId) return false;
       if (records.some(({ key }) => this.isLinked(key))) await this.syncCurrent(true);
       return true;
     } catch (error) {

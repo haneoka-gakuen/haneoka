@@ -226,16 +226,6 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
           },
         })}
         ${compact && !host.boxQuickEntry ? nothing : html`<span class="row__spacer"></span>
-        ${segmented({
-          label: host.t("boxImport.libraryServer", "Card library server"),
-          value: host.data!.identity.server,
-          grow: false,
-          options: [
-            { value: "jp", label: host.t("boxImport.servers.jp", "JP") },
-            { value: "intl", label: host.t("boxImport.servers.intl", "Global") },
-          ],
-          onSelect: (server) => host.switchServer(server),
-        })}
         ${host.boxQuickEntry ? nothing : html`
           <button class="button button--tonal" type="button" @click=${() => host.imports.openBox()}>${icon("upload_file", 18)}${host.t("importBox", "Import")}</button>
         `}`}
@@ -259,15 +249,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
               label: compact ? host.common("common.actions.moreActions", "More") : host.t("bulkActions", "Edit shown cards"),
               items: [
                 ...(compact
-                  ? [
-                      { label: host.t("importBox", "Import"), icon: "upload_file", run: () => host.imports.openBox() },
-                      ...(["jp", "intl"] as const).map((server) => ({
-                        label: host.t("boxImport.libraryServerItem", "Card library: {server}", { server: host.t(`boxImport.servers.${server}`, server === "jp" ? "JP" : "Global") }),
-                        icon: host.data!.identity.server === server ? "check" : "public",
-                        disabled: host.data!.identity.server === server,
-                        run: () => host.switchServer(server),
-                      })),
-                    ]
+                  ? [{ label: host.t("importBox", "Import"), icon: "upload_file", run: () => host.imports.openBox() }]
                   : []),
                 { label: host.t("bulkOwn", "Own all shown"), icon: "library_add_check", disabled: !rows.length,
                   run: () => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.flatMap((row) => [{ key: `${prefix(row.kind)}.${row.id}.own`, value: true }, ...(row.owned ? [] : [{ key: `${prefix(row.kind)}.${row.id}.use`, value: true }])])) },

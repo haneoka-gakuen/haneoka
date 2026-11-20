@@ -29,6 +29,7 @@ import { snackbar } from "../lib/snackbar";
 import { appCall, appSupports, DEFAULT_SAVE_IMPORT, inApp, type DeviceSave, type SaveImportAction, type SaveImportOptions } from "../lib/app-bridge";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
+import "./web-game-save-reader";
 
 const ACCOUNT_LABEL_KEYS: Readonly<Record<string, string>> = {
   close: "common.actions.close",
@@ -1313,7 +1314,7 @@ export class AccountWorkspace extends LitElement {
 
   /** In the app: the saves read on this device, which need no sign-in. */
   private renderDeviceSaves() {
-    if (!inApp()) return html`<a class="button button--tonal" href=${`/${preferredLocale()}/saves/`}>${this.label("deviceSaves", "Saves on this device")}</a>`;
+    if (!inApp()) return html`<web-game-save-reader></web-game-save-reader>`;
     const locale = preferredLocale();
     const number = (value: number) => new Intl.NumberFormat(locale).format(value);
     return html`
@@ -1358,6 +1359,7 @@ export class AccountWorkspace extends LitElement {
               ["songs", "autoSongs", "Automatically import song progress"],
               ["history", "autoHistory", "Automatically read recruitment records"],
               ["link", "autoLink", "Automatically link game account"],
+              ...(appSupports("saveAutomationV2") ? [["save", "toolAccounts.syncSave", "Sync game saves"] as const] : []),
             ] as const).map(([action, key, fallback]) => html`
               <li><label class="detail-object row row--between">
                 <span>${this.label(key, fallback)}</span>
@@ -1369,6 +1371,7 @@ export class AccountWorkspace extends LitElement {
           </ul>
         ` : nothing}
       </section>
+      <web-game-save-reader native .deviceSaves=${this.deviceSaves}></web-game-save-reader>
     `;
   }
 

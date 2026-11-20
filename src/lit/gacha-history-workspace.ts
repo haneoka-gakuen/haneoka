@@ -32,6 +32,11 @@ import { downloadBlob } from "../lib/canvas-capture";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import { formatDate } from "../lib/date-format";
 import { appAccountCall, appCall, appSaveImportHref, inApp } from "../lib/app-bridge";
+import { gameToolHistoryServer, historyKeyFromGameToolAccount, isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "../lib/game-tool-accounts";
+import { associateGameToolHistory, captureGameToolSaveByKey, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, rememberedGameToolAccount, selectedGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { iconButton } from "./ui/controls";
+import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
 import { chooseAppAccount } from "./ui/app-account-chooser";
 
 class GachaHistoryWorkspace extends HTMLElement {
@@ -41,6 +46,10 @@ class GachaHistoryWorkspace extends HTMLElement {
   private cloud = new HistoryCloudSync();
   private selected = "";
   private selectedKind = "";
+  private toolAccount?: GameToolAccount;
+  private toolOwner: string | null = null;
+  private knownHistoryKeys = new Map<string, string>();
+  private accountsChanged = () => { void this.reloadToolAccounts(); };
   private catalog?: GachaHistoryPageData;
   private busy = false;
   private error = "";
@@ -61,9 +70,7 @@ class GachaHistoryWorkspace extends HTMLElement {
   };
   private cloudChanged = () => {
     this.records = this.cloud.visibleRecords();
-    if (!this.records.some((row) => row.key === this.selected))
-      this.selected =
-        this.records.find((row) => row.aliases?.includes(this.selected))?.key ?? this.records[0]?.key ?? "";
+    this.selectAvailableHistory();
     if (this.isConnected) this.update();
   };
   connectedCallback() {
@@ -76,6 +83,17 @@ class GachaHistoryWorkspace extends HTMLElement {
       );
       return;
     }
+    const requested = new URL(location.href).searchParams.get("gameAccount");
+    this.toolOwner = gameToolOwner();
+    this.toolAccount = rememberedGameToolAccount("history", requested);
+    window.addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.accountsChanged);
+    void refreshGameToolAccounts().then(() => {
+      if (!this.isConnected) return;
+      this.toolAccount ??= rememberedGameToolAccount("history", requested);
+      if (requested && this.toolAccount?.id === requested) selectGameToolAccount(this.toolAccount);
+      if (!this.toolAccount && gameToolAccounts("history").length) this.toolAccount = selectedGameToolAccount("history", "intl");
+      void this.reloadToolAccounts();
+    });
     this.on("gacha-account-change", ({ accountKey }) => {
       this.selected = accountKey;
       this.selectedKind = "";
@@ -183,14 +201,21 @@ class GachaHistoryWorkspace extends HTMLElement {
       // History the app's save page read from the game server.
       if (!inApp()) return;
       const pending = await appCall("pendingGachaHistory", {}).catch(() => null);
-      if (pending?.files.length)
+      if (pending?.files.length) {
+        const account = pending.key ? await captureGameToolSaveByKey(pending.key, "history").catch(() => undefined) : undefined;
+        if (account) { selectGameToolAccount(account); this.selectToolAccount(account); }
         await this.importFiles(
           pending.files.map((file) => new File([file.text], file.name, { type: "application/json" })),
           true,
+          account,
         );
+      }
     });
   }
   disconnectedCallback() {
+    window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.accountsChanged);
+    clearGameToolAccountAction("history");
+    clearAppBarActions("gacha-history-assignment");
     this.controller.abort();
     historyStore.removeEventListener("change", this.changed);
     this.cloud.stop();
@@ -207,6 +232,73 @@ class GachaHistoryWorkspace extends HTMLElement {
     historyStore.configure(cards);
     this.cloud.configure(cards);
   }
+  private recordMatches(record: StoredHistory, account: GameToolAccount) {
+    const observed = [record.key, record.snapshot.source.accountKey, ...(record.aliases ?? [])];
+    const verified = [...this.knownHistoryKeys].filter(([, key]) => observed.includes(key));
+    if (verified.length) return verified.length === 1 && verified[0]?.[0] === account.id;
+    return [...account.historyKeys, this.knownHistoryKeys.get(account.id)]
+      .some(key => key !== undefined && observed.includes(key));
+  }
+  private visibleRecords() {
+    const account = this.toolAccount;
+    if (!account) return this.records;
+    if (isGameToolAccountId(account.id)) return this.records.filter(record => this.recordMatches(record, account));
+    const assigned = gameToolAccounts("history");
+    return this.records.filter(record => (record.snapshot.source.server === "jp" ? "jp" : "intl") === account.server
+      && !assigned.some(profile => this.recordMatches(record, profile)));
+  }
+  private selectAvailableHistory() {
+    const records = this.visibleRecords();
+    if (!records.some(row => row.key === this.selected))
+      this.selected = records.find(row => row.aliases?.includes(this.selected))?.key ?? records[0]?.key ?? "";
+  }
+  private unassignedHistory(account: GameToolAccount) {
+    const known = gameToolHistoryServer(account), assigned = gameToolAccounts("history");
+    return this.records.filter(record => {
+      const server = record.snapshot.source.server;
+      return (known ? server === known : (server === "jp" ? "jp" : "intl") === account.server)
+        && !assigned.some(profile => this.recordMatches(record, profile));
+    });
+  }
+  private async assignHistory(account: GameToolAccount) {
+    const owner = gameToolOwner();
+    const records = this.unassignedHistory(account);
+    const title = clientText(this.view.locale, "account.page.toolAccounts.assignHistory", "Assign recruitment history");
+    const key = await chooseAppAccount(this.view.locale, records.map(record => {
+      const at = record.snapshot.batches.reduce((latest, batch) => Math.max(latest, batch.executedAt ?? 0), 0);
+      return { key: record.key, profileId: record.key.slice(0, 8), name: null, region: record.snapshot.source.server,
+        rank: null, savedAt: at ? at * 1000 : null };
+    }), `${title} / ${account.name || account.uid || account.server}`);
+    if (!key || !this.isConnected || owner !== gameToolOwner() || !this.unassignedHistory(account).some(record => record.key === key)) return;
+    try {
+      await associateGameToolHistory(account, key, owner);
+      if (this.toolAccount?.id === account.id) this.selected = key;
+      await this.reloadToolAccounts();
+    } catch { snackbar(this.t("mergeIdentityError"), { error: true }); }
+  }
+  private async reloadToolAccounts() {
+    const owner = gameToolOwner();
+    if (owner !== this.toolOwner) {
+      this.toolOwner = owner;
+      this.toolAccount = this.toolAccount && legacyToolAccount(this.toolAccount.server, "history");
+      this.selected = this.selectedKind = "";
+      this.knownHistoryKeys.clear();
+      this.update();
+    }
+    const accounts = gameToolAccounts("history");
+    const keys = await Promise.all(accounts.map(async account => [account.id, await historyKeyFromGameToolAccount(account)] as const));
+    if (!this.isConnected || owner !== gameToolOwner()) return;
+    this.knownHistoryKeys = new Map(keys.filter((entry): entry is readonly [string, string] => !!entry[1]));
+    if (this.toolAccount) this.toolAccount = getGameToolAccount(this.toolAccount.id, "history") ?? legacyToolAccount(this.toolAccount.server, "history");
+    this.selectAvailableHistory();
+    this.update();
+  }
+  private selectToolAccount(account: GameToolAccount) {
+    this.toolAccount = account;
+    this.selected = this.selectedKind = this.error = "";
+    this.selectAvailableHistory();
+    this.update();
+  }
   private async reload() {
     try {
       await historyStore.reconcile().catch(() => {
@@ -217,9 +309,7 @@ class GachaHistoryWorkspace extends HTMLElement {
       this.localIdentities = new Map(records.map((row) => [row.key, row.snapshot.source.accountKey]));
       this.cloud.setLocal(records);
       this.records = this.cloud.visibleRecords();
-      if (!this.records.some((row) => row.key === this.selected))
-        this.selected =
-          this.records.find((row) => row.aliases?.includes(this.selected))?.key ?? this.records[0]?.key ?? "";
+      this.selectAvailableHistory();
     } catch {
       this.error = this.t("errorImportInvalid");
     }
@@ -318,7 +408,8 @@ class GachaHistoryWorkspace extends HTMLElement {
     );
     input.click();
   }
-  private async importFiles(files: readonly File[], companion = false) {
+  private async importFiles(files: readonly File[], companion = false, account = this.toolAccount) {
+    const owner = gameToolOwner();
     this.busy = true;
     this.error = "";
     this.update();
@@ -326,12 +417,22 @@ class GachaHistoryWorkspace extends HTMLElement {
       if (files.length > 128 || files.reduce((sum, file) => sum + file.size, 0) > HISTORY_BYTES * 4)
         throw new Error("history_import_invalid");
       for (const file of files) {
+        if (owner !== gameToolOwner() || !this.isConnected) return;
         if (!file.size || file.size > HISTORY_BYTES * 2) throw new Error("history_import_invalid");
         const record = await historyStore.import(
           JSON.parse(await file.text()),
           companion ? file.name.replace(/\.json$/u, "") : undefined,
         );
-        this.selected = record.key;
+        if (account && isGameToolAccountId(account.id)) {
+          const historyServer = record.snapshot.source.server;
+          const catalog = historyServer === "jp" ? "jp" : "intl";
+          const actual = gameToolHistoryServer(account);
+          const matched = gameToolAccounts("history").find(profile => this.recordMatches(record, profile));
+          if (catalog !== account.server || actual && historyServer !== actual || matched && matched.id !== account.id)
+            throw new Error("history_merge_identity");
+          await associateGameToolHistory(account, record.key, owner);
+        }
+        if (account?.id === this.toolAccount?.id && owner === gameToolOwner()) this.selected = record.key;
       }
       await this.reload();
       void this.cloud.sync();
@@ -347,14 +448,19 @@ class GachaHistoryWorkspace extends HTMLElement {
   private async game(key?: string) {
     if (this.busy) return;
     try {
-      const result = await appAccountCall("gachaHistory", key ? { key } : {}, (accounts) =>
+      const target = this.toolAccount;
+      const result = await appAccountCall("gachaHistory", target?.uid ? { account: `${target.server}-${target.uid}` } : key ? { key } : {}, (accounts) =>
         chooseAppAccount(this.view.locale, accounts),
       );
-      if (result?.files.length)
+      if (result?.files.length) {
+        const account = result.key ? await captureGameToolSaveByKey(result.key, "history").catch(() => undefined) : target;
+        if (account && this.toolAccount?.id === target?.id) this.selectToolAccount(account);
         await this.importFiles(
           result.files.map((file) => new File([file.text], file.name, { type: "application/json" })),
           true,
+          account,
         );
+      }
     } catch (error) {
       const kind = gameHistoryErrorKey(error);
       this.error = this.t(kind);
@@ -441,13 +547,29 @@ class GachaHistoryWorkspace extends HTMLElement {
   private update() {
     const view = this.view;
     if (!view) return;
-    const current = this.records.find((row) => row.key === this.selected),
+    const visible = this.visibleRecords();
+    view.scopedGameAccount = isGameToolAccountId(this.toolAccount?.id);
+    view.scopedGameRead = !!this.toolAccount?.uid;
+    const current = visible.find((row) => row.key === this.selected),
       snapshot = current?.histories?.find((row) => row.historyKind === this.selectedKind) ?? current?.snapshot;
     const server = snapshot?.source.server === "jp" ? "jp" : "intl";
     const source = this.catalog?.variants[server];
     const catalog: HistoryCatalogData | undefined =
       source?.metadata.schema === "haneoka-gacha-history-data-v1" ? source : undefined;
-    view.accounts = this.records.map((row) => {
+    if (this.isConnected) {
+      setGameToolAccountAction({
+        tool: "history", locale: view.locale, account: this.toolAccount,
+        legacyServers: (["jp", "intl"] as const).filter(server => this.unassignedHistory(legacyToolAccount(server, "history")).length > 0),
+        onSelect: account => this.selectToolAccount(account),
+      }, view);
+      if (this.toolAccount && isGameToolAccountId(this.toolAccount.id) && this.unassignedHistory(this.toolAccount).length)
+        setAppBarActions("gacha-history-assignment", iconButton({
+          icon: "link", label: clientText(view.locale, "account.page.toolAccounts.assignHistory", "Assign recruitment history"),
+          onClick: () => { if (this.toolAccount) void this.assignHistory(this.toolAccount); },
+        }), view);
+      else clearAppBarActions("gacha-history-assignment");
+    }
+    view.accounts = visible.map((row) => {
       let first = Infinity,
         last = -Infinity;
       for (const history of row.histories ?? [row.snapshot])

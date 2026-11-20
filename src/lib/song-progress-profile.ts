@@ -37,17 +37,18 @@ export function songProgressProfile(input: {
   };
 }
 
-const keyFor = (server: string, owner: string | null) => `haneoka.song-progress-identity.v1.${server}.${owner ?? "local"}`;
+const keyFor = (server: string, owner: string | null, accountId?: string) =>
+  `haneoka.song-progress-identity.v1.${server}.${owner ?? "local"}${accountId ? `.${accountId}` : ""}`;
 
-export function saveSongProgressProfile(server: string, owner: string | null, profile?: SongProgressProfile) {
+export function saveSongProgressProfile(server: string, owner: string | null, profile?: SongProgressProfile, accountId?: string) {
   try {
-    if (profile && Object.values(profile).some(Boolean)) localStorage.setItem(keyFor(server, owner), JSON.stringify(profile));
-    else localStorage.removeItem(keyFor(server, owner));
+    if (profile && Object.values(profile).some(Boolean)) localStorage.setItem(keyFor(server, owner, accountId), JSON.stringify(profile));
+    else localStorage.removeItem(keyFor(server, owner, accountId));
   } catch { /* The account can also be resolved on export. */ }
 }
 
-export function readSongProgressProfile(server: string, owner: string | null): SongProgressProfile {
+export function readSongProgressProfile(server: string, owner: string | null, accountId?: string): SongProgressProfile {
   try {
-    return songProgressProfile(JSON.parse(localStorage.getItem(keyFor(server, owner)) || "{}") ?? {});
+    return songProgressProfile(JSON.parse(localStorage.getItem(keyFor(server, owner, accountId)) || "{}") ?? {});
   } catch { return songProgressProfile({}); }
 }

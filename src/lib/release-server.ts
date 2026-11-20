@@ -29,14 +29,12 @@ export function normalizeReleaseServer(value: unknown): ReleaseServer {
 
 /** The global selection stays formal while an entity keeps its own source. */
 export function readSelectedReleaseServer(): ReleaseServer {
-  const routeServer =
-    typeof location === "undefined" ? undefined : releaseServerFromPath(navigationDocumentUrl().pathname);
+  const url = typeof location === "undefined" ? undefined : navigationDocumentUrl();
+  const routeServer = url && releaseServerFromPath(url.pathname);
   if (routeServer) return writeReleaseServer(routeServer);
-  try {
-    const queryServer =
-      typeof location === "undefined" ? undefined : navigationDocumentUrl().searchParams.get("server");
-    if (isReleaseServer(queryServer)) return writeReleaseServer(queryServer);
-  } catch {}
+  const boxHandoff = url?.pathname.endsWith("/team-builder/") && url.searchParams.get("appBox") === "1";
+  const queryServer = url?.searchParams.get("server");
+  if (!boxHandoff && isReleaseServer(queryServer)) return writeReleaseServer(queryServer);
   try {
     const stored = localStorage.getItem(KEY);
     const current = normalizeReleaseServer(stored ?? synchronizedServer ?? savedServerCookie());

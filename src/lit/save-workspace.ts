@@ -298,6 +298,19 @@ export class SaveWorkspace extends LitElement {
   private team(record: StoredSave) {
     void this.run(async () => {
       const { player, ...snapshot } = record.snapshot;
+      const uid = typeof player._profileId === "string" || typeof player._profileId === "number" ? String(player._profileId) : record.profile?.uid;
+      let accountId: string | undefined;
+      if (uid) {
+        const { captureGameToolSave, refreshGameToolAccounts } = await import("../lib/game-tool-account-store");
+        await refreshGameToolAccounts();
+        const account = await captureGameToolSave({
+          key: `${snapshot.server}-${uid}`, profileId: uid, server: snapshot.server,
+          name: record.profile?.name || record.label, region: record.profile?.region ?? null,
+          rank: Number(record.profile?.rank) || null, savedAt: snapshot.savedAt ? Date.parse(snapshot.savedAt) : null,
+          favoriteCardId: Number(player._favoriteMemberCardId) || null,
+        }, "team");
+        accountId = account?.id;
+      }
       const box = Object.fromEntries(
         ["_memberCards", "_supportCards", "_characters", "_bandItems"].flatMap((key) =>
           player[key] === undefined ? [] : [[key, player[key]]],
@@ -305,10 +318,10 @@ export class SaveWorkspace extends LitElement {
       );
       sessionStorage.setItem(
         "haneoka:pending-save-box",
-        JSON.stringify({ id: record.id, server: snapshot.server, text: JSON.stringify({ ...snapshot, player: box }) }),
+        JSON.stringify({ id: record.id, server: snapshot.server, accountId, text: JSON.stringify({ ...snapshot, player: box }) }),
       );
       location.assign(
-        `/${this.locale}/team-builder/?server=${snapshot.server}&tab=box&saveImport=${encodeURIComponent(record.id)}`,
+        `/${this.locale}/team-builder/?server=${snapshot.server}&tab=box&saveImport=${encodeURIComponent(record.id)}${accountId ? `&appBox=1&gameAccount=${accountId}` : ""}`,
       );
     });
   }

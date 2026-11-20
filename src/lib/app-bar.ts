@@ -172,11 +172,22 @@ function searchContent(options: AppBarSearchOptions, inputId: string, expanded: 
 }
 
 /** Renders (or re-renders) this owner's actions into the app bar. */
-export function setAppBarActions(owner: string, content: TemplateResult, context?: object) {
-  if (staticAppBar) { staticAppBar.actions.set(owner, content); return; }
+export function setAppBarActions(owner: string, content: TemplateResult, context?: object, position?: "leading") {
+  if (staticAppBar) {
+    if (position === "leading") {
+      staticAppBar.actions.delete(owner);
+      staticAppBar.actions = new Map([[owner, content], ...staticAppBar.actions]);
+    } else staticAppBar.actions.set(owner, content);
+    return;
+  }
   if (context && "isConnected" in context && context.isConnected === false) return;
   const node = container(owner, true);
-  if (node) render(content, node, { host: context });
+  if (!node) return;
+  if (position === "leading") {
+    const player = node.parentElement?.querySelector(":scope > [data-app-bar-player]");
+    if (player && player.nextElementSibling !== node) player.after(node);
+  }
+  render(content, node, { host: context });
 }
 
 /** Renders an entity's non-interactive identity marks between Back and title. */

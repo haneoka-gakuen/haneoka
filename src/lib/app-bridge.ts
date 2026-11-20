@@ -13,7 +13,7 @@ export interface AppMethods {
   /** Gacha history read from the game server, as companion files (`{key}.json`). */
   gachaHistory: {
     args: { key?: string; account?: string };
-    result: { files: { name: string; text: string }[] } | null;
+    result: { key?: string; files: { name: string; text: string }[] } | null;
   };
   /** Provider sign-in in the system browser; the page exchanges the code for its session. */
   signIn: { args: { provider: string }; result: { code: string; verifier: string } | null };
@@ -25,17 +25,18 @@ export interface AppMethods {
   /** The app's save reading: Shizuku, game folder, USB, backups or files. */
   addGameAccount: { args: { fromAccount?: boolean }; result: null };
   saveImportOptions: { args: Partial<SaveImportOptions>; result: SaveImportOptions };
-  saveImportJobs: { args: Record<string, never>; result: SaveImportJob[] };
+  saveImportOwner: { args: { owner: string | null }; result: null };
+  saveImportJobs: { args: { accountScoped?: boolean }; result: SaveImportJob[] };
   prepareSaveImport: { args: { id: string; action: SaveImportAction }; result: unknown };
   completeSaveImport: { args: { id: string; action: SaveImportAction }; result: null };
   /** Gacha history the app's save page read from the game server, taken once. */
-  pendingGachaHistory: { args: Record<string, never>; result: { files: { name: string; text: string }[] } | null };
+  pendingGachaHistory: { args: Record<string, never>; result: { key?: string; files: { name: string; text: string }[] } | null };
   /** Clear marks and lossless mission counters from a chosen save; key also identifies older marks-only replies. */
   songProgress: { args: { server: string; key?: string }; result: AppSongProgress | null };
   /** Song progress the app's save page sent here, taken once. */
   pendingSongProgress: { args: Record<string, never>; result: AppSongProgress | null };
   /** A save sent to the team builder from the app's save page, taken once. */
-  pendingBoxImport: { args: Record<string, never>; result: { server: string; text: string } | null };
+  pendingBoxImport: { args: Record<string, never>; result: AppBoxImport | null };
   /** `saveSourcesV1`: where this device can read game saves. */
   saveSources: { args: Record<string, never>; result: { sources: SaveSource[]; releases: string[] } };
   /** Picked files, or a picked folder; null when the reader backs out. */
@@ -66,14 +67,22 @@ export interface AppMethods {
 }
 
 export type SaveSource = "files" | "folder" | "adb" | "iosBackup" | "shizuku" | "gameFolder";
-export type SaveImportAction = "team" | "songs" | "history" | "link";
+export type SaveImportAction = "team" | "songs" | "history" | "link" | "save";
 export type SaveImportOptions = Record<SaveImportAction, boolean>;
-export const DEFAULT_SAVE_IMPORT: SaveImportOptions = { team: true, songs: true, history: true, link: true };
+export const DEFAULT_SAVE_IMPORT: SaveImportOptions = { team: true, songs: true, history: true, link: true, save: true };
 export interface SaveImportJob {
   id: string;
   key: string;
   server: "jp" | "intl";
   actions: SaveImportAction[];
+  accountScoped?: boolean;
+  owner?: string | null;
+}
+
+export interface AppBoxImport {
+  server: SaveImportJob["server"];
+  key?: string;
+  text: string;
 }
 
 export interface AppSongProgress {
@@ -110,6 +119,7 @@ export interface DeviceSave {
   profileId: string;
   region: string | null;
   rank: number | null;
+  favoriteCardId?: number | null;
   savedAt: number | null;
   server?: string | null;
   canRefresh?: boolean;

@@ -299,12 +299,6 @@ export function renderArenaTab(host: TeamBuilder) {
       <section class="surface stack" id="tb-arena-rules" data-tb-field tabindex="-1">
         ${sectionHeading({ icon: "swords", label: host.t("arena.tab", "GEKISO Arena") })}
         ${choiceField({
-          type: "buttons",
-          label: host.t("arena.server", "Server"), value: host.server,
-          options: ["jp", "intl"].map(server => ({value: server, label: host.t(`arena.${server}`, server.toUpperCase())})),
-          onSelect: server => void host.switchServer(server),
-        })}
-        ${choiceField({
           type: "select",
           label: host.t("arena.league", "League"), value: String(draft.leagueId),
           options: [1,2,3,4,5].map(id => ({value: String(id), label: catalog.bandName(id),

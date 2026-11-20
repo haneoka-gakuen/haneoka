@@ -318,6 +318,9 @@ const gameAccounts = async (request: Request, env: Env, url: URL): Promise<Respo
   if (!session?.user?.id) return error(401, "unauthenticated", "Sign in first");
   const userId = session.user.id;
   const rest = url.pathname.slice(GAME_ACCOUNTS_PATH.length).split("/").filter(Boolean);
+  const expectedUser = request.headers.get("X-Haneoka-Expected-User");
+  if (expectedUser !== null && expectedUser !== userId)
+    return error(409, "account_changed", "The signed-in account changed");
   const now = Date.now();
   if (request.method === "GET" && !rest.length) return json({ accounts: await listGameAccounts(env, userId) });
   if (request.method === "DELETE" && rest.length === 2) {

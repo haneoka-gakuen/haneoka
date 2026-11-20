@@ -1,0 +1,61 @@
+@layer pages {
+  game-tool-account-picker { display: block; min-inline-size: 0; }
+  .tool-account__trigger {
+    display: inline-flex; align-items: center; gap: 6px; padding-inline: 10px 8px;
+    max-inline-size: min(10rem, 31vw); min-inline-size: 44px;
+  }
+  .tool-account__trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-account__trigger img, .tool-account__detail img {
+    inline-size: 17px; block-size: 17px; flex: none; border-radius: 50%;
+  }
+  .tool-account__dialog { inline-size: min(26rem, calc(100% - 24px)); }
+  .tool-account__header, .tool-account__header h2, .tool-account__management h2 {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tool-account__header { justify-content: space-between; }
+  .tool-account__rows { display: grid; gap: 8px; min-inline-size: 0; }
+  .tool-account__card {
+    position: relative; isolation: isolate; overflow: hidden;
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    inline-size: 100%; min-block-size: 82px; padding: 11px 12px; text-align: start;
+    border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface);
+    font: inherit;
+  }
+  button.tool-account__card { cursor: pointer; }
+  button.tool-account__card:hover, .tool-account__card[aria-pressed="true"] {
+    border-color: var(--md-sys-color-primary); background: var(--md-sys-color-surface-container-highest);
+  }
+  .tool-account__art {
+    position: absolute; inset-block: 0; inset-inline-end: 0; z-index: -1;
+    inline-size: 65%; block-size: 100%; object-fit: cover; object-position: center 33%;
+    opacity: .5; mask-image: linear-gradient(to right, transparent, currentColor 92%);
+  }
+  .tool-account__rank {
+    display: grid; place-items: center; position: relative; inline-size: 52px; aspect-ratio: 1;
+    color: var(--md-sys-color-on-primary-container); text-align: center;
+  }
+  .tool-account__rank > svg:first-child {
+    position: absolute; inset: 0; inline-size: 100%; block-size: 100%;
+    fill: var(--md-sys-color-primary-container); z-index: -1;
+  }
+  .tool-account__rank > span { display: grid; line-height: 1; gap: 2px; }
+  .tool-account__rank small { font-size: 9px; font-weight: 650; letter-spacing: .055em; }
+  .tool-account__rank strong { font-size: 19px; font-variant-numeric: tabular-nums; }
+  .tool-account__identity { display: grid; gap: 2px; min-inline-size: 0; }
+  .tool-account__name {
+    font-size: var(--md-sys-typescale-title-small-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tool-account__detail { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
+  .tool-account__detail img { inline-size: 14px; block-size: 14px; }
+  .tool-account__select { color: var(--md-sys-color-primary); }
+  .tool-account__links { display: flex; flex-wrap: wrap; gap: 2px; }
+  .tool-account__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; }
+  .tool-account__management { padding: 12px; }
+  @media (max-width: 480px) {
+    .tool-account__trigger { max-inline-size: min(7.25rem, 28vw); }
+  }
+  @media (min-width: 760px) {
+    .tool-account__management .tool-account__rows { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  }
+}

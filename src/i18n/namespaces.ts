@@ -61,7 +61,7 @@ export type MainI18nNamespace = (typeof I18N_NAMESPACES)[number];
 
 /** Explicit semantic domains; feature payloads never inject unrelated scalar leaves. */
 const namespaceRootKeys: Readonly<Record<MainI18nNamespace, readonly string[]>> = {
-  common: ["common", "navigation", "settings", "media.audio", "media.images.actions", "media.capture", "catalog.bands.names", "community.page.forums", "account.page.openSaveImport", "account.page.saveImportGuide"],
+  common: ["common", "navigation", "settings", "media.audio", "media.images.actions", "media.capture", "catalog.bands.names", "community.page.forums", "account.page.openSaveImport", "account.page.saveImportGuide", "account.page.toolAccounts"],
   catalog: ["catalog", "tools.playerProfile", "editors.chart.labels.notes", "editors.chart.labels.combo", "editors.chart.importGbp", "story.labels.eventStory", "story.labels.extraStory", "story.labels.anotherStory"],
   home: ["home"],
   download: ["download"],

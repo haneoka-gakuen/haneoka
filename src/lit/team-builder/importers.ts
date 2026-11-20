@@ -23,7 +23,8 @@ import { selectionPane } from "../ui/selection-pane";
 import type { TeamBuilder } from "../team-builder";
 import { ANDROID_CHANNELS, readAndroidFiles } from "@haneoka/game-data-exporter";
 import { prepareScreenshot, FULL_SCREENSHOT, type ScreenshotCrop } from "../../lib/team-builder/screenshot-image";
-import { appCall, appSaveImportHref, inApp } from "../../lib/app-bridge";
+import { appSaveImportHref, inApp, type AppBoxImport } from "../../lib/app-bridge";
+import { navigationDocumentUrl } from "../../lib/document-url";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -699,8 +700,8 @@ export class ImportController {
   }
 
   /** A local or native save opens the existing review; only confirmation consumes the local handoff. */
-  async takePending() {
-    const saveId = new URL(location.href).searchParams.get("saveImport");
+  async takePending(appImport: AppBoxImport | null) {
+    const saveId = navigationDocumentUrl().searchParams.get("saveImport");
     if (saveId) {
       this.openBox();
       try {
@@ -708,7 +709,8 @@ export class ImportController {
         if (!raw) throw new BoxImportError("box_no_player");
         const pending = JSON.parse(raw);
         if (pending.id !== saveId || typeof pending.text !== "string") throw new BoxImportError("box_no_player");
-        if (pending.server !== this.box?.server) throw new BoxImportError("box_incompatible_server");
+        if (pending.server !== this.box?.server || pending.accountId && pending.accountId !== this.host.gameAccount?.id)
+          throw new BoxImportError("box_incompatible_server");
         await this.parse({ text: pending.text });
       } catch (error) {
         if (this.box)
@@ -718,10 +720,15 @@ export class ImportController {
       return;
     }
 
-    const pending = await appCall("pendingBoxImport", {}).catch(() => null);
-    if (!pending) return;
+    if (!appImport) return;
     this.openBox();
-    if (this.box) await this.parse({ text: pending.text });
+    if (!this.box) return;
+    if (appImport.server !== this.box.server) {
+      this.box = { ...this.box, error: "box_incompatible_server" };
+      this.host.requestUpdate();
+      return;
+    }
+    await this.parse({ text: appImport.text });
   }
 
   render(): TemplateResult | typeof nothing {
@@ -730,10 +737,11 @@ export class ImportController {
       const state = this.box;
       const sourceServer = state.candidates.find((candidate) => candidate.id === state.selectedCandidateId)?.declaredIdentity?.server;
       const serverLabel = (server: string) => this.text(`servers.${server}`, server);
+      const account = this.host.gameAccount;
       return renderBoxImportDialog(
         {
           ...state,
-          serverLabel: serverLabel(state.server!),
+          serverLabel: [serverLabel(state.server!), account?.name || (account?.uid ? `UID …${account.uid.slice(-4)}` : "")].filter(Boolean).join(" / "),
           sourceServerLabel: sourceServer && sourceServer !== state.server ? serverLabel(sourceServer) : undefined,
           error: state.error ? this.boxError(state.error) : null,
         },

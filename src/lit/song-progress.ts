@@ -13,6 +13,9 @@ import type { SongProgressRoster, RosterRatings } from "../lib/song-progress-ros
 import type { SongProgressImageReport } from "../lib/song-progress-image";
 import { formatDate } from "../lib/date-format";
 import { readSongProgressProfile, saveSongProgressProfile, songProgressProfile } from "../lib/song-progress-profile";
+import { isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "../lib/game-tool-accounts";
+import { captureGameToolSaveByKey, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, selectedGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
+import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
 import { GAME_REGION_NAMES } from "../lib/game-records";
 import { createPerformerRegistry, resolveSongPerformer, type SongPerformer } from "../lib/song-performer";
 import { resolveRelationshipText } from "../lib/localized-text";
@@ -112,16 +115,30 @@ export class SongProgress extends LitElement {
   private snapshot: BoxSnapshot | null = null;
   private unsubscribe?: () => void;
   private server: ReleaseServer = "intl";
+  private gameAccount?: GameToolAccount;
+  private get gameAccountId() {
+    return isGameToolAccountId(this.gameAccount?.id) ? this.gameAccount.id : undefined;
+  }
+  private gameAccountOwner: string | null = null;
+  private gameAccountsChanged = () => {
+    const current = this.gameAccount && getGameToolAccount(this.gameAccount.id, "songs");
+    if (this.gameAccountId && (!current || this.gameAccountOwner !== gameToolOwner()))
+      void this.openGameToolAccount(legacyToolAccount(this.server === "jp" ? "jp" : "intl", "songs"));
+    else if (current) this.gameAccount = current;
+    this.renderStaticChrome();
+    this.requestUpdate();
+  };
   private counts = new ProgressCounts(this, {
     locale: () => this.locale,
     server: () => this.server as "jp" | "intl",
+    uid: () => this.gameAccount?.uid,
     text: (key, fallback) => this.text(key, fallback),
     write: changes => this.writeProgress(changes),
     marks: player => {
       const marks = saveClearMarks(player);
       return marks === null ? [] : this.markChanges(marks);
     },
-    profile: account => saveSongProgressProfile(this.server, this.snapshot?.owner ?? null, account),
+    profile: account => saveSongProgressProfile(this.server, this.snapshot?.owner ?? null, account, this.gameAccountId),
     difficulties: song => (this.songSources[String(song)]?.difficulty as Row[] ?? [])
       .filter(row => Number(row.difficulty) <= 4 && contentPublished(row))
       .map(row => Number(row.difficulty)),
@@ -149,6 +166,7 @@ export class SongProgress extends LitElement {
       this.requestUpdate();
     });
     this.locale = preferredLocale(this.locale);
+    window.addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     if (payload) void this.updateComplete.then(() => this.start());
     else this.start();
   }
@@ -193,6 +211,10 @@ export class SongProgress extends LitElement {
       label: uiText(this.locale, "common.actions.search"),
       onInput: value => { this.query = value.trim().toLowerCase(); },
     });
+    setGameToolAccountAction({
+      tool: "songs", locale: this.locale, account: this.gameAccount,
+      onSelect: account => void this.openGameToolAccount(account),
+    }, this);
     setAppBarActions(OWNER, html`
       ${this.counts.renderImportMenu()}
       ${iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => void this.openExportDialog() })}
@@ -221,7 +243,7 @@ export class SongProgress extends LitElement {
     if (progress.key && inApp()) {
       const account = (await appCall("gameAccounts", {}).catch(() => [])).find((save) => save.key === progress.key);
       if (account && store === this.store && owner === this.snapshot?.owner && this.isConnected) {
-        saveSongProgressProfile(this.server, owner ?? null, songProgressProfile({ ...account, uid: account.profileId }));
+        saveSongProgressProfile(this.server, owner ?? null, songProgressProfile({ ...account, uid: account.profileId }), this.gameAccountId);
       }
     }
     if (!counts.length) {
@@ -235,16 +257,44 @@ export class SongProgress extends LitElement {
     }
     snackbar(this.text("imported", "Imported {count} charts").replace("{count}", String(changes.length)));
   }
-  private start() {
+  private async start() {
     if (!this.isConnected) return;
-    this.server = currentReleaseServer() as ReleaseServer;
+    const server = currentReleaseServer() === "jp" ? "jp" : "intl";
     const params = new URLSearchParams(location.search);
     const difficulty = DIFFICULTIES.indexOf(params.get("difficulty") as (typeof DIFFICULTIES)[number]);
     if (difficulty >= 0) this.difficulty = difficulty === 4 ? 5 : difficulty;
+    const requested = params.get("gameAccount");
+    if (requested && !getGameToolAccount(requested, "songs")) await refreshGameToolAccounts();
+    const pending = inApp() ? await appCall("pendingSongProgress", {}).catch(() => null) : null;
+    const target = pending?.key
+      ? await captureGameToolSaveByKey(pending.key, "songs").catch(() => undefined)
+      : pending?.server === "jp" || pending?.server === "intl" ? legacyToolAccount(pending.server, "songs")
+      : selectedGameToolAccount("songs", server, requested);
+    if (!this.isConnected) return;
+    if (target && (pending || requested === target.id)) selectGameToolAccount(target);
+    await this.openGameToolAccount(target ?? selectedGameToolAccount("songs", server, requested));
+    if (pending && target && this.gameAccount?.id === target.id && this.phase === "ready") await this.importSave(pending);
+  }
+  private async openGameToolAccount(account: GameToolAccount) {
+    const changedServer = this.server !== account.server;
+    this.gameAccount = account;
+    this.gameAccountOwner = gameToolOwner();
+    this.server = account.server;
+    this.ratingDialog = false;
+    this.profileLoading = false;
+    this.unsubscribe?.();
+    this.store?.dispose();
+    this.counts.dispose();
+    this.snapshot = null;
+    if (changedServer) {
+      this.roster?.dispose();
+      this.roster = undefined;
+      this.phase = "loading";
+    }
     this.renderStaticChrome();
-    this.store = new BoxStore({ server: this.server });
+    this.store = new BoxStore({ server: this.server, accountId: this.gameAccountId, accountOwner: this.gameAccountOwner });
     this.unsubscribe = this.store.subscribe((snapshot) => {
-      const signature = JSON.stringify([snapshot.owner, Object.entries(snapshot.entries)
+      const signature = JSON.stringify([account.id, snapshot.owner, Object.entries(snapshot.entries)
         .filter(([key]) => /^[ms]\.\d+\.(own|lvl|awk|rnk|sk)$/u.test(key))
         .sort(([a],[b]) => a.localeCompare(b)).map(([key,row]) => [key,row.v])]);
       if (signature !== this.rosterSignature) {
@@ -262,18 +312,15 @@ export class SongProgress extends LitElement {
       this.requestUpdate();
     });
     this.storeReady = this.store.start();
-    void this.load().then(async () => {
-      // Progress the app's save page sent here.
-      if (!inApp() || !this.isConnected || this.phase !== "ready") return;
-      const pending = await appCall("pendingSongProgress", {}).catch(() => null);
-      if (pending?.server && pending.server !== this.server) { snackbar(this.text("counts.wrongServer", "Save region does not match")); return; }
-      if (pending) await this.importSave(pending);
-    });
+    if (changedServer || this.phase !== "ready") await this.load();
+    this.requestUpdate();
   }
   disconnectedCallback() {
+    window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     this.disposeSongDisplay?.();
     clearAppBarSearch(OWNER);
     clearAppBarActions(OWNER);
+    clearGameToolAccountAction("songs");
     this.unsubscribe?.();
     ++this.ratingGeneration;
     this.roster?.dispose();
@@ -287,22 +334,24 @@ export class SongProgress extends LitElement {
     return clientText(this.locale, `catalog.songProgress.${key}`, fallback);
   }
   private async load() {
+    const server = this.server;
     if (this.pageData?.variants[this.server]) { this.preparePage(this.pageData, this.server); return; }
     const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner" });
     try {
       const read = <T extends Record<string, unknown>>(resource: string) =>
-        fetchJson<T>(catalogUrl(resource, "", this.server));
+        fetchJson<T>(catalogUrl(resource, "", server));
       const [songs, bands, marks] = await Promise.all([
         read<Record<string, Row>>("songs"),
         read("bands").catch(() => ({})),
         read("ui-marks").catch(() => ({})),
       ]);
+      if (server !== this.server || !this.isConnected) { progress.finish(); return; }
       this.fallbackVisuals = { bands, marks, characters: {} };
       this.applySongs(songs);
       this.phase = "ready";
       progress.finish();
     } catch (error) {
-      this.phase = "error";
+      if (server === this.server && this.isConnected) this.phase = "error";
       progress.fail(error);
     }
   }
@@ -355,7 +404,7 @@ export class SongProgress extends LitElement {
         });
       });
   }
-  private profileKey() { return `haneoka.song-progress-profile.v1.${this.server}.${this.snapshot?.owner ?? "local"}`; }
+  private profileKey() { return `haneoka.song-progress-profile.v1.${this.server}.${this.snapshot?.owner ?? "local"}${this.gameAccountId ? `.${this.gameAccountId}` : ""}`; }
   private loadProfile() {
     this.profile = { name: "", uid: "", rank: "", region: "" };
     try {
@@ -380,16 +429,26 @@ export class SongProgress extends LitElement {
   private async calculateRoster() {
     if (!this.snapshot || this.calculating) return;
     const generation = ++this.ratingGeneration;
-    const snapshot = this.snapshot;
-    const owned = Object.entries(snapshot.entries).filter(([key,row]) => /^[ms]\.\d+\.own$/u.test(key) && row.v === true);
-    if (owned.filter(([key]) => key.startsWith("m.")).length < 5 || owned.filter(([key]) => key.startsWith("s.")).length < 5) {
-      this.rosterRatings = {current:null,potential:null,incomplete:false};
-      this.requestUpdate();
-      return;
-    }
+    let snapshot = this.snapshot;
     this.calculating = true;
     this.ratingError = "";
     try {
+      const gameAccount = this.gameAccount;
+      const matching = gameAccount?.uid && gameToolAccounts("team").find(account =>
+        account.uid === gameAccount.uid && account.server === gameAccount.server);
+      if (matching) {
+        const cards = new BoxStore({ server: matching.server, accountId: matching.id, accountOwner: this.gameAccountOwner });
+        try {
+          await cards.start();
+          if (generation !== this.ratingGeneration) return;
+          snapshot = cards.snapshot;
+        } finally { cards.dispose(); }
+      }
+      const owned = Object.entries(snapshot.entries).filter(([key, row]) => /^[ms]\.\d+\.own$/u.test(key) && row.v === true);
+      if (owned.filter(([key]) => key.startsWith("m.")).length < 5 || owned.filter(([key]) => key.startsWith("s.")).length < 5) {
+        this.rosterRatings = { current: null, potential: null, incomplete: false };
+        return;
+      }
       const { SongProgressRoster } = await import("../lib/song-progress-roster");
       if (generation !== this.ratingGeneration) return;
       this.roster ??= new SongProgressRoster();
@@ -495,8 +554,10 @@ export class SongProgress extends LitElement {
     await this.storeReady;
     const owner = this.snapshot?.owner ?? null;
     const server = this.server;
-    let actual = readSongProgressProfile(server, owner);
-    if (!Object.values(actual).every(Boolean)) {
+    const scope = this.gameAccount;
+    const scopeId = this.gameAccountId;
+    let actual = scopeId && scope?.uid ? songProgressProfile(scope) : readSongProgressProfile(server, owner, scopeId);
+    if (!scopeId && !Object.values(actual).every(Boolean)) {
       const [deviceSaves, linked] = await Promise.all([
         inApp() ? appCall("gameAccounts", {}).catch(() => []) : Promise.resolve([]),
         owner ? fetchJson<{ accounts: Row[] }>("/api/v1/account/game-accounts", {
@@ -526,7 +587,7 @@ export class SongProgress extends LitElement {
       };
     }
     this.profileLoading = false;
-    if (server === this.server && owner === (this.snapshot?.owner ?? null)) this.actualProfile = actual;
+    if (server === this.server && scopeId === this.gameAccountId && owner === (this.snapshot?.owner ?? null)) this.actualProfile = actual;
     else this.actualProfile = songProgressProfile({});
     this.requestUpdate();
   }

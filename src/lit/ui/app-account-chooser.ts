@@ -9,7 +9,7 @@ import { formatDate } from "../../lib/date-format";
 import type { DeviceSave } from "../../lib/app-bridge";
 import { modal } from "./modal";
 
-export function chooseAppAccount(locale: string, accounts: DeviceSave[]): Promise<string | null> {
+export function chooseAppAccount(locale: string, accounts: DeviceSave[], title?: string): Promise<string | null> {
   const text = (key: string, fallback: string) => clientText(locale, `common.appAccounts.${key}`, fallback);
   const host = document.createElement("div");
   document.body.append(host);
@@ -23,7 +23,7 @@ export function chooseAppAccount(locale: string, accounts: DeviceSave[]): Promis
       html`
         <dialog class="dialog" ${modal(() => done(null))}>
           <div class="dialog__surface">
-            <header class="dialog__header"><h2>${text("choose", "Choose a game account")}</h2></header>
+            <header class="dialog__header"><h2>${title ?? text("choose", "Choose a game account")}</h2></header>
             <div class="dialog__body">
               <ul class="detail-object-list" role="list">
                 ${accounts.map(

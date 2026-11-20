@@ -35,6 +35,8 @@ export interface StorageLike {
 }
 export interface BoxStoreOptions {
   server: string;
+  accountId?: string;
+  accountOwner?: string | null;
   storage?: StorageLike;
   fetcher?: typeof fetch;
   /** Debounce before sending local edits. */
@@ -43,8 +45,8 @@ export interface BoxStoreOptions {
   pullIntervalMs?: number;
 }
 
-const replicaKey = (server: string, owner: string | null) =>
-  `haneoka:team-box:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(server)}`;
+const replicaKey = (server: string, owner: string | null, accountId?: string) =>
+  `haneoka:team-box:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(server)}${accountId ? `:${accountId}` : ""}`;
 const CLIENT_KEY = "haneoka:team-box:client";
 const emptyReplica = (): Replica => ({ schema: "haneoka-team-box-replica-v1", revision: 0, entries: {}, outbox: [], migrated: false });
 const BACKOFF = [1500, 4000, 10000, 30000, 60000];
@@ -82,6 +84,12 @@ export class BoxStore {
     }
     this.client = client;
   }
+  private boxUrl(since?: number) {
+    const query = new URLSearchParams();
+    if (this.options.accountId) query.set("gameAccount", this.options.accountId);
+    if (since !== undefined) query.set("since", String(since));
+    return `/api/v1/team-box/${encodeURIComponent(this.options.server)}${query.size ? `?${query}` : ""}`;
+  }
 
   get snapshot(): BoxSnapshot {
     return {
@@ -109,8 +117,9 @@ export class BoxStore {
     if (typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel("haneoka-team-box");
       this.channel.onmessage = (event: MessageEvent) => {
-        const message = event.data as { server?: string; owner?: string | null };
-        if (message?.server === this.options.server && message.owner === this.owner) this.reload();
+        const message = event.data as { server?: string; owner?: string | null; accountId?: string };
+        if (message?.server === this.options.server && message.owner === this.owner && message.accountId === this.options.accountId)
+          this.reload();
       };
     }
     if (typeof document !== "undefined") {
@@ -173,6 +182,37 @@ export class BoxStore {
     this.scheduleFlush();
   }
 
+  /** A background save updates one account atomically, after the source version is registered. */
+  async applyGameSave(changes: readonly { key: string; value: BoxValue }[], saveTime: number): Promise<boolean> {
+    if (!this.options.accountId || this.disposed || this.owner === undefined) return false;
+    const owner = this.owner;
+    if (!owner) { this.set(changes); return true; }
+    if (!await this.flushPending() || this.disposed || this.owner !== owner) return false;
+    const since = this.replica.revision;
+    const ops = changes.filter(({ key, value }) => JSON.stringify(this.value(key)) !== JSON.stringify(value))
+      .map(({ key, value }) => ({ k: key, v: value, t: this.clock.next(), c: this.client }));
+    if (!ops.length) return true;
+    try {
+      const response = await this.fetcher(this.boxUrl(), {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "x-haneoka-expected-user": owner, "content-type": "application/json" },
+        body: JSON.stringify({ since, ops, saveTime }),
+      });
+      if (this.disposed || this.owner !== owner) return false;
+      if (!response.ok) {
+        if (response.status !== 409) return false;
+        const result = await response.json() as { error?: { code?: string } };
+        return result.error?.code === "stale_game_save";
+      }
+      const body = await response.json() as { revision: number; entries: Record<string, BoxEntry> };
+      if (this.disposed || this.owner !== owner) return false;
+      this.receive(body, since);
+      this.persist();
+      this.changed();
+      return true;
+    } catch { return false; }
+  }
+
   /** Re-checks the session (rate limited) and syncs both ways. */
   async refresh(): Promise<void> {
     if (!(await this.checkSession(false))) await this.pull();
@@ -180,6 +220,7 @@ export class BoxStore {
   }
 
   private readCachedOwner(): string | null {
+    if (this.options.accountId) return this.options.accountOwner ?? null;
     const cached = this.storage.getItem("haneoka:team-box:owner");
     return cached ? cached : null;
   }
@@ -201,9 +242,13 @@ export class BoxStore {
       return false;
     }
     if (this.disposed) return false;
+    if (this.options.accountId && owner !== (this.options.accountOwner ?? null)) {
+      this.setStatus("signed-out");
+      return true;
+    }
     if (owner !== this.owner) this.useOwner(owner, true);
     if (owner) {
-      await this.migrateCloudOnce();
+      if (!this.options.accountId) await this.migrateCloudOnce();
       await this.pull();
       this.flushNow();
       return true;
@@ -224,12 +269,12 @@ export class BoxStore {
     this.replica = this.read(owner);
     for (const entry of Object.values(this.replica.entries)) this.clock.observe(entry.t);
     if (!this.replica.migrated) {
-      this.applyMigration(legacyOps(this.storage, this.options.server, owner, this.client));
+      if (!this.options.accountId) this.applyMigration(legacyOps(this.storage, this.options.server, owner, this.client));
       this.replica.migrated = true;
       this.persist();
     }
     // Signing in merges what was edited signed out; clocks decide every key.
-    if (owner && previous === null) {
+    if (!this.options.accountId && owner && previous === null) {
       const anonymous = this.read(null);
       const ops = Object.entries(anonymous.entries).map(([k, entry]) => ({ k, v: entry.v, t: entry.t, c: entry.c }));
       this.applyMigration(ops);
@@ -278,7 +323,7 @@ export class BoxStore {
 
   private read(owner: string | null): Replica {
     try {
-      const raw = this.storage.getItem(replicaKey(this.options.server, owner));
+      const raw = this.storage.getItem(replicaKey(this.options.server, owner, this.options.accountId));
       if (!raw) return emptyReplica();
       const value = JSON.parse(raw) as Replica;
       if (value?.schema !== "haneoka-team-box-replica-v1" || typeof value.entries !== "object") return emptyReplica();
@@ -291,8 +336,8 @@ export class BoxStore {
   private persist() {
     if (this.owner === undefined) return;
     try {
-      this.storage.setItem(replicaKey(this.options.server, this.owner), JSON.stringify(this.replica));
-      this.channel?.postMessage({ server: this.options.server, owner: this.owner });
+      this.storage.setItem(replicaKey(this.options.server, this.owner, this.options.accountId), JSON.stringify(this.replica));
+      this.channel?.postMessage({ server: this.options.server, owner: this.owner, accountId: this.options.accountId });
     } catch (error) {
       this.error = String(error);
     }
@@ -327,7 +372,7 @@ export class BoxStore {
     this.setStatus("syncing");
     const task = (async () => {
       try {
-        const response = await this.fetcher(`/api/v1/team-box/${encodeURIComponent(this.options.server)}`, {
+        const response = await this.fetcher(this.boxUrl(), {
           method: "POST",
           credentials: "same-origin",
           cache: "no-store",
@@ -410,7 +455,7 @@ export class BoxStore {
   private async pullReplica(owner: string, since: number): Promise<void> {
     try {
       const response = await this.fetcher(
-        `/api/v1/team-box/${encodeURIComponent(this.options.server)}?since=${since}`,
+        this.boxUrl(since),
         { credentials: "same-origin", cache: "no-store", headers: { accept: "application/json", "x-haneoka-expected-user": owner } },
       );
       if (owner !== this.owner || this.disposed) return;

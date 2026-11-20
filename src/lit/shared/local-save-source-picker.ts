@@ -7,11 +7,13 @@ import { icon } from "../ui/icon";
 import { modal } from "../ui/modal";
 import "../../styles/components/selection-pane.css";
 
-export function renderLocalSaveSourcePicker(options: {
+type SaveSource = GachaHistoryImportSource | "folder";
+export function renderLocalSaveSourcePicker<T extends SaveSource>(options: {
   locale: string;
   historyGuidance?: boolean;
-  sources: readonly GachaHistoryImportSource[];
-  onSelect: (source: GachaHistoryImportSource) => void;
+  title?: string;
+  sources: readonly T[];
+  onSelect: (source: T) => void;
   onClose: () => void;
 }) {
   const t = (key: string) => clientText(options.locale, `catalog.gachaHistory.${key}`, "");
@@ -19,14 +21,15 @@ export function renderLocalSaveSourcePicker(options: {
   const sources = {
     game: { label: accountImport ? clientText(options.locale, "account.page.openSaveImport", "Import a save in Account") : t("gameSource"), icon: icon("sports_esports") },
     saved: { label: t("savedSource"), icon: icon("account_circle") },
-    files: { label: t("filesSource"), icon: icon("folder_open") },
-    adb: { label: t("adbSource"), icon: icon("usb") },
+    files: { label: options.historyGuidance ? t("filesSource") : clientText(options.locale, "common.actions.import", "Import files"), icon: icon("upload_file") },
+    folder: { label: clientText(options.locale, "account.page.toolAccounts.folder", "Choose a folder"), icon: icon("folder_open") },
+    adb: { label: options.title ? clientText(options.locale, "account.page.toolAccounts.usbRead", "USB / ADB") : t("adbSource"), icon: icon("usb") },
   };
   return html`
-    <dialog class="selection-pane" aria-label=${t("importSource")} ${modal(options.onClose)}>
+    <dialog class="selection-pane" aria-label=${options.title ?? t("importSource")} ${modal(options.onClose)}>
       <header class="sheet__header">
-        <strong>${t("importSource")}</strong>
-        ${iconButton({ icon: "close", label: t("close"), onClick: options.onClose })}
+        <strong>${options.title ?? t("importSource")}</strong>
+        ${iconButton({ icon: "close", label: clientText(options.locale, "common.actions.close", "Close"), onClick: options.onClose })}
       </header>
       <div class="selection-pane__body">
         <ul class="list">

@@ -27,6 +27,7 @@ import { songProgressProfile, type SongProgressProfile } from "../lib/song-progr
 interface Options {
   locale(): string;
   server(): "jp" | "intl";
+  uid(): string | undefined;
   text(key: string, fallback: string): string;
   write(changes: CountChanges): void;
   marks(player: Record<string, unknown>): CountChanges;
@@ -47,7 +48,7 @@ export class ProgressCounts {
   sync(snapshot: BoxSnapshot) {
     for (const key of this.invalidFields) if (this.entries[key]?.v !== snapshot.entries[key]?.v) this.invalidFields.delete(key);
     this.entries = snapshot.entries;
-    const context = `${this.options.server()}:${snapshot.owner ?? "local"}`;
+    const context = `${this.options.server()}:${snapshot.owner ?? "local"}:${this.options.uid() ?? ""}`;
     if (context === this.context && !this.controller.signal.aborted) return;
     this.context = context;
     this.invalidFields.clear();
@@ -66,7 +67,9 @@ export class ProgressCounts {
     const context = this.context, controller = this.controller;
     this.busy = true; this.error = ""; this.changed();
     try {
-      const accounts = (await appCall("gameAccounts", {})).filter(account => !account.server || account.server === this.options.server());
+      const uid = this.options.uid();
+      const accounts = (await appCall("gameAccounts", {})).filter(account =>
+        (!account.server || account.server === this.options.server()) && (!uid || account.profileId === uid));
       const key = options.key ?? await chooseAppAccount(this.options.locale(), accounts);
       if (!key || this.controller !== controller || controller.signal.aborted) return false;
       const account = accounts.find(account => account.key === key);
@@ -102,6 +105,11 @@ export class ProgressCounts {
     finally { if (context === this.context && this.controller === controller) { this.busy = false; this.changed(); } }
   }
   private use(record: StoredSave) {
+    const uid = this.options.uid();
+    if (uid && record.profile?.uid !== uid) {
+      this.error = this.t("wrongServer", "Save account does not match"); this.changed();
+      return;
+    }
     const changes = countImportChanges(record.snapshot.player._missionCounters, record.label, record.snapshot.savedAt ?? record.importedAt);
     const marks = this.options.marks(record.snapshot.player);
     this.invalidFields.clear();
