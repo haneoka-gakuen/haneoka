@@ -17,7 +17,7 @@ import { historyObject, type HistorySnapshot } from "@haneoka/game-data-exporter
 import { gachaHistoryExpectation, gachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import { gachaTargetProgress, type GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import { cardRarityName } from "./card-rarity";
-import { compileGachaLuckRules, type GachaLuckRules, type GachaLuckLaw } from "./gacha-history-luck";
+import { compileGachaLuckRules, GACHA_RATE_KEYS, type GachaLuckRules, type GachaLuckLaw } from "./gacha-history-luck";
 
 export * from "@haneoka/game-data-exporter/gacha-history";
 export { mergeHistoryCollection } from "./gacha-history-merge";
@@ -319,9 +319,12 @@ export function historyBatchLuckLaw(
   draws: number,
 ): GachaLuckLaw | undefined {
   if (!catalog) return;
-  let compiled = catalog.luckRules ?? luckRules.get(catalog);
+  let compiled = luckRules.get(catalog);
   if (!compiled) {
-    compiled = compileGachaLuckRules(catalog.metadata);
+    const supplied = catalog.luckRules;
+    compiled = supplied && Object.values(supplied).every(pool => Object.values(pool).every(law => !law || law.rates))
+      ? supplied
+      : compileGachaLuckRules(catalog.metadata);
     luckRules.set(catalog, compiled);
   }
   const pool = compiled[poolId ?? ""];
@@ -334,9 +337,11 @@ export function historyBatchLuckLaw(
       return option.drawCount === (product.drawCount ?? draws);
     })
     .map(([, law]) => law);
-  return candidates.length && candidates.every((law) => law && law.key === candidates[0]?.key)
-    ? candidates[0]!
-    : undefined;
+  const first = candidates[0];
+  if (!first || !candidates.every((law) => law?.key === first.key)) return;
+  if (candidates.every((law) => GACHA_RATE_KEYS.every((key) => law?.rates?.[key] === first.rates?.[key])))
+    return first;
+  return { ...first, rates: undefined };
 }
 
 function historyBatchExpectation(

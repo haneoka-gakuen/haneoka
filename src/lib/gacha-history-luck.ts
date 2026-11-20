@@ -1,14 +1,22 @@
 // L3 — GEB
 // Input: Published pool weights, executed product guarantees and projected history.
-// Output: Joint SSR+/UP batch laws, conservative nine-tier ratings and coverage.
+// Output: Joint SSR+/UP batch laws, expected category rates and conservative nine-tier ratings.
 // Pos: [Map](L2-2.md); gacha history probability model shared by builds and its browser worker.
 // Effects/Dependencies: Pure calculations; polynomial products use bounded-error floating-point FFT for large histories.
-import { cardRarityAtLeast } from "./card-rarity";
+import { cardRarityAtLeast, cardRarityName } from "./card-rarity";
 import type { GachaHistoryBatch } from "./gacha-history-view";
 
 type Row = Record<string, unknown>;
 type Categories = [number, number, number];
 export type LuckTarget = "combined" | "high" | "pickup";
+export const emptyGachaRates = () => ({
+  high: 0, memberHigh: 0, supportHigh: 0, SSR: 0, BD: 0, EX: 0, SR: 0, R: 0, pickup: 0,
+});
+type GachaRates = ReturnType<typeof emptyGachaRates>;
+export type GachaRateKey = keyof GachaRates;
+export const GACHA_RATE_KEYS = Object.keys(emptyGachaRates()) as GachaRateKey[];
+type RateRarity = Exclude<GachaRateKey, "high" | "memberHigh" | "supportHigh" | "pickup">;
+
 export interface GachaLuckLaw {
   key: string;
   kind: "card" | "item";
@@ -17,10 +25,11 @@ export interface GachaLuckLaw {
   combined: number[];
   high: number[];
   pickup: number[];
+  rates?: GachaRates;
 }
 export type GachaLuckRules = Record<string, Record<string, GachaLuckLaw | null>>;
 export interface GachaLuckInput {
-  laws: Record<string, GachaLuckLaw>;
+  laws: Record<string, Omit<GachaLuckLaw, "rates">>;
   pools: Record<string, GachaLuckScope>;
 }
 export interface GachaLuckScope {
@@ -73,6 +82,16 @@ function project(values: Categories, target: LuckTarget): number[] {
   return target === "combined" ? values : target === "high" ? [values[0], values[1] + values[2]] : [values[0] + values[1], values[2]];
 }
 
+function addRateMass(rates: GachaRates, resource: number, rarity: number, pickup: boolean, mass: number) {
+  if (pickup) rates.pickup += mass;
+  if (resource !== 2 && resource !== 3) return;
+  rates[cardRarityName(rarity) as RateRarity] += mass;
+  if (HIGH.has(rarity)) {
+    rates.high += mass;
+    rates[resource === 2 ? "memberHigh" : "supportHigh"] += mass;
+  }
+}
+
 /** Keeps qualifying and nonqualifying outcomes joint with the UP bonus. */
 export function compileGachaLuckLaw(pool: Row, option: Row): GachaLuckLaw | null {
   const n = Number(option.drawCount), count = Number(option.guaranteedCount), rarity = Number(option.guaranteedRarity), type = Number(option.guaranteedType);
@@ -80,6 +99,7 @@ export function compileGachaLuckLaw(pool: Row, option: Row): GachaLuckLaw | null
     !Number.isSafeInteger(rarity) || rarity < 0 || ![1, 2, 3, 4].includes(type) || option.guaranteedNew !== false ||
     Number(pool.pickUpSelectCount ?? 0) > 0 || !Array.isArray(pool.rates)) return null;
   const ordinary: Categories = [0, 0, 0], eligible: Categories = [0, 0, 0], ineligible: Categories = [0, 0, 0];
+  const ordinaryRates = emptyGachaRates(), eligibleRates = emptyGachaRates();
   let total = 0, ensured = 0, cardMass = 0;
   for (const group of rows(pool.rates)) {
     const weight = Number(group.rate), prizes = rows(group.prizes), inner = prizes.reduce((v, p) => v + Number(p.rate), 0);
@@ -93,9 +113,13 @@ export function compileGachaLuckLaw(pool: Row, option: Row): GachaLuckLaw | null
       const high = card && HIGH.has(r), category = high ? prize.pickup ? 2 : 1 : 0;
       const qualifies = cardRarityAtLeast(r, rarity) && (type === 1 || type === 4 && card || type === resource);
       total += mass; ordinary[category] += mass;
+      addRateMass(ordinaryRates, resource, r, prize.pickup, mass);
       if (card) cardMass += mass;
       (qualifies ? eligible : ineligible)[category] += mass;
-      if (qualifies) ensured += mass;
+      if (qualifies) {
+        ensured += mass;
+        addRateMass(eligibleRates, resource, r, prize.pickup, mass);
+      }
     }
   }
   if (!(total > 0)) return null;
@@ -106,13 +130,30 @@ export function compileGachaLuckLaw(pool: Row, option: Row): GachaLuckLaw | null
   const rejected = total - ensured;
   const b = rejected > 1e-14 * total ? normalized(ineligible) as Categories : p;
   const q = Math.min(1, ensured / total), perDraw = !guaranteed;
-  const law = { key: "", kind: cardMass > 0 ? "card" : "item", count: perDraw ? 1 : n, perDraw } as GachaLuckLaw;
+  const qualifiers = guaranteed && pool.guaranteeRule === "redraw" ? smallPower([1 - q, q], n) : null;
+  // A redraw replaces only the missing qualifying draws, on average over all batches.
+  const replacementShare = !guaranteed ? 0 : (qualifiers
+    ? qualifiers.reduce((total, probability, qualified) => total + probability * Math.max(0, count - qualified), 0)
+    : count) / n;
+  const rates = emptyGachaRates();
+  for (const key of GACHA_RATE_KEYS) {
+    const ordinaryRate = ordinaryRates[key] / total;
+    if (replacementShare === 0) {
+      rates[key] = ordinaryRate;
+      continue;
+    }
+    const removedRate = qualifiers && rejected > 1e-14 * total
+      ? (ordinaryRates[key] - eligibleRates[key]) / rejected
+      : ordinaryRate;
+    rates[key] = Math.max(0, Math.min(1, ordinaryRate + replacementShare * (eligibleRates[key] / ensured - removedRate)));
+  }
+  const law = { key: "", kind: cardMass > 0 ? "card" : "item", count: perDraw ? 1 : n, perDraw, rates } as GachaLuckLaw;
   for (const target of TARGETS) {
     const normal = project(p, target), qualified = project(a, target), other = project(b, target);
     if (!guaranteed) law[target] = normal;
-    else if (pool.guaranteeRule === "slot") law[target] = smallProduct(smallPower(normal, n - count), smallPower(qualified, count));
+    else if (!qualifiers) law[target] = smallProduct(smallPower(normal, n - count), smallPower(qualified, count));
     else {
-      const qualifiers = smallPower([1 - q, q], n), out = Array<number>((target === "combined" ? 2 : 1) * n + 1).fill(0);
+      const out = Array<number>((target === "combined" ? 2 : 1) * n + 1).fill(0);
       for (let c = 0; c <= n; c++) {
         const kept = Math.max(c, count);
         const distribution = smallProduct(smallPower(qualified, kept), smallPower(other, n - kept));
@@ -135,19 +176,29 @@ export function compileGachaLuckRules(metadata: Row): GachaLuckRules {
 }
 
 const emptyScope = (): GachaLuckScope => ({ groups: {}, high: 0, pickup: 0, knownDraws: 0, unknownDraws: 0, itemDraws: 0 });
+export function comparableGachaLaw(batch: GachaHistoryBatch): GachaLuckLaw | undefined {
+  const { luckLaw: law, prizes } = batch;
+  if (law?.kind !== "card" || !law.perDraw && prizes.length !== law.count || prizes.some(prize => prize.kind === "unknown" ||
+    (prize.kind === "member" || prize.kind === "support") && (!HIGH.has(Number(prize.rarity)) && ![2, 3].includes(Number(prize.rarity)) ||
+      HIGH.has(Number(prize.rarity)) && typeof prize.pickup !== "boolean"))) return;
+  return law;
+}
+
 export function gachaLuckInput(batches: readonly GachaHistoryBatch[]): GachaLuckInput {
   const input: GachaLuckInput = { laws: Object.create(null), pools: Object.create(null) };
   for (const batch of batches) {
-    const scope = input.pools[batch.poolId] ??= emptyScope(), n = batch.prizes.length, law = batch.luckLaw;
-    if (law?.kind === "item") { scope.itemDraws += n; continue; }
-    if (!law || !law.perDraw && n !== law.count || batch.prizes.some(prize => prize.kind === "unknown" ||
-      (prize.kind === "member" || prize.kind === "support") && (!HIGH.has(Number(prize.rarity)) && ![2, 3].includes(Number(prize.rarity)) ||
-        HIGH.has(Number(prize.rarity)) && typeof prize.pickup !== "boolean"))) { scope.unknownDraws += n; continue; }
+    const scope = input.pools[batch.poolId] ??= emptyScope(), n = batch.prizes.length;
+    if (batch.luckLaw?.kind === "item") { scope.itemDraws += n; continue; }
+    const law = comparableGachaLaw(batch);
+    if (!law) { scope.unknownDraws += n; continue; }
     scope.knownDraws += n;
     for (const prize of batch.prizes) if ((prize.kind === "member" || prize.kind === "support") && HIGH.has(Number(prize.rarity))) {
       scope.high++; if (prize.pickup) scope.pickup++;
     }
-    input.laws[law.key] = law;
+    if (!input.laws[law.key]) {
+      const { rates: _rates, ...distribution } = law;
+      input.laws[law.key] = distribution;
+    }
     scope.groups[law.key] = (scope.groups[law.key] ?? 0) + (law.perDraw ? n : 1);
   }
   return input;

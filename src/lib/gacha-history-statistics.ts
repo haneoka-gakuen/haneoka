@@ -1,10 +1,11 @@
 // L3 — GEB
-// Input: Scoped draw records and published odds by pool.
-// Output: Cross-pool SSR+ streak and rate comparisons on matched samples.
+// Input: Scoped draw records, executed draw rules and published pool odds.
+// Output: Cross-pool SSR+ streak, adjusted overview rates and base per-pool rates.
 // Pos: [Map](L2-2.md); recruitment history statistics.
 // Effects/Dependencies: Pure calculations using the SDK's same-timestamp hit intervals.
 import { gachaHistoryHits, type GachaPoolHits, type GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import { cardRarityId, cardRarityName } from "./card-rarity";
+import { comparableGachaLaw, emptyGachaRates, GACHA_RATE_KEYS, type GachaRateKey } from "./gacha-history-luck";
 import type { GachaHistoryBatch, GachaHistoryPool, GachaHistoryPrize } from "./gacha-history-view";
 
 type CardRarity = Exclude<keyof GachaPoolRates["rarities"], "item">;
@@ -65,18 +66,17 @@ export interface GachaRateSample {
   expected: number;
 }
 
-const RATE_KEYS = ["high", "memberHigh", "supportHigh", "SSR", "BD", "EX", "SR", "R", "pickup"] as const;
-type RateKey = (typeof RATE_KEYS)[number];
-export type GachaRateComparison = Record<RateKey, GachaRateSample>;
+export type GachaRateComparison = Record<GachaRateKey, GachaRateSample>;
 
 function emptyComparison(): GachaRateComparison {
-  return Object.fromEntries(RATE_KEYS.map((key) => [key, { draws: 0, hits: 0, expected: 0 }])) as GachaRateComparison;
+  return Object.fromEntries(GACHA_RATE_KEYS.map((key) => [key, { draws: 0, hits: 0, expected: 0 }])) as GachaRateComparison;
 }
 
 export function gachaRateComparisons(
   batches: readonly GachaHistoryBatch[],
   pools: ReadonlyMap<string, GachaHistoryPool>,
 ) {
+  const overall = emptyComparison();
   const byPool = new Map<string, GachaRateComparison>();
   for (const batch of batches) {
     const published = pools.get(batch.poolId)?.rates;
@@ -86,35 +86,42 @@ export function gachaRateComparisons(
       comparison = emptyComparison();
       byPool.set(batch.poolId, comparison);
     }
-    let draws = 0;
+    const hits = emptyGachaRates();
+    let draws = 0, pickupDraws = 0;
     for (const prize of batch.prizes) {
       if (prize.kind !== "unknown" && typeof prize.pickup === "boolean") {
-        comparison.pickup.draws++;
-        if (prize.pickup) comparison.pickup.hits++;
+        pickupDraws++;
+        if (prize.pickup) hits.pickup++;
       }
       const rarity = knownRarity(prize);
       if (!rarity) continue;
       draws++;
-      if (rarity !== "item") comparison[rarity].hits++;
+      if (rarity !== "item") hits[rarity]++;
       if (isHigh(rarity)) {
-        comparison.high.hits++;
-        if (prize.kind === "member") comparison.memberHigh.hits++;
-        if (prize.kind === "support") comparison.supportHigh.hits++;
+        hits.high++;
+        if (prize.kind === "member") hits.memberHigh++;
+        if (prize.kind === "support") hits.supportHigh++;
       }
     }
-    for (const key of RATE_KEYS) if (key !== "pickup") comparison[key].draws += draws;
+    const rates = comparableGachaLaw(batch)?.rates;
+    for (const key of GACHA_RATE_KEYS) {
+      const sampleDraws = key === "pickup" ? pickupDraws : draws;
+      comparison[key].draws += sampleDraws;
+      comparison[key].hits += hits[key];
+      if (!rates || sampleDraws !== batch.prizes.length) continue;
+      const row = overall[key];
+      row.draws += sampleDraws;
+      row.hits += hits[key];
+      row.expected += sampleDraws * rates[key];
+    }
   }
 
-  const overall = emptyComparison();
   for (const [poolId, comparison] of byPool) {
     const { rarities, ...base } = pools.get(poolId)!.rates!;
     const published = { ...rarities, ...base };
-    for (const key of RATE_KEYS) {
+    for (const key of GACHA_RATE_KEYS) {
       const row = comparison[key];
       row.expected = row.draws * published[key];
-      overall[key].draws += row.draws;
-      overall[key].hits += row.hits;
-      overall[key].expected += row.expected;
     }
   }
   return { overall, byPool };
