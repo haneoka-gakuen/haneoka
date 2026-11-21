@@ -666,8 +666,14 @@ function createSkinSprites(
   // Preserve every authored cap tier; runtime chooses each boundary
   // independently and mirrors the selected cap in its draw geometry.
   for (const [label, note] of [
-    ["Tap", tap], ["Slide", slide], ["End", slideEnd], ["Flick", flick],
-    ["FlickLeft", flickLeft], ["FlickRight", flickRight], ["Trace", trace], ["Node", slideNode],
+    ["Tap", tap],
+    ["Slide", slide],
+    ["End", slideEnd],
+    ["Flick", flick],
+    ["FlickLeft", flickLeft],
+    ["FlickRight", flickRight],
+    ["Trace", trace],
+    ["Node", slideNode],
   ] as const) {
     for (const part of note.parts) {
       alias(`Our Notes Native ${label} Left ${part.tilt}`, part.leftSprite);
@@ -680,7 +686,8 @@ function createSkinSprites(
     const left = finite(border.x, `${note.mainSprite}.border.left`);
     const right = finite(border.z, `${note.mainSprite}.border.right`);
     for (const [side, x, w] of [
-      ["Left", main.x, left], ["Middle", main.x + left, main.w - left - right],
+      ["Left", main.x, left],
+      ["Middle", main.x + left, main.w - left - right],
       ["Right", main.x + main.w - right, right],
     ] as const) {
       if (w <= 0) continue;
@@ -743,9 +750,20 @@ function createSkinSprites(
   ])
     alias(name, "slide_line_pressed");
 
-  for (const [state, x] of [["Normal", 505], ["Pressed", 609], ["Missed", 713]] as const) {
+  for (const [state, x] of [
+    ["Normal", 505],
+    ["Pressed", 609],
+    ["Missed", 713],
+  ] as const) {
     for (let cell = 0; cell < 16; cell++)
-      sprites.push({ name: `Our Notes Native Line ${state} ${cell}`, x, y: 3720 + cell * 10, w: 100, h: 8, transform: identity });
+      sprites.push({
+        name: `Our Notes Native Line ${state} ${cell}`,
+        x,
+        y: 3720 + cell * 10,
+        w: 100,
+        h: 8,
+        transform: identity,
+      });
   }
 
   addArrowAliases(sprites, sources, "Up", flick.arrows);
@@ -826,9 +844,8 @@ function rgbToHsv(r: number, g: number, b: number): readonly [number, number, nu
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const delta = max - min;
-  const h =
-    delta === 0 ? 0 : max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
-  return [((h / 6) + 1) % 1, max === 0 ? 0 : delta / max, max];
+  const h = delta === 0 ? 0 : max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  return [(h / 6 + 1) % 1, max === 0 ? 0 : delta / max, max];
 }
 
 function hsvToRgb(h: number, s: number, v: number): readonly [number, number, number] {
@@ -862,7 +879,11 @@ export function bakeSkinSlideStrips(
   const style = OUR_NOTES_SLIDE_LINE_STYLES[skinName];
   const stride = texture.width * 4;
   const sourceOffset = SLIDE_SOURCE_ROW * source.width * 4;
-  const stateScales = { normal: style.glow.enabledScale, pressed: style.glow.pressedScale, disabled: style.glow.disabledScale };
+  const stateScales = {
+    normal: style.glow.enabledScale,
+    pressed: style.glow.pressedScale,
+    disabled: style.glow.disabledScale,
+  };
   const normalAlpha = Math.max(style.normal.alpha[1], style.normal.alpha[3]);
   const strips = new Map<string, { sprite: SkinSprite; state: SlideStripState; totalTime: number; samples: number }>();
   const cells = { Normal: "normal", Pressed: "pressed", Missed: "disabled" } as const;
@@ -873,45 +894,108 @@ export function bakeSkinSlideStrips(
     if (!cell && !alias) continue;
     const state: SlideStripState = cell
       ? cells[cell[1] as keyof typeof cells]
-      : alias![1]!.startsWith("Our Notes Active") ? alias![2] ? "pressed" : "normal" : "guide";
+      : alias![1]!.startsWith("Our Notes Active")
+        ? alias![2]
+          ? "pressed"
+          : "normal"
+        : "guide";
     const time = cell ? (Number(cell[2]) + 0.5) / 16 : 0.5;
     const rect = `${x}:${y}:${w}:${h}`;
     const strip = strips.get(rect);
     if (strip) {
-      if (strip.state !== state) throw new Error(`${skinName} shares a texture area between different connector states`);
+      if (strip.state !== state)
+        throw new Error(`${skinName} shares a texture area between different connector states`);
       strip.totalTime += time;
       strip.samples++;
     } else strips.set(rect, { sprite, state, totalTime: time, samples: 1 });
   }
-  for (const { sprite: { x, y, w, h }, state, totalTime, samples } of strips.values()) {
+  for (const {
+    sprite: { x, y, w, h },
+    state,
+    totalTime,
+    samples,
+  } of strips.values()) {
     // Deduplicated atlas cells share one representative gradient sample.
     const time = totalTime / samples;
     const [baseR, baseG, baseB, baseA] = state === "guide" ? style.guide : sampleSlideGradient(style[state], time);
     const [hue, saturation, value] = rgbToHsv(baseR, baseG, baseB);
     for (let column = 0; column < w; column++) {
-      const sourceColumn = Math.round(column * (SLIDE_STRIP_WIDTH - 1) / Math.max(1, w - 1));
+      const sourceColumn = Math.round((column * (SLIDE_STRIP_WIDTH - 1)) / Math.max(1, w - 1));
       const offset = sourceOffset + sourceColumn * 4;
       const gray = source.pixels[offset]! / 255;
       const sourceA = source.pixels[offset + 3]! / 255;
-      const u = Math.min(1, Math.max(0, (sourceColumn - SLIDE_ART_SPAN.left) / (SLIDE_ART_SPAN.right - SLIDE_ART_SPAN.left)));
+      const u = Math.min(
+        1,
+        Math.max(0, (sourceColumn - SLIDE_ART_SPAN.left) / (SLIDE_ART_SPAN.right - SLIDE_ART_SPAN.left)),
+      );
       const edge = Math.abs(2 * u - 1);
       const glowBase = Math.min(1, Math.max(0, edge / 0.125 - 7));
-      const glow = state === "guide"
-        ? Math.exp(-style.glow.falloff * edge / (style.glow.width * style.glow.enabledScale)) * style.glow.intensity * sourceA
-        : Math.min(1, glowBase ** style.glow.falloff * style.glow.intensity * stateScales[state]);
-      const adjusted = state === "guide" ? [baseR, baseG, baseB]
-        : hsvToRgb(hue, Math.max(0, saturation - glow), Math.min(1, value + glow));
-      const rgb = adjusted.map((channel, index) => state === "guide"
-        ? channel * gray + style.glow.color[index]! * glow
-        : (channel + (style.glow.color[index]! - channel) * glow) * gray);
-      const alpha = sourceA * (state === "guide"
-        ? baseA * DEFAULT_RENDER_SETTINGS.guideAlpha
-        : (baseA + (1 - baseA) * glow) * DEFAULT_RENDER_SETTINGS.longAlpha / normalAlpha);
+      const glow =
+        state === "guide"
+          ? Math.exp((-style.glow.falloff * edge) / (style.glow.width * style.glow.enabledScale)) *
+            style.glow.intensity *
+            sourceA
+          : Math.min(1, glowBase ** style.glow.falloff * style.glow.intensity * stateScales[state]);
+      const adjusted =
+        state === "guide"
+          ? [baseR, baseG, baseB]
+          : hsvToRgb(hue, Math.max(0, saturation - glow), Math.min(1, value + glow));
+      const rgb = adjusted.map((channel, index) =>
+        state === "guide"
+          ? channel * gray + style.glow.color[index]! * glow
+          : (channel + (style.glow.color[index]! - channel) * glow) * gray,
+      );
+      const alpha =
+        sourceA *
+        (state === "guide"
+          ? baseA * DEFAULT_RENDER_SETTINGS.guideAlpha
+          : ((baseA + (1 - baseA) * glow) * DEFAULT_RENDER_SETTINGS.longAlpha) / normalAlpha);
       for (let row = y - 1; row <= y + h; row++) {
         const target = row * stride + (x + column) * 4;
         for (const [index, channel] of [...rgb, alpha].entries())
           texture.pixels[target + index] = Math.round(Math.min(1, Math.max(0, channel)) * 255);
       }
+    }
+  }
+}
+
+// The lane canvas multiplies lane_base by its SpriteRenderer's serialized
+// deep blue (linear values, alpha handled at draw time). Bake the composed
+// colour so the flat packed trapezoid keeps the native lane's darkness.
+const LANE_BACKDROP_TINT: readonly [number, number, number] = [0.035294119, 0.074509792, 0.180392116];
+
+function srgbToLinear(channel: number): number {
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgb(channel: number): number {
+  return channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
+}
+
+export function bakeSkinLaneBackdrop(texture: DecodedRgbaPng): void {
+  const source = special.get("lane_base")!;
+  for (let row = 0; row < source.h; row += 1) {
+    for (let col = 0; col < source.w; col += 1) {
+      const offset = ((source.y + row) * texture.width + source.x + col) * 4;
+      for (const channel of [0, 1, 2] as const) {
+        const composed = srgbToLinear(texture.pixels[offset + channel]! / 255) * LANE_BACKDROP_TINT[channel];
+        texture.pixels[offset + channel] = Math.round(Math.min(1, Math.max(0, linearToSrgb(composed))) * 255);
+      }
+    }
+  }
+}
+
+// The native outside lines multiply the authored strip by their gradient
+// (alpha 1 at the near end, 0 at the far end) and no option controller writes
+// them; bake the fade so the engine keeps the strip free of the guideline
+// opacity option. Image top is the distant end; image bottom is the near end.
+export function bakeSkinOutsideLineFade(texture: DecodedRgbaPng): void {
+  const source = special.get("lane_side")!;
+  for (let row = 0; row < source.h; row += 1) {
+    const fade = row / (source.h - 1);
+    const offset = ((source.y + row) * texture.width + source.x) * 4;
+    for (let col = 0; col < source.w; col += 1) {
+      texture.pixels[offset + col * 4 + 3] = Math.round(texture.pixels[offset + col * 4 + 3]! * fade);
     }
   }
 }
@@ -1027,13 +1111,19 @@ function packSkin(
   for (const sprite of native) copySprite(texture, sprite);
   bakeSkinSlideStrips(texture, skinName, sprites);
   bakeSkinLaneGuidelines(texture);
+  bakeSkinLaneBackdrop(texture);
+  bakeSkinOutsideLineFade(texture);
   // Solid compatibility texels baked by build-original-assets. A transparent
   // texel here silently disables an engine feature (published skins once
   // shipped an invisible judgment line and simultaneous-press line).
   for (const name of ["sim_line", "judgment_line", "preview_lane", "preview_border"] as const) {
     const source = special.get(name)!;
-    const alpha = texture.pixels[((source.y + Math.floor(source.h / 2)) * texture.width + source.x + Math.floor(source.w / 2)) * 4 + 3];
-    if (!alpha) throw new Error(`${skinName} compatibility sprite ${name} is transparent; bake the common texture first`);
+    const alpha =
+      texture.pixels[
+        ((source.y + Math.floor(source.h / 2)) * texture.width + source.x + Math.floor(source.w / 2)) * 4 + 3
+      ];
+    if (!alpha)
+      throw new Error(`${skinName} compatibility sprite ${name} is transparent; bake the common texture first`);
   }
 
   return {
@@ -1053,17 +1143,19 @@ export interface NativeNoteSkinPackSummary {
 }
 
 export function restoreNativeSkinSprites(sprites: readonly SkinSprite[]): SkinSprite[] {
-  return sprites.filter(sprite => !isNativeLaneClipReference(sprite.name));
+  return sprites.filter((sprite) => !isNativeLaneClipReference(sprite.name));
 }
 
 export function isOptionalOriginalSkinSprite(name: string): boolean {
   const base = name.replace(/ Lane Clip \d+$/u, "");
   // Outside boundaries use the mirrored right cap; authored left tier 6 is empty.
   // Only four Up tiers are reachable, and each pack has one animation marker.
-  return base.startsWith("Our Notes Slot ") ||
+  return (
+    base.startsWith("Our Notes Slot ") ||
     /^Our Notes Native (Tap|Slide|End|Flick|FlickLeft|FlickRight|Trace|Node) Left 6$/u.test(base) ||
     /Our Notes Flick Arrow (Red|Yellow) Up [5-8]$/u.test(base) ||
-    /Our Notes Native Flick Arrow Animation Skin \d{3}$/u.test(base);
+    /Our Notes Native Flick Arrow Animation Skin \d{3}$/u.test(base)
+  );
 }
 
 export function buildNativeNoteSkinPacks(
