@@ -92,6 +92,7 @@
       "metadataUnavailable": "Einige Modellinformationen konnten nicht geladen werden.",
       "requestTimedOut": "Bei der Anfrage ist eine Zeitüberschreitung aufgetreten. Bitte versuchen Sie es erneut.",
       "updateAvailable": "Eine neue Version ist verfügbar",
+      "appUpdateAvailable": "Eine neue App-Version ist verfügbar",
       "unknown": "Unbekannt",
       "unlimited": "Unbegrenzt"
     },

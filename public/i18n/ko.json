@@ -92,6 +92,7 @@
       "metadataUnavailable": "일부 모델 정보를 불러오지 못했습니다.",
       "requestTimedOut": "요청 시간이 초과되었습니다. 다시 시도해 주세요.",
       "updateAvailable": "새 버전이 있습니다",
+      "appUpdateAvailable": "새 앱 버전이 있습니다",
       "unknown": "알 수 없음",
       "unlimited": "무제한"
     },

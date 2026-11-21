@@ -92,6 +92,7 @@
       "metadataUnavailable": "モデル情報の一部を読み込めませんでした。",
       "requestTimedOut": "通信がタイムアウトしました。もう一度お試しください。",
       "updateAvailable": "新しいバージョンがあります",
+      "appUpdateAvailable": "アプリの新しいバージョンがあります",
       "unknown": "不明",
       "unlimited": "無制限"
     },

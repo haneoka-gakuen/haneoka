@@ -92,6 +92,7 @@
       "metadataUnavailable": "ไม่สามารถโหลดข้อมูลรุ่นบางรุ่นได้",
       "requestTimedOut": "คำขอหมดเวลา โปรดลองอีกครั้ง",
       "updateAvailable": "รุ่นใหม่ที่มีอยู่",
+      "appUpdateAvailable": "มีเวอร์ชันแอปใหม่",
       "unknown": "ไม่ทราบ",
       "unlimited": "ไม่ จํากัด"
     },

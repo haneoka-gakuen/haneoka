@@ -92,6 +92,7 @@
       "metadataUnavailable": "No se pudo cargar cierta información del modelo.",
       "requestTimedOut": "La solicitud expiró. Por favor inténtalo de nuevo.",
       "updateAvailable": "Una nueva versión está disponible",
+      "appUpdateAvailable": "Hay una nueva versión de la app",
       "unknown": "Desconocido",
       "unlimited": "Inlimitado"
     },

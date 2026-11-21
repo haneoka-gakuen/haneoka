@@ -92,6 +92,7 @@
       "metadataUnavailable": "Niektóre informacje o modelu nie mogły być ładowane.",
       "requestTimedOut": "Zaproszenie jest już terminowane, proszę spróbować ponownie.",
       "updateAvailable": "Dostępna jest nowa wersja",
+      "appUpdateAvailable": "Dostępna jest nowa wersja aplikacji",
       "unknown": "Nieznane",
       "unlimited": "Nieograniczona"
     },

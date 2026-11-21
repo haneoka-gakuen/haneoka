@@ -92,6 +92,7 @@
       "metadataUnavailable": "Beberapa informasi model tidak dapat dimuat.",
       "requestTimedOut": "Waktu permintaan telah habis. Silakan coba lagi.",
       "updateAvailable": "Versi baru tersedia",
+      "appUpdateAvailable": "Versi aplikasi baru tersedia",
       "unknown": "Tidak dikenal",
       "unlimited": "Tidak Terbatas"
     },

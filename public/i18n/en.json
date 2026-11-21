@@ -92,6 +92,7 @@
       "metadataUnavailable": "Some model information could not be loaded.",
       "requestTimedOut": "The request timed out. Please try again.",
       "updateAvailable": "A new version is available",
+      "appUpdateAvailable": "A new app version is available",
       "unknown": "Unknown",
       "unlimited": "Unlimited"
     },

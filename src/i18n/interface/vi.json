@@ -92,6 +92,7 @@
       "metadataUnavailable": "Không thể tải một số thông tin mô hình.",
       "requestTimedOut": "Yêu cầu đã hết thời gian chờ. Vui lòng thử lại.",
       "updateAvailable": "Một phiên bản mới có sẵn",
+      "appUpdateAvailable": "Có phiên bản ứng dụng mới",
       "unknown": "Không xác định",
       "unlimited": "không giới hạn"
     },

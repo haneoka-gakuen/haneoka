@@ -92,6 +92,7 @@
       "metadataUnavailable": "部分模型資料無法載入。",
       "requestTimedOut": "請求逾時，請重試。",
       "updateAvailable": "有新版本可用",
+      "appUpdateAvailable": "應用程式有新版本",
       "unknown": "未知",
       "unlimited": "不限"
     },
