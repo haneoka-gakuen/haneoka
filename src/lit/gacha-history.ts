@@ -1905,6 +1905,7 @@ export class GachaHistory extends LitElement {
           gapLabel: this.hitGap(hit),
           gap: hit.gap,
           pickup: hit.prize.pickup,
+          kind: hit.prize.kind,
           imageUrl: hit.prize.imageUrl,
         })),
       };

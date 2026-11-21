@@ -41,6 +41,16 @@
     padding: 2px;
     object-fit: contain;
   }
+  /* Square cards crop the 3:4 member art to a fitted square like the ranking
+     page's card media; the rectangular .gacha-stats grids keep contain. */
+  .gacha-card[data-kind="member"] .gacha-card__art {
+    object-fit: cover;
+    object-position: 50% 25%;
+  }
+  .gacha-stats .gacha-card[data-kind="member"] .gacha-card__art {
+    object-fit: contain;
+    object-position: 50% 50%;
+  }
   .gacha-card__attribute,
   .gacha-card__rarity {
     position: absolute;

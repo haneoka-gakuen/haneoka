@@ -40,6 +40,7 @@ export interface GachaTimelineGroup {
     gapLabel: string;
     gap: number | null;
     pickup?: boolean | null;
+    kind?: string;
     imageUrl?: string;
   }[];
 }
@@ -152,6 +153,15 @@ async function renderTimelineImages(
       const w = image.naturalWidth * scale, h = image.naturalHeight * scale;
       ctx.drawImage(image, x + (width - w) / 2, y + (height - h) / 2, w, h);
     };
+    // The hit boxes are square; crop the 3:4 member art to fill them like the
+    // page's square gacha cards instead of letterboxing.
+    const squareArt = (source: string | undefined, x: number, y: number, size: number) => {
+      const image = source ? images.get(source) : null;
+      if (!image) return;
+      const { naturalWidth: w, naturalHeight: h } = image;
+      if (w >= h) ctx.drawImage(image, (w - h) / 2, 0, h, h, x, y, size, size);
+      else ctx.drawImage(image, 0, (h - w) * 0.25, w, w, x, y, size, size);
+    };
     rounded("surface", 0, low, WIDTH, high - low, 0);
     rounded("secondary-container", PAD, 29, 8, 42, 4);
     const brandWidth = drawExportBrand(
@@ -204,7 +214,7 @@ async function renderTimelineImages(
         const trackWidth = 224;
         const start = right - trackWidth;
         rounded("surface-container", PAD + 12, top, content - 24, rowHeight - 8, 18);
-        if (row.imageUrl && images.get(row.imageUrl)) art(row.imageUrl, PAD + 20, top + 5, 68, 68);
+        if (row.imageUrl && images.get(row.imageUrl)) (row.kind === "member" ? squareArt : art)(row.imageUrl, PAD + 20, top + 5, 68, 68);
         else {
           rounded("secondary-container", PAD + 22, top + 9, 62, 62, 13);
           text("SSR+", "on-secondary-container", 700, 17, PAD + 33, top + 30, 42);
