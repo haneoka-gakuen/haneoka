@@ -1,10 +1,10 @@
 // L3 — GEB
 // Input: 工作区提供的账号、规范记录、卡池规则、统计及云状态。
-// Output: 账号概览、运气、卡池、收获、明细与趋势分页，统一卡牌、兑换进度和显式操作事件；总览显示跨池出货间隔，实际出率与公示概率共用可识别样本。
+// Output: 账号概览、卡池、收获、长龙、明细与趋势及其图片导出。
 // Pos: [Map](L2-2.md)；抽卡历史展示与资料边界。
 // Effects/Dependencies: light DOM 与 SSR 共用；消费共享分析／图表／卡牌，导入及云状态由工作区持有。
 import { scrollableTabBar } from "./ui/scrollable-tabs";
-import { cardRarityRank } from "../lib/card-rarity";
+import { cardRarityName, cardRarityRank } from "../lib/card-rarity";
 import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
 import { modal } from "./ui/modal";
 import { gameHistoryHelp } from "./ui/game-history-help";
@@ -12,14 +12,10 @@ import "./ui/image-gallery";
 import {
   analyzeGachaHistory,
   gachaHistoryDay,
-  gachaHistoryHits,
   gachaHistoryMonths,
   summarizeGachaHistoryMoney,
   type GachaDrawInterval,
-  type GachaHit,
-  type GachaPoolHits,
 } from "@haneoka/game-data-exporter/gacha-history-analysis";
-import "./shared/gacha-history-chart";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
@@ -46,7 +42,7 @@ import { accordion } from "./ui/accordion";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { gachaPrizeCard } from "./shared/gacha-prize-card";
 import { LazyImages, localeTaggedCandidates } from "./ui/lazy-images";
-import type { GachaHistoryReport, GachaHistoryReportCard } from "../lib/gacha-history-image";
+import type { GachaHistoryReport, GachaTimelineBadge, GachaTimelineGroup } from "../lib/gacha-history-image";
 import { emptyState, loadingState } from "./ui/state";
 import { renderDetailSectionHeading } from "./shared/detail-section-heading";
 import "../styles/gacha-history.css";
@@ -56,16 +52,18 @@ import { GachaLuckClient } from "./shared/gacha-history-luck";
 import type { GachaLuckResult, GachaLuckSummary, GachaLuckValue } from "../lib/gacha-history-luck";
 import {
   gachaHighStreak,
+  gachaRecordedHits,
   gachaRateComparisons,
   isItemOnlyGacha,
   latestGachaHigh,
   type GachaRateComparison,
   type GachaRateSample,
+  type GachaRecordedHit,
 } from "../lib/gacha-history-statistics";
 
 type Axis = "category" | "pool" | "kind" | "rarity" | "pickup";
-type Tab = "overview" | "pools" | "collection" | "records" | "trends" | "settings";
-const TABS: readonly Tab[] = ["overview", "pools", "collection", "records", "trends", "settings"];
+type Tab = "overview" | "pools" | "collection" | "timeline" | "records" | "trends" | "settings";
+const TABS: readonly Tab[] = ["overview", "pools", "collection", "timeline", "records", "trends", "settings"];
 const HIGH = new Set([4, 10, 20]);
 const OWNER = "gacha-history";
 const isHigh = (prize: GachaHistoryPrize) =>
@@ -195,6 +193,10 @@ export class GachaHistory extends LitElement {
   }>();
   private reportInputs: unknown[] = [];
   private reportValue?: GachaHistoryReport;
+  private recorded = new WeakMap<readonly GachaHistoryBatch[], {
+    high: ReturnType<typeof gachaRecordedHits>;
+    pickup?: ReturnType<typeof gachaRecordedHits>;
+  }>();
   private indexedPools?: readonly GachaHistoryPool[];
   private poolIndex = new Map<string, GachaHistoryPool>();
   private expansionReady = false;
@@ -460,8 +462,9 @@ export class GachaHistory extends LitElement {
                   }}
                 />
               `
-            : icon("casino", 24)
+            : nothing
         }
+        <span class="gacha-history__logo-fallback">${icon("casino", 22)}</span>
       </span>
     `;
   }
@@ -635,7 +638,7 @@ export class GachaHistory extends LitElement {
         }),
       );
     const stats = scoped.length ? this.analysis(scoped) : null;
-    const report = stats && !this.luckClient.pending && !this.luckClient.error ? this.cachedReport(scoped, stats) : null;
+    const report = stats && !this.luckClient.pending ? this.cachedReport(scoped, stats) : null;
     const viewTab = this.tab === "records" || this.tab === "collection";
     return html`
       <div class="gacha-history">
@@ -992,6 +995,7 @@ export class GachaHistory extends LitElement {
       overview: [this.t("tabOverview"), icon("insights", 18)],
       pools: [this.t("tabPools"), icon("layers", 18)],
       collection: [this.t("tabCollection"), icon("collections_bookmark", 18)],
+      timeline: [this.t("tabTimeline"), icon("timeline", 18)],
       records: [this.t("tabRecords"), icon("receipt_long", 18)],
       trends: [this.t("tabTrends"), icon("show_chart", 18)],
       settings: [this.t("tabSettings"), icon("tune", 18)],
@@ -1037,6 +1041,8 @@ export class GachaHistory extends LitElement {
         return this.renderCollection(scoped);
       case "records":
         return this.renderRecords(filtered);
+      case "timeline":
+        return this.renderTimeline(scoped);
       case "trends":
         return this.renderTrends(scoped, stats);
       case "settings":
@@ -1050,8 +1056,10 @@ export class GachaHistory extends LitElement {
     label: string,
     categories: string[],
     series: Array<{ name: string; values: number[] }>,
-    options: { horizontal?: boolean; caption?: string; details?: string[]; wide?: boolean } = {},
+    options: { caption?: string; details?: string[]; wide?: boolean } = {},
   ) {
+    const totals = categories.map((_, index) => series.reduce((sum, row) => sum + (row.values[index] ?? 0), 0));
+    const largest = totals.reduce((max, total) => Math.max(max, total), 1);
     return html`
       <section class=${`surface stack${options.wide ? " gacha-history__wide" : ""}`}>
         ${renderDetailSectionHeading(label, "stats", { level: 3 })}
@@ -1062,9 +1070,21 @@ export class GachaHistory extends LitElement {
               `
             : nothing
         }
-        <gacha-history-chart
-          .data=${{ label, categories, series, horizontal: !!options.horizontal, grouped: false, details: options.details ?? [] }}
-        ></gacha-history-chart>
+        <ul class="gacha-series">
+          ${categories.map((category, index) => html`
+            <li>
+              <div class="row row--between"><strong>${category}</strong><strong class="tabular">${this.number(totals[index])}</strong></div>
+              <div class="gacha-series__track" aria-hidden="true">
+                ${series.map((row, channel) => html`<span data-channel=${channel} style=${`inline-size:${(row.values[index] ?? 0) * 100 / largest}%`}></span>`)}
+              </div>
+              <div class="cluster gacha-series__values">
+                ${series.map((row, channel) => html`
+                  <span data-channel=${channel}>${row.name} <strong class="tabular">${this.number(row.values[index] ?? 0)}</strong></span>
+                `)}
+                ${options.details?.[index] ? html`<span>${options.details[index]}</span>` : nothing}
+              </div>
+            </li>`)}
+        </ul>
       </section>
     `;
   }
@@ -1083,7 +1103,6 @@ export class GachaHistory extends LitElement {
           rows.map((row) => `${row.rarity} / ${this.percent(row.count, kind.total)}`),
           (["nonPickup", "pickup"] as const).map((key) => ({ name: this.t(key), values: rows.map((row) => row[key]) })),
           {
-            horizontal: true,
             caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
           },
         );
@@ -1103,9 +1122,9 @@ export class GachaHistory extends LitElement {
       ["R", "R"],
       [this.t("pickup"), "pickup"],
     ];
-    const hits = gachaHistoryHits(scoped, "high")
+    const hits = this.recordedHits(scoped)
       .flatMap((pool) => pool.hits.map((hit) => ({ ...hit, poolId: pool.poolId })))
-      .sort((a, b) => (a.pulledAt < b.pulledAt ? 1 : a.pulledAt > b.pulledAt ? -1 : 0));
+      .sort((a, b) => (b.pulledAt ?? "").localeCompare(a.pulledAt ?? "") || (b.position ?? 0) - (a.position ?? 0));
     return html`
       <div class="gacha-history__grid">
         <section class="surface stack">
@@ -1170,13 +1189,85 @@ export class GachaHistory extends LitElement {
     `;
   }
 
-  private hitList(hits: ReadonlyArray<GachaHit & { poolId?: string | null }>, showPool: boolean) {
-    const largest = Math.max(1, ...hits.map((hit) => hit.since.max));
+  private recordedHits(batches: readonly GachaHistoryBatch[], target: "high" | "pickup" = "high") {
+    let result = this.recorded.get(batches);
+    if (!result) {
+      result = { high: gachaRecordedHits(batches) };
+      this.recorded.set(batches, result);
+    }
+    return result[target] ?? (result.pickup = gachaRecordedHits(batches, "pickup"));
+  }
+
+  private hitMeta(entry: GachaRecordedHit, pool?: string) {
+    return [
+      pool === undefined ? "" : this.poolName(pool),
+      entry.pulledAt ? this.serverTime(entry.pulledAt, "dateTime") : this.t("unknownTime"),
+      entry.position === null ? "" : `#${this.number(entry.position)}`,
+    ].filter(Boolean).join(" / ");
+  }
+
+  private hitGap(entry: GachaRecordedHit) {
+    return entry.gap === null ? "—" : this.t("draws", { count: this.number(entry.gap) });
+  }
+
+  private hasHighPickup(pool?: GachaHistoryPool) {
+    return pool?.featured?.some(card => ["SSR", "EX", "BD"].includes(cardRarityName(card.rarity)));
+  }
+
+  private tenPullLabel(count: number) {
+    return this.t("timelineMultiSsr", { count: this.number(count) });
+  }
+
+  private hitBadges(hit: GachaRecordedHit, pool?: GachaHistoryPool): GachaTimelineBadge[] {
+    const badges: GachaTimelineBadge[] = [];
+    if (hit.prize.pickup === true) badges.push({ label: this.t("pickup"), tone: "tertiary" });
+    else if (hit.prize.pickup === false && this.hasHighPickup(pool))
+      badges.push({ label: this.t("timelineOffBanner"), tone: "error" });
+    if (hit.tenPullHits) badges.push({ label: this.tenPullLabel(hit.tenPullHits), tone: "tertiary" });
+    if (hit.gap === 1) badges.push({ label: this.t("timelineOneShot"), tone: "primary" });
+    if (hit.prize.converted) badges.push({ label: this.t("converted"), tone: "primary" });
+    return badges;
+  }
+
+  private timelineHighlights(pools: ReturnType<typeof gachaRecordedHits>): GachaTimelineBadge[] {
+    let oneShots = 0, bestPickup = 0, bestOffBanner = 0;
+    const tenPulls = new Map<number, number>();
+    for (const pool of pools) {
+      const hasPickup = this.hasHighPickup(this.poolMap.get(pool.poolId));
+      let pickup = 0, offBanner = 0;
+      for (const hit of pool.hits) {
+        if (hit.tenPullHits) tenPulls.set(hit.tenPullHits, (tenPulls.get(hit.tenPullHits) ?? 0) + 1);
+        if (hit.gap === 1) oneShots++;
+        if (hit.gap === null) pickup = offBanner = 0;
+        pickup = hit.prize.pickup === true ? pickup + 1 : 0;
+        offBanner = hasPickup && hit.prize.pickup === false ? offBanner + 1 : 0;
+        bestPickup = Math.max(bestPickup, pickup);
+        bestOffBanner = Math.max(bestOffBanner, offBanner);
+      }
+    }
+    const badges: GachaTimelineBadge[] = [...tenPulls].sort((a, b) => b[0] - a[0])
+      .map(([hits, count]) => ({ label: this.t("timelineBadgeTimes", { label: this.tenPullLabel(hits), count: this.number(count) }), tone: "tertiary" }));
+    if (oneShots) badges.push({ label: this.t("timelineBadgeTimes", { label: this.t("timelineOneShot"), count: this.number(oneShots) }), tone: "primary" });
+    if (bestPickup > 1) badges.push({ label: this.t("timelinePickupRun", { count: this.number(bestPickup) }), tone: "tertiary" });
+    if (bestOffBanner > 1) badges.push({ label: this.t("timelineOffRun", { count: this.number(bestOffBanner) }), tone: "error" });
+    return badges;
+  }
+
+  private timelineTags(badges: readonly GachaTimelineBadge[]) {
+    return badges.length ? html`<span class="cluster gacha-timeline__marks">
+      ${badges.map(badge => html`<span class="gacha-chip" data-tone=${badge.tone}>${badge.label}</span>`)}
+    </span>` : nothing;
+  }
+
+  private hitList(
+    hits: ReadonlyArray<GachaRecordedHit & { poolId?: string }>, showPool: boolean,
+    timeline?: { pool?: GachaHistoryPool },
+  ) {
+    const largest = hits.reduce((max, hit) => Math.max(max, hit.gap ?? 0), 1);
     return html`
       <ol class="gacha-hits">
         ${hits.map((entry) => {
-          const prize = entry.prize as GachaHistoryPrize;
-          const middle = (entry.since.min + entry.since.max) / 2;
+          const prize = entry.prize;
           return html`
             <li class="gacha-hit" data-pickup=${String(prize.pickup === true)}>
               <span class="gacha-hit__card">
@@ -1202,19 +1293,14 @@ export class GachaHistory extends LitElement {
                       `
                 }
                 <span class="gacha-hit__meta">
-                  ${[
-                    showPool ? this.poolName(entry.poolId ?? null) : "",
-                    this.serverTime(entry.pulledAt, "dateTime"),
-                    `#${this.interval(entry.position)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" / ")}
+                  ${this.hitMeta(entry, showPool ? entry.poolId ?? "" : undefined)}
                 </span>
+                ${timeline ? this.timelineTags(this.hitBadges(entry, timeline.pool)) : nothing}
               </span>
               <span class="gacha-hit__gap">
-                <span class="gacha-hit__count">${this.t("draws", { count: this.interval(entry.since) })}</span>
+                <span class="gacha-hit__count">${this.hitGap(entry)}</span>
                 <span class="gacha-hit__bar" aria-hidden="true">
-                  <span style=${`inline-size:${Math.max(2, (middle / largest) * 100).toFixed(1)}%`}></span>
+                  <span style=${`inline-size:${entry.gap === null ? 0 : Math.max(2, (entry.gap / largest) * 100).toFixed(1)}%`}></span>
                 </span>
               </span>
             </li>
@@ -1224,10 +1310,42 @@ export class GachaHistory extends LitElement {
     `;
   }
 
+  private poolPeriod(pool?: GachaHistoryPool) {
+    const period = pool?.startAt && pool.endAt ? `${this.serverTime(pool.startAt, "date")} – ${this.serverTime(pool.endAt, "date")}` : "";
+    return [pool?.category, period].filter(Boolean).join(" / ");
+  }
+
+  private timelinePools(scoped: readonly GachaHistoryBatch[]) {
+    return this.newestPoolsFirst(this.recordedHits(scoped), scoped);
+  }
+
+  private renderTimeline(scoped: readonly GachaHistoryBatch[]) {
+    const pools = this.timelinePools(scoped);
+    return html`<div class="stack stack--loose gacha-timeline">
+      ${this.timelineTags(this.timelineHighlights(pools))}
+      ${repeat(pools, pool => pool.poolId, pool => {
+        const view = this.poolMap.get(pool.poolId);
+        return html`
+          <article class="surface stack gacha-pool">
+            <header class="gacha-pool__header">
+              ${this.poolLogo(view)}
+              <div class="gacha-pool__title">
+                <h3 class="md-title-medium">${this.poolName(pool.poolId)}</h3>
+                <span class="md-body-small">${this.poolPeriod(view)}</span>
+              </div>
+              <span class="gacha-pool__total">${this.t("draws", { count: this.number(pool.total) })}</span>
+            </header>
+            ${pool.hits.length ? this.hitList(pool.hits, false, { pool: view })
+              : html`<span class="md-body-medium gacha-timeline__empty">${this.t("noRecordedHigh")}</span>`}
+          </article>`;
+      })}
+    </div>`;
+  }
+
   private renderPools(scoped: readonly GachaHistoryBatch[], stats: ReturnType<GachaHistory["analysis"]>) {
     const { byPool } = this.statistics(scoped).rates;
-    const highHits = new Map(gachaHistoryHits(scoped, "high").map((row) => [row.poolId, row]));
-    const pickupHits = new Map(gachaHistoryHits(scoped, "pickup").map((row) => [row.poolId, row]));
+    const recordedHigh = new Map(this.recordedHits(scoped).map((row) => [row.poolId, row]));
+    const pickupHits = new Map(this.recordedHits(scoped, "pickup").map((row) => [row.poolId, row]));
     const batchesByPool = new Map<string, GachaHistoryBatch[]>();
     for (const batch of scoped) {
       const rows = batchesByPool.get(batch.poolId) ?? [];
@@ -1245,14 +1363,10 @@ export class GachaHistory extends LitElement {
             const luck = this.luckSummary(pool.poolId ?? "");
             const expected = luck?.high;
             const batches = batchesByPool.get(pool.poolId ?? "") ?? [];
-            const high = highHits.get(pool.poolId) as GachaPoolHits | undefined;
-            const streak = gachaHighStreak(batches, high, true);
-            const pickup = pickupHits.get(pool.poolId) as GachaPoolHits | undefined;
+            const recorded = recordedHigh.get(pool.poolId ?? "");
+            const streak = gachaHighStreak(batches, recorded, true);
+            const pickup = pickupHits.get(pool.poolId ?? "");
             const owned = new Map(this.collected(batches).map((card) => [card.key, card]));
-            const period =
-              view?.startAt && view.endAt
-                ? `${this.serverTime(view.startAt, "date")} – ${this.serverTime(view.endAt, "date")}`
-                : "";
             const id = `pool-${pool.poolId ?? "unknown"}`;
             return html`
               <article class="surface stack gacha-pool">
@@ -1260,7 +1374,7 @@ export class GachaHistory extends LitElement {
                   ${this.poolLogo(view)}
                   <div class="gacha-pool__title">
                     <h3 class="md-title-medium">${this.poolName(pool.poolId)}</h3>
-                    <span class="md-body-small">${[view?.category, period].filter(Boolean).join(" / ")}</span>
+                    <span class="md-body-small">${this.poolPeriod(view)}</span>
                   </div>
                   <span class="gacha-pool__total">${this.t("draws", { count: this.number(pool.total) })}</span>
                 </header>
@@ -1283,8 +1397,8 @@ export class GachaHistory extends LitElement {
                     icon: icon("hourglass_bottom", 20),
                     label: this.t(streak.hasHit ? "sinceLastHigh" : "consecutiveWithoutHigh"),
                     value: this.interval(streak.trailing),
-                    supporting: pickup?.trailing && pickup.unknownDraws === 0
-                      ? `${this.t("sinceLastPickup")} ${this.interval(pickup.trailing)}`
+                    supporting: pickup?.trailing != null
+                      ? `${this.t("sinceLastPickup")} ${this.number(pickup.trailing)}`
                       : "",
                   })}
                   ${this.stat({
@@ -1339,22 +1453,17 @@ export class GachaHistory extends LitElement {
                     : nothing
                 }
                 ${this.exchangeProgress(view)}
-                ${
-                  high?.hits.length
-                    ? this.fold(
-                        `${id}-high`,
-                        this.t("highHistory"),
-                        this.hitList([...high.hits].reverse(), false),
-                        this.number(high.hits.length),
-                      )
-                    : nothing
-                }
+                ${this.fold(`${id}-timeline`, this.t("tabTimeline"),
+                  this.expanded.has(`${id}-timeline`)
+                    ? recorded?.hits.length ? this.hitList(recorded.hits, false, { pool: view }) : html`<span>${this.t("noRecordedHigh")}</span>`
+                    : nothing,
+                  this.number(recorded?.hits.length ?? 0))}
                 ${
                   pickup?.hits.length
                     ? this.fold(
                         `${id}-pickup`,
                         this.t("pickupHistory"),
-                        this.hitList([...pickup.hits].reverse(), false),
+                        this.expanded.has(`${id}-pickup`) ? this.hitList([...pickup.hits].reverse(), false) : nothing,
                         this.number(pickup.hits.length),
                       )
                     : nothing
@@ -1689,7 +1798,7 @@ export class GachaHistory extends LitElement {
           this.t("poolComposition"),
           stats.pools.map((pool) => this.poolName(pool.poolId)),
           composition(stats.pools),
-          { horizontal: true, wide: true },
+          { wide: true },
         )}
         <section class="surface stack gacha-history__wide">
           ${renderDetailSectionHeading(this.t("monthlyTrend"), "stats", { level: 3 })}
@@ -1780,45 +1889,26 @@ export class GachaHistory extends LitElement {
         value: luck ? this.luckRating(luck) : this.luckState(summary),
       },
     ];
-    const groups = stats.pools.flatMap((pool) => {
-      const selected = batches.filter((batch) => batch.poolId === pool.poolId);
-      return (["member", "support"] as const).map((kind) => ({
-        label: `${this.poolName(pool.poolId)} / ${this.t(kind)}`,
-        imageUrl: this.poolMap.get(pool.poolId ?? "")?.imageUrl,
-        cards: this.collected(selected)
-          .filter((card) => card.prize.kind === kind && (isHigh(card.prize) || card.pickup > 0))
-          .sort(
-            (a, b) =>
-              b.pickup - a.pickup || cardRarityRank(b.prize.rarity) - cardRarityRank(a.prize.rarity) || b.count - a.count,
-          )
-          .map((card): GachaHistoryReportCard => ({
-            name: card.prize.name,
-            kindLabel: this.t(kind),
-            quantity: card.count,
-            imageUrl: card.prize.imageUrl,
-            attributeImageUrl: card.prize.attributeImageUrl,
-            rarityImageUrl: card.prize.rarityImageUrl,
-            pickup: card.pickup,
-          })),
-      }));
+    const pools = this.timelinePools(batches);
+    const timeline: GachaTimelineGroup[] = pools.map(pool => {
+      const view = this.poolMap.get(pool.poolId);
+      return {
+        label: this.poolName(pool.poolId),
+        supporting: this.poolPeriod(view),
+        total: this.t("draws", { count: this.number(pool.total) }),
+        imageUrl: view?.imageUrl,
+        empty: this.t("noRecordedHigh"),
+        entries: pool.hits.map(hit => ({
+          name: hit.prize.name,
+          meta: this.hitMeta(hit),
+          badges: this.hitBadges(hit, view),
+          gapLabel: this.hitGap(hit),
+          gap: hit.gap,
+          pickup: hit.prize.pickup,
+          imageUrl: hit.prize.imageUrl,
+        })),
+      };
     });
-    const charts = stats.kinds
-      .filter((kind) => kind.kind === "member" || kind.kind === "support")
-      .map((kind) => ({
-        label: `${this.t(kind.kind)} / ${this.t("rarityDistribution")}`,
-        caption: `${this.t(kind.kind)} ${this.number(kind.total)} / SSR+ ${this.percent(kind.high, kind.total)}`,
-        legend: [this.t("nonPickup"), this.t("pickup")],
-        rows: kind.distribution
-          .filter(
-            (row) =>
-              ["SSR", "SR", "R"].includes(row.rarity) ||
-              (row.count > 0 && row.rarity !== "item" && row.rarity !== "unknown"),
-          )
-          .map((row) => ({
-            label: `${row.rarity} / ${this.percent(row.count, kind.total)}`,
-            values: [row.nonPickup, row.pickup],
-          })),
-      }));
     const dates = batches
       .map((batch) => batch.pulledAt)
       .filter((value): value is string => Boolean(value))
@@ -1829,7 +1919,7 @@ export class GachaHistory extends LitElement {
         : this.t("unknownTime"),
     ];
     if (dates.length && dates.length !== batches.length) scope.push(this.t("unknownTime"));
-    return { title: this.t("title"), scope, metrics, groups, charts };
+    return { title: this.t("title"), scope, metrics, charts: [], groups: [], timeline, timelineHighlights: this.timelineHighlights(pools) };
   }
   private cloudControls() {
     const disabled = this.cloudBusy || this.busy || !this.selectedAccountKey;

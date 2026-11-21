@@ -753,15 +753,18 @@ function renderExchangeGoods(c: Controller, item: Item) {
       })}
       <ul class="detail-object-list" role="list">
         ${shown.map((product) => {
+          const reward = (product.reward || {}) as Item;
+          const count = Number(reward.count);
           const cost = typeof product.cost === "number" && Number.isSafeInteger(product.cost) && product.cost >= 0
             ? product.cost.toLocaleString(c.settings.locale) : c.label("unknown", "Unknown");
           const limit = typeof product.limit === "number" && Number.isSafeInteger(product.limit)
             ? product.limit > 0 ? String(product.limit) : c.label("unlimited", "Unlimited")
             : c.label("unknown", "Unknown");
           return rewardRow(
-            c, (product.reward || {}) as Item,
+            c, reward,
             html`<span><strong>${costLine(cost, currency.image)}</strong>
               <small class="detail-copy">${c.label("exchangePurchaseLimit", "Purchase limit")}: ${limit}</small></span>`,
+            Number.isSafeInteger(count) && count > 0 ? `×${count.toLocaleString(c.settings.locale)}` : undefined,
           );
         })}
       </ul>

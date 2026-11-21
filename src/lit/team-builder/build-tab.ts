@@ -11,6 +11,7 @@ import { boostControl, challengeCostControl } from "./boost-control";
 import { cardScopeControl, recordedGrowthControl, unknownGrowthControl } from "./card-input-controls";
 /** Team search: goal, songs, play, candidates and constraints; results beside them. */
 import { html, nothing, type TemplateResult } from "lit";
+import { includeDifficulties, includeDifficultySelect } from "./song-picker";
 import { live } from "lit/directives/live.js";
 import "@material/web/progress/linear-progress.js";
 import type { SongRef } from "../../lib/team-builder/engine/api";
@@ -358,6 +359,7 @@ export function songList(
               songs: songs.map((song) => ({ ...song })),
               context: options?.context ?? `${host.tab}:${host.searchSettings.goal}:${single ? "single" : allowedSongIds ? "restricted" : "songs"}${host.tab === "arena" ? `:${host.arena.draft.leagueId}` : ""}`,
               single,
+              expandDifficulties: !single,
               recommend: !single && fieldId === "tb-songs",
               query: "",
               filtersOpen: false,
@@ -377,6 +379,10 @@ export function songList(
         </button>
         </div>
       </div>
+      ${!single && options?.poolAction && options.poolAction !== nothing ? includeDifficultySelect(host, host.songDifficultyCeiling, (through) => {
+        host.setSongPickerPreferences(host.songDifficulties, through);
+        if (through !== null && songs.length) change(includeDifficulties(host, songs, through, available));
+      }) : nothing}
       ${
         songs.length
           ? html`
@@ -468,13 +474,14 @@ export function eventSection(host: TeamBuilder, s = host.searchSettings, options
   `;
 }
 
-export function useChallengeSongsButton(host: TeamBuilder, ids: readonly number[], change: (songs: SongRef[]) => void) {
+export function useChallengeSongsButton(host: TeamBuilder, ids: readonly number[], change: (songs: SongRef[]) => void, single = false) {
   if (!ids.length) return nothing;
   const catalog = host.catalog!;
   return html`
     <button class="button button--text" type="button" @click=${() => {
+      const difficulties = single ? host.songDifficulties : host.songPoolDifficulties;
       const songs = [...new Set(ids)].flatMap(songId => catalog.difficultyRows(songId)
-        .filter(difficulty => host.songDifficulties.includes(Number(difficulty.difficulty)))
+        .filter(difficulty => difficulties.includes(Number(difficulty.difficulty)))
         .map(difficulty => ({ songId, difficulty: Number(difficulty.difficulty) })));
       change(songs);
     }}>${icon("swords", 18)}${host.t("useChallengeSongs", "Use challenge songs")}</button>
@@ -1101,7 +1108,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 ${songList(host, s.goal === "power" ? s.songs : host.settings.songs, (songs) => set({ songs }),
                   s.goal === "power", allowedSongIds, "tb-songs", undefined, {
                     poolAction: challenge && !s.manualEventEnabled
-                      ? useChallengeSongsButton(host, challengeSongs, (songs) => set({ songs: s.goal === "power" ? songs.slice(0, 1) : songs }))
+                      ? useChallengeSongsButton(host, challengeSongs, (songs) => set({ songs: s.goal === "power" ? songs.slice(0, 1) : songs }), s.goal === "power")
                       : nothing,
                   })}
                 ${multiSongControl(host)}

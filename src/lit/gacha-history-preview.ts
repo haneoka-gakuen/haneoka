@@ -6,6 +6,7 @@ import { historyObject, historyDefaultGemConversion, historyPoolViews, historyBa
 import { localizedText } from "./shared/catalog";
 import { clientText } from "../i18n/client";
 import { cardRarityName } from "../lib/card-rarity";
+import { isContentListed } from "../lib/content-release";
 
 export function mountGachaHistoryPreview(view: GachaHistory, page: GachaHistoryPageData) {
   const catalog = page.variants.intl ?? page.variants.jp;
@@ -21,6 +22,7 @@ export function mountGachaHistoryPreview(view: GachaHistory, page: GachaHistoryP
   ] as const) {
     for (const [id, value] of Object.entries(source)) {
       const card = historyObject(value);
+      if (!isContentListed(kind === "member" ? "cards" : "support-cards", card, id)) continue;
       const rarity = Number(card.rarity);
       if (![2, 3, 4, 10, 20].includes(rarity)) continue;
       const rarityLabel = cardRarityName(rarity);
@@ -44,7 +46,8 @@ export function mountGachaHistoryPreview(view: GachaHistory, page: GachaHistoryP
   const pools: GachaHistoryPool[] = historyPoolViews(catalog, view.locale, (key) =>
     clientText(view.locale, `catalog.recruitments.types.${key}`, key),
   )
-    .filter((pool) => pool.rates && pool.rates.high < 0.2 && pool.featured?.length)
+    .filter((pool) => pool.rates && pool.rates.high < 0.2 && pool.featured?.length
+      && (!pool.startAt || Date.parse(pool.startAt) < Date.now()))
     .slice(-3);
   const exchangeTarget = (
     pool: GachaHistoryPool,
@@ -134,11 +137,14 @@ export function mountGachaHistoryPreview(view: GachaHistory, page: GachaHistoryP
       if (random() < 0.45) continue;
       const count = random() < 0.75 ? 10 : 1;
       const prizes = Array.from({ length: count }, (_, i) => draw(pool, count === 10 && i === 9));
+      const start = Date.parse(pool.startAt ?? "2026-08-01T00:00:00Z");
+      const end = Math.min(Date.parse(pool.endAt ?? "2026-10-15T00:00:00Z"), Date.now());
+      const pulledAt = new Date(start + (day + random()) / 75 * Math.max(0, end - start)).toISOString();
       batches.push({
         id: `preview-${day}-${index}`,
         accountKey: "ui-preview",
         poolId: pool.id,
-        pulledAt: new Date(Date.UTC(2026, 7, 1 + day, 9 + index, Math.floor(random() * 60))).toISOString(),
+        pulledAt,
         drawCount: count,
         prizes,
         cost: random() < 0.7 ? { freeGems: count * 250, paidGems: 0 } : { freeGems: 0, paidGems: count * 250 },

@@ -16,7 +16,7 @@ import { actionMenu } from "../ui/action-menu";
 import { improvementPercent } from "../../lib/team-builder/engine/execution";
 /** Search results: ranked team cards, per-song rankings, plan summary, comparison. */
 import { html, nothing, render, type TemplateResult } from "lit";
-import type { EngineHit, OrderTiming, SongRef, Timeline, TimingGuide, TimingGuideAction, TimingWindow } from "../../lib/team-builder/engine/api";
+import type { EngineHit, OrderTiming, SongRef, SongResult, Timeline, TimingGuide, TimingGuideAction, TimingWindow } from "../../lib/team-builder/engine/api";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 import { downloadBlob } from "../../lib/canvas-capture";
 import { accordion } from "../ui/accordion";
@@ -29,6 +29,7 @@ import type { CardGrowth } from "../shared/card-growth";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { sectionHeading } from "./catalog";
 import { renderChecklist } from "./tool-layout";
+import { chartKey } from "./workspace-state";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { resultRequest, resultSettings, usesPtResults, scoreGoal, scoreProof, scoreRankName, manualResultSource, resultOrderIndex, setResultOrder } from "./score-goal";
@@ -1505,6 +1506,21 @@ function growthSection(host: TeamBuilder, hit: EngineHit): TemplateResult {
   `;
 }
 
+function bestResultsBySong(results: SongResult[], criterion: BuildSettings["criterion"]) {
+  const best = new Map<number, { result: SongResult; score: number }>();
+  for (const result of results) {
+    if (!result.song) continue;
+    let score = -Infinity;
+    for (const hit of result.hits) {
+      const value = hit.score?.[criterion] ?? hit.skipScore;
+      if (typeof value === "number" && Number.isFinite(value)) score = Math.max(score, value);
+    }
+    const previous = best.get(result.song.songId);
+    if (!previous || score > previous.score) best.set(result.song.songId, { result, score });
+  }
+  return best;
+}
+
 export function renderResults(host: TeamBuilder): TemplateResult {
   const results = host.results;
   if (
@@ -1516,21 +1532,25 @@ export function renderResults(host: TeamBuilder): TemplateResult {
   }
   const catalog = host.catalog!;
   const stale = host.stale;
-  const multi = results.results.length > 1 && resultSettings(host).goal !== "plan";
-  const tab = multi ? host.resultTab : "all";
+  const settings = resultSettings(host);
+  const multi = results.results.length > 1 && settings.goal !== "plan";
+  const chartResults = multi ? results.results.filter((result) => result.song) : [];
+  const hasMultipleDifficulties = new Set(chartResults.map((result) => result.song!.songId)).size < chartResults.length;
+  const best = hasMultipleDifficulties && host.bestDifficultyOnly ? bestResultsBySong(chartResults, settings.criterion) : undefined;
+  const visibleCharts = best ? chartResults.filter((result) => best.get(result.song!.songId)?.result === result) : chartResults;
+  const selected = chartResults.find((result) => chartKey(result.song!) === host.resultTab);
+  const selectedChart = selected && (best?.get(selected.song!.songId)?.result ?? selected);
+  const tab = multi ? selectedChart ? chartKey(selectedChart.song!) : "overall" : "all";
   const unfiltered = results.plan
     ? [results.plan.normal, results.plan.challenge].filter((hit): hit is EngineHit => hit !== null)
     : tab === "overall" || !multi
       ? multi
         ? results.overall
         : (results.results[0]?.hits ?? [])
-      : (results.results.find((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab)
-          ?.hits ?? []);
+      : (selectedChart?.hits ?? []);
   const shown = resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
   const groups =
-    multi && tab !== "overall"
-      ? results.results.filter((result) => result.song && `${result.song.songId}:${result.song.difficulty}` === tab)
-      : results.results;
+    selectedChart ? [selectedChart] : results.results;
   const proven = groups.length > 0 && groups.every((result) => result.proven);
   const gap = proven ? null : improvementPercent(groups);
   const goal = resultRequest(host)?.goal;
@@ -1568,7 +1588,7 @@ export function renderResults(host: TeamBuilder): TemplateResult {
                   <md-select-option value="overall">
                     <div slot="headline">${host.t("overall", "Overall")}</div>
                   </md-select-option>
-                  ${results.results.map(
+                  ${visibleCharts.map(
                     (result) => html`
                       <md-select-option value=${`${result.song!.songId}:${result.song!.difficulty}`}>
                         <div slot="headline">
@@ -1579,6 +1599,18 @@ export function renderResults(host: TeamBuilder): TemplateResult {
                     `,
                   )}
                 </md-outlined-select>
+                ${hasMultipleDifficulties ? html`
+                  <label class="tb-check">
+                    <md-checkbox touch-target="wrapper"
+                      .checked=${host.bestDifficultyOnly}
+                      @change=${(event: Event) => {
+                        host.bestDifficultyOnly = (event.target as HTMLInputElement).checked;
+                        host.requestUpdate();
+                      }}
+                    ></md-checkbox>
+                    <span>${host.t("bestDifficultyOnly", "Only show each song’s highest-scoring difficulty")}</span>
+                  </label>
+                ` : nothing}
               `
             : nothing
         }

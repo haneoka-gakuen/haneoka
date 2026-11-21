@@ -1,9 +1,9 @@
 // L3 — GEB
 // Input: Scoped draw records, executed draw rules and published pool odds.
-// Output: Cross-pool SSR+ streak, adjusted overview rates and base per-pool rates.
+// Output: Recorded draw timelines, SSR+ streaks and comparable per-pool and overview rates.
 // Pos: [Map](L2-2.md); recruitment history statistics.
-// Effects/Dependencies: Pure calculations using the SDK's same-timestamp hit intervals.
-import { gachaHistoryHits, type GachaPoolHits, type GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
+// Effects/Dependencies: Pure calculations on the supplied draw records.
+import type { GachaPoolRates } from "@haneoka/game-data-exporter/gacha-history-analysis";
 import { cardRarityId, cardRarityName } from "./card-rarity";
 import { comparableGachaLaw, emptyGachaRates, GACHA_RATE_KEYS, type GachaRateKey } from "./gacha-history-luck";
 import type { GachaHistoryBatch, GachaHistoryPool, GachaHistoryPrize } from "./gacha-history-view";
@@ -19,18 +19,68 @@ function knownRarity(prize: GachaHistoryPrize): CardRarity | "item" | "" {
 
 export const isItemOnlyGacha = (rates?: GachaPoolRates) => (rates?.rarities.item ?? 0) >= 1 - 1e-12;
 
+export interface GachaRecordedHit {
+  pulledAt: string | null;
+  prize: GachaHistoryPrize;
+  position: number | null;
+  gap: number | null;
+  tenPullHits?: number;
+}
+
+/** The import preserves prize array order. The service does not attest to animation order. */
+export function gachaRecordedHits(batches: readonly GachaHistoryBatch[], target: "high" | "pickup" = "high") {
+  const grouped = new Map<string, GachaHistoryBatch[]>();
+  for (const batch of batches) {
+    const group = grouped.get(batch.poolId);
+    if (group) group.push(batch);
+    else grouped.set(batch.poolId, [batch]);
+  }
+  return [...grouped].map(([poolId, rows]) => {
+    rows.sort((a, b) => (a.pulledAt ?? "~").localeCompare(b.pulledAt ?? "~"));
+    const hasUndated = rows.some(row => !row.pulledAt);
+    let total = 0;
+    let last = 0;
+    let gapKnown = !hasUndated;
+    const hits: GachaRecordedHit[] = [];
+    for (const batch of rows) {
+      const found: GachaRecordedHit[] = [];
+      for (const prize of batch.prizes) {
+        total++;
+        const rarity = knownRarity(prize);
+        const result = rarity === "item" ? false
+          : target === "high" ? rarity ? isHigh(rarity) : null
+            : prize.kind !== "unknown" && typeof prize.pickup === "boolean" ? prize.pickup : null;
+        if (result === null) {
+          gapKnown = false;
+        } else if (result) {
+          found.push({
+            pulledAt: batch.pulledAt, prize,
+            position: hasUndated ? null : total,
+            gap: gapKnown ? total - last : null,
+          });
+          last = total;
+          gapKnown = !hasUndated;
+        }
+      }
+      if (batch.prizes.length === 10 && found.length > 1) found[0]!.tenPullHits = found.length;
+      for (const hit of found) hits.push(hit);
+    }
+    return { poolId, total, hits, trailing: gapKnown ? total - last : null };
+  });
+}
+
 export function latestGachaHigh(
   batches: readonly GachaHistoryBatch[],
   pools: ReadonlyMap<string, GachaHistoryPool>,
 ) {
   const draws = batches.filter((batch) => batch.prizes.length && !isItemOnlyGacha(pools.get(batch.poolId)?.rates));
-  const timeline = gachaHistoryHits(draws.map((batch) => ({ ...batch, poolId: null })), "high")[0];
+  const timeline = gachaRecordedHits(draws.map((batch) => ({ ...batch, poolId: "" })))[0];
   return gachaHighStreak(draws, timeline);
 }
 
 export function gachaHighStreak(
   batches: readonly GachaHistoryBatch[],
-  timeline: GachaPoolHits | undefined,
+  timeline: ReturnType<typeof gachaRecordedHits>[number] | undefined,
   fromFirstDraw = false,
 ) {
   const last = timeline?.hits.at(-1);
@@ -54,7 +104,7 @@ export function gachaHighStreak(
   }
   let trailing = null;
   if (!uncertain && !undatedHit && timeline) {
-    if (last) trailing = timeline.trailing;
+    if (last && timeline.trailing !== null) trailing = { min: timeline.trailing, max: timeline.trailing };
     else if (fromFirstDraw && !hasHit) trailing = { min: timeline.total, max: timeline.total };
   }
   return { trailing, poolIds: undatedHit ? [] : [...hitPools], hasHit };

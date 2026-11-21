@@ -10,7 +10,6 @@ import { resolveLocalizedText } from "../../lib/localized-text";
 import { GAME_RECORDS_REGIONS, gameAccountRegion } from "../shared/game-records";
 // import { playerProfileHref } from "../../lib/player-profile-route";
 import { resourcePath } from "../../lib/resource-route";
-import { formatDate } from "../../lib/date-format";
 import type { Locale } from "../../i18n/locales";
 
 type Value = Record<string, unknown>;
@@ -36,7 +35,6 @@ export interface GameAccountsView {
 }
 
 const DIFFICULTIES = ["easy", "normal", "hard", "expert"] as const;
-const DAY_MS = 86_400_000;
 
 const summaryOf = (account: Value): Value | null =>
   ((account.latestSnapshot as Value | null | undefined)?.summary as Value | null | undefined) ?? null;
@@ -214,9 +212,6 @@ function renderAccount(account: Value, view: GameAccountsView) {
     const amount = count(input);
     return amount == null ? null : number.format(amount);
   };
-  const startedAt = count(summary?.startedAt);
-  const startedMs = startedAt == null || startedAt <= 0 ? null : startedAt * 1000;
-  const days = startedMs == null ? null : Math.max(0, Math.floor((Date.now() - startedMs) / DAY_MS));
   const stats = summary
     ? [
         value(summary.rank) != null
@@ -231,14 +226,6 @@ function renderAccount(account: Value, view: GameAccountsView) {
           : nothing,
         value(summary.snapshots) != null
           ? renderStat(icon("photo_library", 20), view.label("community.page.gameSnapshots", "Snapshots"), value(summary.snapshots))
-          : nothing,
-        startedMs != null
-          ? renderStat(
-              icon("calendar_month", 20),
-              view.label("community.page.gameStarted", "Started"),
-              html`<time datetime=${new Date(startedMs).toISOString()}>${formatDate(locale, startedMs, { year: "always" })}</time>`,
-              html`<small>${view.label("community.page.gameDays", "{count} days", { count: number.format(days!) })}</small>`,
-            )
           : nothing,
       ]
     : [];

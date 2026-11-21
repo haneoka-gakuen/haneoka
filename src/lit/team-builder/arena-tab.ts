@@ -165,7 +165,7 @@ export class ArenaController {
     this.update({ leagueId, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } });
   }
   selectPool() {
-    const difficulties = this.host.songDifficulties;
+    const difficulties = this.host.songPoolDifficulties;
     this.updateBuild({
       songs: this.allowedSongIds.flatMap((id) => {
         const rows = this.host.catalog!.difficultyRows(id).filter((row) => arenaReleased(row));

@@ -320,7 +320,6 @@
     "src/lib/gacha-history-device.ts",
     "src/server/gacha-history-page-data.ts",
     "src/lit/gacha-history.ts",
-    "src/lit/shared/gacha-history-chart.ts",
     "src/lit/shared/voice-catalog.ts",
     "src/lib/cross-server/voices.ts",
     "src/lib/team-builder/song-comparison.ts",

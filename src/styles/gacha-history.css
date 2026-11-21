@@ -169,14 +169,6 @@
   .gacha-history__wide {
     grid-column: 1 / -1;
   }
-  .gacha-history gacha-history-chart {
-    display: block;
-    min-inline-size: 0;
-  }
-  .gacha-history__plot {
-    inline-size: 100%;
-    block-size: 288px;
-  }
   .gacha-history__logo {
     display: grid;
     flex: 0 0 auto;
@@ -189,6 +181,18 @@
     inline-size: 100%;
     block-size: 100%;
     object-fit: contain;
+  }
+  .gacha-history__logo-fallback {
+    display: grid;
+    place-items: center;
+    inline-size: 38px;
+    block-size: 38px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+  }
+  .gacha-history__logo img:not([hidden]) ~ .gacha-history__logo-fallback {
+    display: none;
   }
 
   /* Luck meter */
@@ -314,6 +318,73 @@
   }
   .gacha-hit[data-pickup="true"] .gacha-hit__bar > span {
     background: var(--md-sys-color-tertiary);
+  }
+  .gacha-timeline .gacha-pool {
+    content-visibility: auto;
+    contain-intrinsic-block-size: auto 320px;
+  }
+  .gacha-timeline .gacha-pool__header {
+    display: grid;
+    grid-template-columns: clamp(48px, 13%, 96px) minmax(0, 1fr) max-content;
+  }
+  .gacha-timeline .gacha-history__logo {
+    inline-size: 100%;
+  }
+  .gacha-timeline .gacha-hit__bar {
+    block-size: 10px;
+  }
+  .gacha-timeline__marks {
+    gap: 4px;
+  }
+  .gacha-timeline__marks .gacha-chip {
+    min-block-size: 20px;
+    padding-inline: 8px;
+  }
+  .gacha-timeline__marks .gacha-chip[data-tone="error"] {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+  }
+  .gacha-timeline__empty {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+  .gacha-series {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+  .gacha-series > li {
+    display: grid;
+    gap: var(--md-sys-spacing-2);
+    padding: var(--md-sys-spacing-3);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-low);
+    overflow-wrap: anywhere;
+  }
+  .gacha-series__track {
+    display: flex;
+    overflow: hidden;
+    block-size: 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-highest);
+  }
+  .gacha-series [data-channel="0"] { --gacha-series-color: var(--md-sys-color-primary); }
+  .gacha-series [data-channel="1"] { --gacha-series-color: var(--md-sys-color-tertiary); }
+  .gacha-series [data-channel="2"] { --gacha-series-color: var(--md-sys-color-outline); }
+  .gacha-series__track > span { background: var(--gacha-series-color); }
+  .gacha-series__values {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-small-size);
+  }
+  .gacha-series__values [data-channel]::before {
+    display: inline-block;
+    inline-size: 8px;
+    block-size: 8px;
+    margin-inline-end: 6px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--gacha-series-color);
+    content: "";
   }
 
   /* Pools */

@@ -276,6 +276,19 @@ export class TeamBuilder extends LitElement {
     return Array.isArray(stored?.difficulties)
       ? stored.difficulties.filter(id => Number.isInteger(id) && id >= 0 && id <= 4) : [3];
   }
+  get songDifficultyCeiling(): number | null {
+    const value = (this.view?.prefs["song-picker"] as { includeThrough?: number } | undefined)?.includeThrough;
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 4 ? value : null;
+  }
+  get songPoolDifficulties(): number[] {
+    const through = this.songDifficultyCeiling;
+    return through === null
+      ? this.songDifficulties
+      : [...new Set([...this.songDifficulties, ...Array.from({ length: through + 1 }, (_, index) => index)])];
+  }
+  setSongPickerPreferences(difficulties: number[], includeThrough: number | null) {
+    this.write([{ key: "pref.song-picker", value: { difficulties, includeThrough } }]);
+  }
   filters: BoxFilters = {
     kind: "members",
     query: "",
@@ -291,6 +304,7 @@ export class TeamBuilder extends LitElement {
   selection = new Set<string>();
   editing: { kind: "members" | "snaps"; cardId: number } | null = null;
   songPicker: SongPickerState | null = null;
+  bestDifficultyOnly = false;
   private taskResults = new Map<
     string,
     {

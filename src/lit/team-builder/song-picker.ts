@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Scene-specific chart choices, catalogue and browse preferences.
-// Output: Grid chart selection, ordinary Live recommendations and explicit apply/cancel.
+// Output: Grid chart selection, optional lower difficulties, ordinary Live recommendations and explicit apply/cancel.
 // Pos: [Map](../L2-2.md); shared team workspace chart chooser.
 // Effects/Dependencies: Lit modal, Box-persisted difficulty selection and lazy reads of release-pinned metadata and rates.
 import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
@@ -40,6 +40,8 @@ export interface SongPickerState {
   gekisouMatch?: "only" | "contains";
   difficulty: number;
   difficulties?: number[];
+  expandDifficulties?: boolean;
+  includeThrough?: number | null;
   minLevel?: number | null;
   maxLevel?: number | null;
   maxSeconds?: number | null;
@@ -83,6 +85,33 @@ const MAX_RECOMMENDATIONS = 10;
 const FILTER_KEYS = ["query", "bands", "categories", "attributes", "gekisouTypes", "gekisouMatch",
   "difficulties", "minLevel", "maxLevel", "maxSeconds"] as const;
 const DIFFICULTIES = ["EASY", "NORMAL", "HARD", "EXPERT", "SPECIAL"];
+
+export function includeDifficulties(host: TeamBuilder, songs: SongRef[], through: number | null, allowed: (song: SongRef) => boolean): SongRef[] {
+  if (through === null) return uniqueCharts(songs);
+  const added = [...new Set(songs.map(song => song.songId))].flatMap(songId =>
+    host.catalog!.difficultyRows(songId)
+      .map(row => ({ songId, difficulty: Number(row.difficulty) }))
+      .filter(ref => ref.difficulty <= through && allowed(ref)),
+  );
+  return uniqueCharts([...songs, ...added]);
+}
+
+export function includeDifficultySelect(host: TeamBuilder, through: number | null, change: (value: number | null) => void) {
+  return html`
+    <md-outlined-select
+      label=${host.t("includeDifficultiesThrough", "Include difficulties up to")}
+      .value=${through === null ? "off" : String(through)}
+      @change=${(event: Event) => {
+        const value = (event.target as HTMLInputElement).value;
+        change(value === "off" ? null : Number(value));
+      }}
+    >
+      <md-select-option value="off"><div slot="headline">${host.t("selectedDifficultiesOnly", "Selected charts only")}</div></md-select-option>
+      ${DIFFICULTIES.map((label, value) => html`<md-select-option value=${String(value)}><div slot="headline">${label}</div></md-select-option>`)}
+    </md-outlined-select>
+  `;
+}
+
 export function renderSongPicker(host: TeamBuilder): TemplateResult {
   let state = host.songPicker!;
   const catalog = host.catalog!;
@@ -94,6 +123,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       ...state,
       ...host.songPickerPreferences.get(context),
       difficulties: host.songDifficulties,
+      includeThrough: state.expandDifficulties ? host.songDifficultyCeiling : null,
       initialized: true,
       opener: typeof document === "undefined" ? undefined : (document.activeElement as HTMLElement),
     };
@@ -125,7 +155,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       maxLevel,
       maxSeconds,
     });
-    if (patch.difficulties) host.write([{ key: "pref.song-picker", value: { difficulties: patch.difficulties } }]);
+    if (patch.difficulties) host.setSongPickerPreferences(patch.difficulties, host.songDifficultyCeiling);
     host.requestUpdate();
   };
   const close = () => {
@@ -243,6 +273,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   });
   const visibleKeys = new Set(visible.map(chartKey));
   const validSelected = state.songs.filter(legal);
+  const appliedCharts = includeDifficulties(host, validSelected, state.includeThrough ?? null, legal);
   const unavailable = state.songs.filter((song) => !legal(song));
   const outside = validSelected.filter((song) => !visibleKeys.has(chartKey(song)));
   const offersRecommendations = state.recommend && host.canRecommendCharts;
@@ -414,6 +445,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
           selected: difficulties, change: (difficulties) => update({ difficulties }),
           allLabel: state.single ? undefined : host.t("allChartDifficulties", "All difficulties"),
         })}
+        ${state.expandDifficulties ? includeDifficultySelect(host, state.includeThrough ?? null, (includeThrough) => update({ includeThrough })) : nothing}
         ${songPickerAppliedFilters({
           items: applied, removeLabel: host.common("common.actions.remove", "Remove"),
           clearLabel: host.t("clearFilters", "Clear filters"), clear: clearFilters,
@@ -582,11 +614,13 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
         <button
           class="button"
           @click=${() => {
-            state.change(uniqueCharts(validSelected));
+            if (state.expandDifficulties)
+              host.setSongPickerPreferences(host.songDifficulties, state.includeThrough ?? null);
+            state.change(appliedCharts);
             close();
           }}
         >
-          ${host.t("applyCharts", "Use {count} charts", { count: validSelected.length })}
+          ${host.t("applyCharts", "Use {count} charts", { count: appliedCharts.length })}
         </button>
       </div>
     `,
