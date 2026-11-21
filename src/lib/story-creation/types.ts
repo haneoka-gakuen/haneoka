@@ -13,6 +13,8 @@ export const STORY_LIMITS = Object.freeze({
   scriptBytes: 8 * 1024 ** 2,
   stories: 200,
   manifestBytes: 16 * 1024 ** 2,
+  /** Revisions kept per story; the cleanup sweep prunes older ones. */
+  revisions: 50,
 });
 export type StoryVisibility = "public" | "unlisted";
 export type StoryAssetState = "ready" | "processing" | "rejected";

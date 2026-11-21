@@ -734,6 +734,48 @@ export async function reconcileCommunityStories(env: Env): Promise<void> {
 export async function cleanupCommunityStories(env: Env): Promise<void> {
   await reconcileCommunityStories(env);
   const cutoff = Date.now() - 7 * 86400000;
+  // Cloud saves are capped per story: keep the newest revisions and hand the
+  // pruned ones' objects to the garbage sweep below.
+  const overCap = await env.DB.prepare(
+    `SELECT s.id, (
+       SELECT count(*) FROM community_story_revision r WHERE r.story_id = s.id
+     ) AS n
+     FROM community_story s
+     WHERE EXISTS (
+       SELECT 1 FROM community_story_revision r WHERE r.story_id = s.id
+       GROUP BY r.story_id HAVING count(*) > ?
+     )
+     LIMIT 30`,
+  )
+    .bind(STORY_LIMITS.revisions)
+    .all<{ id: string }>();
+  for (const row of overCap.results) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO community_story_gc(object_key,created_at)
+         SELECT object_key, ? FROM community_story_revision WHERE story_id = ? AND revision <= (
+           SELECT min(revision) FROM (
+             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
+           )
+         )`,
+      ).bind(Date.now(), row.id, row.id, STORY_LIMITS.revisions),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO community_story_gc(object_key,created_at)
+         SELECT runtime_key, ? FROM community_story_revision WHERE story_id = ? AND runtime_key IS NOT NULL AND revision <= (
+           SELECT min(revision) FROM (
+             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
+           )
+         )`,
+      ).bind(Date.now(), row.id, row.id, STORY_LIMITS.revisions),
+      env.DB.prepare(
+        `DELETE FROM community_story_revision WHERE story_id = ? AND revision <= (
+           SELECT min(revision) FROM (
+             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
+           )
+         )`,
+      ).bind(row.id, row.id, STORY_LIMITS.revisions),
+    ]);
+  }
   const removedOwners = await env.DB.prepare(
     `SELECT s.id,s.deleted_at AS deletedAt FROM community_story s JOIN community_profile p ON p.user_id=s.owner_id
     WHERE p.status='deleted' OR p.deleted_at IS NOT NULL OR s.deleted_at<? ORDER BY s.id LIMIT 30`,

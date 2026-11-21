@@ -370,6 +370,13 @@ const gameAccounts = async (request: Request, env: Env, url: URL): Promise<Respo
       `INSERT OR IGNORE INTO community_game_account_snapshot (id, game_account_id, captured_at, summary_json, schema_version, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     ).bind(crypto.randomUUID(), id, capturedAt, JSON.stringify(summary), SNAPSHOT_SCHEMA, now),
+    // Readers only use the newest snapshot; keep a bounded history per account.
+    env.DB.prepare(
+      `DELETE FROM community_game_account_snapshot WHERE game_account_id = ? AND id NOT IN (
+         SELECT id FROM community_game_account_snapshot WHERE game_account_id = ?
+         ORDER BY captured_at DESC, id DESC LIMIT 10
+       )`,
+    ).bind(id, id),
   ]);
   return json({ accounts: await listGameAccounts(env, userId) });
 };
