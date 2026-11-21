@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 本地谱面工程、可选音频、发布配置及备份 ZIP。
-// Output: 有无音频均可保存的 CAS 历史与可移植工程备份；MMW 原始字节保留 binary 编码标记。
+// Output: 有无音频均可保存的 CAS 历史与可移植工程备份；文档行维护轻量版本索引，每工程保留最近有限个版本并在保存时清理更早记录；MMW 原始字节保留 binary 编码标记。
 // Pos: [Map](../L2-2.md)；谱面创作的 IndexedDB 与文件持久化边界。
 // Effects/Dependencies: IndexedDB 连接生命周期、ZIP、哈希；导出云端封面时按当前账户读取素材，导入移除云端写入身份。
 import { zip, unzip } from "fflate";
@@ -23,6 +23,13 @@ export interface CreationRevision {
   chart: Project;
   audio?: AudioRef;
 }
+/** Revision history entry kept on the document row so lists never load chart bodies. */
+export interface CreationVersionEntry {
+  revision: number;
+  savedAt: number;
+}
+/** Each project keeps at most this many revisions; older ones are pruned on save. */
+export const CREATION_REVISION_LIMIT = 50;
 export interface CreationDocument {
   id: string;
   title: string;
@@ -31,6 +38,7 @@ export interface CreationDocument {
   original: Project;
   originalAudio?: AudioRef;
   source?: { name: string; text: string; encoding?: "binary" };
+  revisions?: CreationVersionEntry[];
 }
 const request = <T>(value: IDBRequest<T>) =>
   new Promise<T>((resolve, reject) => {
@@ -96,6 +104,36 @@ export class CreationStore {
     const tx = await this.transaction("revisions");
     return request(tx.objectStore("revisions").getAll(IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER])));
   }
+  /** Version list without chart bodies; backfills the document index for pre-index projects. */
+  async versionList(id: string): Promise<CreationVersionEntry[]> {
+    const tx = await this.transaction("documents");
+    const document = (await request(tx.objectStore("documents").get(id))) as CreationDocument | undefined;
+    if (Array.isArray(document?.revisions)) return document.revisions;
+    const entries = (await this.versions(id)).map(({ revision, savedAt }) => ({ revision, savedAt }));
+    if (document && entries.length > CREATION_REVISION_LIMIT) return this.pruneVersions(id, entries);
+    if (document && entries.length) {
+      const write = await this.transaction("documents", "readwrite");
+      write.objectStore("documents").put({ ...document, revisions: entries });
+      await completion(write);
+    }
+    return entries;
+  }
+  /** Trim the document's version index and delete the pruned revision rows. */
+  private async pruneVersions(id: string, entries: CreationVersionEntry[]): Promise<CreationVersionEntry[]> {
+    const kept = entries.slice(-CREATION_REVISION_LIMIT);
+    const oldest = kept[0]?.revision ?? Number.MAX_SAFE_INTEGER;
+    const tx = await this.transaction(["documents", "revisions"], "readwrite");
+    const done = completion(tx);
+    const revisions = tx.objectStore("revisions");
+    const doomed = await request(revisions.getAllKeys(IDBKeyRange.bound([id, 0], [id, oldest - 1]))) as IDBValidKey[];
+    for (const key of doomed) revisions.delete(key);
+    const docs = tx.objectStore("documents");
+    const document = (await request(docs.get(id))) as CreationDocument | undefined;
+    // Audio blobs are content-addressed and shared; project deletion remains their garbage collector.
+    if (document) docs.put({ ...document, revisions: kept });
+    await done;
+    return kept;
+  }
   async open(id: string, revision?: number) {
     const tx = await this.transaction(["documents", "revisions", "audio"]);
     const done = completion(tx);
@@ -129,6 +167,7 @@ export class CreationStore {
     const done = completion(tx);
     void done.catch(() => {});
     const docs = tx.objectStore("documents"),
+      revisionsStore = tx.objectStore("revisions"),
       previous = (await request(docs.get(id))) as CreationDocument | undefined;
     if ((previous?.head ?? 0) !== head) {
       tx.abort();
@@ -143,8 +182,17 @@ export class CreationStore {
     const originalRef = originalAudio === null ? undefined : originalAudio?.audio ?? ref;
     const savedAt = Date.now(),
       revision = head + 1;
+    // The version index rides on the document row; legacy projects without one
+    // are rebuilt here once, from the full revision bodies.
+    const previousEntries: CreationVersionEntry[] = Array.isArray(previous?.revisions)
+      ? previous.revisions
+      : (await request(revisionsStore.getAll(IDBKeyRange.bound([id, 0], [id, head]))) as CreationRevision[])
+        .map(({ revision: number, savedAt: at }) => ({ revision: number, savedAt: at }));
+    const entries = [...previousEntries.filter((entry) => entry.revision !== revision), { revision, savedAt }]
+      .sort((a, b) => a.revision - b.revision)
+      .slice(-CREATION_REVISION_LIMIT);
     const document: CreationDocument = previous
-      ? { ...previous, title: chart.meta.title, head: revision, updatedAt: savedAt }
+      ? { ...previous, title: chart.meta.title, head: revision, updatedAt: savedAt, revisions: entries }
       : {
           id,
           title: chart.meta.title,
@@ -153,18 +201,24 @@ export class CreationStore {
           original: structuredCloneValue(original),
           ...(originalRef ? { originalAudio: structuredCloneValue(originalRef) } : {}),
           ...(source ? { source } : {}),
+          revisions: entries,
         };
     if (audio && !(await request(tx.objectStore("audio").getKey(audio.sha256))))
       tx.objectStore("audio").put(audio.file, audio.sha256);
     if (!previous && originalAudio && !(await request(tx.objectStore("audio").getKey(originalAudio.audio.sha256))))
       tx.objectStore("audio").put(originalAudio.file, originalAudio.audio.sha256);
-    tx.objectStore("revisions").add({
+    revisionsStore.add({
       projectId: id,
       revision,
       savedAt,
       chart: structuredCloneValue(chart),
       ...(ref ? { audio: ref } : {}),
     } satisfies CreationRevision);
+    // Revisions that fell out of the index are deleted in the same CAS
+    // transaction; audio blobs stay until project deletion collects them.
+    const oldest = entries[0]?.revision ?? revision;
+    for (const key of await request(revisionsStore.getAllKeys(IDBKeyRange.bound([id, 0], [id, oldest - 1]))) as IDBValidKey[])
+      revisionsStore.delete(key);
     docs.put(document);
     await done;
     return document;
@@ -329,6 +383,7 @@ export class CreationStore {
       original,
       ...(originalAudio ? { originalAudio } : {}),
       ...(source ? { source } : {}),
+      revisions: [{ revision: 1, savedAt }],
     });
     tx.objectStore("revisions").add({ projectId: id, revision: 1, savedAt, chart, ...(currentAudio ? { audio: currentAudio } : {}) });
     await done;

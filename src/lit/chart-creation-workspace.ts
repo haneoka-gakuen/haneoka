@@ -35,7 +35,7 @@ import { ChartPatternStore, parseChartPattern, serializeChartPattern, type Chart
 import { chartCreationTools as creationTools, chartSnapDivisions as snapDivisions, chartShortcutCommands, chartShortcutBindings,
   displayChartShortcut, matchChartShortcut, readChartShortcuts, shortcutForEvent, writeChartShortcuts,
   type ChartShortcutOverrides } from "../lib/chart-creation/shortcuts";
-import { CreationStore, type CreationDocument, type CreationRevision } from "../lib/chart-creation/storage";
+import { CreationStore, type CreationDocument, type CreationVersionEntry } from "../lib/chart-creation/storage";
 import { decodeCreationAudio, type CreationAudio } from "../lib/chart-creation/audio";
 import { EditorAudioFeedback, DEFAULT_EDITOR_AUDIO, readEditorAudioSettings, writeEditorAudioSettings, type EditorAudioSettings } from "../lib/chart-creation/feedback";
 import { MediaClock } from "@haneoka/cassiopeia-host-web";
@@ -338,7 +338,14 @@ export class ChartCreationWorkspace extends LitElement {
   declare private patternName: string;
   declare private selectedPattern: string;
   declare private patternError: string;
-  private autosaveTimer?: ReturnType<typeof setTimeout>;
+  /** Consecutive edits coalesce into one autosave after this idle gap. */
+  private static readonly autosaveIdleMs = 5_000;
+  /** Continuous editing still saves at least this often, measured from the first unsaved change. */
+  private static readonly autosaveMaxMs = 30_000;
+  private autosaveIdleTimer?: ReturnType<typeof setTimeout>;
+  private autosaveDeadlineTimer?: ReturnType<typeof setTimeout>;
+  private unsavedSince = 0;
+  private autosaveInFlight?: Promise<void>;
   private audio?: CreationAudio;
   private preview?: EditAudioTransport;
   declare private stageMode: "edit" | "preview";
@@ -387,7 +394,7 @@ export class ChartCreationWorkspace extends LitElement {
   declare private tool: string;
   declare private selected: string;
   declare private documents: CreationDocument[];
-  declare private revisions: CreationRevision[];
+  declare private revisions: CreationVersionEntry[];
   declare private windowStart: number;
   declare private topDownTime: boolean;
   private pending?: { tick: number; lane: number; size: number };
@@ -626,7 +633,8 @@ export class ChartCreationWorkspace extends LitElement {
   }
   disconnectedCallback() {
     this.touchPoints.clear(); this.touchViewport = undefined;
-    clearTimeout(this.autosaveTimer);
+    clearTimeout(this.autosaveIdleTimer);
+    clearTimeout(this.autosaveDeadlineTimer);
     document.removeEventListener("fullscreenchange", this.fullscreenChanged);
     this.panelMedia?.removeEventListener("change", this.mediaChanged);
     this.releasePanelFocus?.();
@@ -667,19 +675,12 @@ export class ChartCreationWorkspace extends LitElement {
   private errorShown = "";
   protected updated() {
     if (!this.isConnected) return;
-    if (this.dirty && this.hasProject && !this.busy && !this.pastePlacement && !this.conflict && !this.autosaveTimer) {
-      this.autosaveTimer = setTimeout(() => {
-        this.autosaveTimer = undefined;
-        if (this.isConnected && !this.busy && !this.gesture && !this.pastePlacement && !this.widthSession && !this.conflict) {
-          const focused = document.activeElement;
-          void this.run(() => this.save(true)).then(async () => {
-            await this.updateComplete;
-            if (focused instanceof HTMLElement && focused.isConnected && document.activeElement === document.body)
-              focused.focus({ preventScroll: true });
-          });
-        }
-      }, 2000);
+    if (!this.dirty) {
+      this.unsavedSince = 0;
+      clearTimeout(this.autosaveDeadlineTimer);
+      this.autosaveDeadlineTimer = undefined;
     }
+    this.scheduleAutosave();
     if (this.error !== this.errorShown) {
       this.errorShown = this.error;
       if (this.error) snackbar(this.error);
@@ -736,7 +737,8 @@ export class ChartCreationWorkspace extends LitElement {
     if (!this.hasProject) return;
     // Astro keeps modules alive across page swaps, including history traversal.
     // Wait for an in-flight save so its new revision is restored with the draft.
-    const draft = this.operation.then(() => this.captureDraft());
+    const draft = Promise.all([this.operation, this.autosaveInFlight ?? Promise.resolve()])
+      .then(() => this.captureDraft());
     ChartCreationWorkspace.suspendedDraft = draft;
     ChartCreationWorkspace.suspendedUnsaved = this.dirty || this.busy;
     window.addEventListener("beforeunload", ChartCreationWorkspace.protectSuspendedDraft);
@@ -744,6 +746,53 @@ export class ChartCreationWorkspace extends LitElement {
       if (ChartCreationWorkspace.suspendedDraft === draft)
         ChartCreationWorkspace.suspendedUnsaved = value.dirty;
     });
+  }
+  /** Autosave runs detached from `run`: it never sets `busy` and never blocks the next edit. */
+  private scheduleAutosave(delay = ChartCreationWorkspace.autosaveIdleMs) {
+    if (!this.isConnected || !this.dirty || !this.hasProject) return;
+    if (this.busy || this.pastePlacement || this.conflict || this.autosaveInFlight) return;
+    this.unsavedSince ||= Date.now();
+    clearTimeout(this.autosaveIdleTimer);
+    this.autosaveIdleTimer = setTimeout(() => {
+      this.autosaveIdleTimer = undefined;
+      void this.autosave();
+    }, delay);
+    // The idle timer restarts on every edit; this one bounds the total staleness.
+    this.autosaveDeadlineTimer ??= setTimeout(() => {
+      this.autosaveDeadlineTimer = undefined;
+      void this.autosave();
+    }, Math.max(0, this.unsavedSince + ChartCreationWorkspace.autosaveMaxMs - Date.now()));
+  }
+  private async autosave() {
+    if (this.autosaveInFlight) {
+      this.scheduleAutosave(1_000);
+      return;
+    }
+    if (!this.isConnected || !this.dirty || this.busy || this.gesture || this.pastePlacement || this.widthSession || this.conflict) {
+      // Blocked mid-interaction: retry shortly instead of waiting for another edit.
+      this.scheduleAutosave(1_000);
+      return;
+    }
+    const chart = this.chart;
+    const run = this.autosaveInFlight = this.save(true, chart).then(() => {}, (error: unknown) => {
+      if (this.isConnected) {
+        this.conflict = error instanceof Error && error.message === "save_conflict";
+        this.error = clientText(
+          this.locale,
+          `editors.chart.creation.${error instanceof Error ? error.message : "failed"}`,
+          this.t("loadFailed"),
+        );
+        this.requestUpdate();
+      }
+    }).finally(() => {
+      if (this.autosaveInFlight === run) this.autosaveInFlight = undefined;
+    });
+    await run;
+    // Edits that landed mid-save anchor a fresh staleness window.
+    if (this.dirty && this.isConnected) {
+      this.unsavedSince = Date.now();
+      this.scheduleAutosave();
+    }
   }
   private run(action: (signal: AbortSignal) => Promise<void>): Promise<void> {
     if (this.busy) return Promise.resolve();
@@ -778,12 +827,14 @@ export class ChartCreationWorkspace extends LitElement {
       }
     }
   }
-  private async save(silent = false) {
+  private async save(silent = false, snapshot = this.chart) {
     if (!this.hasProject || !this.dirty) return;
+    // A detached autosave may hold the head; let it finish so both saves chain on the CAS.
+    if (this.autosaveInFlight) await this.autosaveInFlight;
     const document = await this.store.save(
       this.projectId,
       this.head,
-      this.chart,
+      snapshot,
       this.audio,
       this.original,
       this.source,
@@ -791,11 +842,12 @@ export class ChartCreationWorkspace extends LitElement {
     this.conflict = false;
     this.head = document.head;
     this.activeRevision = document.head;
-    this.dirty = false;
+    if (this.chart === snapshot) this.dirty = false;
     if (!silent) this.status = this.t("creation.saved");
     try { localStorage.setItem("haneoka-chart-last-project", this.projectId); } catch {}
-    this.documents = await this.store.list();
-    this.revisions = await this.store.versions(this.projectId);
+    if (Array.isArray(document.revisions)) this.revisions = document.revisions;
+    // The picker list only needs refreshing for reader-visible saves; autosave stays detached.
+    if (!silent) this.documents = await this.store.list();
   }
   private edit(updater: (draft: Project) => void) {
     if (this.busy || this.gesture || this.pastePlacement) return;
@@ -1164,7 +1216,7 @@ export class ChartCreationWorkspace extends LitElement {
     const signal = this.controller!.signal;
     await this.save(); signal.throwIfAborted();
     const opened = await this.store.open(id, revision);
-    const [audio, revisions] = await Promise.all([opened.file ? decodeCreationAudio(opened.file, signal) : undefined, this.store.versions(id)]);
+    const [audio, revisions] = await Promise.all([opened.file ? decodeCreationAudio(opened.file, signal) : undefined, this.store.versionList(id)]);
     if (audio && audio.sha256 !== opened.value.audio!.sha256) throw new Error("audio_hash");
     signal.throwIfAborted(); await this.disposePreview(); signal.throwIfAborted();
     if (!this.isConnected) throw new DOMException("Disconnected", "AbortError");
@@ -1192,7 +1244,7 @@ export class ChartCreationWorkspace extends LitElement {
       this.projectId = id; this.head = document.head; this.activeRevision = document.head;
       this.history.reset(snapshot); this.setSelection([]);
       this.dirty = false; this.conflict = false; this.deletingProject = false;
-      this.documents = await this.store.list(); this.revisions = await this.store.versions(id);
+      this.documents = await this.store.list(); this.revisions = await this.store.versionList(id);
       this.status = this.t("creation.saved");
     });
   }
