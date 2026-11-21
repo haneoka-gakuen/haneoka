@@ -9,6 +9,7 @@ import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { readPageData } from "../lib/page-data";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { communityLinkBootstrapUrl, readCommunityBootstrap } from "../lib/community-bootstrap";
+import { GAME_TOOL_ACCOUNTS_CHANGED } from "../lib/game-tool-account-store";
 import { prefetchEarlyRead } from "../lib/early-read";
 import { interpolateMessage, type MessageParams } from "@haneoka/i18n";
 import { renderEntityCommentActivity } from "./views/entity-comment-activity";
@@ -430,6 +431,15 @@ export class CommunityWorkspace extends LitElement {
         this[property] = field.value;
     }
   }
+  private gameAccountSyncTimer?: ReturnType<typeof setTimeout>;
+  private readonly onGameAccountSync = () => {
+    if (this.routeKind !== "user-detail" || this.phase !== "ready") return;
+    // Import bursts coalesce into one profile re-read.
+    clearTimeout(this.gameAccountSyncTimer);
+    this.gameAccountSyncTimer = setTimeout(() => {
+      if (this.isConnected && this.routeKind === "user-detail") void this.load(false, true);
+    }, 800);
+  };
   private readonly onForumRefresh = (event?: Event) => {
     if (!this.isConnected) return;
     const editor =
@@ -795,6 +805,7 @@ export class CommunityWorkspace extends LitElement {
     }
   };
   disconnectedCallback() {
+    clearTimeout(this.gameAccountSyncTimer);
     this.reactions.clear();
     this.saveFeedSnapshot();
     this.columnsObserver?.disconnect();
@@ -853,6 +864,14 @@ export class CommunityWorkspace extends LitElement {
       { signal: this.lifetime.signal },
     );
     window.addEventListener("haneoka:session-changed", this.onForumRefresh, {
+      signal: this.lifetime.signal,
+    });
+    // A profile's game-account sync lands after the page rendered; refresh
+    // the open profile instead of keeping its stale last-synced stamp.
+    window.addEventListener("haneoka-save-import-complete", this.onGameAccountSync, {
+      signal: this.lifetime.signal,
+    });
+    window.addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.onGameAccountSync, {
       signal: this.lifetime.signal,
     });
     // A post or member link the reader points at, presses or focuses starts

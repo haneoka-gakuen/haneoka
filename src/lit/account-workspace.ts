@@ -27,6 +27,7 @@ import { rememberSignedIn, signedInHint } from "../lib/community-viewer";
 import { readEarlyJson, takeEarlyRead } from "../lib/early-read";
 import { snackbar } from "../lib/snackbar";
 import { appCall, appSupports, DEFAULT_SAVE_IMPORT, inApp, type DeviceSave, type SaveImportAction, type SaveImportOptions } from "../lib/app-bridge";
+import { GAME_TOOL_ACCOUNTS_CHANGED } from "../lib/game-tool-account-store";
 import { hasUserCapability } from "../lib/user-roles";
 import { formatDate } from "../lib/date-format";
 import "./web-game-save-reader";
@@ -186,9 +187,12 @@ export class AccountWorkspace extends LitElement {
     if (query.get("deleted") === "1") this.message = this.label("accountDeleted", "Account deleted.");
     if (query.get("linked") === "1") this.message = this.label("accountLinked", "Account linked.");
     void this.load();
+    // Import completion and tool-account changes refresh the linked list in
+    // every context, not only inside the app shell.
+    addEventListener("haneoka-save-import-complete", this.reloadLinkedGames);
+    addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.reloadLinkedGames);
     if (inApp()) {
       addEventListener("haneoka-app-accounts", this.loadDeviceSaves);
-      addEventListener("haneoka-save-import-complete", this.reloadLinkedGames);
       addEventListener("pageshow", this.restoreDeviceSaves);
       void this.loadDeviceSaves();
       if (appSupports("saveAutomationV1"))
@@ -205,12 +209,18 @@ export class AccountWorkspace extends LitElement {
       this.deviceSaves = [];
     }
   };
-  private readonly reloadLinkedGames = async () => {
+  private linkedGamesTimer?: ReturnType<typeof setTimeout>;
+  private readonly reloadLinkedGames = () => {
+    // Account bursts (history association, imports) coalesce into one fetch.
+    clearTimeout(this.linkedGamesTimer);
+    this.linkedGamesTimer = setTimeout(() => void this.reloadLinkedGamesNow(), 500);
+  };
+  private async reloadLinkedGamesNow() {
     const owner = this.user()?.id;
     if (!owner) return;
     const value = await this.request("/api/v1/account/game-accounts", { signal: this.lifetime.signal }).catch(() => null);
     if (this.isConnected && this.user()?.id === owner && Array.isArray(value?.accounts)) this.games = value.accounts as Value[];
-  };
+  }
   private async changeSaveImportOption(action: SaveImportAction, selected: boolean) {
     try {
       this.saveImportOptions = await appCall("saveImportOptions", { [action]: selected });
@@ -224,6 +234,8 @@ export class AccountWorkspace extends LitElement {
   disconnectedCallback() {
     removeEventListener("haneoka-app-accounts", this.loadDeviceSaves);
     removeEventListener("haneoka-save-import-complete", this.reloadLinkedGames);
+    removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.reloadLinkedGames);
+    clearTimeout(this.linkedGamesTimer);
     removeEventListener("pageshow", this.restoreDeviceSaves);
     this.lifetime.abort();
     this.loadRequests.cancel();
@@ -490,6 +502,9 @@ export class AccountWorkspace extends LitElement {
         return;
       }
       await this.load();
+      // Staying on the page: let tool accounts, box sync and app imports
+      // pick up the new session without a reload.
+      dispatchEvent(new Event("haneoka:session-changed"));
     });
     if (result || this.mode === "verifyEmail")
       this.message =
@@ -551,6 +566,7 @@ export class AccountWorkspace extends LitElement {
       async () => {
         await this.request("/api/auth/sign-out", { method: "POST", body: "{}" });
         this.clearSession();
+        dispatchEvent(new Event("haneoka:session-changed"));
       },
       this.label("signedOut", "Signed out."),
     );
