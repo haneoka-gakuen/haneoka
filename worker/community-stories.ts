@@ -734,15 +734,41 @@ export async function reconcileCommunityStories(env: Env): Promise<void> {
 export async function cleanupCommunityStories(env: Env): Promise<void> {
   await reconcileCommunityStories(env);
   const cutoff = Date.now() - 7 * 86400000;
-  // Cloud saves are capped per story: keep the newest revisions and hand the
-  // pruned ones' objects to the garbage sweep below.
+  // Cloud saves are capped per story. The current draft (head), the published
+  // and the in-flight revision, and every revision that was ever published
+  // are protected: their records stay and their objects never enter the
+  // garbage queue. Only the unpublished draft tail beyond the newest
+  // STORY_LIMITS.revisions of it is pruned, strictly below that boundary.
+  const protectedRevision = `(
+       r.published_at IS NOT NULL
+       OR r.revision = s.head
+       OR (s.published_revision IS NOT NULL AND r.revision = s.published_revision)
+       OR (s.publishing_revision IS NOT NULL AND r.revision = s.publishing_revision)
+     )`;
+  const prunableTail = `FROM community_story s
+     JOIN community_story_revision r ON r.story_id = s.id
+     WHERE s.id = ?
+       AND r.deleted_at IS NULL
+       AND NOT ${protectedRevision}
+       AND r.revision < (
+         SELECT min(revision) FROM (
+           SELECT candidate.revision FROM community_story_revision candidate
+           WHERE candidate.story_id = s.id AND candidate.deleted_at IS NULL
+             AND NOT (
+               candidate.published_at IS NOT NULL
+               OR candidate.revision = s.head
+               OR (s.published_revision IS NOT NULL AND candidate.revision = s.published_revision)
+               OR (s.publishing_revision IS NOT NULL AND candidate.revision = s.publishing_revision)
+             )
+           ORDER BY candidate.revision DESC LIMIT ?
+         )
+       )`;
   const overCap = await env.DB.prepare(
-    `SELECT s.id, (
-       SELECT count(*) FROM community_story_revision r WHERE r.story_id = s.id
-     ) AS n
-     FROM community_story s
+    `SELECT s.id FROM community_story s
      WHERE EXISTS (
-       SELECT 1 FROM community_story_revision r WHERE r.story_id = s.id
+       SELECT 1 FROM community_story_revision r
+       JOIN community_story s2 ON s2.id = r.story_id
+       WHERE r.story_id = s.id AND r.deleted_at IS NULL AND NOT ${protectedRevision}
        GROUP BY r.story_id HAVING count(*) > ?
      )
      LIMIT 30`,
@@ -753,25 +779,15 @@ export async function cleanupCommunityStories(env: Env): Promise<void> {
     await env.DB.batch([
       env.DB.prepare(
         `INSERT OR IGNORE INTO community_story_gc(object_key,created_at)
-         SELECT object_key, ? FROM community_story_revision WHERE story_id = ? AND revision <= (
-           SELECT min(revision) FROM (
-             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
-           )
-         )`,
-      ).bind(Date.now(), row.id, row.id, STORY_LIMITS.revisions),
+         SELECT r.object_key, ? ${prunableTail}`,
+      ).bind(Date.now(), row.id, STORY_LIMITS.revisions),
       env.DB.prepare(
         `INSERT OR IGNORE INTO community_story_gc(object_key,created_at)
-         SELECT runtime_key, ? FROM community_story_revision WHERE story_id = ? AND runtime_key IS NOT NULL AND revision <= (
-           SELECT min(revision) FROM (
-             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
-           )
-         )`,
-      ).bind(Date.now(), row.id, row.id, STORY_LIMITS.revisions),
+         SELECT r.runtime_key, ? ${prunableTail}`,
+      ).bind(Date.now(), row.id, STORY_LIMITS.revisions),
       env.DB.prepare(
-        `DELETE FROM community_story_revision WHERE story_id = ? AND revision <= (
-           SELECT min(revision) FROM (
-             SELECT revision FROM community_story_revision WHERE story_id = ? ORDER BY revision DESC LIMIT ?
-           )
+        `DELETE FROM community_story_revision WHERE story_id = ? AND revision IN (
+           SELECT r.revision ${prunableTail}
          )`,
       ).bind(row.id, row.id, STORY_LIMITS.revisions),
     ]);
