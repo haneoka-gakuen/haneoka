@@ -4,7 +4,9 @@
 // Pos: [Map](L2-2.md)；网页和程序化导出共用的图片排版。
 // Effects/Dependencies: 解码图片、加载字体、绘制 Canvas；下载创建并回收 Blob URL。
 import type { ChartDocument } from "@haneoka/cassiopeia";
-import { chartCanvasFontFamily, countNoteKinds } from "./chart-overview-renderer";
+import type { ChartCanvasSkin } from "@haneoka/cassiopeia-ui-vue/overview";
+import { drawLongPng } from "../../lib/long-png";
+import { chartCanvasFontFamily, chartOverviewLayout, countNoteKinds, drawDetailedChartOverview } from "./chart-overview-renderer";
 const DIFFICULTY_COLORS: Record<string, string> = {
   easy: "#48cadc",
   normal: "#56ce79",
@@ -226,6 +228,7 @@ const layoutStatRows = (cells: StatCell[], contentWidth: number, gap: number, ma
 export async function composeChartOverviewImage(
   canvas: HTMLCanvasElement,
   meta: ChartOverviewExportMeta,
+  more: readonly HTMLCanvasElement[] = [],
 ): Promise<Blob | undefined> {
   const fontStack = chartCanvasFontFamily(meta.locale);
   const cssWidth = Number.parseFloat(canvas.style.width || "") || canvas.width;
@@ -254,189 +257,207 @@ export async function composeChartOverviewImage(
   const gapStatsChart = Math.round(20 * scale);
   const width = Math.max(chartWidth + padding * 2, Math.round(1000 * scale));
 
-  const output = document.createElement("canvas");
-  const context = output.getContext("2d");
-  if (!context) return undefined;
+  const measure = document.createElement("canvas").getContext("2d");
+  if (!measure) return undefined;
   // Two rows keep the stats band dense on every strip width; wider strips
   // simply spread the same cells further apart.
   const statRows = layoutStatRows(
-    measureStatCells(context, meta.stats, scale, fontStack),
+    measureStatCells(measure, meta.stats, scale, fontStack),
     width - padding * 2,
     Math.round(26 * scale),
     2,
   );
   const statsHeight = statRows.length * statRowHeight + (statRows.length - 1) * statRowGap;
-  const height = padding + headerHeight + gapHeaderStats + statsHeight + gapStatsChart + chartHeight + padding;
-  if (width > 16_384 || height > 16_384 || width * height > 32_000_000) return undefined;
-  output.width = width;
-  output.height = height;
+  const chartTop = padding + headerHeight + gapHeaderStats + statsHeight + gapStatsChart;
+  const height = chartTop + chartHeight * (more.length + 1) + padding;
+  if (width > 16_384) return undefined;
 
   const accent = difficultyColor(meta.difficultyName);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  // Same colour as the overview panels: the padding reads as part of the chart.
-  context.fillStyle = "#000";
-  context.fillRect(0, 0, width, height);
-  context.textAlign = "left";
-  context.textBaseline = "alphabetic";
+  return drawLongPng(width, height, (context, top, bottom) => {
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    // Same colour as the overview panels: the padding reads as part of the chart.
+    context.fillStyle = "#000";
+    context.fillRect(0, top, width, bottom - top);
+    context.textAlign = "left";
+    context.textBaseline = "alphabetic";
 
-  // Header — jacket on the left; the enlarged title with the band mark and
-  // band name to its right, then the difficulty pill and the credit row.
-  // Every header row shares one left edge (`textLeft`), matching the site
-  // brand block on the right edge.
-  const textLeft = padding + (jacket ? jacketSize + Math.round(24 * scale) : 0);
-  const titleSize = Math.round(40 * scale);
-  context.font = `400 ${titleSize}px/${Math.round(50 * scale)}px ${chartCanvasFontFamily(meta.titleLanguage || meta.locale)}`;
-  const titleRowCenter = padding + Math.round(34 * scale);
-  const titleMaxWidth = width - padding - textLeft - Math.round(320 * scale);
-  const title = clampText(context, meta.title, titleMaxWidth);
-  const titleDrawnWidth = Math.min(context.measureText(title).width, titleMaxWidth);
-  context.fillStyle = "rgba(255,255,255,.94)";
-  context.textBaseline = "middle";
-  context.fillText(title, textLeft, titleRowCenter);
-  if (jacket) {
-    context.save();
-    roundRect(context, padding, padding, jacketSize, jacketSize, Math.round(16 * scale));
-    context.clip();
-    context.drawImage(jacket, padding, padding, jacketSize, jacketSize);
-    context.restore();
-  }
-
-  // Band mark and name sit beside the enlarged title, vertically centered
-  // against it.
-  const bandMarkSize = Math.round(34 * scale);
-  let bandCursor = textLeft + titleDrawnWidth + Math.round(24 * scale);
-  if (bandMark) {
-    context.drawImage(bandMark, bandCursor, titleRowCenter - bandMarkSize / 2, bandMarkSize, bandMarkSize);
-    bandCursor += bandMarkSize + Math.round(14 * scale);
-  }
-  if (meta.bandName || meta.artist) {
-    context.font = `500 ${Math.round(24 * scale)}px/${Math.round(32 * scale)}px ${fontStack}`;
-    context.fillStyle = "rgba(255,255,255,.82)";
-    context.fillText(
-      clampText(context, meta.bandName || meta.artist || "", Math.max(0, width - padding - bandCursor)),
-      bandCursor,
-      titleRowCenter,
-    );
-  }
-  context.textBaseline = "alphabetic";
-
-  // Pill row — the difficulty pill, then the attribute mark, on the shared
-  // left edge.
-  const pillTop = padding + pillRowTop;
-  const pillLabel = `${meta.difficultyName.toUpperCase()} ${meta.displayLevel}`.trim();
-  context.font = `500 ${Math.round(16 * scale)}px/${pillHeight}px ${fontStack}`;
-  const pillPadding = Math.round(18 * scale);
-  const pillWidth = context.measureText(pillLabel).width + pillPadding * 2;
-  context.globalAlpha = 0.32;
-  context.fillStyle = accent;
-  roundRect(context, textLeft, pillTop, pillWidth, pillHeight, pillHeight / 2);
-  context.fill();
-  context.globalAlpha = 1;
-  context.lineWidth = Math.max(1, Math.round(1.5 * scale));
-  context.strokeStyle = accent;
-  roundRect(context, textLeft, pillTop, pillWidth, pillHeight, pillHeight / 2);
-  context.stroke();
-  context.fillStyle = accent;
-  context.textBaseline = "middle";
-  context.fillText(pillLabel, textLeft + pillPadding, pillTop + pillHeight / 2);
-  const cursor = textLeft + pillWidth + Math.round(16 * scale);
-  const markSize = Math.round(28 * scale);
-  if (attributeMark) {
-    context.drawImage(attributeMark, cursor, pillTop + (pillHeight - markSize) / 2, markSize, markSize);
-  }
-  context.textBaseline = "alphabetic";
-
-  // Credit row — 作曲 · 作词 · 编曲 · 发布 on the shared left edge. Labels
-  // share one column width so the values also line up vertically.
-  const credits = (meta.credits || []).filter((credit) => credit.value);
-  if (credits.length) {
-    const creditTop = padding + creditsRowTop;
-    context.font = `500 ${Math.round(13 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
-    const labelWidth = Math.max(...credits.map((credit) => context.measureText(credit.label).width));
+    // Header — jacket on the left; the enlarged title with the band mark and
+    // band name to its right, then the difficulty pill and the credit row.
+    // Every header row shares one left edge (`textLeft`), matching the site
+    // brand block on the right edge.
+    const textLeft = padding + (jacket ? jacketSize + Math.round(24 * scale) : 0);
+    const titleSize = Math.round(40 * scale);
+    context.font = `400 ${titleSize}px/${Math.round(50 * scale)}px ${chartCanvasFontFamily(meta.titleLanguage || meta.locale)}`;
+    const titleRowCenter = padding + Math.round(34 * scale);
+    const titleMaxWidth = width - padding - textLeft - Math.round(320 * scale);
+    const title = clampText(context, meta.title, titleMaxWidth);
+    const titleDrawnWidth = Math.min(context.measureText(title).width, titleMaxWidth);
+    context.fillStyle = "rgba(255,255,255,.94)";
     context.textBaseline = "middle";
-    let creditCursor = textLeft;
-    for (const credit of credits) {
-      context.font = `500 ${Math.round(13 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
-      context.fillStyle = "rgba(255,255,255,.45)";
-      context.fillText(credit.label, creditCursor, creditTop);
-      context.font = `400 ${Math.round(16 * scale)}px/${Math.round(22 * scale)}px ${fontStack}`;
-      context.fillStyle = "rgba(255,255,255,.78)";
-      const maxTextWidth = Math.max(0, width - padding - creditCursor - labelWidth - Math.round(10 * scale));
-      const text = clampText(context, credit.value, maxTextWidth);
-      context.fillText(text, creditCursor + labelWidth + Math.round(10 * scale), creditTop);
-      creditCursor += labelWidth + Math.round(10 * scale) + context.measureText(text).width + Math.round(26 * scale);
-      if (creditCursor > width - padding) break;
+    context.fillText(title, textLeft, titleRowCenter);
+    if (jacket) {
+      context.save();
+      roundRect(context, padding, padding, jacketSize, jacketSize, Math.round(16 * scale));
+      context.clip();
+      context.drawImage(jacket, padding, padding, jacketSize, jacketSize);
+      context.restore();
+    }
+
+    // Band mark and name sit beside the enlarged title, vertically centered
+    // against it.
+    const bandMarkSize = Math.round(34 * scale);
+    let bandCursor = textLeft + titleDrawnWidth + Math.round(24 * scale);
+    if (bandMark) {
+      context.drawImage(bandMark, bandCursor, titleRowCenter - bandMarkSize / 2, bandMarkSize, bandMarkSize);
+      bandCursor += bandMarkSize + Math.round(14 * scale);
+    }
+    if (meta.bandName || meta.artist) {
+      context.font = `500 ${Math.round(24 * scale)}px/${Math.round(32 * scale)}px ${fontStack}`;
+      context.fillStyle = "rgba(255,255,255,.82)";
+      context.fillText(
+        clampText(context, meta.bandName || meta.artist || "", Math.max(0, width - padding - bandCursor)),
+        bandCursor,
+        titleRowCenter,
+      );
     }
     context.textBaseline = "alphabetic";
-  }
 
-  // Top-right corner — site mark, name, URL, the Cassiopeia credit and the
-  // song id, all right-aligned on the shared right edge.
-  const brandName = "Haneoka";
-  const creditLine = "Powered by Cassiopeia from haneoka";
-  context.font = `500 ${Math.round(18 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
-  const brandNameWidth = context.measureText(brandName).width;
-  context.font = `400 ${Math.round(15 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
-  const brandUrlWidth = context.measureText("haneoka.org").width;
-  const brandGap = Math.round(10 * scale);
-  const brandMarkSize = Math.round(26 * scale);
-  const brandRight =
-    padding + brandMarkSize + brandGap + brandNameWidth + brandGap + brandUrlWidth;
-  let brandCursor = width - brandRight;
-  if (brandMarkSmall) {
-    context.drawImage(brandMarkSmall, brandCursor, padding + Math.round(2 * scale), brandMarkSize, brandMarkSize);
-  }
-  brandCursor += brandMarkSize + brandGap;
-  context.textBaseline = "middle";
-  context.font = `500 ${Math.round(18 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
-  context.fillStyle = "rgba(255,255,255,.92)";
-  context.fillText(brandName, brandCursor, padding + Math.round(15 * scale));
-  brandCursor += brandNameWidth + brandGap;
-  context.font = `400 ${Math.round(15 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
-  context.fillStyle = "rgba(255,255,255,.55)";
-  context.fillText("haneoka.org", brandCursor, padding + Math.round(15 * scale));
-  context.textAlign = "right";
-  context.font = `400 ${Math.round(14 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
-  context.fillStyle = "rgba(255,255,255,.45)";
-  context.fillText(creditLine, width - padding, padding + Math.round(42 * scale));
-  if (meta.songId !== undefined && meta.songId !== "") {
-    context.fillText(`ID ${meta.songId}`, width - padding, padding + Math.round(64 * scale));
-  }
-  context.textAlign = "left";
-  context.textBaseline = "alphabetic";
-
-  // Stats grid — label over value on the shared left edge, each row spread
-  // across the strip width.
-  let statsTop = padding + headerHeight + gapHeaderStats;
-  for (const row of statRows) {
-    const rowWidth = row.reduce((total, cell) => total + cell.width, 0);
-    const gap = row.length > 1 ? (width - padding * 2 - rowWidth) / (row.length - 1) : 0;
-    // First cell pins to the shared left edge; the rest spread evenly.
-    let rowCursor = padding;
-    for (const cell of row) {
-      context.font = `500 ${Math.round(12.5 * scale)}px/${Math.round(16 * scale)}px ${fontStack}`;
-      context.fillStyle = "rgba(255,255,255,.5)";
-      context.fillText(cell.label, rowCursor, statsTop + Math.round(11 * scale));
-      context.font = `500 ${Math.round(20 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
-      context.fillStyle = "rgba(255,255,255,.92)";
-      context.fillText(cell.value, rowCursor, statsTop + Math.round(39 * scale));
-      rowCursor += cell.width + gap;
+    // Pill row — the difficulty pill, then the attribute mark, on the shared
+    // left edge.
+    const pillTop = padding + pillRowTop;
+    const pillLabel = `${meta.difficultyName.toUpperCase()} ${meta.displayLevel}`.trim();
+    context.font = `500 ${Math.round(16 * scale)}px/${pillHeight}px ${fontStack}`;
+    const pillPadding = Math.round(18 * scale);
+    const pillWidth = context.measureText(pillLabel).width + pillPadding * 2;
+    context.globalAlpha = 0.32;
+    context.fillStyle = accent;
+    roundRect(context, textLeft, pillTop, pillWidth, pillHeight, pillHeight / 2);
+    context.fill();
+    context.globalAlpha = 1;
+    context.lineWidth = Math.max(1, Math.round(1.5 * scale));
+    context.strokeStyle = accent;
+    roundRect(context, textLeft, pillTop, pillWidth, pillHeight, pillHeight / 2);
+    context.stroke();
+    context.fillStyle = accent;
+    context.textBaseline = "middle";
+    context.fillText(pillLabel, textLeft + pillPadding, pillTop + pillHeight / 2);
+    const cursor = textLeft + pillWidth + Math.round(16 * scale);
+    const markSize = Math.round(28 * scale);
+    if (attributeMark) {
+      context.drawImage(attributeMark, cursor, pillTop + (pillHeight - markSize) / 2, markSize, markSize);
     }
-    statsTop += statRowHeight + statRowGap;
+    context.textBaseline = "alphabetic";
+
+    // Credit row — 作曲 · 作词 · 编曲 · 发布 on the shared left edge. Labels
+    // share one column width so the values also line up vertically.
+    const credits = (meta.credits || []).filter((credit) => credit.value);
+    if (credits.length) {
+      const creditTop = padding + creditsRowTop;
+      context.font = `500 ${Math.round(13 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
+      const labelWidth = Math.max(...credits.map((credit) => context.measureText(credit.label).width));
+      context.textBaseline = "middle";
+      let creditCursor = textLeft;
+      for (const credit of credits) {
+        context.font = `500 ${Math.round(13 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
+        context.fillStyle = "rgba(255,255,255,.45)";
+        context.fillText(credit.label, creditCursor, creditTop);
+        context.font = `400 ${Math.round(16 * scale)}px/${Math.round(22 * scale)}px ${fontStack}`;
+        context.fillStyle = "rgba(255,255,255,.78)";
+        const maxTextWidth = Math.max(0, width - padding - creditCursor - labelWidth - Math.round(10 * scale));
+        const text = clampText(context, credit.value, maxTextWidth);
+        context.fillText(text, creditCursor + labelWidth + Math.round(10 * scale), creditTop);
+        creditCursor += labelWidth + Math.round(10 * scale) + context.measureText(text).width + Math.round(26 * scale);
+        if (creditCursor > width - padding) break;
+      }
+      context.textBaseline = "alphabetic";
+    }
+
+    // Top-right corner — site mark, name, URL, the Cassiopeia credit and the
+    // song id, all right-aligned on the shared right edge.
+    const brandName = "Haneoka";
+    const creditLine = "Powered by Cassiopeia from haneoka";
+    context.font = `500 ${Math.round(18 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
+    const brandNameWidth = context.measureText(brandName).width;
+    context.font = `400 ${Math.round(15 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
+    const brandUrlWidth = context.measureText("haneoka.org").width;
+    const brandGap = Math.round(10 * scale);
+    const brandMarkSize = Math.round(26 * scale);
+    const brandRight =
+      padding + brandMarkSize + brandGap + brandNameWidth + brandGap + brandUrlWidth;
+    let brandCursor = width - brandRight;
+    if (brandMarkSmall) {
+      context.drawImage(brandMarkSmall, brandCursor, padding + Math.round(2 * scale), brandMarkSize, brandMarkSize);
+    }
+    brandCursor += brandMarkSize + brandGap;
+    context.textBaseline = "middle";
+    context.font = `500 ${Math.round(18 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
+    context.fillStyle = "rgba(255,255,255,.92)";
+    context.fillText(brandName, brandCursor, padding + Math.round(15 * scale));
+    brandCursor += brandNameWidth + brandGap;
+    context.font = `400 ${Math.round(15 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
+    context.fillStyle = "rgba(255,255,255,.55)";
+    context.fillText("haneoka.org", brandCursor, padding + Math.round(15 * scale));
+    context.textAlign = "right";
+    context.font = `400 ${Math.round(14 * scale)}px/${Math.round(20 * scale)}px ${fontStack}`;
+    context.fillStyle = "rgba(255,255,255,.45)";
+    context.fillText(creditLine, width - padding, padding + Math.round(42 * scale));
+    if (meta.songId !== undefined && meta.songId !== "") {
+      context.fillText(`ID ${meta.songId}`, width - padding, padding + Math.round(64 * scale));
+    }
+    context.textAlign = "left";
+    context.textBaseline = "alphabetic";
+
+    // Stats grid — label over value on the shared left edge, each row spread
+    // across the strip width.
+    let statsTop = padding + headerHeight + gapHeaderStats;
+    for (const row of statRows) {
+      const rowWidth = row.reduce((total, cell) => total + cell.width, 0);
+      const gap = row.length > 1 ? (width - padding * 2 - rowWidth) / (row.length - 1) : 0;
+      // First cell pins to the shared left edge; the rest spread evenly.
+      let rowCursor = padding;
+      for (const cell of row) {
+        context.font = `500 ${Math.round(12.5 * scale)}px/${Math.round(16 * scale)}px ${fontStack}`;
+        context.fillStyle = "rgba(255,255,255,.5)";
+        context.fillText(cell.label, rowCursor, statsTop + Math.round(11 * scale));
+        context.font = `500 ${Math.round(20 * scale)}px/${Math.round(26 * scale)}px ${fontStack}`;
+        context.fillStyle = "rgba(255,255,255,.92)";
+        context.fillText(cell.value, rowCursor, statsTop + Math.round(39 * scale));
+        rowCursor += cell.width + gap;
+      }
+      statsTop += statRowHeight + statRowGap;
+    }
+
+    for (const [index, row] of [canvas, ...more].entries()) {
+      const y = chartTop + index * chartHeight;
+      if (y >= bottom || y + chartHeight <= top) continue;
+      const rowWidth = Math.round((Number.parseFloat(row.style.width || "") || row.width) * scale);
+      context.drawImage(row, padding, y, rowWidth, chartHeight);
+    }
+  });
+}
+
+export async function renderChartOverviewPng(
+  chart: ChartDocument,
+  skin: ChartCanvasSkin,
+  viewportHeight: number,
+  meta: ChartOverviewExportMeta,
+  fontFamily = chartCanvasFontFamily(meta.locale),
+) {
+  const layout = chartOverviewLayout(chart.durationMs, viewportHeight);
+  const maxWidth = Math.min(5200, 10_000_000 / (layout.height * 2.25));
+  const columns = Math.max(1, Math.floor(maxWidth / layout.panelWidth));
+  const rows: HTMLCanvasElement[] = [];
+  try {
+    for (let first = 0; first < layout.panelCount; first += columns) {
+      const row = document.createElement("canvas");
+      drawDetailedChartOverview(row, chart, skin, layout.height, undefined, { first, count: columns }, fontFamily);
+      rows.push(row);
+    }
+    return await composeChartOverviewImage(rows[0]!, meta, rows.slice(1));
+  } finally {
+    for (const row of rows) row.width = row.height = 0;
   }
-
-  // Chart strip — the export ends flush with the strip: no footer band.
-  context.drawImage(
-    canvas,
-    padding,
-    padding + headerHeight + gapHeaderStats + statsHeight + gapStatsChart,
-    chartWidth,
-    chartHeight,
-  );
-
-  const blob = await new Promise<Blob | null>((resolve) => output.toBlob(resolve, "image/png"));
-  return blob || undefined;
 }
 
 export function downloadChartOverviewImage(blob: Blob, fileName: string): void {

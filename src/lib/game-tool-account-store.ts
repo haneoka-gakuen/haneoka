@@ -39,26 +39,44 @@ function directory(scope: string | null = gameToolOwner()): Directory {
   };
 }
 const directoryKey = (scope: string | null) => scope === null ? "directory:local" : `directory:user:${encodeURIComponent(scope)}`;
+const versions = ["jp", "intl"] as const;
+const tools = ["team", "songs", "history"] as const;
+// Legacy tool data retains its old Box address. Reserved directory rows store its management settings.
+const legacySettingsId = (tool: GameTool, server: PublicReleaseServer) =>
+  (1 + tools.indexOf(tool) * versions.length + versions.indexOf(server)).toString(16).padStart(32, "0");
+const legacySettingsIds = new Set(tools.flatMap(tool => versions.map(server => legacySettingsId(tool, server))));
+function legacyProfile(tool: GameTool, server: PublicReleaseServer, scope = gameToolOwner()): GameToolAccount {
+  const stored = directory(scope).accounts.find(row => row.id === legacySettingsId(tool, server));
+  return { ...legacyToolAccount(server, tool), settings: stored?.settings };
+}
 function changed(scope: string | null, value: Directory) {
   write(directoryKey(scope), value);
   if (scope === gameToolOwner()) window.dispatchEvent(new Event(GAME_TOOL_ACCOUNTS_CHANGED));
 }
 export function gameToolAccounts(tool: GameTool, includeRemoved = false) {
-  return directory().accounts.filter(account => account.tool === tool && (includeRemoved || !account.settings?.removed))
+  return directory().accounts.filter(account => account.tool === tool && !legacySettingsIds.has(account.id) && (includeRemoved || !account.settings?.removed))
     .sort((a, b) => (a.settings?.position ?? 0) - (b.settings?.position ?? 0) || a.id.localeCompare(b.id));
 }
-export function legacyGameToolAccounts(tool: GameTool, active?: GameToolAccount): GameToolAccount[] {
+export function legacyGameToolAccountsWithData(tool: GameTool): PublicReleaseServer[] {
   const scope = gameToolOwner(), value = directory(scope);
-  if (tool === "history") return (gameToolAccounts(tool).length ? [] : ["jp", "intl"] as const).map(server => legacyToolAccount(server, tool));
-  if (!gameToolAccounts(tool).length) return [legacyToolAccount("jp", tool), legacyToolAccount("intl", tool)];
   const matches = new Set(value.legacy);
+  if (tool === "history") matches.clear();
+  for (const server of versions)
+    if (value.accounts.some(account => account.id === legacySettingsId(tool, server))) matches.add(server);
+  if (tool === "history") return [...matches];
   const boxOwner = scope === null ? "anonymous" : `account:${encodeURIComponent(scope)}`;
+  const dataKeys = tool === "songs" ? /^(?:l\.|pref\.pc-)/u : /^(?:m|s|bi|cr|br|cm|mm|p|team|plan)\./u;
   for (const server of ["jp", "intl"] as const) {
     try {
       const text = localStorage.getItem(`haneoka:team-box:v1:${boxOwner}:${server}`);
       const replica = text && JSON.parse(text) as { entries?: Record<string, { v: unknown }> };
-      if (replica && replica.entries && Object.values(replica.entries).some(entry => entry.v !== null)) matches.add(server);
-      if (!matches.has(server)) {
+      if (replica && replica.entries) {
+        const managed = value.accounts.some(account => account.id === legacySettingsId(tool, server));
+        if (managed || Object.entries(replica.entries).some(([key, entry]) => dataKeys.test(key) && entry.v !== null))
+          matches.add(server);
+        else matches.delete(server);
+      }
+      if (!matches.has(server) && tool === "team") {
         const prefix = `haneoka:team-inventory:v1:${boxOwner}:${server}:`;
         for (let index = 0; index < localStorage.length; index++) {
           if (localStorage.key(index)?.startsWith(prefix)) { matches.add(server); break; }
@@ -66,26 +84,45 @@ export function legacyGameToolAccounts(tool: GameTool, active?: GameToolAccount)
       }
     } catch { /* A cached Box is optional. */ }
   }
+  return [...matches];
+}
+export function legacyGameToolAccounts(tool: GameTool, active?: GameToolAccount, displayed: PublicReleaseServer[] = [], includeRemoved = false): GameToolAccount[] {
+  const matches = new Set([...legacyGameToolAccountsWithData(tool), ...displayed]);
   if (active && !isGameToolAccountId(active.id)) matches.add(active.server);
-  if (value.active[tool] === "legacy-jp") matches.add("jp");
-  if (value.active[tool] === "legacy-intl") matches.add("intl");
-  return [...matches].map(server => legacyToolAccount(server, tool));
+  return [...matches].map(server => legacyProfile(tool, server)).filter(account => includeRemoved || !account.settings?.removed);
 }
 export function getGameToolAccount(id: string, tool: GameTool, scope = gameToolOwner()): GameToolAccount | undefined {
-  if (id === "legacy-jp" || id === "legacy-intl") return legacyToolAccount(id === "legacy-jp" ? "jp" : "intl", tool);
-  return directory(scope).accounts.find(account => account.id === id && account.tool === tool && !account.settings?.removed);
+  if (id === "legacy-jp" || id === "legacy-intl") {
+    const profile = legacyProfile(tool, id === "legacy-jp" ? "jp" : "intl", scope);
+    return profile.settings?.removed ? undefined : profile;
+  }
+  if (!legacySettingsIds.has(id))
+    return directory(scope).accounts.find(account => account.id === id && account.tool === tool && !account.settings?.removed);
 }
 export function rememberedGameToolAccount(tool: GameTool, id?: string | null): GameToolAccount | undefined {
   return (id ? getGameToolAccount(id, tool) : undefined) ?? getGameToolAccount(directory().active[tool] ?? "", tool);
 }
 export function selectedGameToolAccount(tool: GameTool, server: string, id?: string | null): GameToolAccount {
-  return rememberedGameToolAccount(tool, id) ?? legacyToolAccount(server === "jp" ? "jp" : "intl", tool);
+  const selected = rememberedGameToolAccount(tool, id);
+  if (selected) return selected;
+  const version = server === "jp" ? "jp" : "intl";
+  const old = getGameToolAccount(`legacy-${version}`, tool);
+  const known = gameToolAccounts(tool);
+  if (old && legacyGameToolAccountsWithData(tool).includes(version)) return old;
+  return known.find(account => account.server === version) ?? old ?? known[0]
+    ?? getGameToolAccount(`legacy-${version === "jp" ? "intl" : "jp"}`, tool)
+    ?? legacyToolAccount(version, tool);
 }
 export function selectGameToolAccount(account: GameToolAccount) {
   if (!getGameToolAccount(account.id, account.tool)) return;
   const scope = gameToolOwner(), value = directory(scope);
   if (value.active[account.tool] === account.id) return;
   changed(scope, { ...value, active: { ...value.active, [account.tool]: account.id } });
+}
+export function selectImportedGameToolAccount(account: GameToolAccount) {
+  const active = rememberedGameToolAccount(account.tool);
+  if (!active || (!isGameToolAccountId(active.id) && !legacyGameToolAccountsWithData(account.tool).includes(active.server)))
+    selectGameToolAccount(account);
 }
 
 function merge(previous: GameToolAccount | undefined, incoming: GameToolAccount): GameToolAccount {
@@ -224,7 +261,10 @@ export async function captureGameToolSave(save: DeviceSave, tool: GameTool, scop
   return put({
     id, tool, server: save.server, uid: save.profileId,
     name: Array.from((save.name ?? "").replace(/[\p{Cc}\p{Cs}]/gu, "")).slice(0, 80).join(""),
-    rank: save.rank ?? undefined, favoriteCardId: save.favoriteCardId ?? undefined, savedAt: save.savedAt ?? undefined, historyKeys: [],
+    rank: Number.isSafeInteger(save.rank) && save.rank! >= 0 && save.rank! <= 99_999_999 ? save.rank! : undefined,
+    favoriteCardId: Number.isSafeInteger(save.favoriteCardId) && save.favoriteCardId! > 0 && save.favoriteCardId! <= 2_147_483_647 ? save.favoriteCardId! : undefined,
+    savedAt: Number.isSafeInteger(save.savedAt) && save.savedAt! >= 0 && save.savedAt! <= 8_640_000_000_000_000 ? save.savedAt! : undefined,
+    historyKeys: [],
   }, scope);
 }
 export async function captureGameToolSaveByKey(key: string, tool: GameTool) {
@@ -242,8 +282,17 @@ export async function associateGameToolHistory(account: GameToolAccount, key: st
 
 async function updateSettings(edits: readonly { account: GameToolAccount; patch: Partial<GameToolAccountSettings> }[]) {
   const scope = gameToolOwner(), value = directory(scope), now = Date.now();
-  const next = new Map(edits.map(({ account, patch }) => [account.id, patch]));
-  const accounts = value.accounts.map(account => {
+  const newLegacy: GameToolAccount[] = [];
+  const next = new Map(edits.map(({ account, patch }) => {
+    const legacy = account.id === `legacy-${account.server}`;
+    const id = legacy ? legacySettingsId(account.tool, account.server) : account.id;
+    if (!value.accounts.some(row => row.id === id && row.tool === account.tool)) {
+      if (!legacy) throw new Error("game_tool_account_changed");
+      newLegacy.push({ id, tool: account.tool, server: account.server, name: "", historyKeys: [] });
+    }
+    return [id, patch] as const;
+  }));
+  const accounts = [...value.accounts, ...newLegacy].map(account => {
     const patch = next.get(account.id);
     if (!patch) return account;
     const settings = { alias: "", position: 0, removed: false, ...account.settings,
@@ -252,18 +301,31 @@ async function updateSettings(edits: readonly { account: GameToolAccount; patch:
     return { ...account, settings };
   });
   const active = { ...value.active };
-  for (const account of accounts) if (account.settings?.removed && active[account.tool] === account.id) delete active[account.tool];
+  for (const { account, patch } of edits)
+    if (patch.removed && active[account.tool] === account.id) delete active[account.tool];
   changed(scope, { ...value, accounts, active,
+    pending: scope ? [...new Set([...value.pending, ...newLegacy.map(row => row.id)])] : value.pending,
     pendingSettings: scope ? [...new Set([...value.pendingSettings, ...next.keys()])] : value.pendingSettings,
   });
-  if (scope) await pushSettings(scope).catch(() => {});
+  if (scope) {
+    for (const row of newLegacy) {
+      const account = directory(scope).accounts.find(value => value.id === row.id);
+      if (account) await push(scope, account).catch(() => {});
+    }
+    await pushSettings(scope).catch(() => {});
+  }
 }
 export const renameGameToolAccount = (account: GameToolAccount, alias: string) =>
   updateSettings([{ account, patch: { alias: alias.trim() } }]);
-export const removeGameToolAccount = (account: GameToolAccount, removed: boolean) =>
-  updateSettings([{ account, patch: { removed } }]);
-export async function moveGameToolAccount(account: GameToolAccount, delta: -1 | 1) {
-  const accounts = gameToolAccounts(account.tool);
+export async function removeGameToolAccount(account: GameToolAccount, removed: boolean) {
+  const lastLegacy = removed && account.id === `legacy-${account.server}` && !gameToolAccounts(account.tool).length &&
+    versions.every(server => server === account.server || !getGameToolAccount(`legacy-${server}`, account.tool));
+  const fallback = lastLegacy ? await createGameToolAccount(account.tool, account.server, "") : undefined;
+  await updateSettings([{ account, patch: { removed } }]);
+  if (fallback) selectGameToolAccount(fallback);
+}
+export async function moveGameToolAccount(account: GameToolAccount, delta: -1 | 1, visible = gameToolAccounts(account.tool)) {
+  const accounts = [...visible];
   const index = accounts.findIndex(row => row.id === account.id);
   const target = index + delta;
   if (index < 0 || target < 0 || target >= accounts.length) return;

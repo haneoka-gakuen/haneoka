@@ -1,4 +1,5 @@
 import { drawExportBrand, HANEOKA_EXPORT_BRAND } from "./export-brand";
+import { drawLongPng } from "./long-png";
 export interface GachaHistoryReportCard {
   name: string;
   kindLabel: string;
@@ -47,7 +48,6 @@ const WIDTH = 960;
 const PAD = 32;
 const ROW = 214;
 const COLUMNS = 6;
-const PAGE_CARDS = 36;
 
 function lines(ctx: CanvasRenderingContext2D, text: string, width: number): string[] {
   const result: string[] = [];
@@ -107,7 +107,6 @@ async function loadReportImages(sources: string[], signal?: AbortSignal, assetsB
 async function renderTimelineImages(
   report: GachaHistoryReport,
   signal?: AbortSignal,
-  page?: number,
   assetsBase?: string,
 ): Promise<Blob[]> {
   const rowHeight = 94;
@@ -116,28 +115,16 @@ async function renderTimelineImages(
   const highlights = report.timelineHighlights ?? [];
   const badgeHeight = Math.ceil(highlights.length / 4) * 48;
   const headerHeight = 114 + report.scope.length * 29 + metricHeight + badgeHeight;
-  const availableHeight = 11900 - headerHeight;
-  const pages: GachaTimelineGroup[][] = [[]];
-  let room = availableHeight;
-  for (const pool of report.timeline!) {
-    let start = 0;
-    do {
-      if (room < groupHeader + rowHeight + 16) {
-        pages.push([]);
-        room = availableHeight;
-      }
-      const capacity = Math.floor((room - groupHeader - 16) / rowHeight);
-      const entries = pool.entries.slice(start, start + capacity);
-      pages.at(-1)!.push({ ...pool, entries });
-      room -= groupHeader + Math.max(1, entries.length) * rowHeight + 16;
-      start += entries.length;
-    } while (start < pool.entries.length);
-  }
-  if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > pages.length)) throw new RangeError("Unknown report page");
-  const selected = pages.filter((_, index) => page === undefined || page === index + 1);
-  const sources = selected.flatMap(groups => groups.flatMap(group => [
+  let height = headerHeight + PAD;
+  const groups = report.timeline!.map(group => {
+    const top = height - PAD;
+    const size = groupHeader + Math.max(1, group.entries.length) * rowHeight;
+    height += size + 16;
+    return { group, top, size, largest: group.entries.reduce((max, row) => Math.max(max, row.gap ?? 0), 1) };
+  });
+  const sources = groups.flatMap(({ group }) => [
     group.imageUrl, ...group.entries.map(row => row.imageUrl),
-  ])).filter((source): source is string => !!source);
+  ]).filter((source): source is string => !!source);
   const images = await loadReportImages([HANEOKA_EXPORT_BRAND.logo, ...sources], signal, assetsBase);
   const logo = images.get(HANEOKA_EXPORT_BRAND.logo) ??
     await loadImage(new URL("/favicon.svg", assetsBase ?? location.href).href, signal);
@@ -145,14 +132,7 @@ async function renderTimelineImages(
   const color = (token: string) => style.getPropertyValue(`--md-sys-color-${token}`).trim();
   const font = getComputedStyle(document.body).fontFamily;
   const content = WIDTH - PAD * 2;
-  const output: Blob[] = [];
-  for (const groups of selected) {
-    signal?.throwIfAborted();
-    const canvas = document.createElement("canvas");
-    canvas.width = WIDTH;
-    canvas.height = headerHeight + PAD + groups.reduce((height, group) =>
-      height + groupHeader + Math.max(1, group.entries.length) * rowHeight + 16, 0);
-    const ctx = canvas.getContext("2d")!;
+  return [await drawLongPng(WIDTH, height, (ctx, low, high) => {
     ctx.textBaseline = "top";
     const rounded = (token: string, x: number, y: number, width: number, height: number, radius: number) => {
       ctx.fillStyle = color(token);
@@ -172,7 +152,7 @@ async function renderTimelineImages(
       const w = image.naturalWidth * scale, h = image.naturalHeight * scale;
       ctx.drawImage(image, x + (width - w) / 2, y + (height - h) / 2, w, h);
     };
-    rounded("surface", 0, 0, WIDTH, canvas.height, 0);
+    rounded("surface", 0, low, WIDTH, high - low, 0);
     rounded("secondary-container", PAD, 29, 8, 42, 4);
     const brandWidth = drawExportBrand(
       ctx, { font, onSurface: color("on-surface"), variant: color("on-surface-variant") },
@@ -202,9 +182,8 @@ async function renderTimelineImages(
     };
     for (let index = 0; index < highlights.length; index += 4)
       badges(highlights.slice(index, index + 4), PAD, headerHeight - badgeHeight + index / 4 * 48, content);
-    let y = headerHeight;
-    for (const group of groups) {
-      const height = groupHeader + Math.max(1, group.entries.length) * rowHeight;
+    for (const { group, top: y, size: height, largest } of groups) {
+      if (y + height <= low || y >= high) continue;
       rounded("surface-container-low", PAD, y, content, height, 28);
       art(group.imageUrl, PAD + 16, y + 20, 98, 52);
       const heading = group.imageUrl && images.get(group.imageUrl) ? PAD + 126 : PAD + 20;
@@ -215,9 +194,12 @@ async function renderTimelineImages(
       ctx.textAlign = "center";
       text(group.total, "on-primary-container", 700, 22, totalX + 65.5, y + 30, 110);
       ctx.textAlign = "start";
-      const largest = group.entries.reduce((max, row) => Math.max(max, row.gap ?? 0), 1);
-      for (const [index, row] of group.entries.entries()) {
-        const top = y + groupHeader + index * rowHeight;
+      const rowsTop = y + groupHeader;
+      const first = Math.max(0, Math.floor((low - rowsTop) / rowHeight));
+      const end = Math.min(group.entries.length, Math.ceil((high - rowsTop) / rowHeight));
+      for (let index = first; index < end; index++) {
+        const row = group.entries[index]!;
+        const top = rowsTop + index * rowHeight;
         const right = WIDTH - PAD - 20;
         const trackWidth = 224;
         const start = right - trackWidth;
@@ -239,50 +221,27 @@ async function renderTimelineImages(
       }
       if (!group.entries.length && group.empty)
         text(group.empty, "on-surface-variant", 500, 22, PAD + 20, y + groupHeader + 18, content - 40);
-      y += height + 16;
     }
-    output.push(await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-      blob => blob ? resolve(blob) : reject(new Error("Report image unavailable")), "image/png",
-    )));
-    canvas.width = canvas.height = 1;
-  }
-  return output;
+  }, signal)];
 }
 
 export async function renderGachaHistoryImages(
   report: GachaHistoryReport,
-  { signal, page, assetsBase }: { signal?: AbortSignal; page?: number; assetsBase?: string } = {},
+  { signal, assetsBase }: { signal?: AbortSignal; assetsBase?: string } = {},
 ): Promise<Blob[]> {
   signal?.throwIfAborted();
   await document.fonts.ready;
   signal?.throwIfAborted();
-  if (report.timeline) return renderTimelineImages(report, signal, page, assetsBase);
+  if (report.timeline) return renderTimelineImages(report, signal, assetsBase);
   const style = getComputedStyle(document.documentElement);
   const color = (token: string) => style.getPropertyValue(`--md-sys-color-${token}`).trim();
   const font = getComputedStyle(document.body).fontFamily;
-  const pages: Array<Array<{ label: string; imageUrl?: string; cards: readonly GachaHistoryReportCard[] }>> = [[]];
-  let remaining = PAGE_CARDS;
-  for (const group of report.groups) {
-    if (!group.cards.length) continue;
-    for (let start = 0; start < group.cards.length;) {
-      if (!remaining) {
-        pages.push([]);
-        remaining = PAGE_CARDS;
-      }
-      const cards = group.cards.slice(start, start + remaining);
-      pages[pages.length - 1].push({ label: group.label, imageUrl: group.imageUrl, cards });
-      start += cards.length;
-      remaining -= cards.length;
-    }
-  }
-  if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > pages.length)) throw new RangeError("Unknown report page");
-  const selected = [...pages.entries()].filter(([index]) => page === undefined || index === page - 1);
-  const selectedGroups = selected.flatMap(([, groups]) => groups);
+  const groups = report.groups.filter(group => group.cards.length);
   const sources = [
     HANEOKA_EXPORT_BRAND.logo,
-    ...selectedGroups.map((group) => group.imageUrl).filter((value): value is string => !!value),
+    ...groups.map((group) => group.imageUrl).filter((value): value is string => !!value),
     ...new Set(
-      selectedGroups.flatMap((group) =>
+      groups.flatMap((group) =>
         group.cards
           .flatMap((card) => [card.imageUrl, card.attributeImageUrl, card.rarityImageUrl])
           .filter((source): source is string => Boolean(source)),
@@ -290,37 +249,32 @@ export async function renderGachaHistoryImages(
     ),
   ];
   const images = await loadReportImages(sources, signal, assetsBase);
-  const output: Blob[] = [];
-  for (const [pageIndex, groups] of selected) {
-    signal?.throwIfAborted();
-    const canvas = document.createElement("canvas");
-    canvas.width = WIDTH;
-    const ctx = canvas.getContext("2d")!;
-    ctx.font = `500 20px ${font}`;
-    const scope = report.scope.flatMap((text) => lines(ctx, text, WIDTH - PAD * 2));
-    const headerHeight = 104 + scope.length * 28;
-    const metricColumns = report.metrics.length <= 4 ? 4 : 3;
-    const metricRows = Math.ceil(report.metrics.length / metricColumns);
-    ctx.font = `600 26px ${font}`;
-    const groupTitles = groups.map((group) => lines(ctx, group.label, WIDTH - PAD * 2 - (group.imageUrl ? 108 : 0)));
-    const chartHeight = report.charts.reduce(
-      (sum, chart) => sum + 100 + (chart.caption ? 28 : 0) + chart.rows.length * 44,
+  const measure = document.createElement("canvas").getContext("2d")!;
+  measure.font = `500 20px ${font}`;
+  const scope = report.scope.flatMap((text) => lines(measure, text, WIDTH - PAD * 2));
+  const headerHeight = 104 + scope.length * 28;
+  const metricColumns = report.metrics.length <= 4 ? 4 : 3;
+  const metricRows = Math.ceil(report.metrics.length / metricColumns);
+  measure.font = `600 26px ${font}`;
+  const groupTitles = groups.map((group) => lines(measure, group.label, WIDTH - PAD * 2 - (group.imageUrl ? 108 : 0)));
+  const chartHeight = report.charts.reduce(
+    (sum, chart) => sum + 100 + (chart.caption ? 28 : 0) + chart.rows.length * 44,
+    0,
+  );
+  const height =
+    headerHeight +
+    metricRows * 104 +
+    chartHeight +
+    36 +
+    groups.reduce(
+      (height, group, index) =>
+        height + groupTitles[index].length * 32 + 40 + Math.ceil(group.cards.length / COLUMNS) * ROW,
       0,
-    );
-    canvas.height =
-      headerHeight +
-      metricRows * 104 +
-      chartHeight +
-      36 +
-      groups.reduce(
-        (height, group, index) =>
-          height + groupTitles[index].length * 32 + 40 + Math.ceil(group.cards.length / COLUMNS) * ROW,
-        0,
-      ) +
-      52;
-    if (canvas.width * canvas.height > 12_000_000) throw new RangeError("Report image exceeds the pixel budget");
+    ) +
+    52;
+  return [await drawLongPng(WIDTH, height, (ctx, low, high) => {
     ctx.fillStyle = color("surface");
-    ctx.fillRect(0, 0, WIDTH, canvas.height);
+    ctx.fillRect(0, low, WIDTH, high - low);
     ctx.textBaseline = "top";
     ctx.fillStyle = color("on-surface");
     ctx.font = `700 36px ${font}`;
@@ -398,6 +352,8 @@ export async function renderGachaHistoryImages(
     }
     const cardWidth = (WIDTH - PAD * 2 - 12 * (COLUMNS - 1)) / COLUMNS;
     for (const [groupIndex, group] of groups.entries()) {
+      const groupHeight = groupTitles[groupIndex].length * 32 + 40 + Math.ceil(group.cards.length / COLUMNS) * ROW;
+      if (y + groupHeight <= low || y >= high) { y += groupHeight; continue; }
       ctx.fillStyle = color("primary");
       ctx.font = `600 26px ${font}`;
       const poolImage = group.imageUrl ? images.get(group.imageUrl) : null;
@@ -407,7 +363,10 @@ export async function renderGachaHistoryImages(
       }
       groupTitles[groupIndex].forEach((line, index) => ctx.fillText(line, PAD + (poolImage ? 108 : 0), y + index * 32));
       y += groupTitles[groupIndex].length * 32 + 16;
-      for (const [index, card] of group.cards.entries()) {
+      const first = Math.max(0, Math.floor((low - y) / ROW)) * COLUMNS;
+      const end = Math.min(group.cards.length, Math.ceil((high - y) / ROW) * COLUMNS);
+      for (let index = first; index < end; index++) {
+        const card = group.cards[index]!;
         const x = PAD + (index % COLUMNS) * (cardWidth + 12),
           top = y + Math.floor(index / COLUMNS) * ROW;
         ctx.fillStyle = color("surface-container");
@@ -453,15 +412,5 @@ export async function renderGachaHistoryImages(
       }
       y += Math.ceil(group.cards.length / COLUMNS) * ROW + 24;
     }
-    ctx.fillStyle = color("on-surface-variant");
-    ctx.font = `500 16px ${font}`;
-    ctx.fillText(`Haneoka / ${pageIndex + 1}/${pages.length}`, PAD, canvas.height - 36);
-    output.push(
-      await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("image_export_failed"))), "image/png"),
-      ),
-    );
-  }
-  signal?.throwIfAborted();
-  return output;
+  }, signal)];
 }

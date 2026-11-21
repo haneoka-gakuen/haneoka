@@ -2263,7 +2263,7 @@ export class GachaHistory extends LitElement {
             natural
             .locale=${this.locale}
             .title=${this.t("imagePreview")}
-            .images=${this.imageFiles.map((file, index) => ({ id: file.filename, source: file.url, label: `${index + 1} / ${this.imageFiles.length}`, width: file.width, height: file.height }))}
+            .images=${this.imageFiles.map((file) => ({ id: file.filename, source: file.url, label: this.t("imagePreview"), width: file.width, height: file.height }))}
           ></image-gallery>
         </div>
         <footer class="dialog__actions">
@@ -2285,20 +2285,13 @@ export class GachaHistory extends LitElement {
     this.imageError = "";
     try {
       const { renderGachaHistoryImages } = await import("../lib/gacha-history-image");
-      const images = await renderGachaHistoryImages(report, { signal: request.signal });
-      const files = [];
-      for (const [index, blob] of images.entries()) {
-        const bitmap = await createImageBitmap(blob);
-        files.push({
-          blob,
-          filename: `haneoka-gacha-history-${index + 1}.png`,
-          width: bitmap.width,
-          height: bitmap.height,
-        });
-        bitmap.close();
-      }
+      const [blob] = await renderGachaHistoryImages(report, { signal: request.signal });
+      const header = new DataView(await blob!.slice(16, 24).arrayBuffer());
       request.signal.throwIfAborted();
-      this.imageFiles = files.map((file) => ({ ...file, url: URL.createObjectURL(file.blob) }));
+      this.imageFiles = [{
+        blob: blob!, filename: "haneoka-gacha-history.png", url: URL.createObjectURL(blob!),
+        width: header.getUint32(0), height: header.getUint32(4),
+      }];
     } catch {
       if (!request.signal.aborted) this.imageError = this.t("exportImageFailed");
     } finally {
@@ -2318,20 +2311,7 @@ export class GachaHistory extends LitElement {
         new CustomEvent("gacha-export-image", { detail: { files }, bubbles: true, composed: true, cancelable: true }),
       );
       if (!handled) {
-        let file: { blob: Blob; filename: string } = files[0];
-        if (files.length > 1) {
-          const { zipSync } = await import("fflate");
-          const entries = Object.fromEntries(
-            await Promise.all(
-              files.map(async (item) => [item.filename, new Uint8Array(await item.blob.arrayBuffer())]),
-            ),
-          );
-          const archive = Uint8Array.from(zipSync(entries, { level: 0 }));
-          file = {
-            filename: "haneoka-gacha-history.zip",
-            blob: new Blob([archive.buffer], { type: "application/zip" }),
-          };
-        }
+        const file = files[0]!;
         if (generation !== this.imageGeneration) return;
         const url = URL.createObjectURL(file.blob);
         const link = document.createElement("a");

@@ -505,6 +505,7 @@
     "src/lit/save-workspace.ts",
     "src/lit/ui/app-account-chooser.ts",
     "src/lib/document-address.ts",
+    "src/lib/long-png.ts",
     "src/lib/markdown-document.ts",
     "src/lib/navigation-prefetch.ts",
     "src/lib/team-builder/skill-roles.ts",

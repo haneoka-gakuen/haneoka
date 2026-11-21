@@ -13,6 +13,7 @@ export interface HistoryCloudLink {
   accountKey: string;
   grantId: string;
   uploaded: Record<string, string>;
+  disabled?: boolean;
 }
 
 export interface StoredHistory {
@@ -294,6 +295,12 @@ class HistoryStore extends EventTarget {
     return { documents, links };
   }
 
+  async localCloudLinks(ownerId: string) {
+    const db = await this.db();
+    return request<HistoryCloudLink[]>(db.transaction("cloudLinks").objectStore("cloudLinks")
+      .getAll(IDBKeyRange.bound([ownerId, ""], [ownerId, "\uffff"])));
+  }
+
   async saveCloud(document: HistoryCloudDocument): Promise<void> {
     const db = await this.db();
     await new Promise<void>((resolve, reject) => {
@@ -315,9 +322,24 @@ class HistoryStore extends EventTarget {
       if (updateOnly) {
         const previous = store.get([link.ownerId, link.accountKey]);
         previous.onsuccess = () => {
-          if (valid() && previous.result?.grantId === link.grantId) store.put(link);
+          if (valid() && previous.result?.grantId === link.grantId && !previous.result.disabled) store.put(link);
         };
       } else if (valid()) store.put(link);
+    });
+  }
+  async ensureCloudLink(link: HistoryCloudLink, valid: () => boolean): Promise<HistoryCloudLink | undefined> {
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("cloudLinks", "readwrite"), store = tx.objectStore("cloudLinks");
+      const previous = store.get([link.ownerId, link.accountKey]);
+      let saved: HistoryCloudLink | undefined;
+      tx.oncomplete = () => resolve(saved);
+      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("history_storage_failed"));
+      previous.onsuccess = () => {
+        if (!valid()) return;
+        saved = previous.result ?? link;
+        if (!previous.result) store.put(link);
+      };
     });
   }
   async unlinkCloud(ownerId: string, accountKey: string, grantId: string): Promise<void> {
@@ -329,7 +351,7 @@ class HistoryStore extends EventTarget {
       const store = tx.objectStore("cloudLinks"),
         previous = store.get([ownerId, accountKey]);
       previous.onsuccess = () => {
-        if (previous.result?.grantId === grantId) store.delete([ownerId, accountKey]);
+        if (previous.result?.grantId === grantId) store.put({ ...previous.result, disabled: true });
       };
     });
   }

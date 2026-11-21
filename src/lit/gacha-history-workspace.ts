@@ -68,6 +68,10 @@ class GachaHistoryWorkspace extends HTMLElement {
   private changed = () => {
     void this.reload();
   };
+  private appImportsChanged = () => {
+    void this.reload();
+    void this.cloud.refreshLocalLinks();
+  };
   private cloudChanged = () => {
     this.records = this.cloud.visibleRecords();
     this.selectAvailableHistory();
@@ -164,6 +168,7 @@ class GachaHistoryWorkspace extends HTMLElement {
       );
     });
     historyStore.addEventListener("change", this.changed);
+    window.addEventListener("haneoka-save-import-complete", this.appImportsChanged);
     this.cloud.addEventListener("change", this.cloudChanged);
     void import("@haneoka/game-data-exporter/webusb")
       .then((usb) => {
@@ -218,6 +223,7 @@ class GachaHistoryWorkspace extends HTMLElement {
     clearAppBarActions("gacha-history-assignment");
     this.controller.abort();
     historyStore.removeEventListener("change", this.changed);
+    window.removeEventListener("haneoka-save-import-complete", this.appImportsChanged);
     this.cloud.stop();
     this.cloud.removeEventListener("change", this.cloudChanged);
   }
@@ -243,7 +249,7 @@ class GachaHistoryWorkspace extends HTMLElement {
     const account = this.toolAccount;
     if (!account) return this.records;
     if (isGameToolAccountId(account.id)) return this.records.filter(record => this.recordMatches(record, account));
-    const assigned = gameToolAccounts("history");
+    const assigned = gameToolAccounts("history", true);
     return this.records.filter(record => (record.snapshot.source.server === "jp" ? "jp" : "intl") === account.server
       && !assigned.some(profile => this.recordMatches(record, profile)));
   }
@@ -253,7 +259,7 @@ class GachaHistoryWorkspace extends HTMLElement {
       this.selected = records.find(row => row.aliases?.includes(this.selected))?.key ?? records[0]?.key ?? "";
   }
   private unassignedHistory(account: GameToolAccount) {
-    const known = gameToolHistoryServer(account), assigned = gameToolAccounts("history");
+    const known = gameToolHistoryServer(account), assigned = gameToolAccounts("history", true);
     return this.records.filter(record => {
       const server = record.snapshot.source.server;
       return (known ? server === known : (server === "jp" ? "jp" : "intl") === account.server)
@@ -285,11 +291,14 @@ class GachaHistoryWorkspace extends HTMLElement {
       this.knownHistoryKeys.clear();
       this.update();
     }
-    const accounts = gameToolAccounts("history");
+    const accounts = gameToolAccounts("history", true);
     const keys = await Promise.all(accounts.map(async account => [account.id, await historyKeyFromGameToolAccount(account)] as const));
     if (!this.isConnected || owner !== gameToolOwner()) return;
     this.knownHistoryKeys = new Map(keys.filter((entry): entry is readonly [string, string] => !!entry[1]));
-    if (this.toolAccount) this.toolAccount = getGameToolAccount(this.toolAccount.id, "history") ?? legacyToolAccount(this.toolAccount.server, "history");
+    const selected = rememberedGameToolAccount("history");
+    if (!this.toolAccount || (!isGameToolAccountId(this.toolAccount.id) && isGameToolAccountId(selected?.id)))
+      this.toolAccount = selected ?? this.toolAccount;
+    else this.toolAccount = getGameToolAccount(this.toolAccount.id, "history") ?? selectedGameToolAccount("history", this.toolAccount.server);
     this.selectAvailableHistory();
     this.update();
   }

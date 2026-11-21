@@ -12,8 +12,8 @@ import { loadOurNotesCreationCanvasSkin } from "../chart-creation/native-canvas-
 import { createPinnedPublicFetcher, creationArtworkUrl, pinnedPublicUrl } from "../chart-creation/public-songs";
 import { readBytes } from "../../../packages/embed-core/src/io";
 import { resolveLocalizedText } from "../localized-text";
-import { drawDetailedChartOverview, loadChartCanvasFonts } from "../../lit/runtime/chart-overview-renderer";
-import { completeChartOverviewMeta, composeChartOverviewImage, chartImageFileName } from "../../lit/runtime/chart-image-export";
+import { loadChartCanvasFonts } from "../../lit/runtime/chart-overview-renderer";
+import { completeChartOverviewMeta, renderChartOverviewPng, chartImageFileName } from "../../lit/runtime/chart-image-export";
 import { createChartOverviewMeta } from "./chart-meta";
 
 import { CHART_IMAGE_RENDERER_VERSION } from "./chart-contract";
@@ -97,15 +97,12 @@ export async function renderChartImage(options: NativeChartImageOptions) {
       attributeIcon: creationArtworkUrl(mark, identity, { apiBase: apiBase.href }) || undefined,
       jacket: creationArtworkUrl(song.jacketUrl, identity, { apiBase: apiBase.href }) || undefined,
     });
-    const canvas = document.createElement("canvas");
     const fontFamily = await loadChartCanvasFonts(locale);
-    drawDetailedChartOverview(canvas, chart, skin.skin, height, undefined, undefined, fontFamily);
     const completed = completeChartOverviewMeta(meta, chart, label);
-    const blob = await composeChartOverviewImage(canvas, completed);
+    const blob = await renderChartOverviewPng(chart, skin.skin, height, completed, fontFamily);
     if (!blob) throw new Error("chart_image_failed");
-    const image = await createImageBitmap(blob);
-    const dimensions = { width: image.width, height: image.height };
-    image.close();
+    const header = new DataView(await blob.slice(16, 24).arrayBuffer());
+    const dimensions = { width: header.getUint32(0), height: header.getUint32(4) };
     return { blob, ...dimensions, identity, renderer: CHART_IMAGE_RENDERER, fileName: chartImageFileName(completed) };
   } finally {
     await skin.dispose();

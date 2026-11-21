@@ -5,7 +5,12 @@
 // Effects/Dependencies: 公开舞台／按需乐队开场清单、Cassiopeia、媒体、WebGL 和音频；缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
 import { LitElement, html, nothing } from "lit";
-import { HANEOKA_CHART_ASSETS_PROJECTION, type HaneokaChartAssets, type HaneokaChartAssetOutput, type HaneokaChartAssetSource } from "../../../packages/api-client/src/chart-assets";
+import {
+  HANEOKA_CHART_ASSETS_PROJECTION,
+  type HaneokaChartAssets,
+  type HaneokaChartAssetOutput,
+  type HaneokaChartAssetSource,
+} from "../../../packages/api-client/src/chart-assets";
 import { NoColorSpace, TextureLoader, type Texture } from "three";
 import { fetchJson, uiText } from "../shared/catalog";
 import type { CommunityChartPlayback } from "../../lib/chart-creation/community-types";
@@ -77,18 +82,31 @@ import {
   type OurNotesRenderer,
 } from "@haneoka/cassiopeia-renderer-three";
 import { WEB_HOST, createWebHostPlugin, type MediaClock, type NoteSoundPlayer } from "@haneoka/cassiopeia-host-web";
-import { chartCanvasFontFamily, chartOverviewLayout, chartOverviewPoint, drawDetailedChartOverview, loadChartCanvasFonts, loadDetailedOverviewSkin } from "./chart-overview-renderer";
+import {
+  chartCanvasFontFamily,
+  chartOverviewLayout,
+  chartOverviewPoint,
+  drawDetailedChartOverview,
+  loadChartCanvasFonts,
+  loadDetailedOverviewSkin,
+} from "./chart-overview-renderer";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
 import {
   chartImageFileName,
-  composeChartOverviewImage,
+  renderChartOverviewPng,
   completeChartOverviewMeta,
   downloadChartOverviewImage,
   type ChartOverviewExportMeta,
 } from "./chart-image-export";
 import { loadingIndicator } from "../ui/loading-indicator";
-import { applyRenderQuality, observeRenderQuality, readRenderQuality, writeRenderQuality, DEFAULT_RENDER_QUALITY } from "../../lib/render-quality";
+import {
+  applyRenderQuality,
+  observeRenderQuality,
+  readRenderQuality,
+  writeRenderQuality,
+  DEFAULT_RENDER_QUALITY,
+} from "../../lib/render-quality";
 import "../ui/render-quality-settings";
 
 /** Message paths for this view's finite control/metadata identifiers. */
@@ -184,12 +202,16 @@ function loadRustWatchSessionFactory() {
   return (rustWatchFactory ??= Promise.all([
     import("@haneoka/cassiopeia/wasm"),
     import("@haneoka/cassiopeia/wasm-session"),
-  ]).then(async ([wasm, adapter]) => {
-    await wasm.default();
-    return adapter.createWasmWatchSessionFactory(wasm);
-  }).catch(error => { rustWatchFactory = undefined; throw error; }));
+  ])
+    .then(async ([wasm, adapter]) => {
+      await wasm.default();
+      return adapter.createWasmWatchSessionFactory(wasm);
+    })
+    .catch((error) => {
+      rustWatchFactory = undefined;
+      throw error;
+    }));
 }
-
 
 const logicalName = (output: RuntimeOutput) => {
   const file = output.path.split("/").pop() || "";
@@ -299,10 +321,12 @@ export class ChartSimulator extends LitElement {
   private watchSessionFactory?: (chart: ChartDocument, options?: SessionOptions) => CassiopeiaSessionPort;
   private runtime() {
     return (this.pluginRuntime ??= new CassiopeiaRuntime([
-      createKernelPlugin({ createSession: (chart, options) => {
-        if (!this.watchSessionFactory) throw new Error("Watch runtime is not loaded");
-        return this.watchSessionFactory(chart, options);
-      } }),
+      createKernelPlugin({
+        createSession: (chart, options) => {
+          if (!this.watchSessionFactory) throw new Error("Watch runtime is not loaded");
+          return this.watchSessionFactory(chart, options);
+        },
+      }),
       createOurNotesPlugin(),
       createThreeRendererPlugin(),
       createWebHostPlugin(),
@@ -478,7 +502,8 @@ export class ChartSimulator extends LitElement {
   }
   updated(changed: Map<PropertyKey, unknown>) {
     const key = `${this.server}:${this.source}`;
-    if ((this.source || this.playback) && (key !== this.loadedKey || this.playback !== this.loadedPlayback)) void this.load();
+    if ((this.source || this.playback) && (key !== this.loadedKey || this.playback !== this.loadedPlayback))
+      void this.load();
     if (changed.has("liveMode") && this.phase === "ready") this.setLiveMode(this.liveMode);
     if (changed.has("gekisouEffectMode")) {
       this.renderer?.invalidateEffectFrame();
@@ -487,11 +512,18 @@ export class ChartSimulator extends LitElement {
     this.transportVisibility.bind(this.querySelector<HTMLElement>(".playback-controls"));
     this.transportVisibility.setFullscreen(this.fullscreen);
     this.transportVisibility.setPlaying(this.playing);
-    const text = [...(this.querySelector("[data-chart-current-time]")?.childNodes ?? [])]
-      .find((node): node is Text => node.nodeType === Node.TEXT_NODE);
+    const text = [...(this.querySelector("[data-chart-current-time]")?.childNodes ?? [])].find(
+      (node): node is Text => node.nodeType === Node.TEXT_NODE,
+    );
     const slider = this.querySelector<HTMLElement & { value: number }>("[data-chart-current-time-slider]") ?? undefined;
-    if (text !== this.transportTimeText) { this.transportTimeText = text; this.transportTimeSecond = Number.NaN; }
-    if (slider !== this.transportTimeSlider) { this.transportTimeSlider = slider; this.transportTimeTick = Number.NaN; }
+    if (text !== this.transportTimeText) {
+      this.transportTimeText = text;
+      this.transportTimeSecond = Number.NaN;
+    }
+    if (slider !== this.transportTimeSlider) {
+      this.transportTimeSlider = slider;
+      this.transportTimeTick = Number.NaN;
+    }
     this.syncTransportTime();
     if (changed.has("locale")) void loadChartCanvasFonts(this.locale).then(this.overviewFontsChanged);
     if (changed.has("mode")) {
@@ -508,7 +540,8 @@ export class ChartSimulator extends LitElement {
 
   private syncTransportTime() {
     if (this.transportCollapsed || this.transportAutoHidden) return;
-    const second = Math.floor(this.currentTime), tick = Math.round(this.currentTime * 100);
+    const second = Math.floor(this.currentTime),
+      tick = Math.round(this.currentTime * 100);
     if (this.transportTimeText && second !== this.transportTimeSecond) {
       this.transportTimeText.data = this.format(this.currentTime);
       this.transportTimeSecond = second;
@@ -520,7 +553,8 @@ export class ChartSimulator extends LitElement {
   }
 
   private sourceRelease(): string | undefined {
-    const release = this.playback?.releaseId ?? new URL(this.source, window.location.href).searchParams.get("release") ?? undefined;
+    const release =
+      this.playback?.releaseId ?? new URL(this.source, window.location.href).searchParams.get("release") ?? undefined;
     if (release && !/^r-[a-f0-9]{20}$/u.test(release)) throw new Error("Invalid chart release pin");
     return release;
   }
@@ -564,15 +598,17 @@ export class ChartSimulator extends LitElement {
     );
     const pending = this.chartAssetCache.get(url);
     if (pending) return pending;
-    const promise = fetchJson<HaneokaChartAssets>(url, { signal }).catch(error => {
-      if (signal.aborted) throw error;
-      const fallback = new URL(url, location.href);
-      fallback.searchParams.delete("bandId");
-      return fetchJson<HaneokaChartAssets>(fallback.pathname + fallback.search, { signal });
-    }).catch(error => {
-      if (this.chartAssetCache.get(url) === promise) this.chartAssetCache.delete(url);
-      throw error;
-    });
+    const promise = fetchJson<HaneokaChartAssets>(url, { signal })
+      .catch((error) => {
+        if (signal.aborted) throw error;
+        const fallback = new URL(url, location.href);
+        fallback.searchParams.delete("bandId");
+        return fetchJson<HaneokaChartAssets>(fallback.pathname + fallback.search, { signal });
+      })
+      .catch((error) => {
+        if (this.chartAssetCache.get(url) === promise) this.chartAssetCache.delete(url);
+        throw error;
+      });
     this.chartAssetCache.set(url, promise);
     return promise;
   }
@@ -596,7 +632,8 @@ export class ChartSimulator extends LitElement {
     const release = this.sourceRelease();
     if (!text || !release) return Promise.resolve(undefined);
     const data = JSON.parse(text) as { server: string; releaseId: string; packs: Record<string, { url: string }> };
-    const pack = data.server === this.server && data.releaseId === release ? data.packs[this.introBand(files)] : undefined;
+    const pack =
+      data.server === this.server && data.releaseId === release ? data.packs[this.introBand(files)] : undefined;
     if (!pack) return Promise.resolve(undefined);
     let pending = this.playbackPackCache.get(pack.url);
     if (!pending) {
@@ -674,9 +711,11 @@ export class ChartSimulator extends LitElement {
     const difficultySprite = difficulty
       ? `Difficulty_${difficulty === "expert" ? "easy_expert" : difficulty}.png`
       : undefined;
-    this.introDifficultyIconUrl = difficultySprite && live.outputs?.some(
-      (entry) => entry.type === "Sprite" && logicalName(entry) === difficultySprite,
-    ) ? sprite(live, difficultySprite) : undefined;
+    this.introDifficultyIconUrl =
+      difficultySprite &&
+      live.outputs?.some((entry) => entry.type === "Sprite" && logicalName(entry) === difficultySprite)
+        ? sprite(live, difficultySprite)
+        : undefined;
     this.gekisouIntroIcons = this.gekisouMissionTypes?.length
       ? {
           combo: sprite(live, "Icon_gekisou_combo.png"),
@@ -778,7 +817,9 @@ export class ChartSimulator extends LitElement {
     })().catch(() => undefined);
     signal.throwIfAborted();
     const media: OurNotesRuntimeMediaManifest = {
-      gekisouLaneAvailable: files.has("Assets/AddressableResources/Effect/Live/LaneEffect/effect001/lane_tap_excellenet_view.prefab"),
+      gekisouLaneAvailable: files.has(
+        "Assets/AddressableResources/Effect/Live/LaneEffect/effect001/lane_tap_excellenet_view.prefab",
+      ),
       noteSkin: selectedSkin,
       noteEffectSkin: selectedEffectSkin,
       noteSeGroup: this.noteSeGroup,
@@ -846,11 +887,26 @@ export class ChartSimulator extends LitElement {
     chart.durationMs += this.offsetMs;
     return chart;
   }
-  private communityChart({ ss, offsetMs, timeScaleChanges, chart: compiled, visualProfiles }: CommunityChartPlayback): ChartDocument {
+  private communityChart({
+    ss,
+    offsetMs,
+    timeScaleChanges,
+    chart: compiled,
+    visualProfiles,
+  }: CommunityChartPlayback): ChartDocument {
     const chart = compiled ? structuredClone(compiled) : this.runtime().require(OUR_NOTES_RULES).parse(ss);
-    this.loadedVisualProfiles = visualProfiles ? { ...visualProfiles,
-      ...(visualProfiles.scroll ? { scroll: { ...visualProfiles.scroll, offsetMs: (visualProfiles.scroll.offsetMs ?? 0) + offsetMs } } : {}) } : undefined;
-    const shift = <T extends { timeMs: number }>(rows: readonly T[]) => rows.forEach(row => { row.timeMs += offsetMs; });
+    this.loadedVisualProfiles = visualProfiles
+      ? {
+          ...visualProfiles,
+          ...(visualProfiles.scroll
+            ? { scroll: { ...visualProfiles.scroll, offsetMs: (visualProfiles.scroll.offsetMs ?? 0) + offsetMs } }
+            : {}),
+        }
+      : undefined;
+    const shift = <T extends { timeMs: number }>(rows: readonly T[]) =>
+      rows.forEach((row) => {
+        row.timeMs += offsetMs;
+      });
     shift(chart.notes);
     shift(chart.bpmChanges);
     shift(chart.signatureChanges);
@@ -860,7 +916,7 @@ export class ChartSimulator extends LitElement {
       section.startTimeMs += offsetMs;
       section.endTimeMs += offsetMs;
     }
-    chart.timeScaleChanges = timeScaleChanges.map(event => ({ ...event, timeMs: event.timeMs + offsetMs }));
+    chart.timeScaleChanges = timeScaleChanges.map((event) => ({ ...event, timeMs: event.timeMs + offsetMs }));
     chart.durationMs = Math.max(0, chart.durationMs + offsetMs);
     return chart;
   }
@@ -886,10 +942,11 @@ export class ChartSimulator extends LitElement {
       )
         sourceUrl.searchParams.set("projection", BESTDORI_CATALOG_VERSION);
       const [source, assets] = await Promise.all([
-        playback ?? fetch(sourceUrl, { headers: { accept: "text/plain" }, signal }).then(async response => {
-          if (!response.ok) throw new Error(`Chart ${response.status}`);
-          return response.text();
-        }),
+        playback ??
+          fetch(sourceUrl, { headers: { accept: "text/plain" }, signal }).then(async (response) => {
+            if (!response.ok) throw new Error(`Chart ${response.status}`);
+            return response.text();
+          }),
         this.runtimeAssets(signal),
       ]);
       signal.throwIfAborted();
@@ -897,10 +954,10 @@ export class ChartSimulator extends LitElement {
         typeof source !== "string"
           ? this.communityChart(source)
           : this.chartFormat === "sus"
-          ? await this.sekaiChart(source)
-          : this.chartFormat === "community"
-            ? this.communityChart(JSON.parse(source) as CommunityChartPlayback)
-            : this.runtime().require(OUR_NOTES_RULES).parse(source);
+            ? await this.sekaiChart(source)
+            : this.chartFormat === "community"
+              ? this.communityChart(JSON.parse(source) as CommunityChartPlayback)
+              : this.runtime().require(OUR_NOTES_RULES).parse(source);
       this.assets = assets;
       const [skin] = await Promise.all([loadDetailedOverviewSkin(assets), loadChartCanvasFonts(this.locale)]);
       if (signal.aborted) {
@@ -912,7 +969,8 @@ export class ChartSimulator extends LitElement {
       await this.updateComplete;
       signal.throwIfAborted();
       this.resizeObserver = new ResizeObserver(() => this.resize());
-      for (const host of this.querySelectorAll(".chart-runtime__stage, .chart-simple-overview")) this.resizeObserver.observe(host);
+      for (const host of this.querySelectorAll(".chart-runtime__stage, .chart-simple-overview"))
+        this.resizeObserver.observe(host);
     } catch (error) {
       if (signal.aborted) return;
       console.error(error);
@@ -937,7 +995,8 @@ export class ChartSimulator extends LitElement {
     try {
       signal.throwIfAborted();
       this.phase = "loading";
-      const chart = this.chart!, assets = this.assets!;
+      const chart = this.chart!,
+        assets = this.assets!;
       if (this.liveMode === "gekisou" && this.gekisouMissionTypes?.length && !assets.particles.laneEffects.gekisou)
         throw new Error("Original Gekisou lane source unavailable");
       this.gekisouPlan =
@@ -1060,8 +1119,14 @@ export class ChartSimulator extends LitElement {
           jacketUrl ? loadBackgroundPixels(this.mediaUrl(jacketUrl)) : undefined,
           loadBackgroundPixels(this.output(atlas.descriptor, "Sprite", "live_game_white.png")),
         ]);
-        if (baseWhite.rgba.some((channel) => channel !== 255)) throw new Error("Background white Sprite is not opaque white");
-        if (revision !== this.backgroundRevision || atlas.server !== this.server || atlas.release !== this.sourceRelease()) return;
+        if (baseWhite.rgba.some((channel) => channel !== 255))
+          throw new Error("Background white Sprite is not opaque white");
+        if (
+          revision !== this.backgroundRevision ||
+          atlas.server !== this.server ||
+          atlas.release !== this.sourceRelease()
+        )
+          return;
         const composite = buildOurNotesLightweightBackground({ stage, jacket, baseWhite });
         this.renderer?.setBackgroundCanvas(backgroundPixelsCanvas(composite), 0);
       }
@@ -1103,7 +1168,9 @@ export class ChartSimulator extends LitElement {
     try {
       const replacement = this.runtime()
         .require(WEB_HOST)
-        .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, target)), { mediaElement: this.clock?.audio });
+        .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, target)), {
+          mediaElement: this.clock?.audio,
+        });
       swap.player = replacement;
       if (this.playing) await replacement.unlock();
       else await replacement.load();
@@ -1168,7 +1235,8 @@ export class ChartSimulator extends LitElement {
         antialias: false,
         assets: this.assets,
         ...(this.gekisouMissionTypes?.some((mission) => mission > 0) &&
-        this.chartFormat === "" && this.assets.particles.laneEffects.gekisou
+        this.chartFormat === "" &&
+        this.assets.particles.laneEffects.gekisou
           ? {
               overlayTextures: {
                 ...this.gekisouOverlayProjector.textures((path) => this.profileResourceUrl(path)),
@@ -1203,7 +1271,9 @@ export class ChartSimulator extends LitElement {
     clock.audio.addEventListener("durationchange", updateDuration);
     this.noteSounds = this.runtime()
       .require(WEB_HOST)
-      .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, this.noteSeGroup)), { mediaElement: clock.audio });
+      .createNoteSounds(this.pinResourceValue(ourNotesNoteSoundsForRelease(this.server, this.noteSeGroup)), {
+        mediaElement: clock.audio,
+      });
     void this.noteSounds.load().catch((error: unknown) => {
       if (!signal.aborted) console.warn("Unable to load chart note sounds", error);
     });
@@ -1220,7 +1290,10 @@ export class ChartSimulator extends LitElement {
     const ownsClock = () => this.clock === clock && !signal.aborted && this.introAudioContext === introContext;
     clock.audio.addEventListener("play", () => {
       if (!ownsClock()) return;
-      if (this.mode !== "watch") { clock.pause(); return; }
+      if (this.mode !== "watch") {
+        clock.pause();
+        return;
+      }
       if (this.watchReplaySource?.clock === clock) this.watchReplaySource.musicStarted = true;
       this.playing = true;
       void introContext?.resume();
@@ -1264,7 +1337,9 @@ export class ChartSimulator extends LitElement {
 
   private profileResourceUrl(path: string): string {
     const [kind, ...segments] = path.split("/");
-    return this.pinResourceUrl(`/${kind}/${encodeURIComponent(this.server)}/${segments.map(encodeURIComponent).join("/")}`);
+    return this.pinResourceUrl(
+      `/${kind}/${encodeURIComponent(this.server)}/${segments.map(encodeURIComponent).join("/")}`,
+    );
   }
   private async loadNativeIntro(signal: AbortSignal, renderer: OurNotesRenderer) {
     const files = await this.sourceFiles(signal);
@@ -1587,17 +1662,20 @@ export class ChartSimulator extends LitElement {
 
   private async prepareGekisouStage(signal: AbortSignal): Promise<void> {
     const renderer = this.renderer!;
-    const resource = this.gekisouStageResources ??= new PreparedResource(async (owner) => {
+    const resource = (this.gekisouStageResources ??= new PreparedResource(async (owner) => {
       const response = await fetch(OUR_NOTES_GEKISOU_STAGE_PROFILE_URL, { signal: owner });
       if (!response.ok) throw new Error(`Gekisou Source profile ${response.status}`);
-      const source = await response.json() as OurNotesGekisouEffectProfile;
+      const source = (await response.json()) as OurNotesGekisouEffectProfile;
       owner.throwIfAborted();
-      const projector = new OurNotesGekisouStageProjector(source, [],
-        () => crypto.getRandomValues(this.gekisouStageSeed)[0]!);
+      const projector = new OurNotesGekisouStageProjector(
+        source,
+        [],
+        () => crypto.getRandomValues(this.gekisouStageSeed)[0]!,
+      );
       await renderer.loadOverlayTextures(projector.textures((path) => this.profileResourceUrl(path)));
       owner.throwIfAborted();
       return source;
-    });
+    }));
     const source = await resource.load(signal);
     signal.throwIfAborted();
     if (renderer !== this.renderer) return;
@@ -1780,7 +1858,8 @@ export class ChartSimulator extends LitElement {
   private attachSession() {
     if (!this.chart) return;
     const options = createOurNotesSessionOptions({
-      mode: "watch", judgementOffsetMs: 0,
+      mode: "watch",
+      judgementOffsetMs: 0,
       automaticPolicy: createOurNotesAutomaticPolicy(this.gekisouPlan),
     });
     const next = this.runtime().require(CASSIOPEIA_SESSION).create(this.chart, options);
@@ -1793,9 +1872,7 @@ export class ChartSimulator extends LitElement {
         ...(this.loadedVisualProfiles ? { visualProfiles: this.loadedVisualProfiles } : {}),
       });
     this.frames.configureGekisouPresentation(
-      this.gekisouPlan
-        ? { projector: this.gekisouOverlayProjector, context: this.gekisouOverlayContext }
-        : undefined,
+      this.gekisouPlan ? { projector: this.gekisouOverlayProjector, context: this.gekisouOverlayContext } : undefined,
     );
     const session = this.session,
       frames = this.frames,
@@ -1864,20 +1941,40 @@ export class ChartSimulator extends LitElement {
   private drawOverview() {
     const host = this.querySelector<HTMLElement>(".chart-simple-overview");
     const strip = host?.querySelector<HTMLElement>(".chart-simple-overview__strip");
-    const chart = this.chart, skin = this.overviewSkin;
+    const chart = this.chart,
+      skin = this.overviewSkin;
     if (!host || !strip || !chart || !skin || this.mode !== "simple" || !host.clientWidth) return;
     const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
     strip.style.width = `${layout.width}px`;
     strip.style.height = `${layout.height}px`;
-    const panelsPerCanvas = 8, chunkWidth = layout.panelWidth * panelsPerCanvas;
+    const panelsPerCanvas = 8,
+      chunkWidth = layout.panelWidth * panelsPerCanvas;
     const first = Math.floor(host.scrollLeft / chunkWidth);
-    const last = Math.min(Math.ceil(layout.panelCount / panelsPerCanvas), Math.ceil((host.scrollLeft + host.clientWidth) / chunkWidth));
-    const dpr = devicePixelRatio || 1, previous = this.overviewRender, fontFamily = chartCanvasFontFamily(this.locale);
-    if (previous?.chart === chart && previous.skin === skin && previous.height === layout.height
-      && previous.dpr === dpr && previous.fontFamily === fontFamily && previous.first === first && previous.last === last) return;
-    const reusable = previous?.chart === chart && previous.skin === skin && previous.height === layout.height && previous.dpr === dpr && previous.fontFamily === fontFamily;
+    const last = Math.min(
+      Math.ceil(layout.panelCount / panelsPerCanvas),
+      Math.ceil((host.scrollLeft + host.clientWidth) / chunkWidth),
+    );
+    const dpr = devicePixelRatio || 1,
+      previous = this.overviewRender,
+      fontFamily = chartCanvasFontFamily(this.locale);
+    if (
+      previous?.chart === chart &&
+      previous.skin === skin &&
+      previous.height === layout.height &&
+      previous.dpr === dpr &&
+      previous.fontFamily === fontFamily &&
+      previous.first === first &&
+      previous.last === last
+    )
+      return;
+    const reusable =
+      previous?.chart === chart &&
+      previous.skin === skin &&
+      previous.height === layout.height &&
+      previous.dpr === dpr &&
+      previous.fontFamily === fontFamily;
     const old = [...strip.querySelectorAll<HTMLCanvasElement>("canvas")];
-    const chunks = new Map(old.map(canvas => [Number(canvas.dataset.chunk), canvas]));
+    const chunks = new Map(old.map((canvas) => [Number(canvas.dataset.chunk), canvas]));
     const canvases: HTMLCanvasElement[] = [];
     for (let chunk = first; chunk < last; chunk += 1) {
       let canvas = reusable ? chunks.get(chunk) : undefined;
@@ -1885,9 +1982,18 @@ export class ChartSimulator extends LitElement {
         canvas = document.createElement("canvas");
         canvas.dataset.chunk = String(chunk);
         canvas.style.left = `${chunk * chunkWidth}px`;
-        drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, {
-          first: chunk * panelsPerCanvas, count: panelsPerCanvas,
-        }, fontFamily);
+        drawDetailedChartOverview(
+          canvas,
+          chart,
+          skin,
+          layout.height,
+          undefined,
+          {
+            first: chunk * panelsPerCanvas,
+            count: panelsPerCanvas,
+          },
+          fontFamily,
+        );
       }
       canvases.push(canvas);
     }
@@ -1906,10 +2012,11 @@ export class ChartSimulator extends LitElement {
   };
   private moveOverviewPointer = (event: PointerEvent) => {
     this.overviewPointer = { clientX: event.clientX, clientY: event.clientY };
-    if (!this.overviewPointerFrame) this.overviewPointerFrame = requestAnimationFrame(() => {
-      this.overviewPointerFrame = 0;
-      this.refreshOverviewCursor();
-    });
+    if (!this.overviewPointerFrame)
+      this.overviewPointerFrame = requestAnimationFrame(() => {
+        this.overviewPointerFrame = 0;
+        this.refreshOverviewCursor();
+      });
   };
   private leaveOverviewPointer = (event: PointerEvent) => {
     if (event.pointerType === "mouse") this.hideOverviewCursor();
@@ -1923,19 +2030,26 @@ export class ChartSimulator extends LitElement {
     if (cursor) cursor.hidden = true;
   }
   private refreshOverviewCursor() {
-    const host = this.querySelector<HTMLElement>(".chart-simple-overview"), chart = this.chart;
+    const host = this.querySelector<HTMLElement>(".chart-simple-overview"),
+      chart = this.chart;
     if (!host || !chart || this.mode !== "simple") return;
     const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
     if (this.overviewPointer) {
       const rect = host.getBoundingClientRect();
-      this.overviewCursor = chartOverviewPoint(chart, layout.height,
-        this.overviewPointer.clientX - rect.left + host.scrollLeft, this.overviewPointer.clientY - rect.top);
+      this.overviewCursor = chartOverviewPoint(
+        chart,
+        layout.height,
+        this.overviewPointer.clientX - rect.left + host.scrollLeft,
+        this.overviewPointer.clientY - rect.top,
+      );
     }
-    const point = this.overviewCursor, cursor = host.querySelector<HTMLElement>("[data-overview-cursor]");
+    const point = this.overviewCursor,
+      cursor = host.querySelector<HTMLElement>("[data-overview-cursor]");
     if (!point || !cursor) return;
     const panel = Math.min(layout.panelCount - 1, Math.floor(point.timeMs / layout.panelDuration));
-    const y = layout.height - (point.timeMs - panel * layout.panelDuration) / layout.panelDuration * layout.height;
-    const timeMs = Math.floor(point.timeMs), minutes = Math.floor(timeMs / 60_000);
+    const y = layout.height - ((point.timeMs - panel * layout.panelDuration) / layout.panelDuration) * layout.height;
+    const timeMs = Math.floor(point.timeMs),
+      minutes = Math.floor(timeMs / 60_000);
     const text = `${minutes ? `${minutes}:` : ""}${String(Math.floor(timeMs / 1000) % 60).padStart(2, "0")}.${String(timeMs % 1000).padStart(3, "0")}`;
     cursor.hidden = false;
     cursor.style.transform = `translate(${panel * layout.panelWidth}px, ${y}px)`;
@@ -1949,58 +2063,56 @@ export class ChartSimulator extends LitElement {
     host.setAttribute("aria-valuetext", `${text} · ${this.ui("combo")} ${point.combo}`);
   }
   private overviewKeydown = (event: KeyboardEvent) => {
-    const host = event.currentTarget as HTMLElement, chart = this.chart;
+    const host = event.currentTarget as HTMLElement,
+      chart = this.chart;
     if (!chart) return;
     const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
     const current = this.overviewCursor?.timeMs ?? 0;
-    const next = event.key === "Home" ? 0 : event.key === "End" ? chart.durationMs
-      : event.key === "ArrowRight" ? current + layout.panelDuration : event.key === "ArrowLeft" ? current - layout.panelDuration
-      : event.key === "ArrowUp" ? current + (event.shiftKey ? 1000 : 100) : event.key === "ArrowDown" ? current - (event.shiftKey ? 1000 : 100) : undefined;
-    if (event.key === "Escape") { this.hideOverviewCursor(); event.preventDefault(); return; }
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? chart.durationMs
+          : event.key === "ArrowRight"
+            ? current + layout.panelDuration
+            : event.key === "ArrowLeft"
+              ? current - layout.panelDuration
+              : event.key === "ArrowUp"
+                ? current + (event.shiftKey ? 1000 : 100)
+                : event.key === "ArrowDown"
+                  ? current - (event.shiftKey ? 1000 : 100)
+                  : undefined;
+    if (event.key === "Escape") {
+      this.hideOverviewCursor();
+      event.preventDefault();
+      return;
+    }
     if (next === undefined) return;
-    event.preventDefault(); this.overviewPointer = undefined;
+    event.preventDefault();
+    this.overviewPointer = undefined;
     const timeMs = Math.max(0, Math.min(chart.durationMs, next));
     const panel = Math.min(layout.panelCount - 1, Math.floor(timeMs / layout.panelDuration));
-    this.overviewCursor = chartOverviewPoint(chart, layout.height, panel * layout.panelWidth,
-      layout.height - (timeMs - panel * layout.panelDuration) / layout.panelDuration * layout.height);
+    this.overviewCursor = chartOverviewPoint(
+      chart,
+      layout.height,
+      panel * layout.panelWidth,
+      layout.height - ((timeMs - panel * layout.panelDuration) / layout.panelDuration) * layout.height,
+    );
     const left = this.overviewCursor.panel * layout.panelWidth;
-    if (left < host.scrollLeft || left + layout.panelWidth > host.scrollLeft + host.clientWidth) host.scrollTo({ left });
+    if (left < host.scrollLeft || left + layout.panelWidth > host.scrollLeft + host.clientWidth)
+      host.scrollTo({ left });
     this.refreshOverviewCursor();
   };
-  /** Downloads every overview panel, paging oversized images into a PNG archive. */
+  /** Downloads all overview panels in a single PNG. */
   async downloadOverview(meta: Omit<ChartOverviewExportMeta, "locale">) {
     const host = this.querySelector<HTMLElement>(".chart-simple-overview");
-    const chart = this.chart, skin = this.overviewSkin;
+    const chart = this.chart,
+      skin = this.overviewSkin;
     if (!host || this.overviewPhase !== "ready" || !chart || !skin) return;
     await loadChartCanvasFonts(this.locale);
-    const layout = chartOverviewLayout(chart.durationMs, host.clientHeight || 720);
-    const payload = completeChartOverviewMeta({ ...meta, locale: this.locale }, chart, key => this.ui(key));
-    const fileName = chartImageFileName(payload), canvas = document.createElement("canvas");
-    const dpr = Math.max(1, Math.min(1.5, devicePixelRatio || 1));
-    try {
-      if (layout.width * dpr <= 16_384 && layout.height * dpr <= 16_384
-        && layout.width * layout.height * dpr * dpr <= 16_777_216) {
-        drawDetailedChartOverview(canvas, chart, skin, layout.height);
-        const blob = await composeChartOverviewImage(canvas, payload);
-        if (blob) {
-          downloadChartOverviewImage(blob, fileName);
-          return;
-        }
-      }
-      const { zipSync } = await import("fflate");
-      const pages: Record<string, Uint8Array> = {};
-      const pageCount = Math.ceil(layout.panelCount / 8), digits = String(pageCount).length;
-      for (let page = 0; page < pageCount; page += 1) {
-        drawDetailedChartOverview(canvas, chart, skin, layout.height, undefined, { first: page * 8, count: 8 });
-        const blob = await composeChartOverviewImage(canvas, payload);
-        if (!blob) return;
-        pages[fileName.replace(/\.png$/u, `-${String(page + 1).padStart(digits, "0")}.png`)] = new Uint8Array(await blob.arrayBuffer());
-      }
-      const archive = new Blob([zipSync(pages, { level: 0 }).buffer as ArrayBuffer], { type: "application/zip" });
-      downloadChartOverviewImage(archive, fileName.replace(/\.png$/u, ".zip"));
-    } finally {
-      canvas.width = canvas.height = 0;
-    }
+    const payload = completeChartOverviewMeta({ ...meta, locale: this.locale }, chart, (key) => this.ui(key));
+    const blob = await renderChartOverviewPng(chart, skin, host.clientHeight || 720, payload);
+    if (blob) downloadChartOverviewImage(blob, chartImageFileName(payload));
   }
   private draw() {
     if (this.mode !== "watch" || !this.renderer || !this.session || !this.frames) return;
@@ -2155,12 +2267,15 @@ export class ChartSimulator extends LitElement {
       contentAlpha: centerAlpha,
     };
     if (this.gekisouPlan && values) {
-      const entry = this.gekisouEntryProjector.project({
-        enabled: true,
-        missionTypes: this.gekisouMissionTypes ?? [],
-        locale: this.locale as OurNotesGekisouEntryInput["locale"],
-        bindings: values,
-      }, this.gekisouOverlayContext);
+      const entry = this.gekisouEntryProjector.project(
+        {
+          enabled: true,
+          missionTypes: this.gekisouMissionTypes ?? [],
+          locale: this.locale as OurNotesGekisouEntryInput["locale"],
+          bindings: values,
+        },
+        this.gekisouOverlayContext,
+      );
       frame.overlays = [...(frame.overlays ?? []), ...entry.sprites];
       frame.overlayTexts = entry.texts;
       frame.hud.titleIntroduction.gekisou = undefined;
@@ -2204,7 +2319,8 @@ export class ChartSimulator extends LitElement {
         this.draw();
       } else {
         await Promise.all([this.noteSounds?.unlock(), this.introAudioContext?.resume()]);
-        if (this.intro !== intro || this.clock !== clock || this.loadAbort?.signal.aborted || this.mode !== "watch") return;
+        if (this.intro !== intro || this.clock !== clock || this.loadAbort?.signal.aborted || this.mode !== "watch")
+          return;
         this.intro.start(performance.now());
         this.playing = true;
         for (const kind of this.introAudioPaused.keys()) this.playNativeIntroSound(kind);
@@ -2229,7 +2345,8 @@ export class ChartSimulator extends LitElement {
     try {
       await Promise.all([sounds?.unlock(), clock.play()]);
     } catch (error) {
-      const cancelled = signal.aborted || this.clock !== clock || this.loadAbort?.signal !== signal || clock.audio.paused;
+      const cancelled =
+        signal.aborted || this.clock !== clock || this.loadAbort?.signal !== signal || clock.audio.paused;
       if (cancelled && error instanceof DOMException && error.name === "AbortError") return false;
       throw error;
     }
@@ -2564,7 +2681,9 @@ export class ChartSimulator extends LitElement {
           <section>
             <h4>${this.ui("playback")}</h4>
             ${
-              this.chartFormat === "" && this.assets?.particles.laneEffects.gekisou && this.gekisouMissionTypes?.some((mission) => mission > 0)
+              this.chartFormat === "" &&
+              this.assets?.particles.laneEffects.gekisou &&
+              this.gekisouMissionTypes?.some((mission) => mission > 0)
                 ? html`
                     <label class="chart-runtime__setting chart-runtime__setting--select">
                       <span>${this.ui("liveMode")}</span>
@@ -2786,14 +2905,27 @@ export class ChartSimulator extends LitElement {
                 `
               : nothing
         }
-        <div class="chart-simple-overview" ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"}
-          role="slider" tabindex="0" aria-label=${`${this.label} · ${this.ui("overviewPosition")}`}
-          aria-valuemin="0" aria-valuemax=${this.chart?.durationMs ?? 0} aria-valuenow=${Math.floor(this.overviewCursor?.timeMs ?? 0)}
-          @scroll=${this.overviewScrolled} @pointermove=${this.moveOverviewPointer} @pointerdown=${this.moveOverviewPointer}
-          @pointerleave=${this.leaveOverviewPointer} @keydown=${this.overviewKeydown} @blur=${this.hideOverviewCursor}>
+        <div
+          class="chart-simple-overview"
+          ?hidden=${this.overviewPhase !== "ready" || this.mode !== "simple"}
+          role="slider"
+          tabindex="0"
+          aria-label=${`${this.label} · ${this.ui("overviewPosition")}`}
+          aria-valuemin="0"
+          aria-valuemax=${this.chart?.durationMs ?? 0}
+          aria-valuenow=${Math.floor(this.overviewCursor?.timeMs ?? 0)}
+          @scroll=${this.overviewScrolled}
+          @pointermove=${this.moveOverviewPointer}
+          @pointerdown=${this.moveOverviewPointer}
+          @pointerleave=${this.leaveOverviewPointer}
+          @keydown=${this.overviewKeydown}
+          @blur=${this.hideOverviewCursor}
+        >
           <div class="chart-simple-overview__strip" role="img" aria-label=${this.label}></div>
           <div class="chart-simple-overview__cursor" data-overview-cursor hidden aria-hidden="true">
-            <span data-overview-time></span><i></i><span data-overview-combo></span>
+            <span data-overview-time></span>
+            <i></i>
+            <span data-overview-combo></span>
           </div>
         </div>
         <div

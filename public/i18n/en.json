@@ -4978,6 +4978,7 @@
         "add": "Add account",
         "manual": "Manual account",
         "legacy": "Original data",
+        "temporary": "Temporary profile",
         "legacyJp": "Original JP",
         "legacyGlobal": "Original Global",
         "server": "Game version",

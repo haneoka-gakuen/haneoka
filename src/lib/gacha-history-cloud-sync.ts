@@ -39,7 +39,7 @@ export class HistoryCloudSync extends EventTarget {
   }
   private linkedKeys(key: string): string[] {
     const canonical = this.canonicalKey(key);
-    return [...this.links.keys()].filter((value) => this.canonicalKey(value) === canonical);
+    return [...this.links].flatMap(([value, link]) => !link.disabled && this.canonicalKey(value) === canonical ? [value] : []);
   }
   private links = new Map<string, HistoryCloudLink>();
   private local: StoredHistory[] = [];
@@ -209,17 +209,40 @@ export class HistoryCloudSync extends EventTarget {
     window.addEventListener("haneoka:session-changed", this.revoke, { signal: this.lifetime.signal });
     if (initialSync) void this.foreground(true);
   }
-  async syncImported(records: StoredHistory[], expectedOwner?: string | null): Promise<boolean> {
+  async syncImported(records: StoredHistory[], expectedOwner: string | null, autoLink = false): Promise<boolean> {
     this.setLocal(records);
     try {
       await this.session();
-      if (expectedOwner !== undefined && expectedOwner !== this.ownerId) return false;
+      if (expectedOwner !== this.ownerId) return false;
+      if (expectedOwner && autoLink) {
+        const generation = this.generation;
+        for (const record of records) {
+          const key = this.canonicalKey(record.key);
+          if ([...this.links.keys()].some(link => this.canonicalKey(link) === key)) continue;
+          const link = await historyStore.ensureCloudLink(
+            { ownerId: expectedOwner, accountKey: key, grantId: crypto.randomUUID(), uploaded: {} },
+            () => this.active && this.ownerId === expectedOwner && this.generation === generation,
+          );
+          this.guard(expectedOwner, generation);
+          if (link) this.links.set(key, link);
+        }
+      }
       if (records.some(({ key }) => this.isLinked(key))) await this.syncCurrent(true);
       return true;
     } catch (error) {
       this.fail(error);
       return false;
     }
+  }
+  async refreshLocalLinks() {
+    const owner = this.ownerId, generation = this.generation;
+    if (!owner) return;
+    try {
+      const links = await historyStore.localCloudLinks(owner);
+      this.guard(owner, generation);
+      this.links = new Map(links.map(link => [link.accountKey, link]));
+      this.changed();
+    } catch (error) { this.fail(error); }
   }
   stop() {
     this.active = false;
@@ -325,7 +348,7 @@ export class HistoryCloudSync extends EventTarget {
     }
     const previous = this.linkedKeys(key).flatMap((value) => (this.links.has(value) ? [this.links.get(value)!] : []));
     if (!linked) {
-      for (const value of previous) this.links.delete(value.accountKey);
+      for (const value of previous) this.links.set(value.accountKey, { ...value, disabled: true });
       this.changed();
     }
     try {

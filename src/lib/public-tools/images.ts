@@ -48,13 +48,12 @@ async function renderImage(input: ResourceImageRequest, options: { apiBase?: str
     blob = await renderGachaImage(input.data);
   } else if (input.kind === "gacha-history") {
     const { renderGachaHistoryImages } = await import("../gacha-history-image");
-    const pages = await renderGachaHistoryImages(input.data, { signal, page: input.archive ? undefined : input.page ?? 1, assetsBase: apiBase });
+    const [image] = await renderGachaHistoryImages(input.data, { signal, assetsBase: apiBase });
     if (input.archive) {
       const { zipSync } = await import("fflate");
-      const files: Record<string, Uint8Array> = {};
-      for (const [index, page] of pages.entries()) files[`gacha-history-${index + 1}.png`] = new Uint8Array(await page.arrayBuffer());
+      const files = { "gacha-history.png": new Uint8Array(await image!.arrayBuffer()) };
       blob = new Blob([zipSync(files, { level: 0 }) as Uint8Array<ArrayBuffer>], { type: "application/zip" });
-    } else blob = pages[0]!;
+    } else blob = image!;
   } else if (input.kind === "stamp") {
     const { drawStamp, loadStampFont } = await import("../stamp-maker/render");
     const { registerImportedFont, removeImportedFont } = await import("../stamp-maker/fonts");
@@ -74,20 +73,13 @@ async function renderImage(input: ResourceImageRequest, options: { apiBase?: str
     } finally { for (const face of faces) removeImportedFont(face); }
   } else if (input.kind === "chart") {
     const { loadOurNotesCreationCanvasSkin } = await import("../chart-creation/native-canvas-skin");
-    const { drawDetailedChartOverview } = await import("../../lit/runtime/chart-overview-renderer");
-    const { composeChartOverviewImage, completeChartOverviewMeta } = await import("../../lit/runtime/chart-image-export");
+    const { renderChartOverviewPng, completeChartOverviewMeta } = await import("../../lit/runtime/chart-image-export");
     const identity = await releaseIdentity(input.data, apiBase, signal);
     const skin = await loadOurNotesCreationCanvasSkin(identity, { apiBase, signal, locale });
     try {
-      const { chartCanvasOverviewPresentation } = await import("@haneoka/cassiopeia-ui-vue/overview");
-      const height = input.data.height ?? 720, presentation = chartCanvasOverviewPresentation();
-      const panels = Math.max(1, Math.ceil(input.data.chart.durationMs / ((height / presentation.heightPerSecond) * 1000)));
-      if (panels * presentation.laneWidth * 13 * height > 12_000_000) throw new RangeError("Chart image exceeds the pixel budget");
-      const canvas = document.createElement("canvas");
-      drawDetailedChartOverview(canvas, input.data.chart, skin.skin, height);
       const labels = await fetch(new URL(`/i18n/${locale}.json`, apiBase), { signal }).then(response => response.json()) as { media: { chartPlayer: Record<string, string> } };
       const meta = completeChartOverviewMeta(input.data.meta, input.data.chart, key => labels.media.chartPlayer[key]!);
-      blob = (await composeChartOverviewImage(canvas, meta))!;
+      blob = (await renderChartOverviewPng(input.data.chart, skin.skin, input.data.height ?? 720, meta))!;
       if (!blob) throw new Error("Image drawing failed");
     } finally { await skin.dispose(); }
   } else {

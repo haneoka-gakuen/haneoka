@@ -4978,6 +4978,7 @@
         "add": "계정 만들기",
         "manual": "수동 계정",
         "legacy": "기존 데이터",
+        "temporary": "임시 프로필",
         "legacyJp": "기존 JP 데이터",
         "legacyGlobal": "기존 Global 데이터",
         "server": "게임 버전",

@@ -4978,6 +4978,7 @@
         "add": "新增帳號",
         "manual": "手動帳號",
         "legacy": "原有資料",
+        "temporary": "臨時檔案",
         "legacyJp": "原日服檔案",
         "legacyGlobal": "原國際服檔案",
         "server": "遊戲版本",

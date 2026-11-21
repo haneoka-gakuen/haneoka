@@ -8,10 +8,11 @@ import "@material/web/textfield/outlined-text-field.js";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import { clientText } from "../i18n/client";
+import { languageFlags } from "../i18n/language-flags";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { GAME_REGION_NAMES, profileRegion } from "../lib/game-records";
 import { isGameToolAccountId, legacyToolAccount, type GameTool, type GameToolAccount } from "../lib/game-tool-accounts";
-import { createGameToolAccount, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, legacyGameToolAccounts, moveGameToolAccount, refreshGameToolAccounts,
+import { createGameToolAccount, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, legacyGameToolAccounts, legacyGameToolAccountsWithData, moveGameToolAccount, refreshGameToolAccounts,
   removeGameToolAccount, renameGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
 import type { GameToolCopyPreview } from "../lib/game-tool-account-copy";
 import type { PublicReleaseServer } from "../lib/temporary-public-routing";
@@ -27,7 +28,16 @@ const shape = Array.from({ length: 96 }, (_, index) => {
   const radius = 46 * (1 + .085 * Math.cos(8 * angle));
   return `${(50 + radius * Math.cos(angle)).toFixed(2)},${(50 + radius * Math.sin(angle)).toFixed(2)}`;
 }).join(" ");
-const releaseIcon = (server: PublicReleaseServer) => server === "jp" ? jpIcon : intlIcon;
+const regionFlags = {
+  tw: languageFlags.find(flag => flag.value === "zh-TW")!.image,
+  en: languageFlags.find(flag => flag.value === "en")!.image,
+  kr: languageFlags.find(flag => flag.value === "ko")!.image,
+};
+const releaseIcon = (account: GameToolAccount) => {
+  const region = account.uid && profileRegion(account.uid);
+  if (region && region !== "jp") return regionFlags[region];
+  return account.server === "jp" ? jpIcon : intlIcon;
+};
 const appBarOwner = (tool: GameTool) => `game-tool-account-${tool}`;
 export function setGameToolAccountAction(options: {
   tool: GameTool;
@@ -87,9 +97,13 @@ export class GameToolAccountPicker extends LitElement {
     return clientText(this.locale, `account.page.toolAccounts.${key}`, fallback);
   }
   private name(account: GameToolAccount) {
-    if (!isGameToolAccountId(account.id))
+    if (account.settings?.alias) return account.settings.alias;
+    if (!isGameToolAccountId(account.id)) {
+      if (!this.legacyServers.includes(account.server) && !legacyGameToolAccountsWithData(this.tool).includes(account.server))
+        return this.t("temporary", "Temporary profile");
       return account.server === "jp" ? this.t("legacyJp", "Original JP") : this.t("legacyGlobal", "Original Global");
-    return account.settings?.alias || account.name || account.uid || this.t("manual", "Manual account");
+    }
+    return account.name || account.uid || this.t("temporary", "Temporary profile");
   }
   private close() {
     this.opened = this.creating = this.manage = false;
@@ -214,6 +228,8 @@ export class GameToolAccountPicker extends LitElement {
   }
   private profile(account: GameToolAccount) {
     const image = this.art.get(account.id);
+    const legacy = !isGameToolAccountId(account.id) &&
+      (this.legacyServers.includes(account.server) || legacyGameToolAccountsWithData(this.tool).includes(account.server));
     return html`
       ${image ? html`<img class="tool-account__art" src=${image} alt="" loading="lazy" decoding="async" />` : nothing}
       <span class="tool-account__rank" aria-hidden="true">
@@ -222,10 +238,10 @@ export class GameToolAccountPicker extends LitElement {
       </span>
       <span class="tool-account__identity">
         <strong class="tool-account__name">${this.name(account)}</strong>
-        <span class="tool-account__detail"><img src=${releaseIcon(account.server)} alt="" />${regionName(account)}</span>
-        <span class="tool-account__detail">${icon(account.uid ? "badge" : "edit", 15)}
-          ${account.uid ? `UID ${account.uid}` : isGameToolAccountId(account.id) ? this.t("manual", "Manual account") : this.t("legacy", "Original data")}
-        </span>
+        <span class="tool-account__detail"><img src=${releaseIcon(account)} alt="" />${regionName(account)}</span>
+        ${account.uid || account.name || legacy ? html`<span class="tool-account__detail">${icon(account.uid ? "badge" : "edit", 15)}
+          ${account.uid ? `UID ${account.uid}` : legacy ? this.t("legacy", "Original data") : this.t("manual", "Manual account")}
+        </span>` : nothing}
         ${account.savedAt ? html`<span class="tool-account__detail">${icon("schedule", 15)}
           ${new Intl.DateTimeFormat(this.locale, { dateStyle: "short", timeStyle: "short" }).format(account.savedAt)}
         </span>` : nothing}
@@ -233,27 +249,29 @@ export class GameToolAccountPicker extends LitElement {
   }
   render() {
     const accounts: GameToolAccount[] = [];
-    if (this.opened) {
-      const legacy = new Set([...legacyGameToolAccounts(this.tool, this.account).map(account => account.server), ...this.legacyServers]);
-      accounts.push(...gameToolAccounts(this.tool), ...[...legacy].map(server => legacyToolAccount(server, this.tool)));
-    }
     const selected = this.account ?? legacyToolAccount("intl", this.tool);
+    if (this.opened) {
+      accounts.push(...gameToolAccounts(this.tool), ...legacyGameToolAccounts(this.tool, selected, this.legacyServers));
+      accounts.sort((a, b) => (a.settings?.position ?? 0) - (b.settings?.position ?? 0) || a.id.localeCompare(b.id));
+    }
     const title = this.t("title", "Game accounts");
     const add = this.t("add", "Add account");
     const copy = this.t("claim", "Copy account data");
     const manage = this.t("manage", "Manage accounts");
-    const removed = this.manage ? gameToolAccounts(this.tool, true).filter(account => account.settings?.removed) : [];
-    const active = this.manage ? gameToolAccounts(this.tool) : [];
+    const removed = this.manage ? [...gameToolAccounts(this.tool, true), ...legacyGameToolAccounts(this.tool, undefined, this.legacyServers, true)]
+      .filter(account => account.settings?.removed) : [];
+    const active = this.manage ? accounts.filter(account => isGameToolAccountId(account.id) || this.legacyServers.includes(account.server) ||
+      legacyGameToolAccountsWithData(this.tool).includes(account.server)) : [];
     const rename = this.t("rename", "Rename account");
     const remove = this.t("remove", "Remove account");
     const editingTitle = this.editing?.kind === "rename" ? rename : remove;
     const close = clientText(this.locale, "common.actions.close", "Close");
     const dialogTitle = this.editing ? editingTitle : this.claim ? copy : this.creating ? add : this.manage ? manage : title;
-    const rows = accounts.filter(account => !this.manage || isGameToolAccountId(account.id)).map(account => this.manage
+    const rows = (this.manage ? active : accounts).map(account => this.manage
       ? html`<article class="tool-account__managed">
           <div class="tool-account__card">${this.profile(account)}</div>
           <div class="tool-account__actions">
-            ${this.tool !== "history" ? iconButton({ icon: "content_copy", label: copy, onClick: () => {
+            ${this.tool !== "history" && isGameToolAccountId(account.id) ? iconButton({ icon: "content_copy", label: copy, onClick: () => {
               if (this.tool === "history") return;
               this.claim = { target: account, source: legacyToolAccount(account.server, this.tool).id, kind: this.tool };
               this.requestUpdate();
@@ -271,9 +289,9 @@ export class GameToolAccountPicker extends LitElement {
               this.editing = { account, kind: "rename" }; this.opened = true; this.requestUpdate();
             } })}
             ${iconButton({ icon: "arrow_upward", label: this.t("moveUp", "Move up"), disabled: active[0]?.id === account.id,
-              onClick: () => void moveGameToolAccount(account, -1) })}
+              onClick: () => void moveGameToolAccount(account, -1, active) })}
             ${iconButton({ icon: "arrow_downward", label: this.t("moveDown", "Move down"), disabled: active.at(-1)?.id === account.id,
-              onClick: () => void moveGameToolAccount(account, 1) })}
+              onClick: () => void moveGameToolAccount(account, 1, active) })}
             ${iconButton({ icon: "delete", label: remove, onClick: () => {
               this.editing = { account, kind: "remove" }; this.opened = true; this.requestUpdate();
             } })}
@@ -289,7 +307,7 @@ export class GameToolAccountPicker extends LitElement {
             aria-label=${`${title} / ${this.name(selected)}`} @click=${() => {
               this.opened = true; this.requestUpdate(); void refreshGameToolAccounts(); void this.loadArtwork();
             }}>
-            <img src=${releaseIcon(selected.server)} alt="" /><span>${this.name(selected)}</span>${icon("expand_more", 17)}
+            <img src=${releaseIcon(selected)} alt="" title=${regionName(selected)} /><span>${this.name(selected)}</span>${icon("expand_more", 17)}
           </button>
       ${this.opened ? html`<dialog class="dialog tool-account__dialog" aria-label=${dialogTitle} ${modal(() => this.close())}>
         <header class="dialog__header tool-account__header">

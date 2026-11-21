@@ -4978,6 +4978,7 @@
         "add": "アカウントを作成",
         "manual": "手動アカウント",
         "legacy": "以前のデータ",
+        "temporary": "一時プロフィール",
         "legacyJp": "従来のJPデータ",
         "legacyGlobal": "従来のGlobalデータ",
         "server": "ゲームのバージョン",

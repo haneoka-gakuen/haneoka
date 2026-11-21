@@ -14,7 +14,16 @@ import type { SongProgressImageReport } from "../lib/song-progress-image";
 import { formatDate } from "../lib/date-format";
 import { readSongProgressProfile, saveSongProgressProfile, songProgressProfile } from "../lib/song-progress-profile";
 import { isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "../lib/game-tool-accounts";
-import { captureGameToolSaveByKey, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, selectedGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
+import {
+  captureGameToolSaveByKey,
+  GAME_TOOL_ACCOUNTS_CHANGED,
+  gameToolAccounts,
+  gameToolOwner,
+  getGameToolAccount,
+  refreshGameToolAccounts,
+  selectedGameToolAccount,
+  selectGameToolAccount,
+} from "../lib/game-tool-account-store";
 import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
 import { GAME_REGION_NAMES } from "../lib/game-records";
 import { createPerformerRegistry, resolveSongPerformer, type SongPerformer } from "../lib/song-performer";
@@ -122,8 +131,14 @@ export class SongProgress extends LitElement {
   private gameAccountOwner: string | null = null;
   private gameAccountsChanged = () => {
     const current = this.gameAccount && getGameToolAccount(this.gameAccount.id, "songs");
-    if (this.gameAccountId && (!current || this.gameAccountOwner !== gameToolOwner()))
-      void this.openGameToolAccount(legacyToolAccount(this.server === "jp" ? "jp" : "intl", "songs"));
+    const selected = selectedGameToolAccount("songs", this.server);
+    if (
+      this.gameAccount &&
+      (!current ||
+        this.gameAccountOwner !== gameToolOwner() ||
+        (!isGameToolAccountId(current.id) && isGameToolAccountId(selected.id)))
+    )
+      void this.openGameToolAccount(selected);
     else if (current) this.gameAccount = current;
     this.renderStaticChrome();
     this.requestUpdate();
@@ -133,15 +148,17 @@ export class SongProgress extends LitElement {
     server: () => this.server as "jp" | "intl",
     uid: () => this.gameAccount?.uid,
     text: (key, fallback) => this.text(key, fallback),
-    write: changes => this.writeProgress(changes),
-    marks: player => {
+    write: (changes) => this.writeProgress(changes),
+    marks: (player) => {
       const marks = saveClearMarks(player);
       return marks === null ? [] : this.markChanges(marks);
     },
-    profile: account => saveSongProgressProfile(this.server, this.snapshot?.owner ?? null, account, this.gameAccountId),
-    difficulties: song => (this.songSources[String(song)]?.difficulty as Row[] ?? [])
-      .filter(row => Number(row.difficulty) <= 4 && contentPublished(row))
-      .map(row => Number(row.difficulty)),
+    profile: (account) =>
+      saveSongProgressProfile(this.server, this.snapshot?.owner ?? null, account, this.gameAccountId),
+    difficulties: (song) =>
+      ((this.songSources[String(song)]?.difficulty as Row[]) ?? [])
+        .filter((row) => Number(row.difficulty) <= 4 && contentPublished(row))
+        .map((row) => Number(row.difficulty)),
   });
   constructor() {
     super();
@@ -175,13 +192,19 @@ export class SongProgress extends LitElement {
     this.server = server as ReleaseServer;
     delete this.fallbackVisuals;
     const source = payload.variants[server];
-    if (!source) { this.charts = []; this.phase = "error"; return; }
+    if (!source) {
+      this.charts = [];
+      this.phase = "error";
+      return;
+    }
     this.applySongs(source.songs);
     this.phase = "ready";
   }
   adoptPageData(payload: PublicSongsPageData) {
     if (payload.schema !== "haneoka-public-songs-page-v1") return false;
-    if (this.pageData?.variants[this.server]?.identity.releaseId !== payload.variants[this.server]?.identity.releaseId) {
+    if (
+      this.pageData?.variants[this.server]?.identity.releaseId !== payload.variants[this.server]?.identity.releaseId
+    ) {
       ++this.ratingGeneration;
       this.roster?.dispose();
       this.roster = undefined;
@@ -194,7 +217,10 @@ export class SongProgress extends LitElement {
     return true;
   }
   protected update(changed: PropertyValues) {
-    if (this.hasAttribute("data-prerendered") && japaneseSongTitles(this.locale) !== defaultJapaneseSongTitles(this.locale)) {
+    if (
+      this.hasAttribute("data-prerendered") &&
+      japaneseSongTitles(this.locale) !== defaultJapaneseSongTitles(this.locale)
+    ) {
       // Built with the default song titles; the reader chose the other ones.
       this.replaceChildren();
       this.removeAttribute("data-prerendered");
@@ -209,16 +235,26 @@ export class SongProgress extends LitElement {
     setAppBarSearch(OWNER, {
       value: this.query,
       label: uiText(this.locale, "common.actions.search"),
-      onInput: value => { this.query = value.trim().toLowerCase(); },
+      onInput: (value) => {
+        this.query = value.trim().toLowerCase();
+      },
     });
-    setGameToolAccountAction({
-      tool: "songs", locale: this.locale, account: this.gameAccount,
-      onSelect: account => void this.openGameToolAccount(account),
-    }, this);
-    setAppBarActions(OWNER, html`
-      ${this.counts.renderImportMenu()}
-      ${iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => void this.openExportDialog() })}
-    `);
+    setGameToolAccountAction(
+      {
+        tool: "songs",
+        locale: this.locale,
+        account: this.gameAccount,
+        onSelect: (account) => void this.openGameToolAccount(account),
+      },
+      this,
+    );
+    setAppBarActions(
+      OWNER,
+      html`
+        ${this.counts.renderImportMenu()}
+        ${iconButton({ icon: "image", label: this.text("exportImage", "Export image"), onClick: () => void this.openExportDialog() })}
+      `,
+    );
   }
   /** Import marks and available lifetime counters from the same app account. */
   private async importSave(progress: AppSongProgress) {
@@ -228,12 +264,20 @@ export class SongProgress extends LitElement {
     const owner = this.snapshot?.owner;
     const marks = progress?.marks;
     if (!marks || store !== this.store || owner !== this.snapshot?.owner || !this.isConnected) return;
-    if (progress.missionCounters === undefined && inApp() && (progress.key || appSupports("accountKeysV1") || this.counts.supportsApp())) {
+    if (
+      progress.missionCounters === undefined &&
+      inApp() &&
+      (progress.key || appSupports("accountKeysV1") || this.counts.supportsApp())
+    ) {
       if (await this.counts.readAppSave({ key: progress.key, fallback: true })) return;
       if (store !== this.store || owner !== this.snapshot?.owner || !this.isConnected) return;
     }
     const changes = this.markChanges(marks);
-    const counts = countImportChanges(progress.missionCounters, this.text("counts.gameSave", "Game save"), new Date().toISOString());
+    const counts = countImportChanges(
+      progress.missionCounters,
+      this.text("counts.gameSave", "Game save"),
+      new Date().toISOString(),
+    );
     try {
       this.writeProgress([...changes, ...counts]);
     } catch {
@@ -243,12 +287,21 @@ export class SongProgress extends LitElement {
     if (progress.key && inApp()) {
       const account = (await appCall("gameAccounts", {}).catch(() => [])).find((save) => save.key === progress.key);
       if (account && store === this.store && owner === this.snapshot?.owner && this.isConnected) {
-        saveSongProgressProfile(this.server, owner ?? null, songProgressProfile({ ...account, uid: account.profileId }), this.gameAccountId);
+        saveSongProgressProfile(
+          this.server,
+          owner ?? null,
+          songProgressProfile({ ...account, uid: account.profileId }),
+          this.gameAccountId,
+        );
       }
     }
     if (!counts.length) {
       const message = /no_session|history_session_expired/u.test(progress.countError ?? "")
-        ? clientText(this.locale, "account.page.importSessionExpired", "Game session expired. Read the latest save again.")
+        ? clientText(
+            this.locale,
+            "account.page.importSessionExpired",
+            "Game session expired. Read the latest save again.",
+          )
         : progress.countError
           ? this.text("counts.remoteFailed", "Could not read counts from the game server")
           : this.text("counts.missing", "This save has no count records");
@@ -268,12 +321,14 @@ export class SongProgress extends LitElement {
     const pending = inApp() ? await appCall("pendingSongProgress", {}).catch(() => null) : null;
     const target = pending?.key
       ? await captureGameToolSaveByKey(pending.key, "songs").catch(() => undefined)
-      : pending?.server === "jp" || pending?.server === "intl" ? legacyToolAccount(pending.server, "songs")
-      : selectedGameToolAccount("songs", server, requested);
+      : pending?.server === "jp" || pending?.server === "intl"
+        ? legacyToolAccount(pending.server, "songs")
+        : selectedGameToolAccount("songs", server, requested);
     if (!this.isConnected) return;
     if (target && (pending || requested === target.id)) selectGameToolAccount(target);
     await this.openGameToolAccount(target ?? selectedGameToolAccount("songs", server, requested));
-    if (pending && target && this.gameAccount?.id === target.id && this.phase === "ready") await this.importSave(pending);
+    if (pending && target && this.gameAccount?.id === target.id && this.phase === "ready")
+      await this.importSave(pending);
   }
   private async openGameToolAccount(account: GameToolAccount) {
     const changedServer = this.server !== account.server;
@@ -292,11 +347,20 @@ export class SongProgress extends LitElement {
       this.phase = "loading";
     }
     this.renderStaticChrome();
-    this.store = new BoxStore({ server: this.server, accountId: this.gameAccountId, accountOwner: this.gameAccountOwner });
+    this.store = new BoxStore({
+      server: this.server,
+      accountId: this.gameAccountId,
+      accountOwner: this.gameAccountOwner,
+    });
     this.unsubscribe = this.store.subscribe((snapshot) => {
-      const signature = JSON.stringify([account.id, snapshot.owner, Object.entries(snapshot.entries)
-        .filter(([key]) => /^[ms]\.\d+\.(own|lvl|awk|rnk|sk)$/u.test(key))
-        .sort(([a],[b]) => a.localeCompare(b)).map(([key,row]) => [key,row.v])]);
+      const signature = JSON.stringify([
+        account.id,
+        snapshot.owner,
+        Object.entries(snapshot.entries)
+          .filter(([key]) => /^[ms]\.\d+\.(own|lvl|awk|rnk|sk)$/u.test(key))
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, row]) => [key, row.v]),
+      ]);
       if (signature !== this.rosterSignature) {
         this.rosterSignature = signature;
         ++this.ratingGeneration;
@@ -335,7 +399,10 @@ export class SongProgress extends LitElement {
   }
   private async load() {
     const server = this.server;
-    if (this.pageData?.variants[this.server]) { this.preparePage(this.pageData, this.server); return; }
+    if (this.pageData?.variants[this.server]) {
+      this.preparePage(this.pageData, this.server);
+      return;
+    }
     const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner" });
     try {
       const read = <T extends Record<string, unknown>>(resource: string) =>
@@ -345,7 +412,10 @@ export class SongProgress extends LitElement {
         read("bands").catch(() => ({})),
         read("ui-marks").catch(() => ({})),
       ]);
-      if (server !== this.server || !this.isConnected) { progress.finish(); return; }
+      if (server !== this.server || !this.isConnected) {
+        progress.finish();
+        return;
+      }
       this.fallbackVisuals = { bands, marks, characters: {} };
       this.applySongs(songs);
       this.phase = "ready";
@@ -373,20 +443,26 @@ export class SongProgress extends LitElement {
       }
     }
     this.charts = Object.values(songs).flatMap((song) => {
-        const songId = Number(song.musicId);
-        const title = songTitle(song, this.locale);
-        const performer = resolveSongPerformer(song, registry);
-        const artist = resolveRelationshipText(performer.names, this.locale).text || localizedText(song.bandName, this.locale);
-        const type = Number(song.musicType);
-        const attributeIcon = liveMusicTypeMark(marks, type);
-        const color = ["", "red", "blue", "green", "yellow", "purple"][type];
-        const attributeLabel = color ? clientText(this.locale, `catalog.songs.liveTypes.${color}`, color) : type === 99 ? "ALL" : "";
-        const rows = Array.isArray(song.difficulty) ? (song.difficulty as Row[]) : [];
-        return rows.flatMap((row, index) => {
-          const difficulty = Number(row.difficulty ?? index);
-          const level = Number(row.displayLevel ?? row.playLevel ?? 0);
-          if (!songId || !level) return [];
-          return [{
+      const songId = Number(song.musicId);
+      const title = songTitle(song, this.locale);
+      const performer = resolveSongPerformer(song, registry);
+      const artist =
+        resolveRelationshipText(performer.names, this.locale).text || localizedText(song.bandName, this.locale);
+      const type = Number(song.musicType);
+      const attributeIcon = liveMusicTypeMark(marks, type);
+      const color = ["", "red", "blue", "green", "yellow", "purple"][type];
+      const attributeLabel = color
+        ? clientText(this.locale, `catalog.songs.liveTypes.${color}`, color)
+        : type === 99
+          ? "ALL"
+          : "";
+      const rows = Array.isArray(song.difficulty) ? (song.difficulty as Row[]) : [];
+      return rows.flatMap((row, index) => {
+        const difficulty = Number(row.difficulty ?? index);
+        const level = Number(row.displayLevel ?? row.playLevel ?? 0);
+        if (!songId || !level) return [];
+        return [
+          {
             key: `l.${songId}.${difficulty}`,
             songId,
             difficulty,
@@ -399,31 +475,48 @@ export class SongProgress extends LitElement {
             attributeIcon,
             attributeLabel,
             performer,
-          }];
-        });
+          },
+        ];
       });
+    });
   }
-  private profileKey() { return `haneoka.song-progress-profile.v1.${this.server}.${this.snapshot?.owner ?? "local"}${this.gameAccountId ? `.${this.gameAccountId}` : ""}`; }
+  private profileKey() {
+    return `haneoka.song-progress-profile.v1.${this.server}.${this.snapshot?.owner ?? "local"}${this.gameAccountId ? `.${this.gameAccountId}` : ""}`;
+  }
   private loadProfile() {
     this.profile = { name: "", uid: "", rank: "", region: "" };
     try {
       const value = JSON.parse(localStorage.getItem(this.profileKey()) || "null");
-      if (value) this.profile = { name: String(value.name ?? ""), uid: String(value.uid ?? ""), rank: String(value.rank ?? ""), region: String(value.region ?? "") };
-    } catch { /* Optional local profile. */ }
+      if (value)
+        this.profile = {
+          name: String(value.name ?? ""),
+          uid: String(value.uid ?? ""),
+          rank: String(value.rank ?? ""),
+          region: String(value.region ?? ""),
+        };
+    } catch {
+      /* Optional local profile. */
+    }
   }
   private saveProfile() {
-    try { localStorage.setItem(this.profileKey(), JSON.stringify(this.profile)); } catch { /* The fields remain usable. */ }
+    try {
+      localStorage.setItem(this.profileKey(), JSON.stringify(this.profile));
+    } catch {
+      /* The fields remain usable. */
+    }
   }
   private eligibleCharts() {
     const now = Date.now();
-    return this.charts.filter(chart => {
+    return this.charts.filter((chart) => {
       const song = this.songSources[String(chart.songId)];
-      const row = (song?.difficulty as Row[] | undefined)?.find(row => Number(row.difficulty) === chart.difficulty);
+      const row = (song?.difficulty as Row[] | undefined)?.find((row) => Number(row.difficulty) === chart.difficulty);
       return contentPublished(song, now) && contentPublished(row, now);
     });
   }
   private number(value: number | null | undefined) {
-    return value === null || value === undefined ? "—" : new Intl.NumberFormat(this.locale, { maximumFractionDigits: 1 }).format(value);
+    return value === null || value === undefined
+      ? "—"
+      : new Intl.NumberFormat(this.locale, { maximumFractionDigits: 1 }).format(value);
   }
   private async calculateRoster() {
     if (!this.snapshot || this.calculating) return;
@@ -433,18 +526,32 @@ export class SongProgress extends LitElement {
     this.ratingError = "";
     try {
       const gameAccount = this.gameAccount;
-      const matching = gameAccount?.uid && gameToolAccounts("team").find(account =>
-        account.uid === gameAccount.uid && account.server === gameAccount.server);
+      const matching =
+        gameAccount?.uid &&
+        gameToolAccounts("team").find(
+          (account) => account.uid === gameAccount.uid && account.server === gameAccount.server,
+        );
       if (matching) {
-        const cards = new BoxStore({ server: matching.server, accountId: matching.id, accountOwner: this.gameAccountOwner });
+        const cards = new BoxStore({
+          server: matching.server,
+          accountId: matching.id,
+          accountOwner: this.gameAccountOwner,
+        });
         try {
           await cards.start();
           if (generation !== this.ratingGeneration) return;
           snapshot = cards.snapshot;
-        } finally { cards.dispose(); }
+        } finally {
+          cards.dispose();
+        }
       }
-      const owned = Object.entries(snapshot.entries).filter(([key, row]) => /^[ms]\.\d+\.own$/u.test(key) && row.v === true);
-      if (owned.filter(([key]) => key.startsWith("m.")).length < 5 || owned.filter(([key]) => key.startsWith("s.")).length < 5) {
+      const owned = Object.entries(snapshot.entries).filter(
+        ([key, row]) => /^[ms]\.\d+\.own$/u.test(key) && row.v === true,
+      );
+      if (
+        owned.filter(([key]) => key.startsWith("m.")).length < 5 ||
+        owned.filter(([key]) => key.startsWith("s.")).length < 5
+      ) {
         this.rosterRatings = { current: null, potential: null, incomplete: false };
         return;
       }
@@ -452,7 +559,7 @@ export class SongProgress extends LitElement {
       if (generation !== this.ratingGeneration) return;
       this.roster ??= new SongProgressRoster();
       let lastProgress = -Infinity;
-      const result = await this.roster.calculate(snapshot, this.server, (done,total) => {
+      const result = await this.roster.calculate(snapshot, this.server, (done, total) => {
         if (generation !== this.ratingGeneration) return;
         const now = performance.now();
         if (done < total && now - lastProgress < 100) return;
@@ -468,7 +575,10 @@ export class SongProgress extends LitElement {
       if (generation === this.ratingGeneration && !(error instanceof DOMException && error.name === "AbortError"))
         this.ratingError = this.text("calculationFailed", "Calculation incomplete");
     } finally {
-      if (generation === this.ratingGeneration) { this.calculating = false; this.requestUpdate(); }
+      if (generation === this.ratingGeneration) {
+        this.calculating = false;
+        this.requestUpdate();
+      }
     }
   }
   private bestResult(row: SkillBest<Chart>) {
@@ -476,75 +586,207 @@ export class SongProgress extends LitElement {
     return `${difficulty} ${row.chart.levelText} / ${row.status === 3 ? "AP" : "FC"} ${this.number(row.value)}`;
   }
   private ratings() {
-    const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
-    const current = this.rosterRatings?.current?.value, potential = this.rosterRatings?.potential?.value;
+    const skill = skillRating(this.eligibleCharts(), (chart) => this.status(chart));
+    const current = this.rosterRatings?.current?.value,
+      potential = this.rosterRatings?.potential?.value;
     const gain = current === undefined || potential === undefined ? null : potential - current;
-    return html`<div class="song-progress__ratings">
-      <section class="surface song-progress__rating">
-        ${renderDetailSectionHeading(this.text("skillRating", "Skill rating"), "stats")}
-        <p class="song-progress__rating-value">${this.number(skill.value)}</p>
-        ${specList([
-          { label: this.text("highestAp", "Highest AP"), value: this.number(skill.ap) },
-          { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
-          { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
-          ...this.counts.summaryRows(),
-        ], { numeric: true, className: "song-progress__rating-facts" })}
-        ${this.counts.renderImportState()}
-        ${accordion({ id:"song-progress-best", label:"Best 20", expanded:this.bestOpen,
-          onExpandedChange: expanded => { this.bestOpen = expanded; this.requestUpdate(); },
-          content:html`<ol class="song-progress__best">${skill.best.map((row,index) => html`<li class="song-progress__best-row">
-            <span class="song-progress__best-rank">${index+1}</span>
-            <a class="song-progress__best-title song-progress__copy" href=${resourcePath({server:this.server,locale:this.locale as Locale,kind:"songs",id:String(row.chart.songId)})}>
-              <span class="song-progress__title">
-                ${row.chart.attributeIcon ? html`<img src=${row.chart.attributeIcon} alt=${row.chart.attributeLabel} width="16" height="16" loading="lazy" />` : nothing}
-                <span lang=${row.chart.titleLanguage}>${row.chart.title}</span>
-              </span>
-              <small class="tile__subtitle">${songPerformerAdornment(row.chart.performer)}<span>${this.bestResult(row)}</span></small>
-            </a>
-          </li>`)}</ol>`,
+    return html`
+      <div class="song-progress__ratings">
+        <section class="surface song-progress__rating">
+          ${renderDetailSectionHeading(this.text("skillRating", "Skill rating"), "stats")}
+          <p class="song-progress__rating-value">${this.number(skill.value)}</p>
+          ${specList(
+          [
+            { label: this.text("highestAp", "Highest AP"), value: this.number(skill.ap) },
+            { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
+            {
+              label: "Best 20",
+              value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20),
+            },
+            ...this.counts.summaryRows(),
+          ],
+          { numeric: true, className: "song-progress__rating-facts" },
+        )}
+          ${this.counts.renderImportState()}
+          ${accordion({
+          id: "song-progress-best",
+          label: "Best 20",
+          expanded: this.bestOpen,
+          onExpandedChange: (expanded) => {
+            this.bestOpen = expanded;
+            this.requestUpdate();
+          },
+          content: html`
+            <ol class="song-progress__best">
+              ${skill.best.map(
+                (row, index) => html`
+                  <li class="song-progress__best-row">
+                    <span class="song-progress__best-rank">${index + 1}</span>
+                    <a
+                      class="song-progress__best-title song-progress__copy"
+                      href=${resourcePath({ server: this.server, locale: this.locale as Locale, kind: "songs", id: String(row.chart.songId) })}
+                    >
+                      <span class="song-progress__title">
+                        ${
+                  row.chart.attributeIcon
+                    ? html`
+                        <img
+                          src=${row.chart.attributeIcon}
+                          alt=${row.chart.attributeLabel}
+                          width="16"
+                          height="16"
+                          loading="lazy"
+                        />
+                      `
+                    : nothing
+                }
+                        <span lang=${row.chart.titleLanguage}>${row.chart.title}</span>
+                      </span>
+                      <small class="tile__subtitle">
+                        ${songPerformerAdornment(row.chart.performer)}
+                        <span>${this.bestResult(row)}</span>
+                      </small>
+                    </a>
+                  </li>
+                `,
+              )}
+            </ol>
+          `,
         })}
-      </section>
-      <section class="surface song-progress__rating">
-        <div class="row row--between">
-          ${renderDetailSectionHeading(this.text("rosterRating", "Roster rating"), "cards")}
-          ${iconButton({ icon: "help", label: this.text("rosterHelpTitle", "About roster ratings"), onClick: () => { this.rosterHelp = true; } })}
-        </div>
-        <span class="md-label-large">${this.text("currentRating", "Current-growth rating")}</span>
-        <p class="song-progress__rating-value song-progress__rating-value--roster">${this.number(this.rosterRatings?.current?.value)}</p>
-        ${specList([
-          { label: this.text("potentialRating", "Full-growth rating"), value: this.number(potential) },
-          { label: this.text("ratingGain", "Growth difference"), value: gain === null ? "—" : `${gain >= 0 ? "+" : ""}${this.number(gain)}` },
-        ], { numeric: true, className: "song-progress__rating-facts" })}
-        <div class="song-progress__rating-actions">
-          <button class="button button--filled" type="button" ?disabled=${this.calculating} @click=${() => void this.calculateRoster()}>${this.text("calculateRating", "Calculate ratings")}</button>
-          <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
-          ${this.calculating ? html`<button class="button button--text" type="button" @click=${() => { ++this.ratingGeneration; this.roster?.cancel(); this.calculating = false; this.requestUpdate(); }}>${uiText(this.locale,"common.actions.cancel")}</button>` : nothing}
-        </div>
-        <small class="md-body-small song-progress__rating-status" role="status">${this.calculating ? this.ratingProgress || uiText(this.locale,"common.states.loading") : this.ratingError || (this.rosterRatings?.incomplete ? this.text("growthIncomplete", "Card growth incomplete") : this.rosterRatings && !this.rosterRatings.potential ? this.text("rosterIncomplete", "Five characters and five Snapshots required") : "")}</small>
-      </section>
-    </div>`;
+        </section>
+        <section class="surface song-progress__rating">
+          <div class="row row--between">
+            ${renderDetailSectionHeading(this.text("rosterRating", "Roster rating"), "cards")}
+            ${iconButton({
+            icon: "help",
+            label: this.text("rosterHelpTitle", "About roster ratings"),
+            onClick: () => {
+              this.rosterHelp = true;
+            },
+          })}
+          </div>
+          <span class="md-label-large">${this.text("currentRating", "Current-growth rating")}</span>
+          <p class="song-progress__rating-value song-progress__rating-value--roster">
+            ${this.number(this.rosterRatings?.current?.value)}
+          </p>
+          ${specList(
+          [
+            { label: this.text("potentialRating", "Full-growth rating"), value: this.number(potential) },
+            {
+              label: this.text("ratingGain", "Growth difference"),
+              value: gain === null ? "—" : `${gain >= 0 ? "+" : ""}${this.number(gain)}`,
+            },
+          ],
+          { numeric: true, className: "song-progress__rating-facts" },
+        )}
+          <div class="song-progress__rating-actions">
+            <button
+              class="button button--filled"
+              type="button"
+              ?disabled=${this.calculating}
+              @click=${() => void this.calculateRoster()}
+            >
+              ${this.text("calculateRating", "Calculate ratings")}
+            </button>
+            <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>
+              ${this.text("manageGrowth", "Cards and growth")}
+            </a>
+            ${
+            this.calculating
+              ? html`
+                  <button
+                    class="button button--text"
+                    type="button"
+                    @click=${() => {
+                      ++this.ratingGeneration;
+                      this.roster?.cancel();
+                      this.calculating = false;
+                      this.requestUpdate();
+                    }}
+                  >
+                    ${uiText(this.locale, "common.actions.cancel")}
+                  </button>
+                `
+              : nothing
+          }
+          </div>
+          <small class="md-body-small song-progress__rating-status" role="status">
+            ${this.calculating ? this.ratingProgress || uiText(this.locale, "common.states.loading") : this.ratingError || (this.rosterRatings?.incomplete ? this.text("growthIncomplete", "Card growth incomplete") : this.rosterRatings && !this.rosterRatings.potential ? this.text("rosterIncomplete", "Five characters and five Snapshots required") : "")}
+          </small>
+        </section>
+      </div>
+    `;
   }
   private rosterHelpDialog() {
     if (!this.rosterHelp) return nothing;
-    const close = () => { this.rosterHelp = false; };
-    return html`<dialog class="dialog" aria-labelledby="song-progress-roster-help" ${modal(close)}>
-      <header class="dialog__header"><h2 id="song-progress-roster-help">${this.text("rosterHelpTitle", "About roster ratings")}</h2></header>
-      <div class="dialog__body stack">
-        ${specList([
-          { label: this.text("rosterHelp.purpose", "Use"), value: this.text("rosterHelp.purposeValue", "Compare scoring ability and growth gains of owned cards") },
-          { label: this.text("currentGrowth", "Current growth"), value: this.text("rosterHelp.currentValue", "All owned members and Snapshots at recorded growth") },
-          { label: this.text("potentialRating", "Full-growth rating"), value: this.text("rosterHelp.potentialValue", "The same owned cards, fully grown") },
-          { label: this.text("ratingGain", "Growth difference"), value: this.text("rosterHelp.gainValue", "Full-growth rating minus current-growth rating") },
-          { label: this.text("rosterHelp.play", "Live"), value: this.text("rosterHelp.playValue", "Ordinary Live / ALL PERFECT") },
-          { label: this.text("rosterHelp.bonuses", "Account bonuses"), value: this.text("rosterHelp.bonusesValue", "Band items, character ranks and memories excluded") },
-          { label: this.text("rosterHelp.required", "Required"), value: this.text("rosterHelp.requiredValue", "Five different characters, five Snapshots and complete card growth") },
-          { label: uiText(this.locale, "catalog.resources.types.MemberCard"), value: ["common.fields.level", "catalog.cards.fields.training", "catalog.cards.fields.awakening", "catalog.cards.fields.liveSkill"].map(key => uiText(this.locale, key)).join(" / ") },
-          { label: uiText(this.locale, "catalog.resources.types.SupportCard"), value: this.text("rosterHelp.snapshotGrowth", "Level / Limit Break") },
+    const close = () => {
+      this.rosterHelp = false;
+    };
+    return html`
+      <dialog class="dialog" aria-labelledby="song-progress-roster-help" ${modal(close)}>
+        <header class="dialog__header">
+          <h2 id="song-progress-roster-help">${this.text("rosterHelpTitle", "About roster ratings")}</h2>
+        </header>
+        <div class="dialog__body stack">
+          ${specList([
+          {
+            label: this.text("rosterHelp.purpose", "Use"),
+            value: this.text("rosterHelp.purposeValue", "Compare scoring ability and growth gains of owned cards"),
+          },
+          {
+            label: this.text("currentGrowth", "Current growth"),
+            value: this.text("rosterHelp.currentValue", "All owned members and Snapshots at recorded growth"),
+          },
+          {
+            label: this.text("potentialRating", "Full-growth rating"),
+            value: this.text("rosterHelp.potentialValue", "The same owned cards, fully grown"),
+          },
+          {
+            label: this.text("ratingGain", "Growth difference"),
+            value: this.text("rosterHelp.gainValue", "Full-growth rating minus current-growth rating"),
+          },
+          {
+            label: this.text("rosterHelp.play", "Live"),
+            value: this.text("rosterHelp.playValue", "Ordinary Live / ALL PERFECT"),
+          },
+          {
+            label: this.text("rosterHelp.bonuses", "Account bonuses"),
+            value: this.text("rosterHelp.bonusesValue", "Band items, character ranks and memories excluded"),
+          },
+          {
+            label: this.text("rosterHelp.required", "Required"),
+            value: this.text(
+              "rosterHelp.requiredValue",
+              "Five different characters, five Snapshots and complete card growth",
+            ),
+          },
+          {
+            label: uiText(this.locale, "catalog.resources.types.MemberCard"),
+            value: [
+              "common.fields.level",
+              "catalog.cards.fields.training",
+              "catalog.cards.fields.awakening",
+              "catalog.cards.fields.liveSkill",
+            ]
+              .map((key) => uiText(this.locale, key))
+              .join(" / "),
+          },
+          {
+            label: uiText(this.locale, "catalog.resources.types.SupportCard"),
+            value: this.text("rosterHelp.snapshotGrowth", "Level / Limit Break"),
+          },
         ])}
-        <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>${this.text("manageGrowth", "Cards and growth")}</a>
-      </div>
-      <footer class="dialog__actions"><button class="button button--text" type="button" @click=${close}>${uiText(this.locale, "common.actions.close")}</button></footer>
-    </dialog>`;
+          <a class="button button--tonal" href=${`/${this.locale}/team-builder/?server=${this.server}&tab=box`}>
+            ${this.text("manageGrowth", "Cards and growth")}
+          </a>
+        </div>
+        <footer class="dialog__actions">
+          <button class="button button--text" type="button" @click=${close}>
+            ${uiText(this.locale, "common.actions.close")}
+          </button>
+        </footer>
+      </dialog>
+    `;
   }
   private async openExportDialog() {
     this.actualProfile = songProgressProfile({});
@@ -559,62 +801,122 @@ export class SongProgress extends LitElement {
     if (!scopeId && !Object.values(actual).every(Boolean)) {
       const [deviceSaves, linked] = await Promise.all([
         inApp() ? appCall("gameAccounts", {}).catch(() => []) : Promise.resolve([]),
-        owner ? fetchJson<{ accounts: Row[] }>("/api/v1/account/game-accounts", {
-          cache: "no-store", signal: AbortSignal.timeout(5000),
-        }).then((result) => Array.isArray(result.accounts) ? result.accounts : []).catch(() => []) : Promise.resolve([]),
+        owner
+          ? fetchJson<{ accounts: Row[] }>("/api/v1/account/game-accounts", {
+              cache: "no-store",
+              signal: AbortSignal.timeout(5000),
+            })
+              .then((result) => (Array.isArray(result.accounts) ? result.accounts : []))
+              .catch(() => [])
+          : Promise.resolve([]),
       ]);
       const candidates = new Map<string, ReturnType<typeof songProgressProfile>>();
       for (const row of [
         ...deviceSaves.map((save) => ({ ...save, uid: save.profileId })),
-        ...linked.map((row) => ({ server: row.region, region: row.region, name: row.displayName, uid: row.playerUid,
-          rank: (row.summary as Row | undefined)?.rank })),
+        ...linked.map((row) => ({
+          server: row.region,
+          region: row.region,
+          name: row.displayName,
+          uid: row.playerUid,
+          rank: (row.summary as Row | undefined)?.rank,
+        })),
       ]) {
         const profile = songProgressProfile(row);
         const candidateServer = profile.region === GAME_REGION_NAMES.jp ? "jp" : profile.region ? "intl" : row.server;
         if (candidateServer === server && profile.uid) {
           const previous = candidates.get(profile.uid);
-          candidates.set(profile.uid, previous ? {
-            ...previous, name: previous.name || profile.name, rank: previous.rank || profile.rank, region: previous.region || profile.region,
-          } : profile);
+          candidates.set(
+            profile.uid,
+            previous
+              ? {
+                  ...previous,
+                  name: previous.name || profile.name,
+                  rank: previous.rank || profile.rank,
+                  region: previous.region || profile.region,
+                }
+              : profile,
+          );
         }
       }
-      const matched = actual.uid ? candidates.get(actual.uid)
-        : !Object.values(actual).some(Boolean) && candidates.size === 1 ? candidates.values().next().value : undefined;
-      if (matched) actual = {
-        name: actual.name || matched.name, uid: actual.uid || matched.uid,
-        rank: actual.rank || matched.rank, region: actual.region || matched.region,
-      };
+      const matched = actual.uid
+        ? candidates.get(actual.uid)
+        : !Object.values(actual).some(Boolean) && candidates.size === 1
+          ? candidates.values().next().value
+          : undefined;
+      if (matched)
+        actual = {
+          name: actual.name || matched.name,
+          uid: actual.uid || matched.uid,
+          rank: actual.rank || matched.rank,
+          region: actual.region || matched.region,
+        };
     }
     this.profileLoading = false;
-    if (server === this.server && scopeId === this.gameAccountId && owner === (this.snapshot?.owner ?? null)) this.actualProfile = actual;
+    if (server === this.server && scopeId === this.gameAccountId && owner === (this.snapshot?.owner ?? null))
+      this.actualProfile = actual;
     else this.actualProfile = songProgressProfile({});
     this.requestUpdate();
   }
   private exportDialog() {
     if (!this.ratingDialog) return nothing;
-    return html`<dialog class="dialog" ${modal(() => { this.ratingDialog = false; })}>
-      <div class="dialog__surface">
-        <header class="dialog__header"><h2>${this.text("exportImage", "Export image")}</h2></header>
-        <div class="dialog__body stack">
-          <div class="song-progress__profile">
-            ${(["name", "uid", "rank", "region"] as const).map(key => html`<md-outlined-text-field
-              label=${key === "region" ? clientText(this.locale, "settings.labels.server", "Server") : this.text(`profile${key}`, key)}
-              .value=${live(this.actualProfile[key] || this.profile[key])} ?readonly=${Boolean(this.actualProfile[key])}
-              ?disabled=${this.profileLoading} maxlength=${key === "name" ? 64 : 24}
-              @input=${(event: Event) => {
+    return html`
+      <dialog
+        class="dialog"
+        ${modal(() => {
+          this.ratingDialog = false;
+        })}
+      >
+        <div class="dialog__surface">
+          <header class="dialog__header"><h2>${this.text("exportImage", "Export image")}</h2></header>
+          <div class="dialog__body stack">
+            <div class="song-progress__profile">
+              ${(["name", "uid", "rank", "region"] as const).map(
+              (key) => html`
+                <md-outlined-text-field
+                  label=${key === "region" ? clientText(this.locale, "settings.labels.server", "Server") : this.text(`profile${key}`, key)}
+                  .value=${live(this.actualProfile[key] || this.profile[key])}
+                  ?readonly=${Boolean(this.actualProfile[key])}
+                  ?disabled=${this.profileLoading}
+                  maxlength=${key === "name" ? 64 : 24}
+                  @input=${(event: Event) => {
                 if (this.actualProfile[key]) return;
                 this.profile = { ...this.profile, [key]: (event.target as HTMLInputElement).value };
                 this.saveProfile();
-              }}></md-outlined-text-field>`)}
+              }}
+                ></md-outlined-text-field>
+              `,
+            )}
+            </div>
+            <div class="cluster">
+              <button
+                class="button button--filled"
+                ?disabled=${this.exporting || this.profileLoading}
+                @click=${() => void this.exportImage(false)}
+              >
+                ${this.text("exportOverview", "Overview image")}
+              </button>
+              <button
+                class="button button--tonal"
+                ?disabled=${this.exporting || this.profileLoading}
+                @click=${() => void this.exportImage(true)}
+              >
+                ${this.text("exportBest", "Best 20 image")}
+              </button>
+            </div>
           </div>
-          <div class="cluster">
-            <button class="button button--filled" ?disabled=${this.exporting || this.profileLoading} @click=${() => void this.exportImage(false)}>${this.text("exportOverview", "Overview image")}</button>
-            <button class="button button--tonal" ?disabled=${this.exporting || this.profileLoading} @click=${() => void this.exportImage(true)}>${this.text("exportBest", "Best 20 image")}</button>
-          </div>
+          <footer class="dialog__actions">
+            <button
+              class="button button--text"
+              @click=${() => {
+          this.ratingDialog = false;
+        }}
+            >
+              ${uiText(this.locale, "common.actions.close")}
+            </button>
+          </footer>
         </div>
-        <footer class="dialog__actions"><button class="button button--text" @click=${() => { this.ratingDialog = false; }}>${uiText(this.locale,"common.actions.close")}</button></footer>
-      </div>
-    </dialog>`;
+      </dialog>
+    `;
   }
   private async exportImage(detailed: boolean) {
     if (this.exporting || this.profileLoading) return;
@@ -623,24 +925,40 @@ export class SongProgress extends LitElement {
     const uid = this.actualProfile.uid || this.profile.uid.trim();
     const rank = this.actualProfile.rank || this.profile.rank.trim();
     const region = this.actualProfile.region || this.profile.region.trim();
-    const skill = skillRating(this.eligibleCharts(), chart => this.status(chart));
+    const skill = skillRating(this.eligibleCharts(), (chart) => this.status(chart));
     const roster = this.rosterRatings;
     const gain = roster?.current && roster.potential ? roster.potential.value - roster.current.value : null;
     const report: SongProgressImageReport = {
-      title: this.text("title", "Song progress"), generated: formatDate(this.locale, Date.now(), { year:"always" }),
-      profile: { name, uid: uid ? `UID ${uid}` : "", rank: rank ? `${this.text("profilerank", "Player rank")} ${rank}` : "", region },
+      title: this.text("title", "Song progress"),
+      generated: formatDate(this.locale, Date.now(), { year: "always" }),
+      profile: {
+        name,
+        uid: uid ? `UID ${uid}` : "",
+        rank: rank ? `${this.text("profilerank", "Player rank")} ${rank}` : "",
+        region,
+      },
       metrics: [
-        { label: this.text("skillRating","Skill rating"), value: this.number(skill.value) },
-        { label: this.text("currentRating","Current-growth rating"), value: this.number(roster?.current?.value) },
-        { label: this.text("potentialRating","Full-growth rating"), value: this.number(roster?.potential?.value), ...(gain === null ? {} : { detail: `${gain >= 0 ? "+" : ""}${this.number(gain)}` }) },
-        { label: this.text("highestAp","Highest AP"), value: this.number(skill.ap) },
-        { label: this.text("highestFc","Highest FC"), value: this.number(skill.fc) },
+        { label: this.text("skillRating", "Skill rating"), value: this.number(skill.value) },
+        { label: this.text("currentRating", "Current-growth rating"), value: this.number(roster?.current?.value) },
+        {
+          label: this.text("potentialRating", "Full-growth rating"),
+          value: this.number(roster?.potential?.value),
+          ...(gain === null ? {} : { detail: `${gain >= 0 ? "+" : ""}${this.number(gain)}` }),
+        },
+        { label: this.text("highestAp", "Highest AP"), value: this.number(skill.ap) },
+        { label: this.text("highestFc", "Highest FC"), value: this.number(skill.fc) },
         { label: "Best 20", value: skill.best20 === null ? `${skill.best.length} / 20` : this.number(skill.best20) },
       ],
-      counts: DIFFICULTIES.map((name,index) => {
-        const charts = this.eligibleCharts().filter(chart => chart.difficulty === (index === 4 ? 5 : index));
-        return { label: name.toUpperCase(), clear: charts.filter(chart => this.status(chart) >= 1).length, fc: charts.filter(chart => this.status(chart) >= 2).length, ap: charts.filter(chart => this.status(chart) >= 3).length };
-      }), countHeaders: ["CLEAR", "FC", "AP"],
+      counts: DIFFICULTIES.map((name, index) => {
+        const charts = this.eligibleCharts().filter((chart) => chart.difficulty === (index === 4 ? 5 : index));
+        return {
+          label: name.toUpperCase(),
+          clear: charts.filter((chart) => this.status(chart) >= 1).length,
+          fc: charts.filter((chart) => this.status(chart) >= 2).length,
+          ap: charts.filter((chart) => this.status(chart) >= 3).length,
+        };
+      }),
+      countHeaders: ["CLEAR", "FC", "AP"],
       songs: skill.best.map((row) => ({
         title: row.chart.title,
         level: this.bestResult(row),
@@ -652,11 +970,14 @@ export class SongProgress extends LitElement {
     };
     try {
       const { renderSongProgressImage } = await import("../lib/song-progress-image");
-      const blob = await renderSongProgressImage(report,detailed);
+      const blob = await renderSongProgressImage(report, detailed);
       const { downloadBlob } = await import("../lib/canvas-capture");
       await downloadBlob(blob, `haneoka-${detailed ? "best20" : "ratings"}.png`);
-    } catch { snackbar(this.text("exportFailed","Image export failed")); }
-    finally { this.exporting = false; }
+    } catch {
+      snackbar(this.text("exportFailed", "Image export failed"));
+    } finally {
+      this.exporting = false;
+    }
   }
   private status(chart: Chart): number {
     const value = this.snapshot?.entries[chart.key]?.v;
@@ -666,12 +987,17 @@ export class SongProgress extends LitElement {
     this.store?.set([{ key: chart.key, value: value || null }]);
   }
   private markChanges(marks: Record<string, number>): CountChanges {
-    return this.charts.filter(chart => (marks[chart.key] ?? 0) !== this.status(chart))
-      .map(chart => ({ key: chart.key, value: marks[chart.key] || null }));
+    return this.charts
+      .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))
+      .map((chart) => ({ key: chart.key, value: marks[chart.key] || null }));
   }
   private writeProgress(changes: CountChanges) {
     if (!this.store || !this.snapshot) return;
-    if (Object.keys(this.snapshot.entries).length + new Set(changes.filter(change => !(change.key in this.snapshot!.entries)).map(change => change.key)).size > MAX_BOX_KEYS)
+    if (
+      Object.keys(this.snapshot.entries).length +
+        new Set(changes.filter((change) => !(change.key in this.snapshot!.entries)).map((change) => change.key)).size >
+      MAX_BOX_KEYS
+    )
       throw new Error("counts_limit");
     this.store.set(changes);
   }
@@ -694,10 +1020,15 @@ export class SongProgress extends LitElement {
         ${renderDetailSectionHeading(this.text("summary", "Summary"), "stats")}
         <dl class="spec-list spec-list--split spec-list--numeric">
           ${[1, 2, 3].map(
-            (value) => html`<div>
-              <dt>${this.statusLabel(value)}</dt>
-              <dd>${reached(charts, value)} / ${charts.length} <small>${percent.format(reached(charts, value) / Math.max(1, charts.length))}</small></dd>
-            </div>`,
+            (value) => html`
+              <div>
+                <dt>${this.statusLabel(value)}</dt>
+                <dd>
+                  ${reached(charts, value)} / ${charts.length}
+                  <small>${percent.format(reached(charts, value) / Math.max(1, charts.length))}</small>
+                </dd>
+              </div>
+            `,
           )}
         </dl>
         ${accordion({
@@ -709,61 +1040,115 @@ export class SongProgress extends LitElement {
             this.levelsOpen = open;
           },
           content: collectionTable(
-          this.text("byLevel", "By level"),
-          [uiText(this.locale, "common.fields.level"), this.text("charts", "Charts"), ...[1, 2, 3].map((value) => this.statusLabel(value))],
-          levels.map((level) => {
-            const row = charts.filter((chart) => chart.levelText === level);
-            return [level, row.length, ...[1, 2, 3].map((value) => `${reached(row, value)}`)];
-          }),
-          { numeric: true },
-        ),
+            this.text("byLevel", "By level"),
+            [
+              uiText(this.locale, "common.fields.level"),
+              this.text("charts", "Charts"),
+              ...[1, 2, 3].map((value) => this.statusLabel(value)),
+            ],
+            levels.map((level) => {
+              const row = charts.filter((chart) => chart.levelText === level);
+              return [level, row.length, ...[1, 2, 3].map((value) => `${reached(row, value)}`)];
+            }),
+            { numeric: true },
+          ),
         })}
       </section>
     `;
   }
   private row(chart: Chart) {
     const status = this.status(chart);
-    const href = resourcePath({ server: this.server, locale: this.locale as Locale, kind: "songs", id: String(chart.songId) });
+    const href = resourcePath({
+      server: this.server,
+      locale: this.locale as Locale,
+      kind: "songs",
+      id: String(chart.songId),
+    });
     return html`
       <li class="song-progress__row" data-status=${status}>
         <a class="song-progress__song" href=${href} title=${chart.title}>
-          <img class="song-progress__jacket" src=${chart.jacket} alt="" width="48" height="48" loading="lazy" decoding="async" />
+          <img
+            class="song-progress__jacket"
+            src=${chart.jacket}
+            alt=""
+            width="48"
+            height="48"
+            loading="lazy"
+            decoding="async"
+          />
           <span class="song-progress__copy">
             <strong class="song-progress__title">
-              ${chart.attributeIcon ? html`<img src=${chart.attributeIcon} alt=${chart.attributeLabel} width="16" height="16" loading="lazy" decoding="async" />` : nothing}
+              ${
+                chart.attributeIcon
+                  ? html`
+                      <img
+                        src=${chart.attributeIcon}
+                        alt=${chart.attributeLabel}
+                        width="16"
+                        height="16"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    `
+                  : nothing
+              }
               <span lang=${chart.titleLanguage}>${chart.title}</span>
             </strong>
-            <small class="tile__subtitle">${songPerformerAdornment(chart.performer)}<span>${chart.artist}</span></small>
+            <small class="tile__subtitle">
+              ${songPerformerAdornment(chart.performer)}
+              <span>${chart.artist}</span>
+            </small>
           </span>
         </a>
-        <span class="song-progress__level tabular" style=${`--chart-color:var(--md-extended-color-difficulty-${DIFFICULTIES[chart.difficulty === 5 ? 4 : chart.difficulty] === "special" ? "master" : DIFFICULTIES[chart.difficulty]})`}>${chart.levelText}</span>
-        <div class="song-progress__controls">
-        <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
-          ${[1, 2, 3].map(
-            (value) => html`<button
-              type="button"
-              role="radio"
-              class="song-progress__mark"
-              data-mark=${value}
-              aria-checked=${String(status === value)}
-              title=${this.statusLabel(value)}
-              @click=${() => this.setStatus(chart, status === value ? 0 : value)}
-            >${["", "CLEAR", "FC", "AP"][value]}</button>`,
-          )}
+        <span
+          class="song-progress__level tabular"
+          style=${`--chart-color:var(--md-extended-color-difficulty-${DIFFICULTIES[chart.difficulty === 5 ? 4 : chart.difficulty] === "special" ? "master" : DIFFICULTIES[chart.difficulty]})`}
+        >
+          ${chart.levelText}
         </span>
-        ${this.counts.renderRow(chart.songId, chart.difficulty, `${chart.title} / ${DIFFICULTY_TAGS[chart.difficulty === 5 ? 4 : chart.difficulty]}`)}
+        <div class="song-progress__controls">
+          <span class="song-progress__status" role="radiogroup" aria-label=${`${chart.title} / ${chart.levelText}`}>
+            ${[1, 2, 3].map(
+            (value) => html`
+              <button
+                type="button"
+                role="radio"
+                class="song-progress__mark"
+                data-mark=${value}
+                aria-checked=${String(status === value)}
+                title=${this.statusLabel(value)}
+                @click=${() => this.setStatus(chart, status === value ? 0 : value)}
+              >
+                ${["", "CLEAR", "FC", "AP"][value]}
+              </button>
+            `,
+          )}
+          </span>
+          ${this.counts.renderRow(chart.songId, chart.difficulty, `${chart.title} / ${DIFFICULTY_TAGS[chart.difficulty === 5 ? 4 : chart.difficulty]}`)}
         </div>
       </li>
     `;
   }
   render() {
-    if (this.phase === "loading") return html`<section class="page song-progress">${loadingState(uiText(this.locale, "common.states.loading"))}</section>`;
+    if (this.phase === "loading")
+      return html`
+        <section class="page song-progress">${loadingState(uiText(this.locale, "common.states.loading"))}</section>
+      `;
     if (this.phase === "error")
-      return html`<section class="page song-progress">${errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => void this.load())}</section>`;
+      return html`
+        <section class="page song-progress">
+          ${errorState(uiText(this.locale, "common.states.unavailable"), uiText(this.locale, "common.actions.retry"), () => void this.load())}
+        </section>
+      `;
     const charts = this.charts.filter((chart) => chart.difficulty === this.difficulty);
     const shown = charts
       .filter((chart) => this.filter === "all" || this.status(chart) === Number(this.filter))
-      .filter((chart) => !this.query || chart.title.toLowerCase().includes(this.query) || chart.artist.toLowerCase().includes(this.query))
+      .filter(
+        (chart) =>
+          !this.query ||
+          chart.title.toLowerCase().includes(this.query) ||
+          chart.artist.toLowerCase().includes(this.query),
+      )
       .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId);
     const present = DIFFICULTIES.map((name, index) => ({ name, value: index === 4 ? 5 : index })).filter(({ value }) =>
       this.charts.some((chart) => chart.difficulty === value),
@@ -771,10 +1156,7 @@ export class SongProgress extends LitElement {
     return html`
       <section class="page song-progress">
         <div class="song-progress__layout">
-          <div class="stack">
-            ${this.ratings()}
-            ${this.summary(charts)}
-          </div>
+          <div class="stack">${this.ratings()} ${this.summary(charts)}</div>
           <div class="stack">
             ${segmented({
               label: uiText(this.locale, "catalog.songs.fields.difficulty"),
@@ -787,20 +1169,34 @@ export class SongProgress extends LitElement {
                 filterChip({
                   label: value === "all" ? uiText(this.locale, "common.states.all") : this.statusLabel(Number(value)),
                   selected: this.filter === value,
-                  count: value === "all" ? charts.length : charts.filter((chart) => this.status(chart) === Number(value)).length,
+                  count:
+                    value === "all"
+                      ? charts.length
+                      : charts.filter((chart) => this.status(chart) === Number(value)).length,
                   onToggle: () => {
                     this.filter = value;
                   },
                 }),
               )}
             </div>
-            ${keyed(`${this.server}:${this.difficulty}`, html`<ol class="song-progress__list" role="list">${shown.map((chart) => this.row(chart))}</ol>`)}
-            ${shown.length ? nothing : html`<p class="detail-copy">${uiText(this.locale, "common.states.empty")}</p>`}
+            ${keyed(
+              `${this.server}:${this.difficulty}`,
+              html`
+                <ol class="song-progress__list" role="list">
+                  ${shown.map((chart) => this.row(chart))}
+                </ol>
+              `,
+            )}
+            ${
+              shown.length
+                ? nothing
+                : html`
+                    <p class="detail-copy">${uiText(this.locale, "common.states.empty")}</p>
+                  `
+            }
           </div>
         </div>
-        ${this.exportDialog()}
-        ${this.rosterHelpDialog()}
-        ${this.counts.renderDialogs()}
+        ${this.exportDialog()} ${this.rosterHelpDialog()} ${this.counts.renderDialogs()}
       </section>
     `;
   }
