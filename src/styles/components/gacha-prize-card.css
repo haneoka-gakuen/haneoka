@@ -41,13 +41,19 @@
     padding: 2px;
     object-fit: contain;
   }
-  /* Square cards crop the 3:4 member art to a fitted square like the ranking
-     page's card media; the rectangular .gacha-stats grids keep contain. */
+  /* Square cards crop the member and snapshot art to a fitted square like
+     the ranking page's card media; the rectangular .gacha-stats grids keep
+     contain. */
   .gacha-card[data-kind="member"] .gacha-card__art {
     object-fit: cover;
     object-position: 50% 25%;
   }
-  .gacha-stats .gacha-card[data-kind="member"] .gacha-card__art {
+  .gacha-card[data-kind="support"] .gacha-card__art {
+    object-fit: cover;
+    object-position: 50% 50%;
+  }
+  .gacha-stats .gacha-card[data-kind="member"] .gacha-card__art,
+  .gacha-stats .gacha-card[data-kind="support"] .gacha-card__art {
     object-fit: contain;
     object-position: 50% 50%;
   }

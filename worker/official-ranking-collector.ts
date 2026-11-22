@@ -25,6 +25,8 @@ const INTERVAL_MS = 300_000;
 const JOB_MS = 120_000;
 const LOOKUP_MS = 60_000;
 const WINDOW_REUSE_MS = INTERVAL_MS;
+/** Already-covered sweep pages wait this long before re-reading; missing pages stay urgent. */
+const ARENA_REFRESH_MS = 2 * INTERVAL_MS;
 /** The collector reuses counts read in the last five minutes; one more covers clock skew. */
 const ARENA_WITNESS_REUSE_MS = 360_000;
 const ARENA_POPULATION_TARGET_MS = 1_200_000;
@@ -1313,7 +1315,7 @@ export class OfficialRankingCollector extends Container<Env> {
       }
       if (starts.length < count) {
         const oldest = [...entry.observed].filter(([rank, observed]) => rank <= entry.maximum
-          && now - observed >= WINDOW_REUSE_MS && !excluded.has(band + ":" + rank))
+          && now - observed >= ARENA_REFRESH_MS && !excluded.has(band + ":" + rank))
           .sort((left, right) => left[1] - right[1] || left[0] - right[0]);
         for (const [rank] of oldest.slice(0, count - starts.length)) starts.push(rank);
       }
@@ -2696,8 +2698,8 @@ export class OfficialRankingCollector extends Container<Env> {
             if (health) health.cooldownUntilMs = state.nextAtMs;
           }
           await this.ctx.storage.put("collectorState", state);
-          await saveOfficialEventWindow(this.env, observation);
-          if (observation.startRank === 1) {
+          const windowChanged = await saveOfficialEventWindow(this.env, observation);
+          if (windowChanged && observation.startRank === 1) {
             const players = observation.players?.map((row) => ({ player_data: row.profile ?? {}, score: row.point ?? 0 }));
             await saveOfficialObservation(this.env, {
               snapshotId: observation.snapshotId, region, eventId: observation.eventId, kind: "point", challengeId: "",

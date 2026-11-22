@@ -8,7 +8,6 @@
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface);
-  scrollbar-width: thin;
 }
 .data-table {
   width: max-content;
