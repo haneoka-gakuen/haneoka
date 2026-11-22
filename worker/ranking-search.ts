@@ -54,6 +54,22 @@ export async function findRankingProfileWindow(
     .first<RankingProfileWindow>();
 }
 
+/** The compact per-player projection stored for search; identical output means an unchanged window. */
+export function rankingSearchRows(players: readonly unknown[], startRank: number): SearchPlayer[] {
+  return players.map((value, offset) => {
+    const entry = object(value),
+      profile = object(entry.profile ?? entry.player_data ?? entry.playerData);
+    const name = String(profile.name ?? "");
+    return {
+      rank: Number(entry.rank ?? startRank + offset),
+      profileId: String(profile.profile_id ?? profile.profileId ?? "") || null,
+      name,
+      search: normalizeRankingQuery(name),
+      point: Number(entry.point ?? entry.score ?? 0),
+    };
+  });
+}
+
 export async function saveRankingSearchWindow(
   db: D1Database,
   region: string,
@@ -61,18 +77,7 @@ export async function saveRankingSearchWindow(
   window: SearchWindow,
   players: readonly unknown[],
 ) {
-  const rows: SearchPlayer[] = players.map((value, offset) => {
-    const entry = object(value),
-      profile = object(entry.profile ?? entry.player_data ?? entry.playerData);
-    const name = String(profile.name ?? "");
-    return {
-      rank: Number(entry.rank ?? window.startRank + offset),
-      profileId: String(profile.profile_id ?? profile.profileId ?? "") || null,
-      name,
-      search: normalizeRankingQuery(name),
-      point: Number(entry.point ?? entry.score ?? 0),
-    };
-  });
+  const rows = rankingSearchRows(players, window.startRank);
   await db
     .prepare(
       `INSERT INTO official_ranking_search_windows
