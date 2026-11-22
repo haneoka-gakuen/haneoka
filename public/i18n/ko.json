@@ -5001,6 +5001,8 @@
         "moveDown": "아래로 이동",
         "removeDetail": "제거된 계정에서 계정과 데이터를 복원할 수 있습니다.",
         "removeDetailTemporary": "이 프로필과 해당 데이터는 완전히 삭제됩니다.",
+        "purging": "삭제 동기화 대기 중",
+        "purgingDetail": "연결이 되면 클라우드에서 삭제됩니다",
         "cloudSaves": "클라우드 게임 저장 데이터",
         "browserSaves": "게임 저장 데이터",
         "readSave": "게임 저장 데이터 읽기",

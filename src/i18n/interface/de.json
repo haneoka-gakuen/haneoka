@@ -5001,6 +5001,8 @@
         "moveDown": "Nach unten",
         "removeDetail": "Das Konto und seine Daten können unter „Entfernte Konten“ wiederhergestellt werden.",
         "removeDetailTemporary": "Dieses Profil und seine Daten werden endgültig gelöscht.",
+        "purging": "Löschen wartet auf Synchronisierung",
+        "purgingDetail": "Wird gelöscht, sobald die Verbindung zurückkehrt",
         "cloudSaves": "Cloud-Spielstände",
         "browserSaves": "Spielstände",
         "readSave": "Spielstand einlesen",

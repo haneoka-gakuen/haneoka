@@ -5001,6 +5001,8 @@
         "moveDown": "Mover para baixo",
         "removeDetail": "Você pode restaurar esta conta e seus dados em Contas removidas.",
         "removeDetailTemporary": "Este perfil e seus dados são excluídos permanentemente.",
+        "purging": "Exclusão aguardando sincronização",
+        "purgingDetail": "Será excluído da nuvem quando a conexão voltar",
         "cloudSaves": "Dados salvos na nuvem",
         "browserSaves": "Dados salvos do jogo",
         "readSave": "Ler dados salvos",

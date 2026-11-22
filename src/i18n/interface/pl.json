@@ -5001,6 +5001,8 @@
         "moveDown": "Przenieś niżej",
         "removeDetail": "Konto wraz z danymi można przywrócić z listy usuniętych kont.",
         "removeDetailTemporary": "Ten profil i jego dane zostaną trwale usunięte.",
+        "purging": "Usuwanie czeka na synchronizację",
+        "purgingDetail": "Zniknie z chmury po powrocie połączenia",
         "cloudSaves": "Zapisy w chmurze",
         "browserSaves": "Zapisy gry",
         "readSave": "Odczytaj zapis gry",

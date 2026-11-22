@@ -5001,6 +5001,8 @@
         "moveDown": "Sposta giù",
         "removeDetail": "Puoi ripristinare account e dati dalla sezione Account rimossi.",
         "removeDetailTemporary": "Questo profilo e i suoi dati vengono eliminati definitivamente.",
+        "purging": "Eliminazione in attesa di sincronizzazione",
+        "purgingDetail": "Verrà eliminato dal cloud al ritorno della connessione",
         "cloudSaves": "Salvataggi nel cloud",
         "browserSaves": "Salvataggi del gioco",
         "readSave": "Leggi salvataggio",

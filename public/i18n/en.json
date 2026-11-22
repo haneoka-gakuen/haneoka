@@ -5001,6 +5001,8 @@
         "moveDown": "Move down",
         "removeDetail": "You can restore this account and its data from Removed accounts.",
         "removeDetailTemporary": "This profile and its data are deleted permanently.",
+        "purging": "Waiting to sync deletion",
+        "purgingDetail": "Deletes from the cloud when the connection returns",
         "cloudSaves": "Cloud game saves",
         "browserSaves": "Game saves",
         "readSave": "Read game save",

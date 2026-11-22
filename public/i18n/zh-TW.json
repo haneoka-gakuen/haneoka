@@ -5001,6 +5001,8 @@
         "moveDown": "下移",
         "removeDetail": "可以在「已移除的帳號」中復原此帳號與資料。",
         "removeDetailTemporary": "此檔案及其資料將被永久刪除。",
+        "purging": "待同步刪除",
+        "purgingDetail": "連線恢復後從雲端刪除",
         "cloudSaves": "雲端遊戲存檔",
         "browserSaves": "遊戲存檔",
         "readSave": "讀取遊戲存檔",
