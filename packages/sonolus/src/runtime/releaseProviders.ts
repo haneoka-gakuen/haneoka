@@ -16,6 +16,7 @@ import {
 import { chartToLevelData } from "@haneoka/cassiopeia-plugin-sonolus";
 import { convertChartAsync } from "@haneoka/cassiopeia-plugin-sonolus";
 import { encodeSonolusLocalizedText, sonolusSongCategoryTitle } from "../sonolusLocalization.js";
+import { levelWithSoloModes, projectSoloModeParameters } from "./soloModeLevelData.js";
 
 const DEFAULT_MAX_CACHE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_CHART_BYTES = 4 * 1024 * 1024;
@@ -188,8 +189,20 @@ export class ReleaseChartCatalogProvider implements ChartCatalogProvider {
     const manifest = await this.#options.readJson("api/v1/catalog/manifest.json");
     const songsPath = catalogIndexPath(manifest, "songs");
     const bandsPath = catalogIndexPath(manifest, "bands");
-    const [songs, bands] = await Promise.all([this.#options.readJson(songsPath), this.#options.readJson(bandsPath)]);
+    const [songs, bands, liveMusic] = await Promise.all([
+      this.#options.readJson(songsPath),
+      this.#options.readJson(bandsPath),
+      this.#options.readJson("objects/master/MasterLiveMusic.json"),
+    ]);
     if (songs === null || bands === null) throw new Error("Release is missing songs or bands catalog data");
+    const missionsBySong = new Map<string, unknown[]>();
+    if (isObject(liveMusic) && Array.isArray(liveMusic._allData)) {
+      for (const row of liveMusic._allData) {
+        if (isObject(row) && typeof row._id === "number") {
+          missionsBySong.set(String(row._id), [row._gekisouMission1, row._gekisouMission2, row._gekisouMission3]);
+        }
+      }
+    }
     const release = releaseChartProvenance(this.#options.release);
     const projection = projectCatalogCharts(songs, bands, {
       categoryTitle: sonolusSongCategoryTitle,
@@ -202,6 +215,11 @@ export class ReleaseChartCatalogProvider implements ChartCatalogProvider {
         return path ? encodeReleaseChartDataId(release, path) : null;
       },
       levelName: (songId, difficulty) => releaseChartLevelName(release.server, songId, difficulty),
+      levelDataParameters: (song, difficulty) =>
+        projectSoloModeParameters(
+          song.gekisou ? song : { ...song, gekisou: { missionTypes: missionsBySong.get(String(song.musicId)) } },
+          difficulty,
+        ),
     });
     if (projection.invalidChartNames.length) this.#options.onInvalidCharts?.(projection.invalidChartNames);
     return { charts: projection.charts, revision: { id: this.#options.revision } };
@@ -311,7 +329,9 @@ export class RuntimeChartDataProvider implements ChartDataProvider {
 
   async load(chart: ChartDescriptor, expectedHash: string): Promise<ChartDataPayload | null> {
     if (!SHA1_PATTERN.test(expectedHash)) return null;
-    const converted = await this.#getOrConvert(chart);
+    let converted = await this.#getOrConvert(chart);
+    if (converted && converted.hash !== expectedHash && chart.levelDataParameters)
+      converted = await this.#getOrConvert(chart, true);
     if (!converted || converted.hash !== expectedHash) return null;
     return {
       body: converted.body,
@@ -321,7 +341,7 @@ export class RuntimeChartDataProvider implements ChartDataProvider {
     };
   }
 
-  async #convert(chart: ChartDescriptor): Promise<ConvertedChartData | null> {
+  async #convert(chart: ChartDescriptor, cacheKey: string, legacy: boolean): Promise<ConvertedChartData | null> {
     const input = await this.#readBytes(chart.dataId);
     if (!input) {
       this.#recordFailure(chart, new Error(`Chart source is missing: ${chart.dataId}`));
@@ -334,38 +354,40 @@ export class RuntimeChartDataProvider implements ChartDataProvider {
 
     let levelData: unknown;
     try {
-      levelData = chartToLevelData(await convertChartAsync(input));
+      const source = await convertChartAsync(input);
+      levelData = levelWithSoloModes(chartToLevelData(source), source, legacy ? undefined : chart.levelDataParameters);
     } catch (error) {
       this.#recordFailure(chart, error);
       return null;
     }
     const body = await gzipJson(levelData);
     const hash = await sha1(body);
-    const previousHash = this.#hashes.get(chart.dataId);
+    const previousHash = this.#hashes.get(cacheKey);
     if (previousHash && previousHash !== hash) {
       throw new Error(`Chart data changed within one catalog revision: ${chart.dataId}`);
     }
-    this.#hashes.set(chart.dataId, hash);
-    this.#cacheData(chart.dataId, { body, hash });
+    this.#hashes.set(cacheKey, hash);
+    this.#cacheData(cacheKey, { body, hash });
     return { body, hash };
   }
 
-  async #getOrConvert(chart: ChartDescriptor): Promise<ConvertedChartData | null> {
-    const cached = this.#cache.get(chart.dataId);
+  async #getOrConvert(chart: ChartDescriptor, legacy = false): Promise<ConvertedChartData | null> {
+    const cacheKey = legacy ? `legacy\u0000${chart.dataId}` : chart.dataId;
+    const cached = this.#cache.get(cacheKey);
     if (cached) {
-      this.#cache.delete(chart.dataId);
-      this.#cache.set(chart.dataId, cached);
+      this.#cache.delete(cacheKey);
+      this.#cache.set(cacheKey, cached);
       return cached;
     }
     if (this.#failures.has(chart.dataId)) return null;
-    const existing = this.#pending.get(chart.dataId);
+    const existing = this.#pending.get(cacheKey);
     if (existing) return existing;
-    const pending = this.#convert(chart);
-    this.#pending.set(chart.dataId, pending);
+    const pending = this.#convert(chart, cacheKey, legacy);
+    this.#pending.set(cacheKey, pending);
     try {
       return await pending;
     } finally {
-      if (this.#pending.get(chart.dataId) === pending) this.#pending.delete(chart.dataId);
+      if (this.#pending.get(cacheKey) === pending) this.#pending.delete(cacheKey);
     }
   }
 

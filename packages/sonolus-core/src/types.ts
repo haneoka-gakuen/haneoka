@@ -55,6 +55,7 @@ export interface ChartDescriptor {
   dataId: string;
   description?: string;
   difficulty: string;
+  levelDataParameters?: Readonly<Record<string, number>>;
   name: string;
   publishedAt: number;
   rating: number;
@@ -118,6 +119,10 @@ export interface CatalogProjectionOptions {
   categoryTitle?: (category: string) => string;
   chartDataId?: (songId: string, difficulty: string, rawDifficulty: Readonly<Record<string, unknown>>) => string | null;
   levelName?: (songId: string, difficulty: string) => string;
+  levelDataParameters?: (
+    song: Readonly<Record<string, unknown>>,
+    difficulty: Readonly<Record<string, unknown>>,
+  ) => Readonly<Record<string, number>>;
   localeOrder?: readonly CatalogLocale[];
   mediaBaseUrl?: string;
   encodeText?: (labels: Readonly<Record<string, string>>, fallbackLocale: string) => string;

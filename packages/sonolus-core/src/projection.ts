@@ -438,6 +438,7 @@ export function projectCatalogCharts(
       const coverUrl = absoluteUrl(song.jacketUrl ?? song.jacketThumbUrl, options.mediaBaseUrl);
       const bgmUrl = absoluteUrl(song.musicUrl, options.mediaBaseUrl);
       const previewUrl = absoluteUrl(song.previewUrl, options.mediaBaseUrl);
+      const levelDataParameters = options.levelDataParameters?.(song, rawDifficulty);
       const metadata = {
         ...description,
         artists,
@@ -455,6 +456,7 @@ export function projectCatalogCharts(
         ...(coverUrl ? { coverUrl } : {}),
         ...(bgmUrl ? { bgmUrl } : {}),
         ...(previewUrl ? { previewUrl } : {}),
+        ...(levelDataParameters ? { levelDataParameters } : {}),
       };
       charts.push(metadata);
     }

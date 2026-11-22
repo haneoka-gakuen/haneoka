@@ -262,6 +262,7 @@
     "packages/sonolus/scripts/build-original-assets.ts",
     "packages/sonolus/scripts/native-particles/scatteredLights.ts",
     "packages/sonolus/scripts/pack-original-note-skins.ts",
+    "packages/sonolus/src/runtime/soloModeLevelData.ts",
     "packages/sonolus/src/server/engineRom.ts",
     "packages/sonolus/src/shared/nativeLaneClipReferences.ts",
     "packages/ui/src/index.ts",

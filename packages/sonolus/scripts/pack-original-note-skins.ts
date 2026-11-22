@@ -19,6 +19,11 @@ import {
   laneBase,
   nativeOutsideLineAlpha,
 } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/lane.ts";
+import {
+  soloHudSpriteNames,
+  soloModeHudAtlas,
+  soloModeHudFrames,
+} from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/soloModeHudSprites.ts";
 import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 
 type VertexComponent = "x1" | "y1" | "x2" | "y2" | "x3" | "y3" | "x4" | "y4";
@@ -646,6 +651,10 @@ function createSkinSprites(
   alias("Our Notes Guideline Space", "guideline_space");
   alias("Our Notes Outside Line", "outside_line");
   alias("Our Notes Judgment Line", "judgment_line");
+  for (const key of Object.keys(soloModeHudFrames) as (keyof typeof soloModeHudFrames)[]) {
+    const [x, y, w, h] = soloModeHudFrames[key];
+    sprites.push({ name: soloHudSpriteNames[key], x: soloModeHudAtlas.x + x, y: soloModeHudAtlas.y + y, w, h, transform: identity });
+  }
   alias("#LANE", "lane_base");
   alias("#STAGE_LEFT_BORDER", "lane_side");
   alias("#STAGE_RIGHT_BORDER", "lane_side");
@@ -1083,6 +1092,20 @@ function copySprite(texture: DecodedRgbaPng, sprite: PackedNativeSprite): void {
   }
 }
 
+function bakeSoloModeHud(texture: DecodedRgbaPng): void {
+  const png = decodeRgba8Png(
+    readFileSync(new URL("../../../.dependencies/sonolus-our-notes/resources/presentation/solo-mode-hud.png", import.meta.url)),
+    "solo mode HUD",
+  );
+  const { x, y, w, h } = soloModeHudAtlas;
+  if (png.width !== w || png.height !== h) throw new Error("Solo mode HUD dimensions differ from the skin layout");
+  for (let row = 0; row < h; row++) {
+    const start = row * w * 4;
+    const target = ((y + row) * texture.width + x) * 4;
+    png.pixels.copy(texture.pixels, target, start, start + w * 4);
+  }
+}
+
 function packSkin(
   skinName: BundledNoteSkin,
   atlas: BundledNoteAtlas,
@@ -1117,6 +1140,7 @@ function packSkin(
   bakeSkinLaneGuidelines(texture);
   bakeSkinLaneBackdrop(texture);
   bakeSkinOutsideLineFade(texture);
+  bakeSoloModeHud(texture);
   // Solid compatibility texels baked by build-original-assets. A transparent
   // texel here silently disables an engine feature (published skins once
   // shipped an invisible judgment line and simultaneous-press line).

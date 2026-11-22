@@ -3351,7 +3351,7 @@ function ourNotesSonolusDataProvider(env: Env, releases: readonly Release[], rev
         console.warn(`Ignoring invalid Sonolus chart ${chart.name}`, error);
       },
     });
-    return cachedChartDataProvider(provider, revision);
+    return cachedChartDataProvider(provider, revision === "unversioned" ? revision : `${revision}:solo-modes-v1`);
   });
 }
 
@@ -3407,7 +3407,7 @@ function cachedChartDataProvider(provider: ChartDataProvider, revision: string):
           contentType: hit.response.headers.get("Content-Type") ?? "application/gzip", etag: `"${hash}"` };
       } else await hit?.response.body?.cancel().catch(() => undefined);
       const payload = await provider.load(chart, hash);
-      if (payload) await store(chart.dataId, hash, payload);
+      if (payload && (await provider.prepare(chart))?.hash === hash) await store(chart.dataId, hash, payload);
       return payload;
     },
   };
@@ -3682,7 +3682,7 @@ async function handleSonolus(
   const origin = siteOrigin(assetUrl);
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(request, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
-  const baseRevision = `identity-text-v9-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const baseRevision = `identity-text-v10-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog

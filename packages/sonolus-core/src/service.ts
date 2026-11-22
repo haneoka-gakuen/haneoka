@@ -421,7 +421,10 @@ export class SonolusLevelService {
       const [chart] = await prepareSnapshotCharts(snapshot, [descriptor], options);
       if (!chart) return notFound();
       const resource = chart.item.data;
-      if (typeof resource !== "object" || resource === null || Array.isArray(resource) || resource.hash !== hash) {
+      if (
+        typeof resource !== "object" || resource === null || Array.isArray(resource) ||
+        (resource.hash !== hash && !chart.levelDataParameters)
+      ) {
         return notFound();
       }
       const payload = await snapshot.dataProvider.load(chart, hash);
