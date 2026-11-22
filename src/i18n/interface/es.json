@@ -5000,6 +5000,7 @@
         "moveUp": "Subir",
         "moveDown": "Bajar",
         "removeDetail": "Puedes restaurar esta cuenta y sus datos en Cuentas eliminadas.",
+        "removeDetailTemporary": "Este perfil y sus datos se eliminan de forma permanente.",
         "cloudSaves": "Partidas en la nube",
         "browserSaves": "Partidas guardadas",
         "readSave": "Leer partida",

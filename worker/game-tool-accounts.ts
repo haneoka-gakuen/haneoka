@@ -9,7 +9,7 @@ import { privateTeamError as error, privateTeamJson as json, readTeamBody, requi
 export async function handleGameToolAccounts(request: Request, env: Env): Promise<Response | null> {
   if (new URL(request.url).pathname !== "/api/v1/account/tool-accounts") return null;
   if (!teamSameOrigin(request)) return error(request, 403, "cross_origin_request", "Use a same-origin request");
-  if (!["GET", "POST", "PATCH"].includes(request.method)) return error(request, 405, "method_not_allowed", "Use GET, POST or PATCH");
+  if (!["GET", "POST", "PATCH", "DELETE"].includes(request.method)) return error(request, 405, "method_not_allowed", "Use GET, POST, PATCH or DELETE");
   if (!env.DB) return error(request, 503, "database_unavailable", "Database is not configured");
   const accountAccess = await requireTeamAccess(request, env, request.method !== "GET");
   if (!accountAccess.ok) return accountAccess.response;
@@ -32,6 +32,17 @@ export async function handleGameToolAccounts(request: Request, env: Env): Promis
   }
   const parsed = await readTeamBody(request);
   if (!parsed.ok) return parsed.response;
+  if (request.method === "DELETE") {
+    const id = parsed.body.id;
+    if (!isGameToolAccountId(id)) return error(request, 422, "invalid_game_tool_account", "Invalid game-tool account");
+    // Only manual profiles really delete; save-linked accounts keep their
+    // recoverable removal so a re-import restores and continues their data.
+    const removed = await env.DB.prepare(`
+      DELETE FROM account_game_tool WHERE user_id = ? AND id = ? AND uid IS NULL AND ${writableTeamOwner}
+      RETURNING id
+    `).bind(userId, id, token).first<{ id: string }>();
+    return removed ? json(request, { deleted: true }) : error(request, 409, "game_tool_account_unavailable", "Account not found or linked to a save");
+  }
   if (request.method === "PATCH") {
     const edits = parsed.body.settings;
     const now = Date.now(), guard = [userId, token, new Date(now).toISOString(), now];

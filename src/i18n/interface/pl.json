@@ -5000,6 +5000,7 @@
         "moveUp": "Przenieś wyżej",
         "moveDown": "Przenieś niżej",
         "removeDetail": "Konto wraz z danymi można przywrócić z listy usuniętych kont.",
+        "removeDetailTemporary": "Ten profil i jego dane zostaną trwale usunięte.",
         "cloudSaves": "Zapisy w chmurze",
         "browserSaves": "Zapisy gry",
         "readSave": "Odczytaj zapis gry",

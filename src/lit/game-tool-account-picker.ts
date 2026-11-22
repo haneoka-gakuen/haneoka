@@ -12,7 +12,7 @@ import { languageFlags } from "../i18n/language-flags";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { GAME_REGION_NAMES, profileRegion } from "../lib/game-records";
 import { isGameToolAccountId, legacyToolAccount, type GameTool, type GameToolAccount } from "../lib/game-tool-accounts";
-import { createGameToolAccount, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, legacyGameToolAccounts, legacyGameToolAccountsWithData, moveGameToolAccount, refreshGameToolAccounts,
+import { createGameToolAccount, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, legacyGameToolAccounts, legacyGameToolAccountsWithData, moveGameToolAccount, purgeGameToolAccount, refreshGameToolAccounts,
   removeGameToolAccount, renameGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
 import type { GameToolCopyPreview } from "../lib/game-tool-account-copy";
 import type { PublicReleaseServer } from "../lib/temporary-public-routing";
@@ -188,7 +188,8 @@ export class GameToolAccountPicker extends LitElement {
       if (editing.kind === "rename") {
         const value = (event.currentTarget as HTMLFormElement).querySelector("md-outlined-text-field")?.value ?? "";
         await renameGameToolAccount(editing.account, value);
-      } else await removeGameToolAccount(editing.account, true);
+      } else if (isGameToolAccountId(editing.account.id) && !editing.account.uid) await purgeGameToolAccount(editing.account);
+      else await removeGameToolAccount(editing.account, true);
       this.finishManagementAction();
     } catch { this.error = this.t("saveFailed", "Could not save account"); }
     finally { this.busy = false; this.requestUpdate(); }
@@ -319,7 +320,9 @@ export class GameToolAccountPicker extends LitElement {
             ${this.editing.kind === "rename" ? html`<md-outlined-text-field label=${this.t("name", "Nickname")} maxlength="80"
               .value=${this.editing.account.settings?.alias || this.editing.account.name}></md-outlined-text-field>`
               : html`<div class="tool-account__card">${this.profile(this.editing.account)}</div>
-                <p>${this.t("removeDetail", "You can restore this account and its data from Removed accounts.")}</p>`}
+                <p>${isGameToolAccountId(this.editing.account.id) && !this.editing.account.uid
+                  ? this.t("removeDetailTemporary", "This profile and its data are deleted permanently.")
+                  : this.t("removeDetail", "You can restore this account and its data from Removed accounts.")}</p>`}
             ${this.error ? html`<p role="alert">${this.error}</p>` : nothing}
             <button class="button button--filled" type="submit" ?disabled=${this.busy}>${this.editing.kind === "rename"
               ? clientText(this.locale, "account.page.save", "Save") : remove}</button>

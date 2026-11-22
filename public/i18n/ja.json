@@ -5000,6 +5000,7 @@
         "moveUp": "上へ移動",
         "moveDown": "下へ移動",
         "removeDetail": "削除したアカウントの一覧でデータと一緒に復元できます。",
+        "removeDetailTemporary": "このプロファイルとそのデータは完全に削除されます。",
         "cloudSaves": "クラウドのセーブデータ",
         "browserSaves": "セーブデータ",
         "readSave": "セーブデータを読み込む",

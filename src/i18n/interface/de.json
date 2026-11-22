@@ -5000,6 +5000,7 @@
         "moveUp": "Nach oben",
         "moveDown": "Nach unten",
         "removeDetail": "Das Konto und seine Daten können unter „Entfernte Konten“ wiederhergestellt werden.",
+        "removeDetailTemporary": "Dieses Profil und seine Daten werden endgültig gelöscht.",
         "cloudSaves": "Cloud-Spielstände",
         "browserSaves": "Spielstände",
         "readSave": "Spielstand einlesen",

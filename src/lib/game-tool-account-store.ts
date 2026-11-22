@@ -16,7 +16,7 @@ let refreshedAt = 0;
 let fetching: Promise<void> | undefined;
 let sessionVersion = 0;
 let listening = false;
-type Directory = { accounts: GameToolAccount[]; pending: string[]; pendingSettings: string[]; active: Partial<Record<GameTool, string>>; legacy: PublicReleaseServer[] };
+type Directory = { accounts: GameToolAccount[]; pending: string[]; pendingSettings: string[]; pendingPurge: string[]; active: Partial<Record<GameTool, string>>; legacy: PublicReleaseServer[] };
 
 function read<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(PREFIX + key) ?? "null") ?? fallback; }
@@ -34,6 +34,7 @@ function directory(scope: string | null = gameToolOwner()): Directory {
     accounts: (Array.isArray(saved.accounts) ? saved.accounts : []).filter(isGameToolAccount),
     pending: Array.isArray(saved.pending) ? saved.pending.filter(isGameToolAccountId) : [],
     pendingSettings: Array.isArray(saved.pendingSettings) ? saved.pendingSettings.filter(isGameToolAccountId) : [],
+    pendingPurge: Array.isArray(saved.pendingPurge) ? saved.pendingPurge.filter(isGameToolAccountId) : [],
     active: saved.active && typeof saved.active === "object" ? saved.active : {},
     legacy: (Array.isArray(saved.legacy) ? saved.legacy : []).filter(isPublicReleaseServer),
   };
@@ -218,7 +219,15 @@ export function refreshGameToolAccounts(force = false): Promise<void> {
     const merged = new Map(value.accounts.map(account => [account.id, account]));
     for (const account of accounts) if (isGameToolAccount(account))
       merged.set(account.id, merge(merged.get(account.id), account));
+    for (const id of value.pendingPurge) merged.delete(id);
     changed(scope, { ...value, accounts: [...merged.values()], legacy: Array.isArray(legacy) ? legacy.filter(isPublicReleaseServer) : value.legacy });
+    for (const id of value.pendingPurge) {
+      if (sessionVersion !== version) return;
+      if (await purgeOnServer(scope, id)) {
+        const latest = directory(scope);
+        changed(scope, { ...latest, pendingPurge: latest.pendingPurge.filter(row => row !== id) });
+      }
+    }
     for (const id of value.pending) {
       if (sessionVersion !== version) return;
       const account = directory(scope).accounts.find(account => account.id === id);
@@ -257,7 +266,11 @@ export async function captureGameToolSave(save: DeviceSave, tool: GameTool, scop
   if (!isPublicReleaseServer(save.server) || !profileRegion(save.profileId)) return;
   const id = await gameToolIdFromSave(tool, save.server, save.profileId);
   const existing = directory(scope).accounts.find(row => row.id === id);
-  if (existing?.settings?.removed) return existing;
+  if (existing?.settings?.removed) {
+    // A re-import restores the removed profile so its data continues in place.
+    await updateSettings([{ account: existing, patch: { removed: false } }]);
+    return getGameToolAccount(id, tool, scope) ?? existing;
+  }
   return put({
     id, tool, server: save.server, uid: save.profileId,
     name: Array.from((save.name ?? "").replace(/[\p{Cc}\p{Cs}]/gu, "")).slice(0, 80).join(""),
@@ -317,6 +330,45 @@ async function updateSettings(edits: readonly { account: GameToolAccount; patch:
 }
 export const renameGameToolAccount = (account: GameToolAccount, alias: string) =>
   updateSettings([{ account, patch: { alias: alias.trim() } }]);
+/** Cloud half of a purge; false leaves the id queued for the next refresh. */
+async function purgeOnServer(scope: string, id: string) {
+  const response = await fetch(API, {
+    method: "DELETE", credentials: "same-origin", cache: "no-store",
+    headers: { "content-type": "application/json", "x-haneoka-expected-user": scope },
+    body: JSON.stringify({ id }),
+  }).catch(() => null);
+  return response !== null && response.ok;
+}
+
+const boxReplicaKey = (server: string, owner: string | null, accountId: string) =>
+  `haneoka:team-box:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(server)}:${accountId}`;
+
+/**
+ * Really deletes a manual (temporary) profile and its tool data. Save-linked
+ * accounts keep the recoverable removal: a re-import restores them and their
+ * box continues from its saved markers.
+ */
+export async function purgeGameToolAccount(account: GameToolAccount) {
+  if (!isGameToolAccountId(account.id) || account.uid) throw new Error("game_tool_account_purge");
+  const scope = gameToolOwner();
+  const value = directory(scope);
+  const active = { ...value.active };
+  if (active[account.tool] === account.id) delete active[account.tool];
+  changed(scope, {
+    ...value,
+    accounts: value.accounts.filter(row => row.id !== account.id),
+    pending: value.pending.filter(id => id !== account.id),
+    pendingSettings: value.pendingSettings.filter(id => id !== account.id),
+    pendingPurge: scope ? [...new Set([...value.pendingPurge, account.id])] : value.pendingPurge,
+    active,
+  });
+  try { localStorage.removeItem(boxReplicaKey(account.server, scope, account.id)); } catch {}
+  if (scope && await purgeOnServer(scope, account.id)) {
+    const latest = directory(scope);
+    changed(scope, { ...latest, pendingPurge: latest.pendingPurge.filter(id => id !== account.id) });
+  }
+}
+
 export async function removeGameToolAccount(account: GameToolAccount, removed: boolean) {
   const lastLegacy = removed && account.id === `legacy-${account.server}` && !gameToolAccounts(account.tool).length &&
     versions.every(server => server === account.server || !getGameToolAccount(`legacy-${server}`, account.tool));

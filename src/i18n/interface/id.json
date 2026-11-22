@@ -5000,6 +5000,7 @@
         "moveUp": "Naikkan",
         "moveDown": "Turunkan",
         "removeDetail": "Akun dan datanya bisa dipulihkan dari daftar akun yang dihapus.",
+        "removeDetailTemporary": "Profil ini dan datanya dihapus permanen.",
         "cloudSaves": "Simpanan game cloud",
         "browserSaves": "Simpanan game",
         "readSave": "Baca simpanan game",

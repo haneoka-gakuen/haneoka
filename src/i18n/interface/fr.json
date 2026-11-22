@@ -5000,6 +5000,7 @@
         "moveUp": "Monter",
         "moveDown": "Descendre",
         "removeDetail": "Vous pouvez restaurer ce compte et ses données depuis Comptes retirés.",
+        "removeDetailTemporary": "Ce profil et ses données sont supprimés définitivement.",
         "cloudSaves": "Sauvegardes dans le cloud",
         "browserSaves": "Sauvegardes de jeu",
         "readSave": "Lire une sauvegarde",
