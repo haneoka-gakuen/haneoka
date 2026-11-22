@@ -93,7 +93,7 @@ jobs:
         run: node .dependencies/sonolus-our-notes/scripts/build.ts ${{ matrix.facet }}
         env:
           SONOLUS_COMPILER_OPTIMIZATION_LEVEL: ${{ matrix.optimization }}
-          SONOLUS_COMPILER_WORKERS: 1
+          SONOLUS_COMPILER_WORKERS: 4
 
       - name: Save compiled ${{ matrix.facet }} facet
         if: steps.engine-cache.outputs.cache-hit != 'true'
