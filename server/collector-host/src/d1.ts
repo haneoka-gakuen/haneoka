@@ -110,9 +110,15 @@ export function installOutbox(db: DatabaseSync, owned: (table: string) => boolea
     // key moves to the end of the queue by removing it first.
     const queue = (row: "NEW" | "OLD") => `DELETE FROM _replica_outbox WHERE tbl='${name}' AND pk=${pick(row)};
         INSERT INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick(row)});`;
-    db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
+    const sameKey = key.map((column) => `OLD."${column}" IS NEW."${column}"`).join(" AND ");
+    const changed = columns.map((column) => `OLD."${column}" IS NOT NEW."${column}"`).join(" OR ");
+    db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_key_change";
+      DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
       CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN ${queue("NEW")} END;
-      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}" BEGIN ${queue("OLD")} ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}"
+        WHEN (${sameKey}) AND (${changed}) BEGIN ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_key_change" AFTER UPDATE ON "${name}"
+        WHEN NOT (${sameKey}) BEGIN ${queue("OLD")} ${queue("NEW")} END;
       CREATE TRIGGER "_replica_${name}_delete" AFTER DELETE ON "${name}" BEGIN ${queue("OLD")} END;`);
     replicated.push({ name, key, columns });
   }

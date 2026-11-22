@@ -867,7 +867,7 @@ export async function harvestOfficialPlayers(env: OfficialRankingStoreBindings, 
       ? [{ profileId: id, found: true, profile, totalFavorite: null, observedAtMs }]
       : [];
   });
-  await saveOfficialPlayers(env, region, players, 150_000);
+  await saveOfficialPlayers(env, region, players, 15 * 60_000);
 }
 
 export async function readOfficialPlayer(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
