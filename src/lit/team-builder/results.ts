@@ -844,7 +844,7 @@ function timingDetails(host: TeamBuilder, hit: EngineHit, order: number, timing:
   const unavailable = timing?.guideAvailable === false || timing === null || guide === null;
   if (!actions.length && !coverage) return html`<div class="row row--between row--wrap"><strong>${host.t("timingGuide", "Timing guide")}</strong>
     <span>${unavailable ? host.t("timingPlanUnavailable", "Early-input plan unavailable")
-      : timing ? timing.planIsOptimal ? host.t("timingOnBeat", "On time") : timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
+      : timing ? !timing.planIsOptimal && timing.optimal > timing.score ? host.t("timingPlanNoGain", "No gain with this plan") : host.t("timingOrderNoGain", "No extra gain in this order")
       : guide ? host.t("timingPlanNoGain", "No gain with this plan") : nothing}</span></div>`;
   const notes = new Map<number, { timeMs: number; kind: "combo" | "skill" | "both"; instruction: string }>();
   for (const action of actions) action.noteIndices.forEach((note, index) => {
