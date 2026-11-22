@@ -35,7 +35,8 @@ const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
 const ARENA_PARALLEL_WINDOWS = 12;
-const ARENA_SWEEP_INTERVAL_MS = LOOKUP_MS + 15_000;
+/** Deep pages turn over about every two hours with this pace; the top windows and demanded windows keep their own cadence. */
+const ARENA_SWEEP_INTERVAL_MS = 150_000;
 const ARENA_SWEEP_DURING_POPULATION = 4;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
