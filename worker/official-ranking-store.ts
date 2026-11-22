@@ -143,7 +143,9 @@ async function prepareObservationPayload(env: OfficialRankingStoreBindings,
   const bytes = new TextEncoder().encode(JSON.stringify({ [hash]: body })).byteLength;
   const now = Date.now();
   const pending = await db.prepare(`SELECT payload_key FROM official_observation_batches
-    WHERE region=? AND created_at_ms>? AND byte_size+?<=? ORDER BY created_at_ms LIMIT 1`)
+    WHERE region=? AND created_at_ms>? AND (SELECT COALESCE(SUM(LENGTH(CAST(body_json AS BLOB))),0)
+      FROM official_observation_payloads WHERE payload_key=official_observation_batches.payload_key)+?<=?
+    ORDER BY created_at_ms LIMIT 1`)
     .bind(observation.region, now - BATCH_DELAY_MS, bytes, BATCH_PAYLOAD_BYTES).first<{ payload_key: string }>();
   if (!pending) {
     const count = await db.prepare("SELECT COUNT(*) AS count FROM official_observation_batches WHERE region=?")
@@ -155,7 +157,6 @@ async function prepareObservationPayload(env: OfficialRankingStoreBindings,
     db.prepare(`INSERT INTO official_observation_batches (payload_key,region,created_at_ms,byte_size)
       VALUES (?,?,?,0) ON CONFLICT(payload_key) DO NOTHING`).bind(key, observation.region, now),
     db.prepare("INSERT INTO official_observation_payloads (payload_key,payload_hash,body_json) VALUES (?,?,?)").bind(key, hash, body),
-    db.prepare("UPDATE official_observation_batches SET byte_size=byte_size+? WHERE payload_key=?").bind(bytes, key),
   ] };
 }
 
@@ -838,6 +839,8 @@ const PLAYER_COLUMNS = `profile_id AS profileId, found, profile_json AS profile,
   observed_at_ms AS observedAtMs`;
 /** D1 binds at most 100 values per statement. */
 const PLAYER_BATCH = 98;
+/** Ride-along profiles refresh a stored row at most this often; explicit lookups still save every observation. */
+const HARVEST_REFRESH_MS = 3_600_000;
 
 export async function saveOfficialPlayers(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
   players: ReadonlyArray<{ profileId: string; found: boolean; profile: unknown; totalFavorite: string | null; observedAtMs: number }>,
@@ -848,10 +851,8 @@ export async function saveOfficialPlayers(env: OfficialRankingStoreBindings, reg
     ON CONFLICT(region, profile_id) DO UPDATE SET found = excluded.found, profile_json = excluded.profile_json,
       total_favorite = COALESCE(excluded.total_favorite, official_player_profiles.total_favorite),
       observed_at_ms = excluded.observed_at_ms
-    WHERE excluded.observed_at_ms >= official_player_profiles.observed_at_ms
-      AND (excluded.observed_at_ms-official_player_profiles.observed_at_ms >= ?
-        OR excluded.found IS NOT official_player_profiles.found OR excluded.profile_json IS NOT official_player_profiles.profile_json
-        OR excluded.total_favorite IS NOT NULL AND excluded.total_favorite IS NOT official_player_profiles.total_favorite)`);
+    WHERE excluded.observed_at_ms-official_player_profiles.observed_at_ms >= ?
+      OR excluded.found IS NOT official_player_profiles.found`);
   if (players.length)
     await db.batch(players.map((player) => statement.bind(region, player.profileId, player.found ? 1 : 0,
       player.profile ? JSON.stringify(player.profile) : null, player.totalFavorite, player.observedAtMs, minimumObservationMs)));
@@ -867,7 +868,7 @@ export async function harvestOfficialPlayers(env: OfficialRankingStoreBindings, 
       ? [{ profileId: id, found: true, profile, totalFavorite: null, observedAtMs }]
       : [];
   });
-  await saveOfficialPlayers(env, region, players, 150_000);
+  await saveOfficialPlayers(env, region, players, HARVEST_REFRESH_MS);
 }
 
 export async function readOfficialPlayer(env: OfficialRankingStoreBindings, region: GameRecordsRegion,
