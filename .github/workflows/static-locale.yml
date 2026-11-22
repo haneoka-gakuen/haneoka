@@ -68,7 +68,7 @@ jobs:
       - name: Resolve immutable locale checkpoints
         id: checkpoint
         if: github.run_attempt > 1
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
           HANDOFF_LOCALE: ${{ inputs.locale }}
@@ -203,7 +203,7 @@ jobs:
     steps:
       - name: Check for a complete locale before starting a runner setup
         id: checkpoint
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           HANDOFF_GENERATION: ${{ inputs.inputs_sha }}
           HANDOFF_LOCALE: ${{ inputs.locale }}
