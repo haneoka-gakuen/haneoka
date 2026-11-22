@@ -3616,6 +3616,13 @@ async function sonolusRepositoryOwnership(revision: string, readJson: (path: str
           else if (name.startsWith("haneoka-gbp-")) collect(item);
         }
       }
+      // Engine-adjacent items are always public; their list pages are the
+      // only place non-default skins, effects and particles are referenced.
+      for (const type of ["skins", "effects", "particles", "playlists"]) {
+        const head = await readJson(`runtime/sonolus/${type}/list/page-0`);
+        const pages = isJsonObject(head) && typeof head.pageCount === "number" ? head.pageCount : 1;
+        for (let page = 0; page < pages; page++) collect(page === 0 ? head : await readJson(`runtime/sonolus/${type}/list/page-${page}`));
+      }
       return result;
     })();
     boundedPromiseCache(sonolusRepositoryOwnershipCache, revision, pending, 2);
