@@ -12,7 +12,7 @@ import { saveSongProgressProfile, songProgressProfile } from "./song-progress-pr
 import { BoxStore } from "./team-builder/sync/box-store";
 import { MAX_BOX_KEYS, validEntry } from "./team-builder/sync/box-doc";
 import { isPublicReleaseServer } from "./temporary-public-routing";
-import { associateGameToolHistory, captureGameToolSave, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, selectImportedGameToolAccount } from "./game-tool-account-store";
+import { associateGameToolHistory, captureGameToolSave, completeGameToolSaveMerge, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, selectImportedGameToolAccount } from "./game-tool-account-store";
 import { historyKeyFromGameToolAccount, isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "./game-tool-accounts";
 import type { StoredHistory } from "./gacha-history-store";
 import type { StoredSave } from "./save-workspace/snapshot";
@@ -70,7 +70,9 @@ async function importTeam(text: string, store: BoxStore, account: GameToolAccoun
   }, data, context);
   if (!await verify()) return false;
   const changes = [...inventoryChanges(confirmed), ...saveMarker(account, "team")];
-  return applyBox(store, account, overwrite(store, changes, (key) => /^(m|s|bi|cr)\./u.test(key)));
+  const applied = await applyBox(store, account, overwrite(store, changes, (key) => !account.settings?.mergeSave && /^(m|s|bi|cr)\./u.test(key)));
+  if (applied && account.settings?.mergeSave) await completeGameToolSaveMerge(account, store.snapshot.owner);
+  return applied;
 }
 
 async function applyBox(store: BoxStore, account: GameToolAccount, changes: CountChanges) {
@@ -88,10 +90,15 @@ function saveMarker(account: GameToolAccount, action: "team" | "songs"): CountCh
 async function importSongs(progress: AppSongProgress, store: BoxStore, account: GameToolAccount, completeMarks = true) {
   const label = clientText(preferredLocale(), "catalog.songProgress.counts.gameSave", "Game save");
   const counts = countImportChanges(progress.missionCounters, label, new Date(account.savedAt ?? Date.now()).toISOString());
-  const changes = Object.entries(progress.marks).map(([key, value]) => ({ key, value }));
+  const merging = account.settings?.mergeSave === true;
+  const changes = Object.entries(progress.marks).map(([key, mark]) => {
+    const previous = merging ? store.value(key) : undefined;
+    return { key, value: typeof previous === "number" ? Math.max(previous, mark) : mark };
+  });
   const countError = counts.length ? undefined : progress.countError;
   const applied = await applyBox(store, account, overwrite(store, [...changes, ...counts, ...(!countError ? saveMarker(account, "songs") : [])],
-    (key) => completeMarks && key.startsWith("l.") || (counts.length > 0 && key.startsWith("pref.pc-"))));
+    (key) => !merging && (completeMarks && key.startsWith("l.") || counts.length > 0 && key.startsWith("pref.pc-"))));
+  if (applied && merging && !countError) await completeGameToolSaveMerge(account, store.snapshot.owner);
   if (applied && account.uid) saveSongProgressProfile(account.server, store.snapshot.owner ?? null, songProgressProfile(account),
     isGameToolAccountId(account.id) ? account.id : undefined);
   return { applied, countError };
@@ -119,7 +126,11 @@ export async function importBrowserSaveToGameTools(record: StoredSave, owner: st
       await store.start();
       if (gameToolOwner() !== owner || store.snapshot.owner !== owner) return false;
       const previous = store.value(`pref.save-${action}`) as { savedAt?: number } | undefined;
-      if (previous?.savedAt && (!account.savedAt || previous.savedAt >= account.savedAt)) return true;
+      if (previous?.savedAt && (!account.savedAt || previous.savedAt >= account.savedAt)) {
+        const flushed = await store.flushPending();
+        if (flushed && account.settings?.mergeSave) await completeGameToolSaveMerge(account, owner);
+        return flushed;
+      }
       if (action === "team") return importTeam(JSON.stringify(snapshot), store, account, async () => gameToolOwner() === owner);
       return (await importSongs({ marks: marks ?? {}, missionCounters: counters }, store, account, marks !== null)).applied;
     } finally { store.dispose(); }
@@ -225,9 +236,12 @@ async function repairImportedProfiles(devices: DeviceSave[], queued: SaveImportJ
             await store.start();
             if (gameToolOwner() !== owner || store.snapshot.owner !== owner) return { retry: true, changed };
             const previous = store.value(`pref.save-${action}`) as { savedAt?: number } | undefined;
-            const target = await captureGameToolSave(save, action, owner);
+            const target = await captureGameToolSave(save, action, owner, "never");
             if (!target || target.settings?.removed) continue;
-            if (previous?.savedAt && previous.savedAt >= (save.savedAt ?? 0)) repaired = await store.flushPending();
+            if (previous?.savedAt && previous.savedAt >= (save.savedAt ?? 0)) {
+              repaired = await store.flushPending();
+              if (repaired && target.settings?.mergeSave) await completeGameToolSaveMerge(target, owner);
+            }
             else if (action === "team")
               repaired = await importTeam((await appCall("saveSnapshot", { key: save.key, complete: true })).text, store, target, async () => gameToolOwner() === owner);
             else {
@@ -285,7 +299,11 @@ async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<s
     }
     if (gameToolOwner() !== owner || store.snapshot.owner !== owner) return false;
     const previous = store.value(`pref.save-${action}`) as { savedAt?: number } | undefined;
-    if (previous?.savedAt && (!account.savedAt || previous.savedAt >= account.savedAt)) return store.flushPending();
+    if (previous?.savedAt && (!account.savedAt || previous.savedAt >= account.savedAt)) {
+      const flushed = await store.flushPending();
+      if (flushed && account.settings?.mergeSave) await completeGameToolSaveMerge(account, owner);
+      return flushed;
+    }
     if (action === "team" && "text" in payload) return importTeam(payload.text, store, account,
       async () => gameToolOwner() === owner && await currentJob(job, "team") && gameToolOwner() === owner);
     if (action === "songs" && "marks" in payload) {
@@ -320,6 +338,7 @@ export async function runAppSaveImports() {
     const jobs = queued.filter(job => jobBelongsTo(job, owner));
     const canRecover = owner && (["team", "songs", "history"] as const).some(tool => gameToolAccounts(tool).some(account => account.uid));
     if (!jobs.length && !canRecover) return;
+    const options = { ...DEFAULT_SAVE_IMPORT, ...await appCall("saveImportOptions", {}) };
     const devices = await appCall("gameAccounts", {});
     const identities = new Map<string, GameToolAccount>();
     const stale = new Set<string>();
@@ -330,19 +349,18 @@ export async function runAppSaveImports() {
       if (!save || !isPublicReleaseServer(job.server)) continue;
       const server = job.server;
       await Promise.all(job.actions.map(async action => {
-        if (action === "link" || action === "save") return;
+        if (action === "link" || action === "save" || !options[action]) return;
         const key = actionKey(job, action);
         if (!job.accountScoped) {
           identities.set(key, { ...legacyToolAccount(server, action), uid: save.profileId, name: save.name ?? "", rank: save.rank ?? undefined });
           return;
         }
-        const identity = await captureGameToolSave(save, action, owner).catch(() => undefined);
+        const identity = await captureGameToolSave(save, action, owner, "newer").catch(() => undefined);
         if (identity?.settings?.removed) removed.add(key);
         else if (identity && (identity.savedAt ?? 0) > (save.savedAt ?? 0)) stale.add(key);
         else if (identity) identities.set(key, identity);
       }));
     }
-    const options = { ...DEFAULT_SAVE_IMPORT, ...await appCall("saveImportOptions", {}) };
     const signedIn = options.link && jobs.some((job) => job.actions.includes("link"))
       ? fetch("/api/auth/get-session", { credentials: "same-origin", cache: "no-store" })
         .then((response) => response.ok ? response.json() : null)

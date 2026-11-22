@@ -15,11 +15,13 @@ import { isGameToolAccountId, legacyToolAccount, type GameTool, type GameToolAcc
 import {
   createGameToolAccount,
   GAME_TOOL_ACCOUNTS_CHANGED,
+  gameToolOwner,
   gameToolAccounts,
   legacyGameToolAccounts,
   legacyGameToolAccountsWithData,
   moveGameToolAccount,
   purgeGameToolAccount,
+  purgingGameToolAccounts,
   refreshGameToolAccounts,
   removeGameToolAccount,
   renameGameToolAccount,
@@ -100,7 +102,7 @@ export class GameToolAccountPicker extends LitElement {
   private error = "";
   private server: PublicReleaseServer = "intl";
   private claim?: { target: GameToolAccount; source: string; kind: "team" | "songs"; preview?: GameToolCopyPreview };
-  private editing?: { account: GameToolAccount; kind: "rename" | "remove" };
+  private editing?: { account: GameToolAccount; kind: "rename" | "remove"; owner: string | null };
   private copyModule?: typeof import("../lib/game-tool-account-copy");
   private art = new Map<string, string>();
   private loadingArt = new Set<string>();
@@ -242,12 +244,14 @@ export class GameToolAccountPicker extends LitElement {
     this.error = "";
     this.requestUpdate();
     try {
+      if (editing.owner !== gameToolOwner()) throw new Error("game_tool_account_changed");
       if (editing.kind === "rename") {
         const value = (event.currentTarget as HTMLFormElement).querySelector("md-outlined-text-field")?.value ?? "";
         await renameGameToolAccount(editing.account, value);
-      } else if (isGameToolAccountId(editing.account.id) && !editing.account.uid)
-        await purgeGameToolAccount(editing.account);
-      else await removeGameToolAccount(editing.account, true);
+      } else {
+        if (isGameToolAccountId(editing.account.id) && !editing.account.uid) await purgeGameToolAccount(editing.account);
+        else await removeGameToolAccount(editing.account, true);
+      }
       this.finishManagementAction();
     } catch {
       this.error = this.t("saveFailed", "Could not save account");
@@ -431,6 +435,7 @@ export class GameToolAccountPicker extends LitElement {
             legacyGameToolAccountsWithData(this.tool).includes(account.server),
         )
       : [];
+    const purging = this.manage ? purgingGameToolAccounts(this.tool) : [];
     const rename = this.t("rename", "Rename account");
     const remove = this.t("remove", "Remove account");
     const editingTitle = this.editing?.kind === "rename" ? rename : remove;
@@ -495,7 +500,7 @@ export class GameToolAccountPicker extends LitElement {
               icon: "edit",
               label: rename,
               onClick: () => {
-                this.editing = { account, kind: "rename" };
+                this.editing = { account, kind: "rename", owner: gameToolOwner() };
                 this.opened = true;
                 this.requestUpdate();
               },
@@ -516,7 +521,7 @@ export class GameToolAccountPicker extends LitElement {
               icon: "delete",
               label: remove,
               onClick: () => {
-                this.editing = { account, kind: "remove" };
+                this.editing = { account, kind: "remove", owner: gameToolOwner() };
                 this.opened = true;
                 this.requestUpdate();
               },
@@ -666,10 +671,20 @@ export class GameToolAccountPicker extends LitElement {
                       </h3>
                       ${removed.map(
                   (account) => html`
-                    <div class="tool-account__card">
-                      ${this.profile(account)}
-                      ${iconButton({ icon: "undo", label: this.t("restore", "Restore account"), onClick: () => this.restoreAccount(account) })}
-                    </div>
+                    <article class="tool-account__managed">
+                      <div class="tool-account__card">${this.profile(account)}</div>
+                      <div class="tool-account__actions">
+                        ${iconButton({ icon: "undo", label: this.t("restore", "Restore account"), onClick: () => this.restoreAccount(account) })}
+                        ${isGameToolAccountId(account.id) && !account.uid ? iconButton({
+                          icon: "delete",
+                          label: remove,
+                          onClick: () => {
+                            this.editing = { account, kind: "remove", owner: gameToolOwner() };
+                            this.requestUpdate();
+                          },
+                        }) : nothing}
+                      </div>
+                    </article>
                   `,
                 )}
                     `

@@ -16,6 +16,7 @@ import { readSongProgressProfile, saveSongProgressProfile, songProgressProfile }
 import { isGameToolAccountId, legacyToolAccount, type GameToolAccount } from "../lib/game-tool-accounts";
 import {
   captureGameToolSaveByKey,
+  completeGameToolSaveMerge,
   GAME_TOOL_ACCOUNTS_CHANGED,
   gameToolAccounts,
   gameToolOwner,
@@ -283,6 +284,12 @@ export class SongProgress extends LitElement {
     } catch {
       snackbar(this.text("counts.writeFailed", "Could not save counts"), { error: true });
       return;
+    }
+    const profile = this.gameAccount;
+    if (profile?.settings?.mergeSave && !progress.countError) {
+      void store.flushPending().then(applied => {
+        if (applied) return completeGameToolSaveMerge(profile, owner);
+      }).catch(() => {});
     }
     if (progress.key && inApp()) {
       const account = (await appCall("gameAccounts", {}).catch(() => [])).find((save) => save.key === progress.key);
@@ -987,9 +994,13 @@ export class SongProgress extends LitElement {
     this.store?.set([{ key: chart.key, value: value || null }]);
   }
   private markChanges(marks: Record<string, number>): CountChanges {
-    return this.charts
-      .filter((chart) => (marks[chart.key] ?? 0) !== this.status(chart))
-      .map((chart) => ({ key: chart.key, value: marks[chart.key] || null }));
+    const merging = this.gameAccount?.settings?.mergeSave;
+    return this.charts.flatMap(chart => {
+      const previous = this.status(chart);
+      const mark = marks[chart.key] ?? 0;
+      const next = merging ? Math.max(previous, mark) : mark;
+      return previous === next ? [] : [{ key: chart.key, value: next || null }];
+    });
   }
   private writeProgress(changes: CountChanges) {
     if (!this.store || !this.snapshot) return;

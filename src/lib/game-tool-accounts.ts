@@ -25,17 +25,22 @@ export interface GameToolAccountSettings {
   position: number;
   removed: boolean;
   changedAt: number;
+  mergeSave?: boolean;
 }
 export function isGameToolAccountSettings(value: unknown): value is GameToolAccountSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const { alias, position, removed, changedAt } = value as Partial<GameToolAccountSettings>;
+  const { alias, position, removed, changedAt, mergeSave } = value as Partial<GameToolAccountSettings>;
   return typeof alias === "string" && [...alias].length <= 80 && !/[\p{Cc}\p{Cs}]/u.test(alias) &&
     typeof position === "number" && Number.isFinite(position) && Math.abs(position) <= 1_000_000 &&
-    typeof removed === "boolean" && typeof changedAt === "number" && Number.isSafeInteger(changedAt) && changedAt >= 0;
+    typeof removed === "boolean" && (mergeSave === undefined || typeof mergeSave === "boolean") &&
+    typeof changedAt === "number" && Number.isSafeInteger(changedAt) && changedAt >= 0;
 }
 
 export const isGameToolAccountId = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{32}$/u.test(value);
+export const isLegacyGameToolSettingsId = (id: string) => /^0{31}[1-6]$/u.test(id);
+export const gameToolCopyBackupKey = (owner: string | null, id: string) =>
+  `haneoka:game-tool-copy:${encodeURIComponent(owner ?? "")}:${id}`;
 export const isGameHistoryKey = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
 

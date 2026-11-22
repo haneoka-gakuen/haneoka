@@ -163,7 +163,7 @@ export class BoxStore {
 
   /** Applies local writes immediately and queues them for the cloud. */
   set(changes: readonly { key: string; value: BoxValue }[]) {
-    if (!changes.length) return;
+    if (this.disposed || !changes.length) return;
     const ops: BoxOp[] = [];
     for (const { key, value } of changes) {
       if (!validEntry(key, value)) throw new RangeError(`invalid-box-entry:${key}`);
@@ -334,7 +334,7 @@ export class BoxStore {
     }
   }
   private persist() {
-    if (this.owner === undefined) return;
+    if (this.disposed || this.owner === undefined) return;
     try {
       this.storage.setItem(replicaKey(this.options.server, this.owner, this.options.accountId), JSON.stringify(this.replica));
       this.channel?.postMessage({ server: this.options.server, owner: this.owner, accountId: this.options.accountId });

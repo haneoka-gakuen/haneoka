@@ -5,7 +5,7 @@
 // Effects/Dependencies: Reads Box replicas and preserves source data.
 import { BoxStore } from "./team-builder/sync/box-store";
 import { MAX_BOX_KEYS, type BoxValue } from "./team-builder/sync/box-doc";
-import { isGameToolAccountId, type GameToolAccount } from "./game-tool-accounts";
+import { gameToolCopyBackupKey, isGameToolAccountId, type GameToolAccount } from "./game-tool-accounts";
 import { gameToolOwner } from "./game-tool-account-store";
 
 type DataKind = "team" | "songs";
@@ -23,7 +23,6 @@ const openBox = (profile: GameToolAccount, owner: string | null) => new BoxStore
 });
 const isSongKey = (key: string) => key.startsWith("l.") || key.startsWith("pref.pc-");
 const equal = (a: BoxValue, b: BoxValue) => JSON.stringify(a) === JSON.stringify(b);
-const backupKey = (owner: string | null, id: string) => `haneoka:game-tool-copy:${encodeURIComponent(owner ?? "")}:${id}`;
 
 export async function previewGameToolCopy(source: GameToolAccount, target: GameToolAccount, kind: DataKind): Promise<GameToolCopyPreview> {
   if (source.id === target.id || source.server !== target.server || source.tool !== kind || target.tool !== kind || !isGameToolAccountId(target.id))
@@ -60,7 +59,7 @@ export async function applyGameToolCopy(preview: GameToolCopyPreview, replace: b
     if (Object.keys(to.snapshot.entries).length + changes.filter(({ key }) => !Object.hasOwn(to.snapshot.entries, key)).length > MAX_BOX_KEYS)
       throw new Error("game_tool_box_limit");
     if (!changes.length) return;
-    localStorage.setItem(backupKey(owner, target.id), JSON.stringify({
+    localStorage.setItem(gameToolCopyBackupKey(owner, target.id), JSON.stringify({
       before: changes.map(({ key }) => ({ key, value: base[key] ?? null })), after: changes,
     }));
     to.set(changes);
@@ -71,11 +70,11 @@ export async function applyGameToolCopy(preview: GameToolCopyPreview, replace: b
 }
 
 export function hasGameToolCopyBackup(account: GameToolAccount) {
-  try { return localStorage.getItem(backupKey(gameToolOwner(), account.id)) !== null; }
+  try { return localStorage.getItem(gameToolCopyBackupKey(gameToolOwner(), account.id)) !== null; }
   catch { return false; }
 }
 export async function undoGameToolCopy(account: GameToolAccount) {
-  const owner = gameToolOwner(), key = backupKey(owner, account.id), to = openBox(account, owner);
+  const owner = gameToolOwner(), key = gameToolCopyBackupKey(owner, account.id), to = openBox(account, owner);
   try {
     const snapshot = JSON.parse(localStorage.getItem(key) ?? "null") as { before: Changes; after: Changes } | null;
     if (!snapshot) return;

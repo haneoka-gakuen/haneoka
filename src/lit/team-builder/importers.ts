@@ -10,6 +10,7 @@ import { isInventoryListInput, previewInventoryListInput } from "../../lib/team-
 import { BoxImportError } from "@haneoka/game-data-exporter";
 import { previewBoxImport, type BoxReviewContext } from "../../lib/team-builder/box-import/preview";
 import { applyConfirmedBoxImport, type BoxConfirmation } from "../../lib/team-builder/box-import/merge";
+import { completeGameToolSaveMerge } from "../../lib/game-tool-account-store";
 import { buildBoxImportReview } from "../../lib/team-builder/box-review-model";
 import { createScreenshotImportSession } from "../../lib/team-builder/screenshot-import-session";
 import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
@@ -137,7 +138,7 @@ export class ImportController {
         if (/^[ms]\.[1-9]\d*\.own$/u.test(key) && entry.v === true && !kept.has(key))
           changes.push({ key, value: false });
     }
-    this.host.write(changes, true);
+    if (!this.host.write(changes, true)) throw new BoxImportError("box_review_changed");
     this.host.notice = this.host.t("imported", "Imported {count} changes", { count: changes.length });
   }
   /** The Box a review compares against: the current store, owner and inventory. */
@@ -176,7 +177,10 @@ export class ImportController {
       candidates: [],
       selectedCandidateId: "",
       preview: null,
-      confirmation: { cards: [], maps: [] },
+      confirmation: {
+        cards: [], maps: [],
+        ...(this.host.gameAccount?.settings?.mergeSave ? { ownership: "merge" } : {}),
+      },
       serverLabel: "",
       progress: null,
       error: null,
@@ -489,6 +493,14 @@ export class ImportController {
       const current = viewInventory(this.host, this.host.persistentView);
       const next = applyConfirmedBoxImport(current, state.preview, state.confirmation, this.host.data!, context);
       this.commit(next, this.boxBase, state.confirmation.ownership === "replace");
+      const account = this.host.gameAccount;
+      const store = this.boxStore;
+      if (account?.settings?.mergeSave && store) {
+        const owner = store.snapshot.owner;
+        void store.flushPending().then(applied => {
+          if (applied) return completeGameToolSaveMerge(account, owner);
+        }).catch(() => {});
+      }
       const url = new URL(location.href);
       if (url.searchParams.has("saveImport")) {
         sessionStorage.removeItem("haneoka:pending-save-box");

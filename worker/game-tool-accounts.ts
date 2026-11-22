@@ -8,6 +8,7 @@ import {
   isGameToolAccount,
   isGameToolAccountId,
   isGameToolAccountSettings,
+  isLegacyGameToolSettingsId,
 } from "../src/lib/game-tool-accounts";
 import {
   privateTeamError as error,
@@ -57,21 +58,27 @@ export async function handleGameToolAccounts(request: Request, env: Env): Promis
   if (request.method === "DELETE") {
     const id = parsed.body.id;
     if (!isGameToolAccountId(id)) return error(request, 422, "invalid_game_tool_account", "Invalid game-tool account");
-    // Only manual profiles really delete; save-linked accounts keep their
-    // recoverable removal so a re-import restores and continues their data.
+    if (isLegacyGameToolSettingsId(id))
+      return error(request, 409, "game_tool_account_unavailable", "This profile is recoverable");
     const now = Date.now(),
       guard = [userId, token, new Date(now).toISOString(), now];
-    const removed = await env.DB.prepare(
-      `
-      DELETE FROM account_game_tool WHERE user_id = ? AND id = ? AND uid IS NULL AND ${writableTeamOwner}
-      RETURNING id
-    `,
-    )
-      .bind(userId, id, ...guard)
-      .first<{ id: string }>();
-    return removed
+    const [, , acknowledgement] = await env.DB.batch<{ id: string }>([
+      env.DB.prepare(`
+        INSERT OR IGNORE INTO account_game_tool_purge(user_id, id) SELECT ?, ?
+        WHERE ${writableTeamOwner} AND NOT EXISTS (
+          SELECT 1 FROM account_game_tool WHERE user_id = ? AND id = ? AND uid IS NOT NULL
+        )
+      `).bind(userId, id, ...guard, userId, id),
+      env.DB.prepare(`
+        DELETE FROM account_game_tool WHERE user_id = ? AND id = ? AND uid IS NULL AND ${writableTeamOwner}
+      `).bind(userId, id, ...guard),
+      env.DB.prepare(`
+        SELECT id FROM account_game_tool_purge WHERE user_id = ? AND id = ? AND ${writableTeamOwner}
+      `).bind(userId, id, ...guard),
+    ]);
+    return acknowledgement?.results.length
       ? json(request, { deleted: true })
-      : error(request, 409, "game_tool_account_unavailable", "Account not found or linked to a save");
+      : error(request, 409, "game_tool_account_unavailable", "This profile is recoverable or the session changed");
   }
   if (request.method === "PATCH") {
     const edits = parsed.body.settings;
@@ -135,6 +142,7 @@ export async function handleGameToolAccounts(request: Request, env: Env): Promis
     INSERT INTO account_game_tool(user_id, id, tool, server, uid, metadata_json, source_time)
     SELECT ?, ?, ?, ?, ?, ?, ?
     WHERE ${writableTeamOwner}
+      AND NOT EXISTS (SELECT 1 FROM account_game_tool_purge WHERE user_id = ? AND id = ?)
       AND (EXISTS (SELECT 1 FROM account_game_tool WHERE user_id = ? AND id = ?)
         OR (SELECT COUNT(*) FROM account_game_tool WHERE user_id = ?) < 80)
     ON CONFLICT(user_id, id) DO UPDATE SET
@@ -166,8 +174,12 @@ export async function handleGameToolAccounts(request: Request, env: Env): Promis
       userId,
       id,
       userId,
+      id,
+      userId,
     )
     .first<{ metadata_json: string; settings_json: string | null }>();
+  if (!written && await env.DB.prepare("SELECT 1 FROM account_game_tool_purge WHERE user_id = ? AND id = ?").bind(userId, id).first())
+    return error(request, 409, "game_tool_account_deleted", "This profile was permanently deleted");
   return written
     ? json(request, {
         account: {

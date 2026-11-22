@@ -5,11 +5,14 @@
 // Effects/Dependencies: Credential-free metadata in localStorage and the authenticated account API.
 import { appCall, appSupports, type DeviceSave } from "./app-bridge";
 import { profileRegion } from "./game-records";
+import { saveSongProgressProfile } from "./song-progress-profile";
 import {
+  gameToolCopyBackupKey,
   gameToolIdFromSave,
   isGameToolAccount,
   isGameToolAccountId,
   isGameToolAccountSettings,
+  isLegacyGameToolSettingsId,
   legacyToolAccount,
   type GameTool,
   type GameToolAccount,
@@ -30,6 +33,7 @@ type Directory = {
   pending: string[];
   pendingSettings: string[];
   pendingPurge: string[];
+  deleted: string[];
   purging: GameToolAccount[];
   active: Partial<Record<GameTool, string>>;
   legacy: PublicReleaseServer[];
@@ -55,6 +59,7 @@ function directory(scope: string | null = gameToolOwner()): Directory {
     pending: Array.isArray(saved.pending) ? saved.pending.filter(isGameToolAccountId) : [],
     pendingSettings: Array.isArray(saved.pendingSettings) ? saved.pendingSettings.filter(isGameToolAccountId) : [],
     pendingPurge: Array.isArray(saved.pendingPurge) ? saved.pendingPurge.filter(isGameToolAccountId) : [],
+    deleted: Array.isArray(saved.deleted) ? saved.deleted.filter(isGameToolAccountId) : [],
     purging: (Array.isArray(saved.purging) ? saved.purging : []).filter(isGameToolAccount),
     active: saved.active && typeof saved.active === "object" ? saved.active : {},
     legacy: (Array.isArray(saved.legacy) ? saved.legacy : []).filter(isPublicReleaseServer),
@@ -67,7 +72,6 @@ const tools = ["team", "songs", "history"] as const;
 // Legacy tool data retains its old Box address. Reserved directory rows store its management settings.
 const legacySettingsId = (tool: GameTool, server: PublicReleaseServer) =>
   (1 + tools.indexOf(tool) * versions.length + versions.indexOf(server)).toString(16).padStart(32, "0");
-const legacySettingsIds = new Set(tools.flatMap((tool) => versions.map((server) => legacySettingsId(tool, server))));
 function legacyProfile(tool: GameTool, server: PublicReleaseServer, scope = gameToolOwner()): GameToolAccount {
   const stored = directory(scope).accounts.find((row) => row.id === legacySettingsId(tool, server));
   return { ...legacyToolAccount(server, tool), settings: stored?.settings };
@@ -80,7 +84,7 @@ export function gameToolAccounts(tool: GameTool, includeRemoved = false) {
   return directory()
     .accounts.filter(
       (account) =>
-        account.tool === tool && !legacySettingsIds.has(account.id) && (includeRemoved || !account.settings?.removed),
+        account.tool === tool && !isLegacyGameToolSettingsId(account.id) && (includeRemoved || !account.settings?.removed),
     )
     .sort((a, b) => (a.settings?.position ?? 0) - (b.settings?.position ?? 0) || a.id.localeCompare(b.id));
 }
@@ -136,7 +140,7 @@ export function getGameToolAccount(id: string, tool: GameTool, scope = gameToolO
     const profile = legacyProfile(tool, id === "legacy-jp" ? "jp" : "intl", scope);
     return profile.settings?.removed ? undefined : profile;
   }
-  if (!legacySettingsIds.has(id))
+  if (!isLegacyGameToolSettingsId(id))
     return directory(scope).accounts.find(
       (account) => account.id === id && account.tool === tool && !account.settings?.removed,
     );
@@ -197,7 +201,13 @@ async function push(scope: string, account: GameToolAccount) {
     headers: { "content-type": "application/json", "x-haneoka-expected-user": scope },
     body: JSON.stringify({ account }),
   });
-  if (!response.ok) return;
+  if (!response.ok) {
+    if (response.status === 409) {
+      const body = await response.json().catch(() => null) as { error?: { code?: string } } | null;
+      if (body?.error?.code === "game_tool_account_deleted") discardProfiles(scope, [account], true);
+    }
+    return;
+  }
   const { account: saved } = (await response.json()) as { account?: unknown };
   if (!isGameToolAccount(saved) || saved.id !== account.id) return;
   const value = directory(scope);
@@ -274,6 +284,9 @@ export function refreshGameToolAccounts(force = false): Promise<void> {
     if (sessionVersion !== version) return;
     window.dispatchEvent(new Event(GAME_TOOL_ACCOUNTS_CHANGED));
     if (!scope) return;
+    const requested = directory(scope);
+    const pending = new Set(requested.pending);
+    const known = new Set(requested.accounts.filter(account => !pending.has(account.id)).map(account => account.id));
     const response = await fetch(API, {
       credentials: "same-origin",
       cache: "no-store",
@@ -282,11 +295,17 @@ export function refreshGameToolAccounts(force = false): Promise<void> {
     if (!response.ok || sessionVersion !== version) return;
     const { accounts, legacy } = (await response.json()) as { accounts?: unknown[]; legacy?: unknown[] };
     if (!Array.isArray(accounts) || sessionVersion !== version) return;
+    const remote = new Map(accounts.filter(isGameToolAccount).map(account => [account.id, account]));
+    const previous = directory(scope);
+    const removed = previous.accounts.filter(account => known.has(account.id) &&
+      !previous.pending.includes(account.id) && !remote.has(account.id));
+    if (removed.length) discardProfiles(scope, removed, true);
     const value = directory(scope);
+    const hidden = new Set([...value.pendingPurge, ...value.deleted]);
     const merged = new Map(value.accounts.map((account) => [account.id, account]));
-    for (const account of accounts)
-      if (isGameToolAccount(account)) merged.set(account.id, merge(merged.get(account.id), account));
-    for (const id of value.pendingPurge) merged.delete(id);
+    for (const account of remote.values())
+      if (!hidden.has(account.id)) merged.set(account.id, merge(merged.get(account.id), account));
+    for (const id of hidden) merged.delete(id);
     changed(scope, {
       ...value,
       accounts: [...merged.values()],
@@ -299,6 +318,7 @@ export function refreshGameToolAccounts(force = false): Promise<void> {
         changed(scope, {
           ...latest,
           pendingPurge: latest.pendingPurge.filter((row) => row !== id),
+          deleted: [...new Set([...latest.deleted, id])],
           purging: latest.purging.filter((row) => row.id !== id),
         });
       }
@@ -320,6 +340,8 @@ export function refreshGameToolAccounts(force = false): Promise<void> {
 async function put(account: GameToolAccount, scope = gameToolOwner()) {
   if (scope !== gameToolOwner() || !isGameToolAccount(account)) throw new Error("game_tool_account_changed");
   const value = directory(scope);
+  if (value.deleted.includes(account.id) || value.pendingPurge.includes(account.id))
+    throw new Error("game_tool_account_deleted");
   const previous = value.accounts.find((row) => row.id === account.id);
   const next = merge(previous, account);
   const edited = JSON.stringify(previous) !== JSON.stringify(next);
@@ -331,7 +353,9 @@ async function put(account: GameToolAccount, scope = gameToolOwner()) {
     });
   if (scope && (edited || value.pending.includes(next.id))) await push(scope, next).catch(() => {});
   if (scope !== gameToolOwner()) throw new Error("game_tool_account_changed");
-  return directory(scope).accounts.find((row) => row.id === next.id) ?? next;
+  const saved = directory(scope).accounts.find((row) => row.id === next.id);
+  if (!saved) throw new Error("game_tool_account_deleted");
+  return saved;
 }
 
 export async function createGameToolAccount(tool: GameTool, server: PublicReleaseServer, name: string) {
@@ -347,16 +371,15 @@ export async function createGameToolAccount(tool: GameTool, server: PublicReleas
   await updateSettings([{ account: created, patch: { position } }]);
   return getGameToolAccount(created.id, tool) ?? created;
 }
-export async function captureGameToolSave(save: DeviceSave, tool: GameTool, scope = gameToolOwner()) {
+export async function captureGameToolSave(
+  save: DeviceSave,
+  tool: GameTool,
+  scope = gameToolOwner(),
+  restore: "explicit" | "newer" | "never" = "explicit",
+) {
   if (!isPublicReleaseServer(save.server) || !profileRegion(save.profileId)) return;
   const id = await gameToolIdFromSave(tool, save.server, save.profileId);
-  const existing = directory(scope).accounts.find((row) => row.id === id);
-  if (existing?.settings?.removed) {
-    // A re-import restores the removed profile so its data continues in place.
-    await updateSettings([{ account: existing, patch: { removed: false } }]);
-    return getGameToolAccount(id, tool, scope) ?? existing;
-  }
-  return put(
+  const registered = await put(
     {
       id,
       tool,
@@ -378,6 +401,17 @@ export async function captureGameToolSave(save: DeviceSave, tool: GameTool, scop
     },
     scope,
   );
+  if (!registered.settings?.removed || restore === "never" ||
+    restore === "newer" && (save.savedAt ?? 0) <= registered.settings.changedAt) return registered;
+  await updateSettings([{ account: registered, patch: { removed: false, mergeSave: tool !== "history" } }], scope);
+  return getGameToolAccount(id, tool, scope);
+}
+
+export async function completeGameToolSaveMerge(account: GameToolAccount, scope = gameToolOwner()) {
+  if (scope !== gameToolOwner()) return;
+  const current = getGameToolAccount(account.id, account.tool, scope);
+  if (current && current.settings?.mergeSave && current.savedAt === account.savedAt)
+    await updateSettings([{ account: current, patch: { mergeSave: false } }], scope);
 }
 export async function captureGameToolSaveByKey(key: string, tool: GameTool) {
   await refreshGameToolAccounts();
@@ -394,9 +428,12 @@ export async function associateGameToolHistory(account: GameToolAccount, key: st
   return put({ ...account, historyKeys: [...new Set([...account.historyKeys, key])] }, scope);
 }
 
-async function updateSettings(edits: readonly { account: GameToolAccount; patch: Partial<GameToolAccountSettings> }[]) {
-  const scope = gameToolOwner(),
-    value = directory(scope),
+async function updateSettings(
+  edits: readonly { account: GameToolAccount; patch: Partial<GameToolAccountSettings> }[],
+  scope = gameToolOwner(),
+) {
+  if (scope !== gameToolOwner()) throw new Error("game_tool_account_changed");
+  const value = directory(scope),
     now = Date.now();
   const newLegacy: GameToolAccount[] = [];
   const next = new Map(
@@ -413,7 +450,7 @@ async function updateSettings(edits: readonly { account: GameToolAccount; patch:
   const accounts = [...value.accounts, ...newLegacy].map((account) => {
     const patch = next.get(account.id);
     if (!patch) return account;
-    const settings = {
+      const settings = {
       alias: "",
       position: 0,
       removed: false,
@@ -459,39 +496,56 @@ async function purgeOnServer(scope: string, id: string) {
 const boxReplicaKey = (server: string, owner: string | null, accountId: string) =>
   `haneoka:team-box:v1:${owner === null ? "anonymous" : `account:${encodeURIComponent(owner)}`}:${encodeURIComponent(server)}:${accountId}`;
 
-/**
- * Really deletes a manual (temporary) profile and its tool data. Save-linked
- * accounts keep the recoverable removal: a re-import restores them and their
- * box continues from its saved markers.
- */
+function discardProfiles(scope: string | null, profiles: GameToolAccount[], confirmed: boolean) {
+  const value = directory(scope);
+  const ids = new Set(profiles.map(profile => profile.id));
+  if (scope === gameToolOwner()) {
+    const url = new URL(location.href);
+    const requested = url.searchParams.get("gameAccount");
+    if (requested && ids.has(requested)) {
+      url.searchParams.delete("gameAccount");
+      history.replaceState(history.state, "", url);
+    }
+  }
+  const active = { ...value.active };
+  for (const profile of profiles) if (active[profile.tool] === profile.id) delete active[profile.tool];
+  const pending = !confirmed && scope !== null;
+  changed(scope, {
+    ...value,
+    accounts: value.accounts.filter(row => !ids.has(row.id)),
+    pending: value.pending.filter(id => !ids.has(id)),
+    pendingSettings: value.pendingSettings.filter(id => !ids.has(id)),
+    pendingPurge: [...new Set([...value.pendingPurge.filter(id => !ids.has(id)), ...(pending ? ids : [])])],
+    purging: [...value.purging.filter(row => !ids.has(row.id)), ...(pending ? profiles : [])],
+    deleted: [...new Set([...value.deleted, ...(pending ? [] : profiles.filter(row => !row.uid && !isLegacyGameToolSettingsId(row.id)).map(row => row.id))])],
+    active,
+  });
+  for (const profile of profiles) {
+    try {
+      localStorage.removeItem(boxReplicaKey(profile.server, scope, profile.id));
+      localStorage.removeItem(gameToolCopyBackupKey(scope, profile.id));
+      if (profile.tool === "songs") saveSongProgressProfile(profile.server, scope, undefined, profile.id);
+    } catch { /* The profile itself is already removed. */ }
+  }
+}
+
 /** Profiles whose cloud delete is still outstanding; shown as 待同步 in the manager. */
 export function purgingGameToolAccounts(tool: GameTool): GameToolAccount[] {
   return directory().purging.filter((account) => account.tool === tool);
 }
 
 export async function purgeGameToolAccount(account: GameToolAccount) {
-  if (!isGameToolAccountId(account.id) || account.uid) throw new Error("game_tool_account_purge");
   const scope = gameToolOwner();
-  const value = directory(scope);
-  const active = { ...value.active };
-  if (active[account.tool] === account.id) delete active[account.tool];
-  changed(scope, {
-    ...value,
-    accounts: value.accounts.filter((row) => row.id !== account.id),
-    pending: value.pending.filter((id) => id !== account.id),
-    pendingSettings: value.pendingSettings.filter((id) => id !== account.id),
-    pendingPurge: scope ? [...new Set([...value.pendingPurge, account.id])] : value.pendingPurge,
-    purging: scope ? [...value.purging.filter((row) => row.id !== account.id), account] : value.purging,
-    active,
-  });
-  try {
-    localStorage.removeItem(boxReplicaKey(account.server, scope, account.id));
-  } catch {}
+  const stored = directory(scope).accounts.find(row => row.id === account.id && row.tool === account.tool);
+  if (!stored || !isGameToolAccountId(stored.id) || isLegacyGameToolSettingsId(stored.id) || stored.uid)
+    throw new Error("game_tool_account_purge");
+  discardProfiles(scope, [stored], false);
   if (scope && (await purgeOnServer(scope, account.id))) {
     const latest = directory(scope);
     changed(scope, {
       ...latest,
       pendingPurge: latest.pendingPurge.filter((id) => id !== account.id),
+      deleted: [...new Set([...latest.deleted, account.id])],
       purging: latest.purging.filter((row) => row.id !== account.id),
     });
   }
