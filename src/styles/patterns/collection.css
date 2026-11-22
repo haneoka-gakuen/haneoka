@@ -211,6 +211,10 @@
 .tile--model .tile__media--cover {
   --tile-fit: cover;
 }
+/* Square card tiles ask for a cropped fill; the generic cover class stays model-only so story artwork keeps its fitted letterbox. */
+.card-media--support.tile__media--cover {
+  --tile-fit: cover;
+}
 /* Overlay marks sit on the artwork: rarity, level, difficulty, duration.
  * They are placed at the corners so they never cover a face or a title. */
 .tile__mark {
