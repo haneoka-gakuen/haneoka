@@ -13,7 +13,10 @@ const CACHE_BYTES = 8 * 1024 * 1024;
 const CACHE_CHARTS = 128;
 const chartSizes = new WeakMap<Record<string, unknown>, number>();
 
-export async function downloadChart(source: EngineChartSources[string] | undefined, signal?: AbortSignal): Promise<Record<string, unknown>> {
+export async function downloadChart(
+  source: EngineChartSources[string] | undefined,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
   if (!source?.file) throw new Error("chart-file-missing");
   const { identity, file, apiBase } = source;
   const path = pinnedSongAssetUrl(identity, file);
@@ -32,24 +35,47 @@ export async function downloadChart(source: EngineChartSources[string] | undefin
   try {
     let response = await fetchChart();
     for (let attempt = 1; attempt < 3 && (!response || response.status >= 500); attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       response = await fetchChart();
     }
     if (!response) throw new Error("chart-network");
     if (!response.ok) throw new Error(`chart-http:${response.status}`);
     const release = response.headers.get("x-haneoka-release-id");
     if (release && release !== identity.releaseId) throw new Error("chart-release-identity-mismatch");
-    let bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-      bytes = new Uint8Array(await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+    try {
+      return await parseChart(new Uint8Array(await response.arrayBuffer()));
+    } catch {
+      // A truncated body (interrupted cache write, dropped connection) parses
+      // as broken JSON. Refetch past every cache once before giving up.
+      if (signal) throwIfAborted(signal);
+      const bypass = new URL(target);
+      bypass.searchParams.set("__reload", "1");
+      const revalidated = await fetch(bypass, { credentials: "omit", cache: "reload" }).catch(() => null);
+      if (!revalidated || !revalidated.ok) throw new Error("chart-corrupt");
+      const revalidatedRelease = revalidated.headers.get("x-haneoka-release-id");
+      if (revalidatedRelease && revalidatedRelease !== identity.releaseId)
+        throw new Error("chart-release-identity-mismatch");
+      try {
+        return await parseChart(new Uint8Array(await revalidated.arrayBuffer()));
+      } catch {
+        throw new Error("chart-corrupt");
+      }
     }
-    const chart = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
-    chartSizes.set(chart, bytes.byteLength);
-    return chart;
   } finally {
     clearTimeout(timeout);
     request.cancel();
   }
+}
+
+/** Parse chart bytes, transparently gunzipping; a truncated body throws here. */
+async function parseChart(bytes: Uint8Array): Promise<Record<string, unknown>> {
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  const chart = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+  chartSizes.set(chart, bytes.byteLength);
+  return chart;
 }
 
 export class EngineCharts {
@@ -83,21 +109,25 @@ export class EngineCharts {
       if (this.downloads.delete(key)) this.downloads.set(key, existing);
       return existing;
     }
-    const download = downloadChart(this.sources[key], this.lifetime.signal).then(chart => {
-      const size = chartSizes.get(chart)!;
-      if (size <= CACHE_BYTES && this.pending.get(key) === download) {
-        while (this.downloads.size >= CACHE_CHARTS || this.bytes + size > CACHE_BYTES) {
-          const oldest = this.downloads.keys().next().value!;
-          this.bytes -= this.sizes.get(oldest)!;
-          this.sizes.delete(oldest);
-          this.downloads.delete(oldest);
+    const download = downloadChart(this.sources[key], this.lifetime.signal)
+      .then((chart) => {
+        const size = chartSizes.get(chart)!;
+        if (size <= CACHE_BYTES && this.pending.get(key) === download) {
+          while (this.downloads.size >= CACHE_CHARTS || this.bytes + size > CACHE_BYTES) {
+            const oldest = this.downloads.keys().next().value!;
+            this.bytes -= this.sizes.get(oldest)!;
+            this.sizes.delete(oldest);
+            this.downloads.delete(oldest);
+          }
+          this.downloads.set(key, download);
+          this.sizes.set(key, size);
+          this.bytes += size;
         }
-        this.downloads.set(key, download);
-        this.sizes.set(key, size);
-        this.bytes += size;
-      }
-      return { song, chart };
-    }).finally(() => { if (this.pending.get(key) === download) this.pending.delete(key); });
+        return { song, chart };
+      })
+      .finally(() => {
+        if (this.pending.get(key) === download) this.pending.delete(key);
+      });
     this.pending.set(key, download);
     return download;
   }

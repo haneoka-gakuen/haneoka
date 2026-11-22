@@ -21,8 +21,8 @@ const PAGES_CACHE = "haneoka.pages.v10";
 const ASSETS_CACHE = "haneoka.assets.v7";
 const IMAGES_CACHE = "haneoka.images.v9";
 const DATA_CACHE = "haneoka.data.v8";
-const PUBLIC_MEDIA_CACHE = "haneoka.media.public.v2";
-const SCOPED_MEDIA_CACHE = "haneoka.media.scoped.v2";
+const PUBLIC_MEDIA_CACHE = "haneoka.media.public.v3";
+const SCOPED_MEDIA_CACHE = "haneoka.media.scoped.v3";
 const ACTIVE_CACHES = [PAGES_CACHE, ASSETS_CACHE, IMAGES_CACHE, DATA_CACHE, PUBLIC_MEDIA_CACHE, SCOPED_MEDIA_CACHE];
 const clientScopes = new Map();
 self.addEventListener("message", (event) => {
@@ -74,7 +74,7 @@ const isNeverCached = (url) => NEVER_CACHE_PREFIXES.some((prefix) => url.pathnam
 
 const mediaKey = (url, scope) => {
   const key = new URL(url);
-  for (const field of ["__content", "spoiler", "cv"]) key.searchParams.delete(field);
+  for (const field of ["__content", "__reload", "spoiler", "cv"]) key.searchParams.delete(field);
   if (scope) key.searchParams.set("cv", scope);
   key.searchParams.sort();
   return new Request(key);
@@ -136,14 +136,15 @@ const explicitlyPublic = (response) => {
 
 const gameMedia = async (event, request, url) => {
   const scope = requestedScope(url, clientScopes.get(event.clientId));
+  const reload = url.searchParams.has("__reload");
   const publicKey = mediaKey(url);
   const privateKey = scope ? mediaKey(url, scope) : null;
-  const shared = await readCache(publicKey, PUBLIC_MEDIA_CACHE);
+  const shared = reload ? {} : await readCache(publicKey, PUBLIC_MEDIA_CACHE);
   if (shared.cached && (url.searchParams.has("release") || fresh(shared.cached, IMAGE_FRESH_MS))) {
     const response = await mediaRange(request, shared.cached);
     if (response) return response;
   }
-  const scoped = privateKey ? await readCache(privateKey, SCOPED_MEDIA_CACHE) : {};
+  const scoped = reload || !privateKey ? {} : await readCache(privateKey, SCOPED_MEDIA_CACHE);
   if (scoped.cached && (url.searchParams.has("release") || fresh(scoped.cached, IMAGE_FRESH_MS))) {
     const response = await mediaRange(request, scoped.cached);
     if (response) return response;
@@ -163,11 +164,18 @@ const gameMedia = async (event, request, url) => {
     const key = published ? publicKey : privateKey;
     const cache = published ? shared.cache : scoped.cache;
     if (key && cache) {
-      const headers = new Headers(response.headers);
-      headers.delete("Vary");
-      const stored = new Response(response.clone().body, { status: 200, headers });
+      // Buffer the whole body before storing. A streamed put that dies with
+      // the worker leaves a truncated 200 that release-pinned reads would
+      // then serve forever; a buffer-backed put either stores completely or
+      // not at all.
       const name = published ? PUBLIC_MEDIA_CACHE : SCOPED_MEDIA_CACHE;
-      event.waitUntil(cache.put(key, stored).then(() => trimCache(name, MAX_IMAGES)).catch(() => {}));
+      event.waitUntil(response.clone().arrayBuffer().then((body) => {
+        if (body.byteLength === 0) return;
+        const headers = new Headers(response.headers);
+        headers.delete("Vary");
+        return cache.put(key, new Response(body, { status: 200, headers }))
+          .then(() => trimCache(name, MAX_IMAGES));
+      }).catch(() => {}));
     }
   }
   return response;
