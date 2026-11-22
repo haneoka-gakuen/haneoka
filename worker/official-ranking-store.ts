@@ -4,7 +4,7 @@
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; profile writes use the collector host’s local observation clock; reads preserve original observation timestamps.
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
-import { saveRankingSearchWindow } from "./ranking-search";
+import { rankingSearchRows, saveRankingSearchWindow } from "./ranking-search";
 import { retainRequestRead } from "./request-work";
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
@@ -571,7 +571,56 @@ export async function readOfficialBoardStatus(env: OfficialRankingStoreBindings,
   return boards;
 }
 
-export async function saveOfficialArenaObservation(env: OfficialRankingStoreBindings, observation: OfficialArenaObservation): Promise<void> {
+/** A window whose compact search projection, extent and player count match the stored snapshot keeps that snapshot;
+ * only the sweep clock on the window metadata advances, so an unchanged re-read costs one row instead of the full chain. */
+async function unchangedArenaWindow(db: D1Database, board: string, observation: OfficialArenaObservation) {
+  if (observation.error || !observation.players) return null;
+  const stored = await db.prepare(`SELECT m.snapshot_id AS snapshotId, m.observed_at_ms AS observedAtMs, m.payload_key AS payloadKey,
+    m.payload_hash AS payloadHash, m.end_rank AS endRank, m.max_rank AS maxRank, w.players_json AS playersJson
+    FROM official_arena_window_metadata AS m LEFT JOIN official_ranking_search_windows AS w
+      ON w.region=m.region AND w.board_key=? AND w.start_rank=m.start_rank AND w.snapshot_id=m.snapshot_id
+    WHERE m.region=? AND m.season_id=? AND m.band_id=? AND m.start_rank=?`)
+    .bind(board, observation.region, observation.seasonId, observation.bandId, observation.startRank)
+    .first<{ snapshotId: string; observedAtMs: number; payloadKey: string; payloadHash: string; endRank: number;
+      maxRank: number | null; playersJson: string | null }>();
+  if (!stored || stored.playersJson === null || stored.playersJson !== JSON.stringify(rankingSearchRows(observation.players, observation.startRank))
+    || stored.endRank !== observation.endRank || stored.maxRank !== (observation.maxRank ?? null)) return null;
+  return stored;
+}
+
+/** Registers the window as a final target and records the attempt only once the final deadline has passed. */
+function arenaFinalAttempt(db: D1Database, observation: Pick<OfficialArenaObservation, "region" | "seasonId" | "bandId" | "startRank" | "observedAtMs">) {
+  return db.prepare(`INSERT INTO official_arena_finals
+    (region,board_key,season_id,due_at_ms,arena_json,catalog_observed_at_ms,last_attempt_at_ms)
+    SELECT region,?,season_id,due_at_ms,arena_json,catalog_observed_at_ms,? FROM official_arena_finals
+    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
+      last_attempt_at_ms=MAX(official_arena_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)
+    WHERE official_arena_finals.due_at_ms<=excluded.last_attempt_at_ms`)
+    .bind(`arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation.observedAtMs,
+      observation.region, `arena/${observation.seasonId}/${observation.bandId}/1`);
+}
+
+/** An unchanged window still archives its stored snapshot for a new Japan-time day and fills an open final target. */
+async function retainUnchangedWindow(db: D1Database, finals: "official_ranking_finals" | "official_arena_finals",
+  board: string, observation: { region: string; observedAtMs: number },
+  stored: { snapshotId: string; observedAtMs: number; payloadKey: string; payloadHash: string }) {
+  await db.batch([
+    db.prepare(`INSERT INTO official_ranking_daily
+      (region, board_key, day, observed_at_ms, snapshot_id, payload_key, payload_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, board_key, day) DO UPDATE SET
+      observed_at_ms=excluded.observed_at_ms, snapshot_id=excluded.snapshot_id,
+      payload_key=excluded.payload_key, payload_hash=excluded.payload_hash
+      WHERE excluded.snapshot_id IS NOT official_ranking_daily.snapshot_id`)
+      .bind(observation.region, board, Math.floor((observation.observedAtMs + JST_MS) / 86_400_000),
+        stored.observedAtMs, stored.snapshotId, stored.payloadKey, stored.payloadHash),
+    db.prepare(`UPDATE ${finals} SET snapshot_id=?,observed_at_ms=?,payload_key=?,payload_hash=?
+      WHERE region=? AND board_key=? AND snapshot_id IS NULL AND due_at_ms<=?`)
+      .bind(stored.snapshotId, stored.observedAtMs, stored.payloadKey, stored.payloadHash,
+        observation.region, board, observation.observedAtMs),
+  ]);
+}
+
+export async function saveOfficialArenaObservation(env: OfficialRankingStoreBindings, observation: OfficialArenaObservation): Promise<boolean> {
   const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
@@ -580,29 +629,33 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
     .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous) {
     if (previous.payload_hash !== hash) throw new Error("official_observation_conflict");
+    return false;
   }
-  await db.prepare(`INSERT INTO official_arena_finals
-    (region,board_key,season_id,due_at_ms,arena_json,catalog_observed_at_ms,last_attempt_at_ms)
-    SELECT region,?,season_id,due_at_ms,arena_json,catalog_observed_at_ms,? FROM official_arena_finals
-    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
-      last_attempt_at_ms=MAX(official_arena_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
-    .bind(`arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation.observedAtMs,
-      observation.region, `arena/${observation.seasonId}/${observation.bandId}/1`).run();
-  const payload = previous ? { key: previous.payload_key, statements: [] } : await prepareObservationPayload(env, observation, "arena", body, hash);
+  const board = `arena/${observation.seasonId}/${observation.bandId}`;
+  const stored = await unchangedArenaWindow(db, board, observation);
+  if (stored) {
+    await db.batch([
+      arenaFinalAttempt(db, observation),
+      db.prepare("UPDATE official_arena_window_metadata SET observed_at_ms=? WHERE region=? AND season_id=? AND band_id=? AND start_rank=? AND observed_at_ms<?")
+        .bind(observation.observedAtMs, observation.region, observation.seasonId, observation.bandId, observation.startRank, observation.observedAtMs),
+    ]);
+    await retainUnchangedWindow(db, "official_arena_finals", `${board}/${observation.startRank}`, observation, stored);
+    return false;
+  }
+  await arenaFinalAttempt(db, observation).run();
+  const payload = await prepareObservationPayload(env, observation, "arena", body, hash);
   const key = payload.key;
-  if (!previous) {
-    await db.batch([...payload.statements, db.prepare(`INSERT INTO official_arena_ranking_observations
+  await db.batch([...payload.statements, db.prepare(`INSERT INTO official_arena_ranking_observations
     (region, snapshot_id, season_id, band_id, start_rank, end_rank, max_rank, observed_at_ms, payload_key, payload_hash, error)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
     .bind(observation.region, observation.snapshotId, observation.seasonId, observation.bandId, observation.startRank,
       observation.endRank, observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null)]);
-  }
   if (!observation.error && observation.players) {
     const profiles: Record<string, number> = {};
     observation.players.forEach((player, index) => {
       const profile = player.profile as Record<string, unknown> | undefined;
       const id = profile?.profile_id ?? profile?.profileId;
-      if (typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)) profiles[id] = observation.startRank + index;
+      if (typeof id === "string" && /^[1-9][0-9]{0,19}$/u.test(id)) profiles[id] = observation.startRank + index;
     });
     const replaced = await db.prepare(`SELECT snapshot_id, payload_key, observed_at_ms FROM official_arena_window_metadata
       WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank = ?`)
@@ -616,10 +669,11 @@ export async function saveOfficialArenaObservation(env: OfficialRankingStoreBind
       .bind(observation.region, observation.seasonId, observation.bandId, observation.startRank, observation.endRank,
         observation.maxRank ?? null, observation.players.length, JSON.stringify(profiles), observation.snapshotId,
         observation.observedAtMs, key, hash).run();
-    await saveRankingSearchWindow(db, observation.region, `arena/${observation.seasonId}/${observation.bandId}`, observation, observation.players);
-    await saveDailyObservation(db, `arena/${observation.seasonId}/${observation.bandId}/${observation.startRank}`, observation, key, hash);
+    await saveRankingSearchWindow(db, observation.region, board, observation, observation.players);
+    await saveDailyObservation(db, `${board}/${observation.startRank}`, observation, key, hash);
     if (replaced) await dropReplaced(env, "official_arena_ranking_observations", observation, replaced);
   }
+  return true;
 }
 
 interface ReplacedWindow { snapshot_id: string; payload_key: string; observed_at_ms: number }
@@ -637,7 +691,34 @@ async function dropReplaced(env: OfficialRankingStoreBindings, table: string,
       observation.region, replaced.snapshot_id, observation.region, replaced.snapshot_id).run();
 }
 
-export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<void> {
+async function unchangedEventWindow(db: D1Database, board: string, observation: OfficialEventWindow) {
+  if (observation.error || !observation.players) return null;
+  const stored = await db.prepare(`SELECT m.snapshot_id AS snapshotId, m.observed_at_ms AS observedAtMs, m.payload_key AS payloadKey,
+    m.payload_hash AS payloadHash, m.end_rank AS endRank, m.max_rank AS maxRank, w.players_json AS playersJson
+    FROM official_event_window_metadata AS m LEFT JOIN official_ranking_search_windows AS w
+      ON w.region=m.region AND w.board_key=? AND w.start_rank=m.start_rank AND w.snapshot_id=m.snapshot_id
+    WHERE m.region=? AND m.event_id=? AND m.start_rank=?`)
+    .bind(board, observation.region, observation.eventId, observation.startRank)
+    .first<{ snapshotId: string; observedAtMs: number; payloadKey: string; payloadHash: string; endRank: number;
+      maxRank: number | null; playersJson: string | null }>();
+  if (!stored || stored.playersJson === null || stored.playersJson !== JSON.stringify(rankingSearchRows(observation.players, observation.startRank))
+    || stored.endRank !== observation.endRank || stored.maxRank !== (observation.maxRank ?? null)) return null;
+  return stored;
+}
+
+/** Registers the window as a final target and records the attempt only once the final deadline has passed. */
+function eventFinalAttempt(db: D1Database, observation: Pick<OfficialEventWindow, "region" | "eventId" | "startRank" | "observedAtMs">) {
+  return db.prepare(`INSERT INTO official_ranking_finals
+    (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms,last_attempt_at_ms)
+    SELECT region,?,event_id,due_at_ms,event_json,catalog_observed_at_ms,? FROM official_ranking_finals
+    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
+      last_attempt_at_ms=MAX(official_ranking_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)
+    WHERE official_ranking_finals.due_at_ms<=excluded.last_attempt_at_ms`)
+    .bind(`event-window/${observation.eventId}/${observation.startRank}`, observation.observedAtMs,
+      observation.region, `event/${observation.eventId}/point/`);
+}
+
+export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings, observation: OfficialEventWindow): Promise<boolean> {
   const { db } = storage(env);
   const body = JSON.stringify(observation);
   if (new TextEncoder().encode(body).byteLength > MAX_PAYLOAD_BYTES) throw new Error("official_observation_too_large");
@@ -645,28 +726,32 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
   const previous = await db.prepare("SELECT payload_key,payload_hash FROM official_event_window_observations WHERE region = ? AND snapshot_id = ?")
     .bind(observation.region, observation.snapshotId).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (previous && previous.payload_hash !== hash) throw new Error("official_observation_conflict");
-  await db.prepare(`INSERT INTO official_ranking_finals
-    (region,board_key,event_id,due_at_ms,event_json,catalog_observed_at_ms,last_attempt_at_ms)
-    SELECT region,?,event_id,due_at_ms,event_json,catalog_observed_at_ms,? FROM official_ranking_finals
-    WHERE region=? AND board_key=? ON CONFLICT(region,board_key) DO UPDATE SET
-      last_attempt_at_ms=MAX(official_ranking_finals.last_attempt_at_ms,excluded.last_attempt_at_ms)`)
-    .bind(`event-window/${observation.eventId}/${observation.startRank}`, observation.observedAtMs,
-      observation.region, `event/${observation.eventId}/point/`).run();
-  const payload = previous ? { key: previous.payload_key, statements: [] } : await prepareObservationPayload(env, observation, "event-window", body, hash);
+  if (previous) return false;
+  const board = `event/${observation.eventId}`;
+  const stored = await unchangedEventWindow(db, board, observation);
+  if (stored) {
+    await db.batch([
+      eventFinalAttempt(db, observation),
+      db.prepare("UPDATE official_event_window_metadata SET observed_at_ms=? WHERE region=? AND event_id=? AND start_rank=? AND observed_at_ms<?")
+        .bind(observation.observedAtMs, observation.region, observation.eventId, observation.startRank, observation.observedAtMs),
+    ]);
+    await retainUnchangedWindow(db, "official_ranking_finals", `event-window/${observation.eventId}/${observation.startRank}`, observation, stored);
+    return false;
+  }
+  await eventFinalAttempt(db, observation).run();
+  const payload = await prepareObservationPayload(env, observation, "event-window", body, hash);
   const key = payload.key;
-  if (!previous) {
-    await db.batch([...payload.statements, db.prepare(`INSERT INTO official_event_window_observations
+  await db.batch([...payload.statements, db.prepare(`INSERT INTO official_event_window_observations
       (region, snapshot_id, event_id, start_rank, end_rank, max_rank, observed_at_ms, payload_key, payload_hash, error)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(region, snapshot_id) DO NOTHING`)
       .bind(observation.region, observation.snapshotId, observation.eventId, observation.startRank, observation.endRank,
         observation.maxRank ?? null, observation.observedAtMs, key, hash, observation.error ?? null)]);
-  }
-  if (observation.error || !observation.players) return;
+  if (observation.error || !observation.players) return true;
   const profiles: Record<string, number> = {};
   observation.players.forEach((player, index) => {
     const profile = player.profile as Record<string, unknown> | undefined;
     const id = profile?.profile_id ?? profile?.profileId;
-    if (typeof id === "string" && /^[1-9][0-9]{0,18}$/u.test(id)) profiles[id] = observation.startRank + index;
+    if (typeof id === "string" && /^[1-9][0-9]{0,19}$/u.test(id)) profiles[id] = observation.startRank + index;
   });
   const replaced = await db.prepare(`SELECT snapshot_id, payload_key, observed_at_ms FROM official_event_window_metadata
     WHERE region = ? AND event_id = ? AND start_rank = ?`)
@@ -679,9 +764,10 @@ export async function saveOfficialEventWindow(env: OfficialRankingStoreBindings,
     WHERE excluded.observed_at_ms >= official_event_window_metadata.observed_at_ms`)
     .bind(observation.region, observation.eventId, observation.startRank, observation.endRank, observation.maxRank ?? null,
       observation.players.length, JSON.stringify(profiles), observation.snapshotId, observation.observedAtMs, key, hash).run();
-  await saveRankingSearchWindow(db, observation.region, `event/${observation.eventId}`, observation, observation.players);
+  await saveRankingSearchWindow(db, observation.region, board, observation, observation.players);
   await saveDailyObservation(db, `event-window/${observation.eventId}/${observation.startRank}`, observation, key, hash);
   if (replaced) await dropReplaced(env, "official_event_window_observations", observation, replaced);
+  return true;
 }
 
 export interface OfficialEventWindowMetadata {

@@ -11,7 +11,11 @@ import { renderLazyEntityCommentActivity } from "./views/entity-comment-activity
 import "../styles/home-community-comments.css";
 import { CommunityReactions } from "../lib/community-reaction";
 import { navigateDetailPage } from "../lib/detail-navigation";
-import { communityRecommendationItems, isEntityCommentRecommendation, entityCommentRecommendationHref } from "../lib/community-recommendations";
+import {
+  communityRecommendationItems,
+  isEntityCommentRecommendation,
+  entityCommentRecommendationHref,
+} from "../lib/community-recommendations";
 import { initializeI18nClient } from "../i18n/client";
 import type { Catalog, MessageParams } from "@haneoka/i18n";
 import { readCommunityViewer, type CommunityViewer } from "../lib/community-viewer";
@@ -25,8 +29,23 @@ import { crossCatalogRows } from "../lib/cross-server/definitions";
 import { announcementText } from "./shared/announcement";
 import type { Announcement } from "../lib/announcements";
 import type { Locale } from "../i18n/locales";
-import { ARENA_PROJECTION, arenaBoundaries, arenaContains, arenaCurrentRule, arenaPeriods, arenaRuleMarkNames, compactArenaCatalog, type ArenaCatalog } from "../lib/arena";
-import { arenaAttribute, arenaMission, arenaRuleText, type ArenaRuleContext, type ArenaRuleView } from "./shared/arena-rule";
+import {
+  ARENA_PROJECTION,
+  arenaBoundaries,
+  arenaContains,
+  arenaCurrentRule,
+  arenaPeriods,
+  arenaRuleMarkNames,
+  compactArenaCatalog,
+  type ArenaCatalog,
+} from "../lib/arena";
+import {
+  arenaAttribute,
+  arenaMission,
+  arenaRuleText,
+  type ArenaRuleContext,
+  type ArenaRuleView,
+} from "./shared/arena-rule";
 import { clientText } from "../i18n/client";
 import { japanDay, openSeasons } from "../lib/themes";
 import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
@@ -84,47 +103,46 @@ import { backdropPress, isBackdropClick } from "./ui/modal";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "spanDays": "common.time.spanDays",
-  "spanHours": "common.time.spanHours",
-  "spanMinutes": "common.time.spanMinutes",
-  "startsIn": "common.time.startsIn",
-  "endsIn": "common.time.endsIn",
-  "endedAgo": "common.time.endedAgo",
-  "releasedToday": "common.time.releasedToday",
-  "releasedAgo": "common.time.releasedAgo",
-  "releasesIn": "common.time.releasesIn",
-  "banners": "home.events.banners",
-  "noBanner": "home.events.noBanner",
-  "noEndDate": "home.events.noEndDate",
-  "noEvent": "home.events.noEvent",
-  "voicesRole": "media.voice.role",
-  "ongoing": "catalog.systems.common.ongoing",
-  "attribute": "catalog.fields.attribute",
-  "band": "catalog.fields.band",
-  "bands": "catalog.fields.bands",
-  "cards": "navigation.cards",
-  "character": "catalog.fields.character",
-  "characters": "navigation.characters",
-  "community": "navigation.community",
-  "empty": "common.states.empty",
-  "error": "common.states.error",
-  "eventStory": "story.labels.eventStory",
-  "events": "navigation.events",
-  "gacha": "navigation.gacha",
-  "live": "catalog.songs.fields.live",
-  "loading": "common.states.loading",
-  "moveDown": "common.actions.moveDown",
-  "moveUp": "common.actions.moveUp",
-  "next": "common.actions.next",
-  "previous": "common.actions.previous",
-  "server": "settings.labels.server",
-  "songs": "navigation.songs",
-  "stories": "navigation.stories",
-  "support": "navigation.support",
-  "title": "common.fields.title",
-  "unavailable": "common.states.unavailable"
+  spanDays: "common.time.spanDays",
+  spanHours: "common.time.spanHours",
+  spanMinutes: "common.time.spanMinutes",
+  startsIn: "common.time.startsIn",
+  endsIn: "common.time.endsIn",
+  endedAgo: "common.time.endedAgo",
+  releasedToday: "common.time.releasedToday",
+  releasedAgo: "common.time.releasedAgo",
+  releasesIn: "common.time.releasesIn",
+  banners: "home.events.banners",
+  noBanner: "home.events.noBanner",
+  noEndDate: "home.events.noEndDate",
+  noEvent: "home.events.noEvent",
+  voicesRole: "media.voice.role",
+  ongoing: "catalog.systems.common.ongoing",
+  attribute: "catalog.fields.attribute",
+  band: "catalog.fields.band",
+  bands: "catalog.fields.bands",
+  cards: "navigation.cards",
+  character: "catalog.fields.character",
+  characters: "navigation.characters",
+  community: "navigation.community",
+  empty: "common.states.empty",
+  error: "common.states.error",
+  eventStory: "story.labels.eventStory",
+  events: "navigation.events",
+  gacha: "navigation.gacha",
+  live: "catalog.songs.fields.live",
+  loading: "common.states.loading",
+  moveDown: "common.actions.moveDown",
+  moveUp: "common.actions.moveUp",
+  next: "common.actions.next",
+  previous: "common.actions.previous",
+  server: "settings.labels.server",
+  songs: "navigation.songs",
+  stories: "navigation.stories",
+  support: "navigation.support",
+  title: "common.fields.title",
+  unavailable: "common.states.unavailable",
 };
-
 
 type ModuleId = "songs" | "cards" | "birthdays" | "community" | "arena" | "fanInfo";
 export interface HomeFanInfo {
@@ -297,7 +315,10 @@ export class HomeDashboard extends LitElement {
   private fitObserved = new Set<Element>();
   private slideTimer?: number;
   private clockTimer?: number;
-  private contentAccessChanged = () => { this.crossServerCatalogs = {}; void this.load(); };
+  private contentAccessChanged = () => {
+    this.crossServerCatalogs = {};
+    void this.load();
+  };
   /** False only for the invisible wrap jump between the clone and slide 0. */
   private slideAnimated = true;
   private localeListener = (event: Event) => {
@@ -397,7 +418,11 @@ export class HomeDashboard extends LitElement {
     )
       this.birthdaySelection = "";
     this.scheduleBirthdayRefresh();
-    if (changed.has("locale")) { this.syncAction(); this.communityReactions.clear(); this.communityMessages = undefined; }
+    if (changed.has("locale")) {
+      this.syncAction();
+      this.communityReactions.clear();
+      this.communityMessages = undefined;
+    }
     this.lazyImages.observe(this);
     this.syncCarousel();
     for (const element of this.fitObserved)
@@ -416,9 +441,16 @@ export class HomeDashboard extends LitElement {
     if (this.clockTimer) window.clearTimeout(this.clockTimer);
     if (!this.isConnected) return;
     const now = Date.now();
-    const boundaries = [...this.events.flatMap((event) => [event.startAt, event.endAt]), ...this.banners.map((banner) => banner.endAt)]
-      .map((at) => relativeTimestamp(at)).filter((at): at is number => at !== undefined && at > now);
-    const refreshAt = boundaries.reduce((next, at) => Math.min(next, at), birthdayRefreshAt(now, this.birthdayRecruitments()));
+    const boundaries = [
+      ...this.events.flatMap((event) => [event.startAt, event.endAt]),
+      ...this.banners.map((banner) => banner.endAt),
+    ]
+      .map((at) => relativeTimestamp(at))
+      .filter((at): at is number => at !== undefined && at > now);
+    const refreshAt = boundaries.reduce(
+      (next, at) => Math.min(next, at),
+      birthdayRefreshAt(now, this.birthdayRecruitments()),
+    );
     this.clockTimer = window.setTimeout(
       () => {
         this.clockTimer = undefined;
@@ -517,7 +549,10 @@ export class HomeDashboard extends LitElement {
     return catalog
       ? releasedCatalog(catalog).entries.map((entry) => ({
           ...(resource === "events"
-            ? pinCrossCatalogValue(homeEventDisplay({ ...entry.perServer[entry.displayServer]!.row, ...entry.nameOverrides }), entry.perServer[entry.displayServer]!.identity) as JsonRecord
+            ? (pinCrossCatalogValue(
+                homeEventDisplay({ ...entry.perServer[entry.displayServer]!.row, ...entry.nameOverrides }),
+                entry.perServer[entry.displayServer]!.identity,
+              ) as JsonRecord)
             : crossServerDisplayRow(entry)),
           homeCatalogEntry: entry,
           homeSourceServer: entry.displayServer,
@@ -540,9 +575,11 @@ export class HomeDashboard extends LitElement {
     if (entry) return crossServerDetail(entry, server as OfficialCatalogServer).row;
     const source = this.sourceRelations.characters[server]?.get(id);
     if (source) return source;
-    return (server === this.sourceServer()
-      ? this.characters.find((person) => Number(person.characterId) === id)
-      : undefined) || values(row.characterDetails).find((person) => Number(person.characterId) === id);
+    return (
+      (server === this.sourceServer()
+        ? this.characters.find((person) => Number(person.characterId) === id)
+        : undefined) || values(row.characterDetails).find((person) => Number(person.characterId) === id)
+    );
   }
   private relationshipBand(id: unknown, row: JsonRecord) {
     const server = this.rowServer(row);
@@ -554,28 +591,33 @@ export class HomeDashboard extends LitElement {
     if (entry) return crossServerDetail(entry, server as OfficialCatalogServer).row;
     const source = this.sourceRelations.bands[server]?.get(Number(id));
     if (source) return source;
-    return server === this.sourceServer()
-      ? this.bands.find((band) => Number(band.bandId) === Number(id))
-      : undefined;
+    return server === this.sourceServer() ? this.bands.find((band) => Number(band.bandId) === Number(id)) : undefined;
   }
   private readonly songPerformers = new Map<string, PerformerRegistry>();
   private songPerformer(row: JsonRecord) {
     const server = this.rowServer(row);
-    const pin = (row.homeCatalogEntry as CrossCatalogEntry | undefined)?.perServer[server as OfficialCatalogServer]?.identity;
+    const pin = (row.homeCatalogEntry as CrossCatalogEntry | undefined)?.perServer[server as OfficialCatalogServer]
+      ?.identity;
     const key = JSON.stringify([server, pin?.releaseId ?? this.seed?.releaseId, pin?.sourceId]);
     let registry = this.songPerformers.get(key);
     if (!registry) {
       const ids = (resource: "bands" | "characters", field: string, fallback: JsonRecord[]) => [
         ...new Set([
           ...fallback.map((entry) => Number(entry[field])),
-          ...(this.crossServerCatalogs[resource]?.entries ?? []).map((entry) => Number(entry.perServer[server as OfficialCatalogServer]?.row[field])),
+          ...(this.crossServerCatalogs[resource]?.entries ?? []).map((entry) =>
+            Number(entry.perServer[server as OfficialCatalogServer]?.row[field]),
+          ),
           ...(this.sourceRelations[resource][server]?.keys() ?? []),
         ]),
       ];
       registry = createPerformerRegistry({
-        game: "our-notes", server, sourceId: pin?.sourceId,
+        game: "our-notes",
+        server,
+        sourceId: pin?.sourceId,
         bands: ids("bands", "bandId", this.bands).flatMap((id) => this.relationshipBand(id, row) ?? []),
-        characters: ids("characters", "characterId", this.characters).flatMap((id) => this.relationshipCharacter(id, row) ?? []),
+        characters: ids("characters", "characterId", this.characters).flatMap(
+          (id) => this.relationshipCharacter(id, row) ?? [],
+        ),
       });
       this.songPerformers.set(key, registry);
     }
@@ -613,7 +655,11 @@ export class HomeDashboard extends LitElement {
 
   /* ---------- copy ---------- */
   private text(key: string, fallback: string) {
-    return clientText(this.locale, (uiLabelPaths[key] ?? key), clientText(this.locale, `home.dashboard.${key}`, fallback));
+    return clientText(
+      this.locale,
+      uiLabelPaths[key] ?? key,
+      clientText(this.locale, `home.dashboard.${key}`, fallback),
+    );
   }
   private count(value: number) {
     return value.toLocaleString(this.locale);
@@ -800,18 +846,27 @@ export class HomeDashboard extends LitElement {
     const server = this.sourceServer();
     const locale = this.locale;
     const signal = this.liveRequests.begin();
-    const currentPanel = () => this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
+    const currentPanel = () =>
+      this.isConnected && this.liveRequests.current(signal) && server === this.sourceServer() && locale === this.locale;
     const newsWork = (async () => {
       if (this.arena?.server === server) return;
-      const catalog = await fetchJson<ArenaCatalog>(`${catalogUrl("arena", "", server)}?projection=${ARENA_PROJECTION}`, { signal });
+      const catalog = await fetchJson<ArenaCatalog>(
+        `${catalogUrl("arena", "", server)}?projection=${ARENA_PROJECTION}`,
+        { signal },
+      );
       const marksUrl = new URL(catalogUrl("ui-marks", "", server), location.origin);
       marksUrl.searchParams.set("release", catalog.identity.releaseId);
       const marks = await fetchJson<Record<string, string>>(marksUrl.toString(), { signal });
-      if (currentPanel()) this.arena = { catalog: compactArenaCatalog(catalog), marks: arenaRuleMarkNames(marks), server };
+      if (currentPanel())
+        this.arena = { catalog: compactArenaCatalog(catalog), marks: arenaRuleMarkNames(marks), server };
     })().catch(() => undefined);
     try {
       if (!communityVisible()) return;
-      const bootstrap = await readCommunityBootstrap<JsonRecord>("/api/v1/community/posts?" + new URLSearchParams({limit:"5",scope:"recommended",kind:"post",server,locale}), signal);
+      const bootstrap = await readCommunityBootstrap<JsonRecord>(
+        "/api/v1/community/posts?" +
+          new URLSearchParams({ limit: "5", scope: "recommended", kind: "post", server, locale }),
+        signal,
+      );
       if (!currentPanel()) return;
       const viewer = bootstrap.viewer;
       if (this.communityViewer && this.communityViewer.realm !== viewer.realm) this.posts = [];
@@ -825,13 +880,15 @@ export class HomeDashboard extends LitElement {
         this.communityPhase = "error";
         return;
       }
-      this.posts = Array.isArray(posts.posts) ? posts.posts as JsonRecord[] : [];
+      this.posts = Array.isArray(posts.posts) ? (posts.posts as JsonRecord[]) : [];
       this.communityPhase = "ready";
     } catch (error) {
       if (!currentPanel()) return;
       this.posts = [];
       this.communityPhase = "error";
-    } finally { await newsWork; }
+    } finally {
+      await newsWork;
+    }
   }
   private readonly onCommunityContextChange = () => {
     this.liveRequests.cancel();
@@ -867,7 +924,8 @@ export class HomeDashboard extends LitElement {
     if (type === 2) return entity("gacha", content);
     if (type === 3) return entity("exchange", content);
     if (type === 4) return entity("shop", content);
-    if (type === 11) return entity("exchange", /Exchange\/Banner\/Banner_(\d+)/u.exec(String(entry.image || ""))?.[1] ?? "");
+    if (type === 11)
+      return entity("exchange", /Exchange\/Banner\/Banner_(\d+)/u.exec(String(entry.image || ""))?.[1] ?? "");
     if (type === 16) return `/${server}/${locale}/arena/`;
     if (type === 24) return `/${server}/${locale}/missions/`;
     if (type === 25) return entity("passes", content ? `season-${content}` : "");
@@ -930,7 +988,8 @@ export class HomeDashboard extends LitElement {
     track.style.transform = `translateX(${-100 * position}%)`;
     const selected = total > 1 ? (position - 1 + total) % total : 0;
     this.querySelectorAll(".home-carousel__dots button").forEach((button, index) =>
-      button.setAttribute("aria-selected", String(index === selected)));
+      button.setAttribute("aria-selected", String(index === selected)),
+    );
     track.querySelectorAll<HTMLImageElement>(".home-carousel__slide > img").forEach((image, index) => {
       image.loading = index === position ? "eager" : "lazy";
     });
@@ -998,10 +1057,12 @@ export class HomeDashboard extends LitElement {
     this.persist();
   }
   private layoutOrder() {
-    return this.order.filter(id => id !== "community" || communityVisible());
+    return this.order.filter((id) => id !== "community" || communityVisible());
   }
   private canMove(id: ModuleId, delta: number) {
-    const order = this.layoutOrder(), from = order.indexOf(id), to = from + delta;
+    const order = this.layoutOrder(),
+      from = order.indexOf(id),
+      to = from + delta;
     return from >= 0 && to >= 0 && to < order.length;
   }
   private toggle(id: ModuleId) {
@@ -1049,7 +1110,9 @@ export class HomeDashboard extends LitElement {
     if (upcoming) return { entry: upcoming, resource: "events", ending: false };
     const ended = this.events
       .filter((entry) => entry.endAt > 0 && entry.endAt < now)
-      .sort((a, b) => b.endAt - a.endAt || b.startAt - a.startAt || b.id.localeCompare(a.id, "en", { numeric: true }))[0];
+      .sort(
+        (a, b) => b.endAt - a.endAt || b.startAt - a.startAt || b.id.localeCompare(a.id, "en", { numeric: true }),
+      )[0];
     return ended ? { entry: ended, resource: "events", ending: false } : null;
   }
   private characterFor(slug: string, names: readonly string[]) {
@@ -1076,9 +1139,11 @@ export class HomeDashboard extends LitElement {
         names = profile.name as string[] | undefined;
       const match = birthdays?.[0]?.match(/^(\d{1,2})月(\d{1,2})日$/);
       if (!match || !names) return [];
-      const catalog = this.characterFor(String(profile.slug || ""), names) ||
-        [...(this.sourceRelations.characters[this.sourceServer()]?.values() || [])].find((row) =>
-          Array.isArray(row.characterName) && row.characterName.some((name) => names.includes(String(name))));
+      const catalog =
+        this.characterFor(String(profile.slug || ""), names) ||
+        [...(this.sourceRelations.characters[this.sourceServer()]?.values() || [])].find(
+          (row) => Array.isArray(row.characterName) && row.characterName.some((name) => names.includes(String(name))),
+        );
       if (!isContentVisible("characters", catalog || {})) return [];
       const band = this.bands.find((entry) => Number(entry.bandId) === Number(catalog?.bandId));
       return [
@@ -1245,7 +1310,8 @@ export class HomeDashboard extends LitElement {
                     }}
                     @pointerup=${(event: PointerEvent) => {
                       const from = this.swipeFrom;
-                      if (from !== undefined && Math.abs(event.clientX - from) > 40) this.step(event.clientX < from ? 1 : -1);
+                      if (from !== undefined && Math.abs(event.clientX - from) > 40)
+                        this.step(event.clientX < from ? 1 : -1);
                     }}
                     @pointercancel=${() => {
                       this.swipeFrom = undefined;
@@ -1273,7 +1339,8 @@ export class HomeDashboard extends LitElement {
                                   @click=${() => {
                                     if ((this.slide - 1 + banners.length) % banners.length === index) return;
                                     this.slideAnimated = true;
-                                    this.slide = index === 0 && this.slide === banners.length ? banners.length + 1 : index + 1;
+                                    this.slide =
+                                      index === 0 && this.slide === banners.length ? banners.length + 1 : index + 1;
                                     this.syncCarousel();
                                   }}
                                 ></button>
@@ -1325,18 +1392,34 @@ export class HomeDashboard extends LitElement {
     const eventServer = event?.sourceServer ?? this.sourceServer();
     // A restricted edition has no page of its own; its spotlight stays unlinked.
     const eventPage = isPublicReleaseServer(eventServer) ? eventServer : undefined;
-    const eventHref = event && eventPage
-      ? entityHref({ server: eventPage, locale: this.locale as Locale, kind: "events", id: event.id })
-      : "";
+    const eventHref =
+      event && eventPage
+        ? entityHref({ server: eventPage, locale: this.locale as Locale, kind: "events", id: event.id })
+        : "";
     const trackerHref = eventPage ? `/${eventPage}/${this.locale}/events/tracker/` : "";
-    const storyHref = eventPage && event
-      ? event.details.homeStoryId
-        ? entityHref({ server: eventPage, locale: this.locale as Locale, kind: "stories", id: String(event.details.homeStoryId) })
-        : resourceCollectionHref("/catalog/stories/event", eventPage, this.locale as Locale)
-      : "";
+    const storyHref =
+      eventPage && event
+        ? event.details.homeStoryId
+          ? entityHref({
+              server: eventPage,
+              locale: this.locale as Locale,
+              kind: "stories",
+              id: String(event.details.homeStoryId),
+            })
+          : resourceCollectionHref("/catalog/stories/event", eventPage, this.locale as Locale)
+        : "";
     const mark = event ? this.exclusiveMark(event.details) : null;
     const markImage = mark
-      ? html`<img class="catalog-server-availability" src=${mark.image} alt=${mark.label} title=${mark.label} width="18" height="18" />`
+      ? html`
+          <img
+            class="catalog-server-availability"
+            src=${mark.image}
+            alt=${mark.label}
+            title=${mark.label}
+            width="18"
+            height="18"
+          />
+        `
       : nothing;
     const title = event ? localizedText(event.details.title, this.locale) || event.title : "";
     const countdown = event ? this.eventPhrase(event.startAt, event.endAt) : "";
@@ -1351,7 +1434,13 @@ export class HomeDashboard extends LitElement {
           .filter((target) => target && typeof target === "object")
           .map((target) => [
             String(target.homeTargetKind || target.kind) +
-              String(target.resourceId || target.bandId || target.characterId || target.cardType || localizedText(target.name, this.locale)),
+              String(
+                target.resourceId ||
+                  target.bandId ||
+                  target.characterId ||
+                  target.cardType ||
+                  localizedText(target.name, this.locale),
+              ),
             target,
           ]),
       ).values(),
@@ -1359,7 +1448,9 @@ export class HomeDashboard extends LitElement {
     const bonusTargets = unique
       .filter((target) => target.homeTargetKind === "band" || target.homeTargetKind === "attribute")
       .map((target) => {
-        const band = event ? this.relationshipBand(target.bandId, event.details) : this.bands.find((entry) => Number(entry.bandId) === Number(target.bandId));
+        const band = event
+          ? this.relationshipBand(target.bandId, event.details)
+          : this.bands.find((entry) => Number(entry.bandId) === Number(target.bandId));
         const source = String(
           (target.homeTargetKind === "band"
             ? band?.icon || target.icon
@@ -1397,42 +1488,60 @@ export class HomeDashboard extends LitElement {
           return variant ? [variant.row] : [];
         }) ?? this.characters)
       : [...(this.sourceRelations.characters[eventServer]?.values() ?? [])];
-    const characterRows = sourceCharacters
-      .filter((character) =>
-        unique.some((target) =>
+    const characterRows = sourceCharacters.filter((character) =>
+      unique.some(
+        (target) =>
           (target.homeTargetKind === "band" && Number(target.bandId) === Number(character.bandId)) ||
-          (target.homeTargetKind === "character" && Number(target.characterId || target.resourceId) === Number(character.characterId)),
-        ),
-      );
+          (target.homeTargetKind === "character" &&
+            Number(target.characterId || target.resourceId) === Number(character.characterId)),
+      ),
+    );
     const stackedCharacters = characterRows.length > 5;
     const bonusCharacters = characterRows.map((character) => {
-        const name = localizedText(character.characterName, this.locale);
-        const content = html`
-          <img
-            src=${String(character.faceImage || character.thumbnailImage || CHARACTER_AVATAR(character.characterId))}
-            width="32"
-            height="32"
-            alt=""
-            loading="lazy"
-          />
-          ${stackedCharacters ? nothing : html`<span>${name}</span>`}
-        `;
-        return eventPage
-          ? html`
-              <a
-                class=${stackedCharacters ? nothing : "home-event__character"}
-                aria-label=${name}
-                title=${name}
-                href=${entityHref({ server: eventPage, locale: this.locale as Locale, kind: "characters", id: String(character.characterId) })}
-              >
-                ${content}
-              </a>
-            `
-          : html`<span class=${stackedCharacters ? nothing : "home-event__character"} aria-label=${name} title=${name}>${content}</span>`;
-      });
+      const name = localizedText(character.characterName, this.locale);
+      const content = html`
+        <img
+          src=${String(character.faceImage || character.thumbnailImage || CHARACTER_AVATAR(character.characterId))}
+          width="32"
+          height="32"
+          alt=""
+          loading="lazy"
+        />
+        ${
+            stackedCharacters
+              ? nothing
+              : html`
+                  <span>${name}</span>
+                `
+          }
+      `;
+      return eventPage
+        ? html`
+            <a
+              class=${stackedCharacters ? nothing : "home-event__character"}
+              aria-label=${name}
+              title=${name}
+              href=${entityHref({ server: eventPage, locale: this.locale as Locale, kind: "characters", id: String(character.characterId) })}
+            >
+              ${content}
+            </a>
+          `
+        : html`
+            <span class=${stackedCharacters ? nothing : "home-event__character"} aria-label=${name} title=${name}>
+              ${content}
+            </span>
+          `;
+    });
     const bonusContents = html`
-      <div class=${"home-event__targets" + (bonusTargets.length > 2 ? " home-event__targets--many" : "")}>${bonusTargets}</div>
-      <div class=${"home-event__characters" + (stackedCharacters ? " avatar-stack home-event__characters--many" : "")} style=${stackedCharacters ? "--avatar-stack-count:" + characterRows.length : nothing}>${bonusCharacters}</div>
+      <div class=${"home-event__targets" + (bonusTargets.length > 2 ? " home-event__targets--many" : "")}>
+        ${bonusTargets}
+      </div>
+      <div
+        class=${"home-event__characters" + (stackedCharacters ? " avatar-stack home-event__characters--many" : "")}
+        style=${stackedCharacters ? "--avatar-stack-count:" + characterRows.length : nothing}
+      >
+        ${bonusCharacters}
+      </div>
     `;
     return html`
       <section class="home-card home-event" aria-labelledby="home-event-title">
@@ -1467,8 +1576,12 @@ export class HomeDashboard extends LitElement {
                       <h3>
                         ${
                           eventHref
-                            ? html`<a href=${eventHref}>${title}${markImage}</a>`
-                            : html`<span>${title}${markImage}</span>`
+                            ? html`
+                                <a href=${eventHref}>${title}${markImage}</a>
+                              `
+                            : html`
+                                <span>${title}${markImage}</span>
+                              `
                         }
                       </h3>
                       <p class="home-event__range">
@@ -1496,7 +1609,10 @@ export class HomeDashboard extends LitElement {
                     ${
                       eventHref
                         ? html`
-                            <nav class="button-group home-event__links" aria-label=${uiText(this.locale, "navigation.events")}>
+                            <nav
+                              class="button-group home-event__links"
+                              aria-label=${uiText(this.locale, "navigation.events")}
+                            >
                               <a
                                 class="button button--tonal home-event__action"
                                 href=${eventHref}
@@ -1614,8 +1730,7 @@ export class HomeDashboard extends LitElement {
                         } as Record<number, string>
                       )[Number(card.cardType)] || "",
                     ) || "";
-                  const rarityName =
-                    cardRarityName(card.rarity);
+                  const rarityName = cardRarityName(card.rarity);
                   const rarity = this.marksFor(card).get(`RarityIconCenter_${rarityName}.png`) || "";
                   const images = (card.images || {}) as JsonRecord;
                   const releasedAt = timestamp(card.releasedAt);
@@ -1630,14 +1745,19 @@ export class HomeDashboard extends LitElement {
                     label: [
                       title,
                       names,
-                      uiText(this.locale, kind === "member-cards" ? "navigation.memberCards" : "navigation.supportCards"),
+                      uiText(
+                        this.locale,
+                        kind === "member-cards" ? "navigation.memberCards" : "navigation.supportCards",
+                      ),
                       rarityName,
                       this.releaseLabel(releasedAt),
                     ]
                       .filter(Boolean)
                       .join(" / "),
                     kind: kind === "member-cards" ? "member" : "support",
-                    fit: "contain",
+                    // Snapshot art letterboxes badly in the square tile; crop
+                    // it like the catalog's square support tiles.
+                    fit: kind === "member-cards" ? "contain" : "cover",
                     adornment: related.adornment,
                     serverMark: this.exclusiveMark(card) ?? undefined,
                     image: String(images.thumbnail || card.thumbnail || card.image || ""),
@@ -1677,8 +1797,7 @@ export class HomeDashboard extends LitElement {
           ${leading}
           <span>${title}</span>
         </h2>
-        ${aside}
-        ${rail ? this.railButtons(rail) : nothing}
+        ${aside} ${rail ? this.railButtons(rail) : nothing}
       </header>
     `;
   }
@@ -1695,10 +1814,22 @@ export class HomeDashboard extends LitElement {
     };
     return html`
       <span class="home-card__rail-buttons">
-        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "common.actions.previous")} title=${uiText(this.locale, "common.actions.previous")} @click=${() => page(-1)}>
+        <button
+          class="icon-button"
+          type="button"
+          aria-label=${uiText(this.locale, "common.actions.previous")}
+          title=${uiText(this.locale, "common.actions.previous")}
+          @click=${() => page(-1)}
+        >
           ${icon("chevron_left", 24)}
         </button>
-        <button class="icon-button" type="button" aria-label=${uiText(this.locale, "common.actions.next")} title=${uiText(this.locale, "common.actions.next")} @click=${() => page(1)}>
+        <button
+          class="icon-button"
+          type="button"
+          aria-label=${uiText(this.locale, "common.actions.next")}
+          title=${uiText(this.locale, "common.actions.next")}
+          @click=${() => page(1)}
+        >
           ${icon("chevron_right", 24)}
         </button>
       </span>
@@ -1740,7 +1871,12 @@ export class HomeDashboard extends LitElement {
                     const songServer = this.rowServer(song);
                     // A restricted edition has no page of its own; its song stays a picture here.
                     const songHref = isPublicReleaseServer(songServer)
-                      ? entityHref({ server: songServer, locale: this.locale as Locale, kind: "songs", id: String(song.musicId || song.id) })
+                      ? entityHref({
+                          server: songServer,
+                          locale: this.locale as Locale,
+                          kind: "songs",
+                          id: String(song.musicId || song.id),
+                        })
                       : "";
                     const options = songTile(
                       song,
@@ -1753,7 +1889,10 @@ export class HomeDashboard extends LitElement {
                         image: (entry) => String(entry.jacketUrl || entry.jacketThumbUrl || ""),
                         artist: (entry) => resolveRelationshipText(this.songPerformer(entry).names, this.locale).text,
                         bandIcon: (entry) => String(this.relationshipBand(entry.bandId, entry)?.icon || ""),
-                        performerAdornment: (entry) => songPerformerAdornment(this.songPerformer(entry), (source) => localizedAssetUrl(source, this.locale)),
+                        performerAdornment: (entry) =>
+                          songPerformerAdornment(this.songPerformer(entry), (source) =>
+                            localizedAssetUrl(source, this.locale),
+                          ),
                         imageForLocale: (source) => localizedAssetUrl(source, this.locale),
                         attributeMark: (entry) => this.attributeMark(entry.musicType, entry),
                         attributeLabel: () => String(song.musicType || ""),
@@ -1897,13 +2036,23 @@ export class HomeDashboard extends LitElement {
     const items = this.birthdays();
     const choices = birthdayCharacterChoices(items.filter((item) => item.kind === "character"));
     const featured = choices.find((item) => this.birthdayChoiceKey(item) === this.birthdaySelection) || choices[0];
-    const nextFeatured = featured && choices.length > 1 ? choices[(choices.indexOf(featured) + 1) % choices.length] : undefined;
+    const nextFeatured =
+      featured && choices.length > 1 ? choices[(choices.indexOf(featured) + 1) % choices.length] : undefined;
     const recruitment = featured ? this.birthdayRecruitment(featured) : undefined;
     const recruitmentStatus = recruitment
-      ? this.text(recruitment.start > Date.now() ? "upcoming" : recruitment.end && recruitment.end <= Date.now() ? "ended" : "ongoing", "")
+      ? this.text(
+          recruitment.start > Date.now()
+            ? "upcoming"
+            : recruitment.end && recruitment.end <= Date.now()
+              ? "ended"
+              : "ongoing",
+          "",
+        )
       : "";
     const recruitmentTime = recruitment ? this.eventPhrase(recruitment.start, recruitment.end) : "";
-    const recruitmentLabel = [recruitmentStatus, recruitmentTime !== recruitmentStatus ? recruitmentTime : ""].filter(Boolean).join(" / ");
+    const recruitmentLabel = [recruitmentStatus, recruitmentTime !== recruitmentStatus ? recruitmentTime : ""]
+      .filter(Boolean)
+      .join(" / ");
     const story = featured ? this.birthdayStory(featured) : undefined;
     const card = featured ? this.birthdayCard(featured) : undefined;
     const sourceCard = card ? (this.seed?.documents.cards?.[String(card.cardId)] as JsonRecord | undefined) : undefined;
@@ -2027,8 +2176,14 @@ export class HomeDashboard extends LitElement {
         `
       : nothing;
     return html`
-      <section class="home-card home-info home-birthdays" data-recruitment=${!!recruitment} aria-labelledby="home-birthdays-title">
-        <h2 class="home-birthday-eyebrow" id="home-birthdays-title">${icon("cake", 16)}${this.text("birthdaysTitle", "Birthday countdown")}</h2>
+      <section
+        class="home-card home-info home-birthdays"
+        data-recruitment=${!!recruitment}
+        aria-labelledby="home-birthdays-title"
+      >
+        <h2 class="home-birthday-eyebrow" id="home-birthdays-title">
+          ${icon("cake", 16)}${this.text("birthdaysTitle", "Birthday countdown")}
+        </h2>
         ${
           featured
             ? html`
@@ -2101,7 +2256,13 @@ export class HomeDashboard extends LitElement {
                     </span>
                   </div>
                 </div>
-                ${recruitment ? html`<span class="home-birthday-recruitment">${recruitmentLabel}</span>` : nothing}
+                ${
+                  recruitment
+                    ? html`
+                        <span class="home-birthday-recruitment">${recruitmentLabel}</span>
+                      `
+                    : nothing
+                }
                 <div class="home-birthday-bottom">
                   ${avatars}
                   <nav class="home-birthday-actions" aria-label=${this.text("birthdaysTitle", "Birthday countdown")}>
@@ -2110,16 +2271,26 @@ export class HomeDashboard extends LitElement {
                       href=${resourceCollectionHref("/calendar", this.sourceServer(), this.locale as Locale)}
                       aria-label=${clientText(this.locale, "tools.calendar.title", "Calendar")}
                       title=${clientText(this.locale, "tools.calendar.title", "Calendar")}
-                    >${icon("event", 20)}</a>
-                    ${nextFeatured ? html`
-                      <button
-                        class="icon-button"
-                        type="button"
-                        aria-label=${`${clientText(this.locale, "common.actions.next", "Next")}: ${nextFeatured.name}`}
-                        title=${nextFeatured.name}
-                        @click=${() => { this.birthdaySelection = this.birthdayChoiceKey(nextFeatured); }}
-                      >${icon("chevron_right", 20)}</button>
-                    ` : nothing}
+                    >
+                      ${icon("event", 20)}
+                    </a>
+                    ${
+                      nextFeatured
+                        ? html`
+                            <button
+                              class="icon-button"
+                              type="button"
+                              aria-label=${`${clientText(this.locale, "common.actions.next", "Next")}: ${nextFeatured.name}`}
+                              title=${nextFeatured.name}
+                              @click=${() => {
+                          this.birthdaySelection = this.birthdayChoiceKey(nextFeatured);
+                        }}
+                            >
+                              ${icon("chevron_right", 20)}
+                            </button>
+                          `
+                        : nothing
+                    }
                     ${
                       story
                         ? html`
@@ -2146,7 +2317,10 @@ export class HomeDashboard extends LitElement {
   }
   private renderCommunity() {
     return html`
-      <section class=${`home-card home-info home-community${this.posts.slice(0, 2).some(isEntityCommentRecommendation) ? " home-community--comments" : ""}`} aria-labelledby="home-community-title">
+      <section
+        class=${`home-card home-info home-community${this.posts.slice(0, 2).some(isEntityCommentRecommendation) ? " home-community--comments" : ""}`}
+        aria-labelledby="home-community-title"
+      >
         ${this.moduleHeader(
           icon("forum"),
           this.text("communityTitle", "Trending community"),
@@ -2162,38 +2336,46 @@ export class HomeDashboard extends LitElement {
             </a>
           `,
         )}
-        ${this.communityCommentError ? html`<div class="inline-message error" role="alert">${this.communityCommentError}</div>` : nothing}
+        ${
+          this.communityCommentError
+            ? html`
+                <div class="inline-message error" role="alert">${this.communityCommentError}</div>
+              `
+            : nothing
+        }
         ${
           this.posts.length
             ? html`
                 <ol class="community-hot-list home-info__body" data-home-fit role="list">
-                  ${this.posts.slice(0, this.posts.some(isEntityCommentRecommendation) ? 2 : 8).map(
-                    (post, index) => isEntityCommentRecommendation(post)
-                      ? html`<li>${this.renderRecommendedComment(post)}</li>`
+                  ${this.posts.slice(0, this.posts.some(isEntityCommentRecommendation) ? 2 : 8).map((post, index) =>
+                    isEntityCommentRecommendation(post)
+                      ? html`
+                          <li>${this.renderRecommendedComment(post)}</li>
+                        `
                       : html`
-                      <li class=${index === 0 ? "home-community-lead" : ""}>
-                        <a class="list-item list-item--interactive" href=${`/community/posts/${post.id}`}>
-                          <span class="list-item__marker tabular" aria-hidden="true">${index + 1}</span>
-                          <span class="list-item__body">
-                            <span class="list-item__headline">${String(post.title || post.excerpt || "—")}</span>
-                            ${
+                          <li class=${index === 0 ? "home-community-lead" : ""}>
+                            <a class="list-item list-item--interactive" href=${`/community/posts/${post.id}`}>
+                              <span class="list-item__marker tabular" aria-hidden="true">${index + 1}</span>
+                              <span class="list-item__body">
+                                <span class="list-item__headline">${String(post.title || post.excerpt || "—")}</span>
+                                ${
                               index === 0 && post.excerpt && post.excerpt !== post.title
                                 ? html`
                                     <span class="home-community-excerpt">${String(post.excerpt)}</span>
                                   `
                                 : nothing
                             }
-                            <span class="list-item__supporting">
-                              ${String(post.authorName || "")}${post.createdAt ? ` / ${this.formatDate(String(post.lastEditedAt || post.createdAt))}` : ""}
-                            </span>
-                          </span>
-                          <span class="list-item__meta community-hot-list__score tabular">
-                            ${icon("favorite", 16)}${Number(post.likeCount || 0)}
-                            ${icon("chat_bubble", 16)}${Number(post.commentCount || 0)}
-                          </span>
-                        </a>
-                      </li>
-                    `,
+                                <span class="list-item__supporting">
+                                  ${String(post.authorName || "")}${post.createdAt ? ` / ${this.formatDate(String(post.lastEditedAt || post.createdAt))}` : ""}
+                                </span>
+                              </span>
+                              <span class="list-item__meta community-hot-list__score tabular">
+                                ${icon("favorite", 16)}${Number(post.likeCount || 0)}
+                                ${icon("chat_bubble", 16)}${Number(post.commentCount || 0)}
+                              </span>
+                            </a>
+                          </li>
+                        `,
                   )}
                 </ol>
               `
@@ -2214,10 +2396,14 @@ export class HomeDashboard extends LitElement {
   private renderArenaRule(context: ArenaRuleContext, rule: ArenaRuleView, next: boolean) {
     const words = arenaRuleText(this.locale, rule);
     return html`
-      <span class=${`home-arena__rule${next ? " home-arena__rule--next" : ""}`} title=${next ? `${clientText(this.locale, "catalog.arena.nextRotation", "Next rotation")}: ${words}` : words}>
-        ${next ? icon("arrow_forward", 12) : nothing}
-        ${arenaAttribute(context, rule.musicType, next ? 16 : 18)}
-        <span class="home-arena__rule-icons">${[...new Set(rule.missions)].map((mission) => arenaMission(context, mission, 16))}</span>
+      <span
+        class=${`home-arena__rule${next ? " home-arena__rule--next" : ""}`}
+        title=${next ? `${clientText(this.locale, "catalog.arena.nextRotation", "Next rotation")}: ${words}` : words}
+      >
+        ${next ? icon("arrow_forward", 12) : nothing} ${arenaAttribute(context, rule.musicType, next ? 16 : 18)}
+        <span class="home-arena__rule-icons">
+          ${[...new Set(rule.missions)].map((mission) => arenaMission(context, mission, 16))}
+        </span>
         <span class="home-arena__rule-words">${words}</span>
       </span>
     `;
@@ -2227,17 +2413,27 @@ export class HomeDashboard extends LitElement {
     const link = isPublicReleaseServer(server) ? `/${server}/${this.locale}/arena/` : "";
     const arena = this.arena;
     const now = Date.now();
-    const seasons = Object.values(arena?.catalog.entries || {}).filter(isReleasedContent).sort((a, b) => a.startAt - b.startAt);
+    const seasons = Object.values(arena?.catalog.entries || {})
+      .filter(isReleasedContent)
+      .sort((a, b) => a.startAt - b.startAt);
     const season =
-      seasons.find((entry) => arenaContains(entry, now)) || seasons.find((entry) => entry.startAt > now) || seasons.at(-1);
-    const context = arena && season ? { locale: this.locale, server: arena.server, catalog: arena.catalog, marks: arena.marks } : null;
+      seasons.find((entry) => arenaContains(entry, now)) ||
+      seasons.find((entry) => entry.startAt > now) ||
+      seasons.at(-1);
+    const context =
+      arena && season
+        ? { locale: this.locale, server: arena.server, catalog: arena.catalog, marks: arena.marks }
+        : null;
     const span = (until: number) => {
       const minutes = Math.max(0, Math.round((until - now) / 60000));
       const days = Math.floor(minutes / 1440),
         hours = Math.floor((minutes % 1440) / 60);
       return days
         ? clientText(this.locale, "catalog.arena.remainingDays", "{days}d {hours}h", { days, hours })
-        : clientText(this.locale, "catalog.arena.remainingHours", "{hours}h {minutes}m", { hours, minutes: minutes % 60 });
+        : clientText(this.locale, "catalog.arena.remainingHours", "{hours}h {minutes}m", {
+            hours,
+            minutes: minutes % 60,
+          });
     };
     const live = season ? arenaContains(season, now) : false;
     const nextChange = season
@@ -2254,7 +2450,12 @@ export class HomeDashboard extends LitElement {
           "home-arena-title",
           link
             ? html`
-                <a class="icon-button" href=${link} aria-label=${this.text("viewAll", "View all")} title=${this.text("viewAll", "View all")}>
+                <a
+                  class="icon-button"
+                  href=${link}
+                  aria-label=${this.text("viewAll", "View all")}
+                  title=${this.text("viewAll", "View all")}
+                >
                   ${icon("arrow_forward", 20)}
                 </a>
               `
@@ -2270,9 +2471,23 @@ export class HomeDashboard extends LitElement {
                   </span>
                   <span class="home-arena__times md-body-small">
                     <span class="home-arena__remaining">
-                      ${live ? html`${icon("hourglass_bottom", 16)}${span(season.endAt + 1000)}` : html`${icon("event", 16)}${formatDate(this.locale, season.startAt, { time: true })}`}
+                      ${
+                        live
+                          ? html`
+                              ${icon("hourglass_bottom", 16)}${span(season.endAt + 1000)}
+                            `
+                          : html`
+                              ${icon("event", 16)}${formatDate(this.locale, season.startAt, { time: true })}
+                            `
+                      }
                     </span>
-                    ${live && nextChange ? html`<span>${icon("autorenew", 16)}${span(nextChange)}</span>` : nothing}
+                    ${
+                      live && nextChange
+                        ? html`
+                            <span>${icon("autorenew", 16)}${span(nextChange)}</span>
+                          `
+                        : nothing
+                    }
                   </span>
                 </div>
                 <ul class="home-arena__leagues" role="list">
@@ -2287,7 +2502,20 @@ export class HomeDashboard extends LitElement {
                           title=${localizedText(league.name, this.locale)}
                           aria-label=${localizedText(league.name, this.locale)}
                         >
-                          ${league.image ? html`<img class="home-arena__band" src=${league.image} alt="" width="28" height="28" loading="lazy" />` : nothing}
+                          ${
+                            league.image
+                              ? html`
+                                  <img
+                                    class="home-arena__band"
+                                    src=${league.image}
+                                    alt=""
+                                    width="28"
+                                    height="28"
+                                    loading="lazy"
+                                  />
+                                `
+                              : nothing
+                          }
                           ${rule ? this.renderArenaRule(context, rule, false) : nothing}
                           ${upcoming ? this.renderArenaRule(context, upcoming, true) : nothing}
                         </a>
@@ -2324,8 +2552,7 @@ export class HomeDashboard extends LitElement {
         ? entry.eventStartAtMs
         : undefined;
     let date = "";
-    if (instant)
-      date = formatDate(this.locale, instant, { time: true });
+    if (instant) date = formatDate(this.locale, instant, { time: true });
     else if (entry.eventDate && /^\d{4}-\d{2}-\d{2}$/u.test(entry.eventDate))
       date = formatDate(this.locale, `${entry.eventDate}T00:00:00Z`, { timeZone: "UTC" });
     return date
@@ -2447,7 +2674,10 @@ export class HomeDashboard extends LitElement {
           <ul class="layout-list" role="list">
             ${this.order.map(
               (id, index) => html`
-                <li class=${this.hiddenModules[id] ? "is-hidden" : ""} data-community-feature=${id === "community" ? "" : nothing}>
+                <li
+                  class=${this.hiddenModules[id] ? "is-hidden" : ""}
+                  data-community-feature=${id === "community" ? "" : nothing}
+                >
                   <button
                     class="icon-button"
                     type="button"
@@ -2518,7 +2748,14 @@ export class HomeDashboard extends LitElement {
     return fallback;
   }
   private entityCommentHref(entry: JsonRecord, reply = false) {
-    return isEntityCommentRecommendation(entry) ? entityCommentRecommendationHref(entry, this.sourceServer(), location.pathname + location.search + location.hash, reply) : "";
+    return isEntityCommentRecommendation(entry)
+      ? entityCommentRecommendationHref(
+          entry,
+          this.sourceServer(),
+          location.pathname + location.search + location.hash,
+          reply,
+        )
+      : "";
   }
   private openRecommendedComment(entry: JsonRecord, action: "reply" | "edit" | "delete" | "report" | "appeal") {
     const href = this.entityCommentHref(entry, action === "reply");
@@ -2530,65 +2767,112 @@ export class HomeDashboard extends LitElement {
   private likeRecommendedComment(entry: JsonRecord) {
     if (!isEntityCommentRecommendation(entry)) return;
     if (!this.communityViewer?.userId) {
-      location.assign(rememberReturnLink("/" + this.locale + "/account/", location.pathname + location.search + location.hash));
+      location.assign(
+        rememberReturnLink("/" + this.locale + "/account/", location.pathname + location.search + location.hash),
+      );
       return;
     }
-    const id = entry.comment.id, realm = this.communityViewer.realm, locale = this.locale, server = this.sourceServer(), lifetime = this.communityLifetime;
+    const id = entry.comment.id,
+      realm = this.communityViewer.realm,
+      locale = this.locale,
+      server = this.sourceServer(),
+      lifetime = this.communityLifetime;
     const find = () => this.posts.find((item) => isEntityCommentRecommendation(item) && item.comment.id === id);
-    const current = () => this.isConnected && !lifetime.signal.aborted && lifetime === this.communityLifetime &&
-      realm === this.communityViewer?.realm && locale === this.locale && server === this.sourceServer() && !!find();
+    const current = () =>
+      this.isConnected &&
+      !lifetime.signal.aborted &&
+      lifetime === this.communityLifetime &&
+      realm === this.communityViewer?.realm &&
+      locale === this.locale &&
+      server === this.sourceServer() &&
+      !!find();
     if (entry.comment.viewer.canLike === false) return;
     this.communityCommentError = "";
-    this.communityReactions.toggle(id, { active: Boolean(entry.comment.viewer.liked), likeCount: Number(entry.comment.likeCount || 0) }, {
-      current,
-      terminal: (error) => !!error && typeof error === "object" && "status" in error && Number(error.status) >= 400 && Number(error.status) < 500,
-      send: async (active, signal) => {
-        const result = await fetchJson<JsonRecord>("/api/v1/community/comments/" + encodeURIComponent(id) + "/reaction", {
-          method: "PUT", body: JSON.stringify({ active }), headers: {"content-type":"application/json"},
-          credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([signal, lifetime.signal]),
-        });
-        return { active: Boolean(result.active), likeCount: Number(result.likeCount) };
+    this.communityReactions.toggle(
+      id,
+      { active: Boolean(entry.comment.viewer.liked), likeCount: Number(entry.comment.likeCount || 0) },
+      {
+        current,
+        terminal: (error) =>
+          !!error &&
+          typeof error === "object" &&
+          "status" in error &&
+          Number(error.status) >= 400 &&
+          Number(error.status) < 500,
+        send: async (active, signal) => {
+          const result = await fetchJson<JsonRecord>(
+            "/api/v1/community/comments/" + encodeURIComponent(id) + "/reaction",
+            {
+              method: "PUT",
+              body: JSON.stringify({ active }),
+              headers: { "content-type": "application/json" },
+              credentials: "same-origin",
+              cache: "no-store",
+              signal: AbortSignal.any([signal, lifetime.signal]),
+            },
+          );
+          return { active: Boolean(result.active), likeCount: Number(result.likeCount) };
+        },
+        apply: (state) => {
+          if (!current()) return;
+          this.posts = this.posts.map((item) =>
+            isEntityCommentRecommendation(item) && item.comment.id === id
+              ? {
+                  ...item,
+                  comment: {
+                    ...item.comment,
+                    likeCount: state.likeCount,
+                    viewer: { ...item.comment.viewer, liked: state.active },
+                  },
+                }
+              : item,
+          );
+        },
+        reject: (error) => {
+          if (!current()) return;
+          this.communityCommentError = this.communityLabel("reactionFailed", "Could not save like. Try again.");
+          if (error && typeof error === "object" && "status" in error && [401, 404].includes(Number(error.status)))
+            this.posts = this.posts.filter((item) => !(isEntityCommentRecommendation(item) && item.comment.id === id));
+        },
       },
-      apply: (state) => {
-        if (!current()) return;
-        this.posts = this.posts.map((item) => isEntityCommentRecommendation(item) && item.comment.id === id
-          ? { ...item, comment: { ...item.comment, likeCount: state.likeCount, viewer: { ...item.comment.viewer, liked: state.active } } } : item);
-      },
-      reject: (error) => {
-        if (!current()) return;
-        this.communityCommentError = this.communityLabel("reactionFailed", "Could not save like. Try again.");
-        if (error && typeof error === "object" && "status" in error && [401, 404].includes(Number(error.status)))
-          this.posts = this.posts.filter((item) => !(isEntityCommentRecommendation(item) && item.comment.id === id));
-      },
-    });
+    );
   }
   private renderRecommendedComment(entry: JsonRecord) {
     if (!isEntityCommentRecommendation(entry)) return nothing;
     const href = this.entityCommentHref(entry);
-    return renderLazyEntityCommentActivity({
-      contextLabel: this.communityLabel("comments", "Comments"),
-      targetTitle: entry.entityRef.titles[this.locale] || Object.values(entry.entityRef.titles).find(Boolean) || entry.entityRef.originalId,
-      targetHref: href,
-      privateLabel: entry.adminOnlyContext ? this.communityLabel("visibilityPrivate", "Private") : undefined,
-      comment: {
-        record: entry.comment,
-        locale: this.locale,
-        label: (key, fallback, params?: MessageParams) => this.communityLabel(key, fallback, params),
-        authorHref: returnLink(`/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}`, location.pathname + location.search + location.hash),
-        canReply: Boolean(href),
-        allowStickers: true,
-        preview: true,
-        previewStickers: communityStickerPreview(entry.comment.body, 1),
-        actions: {
-          like: () => this.likeRecommendedComment(entry),
-          reply: href ? () => this.openRecommendedComment(entry, "reply") : undefined,
-          edit: href ? () => this.openRecommendedComment(entry, "edit") : undefined,
-          report: href ? () => this.openRecommendedComment(entry, "report") : undefined,
-          appeal: href ? () => this.openRecommendedComment(entry, "appeal") : undefined,
-          remove: href ? () => this.openRecommendedComment(entry, "delete") : undefined,
+    return renderLazyEntityCommentActivity(
+      {
+        contextLabel: this.communityLabel("comments", "Comments"),
+        targetTitle:
+          entry.entityRef.titles[this.locale] ||
+          Object.values(entry.entityRef.titles).find(Boolean) ||
+          entry.entityRef.originalId,
+        targetHref: href,
+        privateLabel: entry.adminOnlyContext ? this.communityLabel("visibilityPrivate", "Private") : undefined,
+        comment: {
+          record: entry.comment,
+          locale: this.locale,
+          label: (key, fallback, params?: MessageParams) => this.communityLabel(key, fallback, params),
+          authorHref: returnLink(
+            `/${this.locale}/community/users/${encodeURIComponent(entry.comment.authorUid)}`,
+            location.pathname + location.search + location.hash,
+          ),
+          canReply: Boolean(href),
+          allowStickers: true,
+          preview: true,
+          previewStickers: communityStickerPreview(entry.comment.body, 1),
+          actions: {
+            like: () => this.likeRecommendedComment(entry),
+            reply: href ? () => this.openRecommendedComment(entry, "reply") : undefined,
+            edit: href ? () => this.openRecommendedComment(entry, "edit") : undefined,
+            report: href ? () => this.openRecommendedComment(entry, "report") : undefined,
+            appeal: href ? () => this.openRecommendedComment(entry, "appeal") : undefined,
+            remove: href ? () => this.openRecommendedComment(entry, "delete") : undefined,
+          },
         },
       },
-    }, () => this.requestUpdate());
+      () => this.requestUpdate(),
+    );
   }
 }
 if (!customElements.get("home-dashboard")) customElements.define("home-dashboard", HomeDashboard);
