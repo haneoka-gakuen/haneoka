@@ -15,6 +15,10 @@ import {
   type BundledNoteSkin,
   type NoteSkinDefinition,
 } from "@haneoka/cassiopeia-plugin-our-notes";
+import {
+  laneBase,
+  nativeOutsideLineAlpha,
+} from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/lane.ts";
 import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 
 type VertexComponent = "x1" | "y1" | "x2" | "y2" | "x3" | "y3" | "x4" | "y4";
@@ -114,6 +118,7 @@ const special = new Map<string, SpriteSource>([
   ["lane_tap_b", { x: 150, y: 3742, w: 4, h: 46 }],
   ["lane_tap_br", { x: 154, y: 3742, w: 46, h: 46 }],
   ["lane_side", { x: 204, y: 3692, w: 16, h: 24 }],
+  ["outside_line", { x: 1832, y: 4027, w: 16, h: 64 }],
 ]);
 
 function byteAt(buffer: Uint8Array, index: number, context: string): number {
@@ -639,7 +644,7 @@ function createSkinSprites(
     alias(`Our Notes Lane Tap Area ${suffix}`, sourceName);
   alias("Our Notes Guideline", "guideline_gradient");
   alias("Our Notes Guideline Space", "guideline_space");
-  alias("Our Notes Outside Line", "lane_side");
+  alias("Our Notes Outside Line", "outside_line");
   alias("Our Notes Judgment Line", "judgment_line");
   alias("#LANE", "lane_base");
   alias("#STAGE_LEFT_BORDER", "lane_side");
@@ -959,43 +964,42 @@ export function bakeSkinSlideStrips(
   }
 }
 
-// The lane canvas multiplies lane_base by its SpriteRenderer's serialized
-// deep blue (linear values, alpha handled at draw time). Bake the composed
-// colour so the flat packed trapezoid keeps the native lane's darkness.
-const LANE_BACKDROP_TINT: readonly [number, number, number] = [0.035294119, 0.074509792, 0.180392116];
-
-function srgbToLinear(channel: number): number {
-  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-}
-
-function linearToSrgb(channel: number): number {
-  return channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
-}
-
+/** The original Gamma project multiplies the texture by the lane renderer's tint. */
 export function bakeSkinLaneBackdrop(texture: DecodedRgbaPng): void {
-  const source = special.get("lane_base")!;
-  for (let row = 0; row < source.h; row += 1) {
-    for (let col = 0; col < source.w; col += 1) {
-      const offset = ((source.y + row) * texture.width + source.x + col) * 4;
-      for (const channel of [0, 1, 2] as const) {
-        const composed = srgbToLinear(texture.pixels[offset + channel]! / 255) * LANE_BACKDROP_TINT[channel];
-        texture.pixels[offset + channel] = Math.round(Math.min(1, Math.max(0, linearToSrgb(composed))) * 255);
+  for (const name of ["lane_base", "preview_lane"] as const) {
+    const { x, y, w, h } = special.get(name)!;
+    const pad = name === "preview_lane" ? 1 : 0;
+    for (let row = -pad; row < h + pad; row++) {
+      for (let col = -pad; col < w + pad; col++) {
+        const offset = ((y + row) * texture.width + x + col) * 4;
+        for (const channel of [0, 1, 2] as const) {
+          texture.pixels[offset + channel] = Math.round(
+            texture.pixels[offset + channel]! * laneBase.materialColor[channel],
+          );
+        }
       }
     }
   }
 }
 
-// The native outside lines multiply the authored strip by their gradient
-// (alpha 1 at the near end, 0 at the far end) and no option controller writes
-// them; bake the fade so the engine keeps the strip free of the guideline
-// opacity option. Image top is the distant end; image bottom is the near end.
+/** Rotate the mask into the projected quad and resample the depth gradient. */
 export function bakeSkinOutsideLineFade(texture: DecodedRgbaPng): void {
-  const source = special.get("lane_side")!;
-  for (let row = 0; row < source.h; row += 1) {
-    const fade = row / (source.h - 1);
-    const offset = ((source.y + row) * texture.width + source.x) * 4;
-    for (let col = 0; col < source.w; col += 1) {
-      texture.pixels[offset + col * 4 + 3] = Math.round(texture.pixels[offset + col * 4 + 3]! * fade);
+  const { x, y, w, h } = special.get("outside_line")!;
+  const mask = special.get("lane_side")!;
+  const maskAlpha = (row: number) =>
+    texture.pixels[((mask.y + row) * texture.width + mask.x + Math.floor(mask.w / 2)) * 4 + 3]!;
+  for (let row = -SKIN_PACK_PAD; row < h + SKIN_PACK_PAD; row++) {
+    const progress = Math.min(1, Math.max(0, row / (h - 1)));
+    const fade = nativeOutsideLineAlpha(progress);
+    for (let col = -SKIN_PACK_PAD; col < w + SKIN_PACK_PAD; col++) {
+      const sample = (Math.min(w - 1, Math.max(0, col)) * (mask.h - 1)) / (w - 1);
+      const lo = Math.floor(sample);
+      const near = maskAlpha(lo);
+      const far = maskAlpha(Math.min(mask.h - 1, lo + 1));
+      const opacity = near + (far - near) * (sample - lo);
+      const offset = ((y + row) * texture.width + x + col) * 4;
+      texture.pixels.fill(255, offset, offset + 3);
+      texture.pixels[offset + 3] = Math.round(opacity * fade);
     }
   }
 }

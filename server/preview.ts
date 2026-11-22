@@ -4,6 +4,7 @@
 // Pos: [Map](L2.md)；Node 本地预览 HTTP 服务入口。
 // Effects/Dependencies: 监听、读资源和代理；HTML 注入 Web 更新基准，已封装产物核对最终引用摘要，不替代生产 D1／队列。
 import { projectUiMarks } from "../src/lib/ui-marks.ts";
+import { chartAssets } from "../worker/chart-assets.ts";
 import { communityStoryDocumentEtag, communityStoryShellPath, legacyCommunityStoryRedirectTarget, parseCommunityStoryDocument, rewriteCommunityStoryDocument } from "../src/lib/community-story-route.ts";
 import { communityChartDocumentEtag, communityChartShellPath, legacyCommunityChartRedirectTarget, parseCommunityChartDocument, rewriteCommunityChartDocument } from "../src/lib/community-chart-route.ts";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest.ts";
@@ -457,7 +458,7 @@ async function servePublicApi(req: IncomingMessage, res: ServerResponse, url: UR
   if (!["GET", "HEAD", "OPTIONS"].includes(req.method || "GET") && !/\/(?:image\.png|images\.zip)$/u.test(url.pathname)) return false;
   const module = await (publicApiModule ??= (async () => {
     const { build } = await import("esbuild");
-    const result = await build({ stdin: { contents: 'export { handleResourceImage } from "./worker/resource-image.ts";export { handleGamePlatform } from "./worker/game-platform.ts";export { handlePublicGameApi } from "./worker/game-public.ts";export { handleApiDiscovery } from "./worker/api-discovery.ts";export { handleChartImageRequest } from "./worker/chart-image.ts";export { renderNativeChart } from "./worker/chart-native-renderer.ts";', resolveDir: ROOT }, bundle: true, format: "esm", platform: "node", write: false, external: ["@cloudflare/playwright"],
+    const result = await build({ stdin: { contents: 'export { handleResourceImage } from "./worker/resource-image.ts";export { handleApiDiscovery } from "./worker/api-discovery.ts";export { handleChartImageRequest } from "./worker/chart-image.ts";export { renderNativeChart } from "./worker/chart-native-renderer.ts";', resolveDir: ROOT }, bundle: true, format: "esm", platform: "node", write: false, external: ["@cloudflare/playwright"],
       banner: { js: `import { createRequire as createLocalRequire } from "node:module";const require = createLocalRequire(${JSON.stringify(path.join(ROOT, "package.json"))});` } });
     return await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles![0]!.contents).toString("base64")}`) as PublicApiModule;
   })());
@@ -1999,6 +2000,36 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const descriptor = JSON.parse(fs.readFileSync(file, "utf8")) as JsonObject;
       const projected = projectUiMarks(descriptor);
       json(res, 200, projected, "public, max-age=0, must-revalidate", releaseResponseHeaders(workspace));
+      return;
+    }
+    if (tail.length === 1 && tail[0] === "chart-assets") {
+      const bandValues = url.searchParams.getAll("bandId");
+      const value = bandValues[0];
+      if (
+        bandValues.length > 1 ||
+        (value !== undefined && (!/^\d{1,10}$/u.test(value) || Number(value) > 2_147_483_647))
+      ) {
+        releaseJson(
+          res,
+          400,
+          { error: { code: "invalid_band_id", message: "Band ID must be a non-negative integer" } },
+          workspace,
+        );
+        return;
+      }
+      const { sourceId } = releaseIdentity(workspace);
+      const projection = await chartAssets(
+        localReleaseJson(workspace, "metadata/source-index/tree.json"),
+        async (source) => localReleaseJson(workspace, `metadata/sources/${source}.json`),
+        value === undefined ? undefined : Number(value),
+      );
+      const data = {
+        schema: "haneoka-chart-assets-v1",
+        identity: { server: workspace.id, releaseId: workspace.releaseId, sourceId: String(sourceId) },
+        ...projection,
+      };
+      if (!isJsonValue(data)) throw new Error("Invalid local chart asset projection");
+      releaseJson(res, 200, data, workspace);
       return;
     }
     if (tail.length === 2 && tail[0] === "stamps" && tail[1] === "textless") {

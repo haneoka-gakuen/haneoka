@@ -3,9 +3,9 @@
 // Output: Public chart-render resource names and exact output identities.
 // Pos: [Map](L2.md); public native-stage projection and media ownership.
 // Effects/Dependencies: Reads release metadata through its caller; excludes entity artwork and source browsing.
-import { CAMERA_MANAGER_SOURCE } from "./retired-game-files";
-import { HANEOKA_CHART_ASSETS_PROJECTION } from "../packages/api-client/src/chart-assets";
-import type { HaneokaChartAssetSource } from "../packages/api-client/src/chart-assets";
+import { CAMERA_MANAGER_SOURCE } from "./retired-game-files.ts";
+import { HANEOKA_CHART_ASSETS_PROJECTION } from "../packages/api-client/src/chart-assets.ts";
+import type { HaneokaChartAssetSource } from "../packages/api-client/src/chart-assets.ts";
 export const CHART_ASSETS_PROJECTION = HANEOKA_CHART_ASSETS_PROJECTION;
 const LIVE = "Assets/AddressableResources/Live/";
 const EFFECT = "Assets/AddressableResources/Effect/Live/";
