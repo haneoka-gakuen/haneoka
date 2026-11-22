@@ -8,6 +8,7 @@ import { clientText, initializeI18nClient } from "../i18n/client";
 import { storyRequest, downloadStoryProject } from "../lib/story-creation/community";
 import { communityStoryDocumentPath, communityStoryReaderPath, parseCommunityStoryDocument } from "../lib/community-story-route";
 import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
+import { siteOrigin } from "../lib/site-origin";
 import {
   STORY_API,
   communityStoryPath,
@@ -118,7 +119,7 @@ export class CommunityStories extends LitElement {
     const url = new URL(location.href),
       route = parseCommunityStoryDocument(url.pathname);
     this.storyId = route?.id || "";
-    if (route) applyCommunityDocumentMetadata(document, route.locale, locale => communityStoryDocumentPath(route, locale), "https://haneoka.org");
+    if (route) applyCommunityDocumentMetadata(document, route.locale, locale => communityStoryDocumentPath(route, locale), siteOrigin(url));
     this.mine = url.searchParams.get("scope") === "mine";
     this.revision = Number(url.searchParams.get("revision") || 0);
     this.stopLocale = initializeI18nClient().subscribe((c) => {

@@ -12,7 +12,7 @@ import {
 } from "../src/i18n/interface-route.ts";
 import type { InterfaceLanguage, InterfaceLanguageId } from "../src/i18n/interface-language-options";
 import { formatDocumentTitle, withoutSiteSuffix } from "../src/lib/document-title";
-import { CANONICAL_ORIGIN } from "../src/lib/site-origin";
+import { siteOrigin } from "../src/lib/site-origin";
 import { retainRequestRead } from "./request-work";
 
 const dictionaries: Record<InterfaceLanguageId, () => Promise<{ default: MessageCatalog }>> = {
@@ -87,7 +87,7 @@ export async function translateInterfaceDocument(document: InterfaceDocument, so
     : undefined;
   const dictionary = sourceTag || source.body ? await interfaceDictionary(language.value) : null;
   if (sourceTag && dictionary) {
-    const etag = `"interface-v1-${language.value}-${dictionary.revision}-${sourceTag}"`;
+    const etag = `"interface-v2-${url.host}-${language.value}-${dictionary.revision}-${sourceTag}"`;
     headers.set("ETag", "W/" + etag);
     const validator = document.ifNoneMatch;
     if (validator?.trim() === "*" || validator?.split(",").some((value) => value.trim().replace(/^W\//u, "") === etag)) {
@@ -115,7 +115,7 @@ export async function translateInterfaceDocument(document: InterfaceDocument, so
     formatDocumentTitle(home ? "" : (message(key) ?? withoutSiteSuffix(original)), siteTitle);
   const socialImage = new URL(
     `/images/social/${language.value}/${interfaceSocialGroup(englishPath)}.png`,
-    CANONICAL_ORIGIN,
+    siteOrigin(url),
   ).href;
   let titleKey: string | null = null;
   let title = "";

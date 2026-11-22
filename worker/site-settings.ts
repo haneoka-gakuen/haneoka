@@ -63,7 +63,8 @@ export async function applySiteSettings(
   if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/html")) return response;
   const view = await requestContentView(request, env);
   const { settings: visibility, group } = view;
-  let resource = parseResourceRoute(new URL(request.url).pathname);
+  const url = new URL(request.url);
+  let resource = parseResourceRoute(url.pathname);
   let kind = resource && visibilityType(resource.kind);
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, max-age=0, must-revalidate");
@@ -81,8 +82,8 @@ export async function applySiteSettings(
   headers.set("Vary", [...vary].join(", "));
   headers.delete("Content-Length");
   const assetEtag = headers.get("ETag");
-  const community = communityPagesEnabled(new URL(request.url).hostname, env.COMMUNITY_HIDDEN_HOSTS);
-  const provider = providerEntityFromUrl(new URL(request.url));
+  const community = communityPagesEnabled(url.hostname, env.COMMUNITY_HIDDEN_HOSTS);
+  const provider = providerEntityFromUrl(url);
   const providerId = provider && (provider.resource !== "songs" || provider.view) ? provider.id : undefined;
   const spoilers = view.override || view.spoilers;
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
@@ -109,7 +110,7 @@ export async function applySiteSettings(
     );
   const etag = assetEtag?.replace(
     /"$/u,
-    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v3:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
+    `${providerId ? `:entity-${encodeURIComponent(providerId)}` : ""}:web-${buildId}:canonical-self-v4-${url.host}:${view.key}:content-${visibilityEpoch}:community-${community ? 1 : 0}"`,
   );
   if (etag) {
     headers.set("ETag", etag);

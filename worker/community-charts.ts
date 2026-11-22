@@ -25,6 +25,7 @@ import { preserveChartMedia, chartMediaSnapshot, type ChartMediaResolver } from 
 import { diversifyRecommendationPage, recommendationScoreSql } from "./community-ranking";
 import { forumDiscoveryPostSql } from "./community-forums";
 import { backgroundWork } from "./request-work";
+import { siteLink, siteOrigin } from "../src/lib/site-origin";
 
 const PREFIX = "/api/v1/community/charts";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -642,7 +643,7 @@ async function serveMedia(request: Request, env: Env, row: Row, kind: string) {
   if (!ref) return fail(request, 404, "media_missing");
   const snapshot = ref.kind === "server" ? await chartMediaSnapshot(env, row.id, row.revision, kind) : null;
   if (ref.kind === "server" && !snapshot) {
-    const legacyUrl = kind === "audio" ? row.audioUrl : row.coverUrl;
+    const legacyUrl = siteLink(kind === "audio" ? row.audioUrl : row.coverUrl, siteOrigin(new URL(request.url)));
     return legacyUrl.startsWith(PREFIX)
       ? fail(request, 404, "media_missing")
       : new Response(null, { status: 302, headers: { Location: legacyUrl, "Cache-Control": "no-store" } });

@@ -99,6 +99,7 @@ import { providerDetailHref, providerDiscussionIdentity, providerEntityRoute } f
 import { entityDiscussion } from "./ui/entity-discussion";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
+import { siteOrigin } from "../lib/site-origin";
 import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
 import {
   providerEntityJsonPath,
@@ -696,7 +697,7 @@ export class StoryWorkspace extends LitElement {
           document,
           providerEntity.locale,
           (locale) => providerEntityRoute({ ...providerEntity, locale: locale as Locale }),
-          "https://haneoka.org",
+          siteOrigin(documentUrl),
         );
     }
     const selection = parseEntitySelection(documentUrl.pathname);

@@ -345,7 +345,6 @@ const INLINE_MEDIA_TYPES: ReadonlySet<string> = new Set([
   "video/webm",
 ]);
 
-const CANONICAL_HOST = "haneoka.org";
 const POINTER_TTL_MS = 30_000;
 const POINTER_EDGE_TTL_SECONDS = 60;
 const POINTER_CACHE_LIMIT = 128;
@@ -4253,6 +4252,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
     (server, release, path) => resourceContentIndex(env, ctx, server, release, path),
     (source) => handleScopedRequest(source, env, ctx, Boolean(interfaceLocale)));
   const url = new URL(request.url);
+  const origin = siteOrigin(url);
   const chartDocument = parseCommunityChartDocument(url.pathname);
   const storyDocument = parseCommunityStoryDocument(url.pathname);
   const providerDocument = providerEntityFromUrl(url);
@@ -4262,7 +4262,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
       : storyDocument ? communityStoryDocumentPath(storyDocument, locale) : chartDocument!.player
       ? communityChartPlayerPath("", locale, chartDocument!.id)
       : communityChartPath("", locale, chartDocument!.id);
-    const canonical = `https://${CANONICAL_HOST}${path((storyDocument ?? chartDocument ?? providerDocument)!.locale)}`;
+    const canonical = `${origin}${path((storyDocument ?? chartDocument ?? providerDocument)!.locale)}`;
     let structuredData = "";
     response = new HTMLRewriter()
       .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", canonical); } })
@@ -4270,7 +4270,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
       .on('link[rel="alternate"][hreflang]', { element(element) {
         const tag = element.getAttribute("hreflang");
         const locale = tag === "x-default" ? "en" : tag === "ja-JP" ? "ja" : tag;
-        if (locale && SERVER_FIRST_LOCALES.has(locale)) element.setAttribute("href", `https://${CANONICAL_HOST}${path(locale)}`);
+        if (locale && SERVER_FIRST_LOCALES.has(locale)) element.setAttribute("href", `${origin}${path(locale)}`);
       } })
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;
@@ -4279,11 +4279,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
       } })
       .transform(response);
   }
-  if (isSiteHostname(url.hostname) && url.hostname !== CANONICAL_HOST && response.headers.get("Content-Type")?.includes("text/html")) {
-    const origin = siteOrigin(url);
+  if (isSiteHostname(url.hostname) && origin !== CANONICAL_ORIGIN && response.headers.get("Content-Type")?.includes("text/html")) {
     const metadata: HTMLRewriterElementContentHandlers = { element(element) {
       const attribute = element.tagName === "link" ? "href" : "content";
-      element.setAttribute(attribute, siteAssetUrl(element.getAttribute(attribute)!, CANONICAL_ORIGIN));
+      element.setAttribute(attribute, siteAssetUrl(element.getAttribute(attribute)!, origin));
     } };
     const media: HTMLRewriterElementContentHandlers = { element(element) {
       element.setAttribute("src", siteLink(element.getAttribute("src")!, origin));
@@ -4291,14 +4290,10 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
     let hostnameWritten = false;
     let structuredData = "";
     response = new HTMLRewriter()
-      .on('link[rel="canonical"]', { element(element) {
-        element.setAttribute("href", siteAssetUrl(element.getAttribute("href")!, origin));
-      } })
-      .on('link[rel="alternate"][hreflang]', metadata)
-      .on('meta[property="og:url"]', metadata)
+      .on('link[rel="canonical"][href], link[rel="alternate"][hreflang][href], meta[property="og:url"][content]', metadata)
       .on('script[type="application/ld+json"]', { text(text) {
         structuredData += text.text;
-        text.replace(text.lastInTextNode ? structuredData.replaceAll(`${origin}/`, `${CANONICAL_ORIGIN}/`) : "", { html: true });
+        text.replace(text.lastInTextNode ? structuredData.replaceAll(`${CANONICAL_ORIGIN}/`, `${origin}/`) : "", { html: true });
         if (text.lastInTextNode) structuredData = "";
       } })
       .on("a[href]", { element(element) {
@@ -4847,7 +4842,7 @@ function guestDocumentKey(request: Request, webBuildId: string, publicationId: s
   const cookie = request.headers.get("Cookie") || "";
   if ((request.headers.has("Authorization") || SESSION_COOKIE.test(cookie)) && !/^\/(jp|intl)\/(ja|en|ko|zh-CN|zh-TW)\//u.test(new URL(request.url).pathname)) return null;
   const key = new URL(request.url);
-  key.searchParams.set("__guest-document", `${webBuildId}:${publicationId ?? ""}:${contentKey}`);
+  key.searchParams.set("__guest-document", `v2:${webBuildId}:${publicationId ?? ""}:${contentKey}`);
   return new Request(key, { method: "GET" });
 }
 function guestDocument(request: Request, cached: Response): Response {
