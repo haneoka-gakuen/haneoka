@@ -1672,7 +1672,11 @@ export class ChartSimulator extends LitElement {
         [],
         () => crypto.getRandomValues(this.gekisouStageSeed)[0]!,
       );
-      await renderer.loadOverlayTextures(projector.textures((path) => this.profileResourceUrl(path)));
+      const resolve = (path: string) => this.profileResourceUrl(path);
+      await renderer.loadOverlayTextures({
+        ...projector.textures(resolve),
+        ...(this.gekisouMissionTypes?.includes(2) ? this.gekisouOverlayProjector.textures(resolve, "luck") : {}),
+      });
       owner.throwIfAborted();
       return source;
     }));
