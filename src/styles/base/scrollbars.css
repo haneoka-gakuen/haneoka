@@ -6,24 +6,25 @@
  * bar instead: a pill thumb in surface-container-highest on a transparent
  * track, hiked to outline on hover. The two-pixel transparent rim keeps the
  * pill inside the container's rounded clip instead of touching its edge.
- * Standard properties cover Firefox; the webkit pseudo-elements cover
- * Chromium and Safari.
  *
- * Systems that auto-hide scrollbars never surface the pill outside an active
- * scroll, which leaves wide tables with nothing to drag. On pointer-fine
- * screens the thumb stays transparent until the pointer rests over the
- * scroll region — the page itself for the viewport bars — and reappears
- * while the region is focused. Pointer-coarse screens keep the always-on
- * scroll feedback.
+ * Chromium and Safari render the webkit pseudo-elements below as persistent
+ * bars, which auto-hiding platforms would otherwise never surface — that is
+ * what leaves wide tables with nothing to drag. Any non-auto standard
+ * scrollbar property disables those pseudo-elements in Chromium, so the
+ * standard properties only apply where the pseudo-elements do not exist:
+ * Firefox gets the same pill through scrollbar-width/color, and pointer
+ * screens without either fall back to the platform default.
  *
  * Native <progress> (upload meters) is drawn as an MD3 linear progress
  * indicator: a full-round 4dp track in surface-container-highest with a
  * primary indicator.
  */
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--md-sys-color-surface-container-highest) transparent;
+@supports not selector(::-webkit-scrollbar-thumb) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-sys-color-surface-container-highest) transparent;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -49,27 +50,6 @@
 
 ::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-@media (pointer: fine) {
-  * {
-    scrollbar-color: transparent transparent;
-  }
-
-  :is(html, .table-scroll, .strip, .announcement-table-scroll):hover,
-  :is(.table-scroll, .strip, .announcement-table-scroll):focus-within {
-    scrollbar-color: var(--md-sys-color-surface-container-highest) transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  :is(html, .table-scroll, .strip, .announcement-table-scroll):hover::-webkit-scrollbar-thumb,
-  :is(.table-scroll, .strip, .announcement-table-scroll):focus-within::-webkit-scrollbar-thumb {
-    background: var(--md-sys-color-surface-container-highest);
-    background-clip: padding-box;
-  }
 }
 
 progress {
