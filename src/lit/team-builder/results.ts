@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
-// Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作。
+// Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作、逐步收益及贡献成员。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
 // Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
 import { evaluateResult, rankRisk } from "./result-analysis";
@@ -778,7 +778,7 @@ const chartClock = (ms: number) => {
 function guideActions(timing: OrderTiming | null | undefined): TimingGuideAction[] {
   if (!timing || timing.guideAvailable === false) return [];
   return timing.windows.flatMap(window => window.steps.map(step => ({
-    kind: "skill" as const, event: window.event, range: null, timeMs: step.timeMs,
+    kind: "skill" as const, event: window.event, events: step.events, range: null, timeMs: step.timeMs,
     noteIndices: step.noteIndices, noteTimesMs: step.noteTimesMs ?? step.noteIndices.map(() => step.timeMs),
     inputTimesMs: step.inputTimesMs ?? step.noteIndices.map(() => step.timeMs - timing.advanceMs),
     inputKinds: step.inputKinds, deliveryTimesMs: step.deliveryTimesMs,
@@ -795,19 +795,19 @@ function timingInputLabel(host: TeamBuilder, target: number, original: number, k
   return [operation, kind === "miss" ? "" : direction].filter(Boolean).join(" ");
 }
 function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: TimingGuideAction, labels: ReadonlyMap<number, number>, chartId: string) {
-  const member = action.event === null ? undefined : memberFace(host, hit, ORDERS[order]![action.event]!);
+  const events = action.events ?? (action.event === null ? [] : [action.event]);
+  const members = events.map(event => memberFace(host, hit, ORDERS[order]![event]!));
   const title = action.kind === "combo-opening" ? host.t("timingComboOpening", "Split the opening chord")
     : action.kind === "combo-chord" ? host.t("timingComboChord", "Split the chord at the COMBO threshold")
     : action.kind === "combo-ending" ? host.t("timingComboEnding", "Hit the ending notes early")
     : action.inputKinds ? host.t("timingOptimalInputs", "Adjust note timing") : host.t("timingSkillStep", "Advance the skill bonus");
-  const source = member?.name ?? host.t("timingComboRange", "COMBO section {section}", { section: (action.range ?? 0) + 1 });
   const numbers = action.noteIndices.map(note => labels.get(note)!);
   const focus = () => {
     const chart = host.querySelector<HTMLElement & { focusNote(number: number): void }>(`#${chartId}`)!;
     chart.focusNote(numbers[0]!);
     chart.scrollIntoView({ block: "center" });
   };
-  return html`<li class="tb-timing__window" data-notes=${numbers.join(" ")} style=${member ? `--member-color:${member.color}` : ""}>
+  return html`<li class="tb-timing__window" data-notes=${numbers.join(" ")}>
     <div class="tb-timing__head">
       <span class="tb-timing__badge tb-timing__badge--group">${numbers.join(", ")}</span>
       <button class="button button--text button--small tabular tb-timing__jump" type="button" @click=${focus}
@@ -816,8 +816,10 @@ function guideAction(host: TeamBuilder, hit: EngineHit, order: number, action: T
         : !action.gain ? nothing : html`<span class="tb-delta" data-sign="up">+${format(host, action.gain)}</span>`}</span>
     </div>
     <div class="tb-timing__head">
-      ${member ? html`<img class="tb-order-card" src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />` : nothing}
-      <span class="tb-timing__advance" data-kind=${member ? "skill" : "combo"}>${source}</span>
+      ${members.map(member => html`
+        <img class="tb-order-card" style=${`--member-color:${member.color}`} src=${member.card} alt="" width="28" height="28" loading="lazy" decoding="async" />
+        <span class="tb-timing__advance" data-kind="skill">${member.name}</span>`)}
+      ${action.range === null ? nothing : html`<span class="tb-timing__advance" data-kind="combo">${host.t("timingComboRange", "COMBO section {section}", { section: action.range + 1 })}</span>`}
       <strong>${title}</strong>
     </div>
     ${action.comboGain ? html`<strong class="tb-delta" data-sign="up">${host.t("timingComboGain", "Gekiso COMBO +{count}", { count: format(host, action.comboGain, 2) })}</strong>` : nothing}

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 可序列化队伍／歌曲／目标请求、Master 与注入的谱面读取器。
-// Output: Engine 输入输出类型、奖励评级证书、竞技场区间目标及冻结对手统计契约，和 TS 评价／搜索接口。
+// Output: Engine 输入输出类型、奖励评级证书、竞技场区间目标及冻结对手统计与时序步骤收益／来源契约，和 TS 评价／搜索接口。
 // Pos: [Map](L2-2.md)；引擎 TS 契约和实现，区别于当前 Worker 的 WASM 执行。
 // Effects/Dependencies: 调用注入的谱面加载与搜索逻辑；实际 I/O 取决于读取器和调用环境。
 /** Serializable engine requests and their evaluation. Pure: charts come from an injected loader. */
@@ -1084,6 +1084,7 @@ export interface Timeline {
 export interface TimingGuideAction {
   kind: "combo-opening" | "combo-chord" | "combo-ending" | "skill";
   event: number | null;
+  events?: number[];
   range: number | null;
   timeMs: number;
   noteIndices: number[];
@@ -1108,12 +1109,12 @@ export interface TimingWindow {
   endMs: number;
   unit: number;
   notes: number[];
-  steps: { step: number; timeMs: number; notes: number; noteIndices: number[]; noteTimesMs?: number[]; inputTimesMs?: number[]; inputKinds?: TimingGuideAction["inputKinds"]; deliveryTimesMs?: number[]; gain: number }[];
+  steps: { step: number; events?: number[]; timeMs: number; notes: number; noteIndices: number[]; noteTimesMs?: number[]; inputTimesMs?: number[]; inputKinds?: TimingGuideAction["inputKinds"]; deliveryTimesMs?: number[]; gain: number }[];
 }
 /** Selected order's nominal score, legal timing extrema and verified optimal input plan. */
 export interface OrderTiming {
   score: number;
-  /** Nominal score at the render origin used by this plan. */
+  /** Score of the playable reference at the render origin used by this plan. */
   planBaseScore?: number;
   frameOriginMs?: number;
   best: number;
