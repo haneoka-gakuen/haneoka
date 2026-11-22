@@ -2,7 +2,7 @@
 // Input: D1 statements from the collector code; the official tables copied from D1.
 // Output: D1 results from the host's own copy; every changed row of a replicated table queued for D1.
 // Pos: [Map](../../L2.md); the collector host's database and its change outbox.
-// Effects/Dependencies: Reads and writes the local official database; triggers record changed primary keys.
+// Effects/Dependencies: Reads and writes the local official database; triggers record changed primary keys. Coalesced profile observation times stay local.
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 type Row = Record<string, unknown>;
@@ -66,6 +66,12 @@ export class LocalD1 {
   constructor(path: string) {
     this.handle = new DatabaseSync(path);
     this.handle.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000");
+    this.handle.exec(`CREATE TABLE IF NOT EXISTS _player_profile_observations (
+      region TEXT NOT NULL, profile_id TEXT NOT NULL, observed_at_ms INTEGER NOT NULL,
+      PRIMARY KEY (region, profile_id),
+      FOREIGN KEY (region, profile_id) REFERENCES official_player_profiles(region, profile_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+    ) WITHOUT ROWID`);
   }
 
   prepare(sql: string): LocalStatement { return new LocalStatement(this, sql); }
@@ -110,9 +116,15 @@ export function installOutbox(db: DatabaseSync, owned: (table: string) => boolea
     // key moves to the end of the queue by removing it first.
     const queue = (row: "NEW" | "OLD") => `DELETE FROM _replica_outbox WHERE tbl='${name}' AND pk=${pick(row)};
         INSERT INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick(row)});`;
-    db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
+    const sameKey = key.map((column) => `OLD."${column}" IS NEW."${column}"`).join(" AND ");
+    const changed = columns.map((column) => `OLD."${column}" IS NOT NEW."${column}"`).join(" OR ");
+    db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_key_change";
+      DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
       CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN ${queue("NEW")} END;
-      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}" BEGIN ${queue("OLD")} ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}"
+        WHEN (${sameKey}) AND (${changed}) BEGIN ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_key_change" AFTER UPDATE ON "${name}"
+        WHEN NOT (${sameKey}) BEGIN ${queue("OLD")} ${queue("NEW")} END;
       CREATE TRIGGER "_replica_${name}_delete" AFTER DELETE ON "${name}" BEGIN ${queue("OLD")} END;`);
     replicated.push({ name, key, columns });
   }

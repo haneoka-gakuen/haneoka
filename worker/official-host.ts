@@ -85,8 +85,10 @@ async function applyRows(env: Env, operations: Operation[]): Promise<Response> {
     if (!columns.length || columns.length > 90 || columns.some((column) => !IDENTIFIER.test(column))) return json({ error: "invalid_operation" }, 400);
     const values = columns.map((column) => row[column] ?? null);
     if (operation.upsert) {
+      const changed = columns.map((column) => `"${operation.table}"."${column}" IS NOT excluded."${column}"`).join(" OR ");
       statements.push(db.prepare(`INSERT INTO "${operation.table}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})
-        ON CONFLICT DO UPDATE SET ${columns.map((c) => `"${c}"=excluded."${c}"`).join(",")}`).bind(...values));
+        ON CONFLICT DO UPDATE SET ${columns.map((c) => `"${c}"=excluded."${c}"`).join(",")}
+        WHERE ${changed}`).bind(...values));
     } else {
       statements.push(db.prepare(`DELETE FROM "${operation.table}" WHERE ${columns.map((c) => `"${c}" IS ?`).join(" AND ")}`).bind(...values));
     }
