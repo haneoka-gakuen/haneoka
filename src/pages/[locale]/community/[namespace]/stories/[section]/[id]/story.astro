@@ -1,0 +1,16 @@
+---
+import { staticBuildPaths } from "../../../../../../../server/static-build";
+import Page from "../../../../../../../components/entities/ProviderStoryEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../../../../i18n/locales";
+import { PROVIDER_STORY_SECTIONS } from "../../../../../../../lib/provider-page-data";
+
+export function getStaticPaths() {
+  return staticBuildPaths("src/pages/[locale]/community/[namespace]/stories/[section]/[id]/story.astro", LOCALES.flatMap(locale =>
+    (["gbp", "sekai"] as const).flatMap(namespace =>
+      PROVIDER_STORY_SECTIONS[namespace === "gbp" ? "bestdori" : "sekai"].map(section => ({ params: { locale, namespace, section, id: "_" } })),
+    ),
+  ));
+}
+const provider = Astro.params.namespace === "gbp" ? "bestdori" : "sekai";
+---
+<Page locale={Astro.params.locale as Locale} provider={provider} section={Astro.params.section!} player />

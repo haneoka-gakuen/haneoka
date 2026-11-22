@@ -108,6 +108,7 @@ const entity = canonical
     titleKey={canonical ? undefined : collectionRoute.titleKey}
     entity={entity}
     appBar={rendered.appBar}
+    contained={chartPage}
   >
     <script is:inline type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
     {chartPlayback && <script is:inline type="application/json" id={CHART_PLAYBACK_DATA_ELEMENT_ID} set:html={JSON.stringify(chartPlayback)}></script>}

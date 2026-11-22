@@ -83,7 +83,7 @@ export async function applySiteSettings(
   const assetEtag = headers.get("ETag");
   const community = communityPagesEnabled(new URL(request.url).hostname, env.COMMUNITY_HIDDEN_HOSTS);
   const provider = providerEntityFromUrl(new URL(request.url));
-  const providerId = provider && provider.resource !== "songs" ? provider.id : undefined;
+  const providerId = provider && (provider.resource !== "songs" || provider.view) ? provider.id : undefined;
   const spoilers = view.override || view.spoilers;
   const sourceBrowser = isAssetBrowserDocument(new URL(request.url));
   const completeView = sourceBrowser || unrestricted(view);

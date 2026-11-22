@@ -11,13 +11,16 @@ type RouteProps = {
   server: ReleaseServer;
   locale: Locale;
   page: SearchableCatalogPage;
-  playback: ChartPlaybackData;
+  playback?: ChartPlaybackData;
 };
 
 export async function getStaticPaths() {
   const output: Array<{ params: Record<string, string>; props: RouteProps }> = [];
   for (const server of staticResourceServers().filter(isPublicReleaseServer)) {
-    const [pages, playback] = await Promise.all([searchableCatalogPages(server), chartPlaybackData(server)]);
+    const [pages, playback] = await Promise.all([
+      searchableCatalogPages(server),
+      import.meta.env.PROD ? chartPlaybackData(server) : undefined,
+    ]);
     for (const page of pages) {
       if (page.collection !== "songs" || page.kind !== "song") continue;
       for (const locale of LOCALES) {

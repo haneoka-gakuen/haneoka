@@ -135,6 +135,7 @@
     "src/lib/community-chart-route.ts",
     "src/lib/community-document-meta.ts",
     "src/lib/community-story-route.ts",
+    "src/lib/provider-entity-routing.ts",
     "src/lib/static-catalog-source.ts",
     "src/lib/stamp-maker/public-manifest.ts",
     "src/lib/static-documents.ts",

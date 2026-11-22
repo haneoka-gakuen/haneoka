@@ -1,0 +1,10 @@
+---
+import { staticBuildPaths } from "../../../../../server/static-build";
+import Page from "../../../../../components/entities/CommunityChartEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../../i18n/locales";
+
+export function getStaticPaths() {
+  return staticBuildPaths("src/pages/[locale]/community/charts/[id]/chart.astro", LOCALES.map(locale => ({ params: { locale, id: "_" } })));
+}
+---
+<Page locale={Astro.params.locale as Locale} server="intl" player />

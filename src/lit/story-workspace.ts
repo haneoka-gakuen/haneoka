@@ -316,10 +316,11 @@ export class StoryWorkspace extends LitElement {
   declare private homeVideoRecording?: boolean;
   private homeStageSpot = "";
   private storyAudio?: HTMLAudioElement;
+  private providerPlayer = false;
   private releaseLocation?: () => void;
   private initializationTimer?: number;
   private restoreLocation = () => {
-    if (this.storyCommentFocus()) {
+    if (!this.providerPlayer && this.storyCommentFocus()) {
       this.storyCommentsTextChoice = true;
       this.detailMode = "text";
       this.stopStoryPlayback();
@@ -546,6 +547,7 @@ export class StoryWorkspace extends LitElement {
     }
   }
   private storyAutoPlayRequested(): boolean {
+    if (this.isProvider()) return this.providerPlayer;
     return (
       !this.storyCommentsTextChoice &&
       !this.storyCommentFocus() &&
@@ -686,9 +688,10 @@ export class StoryWorkspace extends LitElement {
     }
     const documentUrl = navigationDocumentUrl();
     const providerEntity = this.isProvider() ? providerEntityFromUrl(documentUrl) : undefined;
+    this.providerPlayer = this.hasAttribute("data-provider-player");
     if (providerEntity && providerEntity.resource !== "songs") {
       this.entityId = providerEntity.id;
-      if (this.hasAttribute("data-provider-entity-shell"))
+      if (!this.providerPlayer && this.hasAttribute("data-provider-entity-shell"))
         applyCommunityDocumentMetadata(
           document,
           providerEntity.locale,
@@ -982,6 +985,20 @@ export class StoryWorkspace extends LitElement {
     this.detailEpisode = null;
     this.detailCard = null;
     try {
+      if (this.providerPlayer) {
+        const payload = await this.providerEntity("stories", this.entityId, signal).catch(() => undefined);
+        if (!active()) return;
+        if (payload) {
+          const collection = payload.card ? payload.collection
+            : await fetchJson<ProviderCollectionPayload>(payload.collectionUrl, { signal }).catch(() => payload.collection);
+          if (!active()) return;
+          await this.prepareProviderEntity(payload, collection);
+          if (!active()) return;
+          this.dataset.entityReady = "true";
+          await this.openVegaPlayer();
+          return;
+        }
+      }
       await this.loadBestdori(signal);
       if (!active()) return;
       this.phase = "ready";
@@ -1020,7 +1037,7 @@ export class StoryWorkspace extends LitElement {
     updateEntityHeading(this, value.text, value.locale);
     const siteTitle = uiText(this.locale, "common.seo.siteTitle");
     document.title = formatDocumentTitle(value.text, siteTitle);
-    if (episode && this.detailCard) {
+    if (episode && this.detailCard && !this.providerPlayer) {
       const back = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>("[data-entity-back]");
       if (back) {
         back.dataset.entityFallbackHref = providerEntityRoute({
@@ -1044,7 +1061,7 @@ export class StoryWorkspace extends LitElement {
           : this.allEpisodes();
     const index = episode ? sequence.findIndex((row) => this.episodeId(row) === this.entityId) : -1;
     const neighbor = (row: JsonRecord | undefined) =>
-      row ? { href: this.storyHref(row)!, title: this.episodeTitle(row) } : undefined;
+      row ? { href: this.storyHref(row, this.providerPlayer)!, title: this.episodeTitle(row) } : undefined;
     const previous = index > 0 ? neighbor(sequence[index - 1]) : undefined;
     const next = index >= 0 ? neighbor(sequence[index + 1]) : undefined;
     updateEntityNeighbors(this, this.locale, { ...(previous ? { previous } : {}), ...(next ? { next } : {}) });
@@ -1773,7 +1790,7 @@ export class StoryWorkspace extends LitElement {
     }
     void this.openScenario(id, source);
   }
-  private storyHref(episode: JsonRecord): string | undefined {
+  private storyHref(episode: JsonRecord, player = false): string | undefined {
     const id = this.episodeId(episode);
     const url = navigationDocumentUrl();
     const collectionPath =
@@ -1787,14 +1804,14 @@ export class StoryWorkspace extends LitElement {
           ? entityReturnHref()
           : returnStateFromLocation(collectionPath, url.search, "stories");
     if (this.isProvider()) {
-      const href = providerEntityRoute({
+      const entry = {
         provider: this.origin === "sekai" ? "sekai" : "bestdori",
         locale: this.locale as Locale,
         resource: this.isCardSection() && !id.startsWith("card.") ? "cards" : "stories",
         section: this.mode,
         id,
-      });
-      return returnLink(href, returnTo);
+      } as const;
+      return returnLink(providerEntityRoute({ ...entry, view: player ? "story" : undefined }), player ? undefined : returnTo);
     }
     const server = this.episodeEntry(episode)?.displayServer || this.dataServer();
     return isPublicReleaseServer(server)
@@ -1987,11 +2004,7 @@ export class StoryWorkspace extends LitElement {
     if (!current || this.detailMode !== "play" || this.episodeId(current) !== event.detail.storyId) return;
     if (this.isProvider() && this.entityId) {
       const next = this.closest("[data-shell]")?.querySelector<HTMLAnchorElement>('[data-entity-navigation="next"]');
-      if (next) {
-        const url = new URL(next.href);
-        url.searchParams.set("playback", "play");
-        openDetailLocation(url.href);
-      }
+      if (next) openDetailLocation(next.href);
       return;
     }
     const chapter = this.chapterOf(current);
@@ -2731,7 +2744,7 @@ export class StoryWorkspace extends LitElement {
     return segmented({
       label: uiText(this.locale, "media.audio.playback"),
       appBarSwitch: "view",
-      value: this.detailMode,
+      value: this.providerPlayer ? "play" : this.detailMode,
       iconOnly: true,
       options: [
         { value: "text" as const, label: uiText(this.locale, "navigation.storyText"), icon: "article" },
@@ -2741,6 +2754,18 @@ export class StoryWorkspace extends LitElement {
     });
   }
   private selectDetailMode(mode: "text" | "play") {
+    if (this.isProvider() && this.entityId) {
+      const entry = providerEntityFromUrl(navigationDocumentUrl());
+      if (entry?.resource === "stories" && (mode === "play") !== this.providerPlayer) {
+        const parent = returnLink(providerEntityRoute({ ...entry, view: undefined }));
+        const previous = entityReturnHref();
+        const href = mode === "play"
+          ? returnLink(providerEntityRoute({ ...entry, view: "story" }), location.pathname + location.search)
+          : previous && new URL(previous, location.href).pathname === parent ? previous : parent;
+        openDetailLocation(href);
+      }
+      return;
+    }
     const url = new URL(location.href);
     if (mode === "play") url.searchParams.set("playback", "play");
     else url.searchParams.delete("playback");

@@ -6,6 +6,9 @@ import {
   returnLink,
 } from "./document-url";
 import { clientText } from "../i18n/client";
+import { applyCommunityDocumentMetadata } from "./community-document-meta";
+import { providerEntityRoute } from "./provider-entity-data";
+import { providerEntityFromUrl } from "./provider-entity-routing";
 import {
   parseEntitySelection,
   resourceCollectionHref,
@@ -177,13 +180,24 @@ export function syncEntityNavigation(): void {
   }
   if (!back) return;
   if (selection?.source === "canonical") delete back.dataset.astroHistory;
+  const provider = providerEntityFromUrl(documentUrl);
+  const parent = provider?.view ? returnLink(providerEntityRoute({ ...provider, view: undefined })) : undefined;
+  if (provider && parent && back.dataset.entityFallbackHref !== parent) {
+    back.dataset.entityFallbackHref = parent;
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const address = canonical && new URL(canonical.href);
+    if (address && address.pathname !== providerEntityRoute(provider))
+      applyCommunityDocumentMetadata(document, provider.locale,
+        (locale) => providerEntityRoute({ ...provider, locale: locale as typeof provider.locale }), address.origin);
+  }
   const returnTo = entityReturnHref();
   if (!returnTo) return;
-  back.href = returnTo;
+  back.href = parent && provider?.view === "story" && new URL(returnTo, documentUrl).pathname !== parent ? parent : returnTo;
   for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-entity-navigation]")) {
     const target = new URL(link.dataset.entityBaseHref || link.href, documentUrl);
     if (target.origin !== location.origin) continue;
-    link.href = returnLink(target.href, returnTo);
+    const neighbor = provider?.view === "story" ? providerEntityFromUrl(target) : undefined;
+    link.href = returnLink(target.href, neighbor?.view === "story" ? providerEntityRoute({ ...neighbor, view: undefined }) : returnTo);
   }
 }
 

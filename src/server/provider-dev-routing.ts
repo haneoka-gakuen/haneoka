@@ -59,7 +59,7 @@ export function installProviderDevRouting(server: DevServer): void {
       }
       const selected = providerEntityFromUrl(url);
       if (selected) {
-        const entry = fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))
+        const entry = !selected.view && fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))
           ? providerEntityManifestEntry(providerEntityHtmlPath(selected), true)
           : undefined;
         if (entry) request.url = `${providerEntityPhysicalPath(entry)}${url.search}`;

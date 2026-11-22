@@ -76,14 +76,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
     chartShell = communityChartShellPath(context.url.pathname);
     chartPath = chartShell
       ? context.url.pathname
-      : /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/charts\/_\/?$/u.test(context.url.pathname)
+      : /^\/(ja|en|zh-TW|zh-CN|ko)\/community\/charts\/_(?:\/chart)?\/?$/u.test(context.url.pathname)
         ? context.request.headers.get("x-haneoka-chart-path") || undefined
         : undefined;
     const storyShell = communityStoryShellPath(context.url.pathname);
     storyPath = storyShell ? context.url.pathname : context.request.headers.get("x-haneoka-story-path") || undefined;
     chartShell ??= storyShell;
     const selected = providerEntityFromUrl(context.url);
-    if (selected && fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))) {
+    if (selected && !selected.view && fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))) {
       const entry = providerEntityManifestEntry(providerEntityHtmlPath(selected), true);
       if (entry) {
         const target = new URL(providerEntityPhysicalPath(entry), context.url);

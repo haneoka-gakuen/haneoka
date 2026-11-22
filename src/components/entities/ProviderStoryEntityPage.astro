@@ -7,8 +7,8 @@ import type { CatalogProvider } from "../../lib/provider-page-data";
 import { renderProviderStoryShell } from "../../server/render-provider";
 import "../../styles/story.css";
 
-interface Props { locale: Locale; provider: CatalogProvider; section: string }
-const { locale, provider, section } = Astro.props;
+interface Props { locale: Locale; provider: CatalogProvider; section: string; player?: boolean }
+const { locale, provider, section, player = false } = Astro.props;
 const route = `/community/${provider === "bestdori" ? "gbp" : "sekai"}/stories/${section}`;
 const titleKey = provider === "bestdori"
   ? `story.navigation.bestdori${section.charAt(0).toUpperCase()}${section.slice(1)}`
@@ -16,9 +16,9 @@ const titleKey = provider === "bestdori"
 const title = t(locale, titleKey);
 const rendered = renderProviderStoryShell(locale, route);
 ---
-<Base locale={locale} route={route} title={title} canonicalRoute={`/${locale}${route}/_/`} noindex>
-  <AppShell locale={locale} route={route} title={title} entity={{ title, backHref: `/${locale}${route}/` }} appBar={rendered.appBar}>
-    <story-workspace locale={locale} origin={provider} mode={section} entity-id="_" data-provider-entity-shell data-prerendered set:html={rendered.body}></story-workspace>
+<Base locale={locale} route={route} title={title} canonicalRoute={`/${locale}${route}/_/${player ? "story/" : ""}`} noindex>
+  <AppShell locale={locale} route={route} title={title} entity={{ title, backHref: `/${locale}${route}/` }} appBar={rendered.appBar} contained={player}>
+    <story-workspace locale={locale} origin={provider} mode={section} entity-id="_" data-provider-entity-shell data-provider-player={player ? "" : undefined} data-prerendered set:html={rendered.body}></story-workspace>
   </AppShell>
 </Base>
 <script>import "../../lit/story-workspace";</script>

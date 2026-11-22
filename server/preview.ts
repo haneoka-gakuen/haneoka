@@ -48,7 +48,7 @@ import {
   STATIC_DOCUMENT_SCHEMA,
   type StaticDocumentRecord,
 } from "../src/lib/static-documents.ts";
-import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing.ts";
+import { legacyProviderRedirectTarget, providerEntityFromUrl, rewriteProviderPlayerDocument } from "../src/lib/provider-entity-routing.ts";
 import { providerEntityHtmlPath } from "../src/lib/provider-entity-data.ts";
 import { staticViewFromUrl } from "../src/lib/static-view-routing.ts";
 import { assetStaticDocumentFromUrl } from "../src/lib/asset-static-routing.ts";
@@ -670,14 +670,18 @@ function sendHtml(
   headers: Record<string, string>,
   status = 200,
 ): void {
-  const chartPath = new URL(req.url || "/", "http://preview.invalid").pathname;
-  if (parseCommunityChartDocument(chartPath) || parseCommunityStoryDocument(chartPath)) {
+  const url = new URL(req.url || "/", "http://preview.invalid");
+  const chartPath = url.pathname;
+  const provider = providerEntityFromUrl(url);
+  if (provider?.view || parseCommunityChartDocument(chartPath) || parseCommunityStoryDocument(chartPath)) {
     const input = source;
     source = Readable.from((async function* () {
       const chunks: Buffer[] = [];
       for await (const chunk of input) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       const html = Buffer.concat(chunks).toString("utf8");
-      yield parseCommunityStoryDocument(chartPath) ? rewriteCommunityStoryDocument(html, chartPath, "https://haneoka.org") : rewriteCommunityChartDocument(html, chartPath, "https://haneoka.org");
+      yield provider?.view ? rewriteProviderPlayerDocument(html, provider, "https://haneoka.org")
+        : parseCommunityStoryDocument(chartPath) ? rewriteCommunityStoryDocument(html, chartPath, "https://haneoka.org")
+          : rewriteCommunityChartDocument(html, chartPath, "https://haneoka.org");
     })());
   }
   const buildFile = path.join(DIST, "build.json");
@@ -1396,7 +1400,7 @@ function servePackedStaticDocument(req: IncomingMessage, res: ServerResponse, ur
   const provider = providerEntityFromUrl(url);
   const corePath = staticDocumentLookupPath(staticViewFromUrl(url) || url.pathname);
   let pathname = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) ||
-    (provider ? providerEntityHtmlPath(provider) : corePath);
+    (provider && !provider.view ? providerEntityHtmlPath(provider) : corePath);
   const shared = /^\/provider-static\/data\/([a-f0-9]{64})\.json$/u.exec(url.pathname);
   const redirect = !url.pathname.endsWith("/") && !communityChartShellPath(url.pathname) && !communityStoryShellPath(url.pathname) && !!coreStaticDocumentPath(`${url.pathname}/`);
   if (redirect) pathname = coreStaticDocumentPath(`${url.pathname}/`);

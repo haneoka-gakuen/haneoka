@@ -10,6 +10,7 @@ export interface ProviderEntityLocator {
   section?: string;
   cardId?: string;
 }
+export type ProviderEntityAddress = ProviderEntityLocator & { view?: "chart" | "story" };
 export interface ProviderEntityPayload extends ProviderEntityLocator {
   schema: "haneoka-provider-entity-v1";
   region: string;
@@ -40,15 +41,15 @@ export function providerDiscussionIdentity(entry: ProviderEntityLocator) {
 export function providerSongRoute(provider: CatalogProvider, locale: string, id: string): string {
   return `/${locale}/community/${provider === "bestdori" ? "gbp" : "sekai"}/songs/${encodeURIComponent(id)}/`;
 }
-export function providerEntityRoute(entry: ProviderEntityLocator): string {
-  const { provider, locale, resource, id, section } = entry;
-  if (resource === "songs") return providerSongRoute(provider, locale, id);
+export function providerEntityRoute(entry: ProviderEntityAddress): string {
+  const { provider, locale, resource, id, section, view } = entry;
+  if (resource === "songs") return providerSongRoute(provider, locale, id) + (view === "chart" ? "chart/" : "");
   if (resource === "cards") {
     if (provider !== "bestdori") throw new TypeError("This provider has no card entity view");
     return `/${locale}/community/gbp/stories/card/${encodeURIComponent(id)}/`;
   }
   if (!section) throw new TypeError("Story entity section is required");
-  return `/${locale}/community/${provider === "bestdori" ? "gbp/stories" : "sekai/stories"}/${section}/${encodeURIComponent(id)}/`;
+  return `/${locale}/community/${provider === "bestdori" ? "gbp/stories" : "sekai/stories"}/${section}/${encodeURIComponent(id)}/${view === "story" ? "story/" : ""}`;
 }
 
 const numericId = (value: unknown) => {

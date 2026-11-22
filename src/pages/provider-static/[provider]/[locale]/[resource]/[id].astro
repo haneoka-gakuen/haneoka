@@ -1,11 +1,14 @@
 ---
 import ProviderEntityDocument from "../../../../../components/ProviderEntityDocument.astro";
-import { providerEntityManifest, readProviderEntityPayload, type ProviderEntityManifestEntry } from "../../../../../server/provider-entity-manifest";
+import fs from "node:fs";
+import path from "node:path";
+import { providerEntityManifest, providerEntityRoot, readProviderEntityPayload, type ProviderEntityManifestEntry } from "../../../../../server/provider-entity-manifest";
 import { providerEntityResourcePath } from "../../../../../lib/provider-entity-data";
 import { staticPageGroupEnabled, staticBuildPaths } from "../../../../../server/static-build";
 
 export function getStaticPaths() {
   if (!staticPageGroupEnabled("provider")) return staticBuildPaths("src/pages/provider-static/[provider]/[locale]/[resource]/[id].astro", []);
+  if (import.meta.env.DEV && !fs.existsSync(path.join(providerEntityRoot(), "manifest.json"))) return [];
   return staticBuildPaths("src/pages/provider-static/[provider]/[locale]/[resource]/[id].astro", providerEntityManifest(import.meta.env.DEV).entries.map(entry => ({
     params: { provider: entry.provider, locale: entry.locale, resource: providerEntityResourcePath(entry), id: entry.id },
     props: { entry },

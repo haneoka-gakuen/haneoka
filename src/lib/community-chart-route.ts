@@ -28,7 +28,7 @@ export function legacyCommunityChartRedirectTarget(pathname: string, search = ""
 }
 export function communityChartShellPath(pathname: string): string | undefined {
   const route = parseCommunityChartDocument(pathname);
-  return route ? `/${route.locale}/community/charts/_/` : undefined;
+  return route ? `/${route.locale}/community/charts/_/${route.player ? "chart/" : ""}` : undefined;
 }
 
 /** The shared shell has different metadata for each chart document. */

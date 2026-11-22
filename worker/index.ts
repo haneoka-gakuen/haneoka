@@ -61,7 +61,7 @@ import {
 import { serveStaticDocument, staticDocumentRedirect, staticPublicationContext } from "./static-documents";
 import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documents";
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
-import { providerEntityHtmlPath, providerEntityJsonPath, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
+import { providerEntityHtmlPath, providerEntityJsonPath, providerEntityRoute, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
 import { providerCatalogBase } from "../src/lib/provider-page-data";
 import { staticViewFromUrl } from "../src/lib/static-view-routing";
 import { assetStaticDocumentFromUrl, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
@@ -4252,13 +4252,17 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
   let response = await contentResourceBoundary(request, env, ctx,
     (server, release, path) => resourceContentIndex(env, ctx, server, release, path),
     (source) => handleScopedRequest(source, env, ctx, Boolean(interfaceLocale)));
-  const chartDocument = parseCommunityChartDocument(new URL(request.url).pathname);
-  const storyDocument = parseCommunityStoryDocument(new URL(request.url).pathname);
-  if ((chartDocument || storyDocument) && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
-    const path = (locale: string) => storyDocument ? communityStoryDocumentPath(storyDocument, locale) : chartDocument!.player
+  const url = new URL(request.url);
+  const chartDocument = parseCommunityChartDocument(url.pathname);
+  const storyDocument = parseCommunityStoryDocument(url.pathname);
+  const providerDocument = providerEntityFromUrl(url);
+  if ((chartDocument || storyDocument || providerDocument?.view) && response.status === 200 && response.headers.get("Content-Type")?.includes("text/html")) {
+    const path = (locale: string) => providerDocument?.view
+      ? providerEntityRoute({ ...providerDocument, locale: locale as typeof providerDocument.locale })
+      : storyDocument ? communityStoryDocumentPath(storyDocument, locale) : chartDocument!.player
       ? communityChartPlayerPath("", locale, chartDocument!.id)
       : communityChartPath("", locale, chartDocument!.id);
-    const canonical = `https://${CANONICAL_HOST}${path((storyDocument ?? chartDocument)!.locale)}`;
+    const canonical = `https://${CANONICAL_HOST}${path((storyDocument ?? chartDocument ?? providerDocument)!.locale)}`;
     let structuredData = "";
     response = new HTMLRewriter()
       .on('link[rel="canonical"]', { element(element) { element.setAttribute("href", canonical); } })
@@ -4275,7 +4279,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
       } })
       .transform(response);
   }
-  const url = new URL(request.url);
   if (isSiteHostname(url.hostname) && url.hostname !== CANONICAL_HOST && response.headers.get("Content-Type")?.includes("text/html")) {
     const origin = siteOrigin(url);
     const metadata: HTMLRewriterElementContentHandlers = { element(element) {
@@ -4740,7 +4743,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
         const document =
           assetStaticDocumentFromUrl(url) ||
           playlistStaticDocumentFromUrl(url) ||
-          (provider ? providerEntityHtmlPath(provider) : corePath);
+          (provider && !provider.view ? providerEntityHtmlPath(provider) : corePath);
         const documents = document ? [document] : [];
         if (provider && corePath && corePath !== document) documents.push(corePath);
         for (const candidate of documents) {

@@ -1,0 +1,23 @@
+---
+import Base from "../../layouts/Base.astro";
+import AppShell from "../AppShell.astro";
+import { catalogConfig } from "../../config/catalog-labels";
+import type { Locale } from "../../i18n/locales";
+import { t } from "../../i18n/messages";
+import type { CatalogProvider } from "../../lib/provider-page-data";
+import { providerEntityRoute } from "../../lib/provider-entity-data";
+import "../../styles/catalog.css";
+
+interface Props { locale: Locale; provider: CatalogProvider; chartPage?: boolean }
+const { locale, provider, chartPage = false } = Astro.props;
+const route = `/community/${provider === "bestdori" ? "gbp" : "sekai"}/songs`;
+const title = t(locale, provider === "bestdori" ? "community.page.songsBestDori" : "community.page.sekai.title");
+const config = catalogConfig({ resource: "songs", locale, origin: provider, entityContext: true, chartPage });
+const canonicalRoute = providerEntityRoute({ locale, provider, resource: "songs", id: "_", view: chartPage ? "chart" : undefined });
+---
+<Base locale={locale} route={route} title={title} canonicalRoute={canonicalRoute} description={title} noindex>
+  <AppShell locale={locale} route={route} title={title} entity={{ title, backHref: `/${locale}${route}/` }} contained={chartPage}>
+    <catalog-screen config={config}></catalog-screen>
+  </AppShell>
+</Base>
+<script>import "../../lit/catalog-screen";</script>

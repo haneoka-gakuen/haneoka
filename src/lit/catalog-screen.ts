@@ -76,7 +76,7 @@ import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { readPageData, waitForPageData } from "../lib/page-data";
 import type { CatalogCollectionPayload } from "../server/catalog-collection";
 import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
-import { providerDetailHref, providerDiscussionIdentity, providerSongRoute, type ProviderEntityPayload } from "../lib/provider-entity-data";
+import { providerDetailHref, providerDiscussionIdentity, providerEntityJsonPath, providerEntityRoute, providerSongRoute, type ProviderEntityPayload } from "../lib/provider-entity-data";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { publicMediaAddress } from "../lib/document-address";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
@@ -1711,7 +1711,6 @@ export class CatalogScreen extends LitElement {
     this.sort = this.normalizeSort(params.get("sort") || this.profile.defaultSort);
     this.order = params.has("order") ? (params.get("order") === "desc" ? "desc" : "asc") : this.defaultSortOrder();
     this.ensureSongMeta();
-    this.syncBestdoriChartPage(params);
     const id = (providerEntity?.resource === "songs" && providerEntity.provider === this.settings.origin ? providerEntity.id : "") ||
       this.settings.entityId || params.get(this.selectionParam()) || "";
     if (id === this.selectedId) {
@@ -2024,8 +2023,7 @@ export class CatalogScreen extends LitElement {
     this.selectedId = (providerEntity?.resource === "songs" && providerEntity.provider === this.settings.origin ? providerEntity.id : "") ||
       this.settings.entityId || params.get(this.selectionParam()) || "";
     if (this.isProvider() && this.profile.presentation === "song") {
-      if (this.settings.entityContext) this.syncBestdoriChartPage(params);
-      else if (this.selectedId) {
+      if (!this.settings.entityContext && this.selectedId) {
         const href = this.entityLink(this.selectedId);
         if (href) {
           const target = new URL(href, documentUrl);
@@ -2478,7 +2476,7 @@ export class CatalogScreen extends LitElement {
     if (this.profile.presentation === "song" && typeof item.jacketThumbUrl === "string") return publicMediaAddress(item.jacketThumbUrl);
     return this.image(item);
   }
-  async prepareProviderEntity(payload: ProviderEntityPayload, config: string = this.config): Promise<void> {
+  async prepareProviderEntity(payload: ProviderEntityPayload, config: string = this.config, signal?: AbortSignal): Promise<void> {
     const source = payload.collection;
     const summary = source.document[payload.id] as Item | undefined;
     const collection = this.isConnected ? readPageData<ProviderCollectionPayload>(this, "data-collection-data") : undefined;
@@ -2488,7 +2486,7 @@ export class CatalogScreen extends LitElement {
       characters: asItems(source.characters), bands: asItems(source.bands),
       marks: {}, gameItems: [], aux: {}, songMeta: source.songMeta || {}, collectionUrl: payload.collectionUrl,
       ...(collection?.schema === "haneoka-provider-collection-v1" && collection.provider === payload.provider && collection.locale === payload.locale && collection.resource === "songs" ? { collection: collection.document } : {}),
-    }, config);
+    }, config, signal);
   }
   prepareProviderCollection(payload: ProviderCollectionPayload, config: string = this.config): void {
     this.settings = JSON.parse(config || "{}") as Config;
@@ -2753,6 +2751,24 @@ export class CatalogScreen extends LitElement {
       this.restoreDetailQuery();
       this.setEntityReady(true);
       return;
+    }
+    if (this.settings.chartPage && this.isProvider()) {
+      const entry = providerEntityFromUrl(navigationDocumentUrl());
+      const payload = entry && await fetchJson<ProviderEntityPayload>(providerEntityJsonPath(entry), { signal }).catch(() => undefined);
+      if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+      if (payload?.schema === "haneoka-provider-entity-v1" && payload.resource === "songs" &&
+          payload.provider === this.settings.origin && payload.id === this.selectedId) {
+        try {
+          await this.prepareProviderEntity(payload, this.config, signal);
+          if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+          this.setEntityReady(true);
+        } catch {
+          if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+          this.phase = "error";
+          this.setEntityReady(false);
+        }
+        return;
+      }
     }
     if (inline?.schema === "haneoka-provider-collection-v1" && "provider" in inline &&
         inline.provider === this.settings.origin && inline.resource === this.settings.resource && !this.settings.entityContext) {
@@ -4466,10 +4482,6 @@ export class CatalogScreen extends LitElement {
   private band(id: number) {
     return this.bands.find((item) => Number(item.bandId) === id);
   }
-  private bandLogo(id: number) {
-    const band = this.band(id);
-    return String(band?.logo || band?.icon || "");
-  }
   private bandIcon(id: number) {
     const band = this.band(id);
     return String(band?.icon || "");
@@ -6055,6 +6067,7 @@ export class CatalogScreen extends LitElement {
     });
   }
   private renderDetailLeading(item: Item) {
+    const song = this.profile.presentation === "song";
     const characterIds = this.itemCharacterIds(item);
     const character = this.character(characterIds[0] || Number(item.characterId || 0));
     const band = this.band(Number(item.bandId || character?.bandId || 0));
@@ -6062,25 +6075,23 @@ export class CatalogScreen extends LitElement {
     const rarity = card ? this.rarityMark(item.rarity) : "";
     const attribute = ["member", "support", "song"].includes(this.profile.presentation)
       ? this.attributeMark(
-          this.profile.presentation === "song" ? item.musicType : item.cardType,
-          this.profile.presentation === "song",
+          song ? item.musicType : item.cardType,
+          song,
         )
       : "";
-    const entity = String(
-      this.profile.presentation === "song"
-        ? this.bandLogo(Number(item.bandId || 0)) || band?.logo || band?.icon || ""
-        : (card ? "" : character?.faceImage) || band?.logo || band?.icon || "",
-    );
+    const entity = String((card ? "" : character?.faceImage) || band?.logo || band?.icon || "");
     return html`
       <span class="detail-header-leading">
         ${
-          card && characterIds.length
-            ? this.characterAvatars(characterIds)
-            : entity
-              ? html`
-                  <img class="detail-header-entity" src=${this.imageForLocale(entity)} alt=${this.secondary(item)} />
-                `
-              : nothing
+          song
+            ? this.tileAdornment(item, characterIds)
+            : card && characterIds.length
+              ? this.characterAvatars(characterIds)
+              : entity
+                ? html`
+                    <img class="detail-header-entity" src=${this.imageForLocale(entity)} alt=${this.secondary(item)} />
+                  `
+                : nothing
         }${
           rarity
             ? html`
@@ -6097,7 +6108,7 @@ export class CatalogScreen extends LitElement {
                 <img
                   class="detail-header-mark"
                   src=${attribute}
-                  alt=${this.fieldValue(item, this.profile.presentation === "song" ? "musicType" : "cardType")}
+                  alt=${this.fieldValue(item, song ? "musicType" : "cardType")}
                 />
               `
             : nothing
@@ -6120,31 +6131,6 @@ export class CatalogScreen extends LitElement {
     }
     history.replaceState(history.state, "", `${location.pathname}?${params}${location.hash}`);
     this.locationStateUrl = `${location.pathname}${location.search}`;
-  }
-  private syncBestdoriChartPage(params: URLSearchParams) {
-    if (!this.isProvider() || this.profile.presentation !== "song" || !this.settings.entityContext) return;
-    const chartPage = params.get("chart") === "1";
-    if (this.settings.chartPage === chartPage) return;
-    this.settings = { ...this.settings, chartPage };
-    this.requestUpdate();
-    if (!chartPage || !this.detailReady) return;
-    const current = () =>
-      this.isConnected &&
-      this.isProvider() &&
-      this.profile.presentation === "song" &&
-      this.settings.entityContext &&
-      this.settings.chartPage;
-    void this.ensureChartPlayer().then(
-      () => {
-        if (current()) this.requestUpdate();
-      },
-      () => {
-        if (current()) {
-          this.phase = "error";
-          this.setEntityReady(false);
-        }
-      },
-    );
   }
   private chartRow(item: Item) {
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
@@ -6293,11 +6279,12 @@ export class CatalogScreen extends LitElement {
     const locale = this.settings.locale as Locale;
     const target = new URL(
       this.isProvider()
-        ? this.entityLink(id, this.detailDifficulty) || this.providerCollection()
+        ? providerEntityRoute({ provider: this.settings.origin === "sekai" ? "sekai" : "bestdori", locale, resource: "songs", id, view: "chart" })
         : chartPath({ server, locale, id }),
       location.href,
     );
-    if (this.isProvider()) target.searchParams.set("chart", "1");
+    if (this.isProvider() && this.selectedSongDifficulty !== "expert")
+      target.searchParams.set("chartDifficulty", this.selectedSongDifficulty);
     target.searchParams.set("difficulty", String(this.detailDifficulty));
     return returnLink(`${target.pathname}${target.search}`, `${location.pathname}${location.search}`);
   }
