@@ -2,7 +2,7 @@
 // Input: Validated official catalogs, observations and region-scoped read identities.
 // Output: Immediate durable observations, D1 indexes, five-day event final targets, preserved daily/final archives and reference-safe payload cleanup.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
-// Effects/Dependencies: Reads and writes private R2 and D1; reads preserve original observation timestamps.
+// Effects/Dependencies: Reads and writes private R2 and D1; profile writes use the collector host’s local observation clock; reads preserve original observation timestamps.
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
 import { saveRankingSearchWindow } from "./ranking-search";
 import { retainRequestRead } from "./request-work";
@@ -849,12 +849,22 @@ export async function saveOfficialPlayers(env: OfficialRankingStoreBindings, reg
       total_favorite = COALESCE(excluded.total_favorite, official_player_profiles.total_favorite),
       observed_at_ms = excluded.observed_at_ms
     WHERE excluded.observed_at_ms >= official_player_profiles.observed_at_ms
+      AND NOT EXISTS (SELECT 1 FROM _player_profile_observations
+        WHERE region=excluded.region AND profile_id=excluded.profile_id AND observed_at_ms>excluded.observed_at_ms)
       AND (excluded.observed_at_ms-official_player_profiles.observed_at_ms >= ?
         OR excluded.found IS NOT official_player_profiles.found OR excluded.profile_json IS NOT official_player_profiles.profile_json
         OR excluded.total_favorite IS NOT NULL AND excluded.total_favorite IS NOT official_player_profiles.total_favorite)`);
+  // A coalesced harvest still advances the host's ordering clock in the same transaction.
+  const rememberObservation = db.prepare(`INSERT INTO _player_profile_observations (region, profile_id, observed_at_ms)
+    SELECT region, profile_id, ? FROM official_player_profiles WHERE region=? AND profile_id=? AND observed_at_ms<?
+    ON CONFLICT(region, profile_id) DO UPDATE SET observed_at_ms=excluded.observed_at_ms
+    WHERE excluded.observed_at_ms>_player_profile_observations.observed_at_ms`);
   if (players.length)
-    await db.batch(players.map((player) => statement.bind(region, player.profileId, player.found ? 1 : 0,
-      player.profile ? JSON.stringify(player.profile) : null, player.totalFavorite, player.observedAtMs, minimumObservationMs)));
+    await db.batch(players.flatMap((player) => [
+      statement.bind(region, player.profileId, player.found ? 1 : 0, player.profile ? JSON.stringify(player.profile) : null,
+        player.totalFavorite, player.observedAtMs, minimumObservationMs),
+      rememberObservation.bind(player.observedAtMs, region, player.profileId, player.observedAtMs),
+    ]));
 }
 
 /** Event boards already carry each player's card, so these cost no extra game request. */
