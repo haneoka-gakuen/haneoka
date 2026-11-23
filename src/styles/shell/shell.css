@@ -413,49 +413,6 @@
   }
 }
 
-.app-shell[data-editor-workspace] {
-  --top-bar-height: 52px;
-  --shell-width: 0px;
-  --shell-pane-gap: 0px;
-  --shell-stage-block: calc(100dvh - var(--top-bar-height) - var(--shell-bottom-inset) - var(--audio-dock-height, 0px));
-  --shell-overlay-inset: var(--top-bar-height) 0 0;
-  --shell-overlay-radius: 0px;
-  grid-template-columns: minmax(0, 1fr);
-}
-.app-shell[data-editor-workspace] .app-shell__body {
-  grid-column: 1;
-}
-.app-shell[data-editor-workspace] .top-app-bar {
-  padding-inline: 4px;
-  border-block-end: 1px solid var(--md-sys-color-outline-variant);
-}
-.app-shell[data-editor-workspace] .top-app-bar__leading {
-  display: flex;
-}
-.app-shell[data-editor-workspace] .top-app-bar__menu {
-  display: inline-grid;
-}
-.app-shell[data-editor-workspace] .app-shell__main {
-  margin-inline: 0;
-  border-radius: 0;
-  clip-path: none;
-}
-@media (max-width: 599px) {
-  .app-shell[data-editor-workspace] .top-app-bar > h1 {
-    font-size: var(--md-sys-typescale-title-medium-size);
-    line-height: var(--md-sys-typescale-title-medium-line-height);
-  }
-}
-@media (min-width: 840px) and (hover: hover) and (pointer: fine) {
-  .app-shell[data-editor-workspace] {
-    --top-bar-height: 44px;
-  }
-  .app-shell[data-editor-workspace] .top-app-bar {
-    --control-height: 32px;
-    --icon-button-size: 32px;
-  }
-}
-
 /* ---------- Page transitions ----------
    Material "fade through" on the content pane only; the shell stays still,
    which is what makes the navigation feel like a frame rather than part of

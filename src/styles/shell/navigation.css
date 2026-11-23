@@ -87,22 +87,6 @@
   }
 }
 
-.app-shell[data-editor-workspace] > .nav {
-  transition:
-    transform var(--motion-spatial),
-    box-shadow var(--motion-effects),
-    visibility 0s linear var(--motion-spring-spatial-default-duration);
-}
-.app-shell[data-editor-workspace].nav-modal-open > .nav {
-  transition-delay: 0s;
-}
-.app-shell[data-editor-workspace]:not(.nav-modal-open) > .nav {
-  --nav-wide: 1;
-  width: min(var(--nav-rail-modal-width), calc(100vw - 56px));
-  visibility: hidden;
-  transform: translateX(calc(-100% - 24px));
-}
-
 /* ---------- Header: menu button and brand ---------- */
 .nav__header {
   position: relative;

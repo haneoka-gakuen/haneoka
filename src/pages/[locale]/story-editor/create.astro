@@ -14,7 +14,7 @@ const titleKey="community.stories.editor",title=t(locale,titleKey),route="/story
 const studioVersion=createHash("sha256").update(readFileSync(resolve(".generated-public/story-studio/index.html"))).digest("hex").slice(0,16);
 ---
 <Base locale={locale} route={route} title={title} titleKey={titleKey}>
- <AppShell locale={locale} route={route} title={title} titleKey={titleKey} contained editorWorkspace>
+ <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
   <story-creation-workspace class="story-creation" locale={locale} studio-entry={`/story-studio/index.html?v=${studioVersion}`} resource-origin={import.meta.env.PUBLIC_STORY_RESOURCE_ORIGIN||undefined}></story-creation-workspace>
  </AppShell>
 </Base>
