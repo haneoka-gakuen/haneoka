@@ -296,6 +296,7 @@
   },
   "settings": {
     "labels": {
+      "offlineStorage": "离线存储",
       "appUpdates": "应用更新",
       "checkAppUpdate": "检查更新",
       "appUpToDate": "已是最新版本",

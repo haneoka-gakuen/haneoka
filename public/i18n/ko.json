@@ -296,6 +296,7 @@
   },
   "settings": {
     "labels": {
+      "offlineStorage": "오프라인 저장 공간",
       "appUpdates": "앱 업데이트",
       "checkAppUpdate": "업데이트 확인",
       "appUpToDate": "최신 버전입니다",

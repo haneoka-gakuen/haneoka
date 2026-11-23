@@ -33,7 +33,7 @@ import type { VegaProject } from "@haneoka/vega-protocol";
 import { describeSpineModel } from "@haneoka/vega-plugin-spine";
 import { createVegaFullPreset } from "@haneoka/vega-preset-full";
 import type { StoryResolvedText } from "@haneoka/vega/runtime";
-import { iterateAdvCommands } from "@haneoka/vega/renderer-kit";
+import { iterateAdvCommands, type StoryResourceResolver } from "@haneoka/vega/renderer-kit";
 import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
 import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { applyRenderQuality, observeRenderQuality } from "../../lib/render-quality";
@@ -164,6 +164,9 @@ export class VegaStoryStage extends LitElement {
   declare completed: boolean;
   private loadedKey = "";
   private appliedLocale = "";
+  offlineProgress?: { ordinal: number; save(ordinal: number): void };
+  offlineResources?: StoryResourceResolver;
+
   private engine?: VegaEngine;
   private handle?: VegaPlayerHandle;
   private playerState?: ReturnType<typeof createVegaPlayerState>;
@@ -454,6 +457,7 @@ export class VegaStoryStage extends LitElement {
       const player = await engine.createPlayer({
         mount,
         story: hydrated,
+        ...(this.offlineResources ? { resources: this.offlineResources } : {}),
         state: playerState,
         resolveLocalizedText: this.localizedTextResolver(),
         displayNameJoiner: this.speakerNameJoiner(),
@@ -493,7 +497,16 @@ export class VegaStoryStage extends LitElement {
       player.player.setLocale(this.locale, { refresh: true });
       this.appliedLocale = this.locale;
       loadingReporter.finish();
+      if (this.offlineProgress?.ordinal) {
+        const { maximum } = player.player.currentSeekProgress();
+        if (maximum > 0) {
+          const ratio = Math.min(1, this.offlineProgress.ordinal / maximum);
+          await player.player.seekTo(player.player.resolveSeekRatio(ratio), { resume: false }).catch(console.warn);
+          if (!active()) return;
+        }
+      }
       this.phase = "ready";
+      if (this.offlineProgress) this.dispatchEvent(new Event("vega-offline-ready"));
       if (continuePlayback) this.startPlayback();
       this.completionEmitted = false;
       this.startTransportLoop();
@@ -707,6 +720,7 @@ export class VegaStoryStage extends LitElement {
     cancelAnimationFrame(this.transportFrame);
     let previousPaint = -Infinity;
     let preparedCommand = -1;
+    let savedOrdinal = this.offlineProgress?.ordinal;
     const paint = (time: number) => {
       const handle = this.handle;
       if (!handle) return;
@@ -740,6 +754,10 @@ export class VegaStoryStage extends LitElement {
       if (Boolean(state.finished) !== this.completed) this.completed = Boolean(state.finished);
       if (timeline.maximum !== this.maximum) this.maximum = timeline.maximum;
       if (!this.scrubbing && timeline.ordinal !== this.ordinal) this.ordinal = timeline.ordinal;
+      if (visible && this.started && !this.scrubbing && this.offlineProgress && timeline.ordinal !== savedOrdinal) {
+        this.offlineProgress.save(timeline.ordinal);
+        savedOrdinal = timeline.ordinal;
+      }
       this.transportFrame = requestAnimationFrame(paint);
     };
     this.transportFrame = requestAnimationFrame(paint);

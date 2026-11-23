@@ -148,6 +148,10 @@ async function serve(request: Request, env: DownloadEnv): Promise<Response> {
     }
     return objectResponse(request, env.APP_RELEASES, `app/${app[3]}/${app[4]}`, true, app[4]);
   }
+  const player = /^\/downloads\/story-player\/(v1\/latest\.json|([a-f0-9]{64})\.zip)$/u.exec(url.pathname);
+  if (player) {
+    return objectResponse(request, env.APP_RELEASES, `story-player/${player[1]}`, Boolean(player[2]));
+  }
   const story = /^\/downloads\/stories\/(jp|intl)\/(latest\.json|(r-[a-f0-9]{20})\/(manifest\.json|manifests\/([a-f0-9]{64})\.json|objects\/([a-f0-9]{64})|batches\/v1))$/u.exec(url.pathname);
   if (!story) return missing();
   const server = story[1]!;

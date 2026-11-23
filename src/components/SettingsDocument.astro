@@ -217,6 +217,21 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
             </section>
           </div>
         </div>
+        <div class="settings-card" data-app-offline hidden>
+          <div class="settings-card__body">
+            <section class="settings-group" aria-labelledby="app-offline-title">
+              <div class="settings-row">
+                <header class="settings-row__header">
+                  <span class="settings-row__icon"><Icon name="storage" /></span>
+                  <h2 id="app-offline-title"><I18nText keyName="settings.labels.offlineStorage" fallback="Offline storage" locale={locale} /></h2>
+                </header>
+                <button class="button button--tonal" type="button" data-open-offline-stories>
+                  <I18nText keyName="app.offline.title" fallback="Offline stories" locale={locale} />
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
         {[groups.slice(0, 3), groups.slice(3 + dateGroups.length, 4 + dateGroups.length), groups.slice(4 + dateGroups.length), dateGroups].map((card) => (
           <div class:list={["settings-card", { "md-accordion settings-dates": card === dateGroups }]}>
             {card === dateGroups && (
@@ -463,6 +478,13 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
     const { signal } = controller;
     let stopDifficultyDisplay: (() => void) | undefined;
     let stopSpoilerDisplay: (() => void) | undefined;
+    const offline = settings.querySelector<HTMLElement>("[data-app-offline]");
+    if (offline && appSupports("offlineStoriesV1")) {
+      offline.hidden = false;
+      offline.querySelector<HTMLButtonElement>("[data-open-offline-stories]")?.addEventListener("click", () => {
+        void appCall("openOfflineStories", {});
+      }, { signal });
+    }
     const updates = settings.querySelector<HTMLElement>("[data-app-updates]");
     if (updates && appSupports("appUpdateV1")) {
       const button = updates.querySelector<HTMLButtonElement>("[data-app-check-update]")!;

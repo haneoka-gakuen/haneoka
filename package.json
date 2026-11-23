@@ -83,6 +83,7 @@
     "typecheck:downloads": "tsc -p worker/tsconfig.downloads.json",
     "types:downloads": "wrangler types worker/downloads-configuration.d.ts --config wrangler.downloads.jsonc --env-interface DownloadEnv",
     "types:downloads:check": "wrangler types worker/downloads-configuration.d.ts --config wrangler.downloads.jsonc --env-interface DownloadEnv --check",
+    "build:offline-story-player": "node scripts/build/offline-story-player.mjs",
     "build:story-studio": "node scripts/build/story-studio.mjs"
   },
   "dependencies": {

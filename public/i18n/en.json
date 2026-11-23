@@ -296,6 +296,7 @@
   },
   "settings": {
     "labels": {
+      "offlineStorage": "Offline storage",
       "appUpdates": "App updates",
       "checkAppUpdate": "Check for updates",
       "appUpToDate": "You’re up to date",

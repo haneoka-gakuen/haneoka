@@ -1,0 +1,42 @@
+@layer pages {
+  body {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  body > header {
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    gap: 8px;
+    padding-inline: 8px 16px;
+  }
+
+  body > header h1 {
+    overflow: hidden;
+    margin: 0;
+    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
+      var(--md-sys-typescale-title-large-line-height) var(--app-font);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body > main {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  body > main > vega-story-stage {
+    display: grid;
+    min-height: 0;
+  }
+
+  body > #error {
+    position: absolute;
+    inset: auto 16px 16px;
+  }
+}

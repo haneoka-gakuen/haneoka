@@ -296,6 +296,7 @@
   },
   "settings": {
     "labels": {
+      "offlineStorage": "オフラインストレージ",
       "appUpdates": "アプリのアップデート",
       "checkAppUpdate": "アップデートを確認",
       "appUpToDate": "最新版です",

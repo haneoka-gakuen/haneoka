@@ -171,27 +171,51 @@ class StoryOfflineProjection:
                         for path in sorted(paths)},
         }
 
-    def publish(self):
-        release, server = self.manifest["releaseId"], self.server
-        prefix = f"servers/{server}/releases/{release}/offline/"
-        previous = self.store.get_json(prefix + "latest.json")
-        if previous and previous.get("schema") == SCHEMA and previous.get("recipeSHA256") == RECIPE:
-            return previous
+    def common_manifest(self):
         documents = {}
-        indexes = {}
         for name in ("stories", "story-runtime", "characters", "bands"):
-            value, spec = self.resource(name)
-            indexes[name] = value
+            spec = self.catalog["resources"][name]
             documents[self.api(name)] = {"path": spec["index"]}
         common_sources = [f"metadata/sources/{path}.json" for path in COMMON_SOURCES]
-        common_sources.extend(path for path in self.entries if path.startswith("metadata/sources/Assets/AddressableResources/Adv/Transition/"))
+        common_sources.extend(
+            path for path in self.entries
+            if path.startswith("metadata/sources/Assets/AddressableResources/Adv/Transition/")
+        )
         for path in common_sources:
             if path in self.entries:
                 documents[self.api("sources/" + path[len("metadata/sources/"):-5])] = {"path": path}
         for path in self.entries:
             if path.startswith("assets/Assets/AddressableResources/Adv/Chat/Stamp/"):
                 documents[self.media(path)] = {"path": path}
-        common = self.collect([], documents)
+        return self.collect([], documents)
+
+    def chapter_manifest(self, episode_keys):
+        refs, seeds = {}, []
+        models = set()
+        for key in episode_keys:
+            value, path = self.entity("stories", key)
+            refs[self.api("stories/" + key)] = {"path": path, "selector": key}
+            seeds.append(value)
+            models.update(model["live2dKey"] for model in value.get("assets", {}).get("live2d", []))
+        for key in sorted(models):
+            model, path = self.entity("live2d", key)
+            refs[self.api("live2d/" + key)] = {"path": path, "selector": key}
+            seeds.append({
+                "sourcePath": model.get("sourcePath"),
+                "runtime": model.get("runtime", {}),
+                "motions": model.get("motions", []),
+                "expressions": model.get("expressions", []),
+            })
+        return self.collect(seeds, refs)
+
+    def publish(self):
+        release, server = self.manifest["releaseId"], self.server
+        prefix = f"servers/{server}/releases/{release}/offline/"
+        previous = self.store.get_json(prefix + "latest.json")
+        if previous and previous.get("schema") == SCHEMA and previous.get("recipeSHA256") == RECIPE:
+            return previous
+        stories = self.resource("stories")[0]
+        common = self.common_manifest()
         allowed = dict(common["objects"])
 
         def publish_manifest(value):
@@ -202,23 +226,11 @@ class StoryOfflineProjection:
 
         common_hash = publish_manifest(common)
         grouped = defaultdict(list)
-        for key, episode in indexes["stories"].get("episodes", {}).items():
+        for key, episode in stories.get("episodes", {}).items():
             grouped[str(episode.get("chapterId") or episode.get("chapterKey") or key)].append((key, episode))
         packages = []
         for chapter, episodes in sorted(grouped.items()):
-            refs, seeds = {}, []
-            for key, summary in episodes:
-                value, path = self.entity("stories", key)
-                refs[self.api("stories/" + key)] = {"path": path, "selector": key}
-                seeds.append(value)
-                for model in value.get("assets", {}).get("live2d", []):
-                    key = model["live2dKey"]
-                    model_value, model_path = self.entity("live2d", key)
-                    refs[self.api("live2d/" + key)] = {"path": model_path, "selector": key}
-                    runtime = model_value.get("runtime", {})
-                    seeds.append({"sourcePath": model_value.get("sourcePath"),
-                                  "runtime": {key: runtime[key] for key in ("moc", "textures") if key in runtime}})
-            package = self.collect(seeds, refs)
+            package = self.chapter_manifest(key for key, _ in episodes)
             allowed.update(package["objects"])
             first = episodes[0][1]
             packages.append({"id": "chapter-" + chapter, "title": first.get("chapterName") or first.get("title"),

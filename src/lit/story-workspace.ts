@@ -96,6 +96,7 @@ import {
 } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark } from "./shared/server-availability";
+import { appCall, appSupports } from "../lib/app-bridge";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { providerDetailHref, providerDiscussionIdentity, providerEntityRoute } from "../lib/provider-entity-data";
 import { entityDiscussion } from "./ui/entity-discussion";
@@ -2710,7 +2711,17 @@ export class StoryWorkspace extends LitElement {
     return nothing;
   }
   private renderDetailActions() {
+    const episode = this.detailEpisode;
+    const server = this.detailServer();
+    const mayDownload = episode && !this.reader && !this.isProvider() &&
+      (server === "jp" || server === "intl") && appSupports("offlineStoriesV1");
+    const label = uiText(this.locale, "app.offline.title");
     return html`
+      ${mayDownload ? html`<button type="button" class="icon-button" title=${label} aria-label=${label}
+        @click=${() => {
+          const id = this.episodeId(episode);
+          void appCall("openOfflineStories", { server, episode: id, chapter: `chapter-${episode.chapterId || episode.chapterKey || id}` });
+        }}>${icon("download")}</button>` : nothing}
       ${this.detailEpisode && (!this.reader || this.reader.editorHref)
         ? html`<a class="icon-button" href=${this.storyEditorHref()}
             title=${uiText(this.locale, "community.stories.editor")}
