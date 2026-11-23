@@ -1,4 +1,18 @@
 @layer pages {
+  .story-creation__project-title {
+    min-inline-size: 0;
+    max-inline-size: 24ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--md-sys-typescale-label-large-weight);
+  }
+  @media (max-width: 599px) {
+    .story-creation__project-title,
+    .story-creation__status-label {
+      display: none;
+    }
+  }
   .story-creation {
     display: block;
     min-width: 0;

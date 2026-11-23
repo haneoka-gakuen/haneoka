@@ -12,10 +12,11 @@ import { icon } from "./icon";
 export function actionMenu(options: {
   id: string;
   label: string | TemplateResult;
+  keepInAppBar?: boolean;
   items: { label: string; icon?: string; leading?: TemplateResult; href?: string; disabled?: boolean; run?: () => void }[];
 }) {
   return html`
-    <span class="action-menu">
+    <span class="action-menu" ?data-app-bar-keep=${options.keepInAppBar}>
       <button
         id=${options.id}
         class="button button--text"

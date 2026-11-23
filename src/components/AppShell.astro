@@ -18,6 +18,7 @@ interface Props {
   server?: ReleaseServer;
   appBar?: { actions: string; identity: string; search: string };
   contained?: boolean;
+  editorWorkspace?: boolean;
   providerHref?: string;
   entity?: {
     title: string;
@@ -28,7 +29,7 @@ interface Props {
     next?: { href: string; title?: string };
   };
 }
-const { locale, route, title, titleKey, server, entity, appBar, providerHref, contained = false } = Astro.props;
+const { locale, route, title, titleKey, server, entity, appBar, providerHref, contained = false, editorWorkspace = false } = Astro.props;
 const shellTitle = entity?.title ?? title;
 const shellTitleKey = entity ? undefined : titleKey;
 const providerSite = isRouteActive("/community/gbp", route)
@@ -61,7 +62,7 @@ const publicForums = await publicForumNavigation(locale, route);
 const publicForumsDataId = "shell-public-forums";
 ---
 
-<div class="app-shell" data-shell data-route={route}>
+<div class="app-shell" data-shell data-route={route} data-editor-workspace={editorWorkspace ? "" : undefined}>
   <script is:inline type="application/json" id={publicForumsDataId} set:html={serializePageData(publicForums.snapshot)}></script>
   <a class="skip-link" href="#main-content">
     <I18nText keyName="common.fields.content" fallback="Content" locale={locale} />
@@ -395,6 +396,7 @@ const publicForumsDataId = "shell-public-forums";
   let navigationAnchor: { route: string; offset: number } | undefined;
 
   const shell = () => document.querySelector<HTMLElement>("[data-shell]");
+  const hasPersistentRail = () => persistentQuery.matches && !shell()?.hasAttribute("data-editor-workspace");
   const syncToggles = (expanded: boolean) =>
     document
       .querySelectorAll("[data-nav-toggle]")
@@ -405,7 +407,7 @@ const publicForumsDataId = "shell-public-forums";
     const host = shell();
     if (!host) return;
     if (host.classList.contains("nav-modal-open") === open && (open || !releaseNavigationFocus)) {
-      syncToggles(open || (persistentQuery.matches && root.dataset.nav !== "collapsed"));
+      syncToggles(open || (hasPersistentRail() && root.dataset.nav !== "collapsed"));
       return;
     }
     host.classList.toggle("nav-modal-open", open);
@@ -430,7 +432,7 @@ const publicForumsDataId = "shell-public-forums";
       releaseNavigationFocus?.();
       releaseNavigationFocus = undefined;
     }
-    syncToggles(open || (persistentQuery.matches && root.dataset.nav !== "collapsed"));
+    syncToggles(open || (hasPersistentRail() && root.dataset.nav !== "collapsed"));
   };
   const setPersistent = (expanded: boolean) => {
     root.dataset.nav = expanded ? "expanded" : "collapsed";
@@ -479,10 +481,10 @@ const publicForumsDataId = "shell-public-forums";
     navigation.dataset.navRestoring = "true";
     const opened = readNavigationChoices();
     restoreNavigationChoices(host, opened);
-    syncToggles(persistentQuery.matches && root.dataset.nav !== "collapsed");
+    syncToggles(hasPersistentRail() && root.dataset.nav !== "collapsed");
     host.querySelectorAll("[data-nav-toggle]").forEach((node) =>
       node.addEventListener("click", () => {
-        if (persistentQuery.matches) setPersistent(root.dataset.nav === "collapsed");
+        if (hasPersistentRail()) setPersistent(root.dataset.nav === "collapsed");
         else setModal(!host.classList.contains("nav-modal-open"));
       }),
     );

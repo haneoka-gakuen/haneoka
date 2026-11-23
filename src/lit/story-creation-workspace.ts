@@ -45,6 +45,7 @@ import {
   StoryRequestError,
 } from "../lib/story-creation/community";
 import { icon } from "./ui/icon";
+import { actionMenu } from "./ui/action-menu";
 import { snackbar } from "../lib/snackbar";
 import { modal } from "./ui/modal";
 import { readReleaseServer } from "../lib/release-server";
@@ -148,26 +149,61 @@ export class StoryCreationWorkspace extends LitElement {
     return this;
   }
   private t = (key: string) => clientText(this.locale, `community.stories.${key}`);
-  private actionButton(action: StudioAction, artwork: unknown) {
-    const label = this.t(action === "stories" ? "importStory" : action);
-    const disabled =
+  private actionLabel(action: StudioAction) {
+    return this.t(action === "stories" ? "importStory" : action);
+  }
+  private actionDisabled(action: StudioAction) {
+    return Boolean(
       !this.studioReady ||
       this.busy ||
       this.state?.busy ||
       (action === "undo" && !this.state?.canUndo) ||
       (action === "redo" && !this.state?.canRedo) ||
-      (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action));
+      (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action))
+    );
+  }
+  private actionButton(action: StudioAction, artwork: unknown) {
+    const label = this.actionLabel(action);
     return html`
       <button
         class="icon-button"
         title=${label}
         aria-label=${label}
-        ?disabled=${disabled}
+        ?disabled=${this.actionDisabled(action)}
         @click=${() => void this.action(action)}
       >
         ${artwork}
       </button>
     `;
+  }
+  private fileMenu() {
+    const item = (action: StudioAction, leading: ReturnType<typeof icon>) => ({
+      label: this.actionLabel(action),
+      leading,
+      disabled: this.actionDisabled(action),
+      run: () => void this.action(action),
+    });
+    return actionMenu({
+      id: `${this.toolbarOwner}-file`,
+      label: this.t("fileMenu"),
+      keepInAppBar: true,
+      items: [
+        item("new", icon("add")),
+        item("library", icon("folder")),
+        item("folder", icon("folder_open")),
+        item("import", icon("upload_file")),
+        item("stories", icon("auto_stories")),
+        {
+          label: this.t("saveCopy"),
+          leading: icon("content_copy"),
+          disabled: this.actionDisabled("export-project"),
+          run: () => void this.saveCopy(),
+        },
+        item("export-project", icon("download")),
+        item("export-game", icon("sports_esports")),
+        item("settings", icon("settings")),
+      ],
+    });
   }
   override connectedCallback() {
     super.connectedCallback();
@@ -248,6 +284,7 @@ export class StoryCreationWorkspace extends LitElement {
       this,
       this.toolbarOwner,
       html`
+        ${this.fileMenu()}
         <button
           class="icon-button"
           data-app-bar-keep
@@ -269,21 +306,7 @@ export class StoryCreationWorkspace extends LitElement {
         ${this.actionButton("undo", icon("undo"))} ${this.actionButton("redo", icon("redo"))}
         ${this.actionButton("timeline", icon("timeline"))}
         ${this.actionButton("assistant", icon("auto_awesome"))} ${this.actionButton("cinematic", icon("movie_filter"))} ${this.actionButton("ai-settings", icon("settings_suggest"))}
-        ${this.actionButton("assets", icon("perm_media"))} ${this.actionButton("import", icon("upload_file"))}
-        ${this.actionButton("stories", icon("auto_stories"))}
-        ${this.actionButton("export-game", icon("sports_esports"))}
-        ${this.actionButton("export-project", icon("download"))} ${this.actionButton("settings", icon("settings"))}
-        ${this.actionButton("library", icon("folder"))} ${this.actionButton("new", icon("add"))}
-        ${this.actionButton("folder", icon("folder_open"))}
-        <button
-          class="icon-button"
-          title=${this.t("saveCopy")}
-          aria-label=${this.t("saveCopy")}
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
-          @click=${() => void this.saveCopy()}
-        >
-          ${icon("content_copy")}
-        </button>
+        ${this.actionButton("assets", icon("perm_media"))}
         <a
           class="icon-button"
           title=${this.t("mine")}
@@ -326,9 +349,13 @@ export class StoryCreationWorkspace extends LitElement {
       this,
       this.toolbarOwner,
       html`
+        ${this.state?.projectId && this.state.title
+          ? html`<span class="story-creation__project-title" dir="auto" title=${this.state.title}>${this.state.title}</span>`
+          : nothing}
         <span
-          class="chip"
+          class="chip story-creation__status"
           role="status"
+          aria-label=${status}
           title=${[
             this.state?.storagePath || storage,
             localStatus,
@@ -347,7 +374,7 @@ export class StoryCreationWorkspace extends LitElement {
             .join(" · ")}
         >
           ${cloudSaved ? icon("cloud_done", 18) : this.state?.storage === "folder" ? icon("folder", 18) : icon("save", 18)}
-          ${status}
+          <span class="story-creation__status-label">${status}</span>
         </span>
       `,
     );
