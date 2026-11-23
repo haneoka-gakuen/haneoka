@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 故事资料、媒体地址、舞台选项与本地画面偏好。
-// Output: 共用 Our Notes 主题与 Three 舞台的 Vega 播放、控制及生命周期适配。
+// Output: 共用 Our Notes 舞台、供应方故事运镜、Vega 播放、控制及生命周期适配。
 // Pos: [Map](L2-2.md)；故事工作区与外部故事引擎的浏览器桥。
 // Effects/Dependencies: 按需加载引擎／资源，创建渲染与媒体状态，清理依赖 dispose／舞台生命周期。
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
@@ -318,16 +318,17 @@ export class VegaStoryStage extends LitElement {
           textureCacheMegabytes: 128,
         });
       }
-      const hydrated = project
-        ? ({ ...story, runtime: resolvedRuntime } as AdvStory)
-        : (hydrateStoryPayload({
-            ...story,
-            assets: {
-              ...assets,
-              live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })),
-            },
-            runtime: resolvedRuntime,
-          }) as AdvStory);
+      const payload = {
+        ...story,
+        assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
+        runtime: resolvedRuntime,
+      };
+      let hydrated = { ...story, runtime: resolvedRuntime } as AdvStory;
+      if (!project && providerBase) {
+        const { compileProviderStory } = await import("@haneoka/altair-plugin-vega-preview/projection");
+        if (!active()) return;
+        hydrated = vegaProjectToAdvStory(compileProviderStory(payload));
+      } else if (!project) hydrated = hydrateStoryPayload(payload) as AdvStory;
       const preparationPlan: Array<{
         index: number;
         category: "Voice" | "Se";
