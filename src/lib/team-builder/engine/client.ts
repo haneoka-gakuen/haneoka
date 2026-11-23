@@ -186,7 +186,9 @@ class EngineWorker {
     return message.type === "run" && !message.request.noFloor && !message.request.seedOnly
       && message.request.k === 1 && (message.request.shard?.count ?? 1) > 1 && (message.request.goal.kind === "event"
         ? (!!message.request.rewardPhase || message.request.rewardLexicographic === true) && !!message.request.goal.gekiso
-        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
+        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" ||
+          !message.request.goal.opponents && ((message.request.goal.accuracy.missEvery ?? 0) > 0 ||
+            ["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16)));
   }
   private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"],
     checkedTeams?: Pending["checkedTeams"], replyWindow?: Pending["replyWindow"]): Promise<unknown> {
@@ -1090,7 +1092,10 @@ export class EngineClient {
             return response;
           });
           const warm = Array.from({ length: seedCount }, () => emptyResponse(part));
-          return { request: part, responses, warm, scoredSeeds: new Map<EngineWorker, unknown[]>(), deferred: false, seeded: request.seeded === true, seedNext: 0, seedDone: 0, next: 0, finished: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
+          const directReplay = request.k === 1 && !justWindow && (goal.accuracy.missEvery ?? 0) > 0
+            && (goal.seeds > 0 || !requestMissions(this.data, request, song).includes(2));
+          return { request: part, responses, warm, scoredSeeds: new Map<EngineWorker, unknown[]>(), deferred: false, directReplay,
+            seeded: directReplay || request.seeded === true, seedNext: 0, seedDone: 0, next: 0, finished: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
         });
         const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknownCards], elapsedMs: clock() - started });
         const waiters = new Set<() => void>();
@@ -1154,7 +1159,7 @@ export class EngineClient {
             const floors = privateHits.length >= request.k ? { [key]: privateHits[request.k - 1]!.key } : {};
             const part: EngineRequest = { ...state.request, seeds: privateHits, floors,
               ...(job.shard === null ? { seedOnly: true, seedVariant: seedCount === 2 ? (job.seed === 0 ? "sample" as const : "quiet" as const) : undefined }
-                : { seeded: true, seedOnly: false, seedVariant: undefined, shard: { index: job.shard, count } }) };
+                : { seeded: !state.directReplay, seedOnly: false, seedVariant: undefined, shard: { index: job.shard, count } }) };
             const update = (response: EngineResponse) => {
               state.deferred ||= response.results.some(part => part.hits.some(pendingScores));
               if (state.deferred) for (const part of response.results) for (const hit of part.hits)
@@ -1188,7 +1193,7 @@ export class EngineClient {
                 parts[job.index] = mergeShardResponses(state.responses.map(scoredResponse), request.k, clock() - started).results[0]!;
               }
               const best = parts[job.index]!.hits[0];
-              if (sampledLive && best) for (const [worker, running] of activeScores)
+              if ((sampledLive || state.directReplay) && best) for (const [worker, running] of activeScores)
                 if (running.index === job.index && best.key > running.floor && worker.raiseFloor(best.key)) running.floor = best.key;
               publish(merged());
             };
