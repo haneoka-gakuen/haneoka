@@ -1,6 +1,6 @@
 // L3 — GEB
-// Input: Released band stage and optional song jacket.
-// Output: A compact Sonolus PNG at the authored lightweight gameplay scale.
+// Input: Released band stage, song jacket or Snapshot illustration.
+// Output: Compact Sonolus PNGs for the lightweight background choices.
 // Pos: [Map](../../L2-2.md); image preparation for the Worker and standalone server.
 // Effects/Dependencies: Uses the shared game compositor for jacket backgrounds.
 import {
@@ -63,6 +63,30 @@ export function composeSonolusSongBackground(stage: Uint8Array, jacket: Uint8Arr
     stage: decodeBackground(stage),
     jacket: decodeBackground(jacket),
   }));
+}
+
+export function buildSonolusSnapshotBackground(source: Uint8Array): Uint8Array {
+  const image = decodeBackground(source);
+  const width = Math.ceil(image.width / 2);
+  const height = Math.ceil(image.height / 2);
+  const data = new Uint8Array(width * height * 3);
+  for (let y = 0; y < height; y++) {
+    const top = 2 * y * image.width;
+    const bottom = Math.min(2 * y + 1, image.height - 1) * image.width;
+    for (let x = 0; x < width; x++) {
+      const left = 2 * x, right = Math.min(left + 1, image.width - 1);
+      const a = (top + left) * 4, b = (top + right) * 4;
+      const c = (bottom + left) * 4, d = (bottom + right) * 4;
+      const output = (y * width + x) * 3;
+      for (let channel = 0; channel < 3; channel++) {
+        data[output + channel] = Math.round((
+          image.rgba[a + channel]! * image.rgba[a + 3]! + image.rgba[b + channel]! * image.rgba[b + 3]! +
+          image.rgba[c + channel]! * image.rgba[c + 3]! + image.rgba[d + channel]! * image.rgba[d + 3]!
+        ) / (4 * 255));
+      }
+    }
+  }
+  return encode({ width, height, channels: 3, data });
 }
 
 export function buildSonolusBandBackground(stage: Uint8Array): Uint8Array {

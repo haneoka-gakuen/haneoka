@@ -89,7 +89,15 @@ import { handleCommunityRequest } from "./community";
 import { submitSonolusCommentReaction } from "./community-social";
 import { handleSonolusAccountLink, handleSonolusAuthentication, readSonolusActor, sonolusAuthRoute } from "./sonolus-auth";
 import {
+  buildSonolusSnapshotBackground,
   composeSonolusSongBackground,
+  snapshotArtPath,
+  snapshotBackgroundItem,
+  sonolusBackgroundJsonResource,
+  sonolusSnapshotBackgroundPath,
+  sonolusSnapshotBackgroundSearch,
+  sonolusSnapshotBackgroundTitle,
+  sonolusSnapshotImageRevision,
   sonolusSongBackgroundAspect,
   sonolusSongBackgroundPath,
   sonolusSongBackgroundVersion,
@@ -3746,7 +3754,7 @@ function sonolusBandBackground(page: JsonValue | null, bandId: unknown): JsonObj
 function songBackgroundItem(release: Release, name: string, songId: string, cover: JsonObject, origin: string): JsonObject {
   const identity = `haneoka-jacket-${release.server}-${release.releaseId}-${songId}`;
   const resource = (kind: string) => ({
-    url: `${origin}/sonolus/backgrounds/${identity}/${kind}${kind === "image" ? `?v=${sonolusSongBackgroundImageRevision}` : ""}`,
+    url: `${origin}/sonolus/backgrounds/${identity}/${kind}?v=${sonolusSongBackgroundImageRevision}`,
   });
   return {
     name: identity, version: sonolusSongBackgroundVersion, title: name, subtitle: "BanG Dream! Our Notes", author: "haneoka", tags: [],
@@ -3777,9 +3785,9 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
   const cacheControl = "private, max-age=0, must-revalidate";
   const jsonHeaders = { ...SONOLUS_JSON_HEADERS, "Cache-Control": cacheControl };
   if (part === "data" || part === "configuration")
-    return new Response(request.method === "HEAD" ? null : JSON.stringify(part === "data"
+    return sonolusBackgroundJsonResource(request, part === "data"
       ? { aspectRatio: sonolusSongBackgroundAspect, fit: "cover", color: "#03030a" }
-      : { blur: 0, mask: "#0000004d" }), { headers: jsonHeaders });
+      : { blur: 0, mask: "#0000004d" }, cacheControl);
   if (part === "image") {
     const key = new Request(`https://sonolus-cover.haneoka.internal/v${sonolusSongBackgroundImageRevision}/${release.server}/${release.releaseId}/${songId}.png`);
     const cached = await caches.default.match(key);
@@ -3829,6 +3837,151 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
   const thumbnail = jacket ? { url: `${origin}/${jacket.replace(/^assets\//u, `assets/${release.server}/`)}?release=${release.releaseId}` } : { url: `${origin}${new URL(request.url).pathname}/image` };
   const item = songBackgroundItem(release, title ?? songId, songId, thumbnail, origin);
   return new Response(request.method === "HEAD" ? null : JSON.stringify({ item, hasCommunity: false, actions: [], leaderboards: [], sections: [] }), { headers: jsonHeaders });
+}
+
+function sonolusSnapshotVisibility(request: Request, env: Env) {
+  return requestContentView(new Request(new URL("/", request.url)), env);
+}
+
+function sonolusSnapshotArt(release: Release, card: JsonObject) {
+  const images = isJsonObject(card.images) ? card.images : {};
+  return {
+    full: snapshotArtPath(release.server, images.full, "full"),
+    thumbnail: snapshotArtPath(release.server, images.thumbnail, "thumbnail"),
+  };
+}
+
+function sonolusSnapshotResponse(request: Request, document: JsonObject) {
+  const localization = new URL(request.url).searchParams.get("localization");
+  return new Response(request.method === "HEAD" ? null : JSON.stringify(
+    localizeSonolusDocument(document, localization, OUR_NOTES_SONOLUS_ITEM_LABELS),
+  ), {
+    headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "private, max-age=0, must-revalidate" },
+  });
+}
+
+async function handleSonolusSnapshotCatalog(
+  request: Request, env: Env, ctx: ExecutionContext, releases: readonly Release[], origin: string,
+) {
+  const url = new URL(request.url);
+  const info = url.pathname.endsWith("/info");
+  if (!info && !["snapshot", "quick"].includes(url.searchParams.get("type") ?? "")) return null;
+  const view = await sonolusSnapshotVisibility(request, env);
+  const sources = await Promise.all(releases.map(async (release) => {
+    const [manifest, visibility] = await Promise.all([
+      catalogStorageManifest(env, release), resourceContentIndex(env, ctx, release.server, release.releaseId),
+    ]);
+    const path = manifest?.resources["support-cards"]?.index;
+    const catalog = path ? await readReleaseJson(env, release, path) : null;
+    return { release, catalog, publications: visibility?.publications };
+  }));
+  const keywords = (url.searchParams.get("keywords") ?? "").slice(0, 128).normalize("NFKC").toLowerCase().trim().split(/\s+/u);
+  const items = new Map<string, JsonObject>();
+  for (const { release, catalog, publications } of sources) {
+    if (!isJsonObject(catalog)) continue;
+    for (const [id, card] of Object.entries(catalog)) {
+      if (items.has(id) || !/^[1-9]\d{0,15}$/u.test(id) || !isJsonObject(card) ||
+          !contentVisible(view, "support-cards", { ...card, ...publications?.[`support-cards:${id}`] }, id)) continue;
+      const { full, thumbnail } = sonolusSnapshotArt(release, card);
+      if (!full) continue;
+      const terms = [id, card.prefix, card.cardName, sonolusSnapshotBackgroundTitle].flat()
+        .filter((value): value is string => typeof value === "string");
+      const searchable = terms.join(" ").normalize("NFKC").toLowerCase();
+      if (keywords.every((word) => searchable.includes(word)))
+        items.set(id, snapshotBackgroundItem(release, id, card, thumbnail, origin));
+    }
+  }
+  const snapshots = [...items.values()].reverse();
+  const loadStages = async () => {
+    const path = "runtime/sonolus/backgrounds/list/page-0";
+    const bands = await readGlobalSonolusJson(env, path) ?? (releases[0] ? await readReleaseJson(env, releases[0], path) : null);
+    const document = sonolusThumbnailDocument(bands, undefined, origin);
+    return isJsonObject(document) && Array.isArray(document.items) ? document.items : [];
+  };
+  if (info) {
+    if (!snapshots.length) return null;
+    return sonolusSnapshotResponse(request, {
+      creates: [],
+      searches: [sonolusSnapshotBackgroundSearch],
+      sections: [
+        { title: "#RECOMMENDED", itemType: "background", items: await loadStages() },
+        {
+          title: sonolusSnapshotBackgroundTitle,
+          itemType: "background",
+          items: snapshots.slice(0, 5),
+          search: sonolusSnapshotBackgroundSearch,
+          searchValues: "type=snapshot",
+        },
+      ],
+    });
+  }
+  const allItems = url.searchParams.get("type") === "quick"
+    ? [...(await loadStages()).filter((stage) => keywords.every((word) =>
+      JSON.stringify(stage).normalize("NFKC").toLowerCase().includes(word))), ...snapshots]
+    : snapshots;
+  const page = Math.max(0, Number.parseInt(url.searchParams.get("page") ?? "0", 10) || 0);
+  const pageSize = 20;
+  return sonolusSnapshotResponse(request, {
+    pageCount: Math.max(1, Math.ceil(allItems.length / pageSize)),
+    items: allItems.slice(page * pageSize, (page + 1) * pageSize),
+  });
+}
+
+async function handleSonolusSnapshotBackground(request: Request, env: Env, ctx: ExecutionContext, match: RegExpExecArray) {
+  const [, , slug, releaseId, id, part] = match;
+  const server = await activeResourceServer(env, slug!);
+  const release = server ? await requestedRelease(env, server, releaseId!) : null;
+  const notFound = () => new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Background not found" }), {
+    status: 404, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },
+  });
+  if (!release || !id) return notFound();
+  const [manifest, visibility, view] = await Promise.all([
+    catalogStorageManifest(env, release),
+    resourceContentIndex(env, ctx, release.server, release.releaseId),
+    sonolusSnapshotVisibility(request, env),
+  ]);
+  const storage = manifest?.resources["support-cards"]?.entities;
+  const card = storage ? ownJsonValue(await readCatalogShard(env, release, storage, id), id) : undefined;
+  if (!isJsonObject(card) || !contentVisible(view, "support-cards", {
+    ...card, ...visibility?.publications?.[`support-cards:${id}`],
+  }, id)) return notFound();
+  const { full, thumbnail } = sonolusSnapshotArt(release, card);
+  if (!full) return notFound();
+  const cacheControl = "private, max-age=0, must-revalidate";
+  if (part === "data" || part === "configuration")
+    return sonolusBackgroundJsonResource(request, part === "data"
+      ? { fit: "cover", color: "#000000" }
+      : { blur: 0, mask: "#0000004d" }, cacheControl);
+  if (part === "image") {
+    const key = new Request(`https://sonolus-snapshot.haneoka.internal/v${sonolusSnapshotImageRevision}/${release.server}/${release.releaseId}/${id}.png`);
+    const cached = await caches.default.match(key);
+    if (cached) {
+      if (request.method === "HEAD") {
+        await cached.body?.cancel();
+        return privateContentResponse(new Response(null, { headers: cached.headers }));
+      }
+      return privateContentResponse(cached);
+    }
+    const path = `assets/${full}`;
+    const entry = await releaseEntry(env, release, path);
+    if (!entry || entry.bytes > 4 * 1024 * 1024 || entry.mediaType !== "image/png") return notFound();
+    const headers = { "Content-Type": "image/png", "Cache-Control": cacheControl };
+    if (request.method === "HEAD") return new Response(null, { headers });
+    const bytes = await readReleaseBytes(env, release, path);
+    if (!bytes) return notFound();
+    const body = new Uint8Array(buildSonolusSnapshotBackground(bytes)).buffer;
+    ctx.waitUntil(caches.default.put(key, new Response(body, {
+      headers: { ...headers, "Cache-Control": "public, max-age=31536000, immutable" },
+    })));
+    return new Response(body, { headers });
+  }
+  return sonolusSnapshotResponse(request, {
+    item: snapshotBackgroundItem(release, id, card, thumbnail, siteOrigin(new URL(request.url))),
+    hasCommunity: false,
+    actions: [],
+    leaderboards: [],
+    sections: [],
+  });
 }
 
 async function handleSonolusCommunityDiscussion(
@@ -3938,6 +4091,8 @@ async function handleSonolus(
   if (sonolusAuthRoute(pathname)) return handleSonolusAuthentication(request, env);
   const backgroundPath = sonolusSongBackgroundPath.exec(pathname);
   if (backgroundPath) return handleSonolusSongBackground(request, env, ctx, backgroundPath);
+  const snapshotPath = sonolusSnapshotBackgroundPath.exec(pathname);
+  if (snapshotPath) return handleSonolusSnapshotBackground(request, env, ctx, snapshotPath);
   const discussionPath = sonolusDiscussionPath.exec(pathname);
   if (discussionPath?.[1] === "levels" && sonolusCommunityLevelPath.test(`/sonolus/levels/${discussionPath[2]}`)) {
     return handleSonolusCommunityDiscussion(env, request, discussionPath, async () => {
@@ -3974,6 +4129,13 @@ async function handleSonolus(
       ? payloadState.revision
       : "unversioned";
   const origin = siteOrigin(assetUrl);
+  if (pathname === "/sonolus/backgrounds/info" || pathname === "/sonolus/backgrounds/list") {
+    const backgrounds = await handleSonolusSnapshotCatalog(request, env, ctx, releases, origin).catch((error) => {
+      console.warn("Could not read Sonolus Snapshot backgrounds", error);
+      return null;
+    });
+    if (backgrounds) return backgrounds;
+  }
   const viewRequest = discussionPath ? new Request(catalogUrl) : request;
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(viewRequest, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
