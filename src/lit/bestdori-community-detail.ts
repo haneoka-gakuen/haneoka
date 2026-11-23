@@ -14,6 +14,7 @@ export interface BestdoriDetailState {
   card: Value | null;
   page: boolean;
   comments?: unknown;
+  downloads?: unknown;
   label(key: string, fallback: string): string;
 }
 export interface BestdoriDetailActions {
@@ -42,6 +43,7 @@ export function renderBestdoriDetail(
       { id: "trained", source: String(images?.trained || ""), label: uiText(locale, "catalog.cards.fields.training") },
     ].filter((image) => image.source);
     return renderPane({
+      actions: state.page ? nothing : state.downloads,
       kind: "card",
       page: state.page,
       hideHeader: state.page,

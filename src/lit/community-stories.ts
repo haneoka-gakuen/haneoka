@@ -4,7 +4,8 @@
 // Pos: [Map](L2-2.md)；社区故事的规范集合与实体页面。
 // Effects/Dependencies: 同源社区 API、共享详情／评论／播放器；离开释放请求和应用栏。
 import { normalizeSearchText } from "../lib/search-text";
-import { appCall, appSupports } from "../lib/app-bridge";
+import type { OfflineStoryItem } from "../lib/app-bridge";
+import { storyDownload } from "./shared/story-download";
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { storyRequest, downloadStoryProject } from "../lib/story-creation/community";
@@ -218,6 +219,7 @@ export class CommunityStories extends LitElement {
         },
         server: this.server,
         backHref: this.href(row.id, this.revision || undefined) + location.search,
+        offlineItem: this.offlineItems(row)[0],
         ...(row.canEdit || row.remix
           ? {
               editorHref:
@@ -321,6 +323,10 @@ export class CommunityStories extends LitElement {
       this.busy = false;
     }
   }
+  private offlineItems(row: CommunityStoryItem): OfflineStoryItem[] {
+    return row.remix && row.publishedRevision && row.revision === row.publishedRevision && !row.compilationError
+      ? [{ server: "community", chapter: row.id, episode: row.id, title: row.title }] : [];
+  }
   private renderDetail(row: CommunityStoryItem) {
     const back = () => location.assign(this.href() + (this.mine ? "?scope=mine" : ""));
     const actions = html`
@@ -343,13 +349,7 @@ export class CommunityStories extends LitElement {
       >
         ${icon("favorite")}
       </button>
-      ${row.remix && row.revision === row.publishedRevision && appSupports("portableOfflineStoriesV1")
-        ? html`<button type="button" class="icon-button" title=${clientText(this.locale, "app.offline.title")}
-            aria-label=${clientText(this.locale, "app.offline.title")}
-            @click=${() => void appCall("openOfflineStories", { server: "community", chapter: row.id, episode: row.id })}>
-          ${icon("offline_pin")}
-        </button>`
-        : nothing}
+      ${storyDownload(this.locale, this.offlineItems(row))}
       ${
         row.canEdit || row.remix
           ? html`
@@ -571,6 +571,7 @@ export class CommunityStories extends LitElement {
                 this.view = view;
               }),
               controls: html`
+                ${storyDownload(this.locale, rows.flatMap(row => this.offlineItems(row)), true)}
                 <a class="button button--tonal" href=${storyCreationPath(this.locale)}>
                   ${icon("add")}${this.t("create")}
                 </a>

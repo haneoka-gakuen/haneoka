@@ -479,7 +479,7 @@ const spoilerLabel = "settings.labels.showSpoilerContent";
     let stopDifficultyDisplay: (() => void) | undefined;
     let stopSpoilerDisplay: (() => void) | undefined;
     const offline = settings.querySelector<HTMLElement>("[data-app-offline]");
-    if (offline && appSupports("offlineStoriesV1")) {
+    if (offline && appSupports("offlineQueueV1")) {
       offline.hidden = false;
       offline.querySelector<HTMLButtonElement>("[data-open-offline-stories]")?.addEventListener("click", () => {
         void appCall("openOfflineStories", {});

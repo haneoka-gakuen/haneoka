@@ -1189,7 +1189,7 @@ def prune_releases(store: R2Store, config: ServerConfig, dry_run: bool = False) 
 
     keep = {current}
     offline = store.get_json(f"servers/{config.id}/offline/current.json")
-    if isinstance(offline, dict) and offline.get("schema") == "haneoka-story-offline-v1" and offline.get("server") == config.id:
+    if isinstance(offline, dict) and offline.get("schema") == "haneoka-story-offline-v2" and offline.get("server") == config.id:
         offline_release = offline.get("releaseId")
         if isinstance(offline_release, str) and any(
             candidate[0] == offline_release and candidate[3] == offline.get("sourceId") for candidate in candidates

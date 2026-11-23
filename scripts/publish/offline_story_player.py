@@ -38,11 +38,10 @@ def main():
     package.write_bytes(payload)
     manifest = args.output / "release.json"
     manifest.write_bytes(json_bytes({
-        "schema": "haneoka-story-player-v1",
+        "schema": "haneoka-story-player-v2",
         "version": args.release,
         "sha256": digest,
         "bytes": len(payload),
-        "portableStory": True,
     }))
     signature = manifest.with_suffix(".json.sig")
     signature.unlink(missing_ok=True)

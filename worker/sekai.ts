@@ -1100,7 +1100,10 @@ export async function handleSekaiApi(
   const offline = /^offline\/((?:event|unit|character|card|area|special|mysekai|live)\.[\w-]+)$/u.exec(tail);
   if (offline) {
     return serveJson(request, ctx, async () => {
-      const story = await storyDetail(region, offline[1]!);
+      const id = offline[1]!;
+      const [detail, rows] = await Promise.all([storyDetail(region, id), collections[id.split(".")[0]!]!()]);
+      const { image, ...summary } = (rows[id] || {}) as Obj;
+      const story = { ...summary, thumbnail: summary.thumbnail || image, ...detail };
       const keys = storyModelIds(story);
       return offlineProviderStory(story, keys.length ? await live2dEntries(keys) : {});
     });

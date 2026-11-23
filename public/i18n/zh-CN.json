@@ -7240,6 +7240,16 @@
   },
   "app": {
     "offline": {
+      "downloadStory": "下载剧情",
+      "downloadResults": "下载符合条件的剧情（{count} 篇）",
+      "inQueue": "等待下载",
+      "savedStory": "已下载",
+      "pausedStory": "下载已暂停",
+      "downloadingStory": "正在下载",
+      "retryStory": "重试下载",
+      "addedCount": "已加入下载队列 {count} 篇",
+      "queuedCount": "已在队列中 {count} 篇",
+      "savedCount": "已下载 {count} 篇",
       "title": "离线剧情",
       "check": "检查更新",
       "download": "下载",

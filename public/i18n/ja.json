@@ -7240,6 +7240,16 @@
   },
   "app": {
     "offline": {
+      "downloadStory": "ストーリーをダウンロード",
+      "downloadResults": "該当するストーリーをダウンロード（{count}件）",
+      "inQueue": "ダウンロード待ち",
+      "savedStory": "ダウンロード済み",
+      "pausedStory": "ダウンロード一時停止中",
+      "downloadingStory": "ダウンロード中",
+      "retryStory": "ダウンロードを再試行",
+      "addedCount": "キューに追加：{count}件",
+      "queuedCount": "キューに追加済み：{count}件",
+      "savedCount": "ダウンロード済み：{count}件",
       "title": "オフラインストーリー",
       "check": "更新を確認",
       "download": "ダウンロード",

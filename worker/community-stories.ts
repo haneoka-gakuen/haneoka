@@ -1009,6 +1009,7 @@ export async function handleCommunityStoryRequest(
         return response(request, {
           schema: "haneoka-portable-story-v1",
           story: { storyId: `community:${id}:${selected.revision}`, title: selected.title },
+          thumbnail: selected.coverPath ? storyAssetUrl(id, selected.revision, selected.coverPath) : null,
           project: mapStoryProjectResources(data.project, (source) => {
             const path = source.replace(/^\.\//u, "");
             return allowed.has(path) ? storyAssetUrl(id, selected.revision, path) : source;

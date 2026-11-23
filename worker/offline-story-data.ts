@@ -11,12 +11,13 @@ export function storyModelIds(story: RecordValue): string[] {
   return [...new Set(rows.map((row) => String(row.live2dKey || "")).filter(Boolean))];
 }
 
-export function offlineProviderStory(story: RecordValue, models: RecordValue) {
+export function offlineProviderStory(story: RecordValue, models: RecordValue, characters: unknown[] = []) {
   const items = models.items as RecordValue | undefined;
   return {
     schema: "haneoka-portable-story-v1",
     story,
     live2d: storyModelIds(story).map((id) => ({ id, ...(items?.[id] as RecordValue | undefined) })),
+    characters,
   };
 }
 
@@ -24,10 +25,13 @@ export function offlineProviderCatalog(rows: RecordValue) {
   return Object.values(rows).flatMap((raw) => {
     const row = raw as RecordValue;
     const title = row.title || row.caption || row.chapterName || row.eventName || row.storyId;
+    const thumbnail = [row.episodeImage, row.thumbnail, row.image].find((value) => typeof value === "string");
     return typeof row.storyId === "string" ? [{
       id: row.storyId,
       title,
       group: row.chapterName || row.eventName || null,
+      groupId: String(row.chapterKey || row.chapterId || row.eventId || ""),
+      thumbnail: thumbnail || null,
     }] : [];
   });
 }

@@ -7240,6 +7240,16 @@
   },
   "app": {
     "offline": {
+      "downloadStory": "Download story",
+      "downloadResults": "Download matching stories ({count})",
+      "inQueue": "In download queue",
+      "savedStory": "Downloaded",
+      "pausedStory": "Download paused",
+      "downloadingStory": "Downloading",
+      "retryStory": "Retry download",
+      "addedCount": "Added to queue: {count}",
+      "queuedCount": "Already queued: {count}",
+      "savedCount": "Already downloaded: {count}",
       "title": "Offline stories",
       "check": "Check for updates",
       "download": "Download",

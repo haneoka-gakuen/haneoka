@@ -7240,6 +7240,16 @@
   },
   "app": {
     "offline": {
+      "downloadStory": "下載劇情",
+      "downloadResults": "下載符合條件的劇情（{count} 篇）",
+      "inQueue": "等待下載",
+      "savedStory": "已下載",
+      "pausedStory": "下載已暫停",
+      "downloadingStory": "下載中",
+      "retryStory": "重試下載",
+      "addedCount": "已加入下載佇列 {count} 篇",
+      "queuedCount": "已在佇列中 {count} 篇",
+      "savedCount": "已下載 {count} 篇",
       "title": "離線劇情",
       "check": "檢查更新",
       "download": "下載",

@@ -1,5 +1,5 @@
 @layer pages {
-  body {
+  body[data-shell] {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-width: 0;
@@ -7,35 +7,20 @@
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
-  body > header {
-    display: flex;
-    align-items: center;
-    min-height: 56px;
-    gap: 8px;
-    padding-inline: 8px 16px;
-  }
-
-  body > header h1 {
-    overflow: hidden;
-    margin: 0;
-    font: var(--md-sys-typescale-title-large-weight) var(--md-sys-typescale-title-large-size) /
-      var(--md-sys-typescale-title-large-line-height) var(--app-font);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  body > main {
-    display: grid;
+  body[data-shell] > main {
     min-width: 0;
     min-height: 0;
+    width: 100%;
+    overflow-y: auto;
   }
 
-  body > main > vega-story-stage {
+  body[data-shell] > main:has(.story-player-host) {
     display: grid;
-    min-height: 0;
+    padding: 0;
+    max-width: none;
   }
 
-  body > #error {
+  #error {
     position: absolute;
     inset: auto 16px 16px;
   }

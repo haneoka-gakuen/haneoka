@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlsplit
 
 from download_store import DownloadStore, json_bytes
 
-SCHEMA = "haneoka-story-offline-v1"
+SCHEMA = "haneoka-story-offline-v2"
 RECIPE = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 COMMON_SOURCES = (
     "Assets/AddressableResources/Common/Prefab/CameraManager.prefab",
@@ -189,14 +189,35 @@ class StoryOfflineProjection:
                 documents[self.media(path)] = {"path": path}
         return self.collect([], documents)
 
-    def chapter_manifest(self, episode_keys):
-        refs, seeds = {}, []
-        models = set()
-        for key in episode_keys:
-            value, path = self.entity("stories", key)
-            refs[self.api("stories/" + key)] = {"path": path, "selector": key}
-            seeds.append(value)
-            models.update(model["live2dKey"] for model in value.get("assets", {}).get("live2d", []))
+    def thumbnail(self, key, summary):
+        value, _ = self.entity("stories", key)
+        candidates = [summary.get(field) for field in ("episodeImage", "thumbnail", "image")]
+        backgrounds = value.get("assets", {}).get("backgrounds") or {}
+        if isinstance(backgrounds, dict):
+            candidates.extend(backgrounds.values())
+        elif isinstance(backgrounds, list):
+            candidates.extend(backgrounds)
+        for item in candidates:
+            if isinstance(item, dict):
+                item = item.get("url") or item.get("imageUrl") or item.get("src")
+            if not isinstance(item, str):
+                continue
+            raw = unquote(urlsplit(item).path)
+            for tree in ("assets", "runtime", "objects"):
+                prefix = f"/{tree}/{self.server}/"
+                if not raw.startswith(prefix):
+                    continue
+                path = tree + "/" + raw[len(prefix):]
+                record = self.entries.get(path)
+                if record and record["mediaType"].split(";", 1)[0] in {"image/jpeg", "image/png", "image/webp"}:
+                    return self.media(path)
+        return None
+
+    def episode_manifest(self, key, thumbnail=None):
+        value, path = self.entity("stories", key)
+        refs = {self.api("stories/" + key): {"path": path, "selector": key}}
+        seeds = [value, thumbnail] if thumbnail else [value]
+        models = {model["live2dKey"] for model in value.get("assets", {}).get("live2d", [])}
         for key in sorted(models):
             model, path = self.entity("live2d", key)
             refs[self.api("live2d/" + key)] = {"path": path, "selector": key}
@@ -218,27 +239,41 @@ class StoryOfflineProjection:
         common = self.common_manifest()
         allowed = dict(common["objects"])
 
-        def publish_manifest(value):
+        def manifest_bytes(value):
             body = json_bytes(value)
-            sha = hashlib.sha256(body).hexdigest()
-            self.store.put_bytes(prefix + f"manifests/{sha}.json", body)
-            return sha
+            return hashlib.sha256(body).hexdigest(), body
 
-        common_hash = publish_manifest(common)
+        def publish_manifest(encoded):
+            sha, body = encoded
+            self.store.put_bytes(prefix + f"manifests/{sha}.json", body)
+
+        common_hash, body = manifest_bytes(common)
+        publish_manifest((common_hash, body))
         grouped = defaultdict(list)
         for key, episode in stories.get("episodes", {}).items():
             grouped[str(episode.get("chapterId") or episode.get("chapterKey") or key)].append((key, episode))
         packages = []
-        for chapter, episodes in sorted(grouped.items()):
-            package = self.chapter_manifest(key for key, _ in episodes)
-            allowed.update(package["objects"])
-            first = episodes[0][1]
-            packages.append({"id": "chapter-" + chapter, "title": first.get("chapterName") or first.get("title"),
-                             "bandId": first.get("bandId"), "manifest": publish_manifest(package),
-                             "bytes": sum(row["bytes"] for row in package["objects"].values()),
-                             "episodes": [{"id": key, "title": value.get("title"), "episodeNumber": value.get("episodeNumber")}
-                                          for key, value in episodes]})
-            print(f"Prepared {server} chapter {chapter}: {len(package['objects'])} objects", flush=True)
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for chapter, episodes in sorted(grouped.items()):
+                objects = {}
+                rows, writes = [], {}
+                for key, summary in episodes:
+                    thumbnail = self.thumbnail(key, summary)
+                    value = self.episode_manifest(key, thumbnail)
+                    objects.update(value["objects"])
+                    digest, body = manifest_bytes(value)
+                    writes[digest] = body
+                    rows.append({"id": key, "title": summary.get("title"),
+                                 "episodeNumber": summary.get("episodeNumber"), "manifest": digest, "thumbnail": thumbnail,
+                                 "bytes": sum(entry["bytes"] for entry in value["objects"].values())})
+                allowed.update(objects)
+                first = episodes[0][1]
+                list(executor.map(publish_manifest, writes.items()))
+                packages.append({"id": "chapter-" + chapter, "title": first.get("chapterName") or first.get("title"),
+                                 "bandId": first.get("bandId"),
+                                 "thumbnail": next((row["thumbnail"] for row in rows if row["thumbnail"]), None),
+                                 "bytes": sum(row["bytes"] for row in objects.values()), "episodes": rows})
+                print(f"Prepared {server} chapter {chapter}: {len(rows)} episode manifests", flush=True)
         root = {"schema": SCHEMA, "server": server, "common": common_hash, "packages": packages,
                 "totalBytes": sum(row["bytes"] for row in allowed.values()), "objectCount": len(allowed)}
         root_body = json_bytes(root)
@@ -249,7 +284,7 @@ class StoryOfflineProjection:
 
         def publish_objects(item):
             shard, rows = item
-            if previous:
+            if previous and previous.get("schema") == SCHEMA:
                 rows = {**(self.store.get_json(prefix + f"objects/{shard}.json") or {}), **rows}
             self.store.put_bytes(prefix + f"objects/{shard}.json", json_bytes(rows))
 

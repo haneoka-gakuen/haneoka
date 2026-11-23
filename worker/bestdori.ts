@@ -2027,6 +2027,8 @@ export async function handleGarupaBestdoriApi(
             id: `card.${resource}.${scenario}`,
             title: episode.title || card.prefix || scenario,
             group: card.prefix,
+            groupId: `card.${resource}`,
+            thumbnail: asObj(card.cardThumbnails).normal || card.cardImage || null,
           }] : [];
         });
       }));
@@ -2037,12 +2039,39 @@ export async function handleGarupaBestdoriApi(
     const id = decodeRoutePart(offline[1]!);
     if (id === null) return invalidPathResponse();
     return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
-      const story = JSON.parse((await storyDetail(id, region, lang)).body) as Obj;
+      const detail = JSON.parse((await storyDetail(id, region, lang)).body) as Obj;
+      const [section, resource, ...suffix] = id.split(".");
+      let summary: Obj;
+      if (section === "card") {
+        const entry = Object.entries(await allCards()).find(([, raw]) => asObj(raw).resourceSetName === resource);
+        const card = entry ? asObj(transformCards({ [entry[0]]: entry[1] }, lang)[entry[0]]) : {};
+        const episode = asArray(card.episodes).map(asObj).find((row) => row.scenarioId === suffix.join("."));
+        summary = episode ? {
+          title: episode.title || card.prefix,
+          chapterName: card.prefix,
+          chapterKey: `card.${resource}`,
+          publishedAt: card.releasedAt,
+          releaseAt: card.releaseAt,
+          cardId: card.cardId,
+          characterId: card.characterId,
+          thumbnail: asObj(card.cardThumbnails).normal || card.cardImage,
+        } : {};
+      } else {
+        summary = asObj((await buildStoryCollection(section as "event" | "band" | "main" | "afterlive", lang))[id]);
+      }
+      const { image, ...metadata } = summary;
+      const story = { ...metadata, thumbnail: summary.thumbnail || image, ...detail } as Obj;
       const selected = String(story.sourceServer || region);
       const candidates = [...new Set([selected, region, ...regionChainForLocale(lang)])].filter(isBestdoriRegion);
       const keys = storyModelIds(story);
-      const models = keys.length ? JSON.parse((await live2dEntries(keys, candidates)).body) as Obj : {};
-      return jsonBody(offlineProviderStory(story, models));
+      const ids = new Set([...asArray(story.characterIds), story.characterId,
+        ...asArray(asObj(story.assets).live2d).map((entry) => asObj(entry).characterId),
+        ...keys.map((key) => Number(/^([0-9]+)_/u.exec(key)?.[1]))].map(Number).filter((id) => Number.isFinite(id) && id > 0));
+      const [models, people] = await Promise.all([
+        keys.length ? live2dEntries(keys, candidates).then(({ body }) => JSON.parse(body) as Obj) : Promise.resolve({}),
+        ids.size ? allCharactersFull().then((rows) => transformCharacters(rows, region)) : Promise.resolve({} as Obj),
+      ]);
+      return jsonBody(offlineProviderStory(story, models, [...ids].flatMap((id) => people[id] ? [people[id]] : [])));
     });
   }
   const storyCollection = /^stories\/(event|band|main|afterlive)$/.exec(tail);

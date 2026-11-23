@@ -96,7 +96,8 @@ import {
 } from "../lib/cross-server/presentation";
 import { OFFICIAL_CATALOG_SERVERS, type OfficialCatalogServer } from "../lib/cross-server/catalog";
 import { catalogServerMark } from "./shared/server-availability";
-import { appCall, appSupports } from "../lib/app-bridge";
+import { appSupports, type OfflineStoryItem } from "../lib/app-bridge";
+import { storyDownload } from "./shared/story-download";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { providerDetailHref, providerDiscussionIdentity, providerEntityRoute } from "../lib/provider-entity-data";
 import { entityDiscussion } from "./ui/entity-discussion";
@@ -123,13 +124,25 @@ import { snackbar } from "../lib/snackbar";
 import { formatDate } from "../lib/date-format";
 import type { VegaProject } from "@haneoka/vega-protocol";
 
+import type { VegaStoryStage } from "./runtime/vega-story-stage";
+
 export interface StoryReaderInput {
   story: JsonRecord;
-  project: VegaProject;
+  project?: VegaProject;
   server: string;
   backHref: string;
   editorHref?: string;
-  comments: { id: string; type: "community-stories" };
+  offlineItem?: OfflineStoryItem;
+  comments?: { id: string; type: "community-stories" };
+  offline?: {
+    releaseId: string;
+    chapterTitle?: string;
+    provider: boolean;
+    live2d?: VegaStoryStage["offlineLive2d"];
+    resources: NonNullable<VegaStoryStage["offlineResources"]>;
+    progress: NonNullable<VegaStoryStage["offlineProgress"]>;
+    playerReady(): void;
+  };
 }
 
 /** Message paths for this view's finite control/metadata identifiers. */
@@ -560,7 +573,7 @@ export class StoryWorkspace extends LitElement {
     );
   }
   private storyCommentsTarget(episode: JsonRecord) {
-    if (this.reader) return { ...this.reader.comments, server: this.reader.server };
+    if (this.reader) return this.reader.comments ? { ...this.reader.comments, server: this.reader.server } : undefined;
     if (this.isProvider()) {
       const entry = providerEntityFromUrl(navigationDocumentUrl());
       return entry?.resource === "stories" && entry.id === this.episodeId(episode)
@@ -580,7 +593,7 @@ export class StoryWorkspace extends LitElement {
     return { id: String(id), server, type: "stories" };
   }
   private storyCommentsRouteAllowed(): boolean {
-    if (!communityVisible()) return false;
+    if (this.reader?.offline || !communityVisible()) return false;
     const view = this.ownerDocument.defaultView;
     if (!view || view.top !== view) return false;
     if (this.reader) return true;
@@ -680,7 +693,7 @@ export class StoryWorkspace extends LitElement {
     const locale = preferredLocale(this.locale);
     if (locale === this.locale) return;
     this.locale = locale;
-    if (this.isProvider()) void this.load();
+    if (this.isProvider() && !this.reader) void this.load();
   };
   connectedCallback() {
     super.connectedCallback();
@@ -1939,6 +1952,10 @@ export class StoryWorkspace extends LitElement {
   }
   /** One step back: a scenario returns to its card, a card to the collection. */
   private closeDetail() {
+    if (this.reader?.offline) {
+      location.assign(this.reader.backHref);
+      return;
+    }
     if (this.reader) {
       this.stopStoryPlayback();
       this.dispatchEvent(new CustomEvent("story-reader-close", { bubbles: true }));
@@ -2097,6 +2114,8 @@ export class StoryWorkspace extends LitElement {
           this.sync();
         }),
         applied: this.appliedCount() || this.query ? this.renderApplied() : undefined,
+        controls: appSupports("offlineQueueV1") ? storyDownload(this.locale, episodes.flatMap(episode =>
+          this.offlineItems(episode, this.episodeEntry(episode)?.displayServer || this.dataServer())), true) : nothing,
         results: this.renderResults(episodes),
         filters: {
           label: uiText(this.locale, "common.actions.filter"),
@@ -2687,6 +2706,7 @@ export class StoryWorkspace extends LitElement {
             locale: this.locale,
             busy: this.detailLoading,
             card: this.detailCard,
+            downloads: storyDownload(this.locale, this.offlineItems(this.detailCard, this.detailServer()), true),
             page: Boolean(this.entityId),
               comments: this.entityId && !this.detailLoading ? entityDiscussion({
                 type: "provider-cards",
@@ -2710,26 +2730,33 @@ export class StoryWorkspace extends LitElement {
       );
     return nothing;
   }
+  private offlineItems(episode: JsonRecord, server: string): OfflineStoryItem[] {
+    if (!isReleasedContent(episode)) return [];
+    const id = this.episodeId(episode);
+    if (!id) return [];
+    if (this.isProvider()) {
+      const provider = this.origin === "sekai" ? "sekai" : "gbp";
+      const source = `${provider}.${providerRegionForLocale(this.locale)}` as const;
+      if (this.isCardSection() && !id.startsWith("card.")) {
+        if (!Array.isArray(episode.episodes)) return [];
+        return episode.episodes.flatMap((entry: JsonRecord) => {
+          const resource = entry.resourceSetName || episode.resourceSetName;
+          if (!resource || !entry.scenarioId) return [];
+          const chapter = `card.${resource}.${entry.scenarioId}`;
+          return [{ server: source, chapter, episode: chapter, title: this.text(entry.title) || this.episodeTitle(episode) }];
+        });
+      }
+      return [{ server: source, chapter: id, episode: id, title: this.episodeTitle(episode) }];
+    }
+    if (server !== "jp" && server !== "intl") return [];
+    return [{ server, chapter: `chapter-${episode.chapterId || episode.chapterKey || id}`, episode: id, title: this.episodeTitle(episode) }];
+  }
   private renderDetailActions() {
     const episode = this.detailEpisode;
-    const server = this.detailServer();
-    const provider = this.origin === "bestdori" ? "gbp" : this.origin === "sekai" ? "sekai" : undefined;
-    const mayDownload = episode && !this.reader && (provider
-      ? appSupports("portableOfflineStoriesV1")
-      : (server === "jp" || server === "intl") && appSupports("offlineStoriesV1"));
-    const label = uiText(this.locale, "app.offline.title");
+    const items = this.reader ? (this.reader.offlineItem ? [this.reader.offlineItem] : []) :
+      episode ? this.offlineItems(episode, this.detailServer()) : [];
     return html`
-      ${mayDownload ? html`<button type="button" class="icon-button" title=${label} aria-label=${label}
-        @click=${() => {
-          const id = this.episodeId(episode);
-          if (provider) {
-            void appCall("openOfflineStories", {
-              server: `${provider}.${providerRegionForLocale(this.locale)}`, episode: id, chapter: id,
-            });
-          } else if (server === "jp" || server === "intl") {
-            void appCall("openOfflineStories", { server, episode: id, chapter: `chapter-${episode.chapterId || episode.chapterKey || id}` });
-          }
-        }}>${icon("download")}</button>` : nothing}
+      ${storyDownload(this.locale, items)}
       ${this.detailEpisode && (!this.reader || this.reader.editorHref)
         ? html`<a class="icon-button" href=${this.storyEditorHref()}
             title=${uiText(this.locale, "community.stories.editor")}
@@ -2765,7 +2792,7 @@ export class StoryWorkspace extends LitElement {
     });
   }
   private selectDetailMode(mode: "text" | "play") {
-    if (this.isProvider() && this.entityId) {
+    if (!this.reader && this.isProvider() && this.entityId) {
       const entry = providerEntityFromUrl(navigationDocumentUrl());
       if (entry?.resource === "stories" && (mode === "play") !== this.providerPlayer) {
         const parent = returnLink(providerEntityRoute({ ...entry, view: undefined }));
@@ -2793,6 +2820,14 @@ export class StoryWorkspace extends LitElement {
   }
   private syncAppBarActions() {
     // An episode over the collection hands its modes to its own takeover of the bar.
+    if (this.entityId && this.detailCard && !this.detailEpisode && !this.detailLoading && !this.detailError && appSupports("offlineQueueV1")) {
+      const downloads = storyDownload(this.locale, this.offlineItems(this.detailCard, this.detailServer()), true);
+      if (downloads !== nothing) {
+        setAppBarActions(this.appBarOwner, downloads, this);
+        this.appBarRegistered = true;
+        return;
+      }
+    }
     const visible = Boolean(this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode) && !this.detailLoading && !this.detailError);
     if (!visible) {
       clearAppBarActions(this, this.appBarOwner);
@@ -2824,7 +2859,7 @@ export class StoryWorkspace extends LitElement {
       `;
       // A restricted edition's references have no pages of their own.
       const server = this.detailServer();
-      const linkable = isPublicReleaseServer(server);
+      const linkable = !this.reader?.offline && isPublicReleaseServer(server);
       const returnTo =
         this.entityId && linkable
           ? entityHref({
@@ -2906,9 +2941,13 @@ export class StoryWorkspace extends LitElement {
                         <vega-story-stage
                           .story=${episode}
                           .communityProject=${this.reader?.project}
-                          .providerBase=${this.isProvider() ? this.providerBase() : ""}
+                          .providerBase=${this.reader?.offline?.provider ? "/offline" : this.isProvider() ? this.providerBase() : ""}
+                          .offlineLive2d=${this.reader?.offline?.live2d}
+                          .offlineProgress=${this.reader?.offline?.progress}
+                          .offlineResources=${this.reader?.offline?.resources}
+                          @vega-offline-ready=${this.reader?.offline?.playerReady}
                           server=${this.detailServer()}
-                          .releaseId=${this.isProvider() || this.reader ? "" : this.episodeEntry(episode)?.perServer[this.detailServer()]?.identity.releaseId || this.pageReleaseId}
+                          .releaseId=${this.reader?.offline?.releaseId ?? (this.isProvider() || this.reader ? "" : this.episodeEntry(episode)?.perServer[this.detailServer()]?.identity.releaseId || this.pageReleaseId)}
                           .locale=${this.locale}
                           @open-text=${() => this.selectDetailMode("text")}
                           @haneoka-story-finished=${(event: CustomEvent<{ storyId: string }>) => void this.continueStory(event)}
@@ -2934,7 +2973,7 @@ export class StoryWorkspace extends LitElement {
                       : nothing
                   }
                   ${
-                    this.reader
+                    this.reader && (!this.reader.offline || this.reader.project)
                       ? nothing
                       : html`
                           <details class="story-reading-info">
@@ -2947,7 +2986,7 @@ export class StoryWorkspace extends LitElement {
                             ${specList([
                               {
                                 label: uiText(this.locale, "story.labels.chapter"),
-                                value: localizedContent(this.chapterOf(episode)?.chapterName, this.locale),
+                                value: localizedContent(this.chapterOf(episode)?.chapterName || episode.chapterName || this.reader?.offline?.chapterTitle, this.locale),
                               },
                               { label: uiText(this.locale, "common.fields.duration"), value: this.duration(episode) },
                               {

@@ -2,9 +2,19 @@
 // Input: Haneoka App 在文档开始时注入的 window.haneokaApp 与其 User-Agent 标记。
 // Output: App 身份、平台与原生方法的 Promise 调用。
 // Pos: [Map](L2-2.md)；网页与 App 外壳之间的唯一接口。
-// Effects/Dependencies: 调用原生存档、游戏服务器读取、系统浏览器登录、全屏方向与移动端音乐队列。
+// Effects/Dependencies: 调用原生存档、游戏服务器读取、系统浏览器登录、全屏方向与移动端音乐队列与剧情离线队列。
+
+export interface OfflineStoryItem {
+  server: "jp" | "intl" | "community" | `${"gbp" | "sekai"}.${string}`;
+  chapter: string;
+  episode?: string;
+  title?: string;
+}
+export type OfflineStoryState = "available" | "saved" | "queued" | "downloading" | "paused" | "failed";
 
 export interface AppMethods {
+  offlineEnqueue: { args: { items: OfflineStoryItem[] }; result: { queued: number; alreadySaved: number; alreadyQueued: number } };
+  offlineStatus: { args: { items: OfflineStoryItem[] }; result: { items: (OfflineStoryItem & { state: OfflineStoryState })[] } };
   /** The chosen save as a `haneoka-game-save-v1` snapshot, with companion documents when requested. */
   saveSnapshot: { args: { key: string; complete?: boolean }; result: { text: string } };
   checkAppUpdate: { args: Record<string, never>; result: "current" | "handled" | "busy" | "unavailable" | "install_failed" };
@@ -23,7 +33,7 @@ export interface AppMethods {
   gameAccounts: { args: Record<string, never>; result: DeviceSave[] };
   /** The app's page for one save: progress, cards, clears, export and update. */
   openGameAccount: { args: { key: string; fromAccount?: boolean }; result: null };
-  openOfflineStories: { args: { server?: "jp" | "intl" | "community" | `${"gbp" | "sekai"}.${string}`; chapter?: string; episode?: string }; result: null };
+  openOfflineStories: { args: Record<string, never>; result: null };
   /** The app's save reading: Shizuku, game folder, USB, backups or files. */
   addGameAccount: { args: { fromAccount?: boolean }; result: null };
   saveImportOptions: { args: Partial<SaveImportOptions>; result: SaveImportOptions };

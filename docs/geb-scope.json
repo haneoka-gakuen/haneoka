@@ -321,6 +321,7 @@
     "src/lib/gacha-history-reconcile.ts",
     "scripts/database/merge_gacha_histories.ts",
     "src/lit/shared/gacha-history-luck.ts",
+    "src/lit/shared/story-download.ts",
     "src/lib/gacha-history-cloud-data.ts",
     "src/lib/gacha-history-cloud.ts",
     "src/lib/gacha-history-cloud-sync.ts",

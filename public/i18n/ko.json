@@ -7240,6 +7240,16 @@
   },
   "app": {
     "offline": {
+      "downloadStory": "스토리 다운로드",
+      "downloadResults": "검색 결과의 스토리 다운로드 ({count}개)",
+      "inQueue": "다운로드 대기 중",
+      "savedStory": "다운로드됨",
+      "pausedStory": "다운로드 일시 중지됨",
+      "downloadingStory": "다운로드 중",
+      "retryStory": "다운로드 다시 시도",
+      "addedCount": "대기열에 추가됨: {count}개",
+      "queuedCount": "이미 대기 중: {count}개",
+      "savedCount": "이미 다운로드됨: {count}개",
       "title": "오프라인 스토리",
       "check": "업데이트 확인",
       "download": "다운로드",

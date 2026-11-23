@@ -7,9 +7,15 @@
   <link rel="stylesheet" href="/player.css">
   <script type="module" src="/player.js"></script>
 </head>
-<body>
-  <header><a id="back" class="button button--text"><svg class="material-icon" aria-hidden="true"><use href="/icons.svg#arrow_back"></use></svg><span></span></a><h1></h1></header>
-  <main></main>
+<body data-shell>
+  <header class="top-app-bar" data-top-app-bar>
+    <div class="top-app-bar__leading" data-top-app-bar-leading>
+      <a class="icon-button" data-entity-back><svg class="material-icon" aria-hidden="true"><use href="/icons.svg#arrow_back"></use></svg></a>
+    </div>
+    <h1 data-entity-title></h1>
+    <div class="top-app-bar__actions" data-top-app-bar-actions></div>
+  </header>
+  <main class="page"></main>
   <p id="error" class="state" role="alert" hidden></p>
 </body>
 </html>
