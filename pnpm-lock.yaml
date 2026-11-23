@@ -2032,6 +2032,9 @@ importers:
 
   packages/embed-vega:
     dependencies:
+      '@esotericsoftware/spine-threejs':
+        specifier: 4.2.119
+        version: 4.2.119(three@0.184.0)
       '@haneoka/api-client':
         specifier: ^0.1.0
         version: link:../api-client
@@ -2050,6 +2053,9 @@ importers:
       '@haneoka/vega-plugin-richtext':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-plugin-richtext
+      '@haneoka/vega-plugin-spine':
+        specifier: ^0.1.0
+        version: link:../../.dependencies/vega-plugin-spine
       '@haneoka/vega-renderer-three':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-renderer-three
@@ -2062,6 +2068,9 @@ importers:
       '@haneoka/vega-ui-portable':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-ui-portable
+      fflate:
+        specifier: 'catalog:'
+        version: 0.8.3
       howler:
         specifier: '>=2.2.0 <3'
         version: 2.2.4

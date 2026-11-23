@@ -90,6 +90,7 @@ for (const relative of [
   ".dependencies/vega/packages/protocol",
   ".dependencies/vega-renderer-three",
   ".dependencies/vega-plugin-cubism",
+  ".dependencies/vega-plugin-spine",
   ".dependencies/vega-plugin-haneoka",
   ".dependencies/vega-plugin-richtext",
   ".dependencies/vega-theme-haneoka",
@@ -158,7 +159,19 @@ const chartStyle = await readFile(path.join(root, "packages/embed-cassiopeia/src
 const entries = {
   "api-client": `export * from "@haneoka/api-client";export * from "@haneoka/api-client/haneoka";export * from "@haneoka/api-client/game";`,
   core: `export * from "@haneoka/embed-core";export * from "@haneoka/embed-core/haneoka";export * from "@haneoka/embed-core/branding";`,
-  vega: `export * from "@haneoka/embed-vega";export * from "@haneoka/embed-vega/haneoka";`,
+  vega: `
+    import {ModelPlayer as Model,mountStory as mount} from "@haneoka/embed-vega";
+    export * from "@haneoka/embed-vega";
+    export * from "@haneoka/embed-vega/haneoka";
+    export function mountStory(container,options){
+      return mount(container,{runtimeManifestUrl:new URL("./manifest.json",import.meta.url).href,...options});
+    }
+    export const ModelPlayer={
+      create(container,options){
+        return Model.create(container,{runtimeManifestUrl:new URL("./manifest.json",import.meta.url).href,...options});
+      }
+    };
+  `,
   "home-spot": `export * from "@haneoka/embed-home-spot";export * from "@haneoka/embed-home-spot/haneoka";`,
   "vega-theme": `export * from "@haneoka/embed-vega/theme";`,
   "vega-haneoka": `

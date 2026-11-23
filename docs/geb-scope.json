@@ -251,6 +251,7 @@
     "packages/embed-cassiopeia/src/index.ts",
     "packages/embed-cassiopeia/src/native-theme.ts",
     "packages/embed-vega/src/index.ts",
+    "packages/embed-vega/src/model.ts",
     "packages/embed-home-spot/src/index.ts",
     "packages/chart-editor/src/index.ts",
     "packages/chart-editor/src/model.ts",

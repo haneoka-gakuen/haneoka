@@ -8,6 +8,8 @@ import { createHaneokaBranding } from "@haneoka/embed-core/branding";
 import type { VegaEngine, VegaPlayerHandle } from "@haneoka/vega/web";
 import { collectPlaybackUrls, resolveStoryUrls } from "./story-urls.js";
 import { createPlaybackUrls } from "./playback-urls.js";
+import { bindStorySounds, cueResourceKey } from "./story-sounds.js";
+import { createStoryModels } from "./story-models.js";
 import type {
   MountStoryOptions,
   StoryEmbedEvent,
@@ -16,6 +18,8 @@ import type {
   StoryEmbedSnapshot,
 } from "./types.js";
 export type * from "./types.js";
+export { ModelPlayer, type ModelPlayerHandle, type ModelPlayerOptions } from "./model.js";
+export { ADV_COMMAND } from "@haneoka/vega/renderer-kit";
 
 const mounts = new WeakMap<HTMLElement, StoryEmbedHandle>();
 
@@ -26,11 +30,17 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
   if (!Number.isSafeInteger(resourceTimeoutMs) || resourceTimeoutMs < 1)
     throw new RangeError("resourceTimeoutMs must be positive");
   const source = options.source ?? memoryDataSource(options.document!);
+  const cues = Object.entries(options.sounds ?? {});
   const resolvedUrls = new Set<string>();
   const loader = createEmbedLoader({
     ...options,
     source,
-    resolveResource: (key, context) => (resolvedUrls.has(key) ? key : (options.resolveResource?.(key, context) ?? key)),
+    resources: {
+      ...options.resources,
+      ...Object.fromEntries(cues.map(([cue, location]) => [cueResourceKey(cue), location])),
+    },
+    resolveResource: (key, context) =>
+      resolvedUrls.has(key) || models.owns(key) ? key : options.resolveResource?.(key, context),
   });
   // URL bookkeeping lets literal file keys resolve once, while providers can
   // request manifest-relative absolute URLs through the same transport.
@@ -41,6 +51,7 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
     return url;
   };
   const controller = new AbortController();
+  const models = createStoryModels(options, loader, controller.signal);
   const playbackUrls = createPlaybackUrls(loader, controller.signal, resourceTimeoutMs);
   const abort = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", abort, { once: true });
@@ -60,7 +71,6 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
   let timer: ReturnType<typeof setInterval> | undefined;
   let disposal: Promise<void> | undefined;
   let releasePlayer: Promise<void> | undefined;
-  let boot: Promise<void>;
   const listeners = new Set<(event: StoryEmbedEvent) => void>();
   if (options.onEvent) listeners.add(options.onEvent);
   const emit = (event: StoryEmbedEvent) => {
@@ -195,6 +205,7 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
         await boot.catch(() => undefined);
         await loader.dispose().catch((error) => failures.push(error));
         playbackUrls.dispose();
+        models.dispose();
         stage.remove();
         resolvedUrls.clear();
         mounts.delete(container);
@@ -215,32 +226,42 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
     },
     { once: true },
   );
-  boot = Promise.resolve().then(async () => {
+  const boot = Promise.resolve().then(async () => {
     let playbackPreparation: Promise<void> | undefined;
     try {
       publish();
       controller.signal.throwIfAborted();
-      const story = await loader.load({ signal: controller.signal });
-      if (!Array.isArray(story.commands)) throw new TypeError("Story document requires a commands array");
+      const loaded = await loader.load({ signal: controller.signal });
+      if (!Array.isArray(loaded.commands)) throw new TypeError("Story document requires a commands array");
+      const story = models.document(cues.length ? bindStorySounds(loaded, new Set(cues.map(([cue]) => cue))) : loaded);
       playbackPreparation = playbackUrls.prepare(collectPlaybackUrls(story, controller.signal));
       void playbackPreparation.catch(() => undefined);
-      const resolved = await resolveStoryUrls(story, loader, controller.signal, async (key) => {
-        const url = await playbackUrls.reference(key);
-        resolvedUrls.add(url);
-        return url;
-      });
+      const resolved = await resolveStoryUrls(
+        story,
+        loader,
+        controller.signal,
+        async (key) => {
+          const url = await playbackUrls.reference(key);
+          resolvedUrls.add(url);
+          return url;
+        },
+        models.url,
+        models.inspect,
+      );
       const [
         { createVega, createVegaPlayerState },
         { defineVegaPlugin },
         { createThreeRendererPlugin },
         { vegaPortableUiPlugin },
         { createVegaRichTextPlugin },
+        modelPlugins,
       ] = await Promise.all([
         import("@haneoka/vega/web"),
         import("@haneoka/vega/plugin"),
         import("@haneoka/vega-renderer-three"),
         import("@haneoka/vega-ui-portable"),
         import("@haneoka/vega-plugin-richtext"),
+        models.plugins(),
       ]);
       controller.signal.throwIfAborted();
       const plugins = [
@@ -269,6 +290,7 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
             });
           },
         }),
+        ...modelPlugins,
         ...(options.plugins ?? []),
       ];
       controller.signal.throwIfAborted();
@@ -325,6 +347,7 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
       } finally {
         await playbackPreparation?.catch(() => undefined);
         playbackUrls.dispose();
+        models.dispose();
       }
       throw error;
     }

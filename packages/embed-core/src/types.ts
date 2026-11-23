@@ -17,7 +17,10 @@ export interface DataContext {
   readonly progress: (value: LoadProgress) => void;
 }
 
-export type ResourceResolver = (key: string, context: DataContext) => ResourceLocation | Promise<ResourceLocation>;
+export type ResourceResolver = (
+  key: string,
+  context: DataContext,
+) => ResourceLocation | undefined | Promise<ResourceLocation | undefined>;
 
 export interface DataSource<T> {
   readonly assetsBase?: string;
@@ -26,6 +29,9 @@ export interface DataSource<T> {
   dispose?(): void | Promise<void>;
 }
 
+/** A JSON document URL (relative to the host page) or a custom data source. */
+export type DataSourceInput<T> = DataSource<T> | string | URL;
+
 export type EmbedEvent =
   | { readonly type: "start" | "ready"; readonly operation: number; readonly key: string }
   | ({ readonly type: "progress"; readonly operation: number; readonly key: string } & LoadProgress)
@@ -33,11 +39,13 @@ export type EmbedEvent =
   | { readonly type: "disposed" };
 
 export interface EmbedLoaderOptions<T> {
-  readonly source: DataSource<T>;
+  readonly source: DataSourceInput<T>;
   readonly server?: string;
   readonly locale?: string;
   /** Absolute directory URL; overrides the source's asset directory. */
   readonly assetsBase?: string;
+  /** Resource keys in the document mapped to URLs or local files. */
+  readonly resources?: Readonly<Record<string, ResourceLocation>>;
   readonly resolveResource?: ResourceResolver;
   readonly fetcher?: EmbedFetcher;
   readonly credentials?: RequestCredentials;
@@ -54,6 +62,7 @@ export interface EmbedLoader<T> {
   load(options?: { readonly signal?: AbortSignal }): Promise<T>;
   resourceUrl(key: string, options?: { readonly signal?: AbortSignal }): Promise<string>;
   resourceBytes(key: string, options?: { readonly signal?: AbortSignal }): Promise<Uint8Array>;
+  resourceBlob(key: string, options?: { readonly signal?: AbortSignal }): Promise<Blob>;
   subscribe(listener: (event: EmbedEvent) => void): () => void;
   /** Cancel current operations while keeping the loader reusable. */
   cancel(): void;

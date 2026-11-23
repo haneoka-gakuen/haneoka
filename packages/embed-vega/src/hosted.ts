@@ -2,6 +2,7 @@ import { createEmbedLoader, httpDataSource } from "@haneoka/embed-core";
 import type { EmbedLoaderOptions } from "@haneoka/embed-core";
 import type { AdvStory } from "@haneoka/vega/engine";
 import type { CubismEmbedOptions } from "./haneoka.js";
+import { hostedDistributionBase, resolveHostedCubismRuntime, type HostedManifest } from "./hosted-runtime.js";
 
 /** The default chat template keeps its images beside `ChatLINE`, while its icons stay inside it. */
 const chatTemplateAsset = (path: string) =>
@@ -45,24 +46,6 @@ export interface HaneokaStoryHandle extends Omit<StoryEmbedHandle, "subscribe"> 
   readonly release: string | undefined;
   subscribe(listener: (event: HaneokaStoryEvent) => void): () => void;
 }
-interface Manifest {
-  schemaVersion: number;
-  release: string;
-  modules: Record<string, string>;
-  runtimes?: { cubism?: string };
-  files: Record<string, { bytes: number; sha256: string }>;
-}
-interface RuntimeDescriptor {
-  schemaVersion: number;
-  runtimeId: string;
-  module: { url: string; bytes: number; sha256: string };
-  core: {
-    cubismCoreUrl: { url: string; bytes: number; sha256: string };
-    cubismWasmUrl?: { url: string; bytes: number; sha256: string };
-    cubism2CoreUrl: { url: string; bytes: number; sha256: string };
-    motionSyncCoreUrl: { url: string; bytes: number; sha256: string };
-  };
-}
 const mounts = new WeakMap<HTMLElement, HaneokaStoryHandle>();
 function abortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
@@ -91,8 +74,8 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
         : request;
     return options.fetcher ? options.fetcher(outgoing) : globalThis.fetch(outgoing);
   };
-  const loader = createEmbedLoader<Manifest>({
-    source: httpDataSource<Manifest>({ url: manifestUrl }),
+  const loader = createEmbedLoader<HostedManifest>({
+    source: httpDataSource<HostedManifest>({ url: manifestUrl }),
     fetcher,
     ...(options.headers === undefined ? {} : { headers: options.headers }),
     ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
@@ -210,10 +193,7 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
       release = manifest.release;
       // The publisher stores the same manifest at /embed/ and /embed/r-*.
       // Its module and runtime targets are relative to the distribution root.
-      const manifestDirectory = new URL("./", manifestUrl);
-      const distributionBase = manifestDirectory.pathname.endsWith(`/${release}/`)
-        ? new URL("../", manifestDirectory)
-        : manifestDirectory;
+      const distributionBase = hostedDistributionBase(manifestUrl, release);
       const pinned = (name: string) => {
         const target = manifest.modules?.[name];
         if (target !== `./${release}/${name}.js`) throw new TypeError(`Mixed SDK epoch: ${name}`);
@@ -238,39 +218,9 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
       let runtime = options.runtime;
       if (!runtime) {
         change("runtime");
-        const target = manifest.runtimes?.cubism;
-        if (target !== `./${release}/runtime.json`)
-          throw new TypeError("SDK epoch has no pinned Cubism runtime descriptor");
-        const expected = manifest.files?.["runtime.json"];
-        if (!expected || !Number.isSafeInteger(expected.bytes) || !/^[a-f0-9]{64}$/u.test(expected.sha256))
-          throw new TypeError("Invalid runtime descriptor metadata");
-        const bytes = await loader.resourceBytes(new URL(target, distributionBase).href, { signal: controller.signal });
-        const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer))]
-          .map((x) => x.toString(16).padStart(2, "0"))
-          .join("");
-        if (bytes.length !== expected.bytes || hash !== expected.sha256)
-          throw new TypeError("Runtime descriptor integrity mismatch");
-        const descriptor = JSON.parse(new TextDecoder().decode(bytes)) as RuntimeDescriptor;
-        if (descriptor.schemaVersion !== 1 || !descriptor.runtimeId)
-          throw new TypeError("Invalid Cubism runtime descriptor");
-        const runtimeUrl = (file: RuntimeDescriptor["module"]) => {
-          if (!file || !Number.isSafeInteger(file.bytes) || !/^[a-f0-9]{64}$/u.test(file.sha256))
-            throw new TypeError("Invalid runtime file metadata");
-          const url = new URL(file.url, manifestUrl);
-          if (url.origin !== manifestUrl.origin || !/^\/(?:Core|cubism-runtime)\//u.test(url.pathname))
-            throw new TypeError("Runtime file escapes deployment origin");
-          url.searchParams.set("v", file.sha256);
-          return url.href;
-        };
-        runtime = {
-          moduleUrl: runtimeUrl(descriptor.module),
-          runtime: {
-            cubismCoreUrl: runtimeUrl(descriptor.core.cubismCoreUrl),
-            ...(descriptor.core.cubismWasmUrl ? { cubismWasmUrl: runtimeUrl(descriptor.core.cubismWasmUrl) } : {}),
-            cubism2CoreUrl: runtimeUrl(descriptor.core.cubism2CoreUrl),
-            motionSyncCoreUrl: runtimeUrl(descriptor.core.motionSyncCoreUrl),
-          },
-        };
+        runtime = await resolveHostedCubismRuntime(manifest, manifestUrl, (url) =>
+          loader.resourceBytes(url, { signal: controller.signal }),
+        );
       }
       controller.signal.throwIfAborted();
       change("data");
