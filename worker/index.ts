@@ -3346,7 +3346,7 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
                 song.jacketUrl.startsWith(`/assets/${release.server}/`) &&
                 contentVisible(guest, "songs", { ...song, ...publication }, songId)
               ) {
-                return songBackgroundItem(release, title, songId, { url: coverUrl }, origin);
+                return songBackgroundItem(release, title, songId, { url: pinnedSonolusJacketUrl(release, coverUrl, origin) }, origin);
               }
               return sonolusBandBackground(backgrounds, song.bandId);
             },
@@ -3623,6 +3623,7 @@ async function localizeStaticSonolusDocument(
 
 interface SonolusRepositoryOwnership { publicHashes: Set<string>; charts: Map<string, Set<string>> }
 const sonolusRepositoryOwnershipCache = new Map<string, Promise<SonolusRepositoryOwnership>>();
+const sonolusPresentationGroups = ["engines", "skins", "backgrounds", "effects", "particles"] as const;
 const sonolusSongKey = (name: string): string | undefined => {
   const match = /^haneoka-(?:(?:jp|intl)-)?(\d+)-(easy|normal|hard|expert|special|master)$/iu.exec(name);
   return match ? `${match[1]}:${match[2]!.toLowerCase()}` : undefined;
@@ -3633,34 +3634,54 @@ async function sonolusRepositoryOwnership(revision: string, readJson: (path: str
     pending = (async () => {
       const result: SonolusRepositoryOwnership = { publicHashes: new Set(), charts: new Map() };
       const collect = (value: JsonValue | undefined, key?: string) => {
-        if (typeof value === "string") {
-          const hash = /\/sonolus\/repository\/([a-f0-9]{40})(?:[?#]|$)/u.exec(value)?.[1];
-          if (hash) { if (key) { const owners = result.charts.get(hash) ?? new Set<string>(); owners.add(key); result.charts.set(hash, owners); } else result.publicHashes.add(hash); }
-        } else if (Array.isArray(value)) value.forEach((child) => collect(child, key));
-        else if (value && typeof value === "object") Object.values(value).forEach((child) => collect(child, key));
+        if (Array.isArray(value)) {
+          for (const child of value) collect(child, key);
+        } else if (isJsonObject(value)) {
+          const hash = typeof value.url === "string"
+            ? /^(?:https?:\/\/[^/]+)?\/sonolus\/repository\/([a-f0-9]{40})(?:[?#]|$)/u.exec(value.url)?.[1]
+            : undefined;
+          if (hash && (value.hash === undefined || value.hash === hash)) {
+            if (!key) result.publicHashes.add(hash);
+            else {
+              const owners = result.charts.get(hash) ?? new Set<string>();
+              owners.add(key);
+              result.charts.set(hash, owners);
+            }
+          }
+          for (const child of Object.values(value)) collect(child, key);
+        }
       };
-      collect(await readJson("runtime/sonolus/engines/list/page-0"));
-      const info = await readJson("runtime/sonolus/info");
-      if (isJsonObject(info)) for (const field of ["banner", "icon", "thumbnail", "background"]) collect(info[field]);
-      collect(await readJson("runtime/sonolus/thumbnail-fallback"));
-      const first = await readJson("runtime/sonolus/levels/list/page-0");
-      const count = isJsonObject(first) && typeof first.pageCount === "number" ? first.pageCount : 1;
-      for (let page = 0; page < count; page++) {
-        const document = page === 0 ? first : await readJson(`runtime/sonolus/levels/list/page-${page}`);
-        if (!isJsonObject(document) || !Array.isArray(document.items)) continue;
-        for (const item of document.items) if (isJsonObject(item)) {
-          collect(item.engine);
-          const name = String(item.name ?? ""), key = sonolusSongKey(name);
-          if (key) for (const field of ["cover", "bgm", "data", "preview"]) collect(item[field], key);
-          else if (name.startsWith("haneoka-gbp-")) collect(item);
+      async function* listItems(group: string) {
+        const base = `runtime/sonolus/${group}/list/page-`;
+        const first = await readJson(base + "0");
+        const count = isJsonObject(first) && typeof first.pageCount === "number" ? first.pageCount : 1;
+        for (let page = 0; page < count; page++) {
+          const document = page === 0 ? first : await readJson(base + page);
+          if (isJsonObject(document) && Array.isArray(document.items))
+            for (const item of document.items) if (isJsonObject(item)) yield item;
         }
       }
-      // Engine-adjacent items are always public; their list pages are the
-      // only place non-default skins, effects and particles are referenced.
-      for (const type of ["skins", "effects", "particles", "playlists"]) {
-        const head = await readJson(`runtime/sonolus/${type}/list/page-0`);
-        const pages = isJsonObject(head) && typeof head.pageCount === "number" ? head.pageCount : 1;
-        for (let page = 0; page < pages; page++) collect(page === 0 ? head : await readJson(`runtime/sonolus/${type}/list/page-${page}`));
+      const collectLevel = (level: JsonObject) => {
+        for (const field of ["engine", "useSkin", "useBackground", "useEffect", "useParticle"]) collect(level[field]);
+        const name = String(level.name ?? "");
+        const key = sonolusSongKey(name);
+        if (key || name.startsWith("haneoka-gbp-"))
+          for (const field of ["cover", "bgm", "data", "preview"]) collect(level[field], key);
+      };
+      collect(await readJson("runtime/sonolus/info"));
+      collect(await readJson("runtime/sonolus/thumbnail-fallback"));
+      for (const group of sonolusPresentationGroups) {
+        for await (const item of listItems(group)) collect(item);
+      }
+      for await (const level of listItems("levels")) collectLevel(level);
+      for await (const playlist of listItems("playlists")) {
+        if (!Array.isArray(playlist.levels)) continue;
+        for (const level of playlist.levels) if (isJsonObject(level)) collectLevel(level);
+        // Official song playlists use the primary level's cover.
+        const primary = playlist.levels[0];
+        if (!isJsonObject(primary) || typeof primary.name !== "string") continue;
+        const key = sonolusSongKey(primary.name);
+        if (key || primary.name.startsWith("haneoka-gbp-")) collect(playlist.thumbnail, key);
       }
       return result;
     })();
@@ -3751,6 +3772,12 @@ function sonolusBandBackground(page: JsonValue | null, bandId: unknown): JsonObj
   return resolve(sonolusBandId(bandId)) ?? resolve(0);
 }
 
+function pinnedSonolusJacketUrl(release: Release, path: string, origin: string): string {
+  const url = new URL(path, origin);
+  url.searchParams.set("release", release.releaseId);
+  return url.href;
+}
+
 function songBackgroundItem(release: Release, name: string, songId: string, cover: JsonObject, origin: string): JsonObject {
   const identity = `haneoka-jacket-${release.server}-${release.releaseId}-${songId}`;
   const resource = (kind: string) => ({
@@ -3834,7 +3861,8 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
   const label = song.musicTitle;
   const title = typeof label === "string" ? label :
     Array.isArray(label) ? label.find((value): value is string => typeof value === "string" && value.length > 0) : undefined;
-  const thumbnail = jacket ? { url: `${origin}/${jacket.replace(/^assets\//u, `assets/${release.server}/`)}?release=${release.releaseId}` } : { url: `${origin}${new URL(request.url).pathname}/image` };
+  const thumbnail = jacket ? { url: pinnedSonolusJacketUrl(release, `/assets/${release.server}/${jacket.slice("assets/".length)}`, origin) }
+    : { url: `${origin}${new URL(request.url).pathname}/image` };
   const item = songBackgroundItem(release, title ?? songId, songId, thumbnail, origin);
   return new Response(request.method === "HEAD" ? null : JSON.stringify({ item, hasCommunity: false, actions: [], leaderboards: [], sections: [] }), { headers: jsonHeaders });
 }
@@ -4139,7 +4167,7 @@ async function handleSonolus(
   const viewRequest = discussionPath ? new Request(catalogUrl) : request;
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(viewRequest, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
-  const baseRevision = `identity-text-v13-background-${sonolusSongBackgroundImageRevision}-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const baseRevision = `identity-text-v14-background-${sonolusSongBackgroundImageRevision}-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog
