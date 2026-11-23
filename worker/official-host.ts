@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Collector calls from the site and admin; the collector host's replicated rows and object operations.
-// Output: Calls carried to the collector host; host changes applied to D1 and the official R2 bucket.
+// Output: Authenticated host reads and the public ranking projection applied to D1 and R2.
 // Pos: [Map](L2.md); the boundary between the Worker and the self-hosted collector.
 // Effects/Dependencies: HTTPS to OFFICIAL_HOST_ORIGIN; D1 batches and R2 operations on the host's behalf; bearer-token checks.
 import type { GameRecordsRegion } from "../src/lib/game-records";
@@ -40,6 +40,22 @@ async function hostCall<T>(env: CollectorBindings, body: { object?: string; modu
   return result.value as T;
 }
 
+export async function readStagedOfficialPayload(env: CollectorBindings, key: string, hash: string): Promise<string | null> {
+  const token = hostToken(env);
+  if (!env.OFFICIAL_HOST_ORIGIN || !token) return null;
+  const url = new URL("/staged-observation", env.OFFICIAL_HOST_ORIGIN);
+  url.searchParams.set("key", key);
+  url.searchParams.set("hash", hash);
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(3_000),
+    redirect: "manual",
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new HostCallError("HostUnavailable", `staged_observation_${response.status}`);
+  return response.text();
+}
+
 /** A regional collector on the collector host. */
 export function officialCollector(env: CollectorBindings, region: GameRecordsRegion): CollectorCalls {
   return new Proxy({}, {
@@ -73,8 +89,21 @@ export function authorizedHost(request: Request, env: CollectorBindings): boolea
 
 type Operation = { table: string; upsert?: Record<string, unknown>; remove?: Record<string, unknown> };
 
+// Keep arena window pointers, search, archives and event history in D1.
+const HOST_LOCAL_UPSERTS = new Set([
+  "official_arena_ranking_observations", "official_observation_batches", "official_observation_payloads",
+  "official_observation_payload_gc", "official_payload_maintenance", "official_storage_sweeps",
+]);
+const STABLE_KEYS = new Map<string, string[]>([
+  ["official_arena_window_metadata", ["region", "season_id", "band_id", "start_rank"]],
+  ["official_event_window_metadata", ["region", "event_id", "start_rank"]],
+  ["official_ranking_search_windows", ["region", "board_key", "start_rank"]],
+  ["official_ranking_daily", ["region", "board_key", "day"]],
+  ["official_player_profiles", ["region", "profile_id"]],
+]);
+
 /** The host's changed rows, applied in order in one D1 transaction. */
-async function applyRows(env: Env, operations: Operation[]): Promise<Response> {
+async function applyRows(env: Env, operations: Operation[], hostStaging: boolean): Promise<Response> {
   const db = env.DB!;
   const statements: D1PreparedStatement[] = [db.prepare("PRAGMA defer_foreign_keys = on")];
   for (const operation of operations) {
@@ -85,10 +114,13 @@ async function applyRows(env: Env, operations: Operation[]): Promise<Response> {
     if (!columns.length || columns.length > 90 || columns.some((column) => !IDENTIFIER.test(column))) return json({ error: "invalid_operation" }, 400);
     const values = columns.map((column) => row[column] ?? null);
     if (operation.upsert) {
-      const changed = columns.map((column) => `"${operation.table}"."${column}" IS NOT excluded."${column}"`).join(" OR ");
+      if (hostStaging && HOST_LOCAL_UPSERTS.has(operation.table)) continue;
+      const key = STABLE_KEYS.get(operation.table);
+      const updated = columns.filter((column) => !key?.includes(column));
+      const conflict = updated.length ? `DO UPDATE SET ${updated.map((column) => `"${column}"=excluded."${column}"`).join(",")}
+        WHERE ${updated.map((column) => `"${operation.table}"."${column}" IS NOT excluded."${column}"`).join(" OR ")}` : "DO NOTHING";
       statements.push(db.prepare(`INSERT INTO "${operation.table}" (${columns.map((c) => `"${c}"`).join(",")}) VALUES (${columns.map(() => "?").join(",")})
-        ON CONFLICT DO UPDATE SET ${columns.map((c) => `"${c}"=excluded."${c}"`).join(",")}
-        WHERE ${changed}`).bind(...values));
+        ON CONFLICT ${conflict}`).bind(...values));
     } else {
       statements.push(db.prepare(`DELETE FROM "${operation.table}" WHERE ${columns.map((c) => `"${c}" IS ?`).join(" AND ")}`).bind(...values));
     }
@@ -150,9 +182,9 @@ async function objectOperation(request: Request, env: Env, operation: string): P
 export async function handleOfficialHost(request: Request, env: Env, path: string): Promise<Response> {
   if (!authorizedHost(request, env)) return json({ error: "unauthorized" }, 401);
   if (path === "sync" && request.method === "POST") {
-    const { operations } = await request.json<{ operations: Operation[] }>();
+    const { operations, projection } = await request.json<{ operations: Operation[]; projection?: string }>();
     if (!Array.isArray(operations) || operations.length > 1000) return json({ error: "invalid_operation" }, 400);
-    return applyRows(env, operations);
+    return applyRows(env, operations, projection === "host-staging-v1" && Boolean(env.OFFICIAL_HOST_ORIGIN));
   }
   const object = /^r2\/(head|get|put|delete|list)$/u.exec(path);
   if (object) return objectOperation(request, env, object[1]!);
