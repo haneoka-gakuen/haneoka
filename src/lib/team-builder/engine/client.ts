@@ -553,7 +553,10 @@ export class EngineClient {
   }
 
   /** Independent complete scenarios share the existing Worker pool and the normal request pipeline. */
-  runBatch(requests: readonly EngineRequest[], onResult?: (index: number, response: EngineResponse) => void): Promise<EngineResponse[]> {
+  runBatch(requests: readonly EngineRequest[], onResult?: (index: number, response: EngineResponse) => void, options?: {
+    prepare?: (index: number, request: EngineRequest) => EngineRequest;
+    snapshot?: (index: number, snapshot: EngineSnapshot) => void;
+  }): Promise<EngineResponse[]> {
     if (!requests.length) return Promise.resolve([]);
     const started = clock();
     const generation = this.generation;
@@ -572,7 +575,10 @@ export class EngineClient {
         try {
           while (!failed && generation === this.generation && next < tasks.length) {
             const index = next++;
-            const response = await this.execute(tasks[index]!, started, undefined, undefined, undefined, null, [worker]);
+            const task = tasks[index]!;
+            const request = options?.prepare?.(index, task) ?? task;
+            const snapshot = options?.snapshot ? (value: EngineSnapshot) => options.snapshot!(index, value) : undefined;
+            const response = await this.execute(request, started, undefined, snapshot, undefined, null, [worker]);
             responses[index] = response;
             onResult?.(index, response);
             if (generation !== this.generation) throw new DOMException("Cancelled", "AbortError");
