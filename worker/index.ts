@@ -5284,7 +5284,7 @@ const worker: ExportedHandler<Env> = {
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (!env.DB) return;
-    if (controller.cron === MEDIA_RECONCILIATION_CRON) {
+    if (controller.cron === DATABASE_CLEANUP_CRON) {
       ctx.waitUntil((async () => {
         for (let batch = 0; batch < 3; batch++) if (!(await moveEventHistory(env))) break;
         await pruneEventHistory(env);

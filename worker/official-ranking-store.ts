@@ -67,14 +67,15 @@ async function payloadText(object: R2ObjectBody): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-async function putPayload(bucket: R2Bucket, key: string, body: string): Promise<R2Object> {
+async function putPayload(bucket: R2Bucket, key: string, body: string, onlyIf?: R2Conditional): Promise<R2Object | null> {
+  const condition = onlyIf ? { onlyIf } : {};
   if (GZIP_PAYLOADS) {
     const compressed = await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
     if (compressed.byteLength < new TextEncoder().encode(body).byteLength) {
-      return bucket.put(key, compressed, { httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } });
+      return bucket.put(key, compressed, { ...condition, httpMetadata: { contentType: "application/json", contentEncoding: "gzip" } });
     }
   }
-  return bucket.put(key, body, { httpMetadata: { contentType: "application/json" } });
+  return bucket.put(key, body, { ...condition, httpMetadata: { contentType: "application/json" } });
 }
 
 export async function compressOfficialPayload(env: OfficialRankingStoreBindings, key: string, retained?: ReadonlySet<string>): Promise<number> {
@@ -178,11 +179,9 @@ export async function flushOfficialPayloads(env: OfficialRankingStoreBindings, r
   for (const { payload_key: key } of results) {
     const { results: payloads } = await db.prepare("SELECT payload_hash,body_json FROM official_observation_payloads WHERE payload_key=?")
       .bind(key).all<{ payload_hash: string; body_json: string }>();
-    let saved = await bucket.head(key);
-    if (!saved) {
-      const body = JSON.stringify({ contract: BATCH_CONTRACT, payloads: Object.fromEntries(payloads.map((row) => [row.payload_hash, row.body_json])) });
-      saved = await putPayload(bucket, key, body);
-    }
+    const body = JSON.stringify({ contract: BATCH_CONTRACT, payloads: Object.fromEntries(payloads.map((row) => [row.payload_hash, row.body_json])) });
+    const saved = await putPayload(bucket, key, body, { etagDoesNotMatch: "*" }) ?? await bucket.head(key);
+    if (!saved) throw new Error("official_archive_not_saved");
     await db.batch([
       db.prepare(`INSERT INTO official_payload_maintenance (payload_key,region,size_bytes,uploaded_at_ms,compressed_at_ms)
         VALUES (?,?,?,?,?) ON CONFLICT(payload_key) DO NOTHING`)

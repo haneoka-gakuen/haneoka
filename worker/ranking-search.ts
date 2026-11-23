@@ -175,15 +175,22 @@ export async function searchRankingWindows<T extends SearchWindow>(
         ),
       ),
     );
+  // The stored projection uses JSON.stringify. A coarse fragment match skips
+  // decoding unrelated windows; the per-player conditions still decide matches.
+  const normalized = normalizeRankingQuery(query);
+  const idFragment = `"profileId":${JSON.stringify(query)}`;
+  const nameFragment = JSON.stringify(normalized).slice(1, -1);
   const { results } = await db
     .prepare(
       `SELECT json_extract(p.value,'$.rank') AS rank,
     json_extract(p.value,'$.profileId') AS profileId,json_extract(p.value,'$.name') AS name,
     json_extract(p.value,'$.point') AS point,w.start_rank+CAST(p.key AS INTEGER) AS position,w.observed_at_ms AS sourceObservedAt FROM official_ranking_search_windows AS w,json_each(w.players_json) AS p
-    WHERE w.region=? AND w.board_key=? AND w.start_rank<=? AND w.start_rank+CAST(p.key AS INTEGER)<=? AND w.start_rank+CAST(p.key AS INTEGER)>? AND (json_extract(p.value,'$.profileId')=?
+    WHERE w.region=? AND w.board_key=? AND w.start_rank<=?
+      AND (instr(w.players_json,?)>0 OR (?=0 AND instr(w.players_json,?)>0))
+      AND w.start_rank+CAST(p.key AS INTEGER)<=? AND w.start_rank+CAST(p.key AS INTEGER)>? AND (json_extract(p.value,'$.profileId')=?
       OR (?=0 AND instr(json_extract(p.value,'$.search'),?)>0)) ORDER BY w.start_rank,CAST(p.key AS INTEGER) LIMIT 101`,
     )
-    .bind(region, board, maximum, maximum, after, query, exact ? 1 : 0, normalizeRankingQuery(query))
+    .bind(region, board, maximum, idFragment, exact ? 1 : 0, nameFragment, maximum, after, query, exact ? 1 : 0, normalized)
     .all<RankingPlayerMatchDto & { position: number; sourceObservedAt: number }>();
   // A player can move between independently collected windows; keep their best observed rank.
   const seen = new Set<string>();

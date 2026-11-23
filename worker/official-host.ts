@@ -138,7 +138,7 @@ async function objectOperation(request: Request, env: Env, operation: string): P
   const bucket = env.OFFICIAL_RANKING_DATA!;
   const url = new URL(request.url);
   const key = url.searchParams.get("key") ?? "";
-  const keyed = ["head", "get", "put"].includes(operation);
+  const keyed = ["head", "get", "put", "create"].includes(operation);
   if (keyed && (!key.startsWith("official/") || key.length > 512)) return json({ error: "invalid_key" }, 400);
   switch (operation) {
     case "head": {
@@ -151,13 +151,15 @@ async function objectOperation(request: Request, env: Env, operation: string): P
       return new Response(object.body, { headers: { "Content-Type": "application/octet-stream", "Cache-Control": "no-store",
         "X-Object-Meta": encodeURIComponent(JSON.stringify(objectMeta(object))) } });
     }
+    case "create":
     case "put": {
       const options = JSON.parse(decodeURIComponent(request.headers.get("X-Put-Options") ?? "%7B%7D")) as {
         httpMetadata?: R2HTTPMetadata; customMetadata?: Record<string, string>; etagMatches?: string };
       const saved = await bucket.put(key, await request.arrayBuffer(), {
         ...(options.httpMetadata ? { httpMetadata: options.httpMetadata } : {}),
         ...(options.customMetadata ? { customMetadata: options.customMetadata } : {}),
-        ...(options.etagMatches ? { onlyIf: { etagMatches: options.etagMatches } } : {}),
+        ...(operation === "create" ? { onlyIf: { etagDoesNotMatch: "*" } }
+          : options.etagMatches ? { onlyIf: { etagMatches: options.etagMatches } } : {}),
       });
       return saved ? json(objectMeta(saved)) : json({ error: "precondition_failed" }, 412);
     }
@@ -186,7 +188,7 @@ export async function handleOfficialHost(request: Request, env: Env, path: strin
     if (!Array.isArray(operations) || operations.length > 1000) return json({ error: "invalid_operation" }, 400);
     return applyRows(env, operations, projection === "host-staging-v1" && Boolean(env.OFFICIAL_HOST_ORIGIN));
   }
-  const object = /^r2\/(head|get|put|delete|list)$/u.exec(path);
+  const object = /^r2\/(head|get|put|create|delete|list)$/u.exec(path);
   if (object) return objectOperation(request, env, object[1]!);
   return json({ error: "not_found" }, 404);
 }

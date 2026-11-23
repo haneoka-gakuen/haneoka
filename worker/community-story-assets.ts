@@ -565,8 +565,10 @@ export async function reconcileStoryAssets(env: Env, id?: string): Promise<void>
       ELSE 'rejected' END`;
   const moderation = `CASE
       WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.sha256=community_story_blob.hash AND a.moderation_status='block' AND a.deleted_at IS NULL) THEN 'block'
-      WHEN EXISTS(SELECT 1 FROM community_attachment a JOIN community_moderation_case c ON c.entity_id=a.id AND c.entity_kind='attachment'
-        WHERE a.sha256=community_story_blob.hash AND a.moderation_status='allow' AND a.deleted_at IS NULL AND c.status='allow' AND c.source IN ('manual','appeal')) THEN 'allow'
+      WHEN EXISTS(SELECT 1 FROM community_attachment a
+        WHERE a.sha256=community_story_blob.hash AND a.moderation_status='allow' AND a.deleted_at IS NULL
+        AND EXISTS(SELECT 1 FROM community_moderation_case c WHERE c.entity_kind='attachment' AND c.entity_id=a.id
+          AND c.status='allow' AND c.source IN ('manual','appeal'))) THEN 'allow'
       WHEN moderation_status='block' THEN 'block'
       WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.sha256=community_story_blob.hash AND a.moderation_status<>'allow' AND a.deleted_at IS NULL) THEN 'review'
       ELSE 'allow' END`;
@@ -575,7 +577,13 @@ export async function reconcileStoryAssets(env: Env, id?: string): Promise<void>
       `UPDATE community_story_asset SET state=${assetState} WHERE attachment_id IS NOT NULL AND state<>(${assetState}) ${id ? "AND id=?" : ""}`,
     ).bind(...(id ? [id] : [])),
     env.DB.prepare(
-      `UPDATE community_story_blob SET moderation_status=${moderation} WHERE moderation_status<>(${moderation}) AND EXISTS(SELECT 1 FROM community_story_asset a WHERE a.blob_hash=community_story_blob.hash AND a.attachment_id IS NOT NULL) ${id ? "AND hash=(SELECT blob_hash FROM community_story_asset WHERE id=?)" : ""}`,
+      `WITH desired AS MATERIALIZED (
+        SELECT hash,${moderation} AS status FROM community_story_blob
+        WHERE hash IN (SELECT blob_hash FROM community_story_asset WHERE attachment_id IS NOT NULL
+          ${id ? "AND blob_hash=(SELECT blob_hash FROM community_story_asset WHERE id=?)" : ""})
+      )
+      UPDATE community_story_blob SET moderation_status=desired.status FROM desired
+      WHERE community_story_blob.hash=desired.hash AND moderation_status<>desired.status`,
     ).bind(...(id ? [id] : [])),
   ]);
 }
