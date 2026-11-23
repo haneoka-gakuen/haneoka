@@ -63,7 +63,7 @@ export class OurNotesGekisouStageProjector {
   private readonly screenWorldToClip = new Float64Array(16);
   private readonly localShaderNames = new Map<string, string>();
   private readonly rendererOrders = new Map<string, number>();
-  private currentState?: OurNotesGekisouStageState;
+  private currentState: OurNotesGekisouStageState | undefined;
 
   constructor(
     readonly source: OurNotesGekisouEffectProfile,

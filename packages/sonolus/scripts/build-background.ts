@@ -1,12 +1,14 @@
 // L3 — GEB
 // Input: Stage images selected by the asset author.
-// Output: Content for each band's Sonolus background image and square thumbnail, dimmed to the native background brightness default.
+// Output: Final-scale band backgrounds and their square thumbnails.
 // Pos: [Map](../L2-2.md); stage asset preparation shared by both local and Worker hosts.
 // Effects/Dependencies: Reads the authored PNGs and writes the generated presentation directory.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { buildSquareThumbnail } from "./presentation-thumbnails.ts";
 import { decodeRgba8Png, encodeRgba8Png } from "./pack-original-note-skins.ts";
+import { buildSonolusBandBackground } from "../src/shared/sonolusBackgroundImage.ts";
+import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
 
 /** The native live dims the background with a black overlay to 70% by default. */
 export function dimBackground(bytes: Buffer): Buffer {
@@ -23,8 +25,6 @@ export function dimBackground(bytes: Buffer): Buffer {
   }
   return encodeRgba8Png(image) as Buffer;
 }
-import { resolveSonolusReleaseWorkspace } from "../src/server/releaseWorkspace.ts";
-
 export function buildSonolusBackgrounds(assetsRoot: string, output: string) {
   for (const bandId of [0, 1, 2, 3, 4, 5]) {
     const path = resolve(
@@ -34,7 +34,7 @@ export function buildSonolusBackgrounds(assetsRoot: string, output: string) {
     const image = readFileSync(path);
     const directory = resolve(output, String(bandId));
     mkdirSync(directory, { recursive: true });
-    writeFileSync(resolve(directory, "image.png"), image);
+    writeFileSync(resolve(directory, "image.png"), buildSonolusBandBackground(image));
     writeFileSync(resolve(directory, "thumbnail.png"), buildSquareThumbnail(image, path));
   }
 }

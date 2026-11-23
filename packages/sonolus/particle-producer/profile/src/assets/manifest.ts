@@ -746,8 +746,9 @@ const unityObject = (source: string, type: string, ordinal = 0): string =>
   `${RELEASE_TEMPLATE_RUNTIME_ROOT}/unity-json/${encodeUnityPath(source)}/${type}${ordinal ? `_${ordinal}` : ""}.json`;
 const objectOrdinal = (filename: string): { type: string; ordinal: number } => {
   const match = /^([A-Za-z0-9]+)(?:_(\d+))?\.asset$/.exec(filename);
-  if (!match) throw new TypeError(`Invalid Unity object projection name: ${filename}`);
-  return { type: match[1], ordinal: Number(match[2] || 0) };
+  const type = match?.[1];
+  if (!type) throw new TypeError(`Invalid Unity object projection name: ${filename}`);
+  return { type, ordinal: Number(match[2] || 0) };
 };
 
 const noteSound = (runtimeRoot: string, name: string): string => `${runtimeRoot}/note-se/${name}.mp3`;

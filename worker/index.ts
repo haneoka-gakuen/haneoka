@@ -93,6 +93,7 @@ import {
   sonolusSongBackgroundAspect,
   sonolusSongBackgroundPath,
   sonolusSongBackgroundVersion,
+  sonolusSongBackgroundImageRevision,
 } from "./sonolus-background";
 import { handleCommunityPlaylistRequest } from "./community-playlists";
 import { handleCommunityStoryRequest, cleanupCommunityStories, reconcilePendingCommunityStories } from "./community-stories";
@@ -3744,7 +3745,9 @@ function sonolusBandBackground(page: JsonValue | null, bandId: unknown): JsonObj
 
 function songBackgroundItem(release: Release, name: string, songId: string, cover: JsonObject, origin: string): JsonObject {
   const identity = `haneoka-jacket-${release.server}-${release.releaseId}-${songId}`;
-  const resource = (kind: string) => ({ url: `${origin}/sonolus/backgrounds/${identity}/${kind}` });
+  const resource = (kind: string) => ({
+    url: `${origin}/sonolus/backgrounds/${identity}/${kind}${kind === "image" ? `?v=${sonolusSongBackgroundImageRevision}` : ""}`,
+  });
   return {
     name: identity, version: sonolusSongBackgroundVersion, title: name, subtitle: "BanG Dream! Our Notes", author: "haneoka", tags: [],
     source: origin, thumbnail: cover, image: resource("image"), data: resource("data"), configuration: resource("configuration"),
@@ -3778,7 +3781,7 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
       ? { aspectRatio: sonolusSongBackgroundAspect, fit: "cover", color: "#03030a" }
       : { blur: 0, mask: "#0000004d" }), { headers: jsonHeaders });
   if (part === "image") {
-    const key = new Request(`https://sonolus-cover.haneoka.internal/v${sonolusSongBackgroundVersion}/${release.server}/${release.releaseId}/${songId}.png`);
+    const key = new Request(`https://sonolus-cover.haneoka.internal/v${sonolusSongBackgroundImageRevision}/${release.server}/${release.releaseId}/${songId}.png`);
     const cached = await caches.default.match(key);
     if (cached) {
       const headers = new Headers(cached.headers);
@@ -3974,7 +3977,7 @@ async function handleSonolus(
   const viewRequest = discussionPath ? new Request(catalogUrl) : request;
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(viewRequest, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
-  const baseRevision = `identity-text-v13-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const baseRevision = `identity-text-v13-background-${sonolusSongBackgroundImageRevision}-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog

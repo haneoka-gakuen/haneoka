@@ -47,6 +47,7 @@ from build.card_videos import build_card_videos
 from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
 from build.runtime_texture_projection import RuntimeTextureProjection
+from build.live_stage import build_live_stage
 from build.game_systems import build_game_systems
 from build.jp_shop import bind_jp_shop_metadata
 from build.studio import build_studio
@@ -8830,9 +8831,11 @@ def build_api(
     story_assets = project("story-assets", _story_assets_catalog, data, stories, source_id)
     spine = project("spine", build_spine_catalog, data, source_id)
     anon_tokyo = project("anon-tokyo", build_anon_tokyo_catalog, data, source_id, spine)
+    characters = project("characters", _characters, data)
+    project("live stage", build_live_stage, data, characters, live2d, video_records)
     documents = {
         "bands": project("bands", _bands, data),
-        "characters": project("characters", _characters, data),
+        "characters": characters,
         "cards": project("cards", _cards, data, "MasterMemberCard"),
         "support-cards": project("support-cards", _cards, data, "MasterSupportCard", True),
         "songs": songs,

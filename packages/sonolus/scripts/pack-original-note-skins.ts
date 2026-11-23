@@ -230,7 +230,12 @@ export function decodeRgba8Png(input: Buffer, sourceName: string): DecodedRgbaPn
   return { signature, chunks, width, height, pixels };
 }
 
-export function encodeRgba8Png({ signature, chunks, width, height, pixels }: DecodedRgbaPng): Buffer {
+const signedMagnitude = (value: number) => Math.min(value, 256 - value);
+
+export function encodeRgba8Png(
+  { signature, chunks, width, height, pixels }: DecodedRgbaPng,
+  filterRows = false,
+): Buffer {
   const stride = width * 4;
   if (pixels.length !== stride * height) {
     throw new Error(`Invalid RGBA pixel buffer: ${pixels.length} != ${stride * height}`);
@@ -239,7 +244,35 @@ export function encodeRgba8Png({ signature, chunks, width, height, pixels }: Dec
   for (let y = 0; y < height; y++) {
     const target = y * (stride + 1);
     scanlines[target] = 0;
-    pixels.copy(scanlines, target + 1, y * stride, (y + 1) * stride);
+    const offset = y * stride;
+    pixels.copy(scanlines, target + 1, offset, offset + stride);
+    if (!filterRows) continue;
+    const filters = [Buffer.allocUnsafe(stride), Buffer.allocUnsafe(stride), Buffer.allocUnsafe(stride)];
+    let best = 0;
+    let bestCost = 0;
+    for (let x = 0; x < stride; x++) bestCost += signedMagnitude(pixels[offset + x]!);
+    for (const [i, row] of filters.entries()) {
+      let cost = 0;
+      for (let x = 0; x < stride; x++) {
+        const left = x < 4 ? 0 : pixels[offset + x - 4]!;
+        const up = y === 0 ? 0 : pixels[offset - stride + x]!;
+        const upperLeft = x < 4 || y === 0 ? 0 : pixels[offset - stride + x - 4]!;
+        const p = left + up - upperLeft;
+        const pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - upperLeft);
+        const predictor = i === 0 ? left : i === 1 ? up : pa <= pb && pa <= pc ? left : pb <= pc ? up : upperLeft;
+        const value = (pixels[offset + x]! - predictor) & 255;
+        row[x] = value;
+        cost += signedMagnitude(value);
+      }
+      if (cost < bestCost) {
+        best = i + 1;
+        bestCost = cost;
+      }
+    }
+    if (best > 0) {
+      scanlines[target] = best === 3 ? 4 : best;
+      filters[best - 1]!.copy(scanlines, target + 1);
+    }
   }
   const encoded = pngChunk("IDAT", deflateSync(scanlines, { level: 9 }));
   const output: Buffer[] = [signature];
@@ -249,7 +282,12 @@ export function encodeRgba8Png({ signature, chunks, width, height, pixels }: Dec
       output.push(encoded);
       inserted = true;
     }
-    output.push(chunk.bytes);
+    if (chunk.type === "IHDR" && (chunk.bytes.readUInt32BE(8) !== width || chunk.bytes.readUInt32BE(12) !== height)) {
+      const header = Buffer.from(chunk.bytes.subarray(8, 21));
+      header.writeUInt32BE(width, 0);
+      header.writeUInt32BE(height, 4);
+      output.push(pngChunk("IHDR", header));
+    } else output.push(chunk.bytes);
   }
   if (!inserted) throw new Error("PNG contains no IEND chunk");
   return Buffer.concat(output);

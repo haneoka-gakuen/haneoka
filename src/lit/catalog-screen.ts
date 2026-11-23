@@ -6403,6 +6403,10 @@ export class CatalogScreen extends LitElement {
         offset-ms=${sekai ? Number(item.chartOffsetMs || 0) : 0}
         audio-url=${String(item.musicUrl || "")}
         band-id=${Number(item.bandId || 1)}
+        .performanceSource=${!sekai && this.dataServer() !== "bestdori" && typeof item.musicId === "number"
+          ? { musicId: item.musicId, mvUrl: typeof item.mvUrl === "string" ? item.mvUrl : undefined,
+              bandId: Number(item.bandId || 0) }
+          : undefined}
         .gekisouMissionTypes=${!sekai && item.gekisou && typeof item.gekisou === "object"
           ? (item.gekisou as { missionTypes?: readonly number[] }).missionTypes : undefined}
         .introContent=${{
