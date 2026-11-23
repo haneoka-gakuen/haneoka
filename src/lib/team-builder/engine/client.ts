@@ -5,7 +5,7 @@
 // Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；复用同输入已证明的自动 CP 校准；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
-import { dataRows, objectRow, type TeamBuilderData } from "../data";
+import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
 import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
@@ -59,6 +59,27 @@ const rewardFloor = (hit: EngineHit): RewardFloor => [hit.key, hit.event?.otherM
 export interface FinalEngineResult { requestId: string; contextKey: string; response: EngineResponse }
 type FinalResultHandler = (result: FinalEngineResult) => void;
 
+function workerEffect(row: DataRow): DataRow {
+  const effect = row.raw === undefined ? row : nativeRow(row);
+  return {
+    id: effect.id,
+    level: effect.level,
+    skillTriggerType: effect.skillTriggerType,
+    effectExecuteLimitCount: effect.effectExecuteLimitCount,
+    effectExecuteLimitResetConditionGroup: effect.effectExecuteLimitResetConditionGroup,
+    skillEffectType: effect.skillEffectType ?? effect.effectType,
+    effectValue: effect.effectValue,
+    activationTimeSecond: effect.activationTimeSecond,
+    skillConditionGroup: effect.skillConditionGroup ?? effect.conditionGroup,
+    skillTriggerConditionGroup: effect.skillTriggerConditionGroup ?? effect.triggerConditionGroup,
+    skillReleaseConditionGroup: effect.skillReleaseConditionGroup ?? effect.releaseConditionGroup,
+    skillCumulativeConditionID: effect.skillCumulativeConditionID ?? effect.cumulativeConditionId,
+    skillTargetIDs: effect.skillTargetIDs ?? effect.targetIds,
+    effectLimitCount: effect.effectLimitCount,
+    maxEffectValue: effect.maxEffectValue,
+  };
+}
+
 function workerData(data: TeamBuilderData): Uint8Array {
   const cards = (rows: TeamBuilderData["members"] | TeamBuilderData["snapshots"]) => Object.fromEntries(Object.entries(rows).map(([id, row]) => {
     const metadata = objectRow(row.catalogMetadata);
@@ -66,7 +87,40 @@ function workerData(data: TeamBuilderData): Uint8Array {
     const { resolvedSkills: _display, ...catalogMetadata } = metadata;
     return [id, { ...row, catalogMetadata }];
   }));
-  return new TextEncoder().encode(JSON.stringify({ ...data, members: cards(data.members), snapshots: cards(data.snapshots) }));
+  const skills = Object.fromEntries(Object.entries(data.skills).map(([group, definitions]) => [
+    group,
+    Object.fromEntries(Object.entries(definitions).map(([id, definition]) => [id, {
+      gekisouMissionType: definition.gekisouMissionType,
+      categories: definition.categories,
+      effects: dataRows(definition.effects).map(workerEffect),
+    }])),
+  ]));
+  const bandItems = Object.fromEntries(Object.entries(data.bandItems).map(([id, row]) => [id, {
+    bandItemId: row.bandItemId,
+    bandId: row.bandId,
+    effects: dataRows(row.effects).map(workerEffect),
+  }]));
+  const eventTables = ["MasterEventEffect", "MasterLiveEventPoint", "MasterChallengeLiveEventPoint", "MasterLiveEventReward", "MasterChallengeLiveEventReward"];
+  const events = Object.fromEntries(Object.entries(data.events).map(([id, row]) => {
+    const tables = objectRow(row.tables);
+    return [id, {
+      id: row.id,
+      startAt: row.startAt,
+      endAt: row.endAt,
+      musicId: row.musicId,
+      eventItemId: row.eventItemId,
+      eventItem: row.eventItem,
+      plannerRules: row.plannerRules,
+      groups: row.groups,
+      liveEventPointGroup: row.liveEventPointGroup,
+      challengeLiveEventPointGroup: row.challengeLiveEventPointGroup,
+      effects: row.effects,
+      tables: Object.fromEntries(eventTables.map(key => [key, tables[key]])),
+    }];
+  }));
+  return new TextEncoder().encode(JSON.stringify({
+    ...data, members: cards(data.members), snapshots: cards(data.snapshots), skills, bandItems, events,
+  }));
 }
 
 /** One engine Worker: compiles the release once, then serves calls. */
