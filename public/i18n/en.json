@@ -4818,6 +4818,10 @@
   },
   "account": {
     "page": {
+      "linkSonolus": "Link Sonolus",
+      "openSonolusLink": "Open Sonolus",
+      "checkSonolusLink": "Check link",
+      "confirmSonolusLink": "Confirm link",
       "loadFailed": "Account information could not be loaded",
       "signOut": "Sign out",
       "loading": "Loading…",

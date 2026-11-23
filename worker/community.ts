@@ -4,6 +4,8 @@
 // Pos: [Map](L2.md)；社区内容与读取／写入策略枢纽。
 // Effects/Dependencies: D1 查询／更新、限流、媒体与审核等协作；读写权限按路由检查，评论层级只在当前请求复用。
 import type { UserRole } from "../src/lib/user-roles";
+import { communityPlainText } from "../src/lib/community-markup";
+import { writableSonolusOwner, type SonolusCommunityActor } from "./sonolus-auth";
 import { measureCommunityRead } from "./community-read-timing";
 import { communitySearchCondition, communitySearchScore } from "./community-search-query";
 import { recommendationPostPool, diversifyRecommendationPage, recommendationScoreSql } from "./community-ranking";
@@ -1095,13 +1097,23 @@ const requireWritableSession = async (
 ): Promise<WritableAccess> => {
   const session = await requireSession(request, env);
   if (!session) return { ok: false, response: error(request, 401, "authentication_required", message) };
-  if (!session.user.emailVerified) {
+  const access = await requireWritableUser(request, env, session.user, restrictionKinds);
+  return access.ok ? { ...access, session } : access;
+};
+
+const requireWritableUser = async (
+  request: Request,
+  env: Env,
+  user: Pick<Session["user"], "id" | "emailVerified">,
+  restrictionKinds: readonly ("sign_in" | "write")[] = ["sign_in", "write"],
+): Promise<Omit<Extract<WritableAccess, { ok: true }>, "session"> | Extract<WritableAccess, { ok: false }>> => {
+  if (!user.emailVerified) {
     return {
       ok: false,
       response: error(request, 403, "email_verification_required", "Verify the account email before posting"),
     };
   }
-  const profile = await communityAccessState(env, session.user.id, restrictionKinds);
+  const profile = await communityAccessState(env, user.id, restrictionKinds);
   if (!profile) {
     return { ok: false, response: error(request, 503, "profile_unavailable", "The community profile is not ready") };
   }
@@ -1123,7 +1135,7 @@ const requireWritableSession = async (
     };
   }
   if (env.COMMUNITY_RATE_LIMITER) {
-    const { success } = await env.COMMUNITY_RATE_LIMITER.limit({ key: session.user.id });
+    const { success } = await env.COMMUNITY_RATE_LIMITER.limit({ key: user.id });
     if (!success) {
       return {
         ok: false,
@@ -1131,7 +1143,7 @@ const requireWritableSession = async (
       };
     }
   }
-  return { ok: true, session, profile };
+  return { ok: true, profile };
 };
 
 const attachPostMetadata = async <T extends PostDatabaseFields>(
@@ -1738,6 +1750,53 @@ const listPosts = async (request: Request, env: Env, url: URL, hydrateEntity?: E
   });
 };
 
+const commentAuthorJoins = `JOIN "user" AS author ON author.id = comment.author_id
+     JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
+     JOIN community_profile AS author_profile
+       ON author_profile.user_id = comment.author_id
+      AND author_profile.status <> 'deleted'`;
+const approvedComment = "comment.moderation_status = 'allow'";
+const namedCommentAuthor = "author_profile.display_name IS NOT NULL";
+const visibleComment = ["comment.post_id = ?", "comment.deleted_at IS NULL", "comment.hidden_at IS NULL"];
+
+async function readPublicCommentPage(
+  env: Env, postId: string | null, cursorValue: string | null, limit: number, viewerId?: string,
+) {
+  const cursor = decodeCursor(cursorValue);
+  if (cursorValue !== null && !cursor) return null;
+  if (!postId) return { comments: [], cursor: undefined };
+  const rows = await measureCommunityRead("comments", () =>
+    env.DB.prepare(
+      `SELECT comment.id, comment.body, comment.created_at AS createdAt, author_profile.display_name AS authorName,
+       comment.like_count AS likeCount, parent_profile.display_name AS parentName,
+       EXISTS(SELECT 1 FROM community_comment_reaction AS react WHERE react.comment_id=comment.id AND react.user_id=? AND react.kind='like') AS liked
+       FROM community_comment AS comment
+       ${commentAuthorJoins}
+       LEFT JOIN community_comment AS parent ON parent.id=comment.parent_id
+         AND parent.deleted_at IS NULL AND parent.hidden_at IS NULL AND parent.moderation_status='allow'
+       LEFT JOIN community_profile AS parent_profile ON parent_profile.user_id=parent.author_id AND parent_profile.status<>'deleted'
+       WHERE ${visibleComment.join(" AND ")} AND ${approvedComment} AND ${namedCommentAuthor}
+         ${viewerId ? `AND NOT EXISTS (
+           SELECT 1 FROM community_user_block AS block WHERE
+             (block.blocker_user_id=? AND block.blocked_user_id=comment.author_id) OR
+             (block.blocked_user_id=? AND block.blocker_user_id=comment.author_id)
+         ) AND NOT EXISTS (
+           SELECT 1 FROM community_user_mute AS mute WHERE mute.muter_user_id=? AND mute.muted_user_id=comment.author_id
+         )` : ""}
+         ${cursor ? "AND (comment.created_at, comment.id) < (?, ?)" : ""}
+       ORDER BY comment.created_at DESC, comment.id DESC LIMIT ?`,
+    )
+      .bind(viewerId ?? null, postId, ...(viewerId ? [viewerId, viewerId, viewerId] : []), ...(cursor ? [cursor.createdAt, cursor.id] : []), limit + 1)
+      .all<Pick<CommentRow, "id" | "body" | "createdAt" | "authorName" | "likeCount"> & { parentName: string | null; liked: number }>(),
+  );
+  const page = rows.results.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    comments: page.map((comment) => ({ ...comment, body: communityPlainText(comment.body) })),
+    cursor: last && rows.results.length > limit ? encodeCursor(last) : undefined,
+  };
+}
+
 const getPost = async (request: Request, env: Env, id: string, url: URL, focusedOnly = false): Promise<Response> => {
   const threadCheck = url.pathname.startsWith(`${COMMUNITY_PREFIX}/posts/`)
     ? entityThreadForPost(env, id)
@@ -1883,8 +1942,8 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
     return error(request, 400, "invalid_cursor", "The hot-comment cursor is invalid");
   }
   const commentModerationSql = userId
-    ? "(comment.moderation_status = 'allow' OR comment.author_id = ?)"
-    : "comment.moderation_status = 'allow'";
+    ? `(${approvedComment} OR comment.author_id = ?)`
+    : approvedComment;
   const commentModerationValues: BindValue[] = userId ? [userId] : [];
 
   const viewerLikedSql = userId
@@ -1896,13 +1955,9 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
       ) THEN 1 ELSE 0 END`
     : "0";
   const commentWhere = [
-    "comment.post_id = ?",
-    "comment.deleted_at IS NULL",
-    "comment.hidden_at IS NULL",
+    ...visibleComment,
     commentModerationSql,
-    userId
-      ? "(author_profile.display_name IS NOT NULL OR comment.author_id=?)"
-      : "author_profile.display_name IS NOT NULL",
+    userId ? `(${namedCommentAuthor} OR comment.author_id=?)` : namedCommentAuthor,
   ];
   if (userId) {
     commentWhere.push(`NOT EXISTS (
@@ -1923,11 +1978,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
        comment.created_at AS createdAt,
        comment.like_count AS likeCount
      FROM community_comment AS comment
-     JOIN "user" AS author ON author.id = comment.author_id
-     JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
-     JOIN community_profile AS author_profile
-       ON author_profile.user_id = comment.author_id
-      AND author_profile.status <> 'deleted'
+     ${commentAuthorJoins}
 
      WHERE ${commentWhere.join(" AND ")}`;
   const commentColumns = `
@@ -1952,11 +2003,7 @@ const getPost = async (request: Request, env: Env, id: string, url: URL, focused
        COALESCE(author_profile.display_name,author.name) AS authorName,
        ${avatarUrlSelect("author")} AS authorImage`;
   const commentFrom = `FROM community_comment AS comment
-     JOIN "user" AS author ON author.id = comment.author_id
-     JOIN community_identity AS author_identity ON author_identity.user_id = comment.author_id
-     JOIN community_profile AS author_profile
-       ON author_profile.user_id = comment.author_id
-      AND author_profile.status <> 'deleted'
+     ${commentAuthorJoins}
 `;
   const commentsResult = await (async () => {
     let trees = commentTrees.get(request);
@@ -2710,10 +2757,17 @@ export interface CommunityCommentInitializer {
   textOnly: true;
   acceptedCommentGuard: (commentId: string) => D1PreparedStatement;
 }
-const createComment = async (request: Request, env: Env, postId: string, initialize?: CommunityCommentInitializer): Promise<Response> => {
-  const writable = await requireWritableSession(request, env, "Sign in to comment");
+const createComment = async (
+  request: Request,
+  env: Env,
+  postId: string,
+  initialize?: CommunityCommentInitializer,
+  native?: SonolusCommunityActor,
+): Promise<Response> => {
+  const session = native ? { user: native } : await requireSession(request, env);
+  if (!session) return error(request, 401, "authentication_required", "Sign in to comment");
+  const writable = await requireWritableUser(request, env, session.user);
   if (!writable.ok) return writable.response;
-  const { session } = writable;
   const payload = await readJSON(request);
   if ("error" in payload) return payloadError(request, payload.error);
   if ((initialize?.textOnly || await entityThreadForPost(env,postId)) && !entityCommentTextOnly(payload.value)) return error(request,422,"entity_comment_media_forbidden","Entity comments accept text only");
@@ -2748,6 +2802,7 @@ const createComment = async (request: Request, env: Env, postId: string, initial
      WHERE post.id = ? AND ${activePostWhere} AND post.moderation_status = 'allow'
        AND ${access.sql} AND ${state.sql} AND ${forumPermissionSql("post.forum_id","?","reply")}
        AND ${activeSessionProfileWhere}
+       ${native ? `AND ${writableSonolusOwner}` : ""}
        AND (
          ? IS NULL OR EXISTS (
            SELECT 1 FROM community_comment AS parent
@@ -2778,6 +2833,7 @@ const createComment = async (request: Request, env: Env, postId: string, initial
     ...state.values,
     session.user.id,
     session.user.id,
+    ...(native ? [native.id, native.tokenDigest, now, now] : []),
     parentId,
     parentId,
     session.user.id,
@@ -3320,6 +3376,8 @@ export const handleCommunityRequest = async (request: Request, env: Env): Promis
 
 export const communityEntityCommentBackend = {
   read: getPost,
+  isPublic: async (env: Env, id: string) => (await findAccessiblePostRow(env, id, null)) !== null,
+  readPublicCommentPage,
   // Internal feed hydration keeps canonical visibility, ancestry and serialization,
   // while excluding unrelated first-page roots and their reply previews.
   readFocused: (request: Request, env: Env, id: string, url: URL) => getPost(request, env, id, url, true),

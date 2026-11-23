@@ -2,6 +2,7 @@ import { hasUserCapability } from "../src/lib/user-roles";
 
 import { measureCommunityRead } from "./community-read-timing";
 import { getAuthSession } from "./auth";
+import { writableSonolusOwner, type SonolusCommunityActor } from "./sonolus-auth";
 import { communityAccessState } from "./access";
 import { communityEntityCommentBackend, type CommunityCommentInitializer } from "./community";
 import { canonicalEntityTarget, entityCommentTextOnly, type CommunityEntityTarget } from "./community-entity-guard";
@@ -122,14 +123,14 @@ function initializeThread(
   postId: string,
   forumId: string,
   userId: string,
-  token: string,
+  token: string | SonolusCommunityActor,
 ): CommunityCommentInitializer {
   const now = Date.now(),
     title = `Entity discussion: ${target.entityType}`,
     body = "Shared catalogue discussion.";
   const insert = env.DB.prepare(
     `INSERT INTO community_post(id,author_id,title,body,status,visibility,moderation_status,forum_id,version,moderation_revision,created_at,updated_at,published_at)
-    SELECT ?,?,?,?,'published','public','allow',?,1,1,?,?,? WHERE ${writableTeamOwner}
+    SELECT ?,?,?,?,'published','public','allow',?,1,1,?,?,? WHERE ${typeof token === "string" ? writableTeamOwner : writableSonolusOwner}
       AND ${forumPermissionSql("?", "?", "post")} AND ${forumPermissionSql("?", "?", "reply")}
       AND (SELECT COUNT(*) FROM community_comment WHERE author_id=? AND created_at>=?)<300
       AND (SELECT COUNT(*) FROM community_comment WHERE author_id=? AND created_at>=?)<2000
@@ -144,8 +145,8 @@ function initializeThread(
     now,
     now,
     userId,
-    token,
-    new Date(now).toISOString(),
+    typeof token === "string" ? token : token.tokenDigest,
+    typeof token === "string" ? new Date(now).toISOString() : now,
     now,
     userId,
     forumId,
@@ -199,6 +200,43 @@ async function defaultForum(env: Env, userId: string | null): Promise<string | n
     )?.id ?? null
   );
 }
+
+export async function publicEntityDiscussion(env: Env, target: CommunityEntityTarget) {
+  const existing = await thread(env, target);
+  if (existing) {
+    return (await communityEntityCommentBackend.isPublic(env, existing.postId))
+      ? { postId: existing.postId }
+      : null;
+  }
+  return (await defaultForum(env, null)) ? { postId: null } : null;
+}
+
+export const readPublicEntityCommentPage = communityEntityCommentBackend.readPublicCommentPage;
+
+export async function submitSonolusEntityComment(
+  request: Request,
+  env: Env,
+  target: CommunityEntityTarget,
+  actor: SonolusCommunityActor,
+  body: string,
+  parentId?: string,
+): Promise<Response> {
+  const existing = await thread(env, target);
+  const forumId = existing?.forumId ?? (await defaultForum(env, actor.id));
+  if (!forumId || !(await replyAllowed(env, existing, forumId, actor.id)))
+    return error(request, 403, "thread_not_writable", "This discussion is not open for replies");
+  if (parentId && !existing) return error(request, 404, "comment_not_found", "Comment not found");
+  const postId = existing?.postId ?? (await carrierId(target));
+  const initialize = existing ? undefined : initializeThread(env, target, postId, forumId, actor.id, actor);
+  const headers = new Headers(request.headers);
+  headers.delete("Content-Length");
+  headers.set("Content-Type", "application/json");
+  const forwarded = new Request(request, {
+    headers, body: JSON.stringify({ body, ...(parentId ? { parentId } : {}) }),
+  });
+  return communityEntityCommentBackend.create(forwarded, env, postId, initialize, actor);
+}
+
 const entityValue = (descriptor: CommunityEntityDescriptor) => ({
   ...descriptor,
   availableServers: (["jp", "intl"] as const).filter((server) => descriptor.availability[server] === "present"),

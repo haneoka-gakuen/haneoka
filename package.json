@@ -136,6 +136,7 @@
     "better-auth": "catalog:",
     "circle-flags": "2.8.3",
     "echarts": "catalog:",
+    "fast-png": "catalog:",
     "fflate": "catalog:",
     "html-to-image": "catalog:",
     "lit": "^3.3.3",

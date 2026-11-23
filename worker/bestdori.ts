@@ -1756,7 +1756,25 @@ export async function loadBestdoriSonolusCatalog(
 ): Promise<{ bands: Record<string, unknown>; songs: Record<string, unknown> }> {
   configureUpstreamBase(configuredUpstreamBase);
   const [rawSongs, bands] = await Promise.all([all8(), allBands()]);
-  return { bands, songs: transformSongs(rawSongs) };
+  const published = recordsPublishedInAnyRegion(rawSongs, "publishedAt");
+  const songs = transformSongs(published);
+  for (const [id, song] of Object.entries(songs)) {
+    const raw = asObj(published[id]);
+    const bpm = asObj(raw.bpm);
+    for (const [index, name] of DIFFICULTY_NAMES.entries()) {
+      const chart = asArray(asObj(song).difficulty).find((value) => asObj(value).difficulty === name);
+      if (!chart) continue;
+      const values = asArray(bpm[String(index)]).flatMap((segment) => {
+        const value = num(asObj(segment).bpm);
+        return value && value > 0 ? [value] : [];
+      });
+      Object.assign(asObj(chart), {
+        seconds: num(raw.length),
+        ...(values.length ? { minBpm: Math.min(...values), maxBpm: Math.max(...values) } : {}),
+      });
+    }
+  }
+  return { bands, songs };
 }
 
 const transformSongMeta = (raw: Record<string, unknown>, metaRaw: Record<string, unknown>): Obj => {

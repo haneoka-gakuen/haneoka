@@ -351,6 +351,9 @@ importers:
       echarts:
         specifier: 'catalog:'
         version: 6.1.0
+      fast-png:
+        specifier: 'catalog:'
+        version: 8.0.0
       fflate:
         specifier: 'catalog:'
         version: 0.8.3

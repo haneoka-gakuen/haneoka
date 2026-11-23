@@ -4818,6 +4818,10 @@
   },
   "account": {
     "page": {
+      "linkSonolus": "Sonolus 연동",
+      "openSonolusLink": "Sonolus 열기",
+      "checkSonolusLink": "연동 상태 확인",
+      "confirmSonolusLink": "연동 확정",
       "loadFailed": "계정 정보를 불러오지 못했습니다",
       "signOut": "로그아웃",
       "loading": "불러오는 중…",

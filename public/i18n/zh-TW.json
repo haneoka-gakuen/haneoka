@@ -4818,6 +4818,10 @@
   },
   "account": {
     "page": {
+      "linkSonolus": "綁定 Sonolus",
+      "openSonolusLink": "開啟 Sonolus",
+      "checkSonolusLink": "檢查綁定狀態",
+      "confirmSonolusLink": "確認綁定",
       "loadFailed": "無法載入帳號資訊",
       "signOut": "登出",
       "loading": "載入中…",

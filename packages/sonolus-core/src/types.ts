@@ -47,6 +47,7 @@ export interface ChartDescriptor {
   artists: string;
   artistFilters?: ChartFilterValue[];
   author?: string;
+  background?: JsonObject;
   bgmUrl?: string;
   coverUrl?: string;
   previewUrl?: string;
@@ -59,6 +60,7 @@ export interface ChartDescriptor {
   name: string;
   publishedAt: number;
   rating: number;
+  songDescription?: string;
   songId: string;
   searchKeywords?: string[];
   title: string;
@@ -125,6 +127,7 @@ export interface CatalogProjectionOptions {
   ) => Readonly<Record<string, number>>;
   localeOrder?: readonly CatalogLocale[];
   mediaBaseUrl?: string;
+  songBackground?: (song: Readonly<Record<string, unknown>>, songId: string, title: string, coverUrl?: string) => JsonObject | undefined;
   encodeText?: (labels: Readonly<Record<string, string>>, fallbackLocale: string) => string;
 }
 

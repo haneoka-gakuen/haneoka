@@ -222,6 +222,8 @@
     "worker/index.ts",
     "worker/markdown-documents.ts",
     "worker/auth.ts",
+    "worker/sonolus-auth.ts",
+    "worker/sonolus-background.ts",
     "worker/admin-creations.ts",
     "worker/app-account.ts",
     "worker/game-tool-accounts.ts",

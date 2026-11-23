@@ -1,9 +1,10 @@
 // L3 — GEB
 // Input: 社区谱面 HTTP、账户、D1、R2 和受信服务器素材解析。
-// Output: 稳定数字编号、私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含作者简介／发布信息的 Sonolus 关卡投影。
+// Output: 稳定数字编号、私有草稿、不可变版本、发布列表、只读播放数据、服务端统计／推荐难度、素材与含署名、版本、统计和公开互动数的 Sonolus 关卡投影。
 // Pos: [Map](L2.md)；社区谱面持久化、发布及访问控制所有者。
 // Effects/Dependencies: 认证／限流、D1 CAS、R2／编译；推荐读取偏好并记录曝光，列表与详情按模型版本缓存分析。
 import { getAuthSession } from "./auth";
+import { writableSonolusOwner, type SonolusCommunityActor } from "./sonolus-auth";
 import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
 import { inspectCommunityText } from "./moderation";
@@ -19,11 +20,20 @@ import {
   type CommunityChartPlayback,
 } from "../src/lib/chart-creation/community-types";
 import type { Project } from "../packages/chart-editor/src/model";
-import type { ChartCatalogProvider, ChartDataProvider, ChartDescriptor } from "@haneoka/sonolus-core";
+import {
+  sonolusChartFacts,
+  sonolusMetadataLine,
+  sonolusPublicationLine,
+  type ChartCatalogProvider,
+  type ChartDataProvider,
+  type ChartDescriptor,
+  type JsonObject,
+  type JsonValue,
+} from "@haneoka/sonolus-core";
 
 import { preserveChartMedia, chartMediaSnapshot, type ChartMediaResolver } from "./community-chart-media";
 import { diversifyRecommendationPage, recommendationScoreSql } from "./community-ranking";
-import { forumDiscoveryPostSql } from "./community-forums";
+import { forumDiscoveryPostSql, forumReadSql } from "./community-forums";
 import { backgroundWork } from "./request-work";
 import { siteLink, siteOrigin } from "../src/lib/site-origin";
 
@@ -154,12 +164,47 @@ async function viewer(request: Request, env: Env) {
 async function writer(request: Request, env: Env) {
   const user = await viewer(request, env);
   if (!user) throw new Error("authentication_required");
+  await requireChartWriter(env, user);
+  return user;
+}
+
+async function requireChartWriter(env: Env, user: { id: string; emailVerified: boolean }) {
   if (!user.emailVerified) throw new Error("email_verification_required");
   const access = await communityAccessState(env, user.id, ["sign_in", "write"]);
   if (access?.status !== "active" || access.restriction) throw new Error("community_write_restricted");
   if (env.COMMUNITY_RATE_LIMITER && !(await env.COMMUNITY_RATE_LIMITER.limit({ key: user.id })).success)
     throw new Error("rate_limit_exceeded");
-  return user;
+}
+
+async function writeChartLike(env: Env, id: string, userId: string, liked: boolean, actor?: SonolusCommunityActor) {
+  const now = Date.now();
+  const proof = actor ? [actor.id, actor.tokenDigest, now, now] : [];
+  const guard = actor ? `AND ${writableSonolusOwner}` : "";
+  if (liked)
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO community_chart_like(chart_id,user_id,created_at)
+       SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM community_chart WHERE id=? AND published_revision IS NOT NULL AND deleted_at IS NULL)
+       ${guard}`,
+    ).bind(id, userId, now, id, ...proof).run();
+  else await env.DB.prepare(
+    `DELETE FROM community_chart_like WHERE chart_id=? AND user_id=? ${guard}`,
+  ).bind(id, userId, ...proof).run();
+}
+
+export async function submitSonolusChartLike(
+  request: Request, env: Env, id: string, actor: SonolusCommunityActor, liked: boolean,
+): Promise<Response> {
+  try {
+    await requireChartWriter(env, actor);
+  } catch (failure) {
+    const code = failure instanceof Error ? failure.message : "";
+    if (code === "rate_limit_exceeded") return fail(request, 429, code);
+    if (code === "email_verification_required" || code === "community_write_restricted") return fail(request, 403, code);
+    throw failure;
+  }
+  if (!(await find(env, id, ""))) return fail(request, 404, "chart_not_found");
+  await writeChartLike(env, id, actor.id, liked, actor);
+  return json(request, { liked });
 }
 function chartAnalysis(row: Row): CommunityChartItem["analysis"] {
   if (row.analysisJson && row.analysisJson !== "null") return JSON.parse(row.analysisJson);
@@ -788,17 +833,8 @@ export async function handleCommunityChartRequest(
       }
       if (action === "like" && method === "PUT") {
         const input = await body(request);
-        if (input.liked === true)
-          await primary.DB.prepare(
-            "INSERT OR IGNORE INTO community_chart_like(chart_id,user_id,created_at) VALUES(?,?,?)",
-          )
-            .bind(id!, owner, Date.now())
-            .run();
-        else if (input.liked === false)
-          await primary.DB.prepare("DELETE FROM community_chart_like WHERE chart_id = ? AND user_id = ?")
-            .bind(id!, owner)
-            .run();
-        else throw new Error("invalid_chart");
+        if (typeof input.liked !== "boolean") throw new Error("invalid_chart");
+        await writeChartLike(primary, id!, owner, input.liked);
         return json(request, { chart: item((await find(primary, id!, owner))!, owner) });
       }
       if (
@@ -871,7 +907,9 @@ export function communitySonolusProviders(
   return {
     catalogProvider: {
       async load() {
-        const charts = rows.map((r): ChartDescriptor => ({
+        const charts = rows.map((r): ChartDescriptor => {
+          const analysis = chartAnalysis(r);
+          return {
             name: chartLevelName(r.publicId),
             songId: r.id,
             dataId: `community:${r.id}:${r.revision}`,
@@ -880,12 +918,14 @@ export function communitySonolusProviders(
             author: r.charter || r.ownerName,
             description: [
               ...(r.summary ? [...r.summary.split("\n").map((line) => `##:${line}`), ""] : []),
-              ...[
+              ...([
                 ["#ARTISTS", r.artist],
                 ["#AUTHOR", r.charter || r.ownerName],
                 ["#OWNER", r.ownerName || `#${r.ownerUid}`],
-                ["#PUBLISHED", r.publishedAt === null ? "" : new Date(r.publishedAt).toISOString()],
-              ].flatMap(([label, value]) => value ? [`${label}:#SEPARATOR_COLON:##:${value}`] : []),
+                ["#VERSION", String(r.revision)],
+              ] as const).flatMap(([label, value]) => value ? [sonolusMetadataLine(label, value)] : []),
+              ...sonolusPublicationLine(r.publishedAt ?? 0),
+              ...sonolusChartFacts({ noteCount: analysis?.n, seconds: analysis?.time, minBpm: analysis?.minBpm, maxBpm: analysis?.maxBpm }),
             ].join("\n"),
             searchKeywords: [r.summary, r.charter, r.ownerName],
             rating: Number.parseFloat(r.level) || 0,
@@ -893,7 +933,8 @@ export function communitySonolusProviders(
             publishedAt: r.publishedAt ?? 0,
             bgmUrl: r.audioUrl,
             coverUrl: r.coverUrl,
-          }));
+          };
+        });
         return { revision: { id: revision }, charts,
           aliases: charts.map((chart, index) => ({ ...chart, name: chartLevelName(rows[index]!.id) })),
         };
@@ -928,6 +969,44 @@ export function communitySonolusProviders(
     },
   };
 }
+
+export async function addSonolusCommunityCounts(env: Env, rows: readonly Row[], body: JsonObject): Promise<void> {
+  const byName = new Map(rows.flatMap((row) => [
+    [chartLevelName(row.publicId), row] as const,
+    [chartLevelName(row.id), row] as const,
+  ]));
+  const items = new Map<JsonObject, Row>();
+  const collect = (value: JsonValue | undefined) => {
+    if (Array.isArray(value)) { value.forEach(collect); return; }
+    if (!value || typeof value !== "object") return;
+    const row = typeof value.name === "string" ? byName.get(value.name) : undefined;
+    if (row) items.set(value, row);
+    else for (const key of ["item", "items", "sections", "levels"]) collect(value[key]);
+  };
+  collect(body);
+  if (!items.size) return;
+  const ids = [...new Set([...items.values()].map((row) => row.id))];
+  const counts = await env.DB.prepare(
+    `SELECT thread.original_id AS id, discussion.comment_count AS count
+     FROM community_entity_thread AS thread
+     JOIN community_post AS discussion ON discussion.id=thread.post_id
+     WHERE thread.entity_type='community-charts'
+       AND thread.original_id IN (SELECT value FROM json_each(?))
+       AND discussion.status='published' AND discussion.visibility='public'
+       AND discussion.moderation_status='allow' AND discussion.deleted_at IS NULL AND discussion.archived_at IS NULL
+       AND ${forumReadSql("discussion", "NULL")}`,
+  ).bind(JSON.stringify(ids)).all<{ id: string; count: number }>();
+  const commentsByChart = new Map(counts.results.map(({ id, count }) => [id, count]));
+  for (const [item, row] of items) {
+    const commentCount = commentsByChart.get(row.id);
+    item.tags = [
+      ...(Array.isArray(item.tags) ? item.tags : []),
+      { title: String(row.likeCount), icon: "heartHollow" },
+      ...(commentCount === undefined ? [] : [{ title: String(commentCount), icon: "comment" }]),
+    ];
+  }
+}
+
 export async function communitySonolusRows(env: Env, name?: string) {
   if (name?.startsWith("haneoka-community-")) {
     const value = name.slice("haneoka-community-".length);

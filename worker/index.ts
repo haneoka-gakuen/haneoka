@@ -86,9 +86,19 @@ import { renderNativeChart } from "./chart-native-renderer";
 import { negotiateRequestLocale } from "../src/i18n/negotiation";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index";
 import { handleCommunityRequest } from "./community";
+import { submitSonolusCommentReaction } from "./community-social";
+import { handleSonolusAccountLink, handleSonolusAuthentication, readSonolusActor, sonolusAuthRoute } from "./sonolus-auth";
+import {
+  composeSonolusSongBackground,
+  sonolusSongBackgroundAspect,
+  sonolusSongBackgroundPath,
+  sonolusSongBackgroundVersion,
+} from "./sonolus-background";
 import { handleCommunityPlaylistRequest } from "./community-playlists";
 import { handleCommunityStoryRequest, cleanupCommunityStories, reconcileCommunityStories } from "./community-stories";
 import {
+  addSonolusCommunityCounts,
+  submitSonolusChartLike,
   handleCommunityChartRequest,
   communitySonolusProviders,
   communitySonolusRows,
@@ -96,7 +106,8 @@ import {
 } from "./community-charts";
 import type { ChartMediaRef } from "../src/lib/chart-creation/community-types";
 import { handleCommunityForumsRequest } from "./community-forums";
-import { handleCommunityEntityRequest } from "./community-entities";
+import { handleCommunityEntityRequest, publicEntityDiscussion, readPublicEntityCommentPage, submitSonolusEntityComment } from "./community-entities";
+import type { CommunityEntityTarget } from "./community-entity-guard";
 import { createCommunityEntityResolver } from "./community-entity-catalog";
 import { handleSearchRequest, syncSearchIndex } from "./search-index";
 import { handleCommunityActivityRequest } from "./community-activity";
@@ -104,7 +115,7 @@ import { handleAnnouncementsRequest } from "./announcements";
 import { announcementDocumentRequest, rewriteAnnouncementDocument } from "../src/lib/announcement-document";
 import { handleModerationQueue, reconcileModerationState } from "./moderation";
 import { handleProfileRequest } from "./profile";
-import { handleTeamInventoryRequest } from "./team-inventory";
+import { handleTeamInventoryRequest, readTeamBody } from "./team-inventory";
 import { handleTeamWorkspaceRequest } from "./team-workspace";
 import { handleTeamBoxRequest } from "./team-box";
 import { handleGameToolAccounts } from "./game-tool-accounts";
@@ -118,11 +129,14 @@ import { moveEventHistory, pruneEventHistory } from "./game-event-history";
 import { createRecognitionReferenceProvider } from "./recognition-reference";
 import { handleTeamBuilderData } from "./team-builder-data";
 import { handlePublicProfileRequest } from "./public-profile";
-import { withD1Session } from "./d1-session";
+import { withD1Session, withPrimaryD1 } from "./d1-session";
 import { affectsAnonymousCommunity, cachedCommunityRead, edgeCacheable, markCommunityMutation } from "./community-edge-cache";
 import { cleanupCommunityUploads, handleUploadRequest } from "./uploads";
 import {
   projectCatalogCharts,
+  sonolusChartFacts,
+  sonolusMetadataLine,
+  type ChartDescriptor,
   type ChartCatalogSnapshot,
   type ChartDataPayload,
   type ChartDataProvider,
@@ -130,6 +144,7 @@ import {
   RevisionCache,
   sonolusLevelName,
   sonolusPlaylistName,
+  sonolusServerFromLevelName,
   SonolusLevelService,
 } from "@haneoka/sonolus-core";
 import {
@@ -428,7 +443,7 @@ const CORS: Readonly<Record<string, string>> = {
 };
 const SONOLUS_JSON_HEADERS: Readonly<Record<string, string>> = {
   ...CORS,
-  "Access-Control-Allow-Headers": `${CORS["Access-Control-Allow-Headers"]}, Sonolus-Session`,
+  "Access-Control-Allow-Headers": `${CORS["Access-Control-Allow-Headers"]}, Sonolus-Session, Sonolus-Signature`,
   "Access-Control-Expose-Headers": `${CORS["Access-Control-Expose-Headers"]}, Sonolus-Version`,
   "Content-Type": "application/json; charset=utf-8",
   "Sonolus-Version": SONOLUS_VERSION,
@@ -3297,6 +3312,8 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
       const cacheKey = `https://sonolus-catalog.haneoka.internal/v1/${encodeURIComponent(revision)}.json`;
       const cached = await caches.default.match(cacheKey).catch(() => undefined);
       if (cached) return cached.json<ChartCatalogSnapshot>();
+      const bandBackgrounds = await readGlobalSonolusJson(env, "runtime/sonolus/backgrounds/list/page-0").catch(() => null);
+      const backgrounds = sonolusThumbnailDocument(bandBackgrounds, undefined, origin);
       const catalogs = await Promise.all(
         releases.map(async (release) => {
           const [storage, index] = await Promise.all([catalogStorageManifest(env, release), resourceContentIndex(env, ctx, release.server, release.releaseId)]);
@@ -3309,6 +3326,19 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
               const value = await readReleaseJson(env, release, releasePath);
               const kind = releasePath === storage?.resources.songs?.index ? "songs" : releasePath === storage?.resources.bands?.index ? "bands" : undefined;
               return kind ? filterContentData(value, view, kind, false, index?.publications).value as JsonValue : value;
+            },
+            songBackground: (song, songId, title, coverUrl) => {
+              const guest: ContentView = { ...view, group: "guest", override: false, spoilers: false };
+              const publication = index?.publications?.[`songs:${songId}`];
+              if (
+                coverUrl &&
+                typeof song.jacketUrl === "string" &&
+                song.jacketUrl.startsWith(`/assets/${release.server}/`) &&
+                contentVisible(guest, "songs", { ...song, ...publication }, songId)
+              ) {
+                return songBackgroundItem(release, title, songId, { url: coverUrl }, origin);
+              }
+              return sonolusBandBackground(backgrounds, song.bandId);
             },
             release: { releaseId: release.releaseId, server: release.server },
             revision: `${release.server}:${release.releaseId}:${revision}`,
@@ -3642,6 +3672,257 @@ function sonolusContentLinks(value: unknown, origin: string): unknown {
   return value;
 }
 
+const sonolusCommunityLevel = "haneoka-community-(?:[1-9]\\d{0,15}|[0-9a-f-]{36})";
+const sonolusCommunityLevelPath = new RegExp(`^/sonolus/levels/(${sonolusCommunityLevel})(?:/data/[a-f0-9]{40})?$`, "u");
+const sonolusDiscussionPath = /^\/sonolus\/(levels|playlists)\/([A-Za-z0-9._~-]+)\/community\/(info|comments\/list|submit|comments\/([a-f0-9-]{36})\/submit)$/u;
+const sonolusItemPath = /^\/sonolus\/(levels|playlists)\/([A-Za-z0-9._~-]+)$/u;
+
+function negotiateSonolusResponse(response: Response, request: Request) {
+  const headers = new Headers(response.headers);
+  headers.set("Sonolus-Version", sonolusClientVersion(request.headers.get("User-Agent")));
+  headers.append("Vary", "User-Agent");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+    encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
+  });
+}
+
+function sonolusSongDiscussion(
+  catalog: ChartCatalogSnapshot,
+  itemType: string,
+  name: string,
+  bestdori: boolean,
+): CommunityEntityTarget | null {
+  const matches = (chart: ChartDescriptor) => {
+    if (itemType === "levels") return chart.name === name;
+    const server = sonolusServerFromLevelName(chart.name);
+    return name === (server ? sonolusPlaylistName(server, chart.songId) : `playlist-${chart.songId}`);
+  };
+  const chart = catalog.charts.find(matches) ?? catalog.aliases?.find(matches);
+  if (!chart) return null;
+  return bestdori
+    ? { entityType: "provider-songs", originalId: `bestdori:${chart.songId}` }
+    : { entityType: "songs", originalId: chart.songId };
+}
+
+async function releaseSonolusChartFacts(env: Env, releases: readonly Release[], chart: ChartDescriptor) {
+  const reference = parseReleaseChartDataId(chart.dataId);
+  if (!reference) return [];
+  const release = releases.find((item) => item.releaseId === reference.releaseId && item.server === reference.server);
+  if (!release) return [];
+  const storage = (await catalogStorageManifest(env, release))?.resources["song-meta"]?.entities;
+  if (!storage) return [];
+  const song = ownJsonValue(await readCatalogShard(env, release, storage, chart.songId), chart.songId);
+  const difficulty = ["easy", "normal", "hard", "expert"].indexOf(chart.difficulty);
+  const entry = difficulty >= 0 && isJsonObject(song) ? song[String(difficulty)] : undefined;
+  const metrics = isJsonObject(entry) ? entry.chart : undefined;
+  if (!isJsonObject(metrics)) return [];
+  return sonolusChartFacts({
+    noteCount: metrics.n,
+    seconds: metrics.time,
+    minBpm: metrics.minBpm,
+    maxBpm: metrics.maxBpm,
+  });
+}
+
+function sonolusBandId(value: unknown): keyof typeof OUR_NOTES_STAGE_NAMES {
+  return typeof value === "number" && Object.hasOwn(OUR_NOTES_STAGE_NAMES, value)
+    ? value as keyof typeof OUR_NOTES_STAGE_NAMES
+    : 0;
+}
+
+function sonolusBandBackground(page: JsonValue | null, bandId: unknown): JsonObject | undefined {
+  if (!isJsonObject(page) || !Array.isArray(page.items)) return;
+  const items = page.items;
+  const resolve = (band: keyof typeof OUR_NOTES_STAGE_NAMES) =>
+    items.find((item): item is JsonObject => isJsonObject(item) && item.name === OUR_NOTES_STAGE_NAMES[band]);
+  return resolve(sonolusBandId(bandId)) ?? resolve(0);
+}
+
+function songBackgroundItem(release: Release, name: string, songId: string, cover: JsonObject, origin: string): JsonObject {
+  const identity = `haneoka-jacket-${release.server}-${release.releaseId}-${songId}`;
+  const resource = (kind: string) => ({ url: `${origin}/sonolus/backgrounds/${identity}/${kind}` });
+  return {
+    name: identity, version: sonolusSongBackgroundVersion, title: name, subtitle: "BanG Dream! Our Notes", author: "haneoka", tags: [],
+    source: origin, thumbnail: cover, image: resource("image"), data: resource("data"), configuration: resource("configuration"),
+  };
+}
+
+async function handleSonolusSongBackground(request: Request, env: Env, ctx: ExecutionContext, match: RegExpExecArray) {
+  const [, , slug, releaseId, songId, part] = match;
+  const server = slug && await activeResourceServer(env, slug);
+  const release = server && releaseId ? await requestedRelease(env, server, releaseId) : null;
+  if (!release || !songId) return Response.json({ message: "Background not found" }, { status: 404 });
+  if (request.method !== "GET" && request.method !== "HEAD")
+    return Response.json({ message: "Method not allowed" }, { status: 405 });
+  const storage = (await catalogStorageManifest(env, release))?.resources.songs?.entities;
+  const song = storage ? ownJsonValue(await readCatalogShard(env, release, storage, songId), songId) : undefined;
+  const view = await requestContentView(new Request(new URL(new URL(request.url).pathname, request.url)), env);
+  const visibility = await resourceContentIndex(env, ctx, release.server, release.releaseId);
+  if (!isJsonObject(song) || !contentVisible(view, "songs", { ...song, ...visibility?.publications?.[`songs:${songId}`] }, songId))
+    return Response.json({ message: "Background not found" }, { status: 404 });
+
+  const origin = siteOrigin(new URL(request.url));
+  const band = sonolusBandId(song.bandId);
+  const prefix = `/assets/${release.server}/`;
+  const jacket = typeof song.jacketUrl === "string" && song.jacketUrl.startsWith(prefix)
+    ? `assets/${song.jacketUrl.slice(prefix.length)}`
+    : undefined;
+  const cacheControl = "private, max-age=0, must-revalidate";
+  const jsonHeaders = { ...SONOLUS_JSON_HEADERS, "Cache-Control": cacheControl };
+  if (part === "data" || part === "configuration")
+    return new Response(request.method === "HEAD" ? null : JSON.stringify(part === "data"
+      ? { aspectRatio: sonolusSongBackgroundAspect, fit: "cover", color: "#03030a" }
+      : { blur: 0, mask: "#0000004d" }), { headers: jsonHeaders });
+  if (part === "image") {
+    const key = new Request(`https://sonolus-cover.haneoka.internal/v${sonolusSongBackgroundVersion}/${release.server}/${release.releaseId}/${songId}.png`);
+    const cached = await caches.default.match(key);
+    if (cached) {
+      const headers = new Headers(cached.headers);
+      headers.set("Cache-Control", cacheControl);
+      return new Response(request.method === "HEAD" ? null : cached.body, { headers });
+    }
+    const readPng = async (path: string) => {
+      const entry = await releaseEntry(env, release, path);
+      return entry && entry.bytes <= 4 * 1024 * 1024 && entry.mediaType.startsWith("image/png")
+        ? readReleaseBytes(env, release, path)
+        : null;
+    };
+    const readStage = (id: number) => readPng(`assets/Assets/AddressableResources/Band/${id}/live_stage/lightweight_background.png`);
+    const [stage, cover] = await Promise.all([
+      readStage(band).then((bytes) => bytes ?? (band ? readStage(0) : null)),
+      jacket ? readPng(jacket) : null,
+    ]);
+    const headers = { "Content-Type": "image/png", "Cache-Control": cacheControl };
+    let png: Uint8Array | undefined;
+    if (stage && cover) {
+      try {
+        if (request.method === "HEAD") return new Response(null, { headers });
+        png = composeSonolusSongBackground(stage, cover);
+      } catch (error) {
+        console.warn("Could not compose Sonolus song background", release.releaseId, songId, error);
+      }
+    }
+    if (!png) {
+      const page = await readGlobalSonolusJson(env, "runtime/sonolus/backgrounds/list/page-0");
+      const fallback = sonolusBandBackground(sonolusThumbnailDocument(page, undefined, origin), band);
+      const image = fallback?.image;
+      if (isJsonObject(image) && typeof image.url === "string")
+        return new Response(null, { status: 302, headers: { Location: new URL(image.url, origin).href, "Cache-Control": cacheControl } });
+      return Response.json({ message: "Background image not found" }, { status: 404 });
+    }
+    const body = new Uint8Array(png).buffer;
+    ctx.waitUntil(caches.default.put(key, new Response(body, {
+      headers: { ...headers, "Cache-Control": "public, max-age=31536000, immutable" },
+    })));
+    return new Response(body, { headers });
+  }
+  const label = song.musicTitle;
+  const title = typeof label === "string" ? label :
+    Array.isArray(label) ? label.find((value): value is string => typeof value === "string" && value.length > 0) : undefined;
+  const thumbnail = jacket ? { url: `${origin}/${jacket.replace(/^assets\//u, `assets/${release.server}/`)}?release=${release.releaseId}` } : { url: `${origin}${new URL(request.url).pathname}/image` };
+  const item = songBackgroundItem(release, title ?? songId, songId, thumbnail, origin);
+  return new Response(request.method === "HEAD" ? null : JSON.stringify({ item, hasCommunity: false, actions: [], leaderboards: [], sections: [] }), { headers: jsonHeaders });
+}
+
+async function handleSonolusCommunityDiscussion(
+  env: Env,
+  request: Request,
+  path: RegExpExecArray,
+  resolveTarget: () => Promise<CommunityEntityTarget | null>,
+) {
+  const url = new URL(request.url);
+  const respond = (value: unknown, status = 200) =>
+    new Response(request.method === "HEAD" ? null : JSON.stringify(value), {
+      status,
+      headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },
+    });
+  if (!communityPagesEnabled(url.hostname, env.COMMUNITY_HIDDEN_HOSTS))
+    return respond({ message: "Discussion not found" }, 404);
+  if (!env.DB) return respond({ message: "Community unavailable" }, 503);
+
+  const overview = path[3] === "info";
+  const submit = path[3]?.endsWith("submit") ?? false;
+  if (submit ? request.method !== "POST" : !["GET", "HEAD"].includes(request.method))
+    return respond({ message: "Method not allowed" }, 405);
+  const cursors = overview ? [] : url.searchParams.getAll("cursor");
+  if (cursors.length > 1) return respond({ message: "Invalid comments cursor" }, 400);
+  const target = await resolveTarget();
+  if (!target) return respond({ message: "Discussion not found" }, 404);
+  if (submit) return withPrimaryD1(env, async (primary) => {
+    const actor = await readSonolusActor(request, primary);
+    if (!actor) return respond({ message: "Sign in with a linked Sonolus account." }, 401);
+    const discussion = await publicEntityDiscussion(primary, target);
+    if (!discussion) return respond({ message: "Discussion not found" }, 404);
+    const payload = await readTeamBody(request.clone());
+    if (!payload.ok || typeof payload.body.values !== "string")
+      return respond({ message: "Invalid community action" }, 422);
+    const values = new URLSearchParams(payload.body.values);
+    const type = values.get("type"), body = values.get("body"), parent = path[4];
+    if (values.getAll("type").length !== 1 || values.getAll("body").length > 1)
+      return respond({ message: "Invalid community action" }, 422);
+    let result: Response;
+    if (body && ((!parent && type === "comment") || (parent && type === "reply"))) {
+      result = await submitSonolusEntityComment(request, primary, target, actor, body, parent);
+    } else if (!parent && target.entityType === "community-charts" && (type === "like_chart" || type === "unlike_chart")) {
+      result = await submitSonolusChartLike(request, primary, target.originalId, actor, type === "like_chart");
+    } else if (parent && discussion.postId && (type === "like" || type === "unlike")) {
+      result = await submitSonolusCommentReaction(request, primary, parent, discussion.postId, actor, type === "like");
+    } else return respond({ message: "Invalid community action" }, 422);
+    const resultBody = await result.json<{ error?: { message?: string }; comment?: { moderationStatus?: string } }>();
+    if (!result.ok) return respond({ message: resultBody.error?.message ?? "Community action failed" }, result.status);
+    if (resultBody.comment?.moderationStatus === "block") return respond({ message: "Comment blocked by moderation." }, 422);
+    return respond({ key: "", hashes: [], shouldUpdateCommunity: true, shouldUpdateComments: true });
+  });
+  const discussion = await publicEntityDiscussion(env, target);
+  if (!discussion) return respond({ message: "Discussion not found" }, 404);
+  const actor = await readSonolusActor(request, env);
+  const page = await readPublicEntityCommentPage(env, discussion.postId, cursors[0] ?? null, overview ? 3 : 10, actor?.id);
+  if (!page) return respond({ message: "Invalid comments cursor" }, 400);
+  const commentForm = (reply = false) => ({
+    type: reply ? "reply" : "comment",
+    title: reply ? "#REPLY" : "#COMMENT",
+    icon: "comment",
+    requireConfirmation: false,
+    options: [{
+      query: "body", name: "#CONTENT", type: "textArea", required: true, def: "",
+      placeholder: reply ? "#REPLY_PLACEHOLDER" : "#COMMENT_PLACEHOLDER", limit: 5000, shortcuts: [],
+    }],
+  });
+  const comments = page.comments.map(({ id, authorName, createdAt, body, parentName, likeCount, liked }) => ({
+    name: id,
+    author: `##:${authorName}`,
+    time: createdAt,
+    content: [
+      ...(parentName ? [sonolusMetadataLine("#REPLY", parentName)] : []),
+      ...body.split("\n").map((line) => `##:${line}`),
+    ].join("\n"),
+    actions: [commentForm(true), {
+      type: liked ? "unlike" : "like",
+      title: `${liked ? "#LIKED" : "#LIKE"}:##: (${likeCount})`,
+      icon: liked ? "heart" : "heartHollow",
+      requireConfirmation: false,
+      options: [],
+    }],
+  }));
+  const actions: unknown[] = [commentForm()];
+  if (overview && target.entityType === "community-charts") {
+    const liked = actor && await env.DB.prepare("SELECT 1 FROM community_chart_like WHERE chart_id=? AND user_id=?")
+      .bind(target.originalId, actor.id).first();
+    actions.push({
+      type: liked ? "unlike_chart" : "like_chart", title: liked ? "#LIKED" : "#LIKE",
+      icon: liked ? "heart" : "heartHollow", requireConfirmation: false, options: [],
+    });
+  }
+  return respond(overview ? { actions, topComments: comments } : {
+    pageCount: -1,
+    ...(page.cursor ? { cursor: page.cursor } : {}),
+    comments,
+  });
+}
+
 async function handleSonolus(
   env: Env,
   ctx: ExecutionContext,
@@ -3650,6 +3931,17 @@ async function handleSonolus(
 ): Promise<Response | null> {
   if (pathname === "/sonolus") return Response.redirect(new URL("/sonolus/", request.url).toString(), 308);
   if (!pathname.startsWith("/sonolus/")) return null;
+  if (sonolusAuthRoute(pathname)) return handleSonolusAuthentication(request, env);
+  const backgroundPath = sonolusSongBackgroundPath.exec(pathname);
+  if (backgroundPath) return handleSonolusSongBackground(request, env, ctx, backgroundPath);
+  const discussionPath = sonolusDiscussionPath.exec(pathname);
+  if (discussionPath?.[1] === "levels" && sonolusCommunityLevelPath.test(`/sonolus/levels/${discussionPath[2]}`)) {
+    return handleSonolusCommunityDiscussion(env, request, discussionPath, async () => {
+      const [chart] = await communitySonolusRows(env, discussionPath[2]);
+      return chart ? { entityType: "community-charts", originalId: chart.id } : null;
+    });
+  }
+  const itemPath = sonolusItemPath.exec(pathname);
   const assetPathname = pathname;
   const assetUrl = new URL(request.url);
   assetUrl.pathname = assetPathname;
@@ -3659,11 +3951,10 @@ async function handleSonolus(
     assetUrl.pathname === "/sonolus/playlists" ||
     assetUrl.pathname.startsWith("/sonolus/playlists/");
   const projectCatalog = isCatalogRoute || pathname === "/sonolus/info";
-  const isBestdoriCatalog = projectCatalog && isBestdoriSonolusCatalogRequest(assetUrl);
-  const communityName = /^\/sonolus\/levels\/(haneoka-community-(?:[1-9]\d{0,15}|[0-9a-f-]{36}))(?:\/data\/[a-f0-9]{40})?$/u.exec(
-    assetUrl.pathname,
-  )?.[1];
-  const isCommunityCatalog = projectCatalog && (
+  const catalogUrl = discussionPath ? new URL(`/sonolus/${discussionPath[1]}/${discussionPath[2]}`, assetUrl) : assetUrl;
+  const isBestdoriCatalog = projectCatalog && isBestdoriSonolusCatalogRequest(catalogUrl);
+  const communityName = sonolusCommunityLevelPath.exec(assetUrl.pathname)?.[1];
+  const isCommunityCatalog = !discussionPath && projectCatalog && (
     !!communityName || assetUrl.searchParams.get("source") === "community" ||
     assetUrl.searchParams.get("type") === "community"
   );
@@ -3679,9 +3970,10 @@ async function handleSonolus(
       ? payloadState.revision
       : "unversioned";
   const origin = siteOrigin(assetUrl);
-  const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(request, env) : undefined;
+  const viewRequest = discussionPath ? new Request(catalogUrl) : request;
+  const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(viewRequest, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
-  const baseRevision = `identity-text-v10-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const baseRevision = `identity-text-v13-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog
@@ -3698,6 +3990,14 @@ async function handleSonolus(
   let fallbackThumbnail: JsonObject | undefined;
   let repositoryPublic = false;
   try {
+    if (discussionPath) {
+      return await handleSonolusCommunityDiscussion(env, request, discussionPath, async () => {
+        const catalog = isBestdoriCatalog
+          ? bestdoriSonolusCatalogProvider(env.BESTDORI_UPSTREAM_BASE, revision, origin)
+          : ourNotesSonolusCatalogProvider(env, ctx, releases, revision, origin, sonolusView!);
+        return sonolusSongDiscussion(await catalog.load(), discussionPath[1]!, discussionPath[2]!, isBestdoriCatalog);
+      });
+    }
     // Runtime documents (engine/template/banner) are server-wide rather than
     // chart data. Choose the first active server slug deterministically; chart
     // data itself remains pinned to the exact release encoded in each data ID.
@@ -3714,7 +4014,7 @@ async function handleSonolus(
     };
     const communityRows = isCommunityCatalog ? await communitySonolusRows(env, communityName) : [];
     if (isCommunityCatalog)
-      revision += `:community:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(communityRows.map((row) => [row.id, row.revision, row.updatedAt])))))].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+      revision += `:community:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(communityRows.map((row) => [row.id, row.revision, row.updatedAt, row.analysisCreatedAt, row.ownerName])))))].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
     const communityProviders = isCommunityCatalog ? communitySonolusProviders(env, communityRows, revision) : null;
     const catalogProvider = projectCatalog || repositoryHash ? (
       communityProviders?.catalogProvider ??
@@ -3803,12 +4103,42 @@ async function handleSonolus(
       ...(serverBanner ? { serverBanner } : {}),
     }) : null;
     if (projected) {
-      if (isCommunityCatalog) projected.cacheControl = "no-store";
+      if (isCommunityCatalog) {
+        projected.cacheControl = "no-store";
+        if (projected.kind === "document" && projected.status === 200)
+          await addSonolusCommunityCounts(env, communityRows, projected.body);
+      }
+      if (projected.kind === "document" && projected.status === 200 && projected.body.item && itemPath) {
+        const communityEnabled = env.DB && communityPagesEnabled(assetUrl.hostname, env.COMMUNITY_HIDDEN_HOSTS);
+        if (isCommunityCatalog) {
+          const communityChart = communityRows[0];
+          if (communityEnabled && communityChart && communityName)
+            projected.body.hasCommunity = !!(await publicEntityDiscussion(env, {
+              entityType: "community-charts",
+              originalId: communityChart.id,
+            }));
+        } else {
+          const description = typeof projected.body.description === "string" ? projected.body.description : "";
+          const lines = description ? description.split("\n") : [];
+          const facts = projected.chart && !isBestdoriCatalog
+            ? await releaseSonolusChartFacts(env, releases, projected.chart).catch(() => [])
+            : [];
+          for (const fact of facts) if (!lines.includes(fact)) lines.push(fact);
+          const source = isBestdoriCatalog ? "BanG Dream! Girls Band Party!" : "BanG Dream! Our Notes";
+          lines.push(sonolusMetadataLine("#SOURCE", source));
+          projected.body.description = lines.join("\n");
+          if (communityEnabled && catalogProvider) {
+            const target = sonolusSongDiscussion(await catalogProvider.load(), itemPath[1]!, itemPath[2]!, isBestdoriCatalog);
+            if (target) projected.body.hasCommunity = !!(await publicEntityDiscussion(env, target));
+          }
+        }
+      }
       if (
         assetUrl.pathname === "/sonolus/info" &&
         projected.kind === "document" &&
         Array.isArray(projected.body.buttons)
-      )
+      ) {
+        if (env.DB) projected.body.buttons.push({ type: "authentication" });
         projected.body.buttons.splice(2, 0, {
           type: "level",
           title: encodeSonolusLocalizedText(
@@ -3823,6 +4153,7 @@ async function handleSonolus(
           ),
           infoType: "community",
         });
+      }
       if (sonolusView?.override && projected.kind === "document") projected.body = sonolusContentLinks(projected.body, origin) as typeof projected.body;
       const produce = async (): Promise<Response> => {
         const headers = new Headers({
@@ -4212,6 +4543,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } });
   if (rejectedResourceClient(request)) return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store", Vary: "User-Agent" } });
   const communityUrl = new URL(request.url);
+  const accountLink = await handleSonolusAccountLink(request, env);
+  if (accountLink) return accountLink;
   if (!communityPagesEnabled(communityUrl.hostname, env.COMMUNITY_HIDDEN_HOSTS)
     && (isCommunityPagePath(communityUrl.pathname) || isCommunityCommentRequest(communityUrl)))
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
@@ -4561,6 +4894,11 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const sonolusRequest = url.pathname === "/sonolus" || url.pathname.startsWith("/sonolus/");
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers: sonolusRequest ? SONOLUS_JSON_HEADERS : CORS });
+  if (request.method === "POST" &&
+      (sonolusAuthRoute(url.pathname) || sonolusDiscussionPath.exec(url.pathname)?.[3]?.endsWith("submit"))) {
+    const response = await handleSonolus(env, ctx, request, url.pathname);
+    if (response) return negotiateSonolusResponse(response, request);
+  }
   if (request.method !== "GET" && request.method !== "HEAD") {
     const response = url.pathname.startsWith("/api/")
       ? errorResponse(request, 405, "method_not_allowed", "Method not allowed")
@@ -4582,17 +4920,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const gameClient = await handleGameClient(env, ctx, request, url);
   if (gameClient) return gameClient;
   const sonolus = await handleSonolus(env, ctx, request, url.pathname);
-  if (sonolus) {
-    const headers = new Headers(sonolus.headers);
-    headers.set("Sonolus-Version", sonolusClientVersion(request.headers.get("User-Agent")));
-    headers.append("Vary", "User-Agent");
-    return new Response(sonolus.body, {
-      status: sonolus.status,
-      statusText: sonolus.statusText,
-      headers,
-      encodeBody: headers.has("Content-Encoding") ? "manual" : "automatic",
-    });
-  }
+  if (sonolus) return negotiateSonolusResponse(sonolus, request);
   const apiDiscovery = await handleApiDiscovery(request, env.ASSETS);
   if (apiDiscovery) return apiDiscovery;
   const arenaRanking = await handleArenaRankingApi(request, ctx, url, env);
@@ -4943,7 +5271,8 @@ const worker: ExportedHandler<Env> = {
             request.method !== "HEAD" &&
             request.method !== "OPTIONS" &&
             response.status < 400 &&
-            affectsAnonymousCommunity(new URL(request.url).pathname)
+            (affectsAnonymousCommunity(new URL(request.url).pathname) ||
+             sonolusDiscussionPath.exec(new URL(request.url).pathname)?.[3]?.endsWith("submit"))
           )
             ctx.waitUntil(markCommunityMutation(request.url));
           return openToEveryOrigin(response);

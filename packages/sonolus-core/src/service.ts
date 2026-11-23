@@ -88,6 +88,7 @@ export interface SonolusLevelRouteOptions {
 export interface SonolusLevelDocumentRouteResult {
   body: JsonObject;
   cacheControl: string;
+  chart?: ChartDescriptor;
   contentType: "application/json; charset=utf-8";
   kind: "document";
   status: 200 | 404;
@@ -418,16 +419,7 @@ export class SonolusLevelService {
       if (!name || !hash) return notFound();
       const descriptor = snapshot.byName.get(name);
       if (!descriptor) return notFound();
-      const [chart] = await prepareSnapshotCharts(snapshot, [descriptor], options);
-      if (!chart) return notFound();
-      const resource = chart.item.data;
-      if (
-        typeof resource !== "object" || resource === null || Array.isArray(resource) ||
-        (resource.hash !== hash && !chart.levelDataParameters)
-      ) {
-        return notFound();
-      }
-      const payload = await snapshot.dataProvider.load(chart, hash);
+      const payload = await snapshot.dataProvider.load(descriptor, hash);
       if (!payload) return notFound();
       return {
         body: payload.body,
@@ -549,7 +541,7 @@ export class SonolusLevelService {
       return playlist
         ? document(
             200,
-            projectPlaylistDetails(playlist.item, descriptor.charts[0]?.description ?? ""),
+            projectPlaylistDetails(playlist.item, descriptor.charts[0]?.songDescription ?? descriptor.charts[0]?.description ?? ""),
             "public, max-age=600, stale-while-revalidate=86400",
           )
         : notFound();
@@ -572,14 +564,14 @@ export class SonolusLevelService {
     );
     const chart = prepared.find((candidate) => candidate.name === name);
     return chart
-      ? document(
+      ? { ...document(
           200,
           projectLevelDetails(chart, prepared, {
             template: snapshot.template.details ?? null,
             ...(options.quickSearchValues ? { quickSearchValues: options.quickSearchValues } : {}),
           }),
           "public, max-age=600, stale-while-revalidate=86400",
-        )
+        ), chart: descriptor }
       : notFound();
   }
 }

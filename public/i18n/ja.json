@@ -4818,6 +4818,10 @@
   },
   "account": {
     "page": {
+      "linkSonolus": "Sonolus と連携",
+      "openSonolusLink": "Sonolus を開く",
+      "checkSonolusLink": "連携状況を確認",
+      "confirmSonolusLink": "連携を確定",
       "loadFailed": "アカウント情報を読み込めませんでした",
       "signOut": "ログアウト",
       "loading": "読み込み中…",
