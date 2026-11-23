@@ -27,7 +27,7 @@ import type { ArenaPopulationDto, ArenaRankingDto, GameRecordsRegion } from "../
 import { readPageData } from "../lib/page-data";
 import { isReleasedContent } from "../lib/content-release";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { resourcePath, releaseServerFromPath, type ReleaseServer } from "../lib/resource-route";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { catalogUrl, fetchJson, gameDateTime, localizedText, preferredLocale } from "./shared/catalog";
@@ -170,7 +170,6 @@ export class ArenaWorkspace extends LitElement {
     clearTimeout(this.timer);
     this.images.disconnect();
     this.masonry?.disconnect();
-    clearAppBarActions(this.owner);
     removeEventListener("haneoka:locale-ready", this.localeReady);
     removeEventListener("popstate", this.restoreState);
     super.disconnectedCallback();
@@ -414,6 +413,7 @@ export class ArenaWorkspace extends LitElement {
     const season = this.season();
     const league = season && this.league(season);
     setAppBarActions(
+      this,
       this.owner,
       html`
         ${gameRecordsRegionPicker(this.locale, this.region, (region) => this.select({ region }), "arena-region", this.regions())}

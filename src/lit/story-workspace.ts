@@ -58,7 +58,6 @@ import { advText } from "./ui/adv-text";
 import { parseAdvRichText, type AdvRichTextNode } from "@haneoka/vega-plugin-richtext";
 import { NATIVE_CHAT_FONT_SIZE } from "../lib/adv-text-size";
 import {
-  clearBrowseBar,
   collectionSkeleton,
   filterGroup,
   renderBrowse,
@@ -311,7 +310,6 @@ export class StoryWorkspace extends LitElement {
   private readonly appBarOwner = `story-workspace-${++storyWorkspaceOwnerId}`;
   private pageServer = "";
   private pageReleaseId = "";
-  private appBarRegistered = false;
   private homeStage?: HomeSpotStage;
   declare private homeVideoReady?: boolean;
   declare private homeVideoRecording?: boolean;
@@ -744,7 +742,6 @@ export class StoryWorkspace extends LitElement {
     this.catalogRequests.cancel();
     this.detailRequests.cancel();
     this.releaseLocation?.();
-    clearBrowseBar();
     this.lazyImages.disconnect();
     this.homeStage?.dispose();
     this.homeStage = undefined;
@@ -753,12 +750,11 @@ export class StoryWorkspace extends LitElement {
     this.homeVideoRecording = false;
     this.storyAudio?.pause();
     this.paneFocus.detach();
-    clearAppBarActions(this.appBarOwner);
-    this.appBarRegistered = false;
     window.removeEventListener("keydown", this.onKeydown);
     super.disconnectedCallback();
   }
   updated() {
+    if (!this.isConnected) return;
     if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
     this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
@@ -2783,18 +2779,10 @@ export class StoryWorkspace extends LitElement {
     // An episode over the collection hands its modes to its own takeover of the bar.
     const visible = Boolean(this.entityId && this.detailEpisode && isReleasedContent(this.detailEpisode) && !this.detailLoading && !this.detailError);
     if (!visible) {
-      if (this.entityId && this.detailEpisode && !isReleasedContent(this.detailEpisode)) {
-        setAppBarActions(this.appBarOwner, html``);
-        clearAppBarActions(this.appBarOwner);
-      }
-      if (this.appBarRegistered) {
-        clearAppBarActions(this.appBarOwner);
-        this.appBarRegistered = false;
-      }
+      clearAppBarActions(this, this.appBarOwner);
       return;
     }
-    setAppBarActions(this.appBarOwner, this.renderDetailActions(), this);
-    this.appBarRegistered = true;
+    setAppBarActions(this, this.appBarOwner, this.renderDetailActions());
   }
   private storyUnlockRows(episode: JsonRecord) {
     const conditions = Array.isArray(episode.unlockConditions) ? (episode.unlockConditions as JsonRecord[]) : [];

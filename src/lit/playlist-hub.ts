@@ -29,7 +29,7 @@ import { icon, iconFilled } from "./ui/icon";
 import { iconButton, segmented, filterChip } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { modal } from "./ui/modal";
-import { setAppBarActions, clearAppBarActions, setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { appBarElement, setAppBarActions, clearAppBarActions, setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
 import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
 import { currentReleaseServer, localizedText } from "./shared/catalog";
 import { songTitle, observeSongDisplay } from "../lib/song-display";
@@ -179,8 +179,6 @@ export class PlaylistHub extends LitElement {
     this.heroObserver?.disconnect();
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
     window.removeEventListener("haneoka:session-changed", this.onSession);
-    clearAppBarActions(OWNER);
-    clearAppBarSearch(OWNER);
     this.restoreShell();
   }
 
@@ -293,11 +291,13 @@ export class PlaylistHub extends LitElement {
   /* ---------- Shell (app bar) ---------- */
 
   private heading() {
-    return document.querySelector<HTMLElement>("[data-top-app-bar] h1");
+    return appBarElement(this)?.querySelector<HTMLElement>("h1");
   }
 
   private syncShell() {
-    const leading = document.querySelector<HTMLElement>("[data-top-app-bar-leading]");
+    const bar = appBarElement(this);
+    if (!bar) return;
+    const leading = bar.querySelector<HTMLElement>("[data-top-app-bar-leading]");
     if (this.view === "hub") {
       this.restoreShell();
       this.syncHubBar();
@@ -305,7 +305,7 @@ export class PlaylistHub extends LitElement {
     }
     this.releaseSearch?.();
     this.releaseSearch = undefined;
-    clearAppBarSearch(OWNER);
+    clearAppBarSearch(this, OWNER);
     if (leading && !this.leadingBack) {
       const back = leading.querySelector<HTMLAnchorElement>("[data-entity-back]") || document.createElement("a");
       back.className = "icon-button";
@@ -322,7 +322,7 @@ export class PlaylistHub extends LitElement {
       leading.prepend(back);
       this.leadingBack = back;
       // Back takes the leading slot; the navigation menu moves to the trailing row.
-      const actions = document.querySelector<HTMLElement>("[data-top-app-bar-actions]");
+      const actions = bar.querySelector<HTMLElement>("[data-top-app-bar-actions]");
       const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]") || actions?.querySelector<HTMLElement>("[data-entity-menu-first]");
       if (menu && actions) {
         const group = menu.closest<HTMLElement>("[data-entity-menu-first-group]") || document.createElement("div");
@@ -337,7 +337,7 @@ export class PlaylistHub extends LitElement {
   }
   private syncHubBar() {
       this.releaseSearch?.();
-      this.releaseSearch = setAppBarSearch(OWNER, {
+      this.releaseSearch = setAppBarSearch(this, OWNER, {
         value: this.query,
         label: this.t("search", "Search playlists"),
         onInput: (value) => {
@@ -350,6 +350,7 @@ export class PlaylistHub extends LitElement {
         },
       });
       setAppBarActions(
+        this,
         OWNER,
         this.signedIn
           ? iconButton({ icon: "add", label: this.t("create", "New playlist"), onClick: () => this.createNew() })
@@ -367,7 +368,7 @@ export class PlaylistHub extends LitElement {
     }
     const heading = this.heading();
     if (heading && this.shellHeading && heading.innerHTML !== this.shellHeading) heading.innerHTML = this.shellHeading;
-    clearAppBarActions(OWNER);
+    clearAppBarActions(this, OWNER);
   }
 
   private syncHeading() {
@@ -386,6 +387,7 @@ export class PlaylistHub extends LitElement {
     if (this.view === "detail") {
       const playlist = this.current;
       setAppBarActions(
+        this,
         OWNER,
         playlist
           ? html`
@@ -404,6 +406,7 @@ export class PlaylistHub extends LitElement {
       );
     } else if (this.view === "edit") {
       setAppBarActions(
+        this,
         OWNER,
         html`
           <button

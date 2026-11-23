@@ -23,7 +23,7 @@ import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { RankingCardCatalog } from "../lib/game-records";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import {
   GAME_RECORDS_REGIONS as REGIONS,
   defaultGameRecordsRegion as defaultRegion,
@@ -221,7 +221,6 @@ export class SongRanking extends GameRecordsCardsElement {
     this.lifetime?.abort();
     this.lifetime = undefined;
     window.clearTimeout(this.retryTimer);
-    clearAppBarActions(this.pageAppBarOwner);
     super.disconnectedCallback();
   }
 
@@ -553,7 +552,7 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   private syncChrome() {
-    if (!this.embedded) setAppBarActions(this.pageAppBarOwner, this.renderPageActions(), this);
+    if (!this.embedded) setAppBarActions(this, this.pageAppBarOwner, this.renderPageActions());
   }
 
   private scrollToTarget() {

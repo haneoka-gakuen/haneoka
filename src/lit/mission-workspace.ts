@@ -9,7 +9,7 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
 import {
   groupMissions,
@@ -196,8 +196,6 @@ export class MissionWorkspace extends LitElement {
     this.request?.abort();
     this.request = undefined;
     this.loading?.cancel();
-    clearAppBarActions("missions");
-    clearAppBarIdentity("missions");
     this.restoreGroupShell();
     removeEventListener("popstate", this.popState);
     removeEventListener("haneoka:locale-ready", this.localeListener);
@@ -662,7 +660,7 @@ export class MissionWorkspace extends LitElement {
     const mission = this.entityId ? this.missions[0] : undefined;
     const group = mission ? groupMissions([mission], this.locale)[0] : selected;
     const count = selected ? selected.rows.length : groups.reduce((total, value) => total + value.rows.length, 0);
-    setAppBarIdentity("missions", html`
+    setAppBarIdentity(this, "missions", html`
       <div class="browse__crumbs">
         ${!mission ? html`
           <span class="chip chip--static tabular" role="status">
@@ -675,8 +673,8 @@ export class MissionWorkspace extends LitElement {
         ` : nothing}
       </div>
     `);
-    if (mission || selected) clearAppBarActions("missions");
-    else setAppBarActions("missions", this.modeFilter());
+    if (mission || selected) clearAppBarActions(this, "missions");
+    else setAppBarActions(this, "missions", this.modeFilter());
   }
 
   render() {

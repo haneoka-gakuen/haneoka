@@ -7,7 +7,7 @@ import { readPageData } from "../lib/page-data";
 import { isContentVisible } from "../lib/content-release";
 import { parseResourceRoute } from "../lib/resource-route";
 import { resolveLocalizedText } from "../lib/localized-text";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
+import { setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { icon } from "./ui/icon";
 import { iconButton, segmented } from "./ui/controls";
@@ -176,12 +176,11 @@ export class CalendarPage extends LitElement {
     clearInterval(this.clock);
     window.removeEventListener("haneoka:locale-ready", this.localeReady);
     this.paneFocus.detach();
-    clearAppBarActions(this.owner);
-    clearAppBarIdentity(this.owner);
     super.disconnectedCallback();
   }
   protected updated(_changed: PropertyValues) {
     setAppBarActions(
+      this,
       this.owner,
       html`${iconButton({ label: this.t("previous"), icon: "chevron_left", onClick: () => this.select(shiftCalendarMonth(this.selected, -1)) })}
       ${iconButton({ label: this.t("next"), icon: "chevron_right", onClick: () => this.select(shiftCalendarMonth(this.selected, 1)) })}
@@ -212,7 +211,7 @@ export class CalendarPage extends LitElement {
         },
       })}`,
     );
-    setAppBarIdentity(this.owner, html`<span class="calendar-month-name" aria-live="polite">${this.monthName}</span>`);
+    setAppBarIdentity(this, this.owner, html`<span class="calendar-month-name" aria-live="polite">${this.monthName}</span>`);
     this.paneFocus.sync(this.filtersOpen ? this.querySelector<HTMLElement>(".browse__filters.is-open") : null, () => {
       this.filtersOpen = false;
     });

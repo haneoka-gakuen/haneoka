@@ -25,7 +25,7 @@ import {
   selectedGameToolAccount,
   selectGameToolAccount,
 } from "../lib/game-tool-account-store";
-import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
+import { setGameToolAccountAction } from "./game-tool-account-picker";
 import { GAME_REGION_NAMES } from "../lib/game-records";
 import { createPerformerRegistry, resolveSongPerformer, type SongPerformer } from "../lib/song-performer";
 import { resolveRelationshipText } from "../lib/localized-text";
@@ -37,7 +37,7 @@ import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
-import { setAppBarSearch, clearAppBarSearch, setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { setAppBarSearch, setAppBarActions } from "../lib/app-bar";
 import { appCall, appSupports, inApp, type AppSongProgress } from "../lib/app-bridge";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
@@ -233,7 +233,7 @@ export class SongProgress extends LitElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    setAppBarSearch(OWNER, {
+    setAppBarSearch(this, OWNER, {
       value: this.query,
       label: uiText(this.locale, "common.actions.search"),
       onInput: (value) => {
@@ -250,6 +250,7 @@ export class SongProgress extends LitElement {
       this,
     );
     setAppBarActions(
+      this,
       OWNER,
       html`
         ${this.counts.renderImportMenu()}
@@ -389,9 +390,6 @@ export class SongProgress extends LitElement {
   disconnectedCallback() {
     window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     this.disposeSongDisplay?.();
-    clearAppBarSearch(OWNER);
-    clearAppBarActions(OWNER);
-    clearGameToolAccountAction("songs");
     this.unsubscribe?.();
     ++this.ratingGeneration;
     this.roster?.dispose();

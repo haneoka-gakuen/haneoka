@@ -18,7 +18,7 @@ import {
   communityChartPlayerPath,
   type CommunityChartItem,
 } from "../lib/chart-creation/community-types";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { songTile } from "./shared/song-tile";
@@ -31,7 +31,7 @@ import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import { LazyImages } from "./ui/lazy-images";
 import { modal } from "./ui/modal";
@@ -155,7 +155,7 @@ export class CommunityCharts extends LitElement {
       this.requestUpdate();
     });
     if (!this.chartId)
-      setAppBarSearch("community-charts", {
+      setAppBarSearch(this, "community-charts", {
         value: this.query,
         label: this.t("search"),
         onInput: (value) => {
@@ -169,8 +169,6 @@ export class CommunityCharts extends LitElement {
     this.unlocale?.();
     this.unmedia?.();
     this.images.disconnect();
-    clearBrowseBar();
-    clearAppBarSearch("community-charts");
     super.disconnectedCallback();
   }
   protected override updated() {

@@ -36,7 +36,7 @@ import { gameToolHistoryServer, historyKeyFromGameToolAccount, isGameToolAccount
 import { associateGameToolHistory, captureGameToolSaveByKey, GAME_TOOL_ACCOUNTS_CHANGED, gameToolAccounts, gameToolOwner, getGameToolAccount, refreshGameToolAccounts, rememberedGameToolAccount, selectedGameToolAccount, selectGameToolAccount } from "../lib/game-tool-account-store";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { iconButton } from "./ui/controls";
-import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
+import { setGameToolAccountAction } from "./game-tool-account-picker";
 import { chooseAppAccount } from "./ui/app-account-chooser";
 
 class GachaHistoryWorkspace extends HTMLElement {
@@ -219,8 +219,6 @@ class GachaHistoryWorkspace extends HTMLElement {
   }
   disconnectedCallback() {
     window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.accountsChanged);
-    clearGameToolAccountAction("history");
-    clearAppBarActions("gacha-history-assignment");
     this.controller.abort();
     historyStore.removeEventListener("change", this.changed);
     window.removeEventListener("haneoka-save-import-complete", this.appImportsChanged);
@@ -572,11 +570,11 @@ class GachaHistoryWorkspace extends HTMLElement {
         onSelect: account => this.selectToolAccount(account),
       }, view);
       if (this.toolAccount && isGameToolAccountId(this.toolAccount.id) && this.unassignedHistory(this.toolAccount).length)
-        setAppBarActions("gacha-history-assignment", iconButton({
+        setAppBarActions(view, "gacha-history-assignment", iconButton({
           icon: "link", label: clientText(view.locale, "account.page.toolAccounts.assignHistory", "Assign gacha history"),
           onClick: () => { if (this.toolAccount) void this.assignHistory(this.toolAccount); },
-        }), view);
-      else clearAppBarActions("gacha-history-assignment");
+        }));
+      else clearAppBarActions(view, "gacha-history-assignment");
     }
     view.accounts = visible.map((row) => {
       let first = Infinity,

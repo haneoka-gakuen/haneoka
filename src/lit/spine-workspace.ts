@@ -13,7 +13,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { SpineStage } from "./runtime/spine-stage";
 import { catalogUrl, fetchJson, preferredLocale, uiText } from "./shared/catalog";
-import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
+import { collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { segmented } from "./ui/controls";
 import { tile } from "./ui/tile";
 import { spineTileOptions, spineModelTitle, spineModelFamily } from "./ui/model-tile";
@@ -299,7 +299,6 @@ export class SpineWorkspace extends LitElement {
     this.selectionRequest?.abort();
     if (this.initializationTimer != null) window.clearTimeout(this.initializationTimer);
     this.initializationTimer = undefined;
-    clearBrowseBar();
     this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
@@ -673,7 +672,6 @@ export class SpineWorkspace extends LitElement {
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
     if (this.entityId || this.selected) {
-      clearBrowseBar();
       return this.renderModelDetail();
     }
     const families = [...new Set(this.models.map((model) => String(model.family || "")).filter(Boolean))];

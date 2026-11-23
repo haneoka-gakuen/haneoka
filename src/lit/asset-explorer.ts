@@ -10,7 +10,7 @@ import { emptyState, errorState, loadingState } from "./ui/state";
 import { catalogUrl, fetchJson, currentReleaseServer, preferredLocale, uiText } from "./shared/catalog";
 import { localizedFallbacks } from "../lib/localized-text";
 import { localeFromPath } from "../i18n/locales";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity, setAppBarSearch } from "../lib/app-bar";
+import { appBarElement, clearAppBarIdentity, setAppBarActions, setAppBarIdentity, setAppBarSearch } from "../lib/app-bar";
 import { viewSwitch, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { assetItem, assetKindText, assetKindIcon } from "./ui/asset-item";
@@ -102,6 +102,7 @@ export class AssetExplorer extends LitElement {
   }
   private syncActions() {
     setAppBarActions(
+      this,
       "asset-explorer",
       viewSwitch(preferredLocale(), this.view, (view) => {
         this.view = view;
@@ -124,6 +125,7 @@ export class AssetExplorer extends LitElement {
   private syncIdentity() {
     if (this.path.length || this.selected)
       setAppBarIdentity(
+        this,
         "asset-explorer",
         html`
           <div class="browse__crumbs">
@@ -146,9 +148,8 @@ export class AssetExplorer extends LitElement {
             }
           </div>
         `,
-        this,
       );
-    else clearAppBarIdentity("asset-explorer");
+    else clearAppBarIdentity(this, "asset-explorer");
   }
   /** After hydration, so the prerendered list stays the first paint's match. */
   firstUpdated() {
@@ -165,7 +166,7 @@ export class AssetExplorer extends LitElement {
   updated() {
     this.syncIdentity();
     requestAnimationFrame(() => {
-      const crumbs = document.querySelector<HTMLElement>(".top-app-bar .browse__crumbs");
+      const crumbs = appBarElement(this)?.querySelector<HTMLElement>(".browse__crumbs");
       if (crumbs) crumbs.scrollLeft = crumbs.scrollWidth;
     });
   }
@@ -264,7 +265,7 @@ export class AssetExplorer extends LitElement {
     }
   }
   private syncSearch() {
-    this.releaseSearch = setAppBarSearch("asset-explorer", {
+    this.releaseSearch = setAppBarSearch(this, "asset-explorer", {
       value: this.query,
       label: uiText(preferredLocale(), "common.actions.search"),
       onInput: (value) => {
@@ -277,8 +278,6 @@ export class AssetExplorer extends LitElement {
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.previewRequest.cancel();
     this.releaseSearch?.();
-    clearAppBarIdentity("asset-explorer");
-    clearAppBarActions("asset-explorer");
     super.disconnectedCallback();
   }
   private siblingNames(): string[] {

@@ -67,6 +67,9 @@ their controls there instead of drawing their own toolbars.
   the filter toggle from `renderBrowse` automatically.
 - Marks after the title (rarity, band, applied filters): `setAppBarIdentity`.
   Applied filters render there as a breadcrumb of removable chips.
+- Pass the owning Lit component as the first argument to those helpers.
+  Its app bar controls are released on disconnect. Use `appBarControls` on
+  conditional views so their controls follow the rendered view's lifetime.
 - A client-side detail view that needs Back inserts it in the leading slot
   with `data-entity-back` and moves the navigation menu to the actions row,
   as `community-workspace` and `playlist-hub` do; restore both on leave.

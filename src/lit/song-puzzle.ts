@@ -27,7 +27,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { clientText, getI18nClient } from "../i18n/client";
 import { catalogUrl, localizedText } from "./shared/catalog";
 import { readReleaseServer, RELEASE_SERVERS } from "../lib/release-server";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
+import { setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { snackbar } from "../lib/snackbar";
 import { iconButton, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -333,8 +333,6 @@ export class SongPuzzle extends LitElement {
     this.clearDrag();
     this.cancel(true);
     this.pause();
-    clearAppBarActions(OWNER);
-    clearAppBarIdentity(OWNER);
     super.disconnectedCallback();
   }
   private nameSongs() {
@@ -1300,8 +1298,8 @@ export class SongPuzzle extends LitElement {
     this.requestUpdate();
   }
   private syncAppBar() {
-    setAppBarActions(OWNER, this.renderAppActions(), this);
-    setAppBarIdentity(OWNER, this.renderAppIdentity(), this);
+    setAppBarActions(this, OWNER, this.renderAppActions());
+    setAppBarIdentity(this, OWNER, this.renderAppIdentity());
   }
   private renderAppActions() {
     const togglePeek = () => {

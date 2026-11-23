@@ -14,7 +14,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
-import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
+import { collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { modelTile, modelTitle, modelPreviewSources, subCharacterLabel } from "./ui/model-tile";
 
 import { EXPANDED, matches, watchMedia } from "./ui/media";
@@ -467,7 +467,6 @@ export class Live2DWorkspace extends LitElement {
       window.clearTimeout(this.initializationTimer);
       this.initializationTimer = undefined;
     }
-    clearBrowseBar();
     this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
@@ -1477,7 +1476,6 @@ export class Live2DWorkspace extends LitElement {
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
     if (this.entityId || this.selected) {
-      clearBrowseBar();
       return this.renderModelDetail();
     }
     const types = [...new Set(this.models.map((model) => String(model.modelType || "")).filter(Boolean))];

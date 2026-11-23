@@ -158,7 +158,7 @@ import { CHARACTER_ART } from "../config/character-art";
 import { sonolusServerLink } from "../config/sonolus";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
-import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
+import { renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { iconButton, inputChip, segmented } from "./ui/controls";
 import {
@@ -2069,16 +2069,12 @@ export class CatalogScreen extends LitElement {
     this.releaseLocation?.();
     document.removeEventListener("astro:before-preparation", this.captureDocumentState);
     document.removeEventListener("astro:page-load", this.restoreLocationState);
-    clearBrowseBar();
     this.paneFocus.detach();
     this.filterFocus.detach();
     this.disposeMedia.forEach((dispose) => dispose());
     this.disposeMedia = [];
     this.lazyImages.disconnect();
     this.viewportGrid.disconnect();
-    clearAppBarActions(this.entityAppBarOwner);
-    clearAppBarIdentity(this.entityAppBarOwner);
-    clearAppBarSearch(this.entityAppBarOwner);
     window.removeEventListener(DENSITY_EVENT, this.onDensity);
     window.removeEventListener("keydown", this.onKeydown);
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
@@ -2120,27 +2116,23 @@ export class CatalogScreen extends LitElement {
     const item = this.selected;
     if (item && this.detailReady && isContentVisible(this.settings.resource, item, this.itemId(item))) {
       setAppBarIdentity(
+        this,
         this.entityAppBarOwner,
         html`
           ${this.renderDetailLeading(item)}
           ${this.settings.resource === "songs" && this.pageChartState === "pending" ? html`<span class="chip" role="status">${this.label("chartPending", "")}</span>` : nothing}
         `,
-        this,
       );
       setAppBarActions(
+        this,
         this.entityAppBarOwner,
         html`
           ${this.settings.chartPage ? this.renderChartPageActions(item) : this.renderDetailActions(item)}
         `,
-        this,
       );
     } else {
-      if (item && !isContentVisible(this.settings.resource, item, this.itemId(item))) {
-        setAppBarActions(this.entityAppBarOwner, html``);
-        setAppBarIdentity(this.entityAppBarOwner, html``);
-      }
-      clearAppBarActions(this.entityAppBarOwner);
-      clearAppBarIdentity(this.entityAppBarOwner);
+      clearAppBarActions(this, this.entityAppBarOwner);
+      clearAppBarIdentity(this, this.entityAppBarOwner);
     }
   }
   private async navigateEntityBack() {
@@ -2240,7 +2232,7 @@ export class CatalogScreen extends LitElement {
       this.renderEntityChrome();
       return;
     }
-    setAppBarSearch(this.entityAppBarOwner, {
+    setAppBarSearch(this, this.entityAppBarOwner, {
       value: this.query,
       label: this.label("search", "Search"),
       onInput: (value) => {
@@ -2265,12 +2257,11 @@ export class CatalogScreen extends LitElement {
       () => (this.filtersOpen = false),
     );
     if (this.settings.entityContext) {
-      clearBrowseBar();
-      clearAppBarSearch(this.entityAppBarOwner);
+      clearAppBarSearch(this, this.entityAppBarOwner);
       this.syncEntityChrome();
     } else {
-      clearAppBarActions(this.entityAppBarOwner);
-      clearAppBarIdentity(this.entityAppBarOwner);
+      clearAppBarActions(this, this.entityAppBarOwner);
+      clearAppBarIdentity(this, this.entityAppBarOwner);
       this.renderStaticChrome();
     }
     // tile() defers its artwork as `data-src`; this is what promotes it.

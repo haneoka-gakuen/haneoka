@@ -19,7 +19,7 @@ import {
   type StudioStoryPickerResult,
 } from "@haneoka/altair/studio-host";
 import { clientText, initializeI18nClient } from "../i18n/client";
-import { setAppBarActions, clearAppBarActions, setAppBarIdentity, clearAppBarIdentity } from "../lib/app-bar";
+import { setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { readCommunityViewer } from "../lib/community-viewer";
 import { CUBISM_CORE_URLS } from "../lib/cubism-runtime";
 import {
@@ -188,8 +188,6 @@ export class StoryCreationWorkspace extends LitElement {
     this.assetImages?.disconnect();
     this.releaseCoverImages();
     window.removeEventListener("beforeunload", this.beforeUnload);
-    clearAppBarActions(this.toolbarOwner);
-    clearAppBarIdentity(this.toolbarOwner);
     super.disconnectedCallback();
   }
   private beforeUnload = (event: BeforeUnloadEvent) => {
@@ -247,6 +245,7 @@ export class StoryCreationWorkspace extends LitElement {
                 ? localStatus
                 : this.t("local");
     setAppBarActions(
+      this,
       this.toolbarOwner,
       html`
         <button
@@ -321,9 +320,9 @@ export class StoryCreationWorkspace extends LitElement {
             : nothing
         }
       `,
-      this,
     );
     setAppBarIdentity(
+      this,
       this.toolbarOwner,
       html`
         <span
@@ -350,7 +349,6 @@ export class StoryCreationWorkspace extends LitElement {
           ${status}
         </span>
       `,
-      this,
     );
     if (this.assetLibraryOpen || this.publicationOpen) {
       const root = this.querySelector(

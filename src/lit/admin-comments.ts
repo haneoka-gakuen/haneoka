@@ -10,7 +10,7 @@ import { fetchJson, preferredLocale } from "./shared/catalog";
 import { filterChip, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { clearAppBarActions, clearAppBarSearch, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
 import { formatDate } from "../lib/date-format";
 import { readReleaseServer } from "../lib/release-server";
 import { snackbar } from "../lib/snackbar";
@@ -101,7 +101,7 @@ export class AdminComments extends LitElement {
     const target = params.get("target");
     if (target === "forum" || target === "entity") this.target = target;
     this.query = params.get("q") || "";
-    setAppBarSearch(this.owner, {
+    setAppBarSearch(this, this.owner, {
       value: this.query,
       label: this.t("search", "Search comments"),
       onInput: (value) => {
@@ -115,8 +115,6 @@ export class AdminComments extends LitElement {
   disconnectedCallback() {
     this.request?.abort();
     clearTimeout(this.searchTimer);
-    clearAppBarSearch(this.owner);
-    clearAppBarActions(this.owner);
     super.disconnectedCallback();
   }
   protected updated(changed: PropertyValues) {
@@ -229,7 +227,7 @@ export class AdminComments extends LitElement {
   private renderBulkActions() {
     const count = this.selected.size;
     if (!count) {
-      clearAppBarActions(this.owner);
+      clearAppBarActions(this, this.owner);
       return;
     }
     const ids = [...this.selected];
@@ -239,6 +237,7 @@ export class AdminComments extends LitElement {
       </button>
     `;
     setAppBarActions(
+      this,
       this.owner,
       html`
         <span class="admin-comments__selection md-title-small">${this.t("selected", "{count} selected", { count })}</span>

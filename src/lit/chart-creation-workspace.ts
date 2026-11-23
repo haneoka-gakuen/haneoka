@@ -47,7 +47,7 @@ import { iconButton, segmented } from "./ui/controls";
 import { actionMenu } from "./ui/action-menu";
 import { icon } from "./ui/icon";
 import { trapFocus } from "../lib/overlay";
-import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { accordion } from "./ui/accordion";
 import "./chart-creation-library";
 import "./chart-publication";
@@ -564,7 +564,7 @@ export class ChartCreationWorkspace extends LitElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
+    setAppBarActions(this, this.toolbarOwner, this.renderAppActions());
   }
   private connectEditor() {
     if (!this.isConnected) return;
@@ -639,7 +639,6 @@ export class ChartCreationWorkspace extends LitElement {
     this.panelMedia?.removeEventListener("change", this.mediaChanged);
     this.releasePanelFocus?.();
     this.focusedPanel = undefined;
-    clearAppBarActions(this.toolbarOwner);
     document.removeEventListener("keydown", this.keydown);
     cancelAnimationFrame(this.cursorFrame);
     this.cursorFrame = 0;
@@ -692,7 +691,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.paint();
     this.paintToolIcons();
     this.fitPalette();
-    setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
+    setAppBarActions(this, this.toolbarOwner, this.renderAppActions());
     const panel = this.narrow ? this.querySelector<HTMLElement>(".chart-studio__panel:not([hidden])") : null;
     if (panel !== (this.focusedPanel ?? null)) {
       this.releasePanelFocus?.();

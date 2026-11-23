@@ -127,7 +127,7 @@
 .top-app-bar__actions :is([data-app-bar-overflowed], [data-app-bar-switch-collapsed]) {
   display: none !important;
 }
-.top-app-bar__actions:has(.top-app-bar__search[data-search-expanded="true"]) {
+.top-app-bar__actions:has([data-app-bar-search]:not([hidden]) .top-app-bar__search[data-search-expanded="true"]) {
   flex: 1 1 auto;
   max-width: none;
 }

@@ -1,7 +1,7 @@
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { LitElement, html, nothing } from "lit";
 import { clientText } from "../i18n/client";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { RequestScope } from "../lib/request-scope";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
@@ -205,7 +205,6 @@ export class EventTracker extends LitElement {
     this.lifetime?.abort();
     window.clearInterval(this.clock);
     window.clearTimeout(this.poll);
-    clearAppBarActions(this.owner);
     super.disconnectedCallback();
   }
   private label(key: string, fallback: string) {
@@ -428,12 +427,12 @@ export class EventTracker extends LitElement {
   private railShown = false;
   private syncAppBar() {
     setAppBarActions(
+      this,
       this.owner,
       html`
         ${gameRecordsRegionPicker(this.locale, this.region, (region) => this.selectRegion(region), "event-tracker-region")}
         ${iconButton({ label: this.label("refresh", "Refresh event rankings"), icon: "refresh", disabled: this.refreshing, onClick: () => void this.refresh() })}
       `,
-      this,
     );
   }
   render() {

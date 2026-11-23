@@ -7,7 +7,7 @@
  */
 import { html, nothing, type TemplateResult } from "lit";
 import { AsyncDirective, directive, type ElementPart, type PartInfo, PartType } from "lit/async-directive.js";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "./app-bar";
+import { appBarElement, clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "./app-bar";
 
 export interface AppBarTakeover {
   title: string;
@@ -30,10 +30,11 @@ interface MovedMenu {
 
 class TakeoverDirective extends AsyncDirective {
   private readonly owner = `takeover-${++generation}`;
+  private source?: Element;
   private options?: AppBarTakeover;
   private saved?: {
     heading: HTMLElement;
-    title: string;
+    title: ChildNode[];
     lang: string | null;
     entityTitle: string | undefined;
     back: HTMLAnchorElement;
@@ -49,7 +50,8 @@ class TakeoverDirective extends AsyncDirective {
   render(_options: AppBarTakeover | null) {
     return nothing;
   }
-  update(_part: ElementPart, [options]: [AppBarTakeover | null]) {
+  update(part: ElementPart, [options]: [AppBarTakeover | null]) {
+    this.source = part.element;
     this.options = options ?? undefined;
     // Owners render their bar groups during the same commit; apply after it.
     if (!this.scheduled) {
@@ -70,10 +72,13 @@ class TakeoverDirective extends AsyncDirective {
   }
 
   private apply(options: AppBarTakeover) {
-    const heading = document.querySelector<HTMLElement>("[data-top-app-bar] h1");
-    const leading = document.querySelector<HTMLElement>("[data-top-app-bar-leading]");
-    const actions = document.querySelector<HTMLElement>("[data-top-app-bar-actions]");
-    const identity = document.querySelector<HTMLElement>("[data-top-app-bar-identity]");
+    const source = this.source;
+    if (!source) return;
+    const bar = appBarElement(source);
+    const heading = bar?.querySelector<HTMLElement>("h1");
+    const leading = bar?.querySelector<HTMLElement>("[data-top-app-bar-leading]");
+    const actions = bar?.querySelector<HTMLElement>("[data-top-app-bar-actions]");
+    const identity = bar?.querySelector<HTMLElement>("[data-top-app-bar-identity]");
     if (!heading || !leading || !actions) return;
     if (!this.saved) {
       const back = document.createElement("a");
@@ -99,7 +104,7 @@ class TakeoverDirective extends AsyncDirective {
       leading.prepend(back);
       this.saved = {
         heading,
-        title: heading.textContent ?? "",
+        title: [...heading.childNodes],
         lang: heading.getAttribute("lang"),
         entityTitle: heading.dataset.entityTitle,
         back,
@@ -119,9 +124,9 @@ class TakeoverDirective extends AsyncDirective {
     heading.dataset.entityTitle = "true";
     if (options.titleLanguage) heading.lang = options.titleLanguage;
     else heading.removeAttribute("lang");
-    setAppBarActions(this.owner, options.actions && options.actions !== nothing ? options.actions : html``);
-    if (options.identity && options.identity !== nothing) setAppBarIdentity(this.owner, options.identity);
-    else clearAppBarIdentity(this.owner);
+    setAppBarActions(source, this.owner, options.actions && options.actions !== nothing ? options.actions : html``);
+    if (options.identity && options.identity !== nothing) setAppBarIdentity(source, this.owner, options.identity);
+    else clearAppBarIdentity(source, this.owner);
     // Everything else in the bar belongs to the page underneath.
     for (const slot of [actions, identity])
       for (const child of slot?.children ?? []) {
@@ -134,17 +139,17 @@ class TakeoverDirective extends AsyncDirective {
 
   private restore() {
     const saved = this.saved;
-    if (!saved) return;
+    if (!saved || !this.source) return;
     this.saved = undefined;
-    clearAppBarActions(this.owner);
-    clearAppBarIdentity(this.owner);
+    clearAppBarActions(this.source, this.owner);
+    clearAppBarIdentity(this.source, this.owner);
     saved.back.remove();
     if (saved.menu) {
       saved.menu.home.append(saved.menu.node);
       saved.menu.group.remove();
     }
     for (const node of saved.hidden) node.hidden = false;
-    saved.heading.textContent = saved.title;
+    saved.heading.replaceChildren(...saved.title);
     if (saved.entityTitle === undefined) delete saved.heading.dataset.entityTitle;
     else saved.heading.dataset.entityTitle = saved.entityTitle;
     if (saved.lang) saved.heading.lang = saved.lang;

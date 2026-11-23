@@ -55,8 +55,8 @@ import {
   navigateDetailPage,
 } from "../lib/detail-navigation";
 import {
+  appBarElement,
   setAppBarActions,
-  clearAppBarActions,
   setAppBarSearch,
   clearAppBarSearch,
 } from "../lib/app-bar";
@@ -826,7 +826,6 @@ export class CommunityWorkspace extends LitElement {
     if (this.savedLeading?.isConnected && this.movedMenu)
       this.savedLeading.prepend(this.movedMenu);
     this.menuGroup?.remove();
-    clearAppBarSearch(COMMUNITY_BAR_OWNER);
     this.disposeSongDisplay?.();
     this.releaseLocation?.();
     removeEventListener("haneoka:locale-ready", this.onLocale);
@@ -834,7 +833,6 @@ export class CommunityWorkspace extends LitElement {
     this.playlistPlaybackIntent++;
     this.paneFocus.detach();
     window.clearTimeout(this.undoTimer);
-    clearAppBarActions(COMMUNITY_BAR_OWNER);
     if (this.routeKind === "post-new" && !this.published && this.uploads.length)
       void this.discardUploads();
     super.disconnectedCallback();
@@ -1025,13 +1023,11 @@ export class CommunityWorkspace extends LitElement {
   /** The tab title follows the content; the app bar's heading stays the
    * section name, exactly as the catalog's entity pages keep "图鉴". */
   private setDocumentTitle(value: string) {
-    if (!value) return;
+    if (!value || !this.isConnected) return;
     const siteTitle = uiText(this.locale, "common.seo.siteTitle");
     document.title = formatDocumentTitle(value, siteTitle);
     if (this.routeKind !== "collection") {
-      const heading = document.querySelector<HTMLElement>(
-        "[data-top-app-bar] h1",
-      );
+      const heading = appBarElement(this)?.querySelector<HTMLElement>("h1");
       if (heading) {
         heading.textContent =
           this.routeKind === "post-detail"
@@ -3863,9 +3859,8 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private installBack() {
-    const leading = document.querySelector<HTMLElement>(
-      ".top-app-bar__leading",
-    );
+    const bar = appBarElement(this);
+    const leading = bar?.querySelector<HTMLElement>("[data-top-app-bar-leading]");
     if (!leading || this.backLink) return;
     this.savedLeading = leading;
     const link = document.createElement("a");
@@ -3890,9 +3885,7 @@ export class CommunityWorkspace extends LitElement {
     leading.prepend(link);
     this.backLink = link;
     const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]");
-    const actions = document.querySelector<HTMLElement>(
-      "[data-top-app-bar-actions]",
-    );
+    const actions = bar?.querySelector<HTMLElement>("[data-top-app-bar-actions]");
     if (menu && actions) {
       this.movedMenu = menu;
       const group = document.createElement("div");
@@ -3986,6 +3979,7 @@ export class CommunityWorkspace extends LitElement {
     });
     const postLocation = this.ipLocation(post.ipLocation);
     setAppBarActions(
+      this,
       COMMUNITY_BAR_OWNER,
       html`
         ${viewer.canEdit ? iconButton({ icon: "edit", label: this.label("editPost", "Edit post"), onClick: () => void navigateDetailPage(this.detailHref(`/community/posts/${this.entityId}/edit`)) }) : nothing}
@@ -4943,7 +4937,7 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderPlaylists(collectionOnly = false): TemplateResult {
-    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
+    setAppBarActions(this, COMMUNITY_BAR_OWNER, this.collectionBar());
     const playlist = this.document;
     if (!collectionOnly && this.routeKind === "playlist-detail") {
       const tracks = playlist ? this.playlistTracks(playlist) : [];
@@ -5138,8 +5132,9 @@ export class CommunityWorkspace extends LitElement {
     const editor =
       this.routeKind === "post-new" || this.routeKind === "post-edit";
     if (this.routeKind !== "collection" && this.mode !== "playlists") {
-      clearAppBarSearch(COMMUNITY_BAR_OWNER);
+      clearAppBarSearch(this, COMMUNITY_BAR_OWNER);
       setAppBarActions(
+        this,
         COMMUNITY_BAR_OWNER,
         editor
           ? html`
@@ -5156,7 +5151,7 @@ export class CommunityWorkspace extends LitElement {
       if (this.routeKind === "user-detail") return this.renderUserDetail();
     }
     if (this.mode !== "notifications")
-      setAppBarSearch(COMMUNITY_BAR_OWNER, {
+      setAppBarSearch(this, COMMUNITY_BAR_OWNER, {
         value: this.query,
         label: this.label("search", "Search community"),
         onInput: (value) => {
@@ -5548,7 +5543,7 @@ export class CommunityWorkspace extends LitElement {
     );
   }
   private renderCollection() {
-    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
+    setAppBarActions(this, COMMUNITY_BAR_OWNER, this.collectionBar());
     return html`
       <section class="community-page page">
         ${this.renderMutationProgress()}

@@ -8,7 +8,7 @@ import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import { facet as renderFacet } from "./ui/facet";
-import { clearBrowseBar, renderBrowse } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { inputChip } from "./ui/controls";
 import "./ui/scrollable-tabs";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
@@ -243,7 +243,6 @@ export class AnonTokyoWorkspace extends LitElement {
   disconnectedCallback() {
     removeEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
     this.loadRequest?.abort();
-    clearBrowseBar();
     this.releaseLocation?.();
     this.paneFocus.detach();
     this.lazyImages.disconnect();
@@ -609,7 +608,6 @@ export class AnonTokyoWorkspace extends LitElement {
       this.document.available === false ||
       (this.mode === "outfits" ? !values(this.document.characters).length : !this.collection().length)
     ) {
-      clearBrowseBar();
       return html`
         <section class="page">
           ${noticeState({
@@ -843,7 +841,6 @@ export class AnonTokyoWorkspace extends LitElement {
     history.replaceState(history.state, "", `${location.pathname}?${params}`);
   }
   private renderOutfits() {
-    clearBrowseBar();
     const characters = values(this.document?.characters).sort((a, b) => Number(a.rawId) - Number(b.rawId));
     const character = this.selectedCharacter ? this.rowForId(characters, this.selectedCharacter) : characters[0];
     const rawId = Number(character?.rawId);

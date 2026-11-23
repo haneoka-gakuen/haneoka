@@ -6,7 +6,7 @@
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { fetchJson, JsonResponseError } from "./shared/catalog";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { collectionList } from "./ui/collection-view";
 import { segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -159,14 +159,13 @@ export class SponsorAdmin extends LitElement {
   override disconnectedCallback() {
     this.lifetime.abort();
     this.stopLocale?.();
-    clearAppBarSearch("sponsor-admin");
     this.document = null;
     this.draft = null;
     this.tierDraft = null;
     super.disconnectedCallback();
   }
   private syncSearch() {
-    setAppBarSearch("sponsor-admin", {
+    setAppBarSearch(this, "sponsor-admin", {
       value: this.query,
       label: this.t("search"),
       onInput: (value) => {

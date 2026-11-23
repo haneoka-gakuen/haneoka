@@ -22,7 +22,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { keyed } from "lit/directives/keyed.js";
 import { clientText } from "../i18n/client";
-import { clearAppBarSearch, setAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import type {
   GachaHistoryAccount,
   GachaHistoryPool,
@@ -34,7 +34,7 @@ import type {
   GachaHistoryItemArt,
   GachaHistoryImportSource,
 } from "../lib/gacha-history-view";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { facet } from "./ui/facet";
 import { filterChip, iconButton, inputChip, rovingKeydown, segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -346,7 +346,7 @@ export class GachaHistory extends LitElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    setAppBarSearch(OWNER, {
+    setAppBarSearch(this, OWNER, {
       value: this.query,
       label: this.t("search"),
       onInput: (value) => {
@@ -368,8 +368,6 @@ export class GachaHistory extends LitElement {
     this.reportInputs = []; this.reportValue = undefined;
     this.cancelImageExport();
     this.images.disconnect();
-    clearAppBarSearch(OWNER);
-    clearBrowseBar();
     super.disconnectedCallback();
   }
   private toggle(axis: Axis, value: string) {

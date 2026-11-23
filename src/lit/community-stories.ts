@@ -19,7 +19,7 @@ import {
 } from "../lib/story-creation/types";
 import type { VegaProject } from "@haneoka/vega-protocol";
 import type { StoryReaderInput } from "./story-workspace";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { facet } from "./ui/facet";
@@ -29,7 +29,7 @@ import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import { LazyImages } from "./ui/lazy-images";
 import { modal } from "./ui/modal";
@@ -127,7 +127,7 @@ export class CommunityStories extends LitElement {
       this.requestUpdate();
     });
     if (!this.storyId)
-      setAppBarSearch("community-stories", {
+      setAppBarSearch(this, "community-stories", {
         value: this.query,
         label: this.t("search"),
         onInput: (value) => {
@@ -141,8 +141,6 @@ export class CommunityStories extends LitElement {
     this.stopLocale?.();
     this.stopMedia?.();
     this.images.disconnect();
-    clearBrowseBar();
-    clearAppBarSearch("community-stories");
     super.disconnectedCallback();
   }
   protected override updated() {

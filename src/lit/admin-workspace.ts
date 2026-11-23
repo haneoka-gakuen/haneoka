@@ -39,7 +39,7 @@ import type { AdminAnalyticsView, AdminSeriesData, AdminGeoData, AdminAnalyticsO
 import "./community-sticker";
 import { snackbar } from "../lib/snackbar";
 import { formatDate } from "../lib/date-format";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import "./admin-comments";
 import type { StoryAssetReviews } from "./story-asset-reviews";
 import type { SponsorAdmin } from "./sponsor-admin";
@@ -379,6 +379,7 @@ export class AdminWorkspace extends LitElement {
   };
   private syncAppBar() {
     setAppBarActions(
+      this,
       this.appBarOwner,
       html`
         <button
@@ -422,7 +423,6 @@ export class AdminWorkspace extends LitElement {
   }
   private readonly onLocale = () => this.requestUpdate();
   disconnectedCallback() {
-    clearAppBarActions(this.appBarOwner);
     this.navigationObserver?.disconnect();
     this.navigationObserver = undefined;
     this.lifetime.abort();

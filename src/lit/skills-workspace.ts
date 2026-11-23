@@ -14,7 +14,7 @@ import type { Locale } from "../i18n/locales";
 import type { SkillCatalogEntry, SkillCatalogPayload, SkillFamily } from "../server/skill-catalog";
 import { skillPageId } from "../lib/skill-page";
 import { setAppBarSearch } from "../lib/app-bar";
-import { clearBrowseBar, renderBrowse } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
@@ -114,7 +114,7 @@ export class SkillsWorkspace extends LitElement {
     this.syncSearch();
   }
   private syncSearch() {
-    this.releaseSearch = setAppBarSearch(SEARCH_OWNER, {
+    this.releaseSearch = setAppBarSearch(this, SEARCH_OWNER, {
       value: this.query,
       label: this.text("common.actions.search", "Search"),
       onInput: (value) => {
@@ -126,7 +126,6 @@ export class SkillsWorkspace extends LitElement {
   disconnectedCallback() {
     removeEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     this.releaseSearch?.();
-    clearBrowseBar();
     this.lazyImages.disconnect();
     super.disconnectedCallback();
   }

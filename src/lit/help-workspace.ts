@@ -123,7 +123,6 @@ export class HelpWorkspace extends LitElement {
     this.request?.abort();
     this.request = undefined;
     this.loading?.cancel();
-    clearAppBarActions("help");
     super.disconnectedCallback();
   }
   public prepareCollection(payload: HelpCollectionPageData, locale: string, _mode?: string): void {
@@ -260,7 +259,7 @@ export class HelpWorkspace extends LitElement {
       return unpublishedState(this.locale);
     const entries = this.filteredEntries();
     if (this.entityId) {
-      clearAppBarActions("help");
+      clearAppBarActions(this, "help");
       if (this.phase === "loading") return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.phase === "error")
         return errorState(
@@ -302,6 +301,7 @@ export class HelpWorkspace extends LitElement {
     // The manual/tips switch is a page-level action, so it belongs in the top
     // app bar rather than floating over it.
     setAppBarActions(
+      this,
       "help",
       segmented({
         label: uiText(this.locale, "common.actions.view"),
