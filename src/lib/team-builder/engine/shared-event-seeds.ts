@@ -14,6 +14,7 @@ type ChartJob = { chart: ChartState; constraints: ConstraintInput };
 
 export interface SharedEventSeeds {
   hits: EngineHit[];
+  primaryChartProofs: ReadonlyMap<string, EngineHit>;
   unknownCards: string[];
   stats: SongResult["stats"];
 }
@@ -175,8 +176,9 @@ export async function acquireSharedEventSeeds(
   const depthLimit = Math.min(request.k, MAX_SCOUT_DEPTH);
   const waveSize = Math.max(1, workers);
   let hits: EngineHit[] = [];
+  const primaryChartProofs = new Map<string, EngineHit>();
 
-  const result = (): SharedEventSeeds => ({ hits, unknownCards: [...unknown], stats: { ...stats } });
+  const result = (): SharedEventSeeds => ({ hits, primaryChartProofs, unknownCards: [...unknown], stats: { ...stats } });
   const record = (response: EngineResponse) => {
     if (response.error) throw new Error(response.error);
     for (const card of response.unknownCards) unknown.add(card);
@@ -245,7 +247,11 @@ export async function acquireSharedEventSeeds(
       if (!best) return;
       winners[index] = best;
       offer(best);
-      if (row.proven) chart.frontier.push({ constraints, best });
+      if (row.proven) {
+        chart.frontier.push({ constraints, best });
+        if (rawPrimary && constraints === request.constraints && row.rewardPhase === "primary" && sameSong(best.song, chart.song))
+          primaryChartProofs.set(`${chart.song.songId}:${chart.song.difficulty}`, best);
+      }
     }, response => { for (const hit of response.overall) offer(hit); });
     return winners;
   };
