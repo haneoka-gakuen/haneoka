@@ -2,7 +2,7 @@ import { haneokaDataSource } from "@haneoka/embed-core/haneoka";
 import type { DataSource } from "@haneoka/embed-core";
 import type { AdvStory } from "@haneoka/vega/engine";
 import type { VegaPlugin } from "@haneoka/vega/plugin";
-import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
+import { HANEOKA_ADV_CHAT_DEFAULT_DATA_ROOT, hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { createCubismPlugin, type CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
 
 type RecordValue = Record<string, unknown>;
@@ -62,14 +62,20 @@ export function haneokaStorySource(options: { readonly id: string; readonly apiB
       const chat = record(resolvedRuntime.chatAssets ?? {});
       const sourceAsset = (value: unknown): string =>
         haneokaSourceAssetUrl(String(value ?? ""), storySource.assetsBase!, context.server);
+      const chatRoot = (value: unknown): string => {
+        const path = String(value ?? "").replace(/\/+$/u, "");
+        // Older releases use the icon directory as the root for the window images.
+        const templateIcons = `${HANEOKA_ADV_CHAT_DEFAULT_DATA_ROOT}/ChatLINE`;
+        return sourceAsset(path.endsWith(templateIcons) ? path.slice(0, -"/ChatLINE".length) : path);
+      };
       const roots = Object.fromEntries(
-        Object.entries(record(chat.dataRootsByWindowAsset ?? {})).map(([key, value]) => [key, sourceAsset(value)]),
+        Object.entries(record(chat.dataRootsByWindowAsset ?? {})).map(([key, value]) => [key, chatRoot(value)]),
       );
       const icons = Object.fromEntries(
         Object.entries(record(chat.iconImagesByAsset ?? {})).map(([key, value]) => [key, sourceAsset(value)]),
       );
       const rects = Object.fromEntries(
-        Object.entries(record(chat.windowRectsByDataRoot ?? {})).map(([key, value]) => [sourceAsset(key), value]),
+        Object.entries(record(chat.windowRectsByDataRoot ?? {})).map(([key, value]) => [chatRoot(key), value]),
       );
       const hydrated = hydrateStoryPayload({
         ...story,
@@ -78,7 +84,7 @@ export function haneokaStorySource(options: { readonly id: string; readonly apiB
           ...resolvedRuntime,
           chatAssets: {
             ...chat,
-            defaultDataRoot: sourceAsset(chat.defaultDataRoot),
+            defaultDataRoot: chatRoot(chat.defaultDataRoot),
             dataRootsByWindowAsset: roots,
             iconImagesByAsset: icons,
             windowRectsByDataRoot: rects,

@@ -6585,12 +6585,13 @@ def _adv_chat_window_rect(
 
 def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
     chat_root = "Assets/AddressableResources/Adv/Chat"
-    template_data_root = f"{chat_root}/Data/_template/data/ChatLINE"
+    template_data_root = f"{chat_root}/Data/_template/data"
     template_prefab = f"{chat_root}/Prefabs/_template/_template.prefab"
-    template_sprite = f"{chat_root}/Data/_template/data/chatwindow_image.png"
+    template_sprite = f"{template_data_root}/chatwindow_image.png"
+    template_icon = f"{template_data_root}/ChatLINE/ADVChatIconLine_Plus.png"
     if not all(
         source in data.source_path_set
-        for source in (template_prefab, template_sprite, template_data_root + "/ADVChatIconLine_Plus.png")
+        for source in (template_prefab, template_sprite, template_icon)
     ):
         # Pre-launch packages ship no ADV chat template; chatAssets arrive with
         # the CDN-served story bundles after release.
