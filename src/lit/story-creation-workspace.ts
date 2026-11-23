@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 网页账户、Altair 同源宿主会话、工程模板来源与社区故事版本。
-// Output: 网站内故事制作、导入导出、云保存和发布；应用栏连接时间线、AI 服务、修改提案和全工程分镜，向制作器同步主题、字体与 Material 图标。
+// Output: 网站内故事制作、导入导出、云保存和发布；应用栏集中工程文件、编辑工具与发布操作，向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
 // Effects/Dependencies: 初始化后开放操作；延迟加载 iframe、账户与云 API，销毁时释放消息通道、请求和应用栏。
 import { LitElement, html, nothing } from "lit";
@@ -162,46 +162,62 @@ export class StoryCreationWorkspace extends LitElement {
       (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action))
     );
   }
-  private actionButton(action: StudioAction, artwork: unknown) {
-    const label = this.actionLabel(action);
-    return html`
-      <button
-        class="icon-button"
-        title=${label}
-        aria-label=${label}
-        ?disabled=${this.actionDisabled(action)}
-        @click=${() => void this.action(action)}
-      >
-        ${artwork}
-      </button>
-    `;
-  }
-  private fileMenu() {
-    const item = (action: StudioAction, leading: ReturnType<typeof icon>) => ({
+  private menuAction(action: StudioAction, leading: ReturnType<typeof icon>) {
+    return {
       label: this.actionLabel(action),
       leading,
       disabled: this.actionDisabled(action),
       run: () => void this.action(action),
-    });
+    };
+  }
+  private fileMenu() {
+    const server = readReleaseServer();
+    const community = communityStoryPath(server, this.locale);
+    const story = this.cloud && communityStoryPath(server, this.locale, this.cloud.id);
     return actionMenu({
       id: `${this.toolbarOwner}-file`,
       label: this.t("fileMenu"),
       keepInAppBar: true,
       items: [
-        item("new", icon("add")),
-        item("library", icon("folder")),
-        item("folder", icon("folder_open")),
-        item("import", icon("upload_file")),
-        item("stories", icon("auto_stories")),
+        this.menuAction("new", icon("add")),
+        this.menuAction("library", icon("folder")),
+        this.menuAction("folder", icon("folder_open")),
+        this.menuAction("import", icon("upload_file")),
+        this.menuAction("stories", icon("auto_stories")),
+        this.menuAction("assets", icon("perm_media")),
+        {
+          label: this.t("save"),
+          leading: icon("cloud_upload"),
+          disabled: this.actionDisabled("save"),
+          run: () => void this.save(),
+        },
         {
           label: this.t("saveCopy"),
           leading: icon("content_copy"),
           disabled: this.actionDisabled("export-project"),
           run: () => void this.saveCopy(),
         },
-        item("export-project", icon("download")),
-        item("export-game", icon("sports_esports")),
-        item("settings", icon("settings")),
+        this.menuAction("export-project", icon("download")),
+        this.menuAction("export-game", icon("sports_esports")),
+        { label: this.t("mine"), leading: icon("auto_stories"), href: community + "?scope=mine" },
+        ...(story && this.cloud?.publishedRevision ? [{ label: this.t("read"), leading: icon("play_arrow"), href: story }] : []),
+        ...(story ? [{ label: this.t("detail"), leading: icon("info"), href: story + "?draft=1" }] : []),
+      ],
+    });
+  }
+  private toolsMenu() {
+    return actionMenu({
+      id: `${this.toolbarOwner}-tools`,
+      label: clientText(this.locale, "navigation.tools"),
+      keepInAppBar: true,
+      items: [
+        this.menuAction("timeline", icon("timeline")),
+        this.menuAction("undo", icon("undo")),
+        this.menuAction("redo", icon("redo")),
+        this.menuAction("settings", icon("settings")),
+        this.menuAction("assistant", icon("auto_awesome")),
+        this.menuAction("cinematic", icon("movie_filter")),
+        this.menuAction("ai-settings", icon("settings_suggest")),
       ],
     });
   }
@@ -285,64 +301,15 @@ export class StoryCreationWorkspace extends LitElement {
       this.toolbarOwner,
       html`
         ${this.fileMenu()}
-        <button
-          class="icon-button"
-          data-app-bar-keep
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
-          title=${this.t("save")}
-          aria-label=${this.t("save")}
-          @click=${() => void this.save()}
-        >
-          ${icon("cloud_upload")}
-        </button>
+        ${this.toolsMenu()}
         <button
           class="button button--filled"
           data-app-bar-keep
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
+          ?disabled=${this.actionDisabled("save")}
           @click=${() => void this.showPublication()}
         >
           ${this.t("publish")}
         </button>
-        ${this.actionButton("undo", icon("undo"))} ${this.actionButton("redo", icon("redo"))}
-        ${this.actionButton("timeline", icon("timeline"))}
-        ${this.actionButton("assistant", icon("auto_awesome"))} ${this.actionButton("cinematic", icon("movie_filter"))} ${this.actionButton("ai-settings", icon("settings_suggest"))}
-        ${this.actionButton("assets", icon("perm_media"))}
-        <a
-          class="icon-button"
-          title=${this.t("mine")}
-          aria-label=${this.t("mine")}
-          href=${communityStoryPath(readReleaseServer(), this.locale) + "?scope=mine"}
-        >
-          ${icon("auto_stories")}
-        </a>
-        ${
-          this.cloud?.publishedRevision
-            ? html`
-                <a
-                  class="icon-button"
-                  title=${this.t("read")}
-                  aria-label=${this.t("read")}
-                  href=${communityStoryPath(readReleaseServer(), this.locale, this.cloud.id)}
-                >
-                  ${icon("play_arrow")}
-                </a>
-              `
-            : nothing
-        }
-        ${
-          this.cloud
-            ? html`
-                <a
-                  class="icon-button"
-                  title=${this.t("detail")}
-                  aria-label=${this.t("detail")}
-                  href=${communityStoryPath(readReleaseServer(), this.locale, this.cloud.id) + "?draft=1"}
-                >
-                  ${icon("info")}
-                </a>
-              `
-            : nothing
-        }
       `,
     );
     setAppBarIdentity(
@@ -353,7 +320,7 @@ export class StoryCreationWorkspace extends LitElement {
           ? html`<span class="story-creation__project-title" dir="auto" title=${this.state.title}>${this.state.title}</span>`
           : nothing}
         <span
-          class="chip story-creation__status"
+          class="story-creation__status"
           role="status"
           aria-label=${status}
           title=${[

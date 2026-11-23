@@ -7,6 +7,16 @@
     white-space: nowrap;
     font-weight: var(--md-sys-typescale-label-large-weight);
   }
+  .story-creation__status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--md-sys-spacing-1);
+    margin-inline: var(--md-sys-spacing-1);
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    white-space: nowrap;
+  }
   @media (max-width: 599px) {
     .story-creation__project-title,
     .story-creation__status-label {
