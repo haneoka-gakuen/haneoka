@@ -297,6 +297,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { installUpdateCheck } from "../lib/update-check";
       import { installAppUpdateNotice } from "../lib/app-update-notice";
       import { installFullscreen } from "../lib/fullscreen";
+      import { installScrollbarHover } from "../lib/scrollbar-hover";
       import { appSupports } from "../lib/app-bridge";
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installNavigationPrefetch } from "../lib/navigation-prefetch";
@@ -312,6 +313,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       installI18nDom();
       installUpdateCheck();
       installFullscreen();
+      installScrollbarHover();
       if (appSupports("saveAutomationV1")) {
         const runSaveImports = () => void import("../lib/app-save-import")
           .then(({ runAppSaveImports }) => runAppSaveImports()).catch(() => {});

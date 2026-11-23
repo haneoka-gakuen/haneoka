@@ -1,29 +1,18 @@
-/*
- * Scrollbars and native progress, in Material 3 dress.
- *
- * Browsers draw scrollbars outside the container's rounded corners and in a
- * weight that fights the panes, so every scroller gets a slim overlay-style
- * bar instead: a pill thumb in surface-container-highest on a transparent
- * track, hiked to outline on hover. The two-pixel transparent rim keeps the
- * pill inside the container's rounded clip instead of touching its edge.
- *
- * Chromium and Safari render the webkit pseudo-elements below as persistent
- * bars, which auto-hiding platforms would otherwise never surface — that is
- * what leaves wide tables with nothing to drag. Any non-auto standard
- * scrollbar property disables those pseudo-elements in Chromium, so the
- * standard properties only apply where the pseudo-elements do not exist:
- * Firefox gets the same pill through scrollbar-width/color, and pointer
- * screens without either fall back to the platform default.
- *
- * Native <progress> (upload meters) is drawn as an MD3 linear progress
- * indicator: a full-round 4dp track in surface-container-highest with a
- * primary indicator.
- */
-
+/* Use one native styling path per browser. Standard scrollbar properties
+ * override the vendor pseudo-elements where both are supported. */
 @supports not selector(::-webkit-scrollbar-thumb) {
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--md-sys-color-surface-container-highest) transparent;
+    scrollbar-color: var(--scrollbar-thumb, var(--md-sys-color-outline)) var(--scrollbar-track, transparent);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *):not(
+      [data-scrollbar-hover],
+      :focus-visible
+    ) {
+      scrollbar-color: transparent transparent;
+    }
   }
 }
 
@@ -33,25 +22,55 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background-color: var(--scrollbar-track, transparent);
 }
 
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--md-sys-shape-corner-full);
-  background: var(--md-sys-color-surface-container-highest);
+  background-color: var(--scrollbar-thumb, var(--md-sys-color-outline-variant));
   background-clip: padding-box;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--md-sys-color-outline);
-  background-clip: padding-box;
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--md-sys-color-outline);
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *)::-webkit-scrollbar-thumb,
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *)::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *):is(
+      [data-scrollbar-hover~="x"],
+      :focus-visible
+    )::-webkit-scrollbar-thumb:horizontal,
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *):is(
+      [data-scrollbar-hover~="y"],
+      :focus-visible
+    )::-webkit-scrollbar-thumb:vertical {
+    background-color: var(--md-sys-color-outline);
+  }
+
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *):is(
+      [data-scrollbar-hover~="x"],
+      :focus-visible
+    )::-webkit-scrollbar-track:horizontal,
+  :where(html[data-scrollbar-hover-enabled], html[data-scrollbar-hover-enabled] *):is(
+      [data-scrollbar-hover~="y"],
+      :focus-visible
+    )::-webkit-scrollbar-track:vertical {
+    background-color: var(--scrollbar-track, transparent);
+  }
+}
+
+/* Native progress uses the Material linear indicator. */
 progress {
   appearance: none;
   -webkit-appearance: none;

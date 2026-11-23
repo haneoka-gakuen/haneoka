@@ -62,7 +62,8 @@
     min-height: 0;
     overflow: auto hidden;
     background: #0f131a;
-    scrollbar-color: #68707d #1a2029;
+    --scrollbar-thumb: #68707d;
+    --scrollbar-track: #1a2029;
   }
   .chart-simple-overview canvas {
     position: absolute;

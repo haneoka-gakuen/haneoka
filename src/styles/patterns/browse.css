@@ -57,7 +57,6 @@
   overscroll-behavior: contain;
   border-right: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container-low);
-  scrollbar-width: thin;
 }
 /* One column, so the rail's tiles are the same card as the results' — same
    corner, same two-line text block. Only the width differs, and that comes

@@ -148,6 +148,7 @@
     "src/lib/save-workspace/cloud.ts",
     "src/lib/save-workspace/schema.ts",
     "src/lib/fullscreen.ts",
+    "src/lib/scrollbar-hover.ts",
     "src/lib/song-puzzle/recognition.ts",
     "src/lib/song-puzzle/labels.ts",
     "src/lib/song-puzzle/constructive.ts",

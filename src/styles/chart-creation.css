@@ -52,7 +52,6 @@
     align-items: center;
     gap: 8px;
     overflow-x: auto;
-    scrollbar-width: thin;
   }
   .chart-studio__tools > .chart-creation__actions {
     flex: 1;
@@ -123,7 +122,6 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0 12px 16px;
-    scrollbar-width: thin;
   }
   .chart-studio__panel .chart-creation__form {
     display: grid;
