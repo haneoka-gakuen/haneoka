@@ -7,7 +7,7 @@ import { getAuthSession } from "./auth";
 import { writableSonolusOwner, type SonolusCommunityActor } from "./sonolus-auth";
 import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
-import { inspectCommunityText } from "./moderation";
+import { inspectCommunityText, scheduleSubmittedAttachmentReviews } from "./moderation";
 import { assertValidProject } from "../packages/chart-editor/src/validation";
 import { compileOurNotesCreation } from "../src/lib/chart-creation/native-compile";
 import { compileCreationSonolus } from "../src/lib/chart-creation/sonolus";
@@ -53,6 +53,7 @@ interface Row {
   head: number;
   version: number;
   publishedRevision: number | null;
+  publicationStatus: "pending" | "block" | null;
   visibility: "public" | "unlisted";
   revision: number;
   objectKey: string;
@@ -84,6 +85,15 @@ const activeOwner = `EXISTS (SELECT 1 FROM community_profile p WHERE p.user_id =
 const availableCover = `(r.cover_attachment_id IS NULL OR EXISTS (SELECT 1 FROM community_attachment a WHERE a.id = r.cover_attachment_id AND a.status = 'ready' AND a.moderation_status = 'allow' AND a.deleted_at IS NULL))`;
 const columns = `c.id, chart_identity.public_id AS publicId, c.owner_id AS ownerId, COALESCE(p.display_name, '') AS ownerName, identity.uid AS ownerUid,
  c.head, c.version, c.published_revision AS publishedRevision, c.visibility, c.updated_at AS updatedAt,
+ CASE WHEN c.owner_id = ?1 THEN (
+   SELECT CASE WHEN cover.moderation_status='block' OR cover.status IN ('rejected', 'deleted') OR media.state='failed'
+     THEN 'block' ELSE 'pending' END
+   FROM community_chart_publication pending
+   JOIN community_chart_revision candidate ON candidate.chart_id=pending.chart_id AND candidate.revision=pending.revision
+   JOIN community_attachment cover ON cover.id=candidate.cover_attachment_id
+   LEFT JOIN community_media_job media ON media.attachment_id=cover.id
+   WHERE pending.chart_id=c.id
+ ) END AS publicationStatus,
  r.revision, r.object_key AS objectKey, r.title, r.artist, r.charter, r.difficulty, r.level, r.summary,
  r.audio_json AS audioJson, r.cover_json AS coverJson, r.audio_url AS audioUrl, r.cover_url AS coverUrl,
  analysis.analysis_json AS analysisJson, COALESCE(NULLIF(legacy_v3.analysis_json, 'null'), NULLIF(legacy_v2.analysis_json, 'null'), legacy_v1.analysis_json) AS legacyAnalysisJson, analysis.created_at AS analysisCreatedAt, r.remix, r.upstream_id AS upstreamId, r.created_at AS createdAt, r.published_at AS publishedAt,
@@ -242,6 +252,7 @@ const item = (r: Row, owner = ""): CommunityChartItem => ({
   version: r.ownerId === owner ? r.version : r.revision,
   revision: r.revision,
   publishedRevision: r.publishedRevision,
+  ...(r.ownerId === owner && r.publicationStatus ? { publicationStatus: r.publicationStatus } : {}),
   publishedAt: r.publishedAt,
   updatedAt: r.updatedAt,
   coverUrl: r.coverUrl,
@@ -407,7 +418,9 @@ async function resolveMedia(
           .bind(ref.id, owner)
           .first()
       : await env.DB.prepare(
-          `SELECT id FROM community_attachment WHERE id = ? AND owner_user_id = ? AND purpose = 'post' AND status = 'ready' AND moderation_status = 'allow' AND deleted_at IS NULL AND media_type IN ('image/png','image/jpeg','image/webp')
+          `SELECT id FROM community_attachment WHERE id = ? AND owner_user_id = ? AND purpose = 'post' AND deleted_at IS NULL AND media_type IN ('image/png','image/jpeg','image/webp')
+           AND byte_size=declared_size AND sha256 IS NOT NULL AND r2_etag IS NOT NULL AND r2_version IS NOT NULL
+           AND ((status='ready' AND moderation_status='allow') OR (status IN ('scanning','review') AND moderation_status IN ('pending','review')))
            AND NOT EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id)`,
         )
           .bind(ref.id, owner)
@@ -542,7 +555,7 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
     if (retry.owner !== owner || retry.hash !== payloadHash) throw new Error("save_conflict");
     const saved = (await find(env, id, owner, true))!;
     await ensureAnalysis(env, saved);
-    return json(request, { chart: item(saved, owner) });
+    return json(request, { chart: item(saved, owner) }, publish && saved.publicationStatus === "pending" ? 202 : 200);
   }
   const current = await env.DB.prepare(
     "SELECT owner_id AS owner, head, version, deleted_at AS deleted FROM community_chart WHERE id = ?",
@@ -584,6 +597,7 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
     dataHash: string | null = null;
   const now = Date.now(),
     objectKey = `charts/projects/${id}/${crypto.randomUUID()}.json`;
+  const coverAttachmentId = normalized.cover?.kind === "upload" ? normalized.cover.id : null;
   if (publish) {
     if (!normalized.audio || !normalized.cover) throw new Error("media_missing");
     const inspection = inspectCommunityText([title, project.meta.artist, project.meta.charter, summary].join("\n"));
@@ -620,7 +634,11 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
       ),
       env.DB.prepare(
         `INSERT INTO community_chart_revision(chart_id,revision,request_id,payload_hash,object_key,title,artist,charter,difficulty,level,summary,audio_json,cover_json,audio_url,cover_url,audio_upload_id,cover_attachment_id,remix,upstream_id,data_key,data_hash,created_at,published_at)
-        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM community_chart WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL`,
+        SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+          CASE WHEN ? AND (? IS NULL OR EXISTS (
+            SELECT 1 FROM community_attachment WHERE id=? AND status='ready' AND moderation_status='allow' AND deleted_at IS NULL
+          )) THEN ? END
+        FROM community_chart WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL`,
       ).bind(
         id,
         revision,
@@ -638,26 +656,26 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
         audioUrl,
         coverUrl,
         normalized.audio?.kind === "upload" ? normalized.audio.id : null,
-        normalized.cover?.kind === "upload" ? normalized.cover.id : null,
+        coverAttachmentId,
         input.remix ? 1 : 0,
         upstreamId,
         dataKey,
         dataHash,
         now,
-        publish ? now : null,
+        publish ? 1 : 0,
+        coverAttachmentId,
+        coverAttachmentId,
+        now,
         id,
         owner,
         expected,
       ),
       env.DB.prepare(
-        `UPDATE community_chart SET head = ?, version = version + 1, updated_at = ?, published_revision = CASE WHEN ? THEN ? ELSE published_revision END, visibility = CASE WHEN ? THEN ? ELSE visibility END WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM community_chart_revision WHERE chart_id = ? AND object_key = ?)`,
+        `UPDATE community_chart SET head = ?, version = version + 1, updated_at = ?
+         WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM community_chart_revision WHERE chart_id = ? AND object_key = ?)`,
       ).bind(
         revision,
         now,
-        publish ? 1 : 0,
-        revision,
-        publish ? 1 : 0,
-        input.visibility,
         id,
         owner,
         expected,
@@ -673,15 +691,30 @@ async function saveChart(request: Request, env: Env, owner: string, id: string, 
         SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM community_chart_revision WHERE object_key = ?)`,
         ).bind(id, revision, snapshot.kind, snapshot.hash, objectKey),
       ),
+      ...(publish ? [
+        env.DB.prepare(
+          `DELETE FROM community_chart_publication
+           WHERE chart_id=? AND EXISTS (SELECT 1 FROM community_chart_revision WHERE object_key=?)`,
+        ).bind(id, objectKey),
+        env.DB.prepare(
+          `INSERT INTO community_chart_publication(chart_id,revision,visibility)
+           SELECT chart_id,revision,? FROM community_chart_revision WHERE object_key=? AND published_at IS NULL`,
+        ).bind(input.visibility, objectKey),
+        env.DB.prepare(
+          `UPDATE community_chart SET published_revision=?, visibility=?
+           WHERE id=? AND EXISTS (SELECT 1 FROM community_chart_revision WHERE object_key=? AND published_at IS NOT NULL)`,
+        ).bind(revision, input.visibility, id, objectKey),
+      ] : []),
     ]);
     if (!result[2]?.meta.changes) throw new Error("save_conflict");
   } catch (error) {
     await env.COMMUNITY_UPLOADS.delete(objectKey);
     throw error;
   }
+  if (publish && coverAttachmentId) await scheduleSubmittedAttachmentReviews(env, [coverAttachmentId]);
   const saved = (await find(env, id, owner, true))!;
   await ensureAnalysis(env, saved);
-  return json(request, { chart: item(saved, owner) });
+  return json(request, { chart: item(saved, owner) }, publish && saved.publicationStatus === "pending" ? 202 : 200);
 }
 async function serveMedia(request: Request, env: Env, row: Row, kind: string) {
   const ref = JSON.parse(kind === "audio" ? row.audioJson : row.coverJson) as ChartMediaRef;

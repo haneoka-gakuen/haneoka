@@ -33,7 +33,7 @@ export const storyAssetReceipt = (row: StoryAssetRow): StoryAssetReceipt => ({
   state:
     row.state === "rejected" || row.moderation === "block"
       ? "rejected"
-      : row.state === "ready" && row.blobState === "active" && row.moderation === "allow"
+      : row.state === "ready" && row.blobState === "active"
         ? "ready"
         : "processing",
 });
@@ -394,10 +394,6 @@ export async function putStoryAsset(env: Env, row: StoryAssetRow, request: Reque
       row.id,
     ),
   ]);
-  if (svg || audioType) {
-    const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
-    await scheduleStoryResourceChecks(env, row.hash);
-  }
   return storyAssetReceipt((await storyAsset(env, row.id, row.ownerId))!);
 }
 
@@ -419,9 +415,10 @@ async function ensureStoryResourceReview(env: Env, asset: StoryAssetRow, name: s
       now,
     ),
     env.DB.prepare(
-      `UPDATE community_story_blob SET moderation_status=(SELECT status FROM community_story_resource_review WHERE blob_hash=?),updated_at=?
-      WHERE hash=? AND moderation_status<>'block'`,
-    ).bind(asset.hash, now, asset.hash),
+      `UPDATE community_story_blob AS blob SET moderation_status=review.status,updated_at=?
+      FROM community_story_resource_review review
+      WHERE blob.hash=? AND review.blob_hash=blob.hash AND blob.moderation_status NOT IN ('block',review.status)`,
+    ).bind(now, asset.hash),
   ]);
 }
 

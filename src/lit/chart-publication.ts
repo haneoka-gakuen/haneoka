@@ -272,7 +272,11 @@ export class ChartPublication extends LitElement {
       this.draft = { ...this.draft, version: chart.version, revision: chart.revision, pendingSave: undefined };
       await this.persist();
       this.refreshCover();
-      snackbar(this.t(publish ? "published" : "draftSaved"));
+      snackbar(
+        publish && chart.publicationStatus
+          ? clientText(this.locale, chart.publicationStatus === "pending" ? "community.page.moderationPending" : "community.page.moderationBlocked")
+          : this.t(publish ? "published" : "draftSaved"),
+      );
     } catch (error) {
       if (error instanceof ChartRequestError && error.status >= 400 && error.status < 500 && error.status !== 429) {
         this.draft = { ...this.draft, pendingSave: undefined };
@@ -452,7 +456,7 @@ export class ChartPublication extends LitElement {
                         ${this.t("viewChart")}
                       </a>
                       ${
-                        this.published.publishedRevision
+                        this.published.publishedRevision || this.published.publicationStatus
                           ? html`
                               <button
                                 class="button button--text"

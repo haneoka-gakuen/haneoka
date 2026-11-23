@@ -17,7 +17,7 @@
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { avatarUrlSelect } from "./avatar-url";
-import { inspectCommunityText } from "./moderation";
+import { inspectCommunityText, scheduleSubmittedAttachmentReviews } from "./moderation";
 import { effectiveUserRole, hasUserCapability, type MemberTier, type StoredUserRole, type UserRole } from "../src/lib/user-roles";
 
 const PREFIX = "/api/v1/community/playlists";
@@ -388,7 +388,7 @@ const createPlaylist = async (request: Request, env: Env): Promise<Response> => 
   if (!parsed.ok) return error(request, 400, "invalid_playlist", parsed.message);
   const input = parsed.value;
   const ownerId = access.session.user.id;
-  if (!moderationAllows(input)) return error(request, 422, "content_blocked", "This text cannot be published");
+  if (input.visibility === "public" && !moderationAllows(input)) return error(request, 422, "content_blocked", "This text cannot be published");
   if (!(await validCover(env, ownerId, input)))
     return error(request, 400, "invalid_cover", "The cover image is unavailable");
   const count = await env.DB.prepare(
@@ -422,6 +422,8 @@ const createPlaylist = async (request: Request, env: Env): Promise<Response> => 
     ),
     ...trackStatements(env, id, input.tracks, now).slice(1),
   ]);
+  if (input.visibility === "public" && input.coverAttachmentId)
+    await scheduleSubmittedAttachmentReviews(env, [input.coverAttachmentId]);
   return getPlaylist(request, env, id).then(
     (response) => new Response(response.body, { status: 201, headers: response.headers }),
   );
@@ -448,7 +450,7 @@ const updatePlaylist = async (request: Request, env: Env, id: string): Promise<R
   const parsed = parseInput(body);
   if (!parsed.ok) return error(request, 400, "invalid_playlist", parsed.message);
   const input = parsed.value;
-  if (!moderationAllows(input)) return error(request, 422, "content_blocked", "This text cannot be published");
+  if (input.visibility === "public" && !moderationAllows(input)) return error(request, 422, "content_blocked", "This text cannot be published");
   if (!(await validCover(env, current.ownerId, input)))
     return error(request, 400, "invalid_cover", "The cover image is unavailable");
   const now = Date.now();
@@ -474,6 +476,8 @@ const updatePlaylist = async (request: Request, env: Env, id: string): Promise<R
     ...trackStatements(env, id, input.tracks, now),
   ]);
   if (!results[0]?.meta.changes) return error(request, 409, "version_conflict", "This playlist changed elsewhere");
+  if (input.visibility === "public" && input.coverAttachmentId)
+    await scheduleSubmittedAttachmentReviews(env, [input.coverAttachmentId]);
   return getPlaylist(request, env, id);
 };
 

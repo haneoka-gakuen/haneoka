@@ -1,5 +1,6 @@
 import { getAuthSession } from "./auth";
 import { storyResourceReviewAsset, storyAssetContent, decideStoryResourceReview } from "./community-story-assets";
+import { storySubmissionSql } from "./community-publication-review";
 import { avatarUrlSelect } from "./avatar-url";
 import { ipDetailsJson, readIpDetails, requestIpMetadata } from "./ip-address";
 import { decideModerationManually, resolveModerationAppeal, resolveStoryAttachmentModeration } from "./moderation";
@@ -2273,7 +2274,9 @@ const storyAssetReviewRows = `WITH reviews AS (
     JOIN community_media_job media ON media.attachment_id=a.id
     WHERE c.entity_kind='attachment' AND c.status IN ('pending','review','allow','block')
     AND a.deleted_at IS NULL AND a.status IN ('scanning','review','ready','rejected') AND media.state='ready'
-    AND EXISTS(SELECT 1 FROM community_story_asset sa WHERE sa.attachment_id=a.id)
+    AND (${storySubmissionSql("asset.attachment_id=a.id")} OR (
+      c.status IN ('allow','block') AND EXISTS(SELECT 1 FROM community_story_asset sa WHERE sa.attachment_id=a.id)
+    ))
     AND NOT EXISTS(SELECT 1 FROM community_moderation_case newer WHERE newer.entity_kind=c.entity_kind AND newer.entity_id=c.entity_id
       AND newer.entity_revision=c.entity_revision AND newer.policy_generation>c.policy_generation)
     UNION ALL
@@ -2284,7 +2287,7 @@ const storyAssetReviewRows = `WITH reviews AS (
       COALESCE(review.decision_operation_id,review.id)
     FROM community_story_resource_review review JOIN community_story_blob b ON b.hash=review.blob_hash
     WHERE review.status IN ('review','allow','block') AND b.state='active'
-      AND EXISTS(SELECT 1 FROM community_story_asset asset WHERE asset.blob_hash=b.hash)
+      AND (review.status<>'review' OR ${storySubmissionSql("asset.blob_hash=b.hash")})
   )`;
 const getStoryAssetReviews = async (request: Request, env: Env, url: URL): Promise<Response> => {
   const access = await requireStaff(request, env, "admin");

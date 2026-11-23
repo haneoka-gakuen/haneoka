@@ -245,31 +245,9 @@ export async function uploadChartCover(
   const id = String(attachment.id);
   draft.coverIntent = attachment;
   await persist();
-  if (attachment.status !== "ready" || attachment.moderationStatus !== "allow") {
-    for (let attempt = 0; attempt < 12; attempt++) {
-      const result = await chartRequest<{ attachment: Record<string, unknown> }>(
-        `/api/v1/community/attachments/${id}`,
-        { signal },
-      );
-      attachment = result.attachment;
-      draft.coverIntent = attachment;
-      await persist();
-      if (["rejected", "deleted"].includes(String(attachment.status))) throw new Error("cover_rejected");
-      if (attachment.status === "ready" && attachment.moderationStatus === "allow") return id;
-      await new Promise<void>((resolve, reject) => {
-        const abort = () => {
-          clearTimeout(timer);
-          reject(signal.reason);
-        };
-        const timer = setTimeout(() => {
-          signal.removeEventListener("abort", abort);
-          resolve();
-        }, 1250);
-        signal.addEventListener("abort", abort, { once: true });
-      });
-    }
-    throw new Error("media_not_ready");
-  }
+  if (["rejected", "deleted"].includes(String(attachment.status)) || attachment.moderationStatus === "block")
+    throw new Error("cover_rejected");
+  if (!["scanning", "ready", "review"].includes(String(attachment.status))) throw new Error("media_not_ready");
   return id;
 }
 export async function loadCommunityChart(id: string, signal: AbortSignal, draft = false, revision?: number) {

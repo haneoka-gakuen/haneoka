@@ -27,6 +27,7 @@ import {
   inspectCommunityText,
   postAttachmentsAllowedSql,
   scheduleEntityModeration,
+  scheduleSubmittedAttachmentReviews,
 } from "./moderation";
 import { requestClientMetadata, type BrowserFamily, type OsFamily } from "./user-agent";
 import { avatarUrlSelect } from "./avatar-url";
@@ -2369,6 +2370,7 @@ const createPost = async (request: Request, env: Env): Promise<Response> => {
   if (!results.at(-1)?.meta.changes) throw new Error("The initial post revision snapshot was not sealed");
   try {
     await scheduleEntityModeration(env, "post", id, inspection, 1);
+    if (inspection.verdict === "allow") await scheduleSubmittedAttachmentReviews(env, attachmentIds);
   } catch (moderationError) {
     logModerationSchedulingError(request, "post", moderationError);
     return json(request, { moderationQueued: false, post: await publicAccessiblePost(env, id, session.user.id) }, 202);
@@ -2567,6 +2569,12 @@ const updatePost = async (request: Request, env: Env, id: string): Promise<Respo
   try {
     moderationQueued =
       (await scheduleEntityModeration(env, "post", id, inspection, updated.moderationRevision)) === "pending";
+    if (moderationQueued && current?.moderationStatus === "block") {
+      const { results } = await env.DB.prepare(
+        "SELECT attachment_id AS id FROM community_post_attachment WHERE post_id=?",
+      ).bind(id).all<{ id: string }>();
+      await scheduleSubmittedAttachmentReviews(env, results.map(({ id }) => id));
+    }
   } catch (moderationError) {
     logModerationSchedulingError(request, "post", moderationError);
     return json(request, { moderationQueued: false, post: await publicAccessiblePost(env, id, session.user.id) }, 202);

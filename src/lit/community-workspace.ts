@@ -3039,13 +3039,14 @@ export class CommunityWorkspace extends LitElement {
         phase:
           attachment.status === "deleted"
             ? "failed"
+            : attachment.reviewDeferred === true ? "ready"
             : String(attachment.status || "scanning"),
         progress: 100,
       });
       progress.finish();
       for (
         let attempt = 0;
-        ["reserved", "scanning"].includes(String(attachment.status));
+        attachment.reviewDeferred !== true && ["reserved", "scanning"].includes(String(attachment.status));
         attempt++
       ) {
         if (attempt >= 20) {
@@ -3083,7 +3084,7 @@ export class CommunityWorkspace extends LitElement {
         }
         this.updateUpload(key, {
           attachment,
-          phase: String(attachment.status || "scanning"),
+          phase: attachment.reviewDeferred === true ? "ready" : String(attachment.status || "scanning"),
         });
       }
     } catch (error) {

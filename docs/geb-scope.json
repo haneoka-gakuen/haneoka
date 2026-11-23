@@ -480,6 +480,7 @@
     "src/lit/story-import-picker.ts",
     "worker/community-stories.ts",
     "worker/community-story-assets.ts",
+    "worker/community-publication-review.ts",
     "worker/community-story-moderation.ts",
     "worker/svg-rasterizer.ts",
     "tooling/local-containers/entrypoint.sh",

@@ -6,7 +6,7 @@
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
-import { inspectCommunityText } from "./moderation";
+import { inspectCommunityText, scheduleSubmittedAttachmentReviews } from "./moderation";
 import { compileCommunityStory } from "../src/lib/story-creation/project";
 import {
   STORY_API,
@@ -627,6 +627,8 @@ async function mutateStory(
     }
     if (plan.issues.length)
       return response(request, { error: { code: "resource_missing", resources: plan.issues } }, 422);
+    if (inspectCommunityText(JSON.stringify([row.title, row.summary, plan.project])).verdict !== "allow")
+      return response(request, { error: { code: "text_blocked" } }, 422);
     statements.push(
       env.DB.prepare(
         `UPDATE community_story SET publishing_revision=head,publish_token=?,publish_error=NULL,version=version+1,updated_at=? WHERE ${guard}`,
@@ -640,7 +642,20 @@ async function mutateStory(
     throw new Error("version_conflict");
   }
   if (kind === "publish") {
-    await finalize(env, row.id);
+    try {
+      const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
+      await scheduleStoryResourceChecks(env, { storyId: row.id, revision });
+      const { results: attachments } = await env.DB.prepare(`SELECT DISTINCT a.attachment_id AS id
+        FROM community_story_revision_asset ra JOIN community_story_asset a ON a.id=ra.asset_id
+        WHERE ra.story_id=? AND ra.revision=? AND ra.is_public=1 AND a.attachment_id IS NOT NULL`)
+        .bind(row.id, revision).all<{ id: string }>();
+      await scheduleSubmittedAttachmentReviews(env, attachments.map(({ id }) => id));
+      await finalize(env, row.id);
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: "story.publish_recovery_needed", errorName: error instanceof Error ? error.name : "Error",
+      }));
+    }
   }
   return await actionReceipt(request, env, row.id, owner, { kind, hash, version, revision });
 }
@@ -891,7 +906,7 @@ export async function handleCommunityStoryRequest(
               state:
                 row.state === "rejected" || row.moderation === "block"
                   ? "rejected"
-                  : row.state === "ready" && row.moderation === "allow"
+                  : row.state === "ready"
                     ? "ready"
                     : "processing",
             })),

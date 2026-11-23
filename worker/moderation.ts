@@ -1,4 +1,5 @@
 import { entityThreadSql } from "./community-entity-guard";
+import { attachmentSubmissionSql } from "./community-publication-review";
 export type ModerationEntityKind = "attachment" | "comment" | "post" | "profile-name";
 export type ModerationVerdict = "allow" | "block";
 type ModerationDecisionSource = "ai" | "appeal" | "deterministic" | "manual" | "system";
@@ -1064,7 +1065,7 @@ const pendingEntityStatement = (
     return env.DB.prepare(
       `UPDATE community_post
        SET moderation_status = 'pending', updated_at = ?
-       WHERE id = ? AND moderation_revision = ? AND deleted_at IS NULL
+       WHERE id = ? AND moderation_revision = ? AND deleted_at IS NULL AND archived_at IS NULL AND status='published'
          AND ${vacantGeneration}
          AND ${noProtectedAppeal}`,
     ).bind(
@@ -1131,6 +1132,7 @@ const pendingEntityStatement = (
        AND r2_etag IS NOT NULL
        AND r2_version IS NOT NULL
        AND deleted_at IS NULL
+       AND ${attachmentSubmissionSql("community_attachment")}
        AND ${vacantGeneration}
        AND ${noProtectedAppeal}`,
   ).bind(now, entityId, entityKind, entityId, entityRevision, POLICY_GENERATION, entityKind, entityId, entityRevision);
@@ -1148,7 +1150,9 @@ const pendingEntityExistsCondition = (
         WHERE pending_post.id = ?
           AND pending_post.moderation_revision = ?
           AND pending_post.moderation_status = 'pending'
+          AND pending_post.status = 'published'
           AND pending_post.deleted_at IS NULL
+          AND pending_post.archived_at IS NULL
       )`,
       values: [entityId, entityRevision],
     };
@@ -1190,12 +1194,13 @@ const pendingEntityExistsCondition = (
         AND pending_attachment.r2_etag IS NOT NULL
         AND pending_attachment.r2_version IS NOT NULL
         AND pending_attachment.deleted_at IS NULL
+        AND ${attachmentSubmissionSql("pending_attachment")}
     )`,
     values: [entityId],
   };
 };
 
-const processableProfileNameCaseCondition = (caseAlias: string): string => `(
+const processableModerationCaseCondition = (caseAlias: string): string => `(
   ${caseAlias}.entity_kind <> 'profile-name'
   OR NOT EXISTS (
     SELECT 1 FROM community_profile AS suspended_profile
@@ -1206,7 +1211,14 @@ const processableProfileNameCaseCondition = (caseAlias: string): string => `(
       AND suspended_profile.display_name_status = 'pending'
       AND suspended_profile.pending_display_name IS NOT NULL
   )
-)`;
+) AND (${caseAlias}.entity_kind<>'attachment' OR EXISTS (
+  SELECT 1 FROM community_attachment submitted
+  WHERE submitted.id=${caseAlias}.entity_id AND ${attachmentSubmissionSql("submitted")}
+)) AND (${caseAlias}.entity_kind<>'post' OR EXISTS (
+  SELECT 1 FROM community_post submitted
+  WHERE submitted.id=${caseAlias}.entity_id AND submitted.status='published' AND submitted.deleted_at IS NULL
+    AND submitted.archived_at IS NULL
+))`;
 
 const dispatchModerationJob = async (env: Env, jobId: string, generation: number, version: string): Promise<void> => {
   const now = Date.now();
@@ -1227,7 +1239,7 @@ const dispatchModerationJob = async (env: Env, jobId: string, generation: number
            AND community_moderation_case.source NOT IN ('appeal', 'manual')
            AND community_moderation_case.policy_generation = ?
            AND community_moderation_case.policy_version = ?
-           AND ${processableProfileNameCaseCondition("community_moderation_case")}
+           AND ${processableModerationCaseCondition("community_moderation_case")}
        )`,
   )
     .bind(dispatchToken, now, jobId, MAX_DISPATCH_ATTEMPTS, now, now - OUTBOX_REDELIVERY_MS, generation, version)
@@ -1286,6 +1298,9 @@ export const scheduleEntityModeration = async (
   if (entityKind === "attachment" && entityRevision !== 1) {
     throw new TypeError("Attachment moderation revisions must be 1");
   }
+  if (entityKind === "attachment" && !(await env.DB.prepare(
+    `SELECT 1 FROM community_attachment a WHERE a.id=? AND ${attachmentSubmissionSql("a")}`,
+  ).bind(entityId).first())) return "pending";
   const now = Date.now();
   const newCaseId = crypto.randomUUID();
   const newJobId = crypto.randomUUID();
@@ -2168,6 +2183,7 @@ const decideEntity = async (
   }
   if (
     attachment.purpose === "post" &&
+    attachment.mediaType !== "text/plain" &&
     attachment.mediaJobState !== undefined &&
     attachment.mediaJobState !== null &&
     (attachment.mediaJobState !== "ready" || !attachment.moderationObjectKey || !attachment.moderationSha256)
@@ -2212,7 +2228,10 @@ const decideEntity = async (
       failure.name = "InvalidAttachmentEncodingError";
       throw failure;
     }
-    return moderateTextWithAi(env, `${attachment.fileName}\n${text}`, "text-attachment");
+    const value = `${attachment.fileName}\n${text}`;
+    const inspection = inspectCommunityText(value);
+    if (inspection.verdict === "block") return { decision: inspection, model: "deterministic" };
+    return moderateTextWithAi(env, value, "text-attachment");
   }
   if (moderationObject) {
     return moderateImageWithAi(env, bytes, moderationObject.mediaType, attachment.purpose, attachment.fileName);
@@ -2400,7 +2419,7 @@ const closeUnavailableEntityCase = async (
        SET status = 'superseded', source = 'system', reason_code = ?,
            model_id = NULL, reviewer_user_id = NULL, decision_token = ?, updated_at = ?, completed_at = ?
        WHERE id = ? AND status = 'pending' AND source NOT IN ('appeal', 'manual')
-         AND ${processableProfileNameCaseCondition("community_moderation_case")}
+         AND ${processableModerationCaseCondition("community_moderation_case")}
          ${unavailableCommentGuard}
          AND EXISTS (
            SELECT 1 FROM community_moderation_job AS leased_job
@@ -2784,7 +2803,7 @@ const processQueueMessage = async (env: Env, message: Message<unknown>, onAttach
          WHERE community_moderation_case.id = community_moderation_job.case_id
            AND community_moderation_case.status = 'pending'
            AND community_moderation_case.source NOT IN ('appeal', 'manual')
-           AND ${processableProfileNameCaseCondition("community_moderation_case")}
+           AND ${processableModerationCaseCondition("community_moderation_case")}
        )`,
   )
     .bind(lease.leaseToken, lease.leaseUntil, now, message.body.jobId, MAX_JOB_ATTEMPTS)
@@ -2919,6 +2938,27 @@ export const handleModerationQueue = async (batch: MessageBatch, env: Env): Prom
   return affectsStories;
 };
 
+/** A media worker can finish its derivative before or after the author submits it. */
+export async function scheduleSubmittedAttachmentReviews(env: Env, ids: readonly string[]): Promise<void> {
+  if (!ids.length) return;
+  try {
+    const prepared = await env.DB.prepare(`SELECT a.id FROM community_attachment a
+      WHERE a.id IN (SELECT value FROM json_each(?)) AND a.status='scanning' AND a.moderation_status='pending'
+        AND a.deleted_at IS NULL AND (a.media_type='text/plain' OR EXISTS (
+          SELECT 1 FROM community_media_job media
+          JOIN community_attachment_variant variant ON variant.attachment_id=media.attachment_id AND variant.kind='moderation'
+          WHERE media.attachment_id=a.id AND media.state='ready'
+        ))`).bind(JSON.stringify(ids)).all<{ id: string }>();
+    for (const row of prepared.results)
+      await scheduleEntityModeration(env, "attachment", row.id,
+        { categories: [], normalizedText: "", reasonCode: "deterministic.media_preview_valid", verdict: "allow" }, 1);
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "moderation.submission_dispatch_failed", errorName: error instanceof Error ? error.name : "Error",
+    }));
+  }
+}
+
 interface DispatchableModerationJobRow {
   id: string;
   policyGeneration: number;
@@ -2968,7 +3008,8 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
        JOIN community_post_revision AS revision
          ON revision.post_id = post.id
         AND revision.revision_number = post.moderation_revision
-       WHERE post.deleted_at IS NULL
+       WHERE post.deleted_at IS NULL AND post.archived_at IS NULL
+         AND post.status='published' AND post.moderation_status='pending'
          AND NOT EXISTS (
            SELECT 1 FROM community_moderation_case AS moderation_case
            WHERE moderation_case.entity_kind = 'post' AND moderation_case.entity_id = post.id
@@ -3003,7 +3044,7 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
          ON revision.comment_id = comment.id
         AND revision.revision_number = comment.moderation_revision
        JOIN community_post AS post ON post.id = comment.post_id
-       WHERE comment.deleted_at IS NULL
+       WHERE comment.deleted_at IS NULL AND comment.moderation_status='pending'
          AND post.deleted_at IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM community_moderation_case AS moderation_case
@@ -3035,14 +3076,16 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
     env.DB.prepare(
       `SELECT attachment.id
        FROM community_attachment AS attachment
-       WHERE attachment.status NOT IN ('reserved', 'deleted')
+       WHERE attachment.status='scanning' AND attachment.moderation_status='pending'
          AND attachment.byte_size IS NOT NULL
          AND attachment.sha256 IS NOT NULL
          AND attachment.r2_etag IS NOT NULL
          AND attachment.r2_version IS NOT NULL
          AND attachment.deleted_at IS NULL
+         AND ${attachmentSubmissionSql("attachment")}
          AND (
            attachment.purpose = 'avatar'
+           OR attachment.media_type = 'text/plain'
            OR NOT EXISTS (
              SELECT 1 FROM community_media_job AS media_job
              WHERE media_job.attachment_id = attachment.id
@@ -3231,6 +3274,7 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
        AND moderation_case.policy_generation = ?
        AND moderation_case.policy_version = ?
        AND moderation_case.source NOT IN ('appeal', 'manual')
+       AND ${processableModerationCaseCondition("moderation_case")}
      ORDER BY COALESCE(job.lease_until, job.updated_at), job.id
      LIMIT 20`,
   )
@@ -3251,7 +3295,7 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
         AND community_moderation_case.source NOT IN ('appeal', 'manual')
         AND community_moderation_case.policy_generation = ?
         AND community_moderation_case.policy_version = ?
-        AND ${processableProfileNameCaseCondition("community_moderation_case")}
+        AND ${processableModerationCaseCondition("community_moderation_case")}
     )`;
     let claimed: D1Result | null = null;
     if (moderationCase.jobStatus === "queued") {
@@ -3437,7 +3481,7 @@ export const reconcileModerationState = async (env: Env): Promise<void> => {
        AND moderation_case.status = 'pending'
        AND moderation_case.policy_generation = ?
        AND moderation_case.source NOT IN ('appeal', 'manual')
-       AND ${processableProfileNameCaseCondition("moderation_case")}
+       AND ${processableModerationCaseCondition("moderation_case")}
      ORDER BY job.next_attempt_at, job.id
      LIMIT 50`,
   )

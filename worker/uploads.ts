@@ -8,7 +8,8 @@ import {
   cleanupNativeMediaStorage,
   mediaPresentation,
 } from "./community-media";
-import { inspectCommunityText, type TextInspection } from "./moderation";
+import type { TextInspection } from "./moderation";
+import { attachmentSubmissionSql } from "./community-publication-review";
 
 type UploadMediaType =
   | "image/jpeg"
@@ -46,6 +47,7 @@ interface AttachmentRow {
   ownerUserId: string;
   purpose: "avatar" | "post";
   storyResource: number;
+  reviewDeferred: number;
   r2UploadId: string | null;
   r2Etag: string | null;
   r2Version: string | null;
@@ -164,6 +166,12 @@ const attachmentColumns = `
   community_attachment.owner_user_id AS ownerUserId,
   community_attachment.purpose,
   EXISTS(SELECT 1 FROM community_story_upload story WHERE story.attachment_id=community_attachment.id) AS storyResource,
+  CASE WHEN community_attachment.status='scanning' AND (
+    community_attachment.media_type='text/plain' OR EXISTS (
+      SELECT 1 FROM community_media_job WHERE attachment_id=community_attachment.id AND state='ready'
+    )
+  ) THEN NOT ${attachmentSubmissionSql("community_attachment")}
+    ELSE 0 END AS reviewDeferred,
   community_attachment.idempotency_key AS idempotencyKey,
   community_attachment.object_key AS objectKey,
   community_attachment.original_name AS fileName,
@@ -296,6 +304,7 @@ const attachmentValue = (row: AttachmentRow): JsonObject => ({
   height: row.height,
   status: row.status,
   moderationStatus: row.moderationStatus,
+  reviewDeferred: row.status === "scanning" && Boolean(row.reviewDeferred),
   createdAt: row.createdAt,
   expiresAt: row.expiresAt,
   uploadUrl: row.status === "reserved" ? `${PREFIX}/uploads/${row.id}/content` : null,
@@ -829,7 +838,7 @@ export const inspectUploadBytes = (
     if (/^\s*(?:<!doctype\s+html\b|<html\b)/iu.test(text)) {
       return { height: null, inspection: clean, ok: false, reason: "html_is_not_allowed", width: null };
     }
-    return { height: null, inspection: inspectCommunityText(text), ok: true, width: null };
+    return { height: null, inspection: clean, ok: true, width: null };
   } catch {
     return { height: null, inspection: clean, ok: false, reason: "invalid_utf8_text", width: null };
   }
@@ -1475,7 +1484,7 @@ const putContent = async (request: Request, env: Env, id: string): Promise<Respo
   }
 
   try {
-    await enqueueNativeMediaJob(env, attachment.id);
+    if (attachment.mediaType !== "text/plain") await enqueueNativeMediaJob(env, attachment.id);
   } catch (moderationError) {
     console.error(
       JSON.stringify({
@@ -1786,7 +1795,7 @@ const completeMultipartUpload = async (request: Request, env: Env, id: string): 
       : error(request, 503, "upload_state_unavailable", "Upload state could not be confirmed");
   }
   try {
-    await enqueueNativeMediaJob(env, id);
+    if (attachment.mediaType !== "text/plain") await enqueueNativeMediaJob(env, id);
   } catch (moderationError) {
     console.error(
       JSON.stringify({
