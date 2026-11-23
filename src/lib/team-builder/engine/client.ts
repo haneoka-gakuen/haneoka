@@ -12,7 +12,7 @@ import type { EngineCall, EngineChart, EngineChartSources, EngineReply, Evaluate
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
 import { RequestScope, throwIfAborted } from "../../request-scope";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
-import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "./merge";
+import { aspirationHeld, compareHits, memberSetKey, mergeLockedGekiso, mergeShardResponses } from "./merge";
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
 import { canUseSharedEventRosters } from "./shared-event-rosters";
 import { proveSharedEvent } from "./shared-event-search";
@@ -848,6 +848,34 @@ export class EngineClient {
         return result;
       }
       if ((request.aggregation === "mean" && (request.goal.kind === "score" || request.goal.kind === "event" || request.goal.kind === "gekiso")) || (request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared")) {
+        const goal = request.goal;
+        const scoreLockedCharts = async (scoped: EngineRequest, chartGoal: Extract<EngineRequest["goal"], { kind: "gekiso" }>, loadedCharts: EngineChart[]) => {
+          const count = Math.min(pool.length, Math.floor(chartGoal.songs.length / 2));
+          const parts = await Promise.allSettled(pool.slice(0, count).map((worker, index) => worker.send<EngineResponse>({
+            type: "run", id: 0, loadedCharts,
+            request: { ...scoped, goal: { ...chartGoal, songs: chartGoal.songs.filter((_, position) => position % count === index) } },
+          })));
+          if (stopped) return undefined;
+          const complete = parts.flatMap(part => part.status === "fulfilled" ? [part.value] : []);
+          return complete.length === count ? mergeLockedGekiso(chartGoal.songs, complete, clock() - started) : undefined;
+        };
+        if (goal.kind === "gekiso" && goal.criterion === "mean" && goal.songs.length >= 8 && request.k === 1
+            && !onFinalResult && !request.shard && !request.seedOnly && !request.seeded && !request.seeds?.length
+            && !request.completed?.length && !justWindow && request.constraints.leader !== null && pool.length > 1) {
+          const slots = new Set(request.constraints.bindings.map(([member]) => member));
+          const roster = new Set([request.constraints.leader, ...request.constraints.requiredMembers, ...slots]);
+          if (slots.size === 5 && roster.size === 5) {
+            const loadedCharts = await pool[0]!.preload(goal.songs);
+            if (stopped) return latest;
+            const locked = await scoreLockedCharts(request, goal, loadedCharts);
+            if (stopped) return latest;
+            if (locked) {
+              progress?.(goal.songs.length, goal.songs.length, { unit: "charts" });
+              publish(locked, true);
+              return locked;
+            }
+          }
+        }
         const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
         const compactArena = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared" && request.goal.songs.length <= 32;
         const count = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? compactArena ? 2 : 1 : request.goal.kind === "gekiso" ? 6 : 2);
@@ -893,6 +921,29 @@ export class EngineClient {
               score: { mean: average(hit => hit.score!.mean), min: average(hit => hit.score!.min), max: average(hit => hit.score!.max),
                 median: average(hit => hit.score!.median), orders: [], ranks: {}, bestOrder: [], worstOrder: [] },
               event: null, skipScore: null, potential: null, aggregate: { kind: "mean", songs } } : undefined;
+          }
+        } else if (goal.kind === "gekiso" && goal.criterion === "mean" && goal.songs.length >= 8 && pool.length > 1
+            && request.k === 1 && !request.noFloor && !request.seedOnly && !request.seeded && !request.shard
+            && !request.seeds?.length && !request.completed?.length && !justWindow
+            && !goal.seeds && !goal.accuracy.great && !goal.accuracy.missEvery
+            && (goal.minComboBonus ?? 1) <= 1 && request.constraints.minBonusPercent == null) {
+          const warm = await workers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
+            request: { ...request, aggregation: undefined, noFloor: true,
+              members: goal.arena ? request.members.filter(member => this.data.members[member.cardId]?.bandId === goal.arena!.bandId) : request.members,
+              goal: { kind: "power", song: goal.songs[0]!, challengeEventId: null } } },
+            undefined, undefined, 80);
+          if (stopped) return latest;
+          const team = warm.overall[0];
+          sharedUnknown = warm.unknownCards;
+          if (team?.members.length === 5 && team.snaps.length === 5) {
+            const fixed: EngineRequest = { ...request, noFloor: true, constraints: {
+              ...request.constraints, leader: team.members[0]!, requiredMembers: team.members,
+              bindings: team.members.map((member, index) => [member, team.snaps[index]!] as [string, string | null]),
+            } };
+            const locked = await scoreLockedCharts(fixed, goal, loadedCharts);
+            if (stopped) return latest;
+            sharedSeed = locked?.overall[0];
+            if (locked) sharedUnknown = [...new Set([...sharedUnknown, ...locked.unknownCards])];
           }
         }
         const parts = workers.map(() => emptyResponse(request));
