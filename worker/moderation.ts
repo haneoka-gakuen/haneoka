@@ -2722,7 +2722,7 @@ const isTemporarilySuspendedProfileName = async (env: Env, moderationCase: CaseR
   return row?.isSuspended === 1;
 };
 
-const processQueueMessage = async (env: Env, message: Message<unknown>): Promise<void> => {
+const processQueueMessage = async (env: Env, message: Message<unknown>, onAttachment: () => void): Promise<void> => {
   if (!isQueueMessage(message.body)) {
     message.ack();
     return;
@@ -2793,6 +2793,7 @@ const processQueueMessage = async (env: Env, message: Message<unknown>): Promise
     message.ack();
     return;
   }
+  if (row.entityKind === "attachment") onAttachment();
 
   const attempt = row.jobAttempts + 1;
   const releaseOrRestartInfrastructureFailure = async (errorCode: string): Promise<void> => {
@@ -2907,11 +2908,15 @@ const processQueueMessage = async (env: Env, message: Message<unknown>): Promise
   }
 };
 
-export const handleModerationQueue = async (batch: MessageBatch, env: Env): Promise<void> => {
+export const handleModerationQueue = async (batch: MessageBatch, env: Env): Promise<boolean> => {
   const { handleStoryResourceCheck } = await import("./community-story-moderation");
+  let affectsStories = false;
+  const markStoryDependency = () => { affectsStories = true; };
   for (const message of batch.messages) {
-    if (!(await handleStoryResourceCheck(env, message))) await processQueueMessage(env, message);
+    if (await handleStoryResourceCheck(env, message)) markStoryDependency();
+    else await processQueueMessage(env, message, markStoryDependency);
   }
+  return affectsStories;
 };
 
 interface DispatchableModerationJobRow {

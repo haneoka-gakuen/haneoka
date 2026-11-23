@@ -28,32 +28,35 @@ interface Check {
 
 export async function scheduleStoryResourceChecks(env: Env, hash?: string): Promise<void> {
   const now = Date.now();
+  const review = hash ? "AND review_id=(SELECT id FROM community_story_resource_review WHERE blob_hash=?)" : "";
+  const scoped = hash ? [hash] : [];
   await env.DB.prepare(
     `INSERT OR IGNORE INTO community_story_resource_check(review_id,status,next_attempt_at,policy_version,created_at,updated_at)
     SELECT r.id,'queued',?,?,?,? FROM community_story_resource_review r JOIN community_story_blob b ON b.hash=r.blob_hash
-    WHERE r.status='review' AND r.source='upload' AND b.state='active' ${hash ? "AND b.hash=?" : ""}`,
+    WHERE r.status='review' AND r.source='upload' AND b.state='active' ${hash ? "AND r.blob_hash=?" : ""}
+      AND NOT EXISTS(SELECT 1 FROM community_story_resource_check c WHERE c.review_id=r.id)`,
   )
-    .bind(now, POLICY, now, now, ...(hash ? [hash] : []))
+    .bind(now, POLICY, now, now, ...scoped)
     .run();
   await env.DB.prepare(
     `UPDATE community_story_resource_check SET status='queued',lease_token=NULL,lease_until=NULL,
-    dispatch_token=NULL,dispatched_at=NULL,updated_at=? WHERE status='processing' AND lease_until<?`,
+    dispatch_token=NULL,dispatched_at=NULL,updated_at=? WHERE status='processing' AND lease_until<? ${review}`,
   )
-    .bind(now, now)
+    .bind(now, now, ...scoped)
     .run();
   if (!env.MODERATION_QUEUE) {
     await env.DB.prepare(
-      "UPDATE community_story_resource_check SET status='review',reason_code='queue_unavailable',updated_at=? WHERE status='queued'",
+      `UPDATE community_story_resource_check SET status='review',reason_code='queue_unavailable',updated_at=? WHERE status='queued' ${review}`,
     )
-      .bind(now)
+      .bind(now, ...scoped)
       .run();
     return;
   }
   const jobs = await env.DB.prepare(
     `SELECT review_id AS id FROM community_story_resource_check
-    WHERE status='queued' AND next_attempt_at<=? AND (dispatched_at IS NULL OR dispatched_at<?) ORDER BY next_attempt_at LIMIT 30`,
+    WHERE status='queued' AND next_attempt_at<=? AND (dispatched_at IS NULL OR dispatched_at<?) ${review} ORDER BY next_attempt_at LIMIT 30`,
   )
-    .bind(now, now - LEASE)
+    .bind(now, now - LEASE, ...scoped)
     .all<{ id: string }>();
   for (const job of jobs.results) {
     const token = crypto.randomUUID();

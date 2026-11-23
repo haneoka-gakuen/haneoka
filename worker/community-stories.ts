@@ -640,7 +640,6 @@ async function mutateStory(
     throw new Error("version_conflict");
   }
   if (kind === "publish") {
-    await reconcileStoryAssets(env);
     await finalize(env, row.id);
   }
   return await actionReceipt(request, env, row.id, owner, { kind, hash, version, revision });
@@ -654,6 +653,7 @@ async function finalize(env: Env, id: string): Promise<void> {
   if (!intent) return;
   const row = await find(env, id, intent.ownerId, true, intent.revision);
   if (!row) return;
+  await reconcileStoryAssets(env, { storyId: id, revision: intent.revision });
   const unavailable = await env.DB.prepare(
     `SELECT a.state,b.moderation_status AS moderation FROM community_story_revision_asset ra JOIN community_story_asset a ON a.id=ra.asset_id JOIN community_story_blob b ON b.hash=a.blob_hash
  WHERE ra.story_id=? AND ra.revision=? AND ra.is_public=1 AND (a.state<>'ready' OR b.state<>'active' OR b.moderation_status<>'allow')`,
@@ -722,17 +722,13 @@ export async function readCommunityStoryForAdmin(
     throw error;
   }
 }
-export async function reconcileCommunityStories(env: Env): Promise<void> {
-  const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
-  await scheduleStoryResourceChecks(env);
-  await reconcileStoryAssets(env);
+export async function reconcilePendingCommunityStories(env: Env): Promise<void> {
   const rows = await env.DB.prepare(
     "SELECT id FROM community_story WHERE publishing_revision IS NOT NULL AND deleted_at IS NULL ORDER BY updated_at LIMIT 30",
   ).all<{ id: string }>();
   for (const row of rows.results) await finalize(env, row.id);
 }
 export async function cleanupCommunityStories(env: Env): Promise<void> {
-  await reconcileCommunityStories(env);
   const cutoff = Date.now() - 7 * 86400000;
   // Cloud saves are capped per story. The current draft (head), the published
   // and the in-flight revision, and every revision that was ever published
@@ -1056,7 +1052,6 @@ export async function handleCommunityStoryRequest(
         }
         if (!parts[1]) {
           if (row.ownerId === owner && row.publishingRevision) {
-            await reconcileStoryAssets(env);
             await finalize(env, id);
             row = (await find(env, id, owner, url.searchParams.get("draft") === "1", requestedRevision))!;
           }

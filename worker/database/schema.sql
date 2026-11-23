@@ -3590,3 +3590,6 @@ CREATE INDEX IF NOT EXISTS sonolus_community_session_expiry ON sonolus_community
 CREATE INDEX IF NOT EXISTS sonolus_community_session_owner ON sonolus_community_session(user_id);
 CREATE INDEX IF NOT EXISTS sonolus_link_challenge_expiry ON sonolus_link_challenge(expires_at);
 CREATE INDEX IF NOT EXISTS sonolus_link_challenge_browser ON sonolus_link_challenge(browser_session_id);
+
+CREATE INDEX IF NOT EXISTS community_story_asset_linked_hash_idx
+  ON community_story_asset(blob_hash) WHERE attachment_id IS NOT NULL;

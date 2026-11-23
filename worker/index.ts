@@ -95,7 +95,8 @@ import {
   sonolusSongBackgroundVersion,
 } from "./sonolus-background";
 import { handleCommunityPlaylistRequest } from "./community-playlists";
-import { handleCommunityStoryRequest, cleanupCommunityStories, reconcileCommunityStories } from "./community-stories";
+import { handleCommunityStoryRequest, cleanupCommunityStories, reconcilePendingCommunityStories } from "./community-stories";
+import { reconcileStoryAssets } from "./community-story-assets";
 import {
   addSonolusCommunityCounts,
   submitSonolusChartLike,
@@ -4825,7 +4826,7 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     const admin = await handleAdminRequest(request, env, ctx);
     if (admin) {
       if (admin.ok && request.method === "POST" && url.pathname.startsWith("/api/v1/admin/story-asset-reviews/"))
-        ctx.waitUntil(reconcileCommunityStories(env));
+        ctx.waitUntil(reconcilePendingCommunityStories(env));
       return admin;
     }
     const profile = await handleProfileRequest(request, env);
@@ -5300,7 +5301,9 @@ const worker: ExportedHandler<Env> = {
                 "community_media_reconciliation",
                 async () => {
                   await reconcileCommunityMedia(env);
-                  await reconcileCommunityStories(env);
+                  const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
+                  await scheduleStoryResourceChecks(env);
+                  await reconcilePendingCommunityStories(env);
                 },
               ]
             : controller.cron === ACCOUNT_CLEANUP_CRON
@@ -5312,7 +5315,8 @@ const worker: ExportedHandler<Env> = {
                   "moderation_reconciliation",
                   async () => {
                     await reconcileModerationState(env);
-                    await reconcileCommunityStories(env);
+                    await reconcileStoryAssets(env);
+                    await reconcilePendingCommunityStories(env);
                   },
                 ]
               : controller.cron === COMMUNITY_UPLOAD_CLEANUP_CRON
@@ -5350,8 +5354,7 @@ const worker: ExportedHandler<Env> = {
   },
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     if (await handleCommunityMediaQueue(batch, env)) return;
-    await handleModerationQueue(batch, env);
-    await reconcileCommunityStories(env);
+    if (await handleModerationQueue(batch, env)) await reconcilePendingCommunityStories(env);
   },
 };
 
