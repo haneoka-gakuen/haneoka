@@ -440,6 +440,21 @@
   border-radius: 0;
   clip-path: none;
 }
+@media (max-width: 599px) {
+  .app-shell[data-editor-workspace] .top-app-bar > h1 {
+    font-size: var(--md-sys-typescale-title-medium-size);
+    line-height: var(--md-sys-typescale-title-medium-line-height);
+  }
+}
+@media (min-width: 840px) and (hover: hover) and (pointer: fine) {
+  .app-shell[data-editor-workspace] {
+    --top-bar-height: 44px;
+  }
+  .app-shell[data-editor-workspace] .top-app-bar {
+    --control-height: 32px;
+    --icon-button-size: 32px;
+  }
+}
 
 /* ---------- Page transitions ----------
    Material "fade through" on the content pane only; the shell stays still,
