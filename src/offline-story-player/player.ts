@@ -10,11 +10,13 @@ import { initializeI18nClient } from "../i18n/client";
 import { normalizeLocale } from "@haneoka/i18n";
 import { DefaultStoryResourceResolver } from "@haneoka/vega/renderer-kit";
 import { fetchJson } from "../lit/shared/catalog";
+import type { VegaProject } from "@haneoka/vega-protocol";
 import "../lit/runtime/vega-story-stage";
 import type { VegaStoryStage } from "../lit/runtime/vega-story-stage";
 
 interface Session {
-  server: "jp" | "intl";
+  server: string;
+  portableStory?: boolean;
   releaseId: string;
   episode: string;
   title: string;
@@ -23,6 +25,13 @@ interface Session {
   theme: "light" | "dark" | null;
   locale: string;
   returnUrl: string;
+}
+
+interface PortableStory {
+  story: Record<string, unknown>;
+  live2d: Record<string, unknown>[];
+  project?: VegaProject;
+  provider: boolean;
 }
 
 async function play(): Promise<void> {
@@ -43,14 +52,23 @@ async function play(): Promise<void> {
   back.href = session.returnUrl;
   back.querySelector("span")!.textContent = catalog.text("common.actions.back");
   document.querySelector("h1")!.textContent = session.title;
-  const story = await fetchJson<Record<string, unknown>>(
+  const portable = session.portableStory ? await fetchJson<PortableStory>("/offline/document.json") : undefined;
+  const story = portable?.story ?? await fetchJson<Record<string, unknown>>(
     `/api/v1/servers/${session.server}/stories/${encodeURIComponent(session.episode)}`,
   );
   const stage = document.createElement("vega-story-stage") as VegaStoryStage;
   stage.story = story;
-  stage.server = session.server;
+  stage.server = portable ? "intl" : session.server;
   stage.locale = locale;
-  stage.releaseId = session.releaseId;
+  if (portable) {
+    stage.communityProject = portable.project ?? undefined;
+    if (portable.provider) {
+      stage.providerBase = "/offline";
+      stage.offlineLive2d = portable.live2d;
+    }
+  } else {
+    stage.releaseId = session.releaseId;
+  }
   stage.offlineResources = new DefaultStoryResourceResolver([{
     schemes: ["haneoka-story"],
     async load(url, signal) {

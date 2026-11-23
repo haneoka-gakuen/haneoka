@@ -42,6 +42,7 @@ def main():
         "version": args.release,
         "sha256": digest,
         "bytes": len(payload),
+        "portableStory": True,
     }))
     signature = manifest.with_suffix(".json.sig")
     signature.unlink(missing_ok=True)

@@ -23,7 +23,7 @@ export interface AppMethods {
   gameAccounts: { args: Record<string, never>; result: DeviceSave[] };
   /** The app's page for one save: progress, cards, clears, export and update. */
   openGameAccount: { args: { key: string; fromAccount?: boolean }; result: null };
-  openOfflineStories: { args: { server?: "jp" | "intl"; chapter?: string; episode?: string }; result: null };
+  openOfflineStories: { args: { server?: "jp" | "intl" | "community" | `${"gbp" | "sekai"}.${string}`; chapter?: string; episode?: string }; result: null };
   /** The app's save reading: Shizuku, game folder, USB, backups or files. */
   addGameAccount: { args: { fromAccount?: boolean }; result: null };
   saveImportOptions: { args: Partial<SaveImportOptions>; result: SaveImportOptions };

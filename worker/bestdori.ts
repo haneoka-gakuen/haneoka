@@ -1,3 +1,4 @@
+import { offlineProviderCatalog, offlineProviderStory, storyModelIds } from "./offline-story-data";
 import { localizedFallbacks } from "../src/lib/localized-text";
 import { providerFetch, providerEdgeCache, type ProviderSourceReader, type ProviderExecutionContext, type ProviderFetchInit } from "./provider-source";
 let sourceReader: ProviderSourceReader | undefined;
@@ -2008,6 +2009,42 @@ export async function handleGarupaBestdoriApi(
       return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody({ items: {}, missing: [] }));
     return serveCached(request, ctx, JSON_CACHE_CONTROL, () => live2dEntries(ids, regionCandidates));
   }
+  const offlineCatalog = /^offline-catalog\/(event|band|main|afterlive|card)$/u.exec(tail)?.[1];
+  if (offlineCatalog) {
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
+      if (offlineCatalog !== "card") {
+        const rows = await buildStoryCollection(offlineCatalog as "event" | "band" | "main" | "afterlive", lang);
+        return jsonBody(offlineProviderCatalog(rows));
+      }
+      const cards = transformCards(recordsPublishedInAnyRegion(await allCards(), "releasedAt"), lang);
+      return jsonBody(Object.values(cards).flatMap((raw) => {
+        const card = asObj(raw);
+        return asArray(card.episodes).flatMap((rawEpisode) => {
+          const episode = asObj(rawEpisode);
+          const resource = String(episode.resourceSetName || "");
+          const scenario = String(episode.scenarioId || "");
+          return resource && scenario ? [{
+            id: `card.${resource}.${scenario}`,
+            title: episode.title || card.prefix || scenario,
+            group: card.prefix,
+          }] : [];
+        });
+      }));
+    });
+  }
+  const offline = /^offline\/((?:event|band|main|afterlive|card)\.[^/]+)$/u.exec(tail);
+  if (offline) {
+    const id = decodeRoutePart(offline[1]!);
+    if (id === null) return invalidPathResponse();
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
+      const story = JSON.parse((await storyDetail(id, region, lang)).body) as Obj;
+      const selected = String(story.sourceServer || region);
+      const candidates = [...new Set([selected, region, ...regionChainForLocale(lang)])].filter(isBestdoriRegion);
+      const keys = storyModelIds(story);
+      const models = keys.length ? JSON.parse((await live2dEntries(keys, candidates)).body) as Obj : {};
+      return jsonBody(offlineProviderStory(story, models));
+    });
+  }
   const storyCollection = /^stories\/(event|band|main|afterlive)$/.exec(tail);
   if (storyCollection) {
     const section = storyCollection[1]! as "event" | "band" | "main" | "afterlive";
@@ -2105,7 +2142,14 @@ export async function handleGarupaBestdoriApi(
         : /\.(mp4)$/i.test(upstreamPath)
           ? "video/mp4"
           : "application/octet-stream";
-    return proxyMedia(request, upstreamPath, fallback);
+    const response = await proxyMedia(request, upstreamPath, fallback);
+    if (response.status !== 404) return response;
+    // Some older scenarios point to a tutorial bundle whose exported image is
+    // only available in its numbered background bundle.
+    const background = /^\/assets\/([a-z]+)\/bg\/[^/]+_rip\/(bg([0-9]{5})\.png)$/u.exec(upstreamPath);
+    if (!background) return response;
+    const canonical = `/assets/${background[1]}/bg/scenario${Math.floor(Number(background[3]) / 10)}_rip/${background[2]}`;
+    return canonical === upstreamPath ? response : proxyMedia(request, canonical, fallback);
   }
 
   return null;

@@ -103,7 +103,7 @@ import { entityDiscussion } from "./ui/entity-discussion";
 import { providerEntityFromUrl } from "../lib/provider-entity-routing";
 import { applyCommunityDocumentMetadata } from "../lib/community-document-meta";
 import { siteOrigin } from "../lib/site-origin";
-import { providerCatalogBase, type ProviderCollectionPayload } from "../lib/provider-page-data";
+import { providerCatalogBase, providerRegionForLocale, type ProviderCollectionPayload } from "../lib/provider-page-data";
 import {
   providerEntityJsonPath,
   type ProviderEntityPayload,
@@ -2713,14 +2713,22 @@ export class StoryWorkspace extends LitElement {
   private renderDetailActions() {
     const episode = this.detailEpisode;
     const server = this.detailServer();
-    const mayDownload = episode && !this.reader && !this.isProvider() &&
-      (server === "jp" || server === "intl") && appSupports("offlineStoriesV1");
+    const provider = this.origin === "bestdori" ? "gbp" : this.origin === "sekai" ? "sekai" : undefined;
+    const mayDownload = episode && !this.reader && (provider
+      ? appSupports("portableOfflineStoriesV1")
+      : (server === "jp" || server === "intl") && appSupports("offlineStoriesV1"));
     const label = uiText(this.locale, "app.offline.title");
     return html`
       ${mayDownload ? html`<button type="button" class="icon-button" title=${label} aria-label=${label}
         @click=${() => {
           const id = this.episodeId(episode);
-          void appCall("openOfflineStories", { server, episode: id, chapter: `chapter-${episode.chapterId || episode.chapterKey || id}` });
+          if (provider) {
+            void appCall("openOfflineStories", {
+              server: `${provider}.${providerRegionForLocale(this.locale)}`, episode: id, chapter: id,
+            });
+          } else if (server === "jp" || server === "intl") {
+            void appCall("openOfflineStories", { server, episode: id, chapter: `chapter-${episode.chapterId || episode.chapterKey || id}` });
+          }
         }}>${icon("download")}</button>` : nothing}
       ${this.detailEpisode && (!this.reader || this.reader.editorHref)
         ? html`<a class="icon-button" href=${this.storyEditorHref()}

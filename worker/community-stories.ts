@@ -968,10 +968,11 @@ export async function handleCommunityStoryRequest(
           );
         }
         if (request.method !== "GET" && request.method !== "HEAD") throw new Error("method_not_allowed");
-        const mine = url.searchParams.get("scope") === "mine";
+        const offline = url.searchParams.get("offline") === "1";
+        const mine = !offline && url.searchParams.get("scope") === "mine";
         if (mine && !user) throw new Error("authentication_required");
         const rows = await env.DB.prepare(
-          `SELECT ${columns} ${joined} WHERE s.deleted_at IS NULL AND r.deleted_at IS NULL AND r.revision=${mine ? "s.head" : "s.published_revision"} AND ${mine ? "s.owner_id=?1" : `${publicAccess} AND r.visibility='public'`} ORDER BY ${mine ? "s.updated_at" : "r.published_at"} DESC,s.id`,
+          `SELECT ${columns} ${joined} WHERE s.deleted_at IS NULL AND r.deleted_at IS NULL AND r.revision=${mine ? "s.head" : "s.published_revision"} AND ${mine ? "s.owner_id=?1" : `${publicAccess} AND r.visibility='public'${offline ? " AND r.remix=1" : ""}`} ORDER BY ${mine ? "s.updated_at" : "r.published_at"} DESC,s.id`,
         )
           .bind(owner)
           .all<Row>();
@@ -996,6 +997,28 @@ export async function handleCommunityStoryRequest(
         if (!current) throw new Error("story_missing");
         if (current.ownerId !== author.id) throw new Error("forbidden");
         return await mutateStory(request, env, current, author.id, value, actionKind);
+      }
+      if (parts[1] === "offline" && ["GET", "HEAD"].includes(request.method)) {
+        const selected = await find(env, id);
+        if (!selected?.remix) throw new Error("story_missing");
+        const data = await runtime(env, selected);
+        if (data.error || !data.project) throw new Error("invalid_project");
+        const allowed = new Set(data.resources);
+        const base = `${STORY_API}/${id}/assets/${selected.revision}/`;
+        const cloud = await manifest(env, selected);
+        return response(request, {
+          schema: "haneoka-portable-story-v1",
+          story: { storyId: `community:${id}:${selected.revision}`, title: selected.title },
+          project: mapStoryProjectResources(data.project, (source) => {
+            const path = source.replace(/^\.\//u, "");
+            return allowed.has(path) ? storyAssetUrl(id, selected.revision, path) : source;
+          }, base),
+          assets: cloud.files.filter((file) => allowed.has(file.path)).map((file) => ({
+            url: storyAssetUrl(id, selected.revision, file.path),
+            sha256: file.hash,
+            bytes: file.bytes,
+          })),
+        });
       }
       const requestedRevision =
         parts[1] === "assets" || parts[1] === "source"

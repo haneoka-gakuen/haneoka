@@ -166,6 +166,7 @@ export class VegaStoryStage extends LitElement {
   private appliedLocale = "";
   offlineProgress?: { ordinal: number; save(ordinal: number): void };
   offlineResources?: StoryResourceResolver;
+  offlineLive2d?: readonly RecordValue[];
 
   private engine?: VegaEngine;
   private handle?: VegaPlayerHandle;
@@ -301,7 +302,9 @@ export class VegaStoryStage extends LitElement {
           : fetchJson<RecordValue>(url("story-runtime"), { signal }),
         project
           ? Promise.resolve([])
-          : providerBase
+          : this.offlineLive2d
+            ? Promise.resolve(keys.map((key) => this.offlineLive2d?.find((row) => row.id === key) ?? {}))
+            : providerBase
             ? keys.length
               ? fetchJson<RecordValue>(
                   `${providerBase}/live2d?projection=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}&${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}${story.sourceServer ? `&server=${encodeURIComponent(String(story.sourceServer))}` : ""}`,

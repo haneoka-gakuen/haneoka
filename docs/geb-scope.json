@@ -399,6 +399,7 @@
     "packages/chart-editor/src/formats/sus-export.ts",
     "packages/chart-editor/src/formats/mmws.ts",
     "worker/downloads.ts",
+    "worker/offline-story-data.ts",
     "scripts/publish/app_downloads.py",
     "scripts/publish/download_store.py",
     "scripts/build/offline-story-player.mjs",
