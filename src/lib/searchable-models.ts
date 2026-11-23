@@ -10,7 +10,6 @@ import {
   staticCatalogRelease,
   type RecordValue,
 } from "./static-catalog-source";
-import { disambiguateTitles } from "./title-disambiguation";
 import type { ReleaseServer } from "./release-server";
 import { modelPreviewSources } from "./model-artwork";
 import { pinCrossCatalogValue } from "./cross-server/presentation";
@@ -81,14 +80,8 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
   for (const [key, model] of live2dModels) {
     const detail = live2dDetails.get(key) ?? model;
     const character = localizedAll(model.characterName);
-    const costumes = localizedAll(live2dModelName(model));
-    const titles = Object.fromEntries(
-      LOCALES.map((locale) => {
-        const name = character[locale] || key;
-        const costume = costumes[locale];
-        return [locale, costume && costume !== character[locale] ? `${name} / ${costume}` : name];
-      }),
-    ) as Record<Locale, string>;
+    const name = live2dModelName(model);
+    const titles = Object.fromEntries(LOCALES.map((locale) => [locale, name])) as Record<Locale, string>;
     const factRows = (source: RecordValue, key: string): string[] =>
       (Array.isArray(source[key]) ? (source[key] as RecordValue[]) : [])
         .map((row) => text(row.name, "ja"))
@@ -121,10 +114,7 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
       descriptions: Object.fromEntries(
         LOCALES.map((locale) => [
           locale,
-          [titles[locale], character[locale], text(model.nickname, locale)]
-            .filter(Boolean)
-            .filter((value, index, all) => all.indexOf(value) === index)
-            .join(" / "),
+          [...new Set([name, character[locale]].filter(Boolean))].join(" / "),
         ]),
       ) as Record<Locale, string>,
       facts,
@@ -176,26 +166,6 @@ async function buildSearchableModelPages(server: ReleaseServer): Promise<Searcha
       model,
     };
   });
-
-  disambiguateTitles(
-    live2dPages,
-    (page, locale) => page.titles[locale],
-    (page, locale, title) => {
-      page.titles[locale] = title;
-    },
-    [],
-    (page) => page.id,
-  );
-  for (const page of live2dPages)
-    page.descriptions = Object.fromEntries(
-      LOCALES.map((locale) => [
-        locale,
-        [page.titles[locale], page.subtitles[locale]]
-          .filter(Boolean)
-          .filter((value, index, all) => all.indexOf(value) === index)
-          .join(" / "),
-      ]),
-    ) as Record<Locale, string>;
 
   live2dPages.sort((left, right) => compareLive2dModelKeys(left.id, right.id));
   return [...live2dPages, ...spinePages];

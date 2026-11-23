@@ -4,15 +4,6 @@
     display: block;
     height: 100%;
   }
-  live2d-workspace .tile--model .tile__title {
-    display: block;
-    max-block-size: none;
-  }
-  live2d-workspace .collection-list .list-item__headline,
-  live2d-workspace .table-entity__copy strong {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
   spine-workspace {
     display: block;
     height: 100%;

@@ -1316,10 +1316,7 @@ export class Live2DWorkspace extends LitElement {
   }
   updated() {
     if (this.entityId && this.detail && isContentVisible("live2d", this.detail, this.entityId))
-      updateEntityHeading(
-        this,
-        [...new Set([this.characterName(this.detail), this.modelTitle(this.detail)].filter(Boolean))].join(" / "),
-      );
+      updateEntityHeading(this, this.modelTitle(this.detail));
     this.removeSsrStageWhenOwned();
     // Collection details are modal panes; canonical entity routes are ordinary
     // page flow and must leave focus in the shell/document.
