@@ -5,7 +5,6 @@ import { languageFlags } from "../../i18n/language-flags";
 import bestdori from "../../assets/icons/bestdori.png";
 import moenotes from "../../assets/icons/moenotes.webp";
 import channelsSprite from "../../assets/icons/our-notes-channels.svg?url";
-import ourNotes from "../../assets/icons/our-notes-official.png";
 import sakiko from "../../assets/icons/sakiko-app.webp";
 import I18nText from "../I18nText.astro";
 import Icon from "../Icon.astro";
@@ -107,7 +106,7 @@ const friendSites = [
                       aria-labelledby={`${nameId} official-channels-${value}`}
                     >
                       {website ? (
-                        <img src={ourNotes.src} alt="" width="20" height="20" decoding="async" />
+                        <img src="/images/our-notes-official.png" alt="" width="20" height="20" decoding="async" />
                       ) : (
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                           <use href={`${channelsSprite}#${platform}`} />
