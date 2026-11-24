@@ -3,6 +3,7 @@
 // Output: Direct ID hits, immediately available name matches and bounded leased background indexing.
 // Pos: [Map](L2.md); shared search index for Arena and event point windows.
 // Effects/Dependencies: Reads/writes compact D1 window indexes and backfill leases; callers load retained payloads and queue missing windows.
+import { searchGlob } from "../src/lib/search-text";
 import type { RankingPlayerMatchDto } from "../src/lib/game-records";
 
 export interface SearchWindow {
@@ -186,11 +187,11 @@ export async function searchRankingWindows<T extends SearchWindow>(
     json_extract(p.value,'$.profileId') AS profileId,json_extract(p.value,'$.name') AS name,
     json_extract(p.value,'$.point') AS point,w.start_rank+CAST(p.key AS INTEGER) AS position,w.observed_at_ms AS sourceObservedAt FROM official_ranking_search_windows AS w,json_each(w.players_json) AS p
     WHERE w.region=? AND w.board_key=? AND w.start_rank<=?
-      AND (instr(w.players_json,?)>0 OR (?=0 AND instr(w.players_json,?)>0))
+      AND (instr(w.players_json,?)>0 OR (?=0 AND LOWER(w.players_json) GLOB ?))
       AND w.start_rank+CAST(p.key AS INTEGER)<=? AND w.start_rank+CAST(p.key AS INTEGER)>? AND (json_extract(p.value,'$.profileId')=?
-      OR (?=0 AND instr(json_extract(p.value,'$.search'),?)>0)) ORDER BY w.start_rank,CAST(p.key AS INTEGER) LIMIT 101`,
+      OR (?=0 AND LOWER(json_extract(p.value,'$.search')) GLOB ?)) ORDER BY w.start_rank,CAST(p.key AS INTEGER) LIMIT 101`,
     )
-    .bind(region, board, maximum, idFragment, exact ? 1 : 0, nameFragment, maximum, after, query, exact ? 1 : 0, normalized)
+    .bind(region, board, maximum, idFragment, exact ? 1 : 0, searchGlob(nameFragment), maximum, after, query, exact ? 1 : 0, searchGlob(normalized))
     .all<RankingPlayerMatchDto & { position: number; sourceObservedAt: number }>();
   // A player can move between independently collected windows; keep their best observed rank.
   const seen = new Set<string>();

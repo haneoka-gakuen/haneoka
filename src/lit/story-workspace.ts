@@ -3,11 +3,13 @@
 // Output: 故事集合链接、独立阅读页、共享文本、选段导出与 Vega 播放控制。
 // Pos: [Map](L2-2.md)；各来源故事阅读与播放的统一宿主。
 // Effects/Dependencies: 按需请求资源与播放器，接管实体应用栏，离开释放媒体和请求。
+import { dateField } from "./ui/date-field";
+import { normalizeSearchText } from "../lib/search-text";
 import { clientText } from "../i18n/client";
 import { formatDocumentTitle } from "../lib/document-title";
 import { unpublishedState } from "./ui/unpublished-state";
 import { communityVisible } from "../lib/site-community";
-import { storyCreationPath } from "../lib/community-story-route";
+import { editorDocumentPath } from "../lib/editor-document-route";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
 import { localizedContent, localizedList } from "./ui/localized-content";
@@ -82,6 +84,7 @@ import {
   legacyCollectionRedirectTarget,
   parseEntitySelection,
   parseResourceRoute,
+  resourcePath,
   returnStateFromLocation,
 } from "../lib/resource-route";
 import { isPublicReleaseServer } from "../lib/release-server";
@@ -547,6 +550,7 @@ export class StoryWorkspace extends LitElement {
   }
   private storyAutoPlayRequested(): boolean {
     if (this.isProvider()) return this.providerPlayer;
+    if (!this.reader && parseResourceRoute(navigationDocumentUrl().pathname)?.view === "story") return true;
     return (
       !this.storyCommentsTextChoice &&
       !this.storyCommentFocus() &&
@@ -939,10 +943,12 @@ export class StoryWorkspace extends LitElement {
     }
     if (page?.schema === "haneoka-story-payload-v1" && page.id === this.entityId) {
       this.prepareEntity(page, this.locale);
+      const play = this.storyAutoPlayRequested();
+      if (play) this.detailMode = "play";
       await this.updateComplete;
       if (!active()) return;
       this.dataset.entityReady = "true";
-      if (this.storyAutoPlayRequested()) await this.openVegaPlayer();
+      if (play) await this.openVegaPlayer();
       return;
     }
     this.phase = "loading";
@@ -1682,7 +1688,7 @@ export class StoryWorkspace extends LitElement {
       : { text: this.query, facets: {} };
     const combined = intersectCatalogFacets(this.facets, query.facets);
     const facets = omitted ? { ...combined, [omitted]: [] } : combined;
-    const needle = query.text.trim().normalize("NFKC").toLocaleLowerCase();
+    const needle = normalizeSearchText(query.text.trim());
     const chapters = facets.chapter || [];
     const bands = (facets.band || []).map(Number);
     const characters = (facets.character || []).map(Number);
@@ -1718,12 +1724,9 @@ export class StoryWorkspace extends LitElement {
         return false;
       if (levels.length && !levels.includes(Number(episode.unlockCharacterFriendshipLevel || 0))) return false;
       if (!needle) return true;
-      return `${this.episodeTitle(episode)} ${this.chapterName(this.chapterOf(episode))} ${ids
+      return normalizeSearchText(`${this.episodeTitle(episode)} ${this.chapterName(this.chapterOf(episode))} ${ids
         .map((id) => this.characterName(this.character(id) || {}))
-        .join(" ")}`
-        .normalize("NFKC")
-        .toLocaleLowerCase()
-        .includes(needle);
+        .join(" ")}`).includes(needle);
     });
     if (!sorted) return list;
     const direction = this.order === "asc" ? 1 : -1;
@@ -1812,7 +1815,7 @@ export class StoryWorkspace extends LitElement {
     }
     const server = this.episodeEntry(episode)?.displayServer || this.dataServer();
     return isPublicReleaseServer(server)
-      ? entityHref({ server, locale: this.locale as Locale, kind: "stories", id, query: { mode: this.mode }, returnTo })
+      ? entityHref({ server, locale: this.locale as Locale, kind: "stories", id, returnTo })
       : undefined;
   }
   private async openScenario(id: string, source?: JsonRecord, variantSource?: string) {
@@ -1836,7 +1839,6 @@ export class StoryWorkspace extends LitElement {
           locale: preferredLocale(this.locale) as Locale,
           kind: "stories",
           id,
-          query: { mode: this.mode },
           returnTo: this.entityId
             ? entityReturnHref()
             : returnStateFromLocation(location.pathname, location.search, "stories"),
@@ -2027,8 +2029,7 @@ export class StoryWorkspace extends LitElement {
           locale: preferredLocale(this.locale) as Locale,
           kind: "stories",
           id,
-          query: { mode: this.mode, playback: "play" },
-          returnTo: entityReturnHref(),
+          view: "story",
         }),
       );
       return;
@@ -2480,20 +2481,14 @@ export class StoryWorkspace extends LitElement {
         html`
           <div class="filter-range">
             ${["releaseFrom", "releaseTo"].map(
-              (key, index) => html`
-                <label>
-                  ${uiText(this.locale, index ? "common.fields.maximum" : "common.fields.minimum")}
-                  <input
-                    type="date"
-                    .value=${this.facets[key]?.[0] || ""}
-                    @change=${(event: Event) => {
-                      const value = (event.target as HTMLInputElement).value;
-                      this.facets = { ...this.facets, [key]: value ? [value] : [] };
-                      this.sync();
-                    }}
-                  />
-                </label>
-              `,
+              (key, index) => dateField({
+                label: uiText(this.locale, index ? "common.fields.maximum" : "common.fields.minimum"),
+                value: this.facets[key]?.[0] || "",
+                onChange: (value) => {
+                  this.facets = { ...this.facets, [key]: value ? [value] : [] };
+                  this.sync();
+                },
+              }),
             )}
           </div>
         `,
@@ -2728,14 +2723,14 @@ export class StoryWorkspace extends LitElement {
     if (this.reader) return this.reader.editorHref ?? "";
     const episode = this.detailEpisode!,
       server = this.detailServer();
-    const url = new URL(storyCreationPath(this.locale), navigationDocumentUrl());
-    url.searchParams.set("importStory", this.episodeId(episode));
-    url.searchParams.set(
+    const params = new URLSearchParams();
+    params.set("importStory", this.episodeId(episode));
+    params.set(
       "importServer",
       this.isProvider() ? String(episode.sourceServer || (server === "intl" ? "en" : server)) : server,
     );
-    if (this.isProvider()) url.searchParams.set("importProvider", this.origin);
-    return url.pathname + url.search;
+    if (this.isProvider()) params.set("importProvider", this.origin);
+    return editorDocumentPath(this.locale, "story-editor", params);
   }
   private renderDetailModes() {
     return segmented({
@@ -2763,11 +2758,13 @@ export class StoryWorkspace extends LitElement {
       }
       return;
     }
-    const url = new URL(location.href);
-    if (mode === "play") url.searchParams.set("playback", "play");
-    else url.searchParams.delete("playback");
-    if (this.reader) url.searchParams.delete("view");
-    history.replaceState(history.state, "", url);
+    const url = navigationDocumentUrl();
+    const route = !this.reader && parseResourceRoute(url.pathname);
+    if (route && route.kind === "stories" && route.id) {
+      if ((mode === "play") !== (route.view === "story"))
+        openDetailLocation(resourcePath({ ...route, view: mode === "play" ? "story" : undefined }) + url.search);
+      return;
+    }
     if (mode === "play") void this.openVegaPlayer();
     else {
       this.storyCommentsTextChoice = true;
@@ -3170,7 +3167,7 @@ export class StoryWorkspace extends LitElement {
     return visibleText(parseAdvRichText(value));
   }
   private searchTranscript(entries: readonly HaneokaTranscriptEntry[]): readonly HaneokaTranscriptEntry[] {
-    const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
+    const normalize = (value: string) => normalizeSearchText(value).replace(/\s+/gu, " ").trim();
     const query = normalize(this.transcriptQuery);
     if (!query && !this.transcriptSpeakers.length) return entries;
     return entries.filter(

@@ -1,3 +1,4 @@
+import { searchGlob } from "../src/lib/search-text";
 import { getAuthSession } from "./auth";
 import { storyResourceReviewAsset, storyAssetContent, decideStoryResourceReview } from "./community-story-assets";
 import { storySubmissionSql } from "./community-publication-review";
@@ -692,7 +693,6 @@ const decodeCursor = (value: string | null): TextCursor | NumericCursor | null =
   }
 };
 
-const escapeLike = (value: string): string => value.replace(/[\\%_]/gu, (character) => `\\${character}`);
 
 const isRole = isUserRole;
 
@@ -899,12 +899,12 @@ const getUsers = async (request: Request, env: Env, url: URL): Promise<Response>
       `(account.id = ?
         OR account.email = ? COLLATE NOCASE
         OR identity.uid = ?
-        OR account.name LIKE ? ESCAPE '\\' COLLATE NOCASE
-        OR profile.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE
-        OR profile.pending_display_name LIKE ? ESCAPE '\\' COLLATE NOCASE
-        OR profile.handle LIKE ? ESCAPE '\\' COLLATE NOCASE)`,
+        OR LOWER(account.name) GLOB ?
+        OR LOWER(profile.display_name) GLOB ?
+        OR LOWER(profile.pending_display_name) GLOB ?
+        OR LOWER(profile.handle) GLOB ?)`,
     );
-    const pattern = `${escapeLike(query)}%`;
+    const pattern = searchGlob(query, true) + "*";
     values.push(
       query,
       query,
@@ -1147,8 +1147,8 @@ const getComments = async (request: Request, env: Env, url: URL): Promise<Respon
     values.push(postId);
   }
   if (query) {
-    conditions.push("comment.body LIKE ? ESCAPE '\\' COLLATE NOCASE");
-    values.push(`%${escapeLike(query)}%`);
+    conditions.push("LOWER(comment.body) GLOB ?");
+    values.push(searchGlob(query));
   }
   if (cursor && typeof cursor.sort === "number") {
     conditions.push("(comment.created_at < ? OR (comment.created_at = ? AND comment.id < ?))");
@@ -1293,8 +1293,8 @@ const getPosts = async (request: Request, env: Env, url: URL): Promise<Response>
     values.push(authorId);
   }
   if (query) {
-    conditions.push("(post.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR post.body LIKE ? ESCAPE '\\' COLLATE NOCASE)");
-    const pattern = `%${escapeLike(query)}%`;
+    conditions.push("(LOWER(post.title) GLOB ? OR LOWER(post.body) GLOB ?)");
+    const pattern = searchGlob(query);
     values.push(pattern, pattern);
   }
   if (cursor && typeof cursor.sort === "number") {
@@ -2297,11 +2297,11 @@ const getStoryAssetReviews = async (request: Request, env: Env, url: URL): Promi
     filter = queue === "automatic" ? "automatic=1" : queue === "allow" ? "automatic=0 AND status='allow'" : queue === "block" ? "automatic=0 AND status='block'" : "automatic=0 AND status IN ('pending','review')",
     before = /^(\d+):([a-f0-9-]{36})$/u.exec(url.searchParams.get("before") || "");
   const result = await env.DB.prepare(`${storyAssetReviewRows} SELECT * FROM reviews
-    WHERE (${filter}) AND fileName LIKE ?1 AND (?2 IS NULL OR createdAt<?2 OR (createdAt=?2 AND id<?3)) ORDER BY createdAt DESC,id DESC LIMIT 101`)
-    .bind(`%${query}%`,before ? Number(before[1]) : null,before ? before[2]! : null).all<JsonObject>();
+    WHERE (${filter}) AND LOWER(fileName) GLOB ?1 AND (?2 IS NULL OR createdAt<?2 OR (createdAt=?2 AND id<?3)) ORDER BY createdAt DESC,id DESC LIMIT 101`)
+    .bind(searchGlob(query),before ? Number(before[1]) : null,before ? before[2]! : null).all<JsonObject>();
   const count = await env.DB.prepare(`${storyAssetReviewRows} SELECT COALESCE(sum(automatic=0 AND status IN ('pending','review')),0) AS attention,COALESCE(sum(automatic=1),0) AS automatic,
     COALESCE(sum(automatic=0 AND status='allow'),0) AS allowed,COALESCE(sum(automatic=0 AND status='block'),0) AS blocked,
-    COALESCE(sum(fileName LIKE ?1 AND (${filter})),0) AS matched FROM reviews`).bind(`%${query}%`).first<{attention:number;automatic:number;allowed:number;blocked:number;matched:number}>();
+    COALESCE(sum(LOWER(fileName) GLOB ?1 AND (${filter})),0) AS matched FROM reviews`).bind(searchGlob(query)).first<{attention:number;automatic:number;allowed:number;blocked:number;matched:number}>();
   const rows = result.results.slice(0, 100),
     last = rows.at(-1);
   return json(request, {

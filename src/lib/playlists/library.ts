@@ -7,6 +7,7 @@
  * resolve. Songs are ordered by their first release in either game.
  */
 import { loadPlaylistCatalogSource, auditedCryChicPortraits, type PlaylistCatalogSource } from "../playlist-tracks";
+import gameBgmCover from "../../assets/icons/our-notes-official.png?url";
 import { resolveSongPerformer, type SongPerformer } from "../song-performer";
 import { resourcePath, isReleaseServer } from "../resource-route";
 import { providerSongRoute } from "../provider-entity-data";
@@ -436,6 +437,7 @@ export function communityPlaylist(value: RecordValue, complete = false): Playlis
 
 /** Jackets for a cover: the chosen song, else a mosaic of the first four. */
 export function coverImages(playlist: Playlist, library: SongLibrary | null): { single?: string; mosaic: string[] } {
+  if (playlist.id === "official:bgm") return { single: gameBgmCover, mosaic: [] };
   if (playlist.cover.kind === "upload" && playlist.cover.url) return { single: playlist.cover.url, mosaic: [] };
   const jacket = (ref: TrackRef | null | undefined) => (ref && library?.byKey.get(refKey(ref))?.jacket) || "";
   if ((playlist.cover.kind === "song" || playlist.cover.kind === "band") && jacket(playlist.cover.song))

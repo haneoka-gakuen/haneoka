@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "./search-text";
 import aliases from "./catalog-query-aliases.json";
 import type { CatalogRecord } from "./catalog-filters";
 import { cardRarityId, cardRarityRank } from "./card-rarity";
@@ -22,7 +23,7 @@ export interface CatalogQuery {
   facets: CatalogQueryFacets;
 }
 
-const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
+const normalize = normalizeSearchText;
 const identity = (value: string) => normalize(value).replace(/[^\p{L}\p{N}]/gu, "");
 export function catalogQueryNames(record: CatalogRecord, kind: "character" | "band"): string[] {
   const fields =

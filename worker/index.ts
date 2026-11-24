@@ -63,9 +63,10 @@ import { staticDocumentLookupPath, acceptsGzip } from "../src/lib/static-documen
 import { legacyProviderRedirectTarget, providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { providerEntityHtmlPath, providerEntityJsonPath, providerEntityRoute, type ProviderEntityPayload } from "../src/lib/provider-entity-data";
 import { providerCatalogBase } from "../src/lib/provider-page-data";
-import { staticViewFromUrl } from "../src/lib/static-view-routing";
-import { assetStaticDocumentFromUrl, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
-import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
+import { legacyStaticViewRedirectTarget, staticViewFromUrl } from "../src/lib/static-view-routing";
+import { assetBrowserLocation, assetStaticDocumentFromUrl, assetStaticDocumentPath, legacyAssetRedirectTarget, isAssetBrowserDocument } from "../src/lib/asset-static-routing";
+import { legacyPlaylistRedirectTarget, playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
+import { legacyEditorRedirectTarget } from "../src/lib/editor-document-route";
 import { isCommunityForumDetailPath, restoreCommunityForumDetailShell } from "../src/lib/community-forum-document";
 import { collectorFor, handleOfficialHost } from "./official-host";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
@@ -4899,6 +4900,10 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   }
   const legacyEntityTarget =
     legacyProviderRedirectTarget(url.pathname, url.search) ??
+    legacyPlaylistRedirectTarget(url.pathname, url.search) ??
+    legacyStaticViewRedirectTarget(url.pathname, url.search) ??
+    legacyAssetRedirectTarget(url.pathname, url.search) ??
+    legacyEditorRedirectTarget(url.pathname, url.search) ??
     legacyEntityRedirectTarget(url.pathname, url.search) ??
     legacyCollectionRedirectTarget(url.pathname, url.search) ??
     legacyHomeRedirectTarget(url.pathname, url.search);
@@ -5255,33 +5260,27 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
           if (lookup?.ok) pageReady = ((await lookup.json()) as { state?: string }).state === "ready";
         }
         const provider = providerEntityFromUrl(url);
+        const playlist = playlistStaticDocumentFromUrl(url);
         const view = staticViewFromUrl(url);
         const corePath = staticDocumentLookupPath(view || url.pathname);
         const document =
           assetStaticDocumentFromUrl(url) ||
-          playlistStaticDocumentFromUrl(url) ||
+          playlist ||
           (provider && !provider.view ? providerEntityHtmlPath(provider) : corePath);
         const documents = document ? [document] : [];
-        if (provider && corePath && corePath !== document) documents.push(corePath);
+        if ((provider || playlist) && corePath && corePath !== document) documents.push(corePath);
         for (const candidate of documents) {
           const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
           if (hit) return hit;
         }
         if (rawAssetDocument) {
-          const source = new URL(url);
-          source.searchParams.delete("file");
-          const base = assetStaticDocumentFromUrl(source);
-          if (base && !documents.includes(base)) {
-            const hit = await serveStaticDocument(assetRequest, env, ctx, base, publicationId);
+          const location = assetBrowserLocation(url);
+          if (location) for (const parts of [location.path, []]) {
+            const candidate = assetStaticDocumentPath(location.server, location.locale, parts);
+            if (documents.includes(candidate)) continue;
+            documents.push(candidate);
+            const hit = await serveStaticDocument(assetRequest, env, ctx, candidate, publicationId);
             if (hit) return hit;
-          }
-          if (["jp", "intl"].includes(segments[0] || "") && segments[2] === "assets") {
-            source.pathname = `/${segments[0]}/${segments[1]}/assets/`;
-            const root = assetStaticDocumentFromUrl(source);
-            if (root) {
-              const hit = await serveStaticDocument(assetRequest, env, ctx, root, publicationId);
-              if (hit) return hit;
-            }
           }
         }
         if (provider && provider.resource !== "songs")

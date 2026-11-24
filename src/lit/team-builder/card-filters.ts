@@ -1,5 +1,7 @@
 /** Shared card filters for My Cards and team-building pickers. */
+import { normalizeSearchText } from "../../lib/search-text";
 import { html } from "lit";
+import { dateField } from "../ui/date-field";
 import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
 import { CARD_SKILL_FACETS, cardArtwork, cardSkills, skillTypeKey, skillTypeTitle, matchesSelections } from "../../lib/catalog-filters";
@@ -94,8 +96,8 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
       !matchesSelections([String(card.attribute)], plan.facets.type || []) ||
       !matchesSelections([String(card.rarity)], plan.facets.rarity || []) ||
       !matchesCatalogRarity(card.rarity, plan.facets, true)) return false;
-  const query = plan.text.normalize("NFKC").toLocaleLowerCase(host.locale).trim();
-  const haystack = [`#${id}`, catalog.cardName(kind, id), ...catalog.characterIds(kind, id).map((id) => catalog.characterName(id)), ...catalog.bandIds(kind, id).map((id) => catalog.bandName(id))].join(" ").normalize("NFKC").toLocaleLowerCase(host.locale);
+  const query = normalizeSearchText(plan.text, host.locale).trim();
+  const haystack = normalizeSearchText([`#${id}`, catalog.cardName(kind, id), ...catalog.characterIds(kind, id).map((id) => catalog.characterName(id)), ...catalog.bandIds(kind, id).map((id) => catalog.bandName(id))].join(" "), host.locale);
   return !query || haystack.includes(query);
 }
 export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch: Partial<BoxFilters>) => void) {
@@ -132,7 +134,10 @@ export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch:
     })}
     ${group(label("availableImage"), f.facets.artwork || [], ["yes","no"].map((value) => ({value,label:label(value)})), (values) => facetSet("artwork", values))}
     ${chooserGroup(label("total"), html`<div class="chooser-filter-options">${["minTotal", "maxTotal"].map((key) => html`<md-outlined-text-field type="number" min="0" label=${label(key.startsWith("min") ? "minimum" : "maximum")} .value=${live(f.facets[key]?.[0] || "")} @input=${(event: Event) => {const value = (event.target as HTMLInputElement).value; facetSet(key, value ? [value] : []);}}></md-outlined-text-field>`)}</div>`)}
-    ${chooserGroup(label("release"), html`<div class="chooser-filter-options">${["releaseFrom", "releaseTo"].map((key) => html`<md-outlined-text-field type="date" label=${label(key === "releaseFrom" ? "minimum" : "maximum")} .value=${live(f.facets[key]?.[0] || "")} @input=${(event: Event) => {const value = (event.target as HTMLInputElement).value; facetSet(key, value ? [value] : []);}}></md-outlined-text-field>`)}</div>`)}
+    ${chooserGroup(label("release"), html`<div class="chooser-filter-options">${["releaseFrom", "releaseTo"].map((key) => dateField({
+      label: label(key === "releaseFrom" ? "minimum" : "maximum"), value: f.facets[key]?.[0] || "",
+      onChange: (value) => facetSet(key, value ? [value] : []),
+    }))}</div>`)}
     <button class="button button--text" type="button" @click=${() => set({bands:[],characters:[],attributes:[],rarities:[],facets:{}})}>${host.t("clearFilters", "Clear filters")}</button>
   `;
 }

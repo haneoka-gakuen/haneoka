@@ -1,3 +1,4 @@
+import { searchGlob } from "../src/lib/search-text";
 import { entityCommentTextOnly, entityThreadForPost, entityThreadSql } from "./community-entity-guard";
 import { forumReadSql, canAccessPostForum } from "./community-forums";
 import { communityAccessState, type CommunityRestrictionKind } from "./access";
@@ -567,10 +568,10 @@ const getTags = async (request: Request, env: Env, url: URL): Promise<Response> 
   const values: BindValue[] = [...readablePostValues, viewerId];
   if (query) {
     conditions.push(
-      "(tag.normalized_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR tag.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE)",
+      "(LOWER(tag.normalized_name) GLOB ? OR LOWER(tag.display_name) GLOB ?)",
     );
-    const escaped = query.replace(/[\\%_]/gu, (character) => `\\${character}`);
-    values.push(`%${escaped}%`, `%${escaped}%`);
+    const pattern = searchGlob(query);
+    values.push(pattern, pattern);
   }
   if (cursor) {
     conditions.push(

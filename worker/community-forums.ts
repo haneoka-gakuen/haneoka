@@ -1,3 +1,4 @@
+import { searchGlob } from "../src/lib/search-text";
 import { communitySearchCondition } from "./community-search-query";
 import { getAuthSession, type AuthSession } from "./auth";
 import { entityThreadSql } from "./community-entity-guard";
@@ -639,9 +640,9 @@ async function getTagFacets(request: Request, env: Env, url: URL, userId: string
     AND NOT EXISTS(SELECT 1 FROM community_post_feedback WHERE user_id=facet_viewer.user_id AND post_id=post.id)`);
   const filters = ["tag.status='active'"];
   if (q) {
-    const pattern = `%${q.replace(/[\\%_]/gu, "\\$&")}%`;
+    const pattern = searchGlob(q);
     filters.push(
-      "(tag.normalized_name LIKE ? ESCAPE '\\' OR tag.display_name LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM community_tag_alias WHERE tag_id=tag.id AND alias_normalized_name LIKE ? ESCAPE '\\'))",
+      "(LOWER(tag.normalized_name) GLOB ? OR LOWER(tag.display_name) GLOB ? OR EXISTS(SELECT 1 FROM community_tag_alias WHERE tag_id=tag.id AND LOWER(alias_normalized_name) GLOB ?))",
     );
     values.push(pattern, pattern, pattern);
   }

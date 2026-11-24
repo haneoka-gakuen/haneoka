@@ -11,10 +11,11 @@ import {
 } from "../lib/provider-entity-routing";
 import { providerEntityHtmlPath } from "../lib/provider-entity-data";
 import { providerEntityManifestEntry, providerEntityRoot } from "./provider-entity-manifest";
-import { staticViewFromUrl } from "../lib/static-view-routing";
-import { assetStaticDocumentFromUrl } from "../lib/asset-static-routing";
-import { playlistStaticDocumentFromUrl } from "../lib/playlists/static-routing";
-import { documentPrefixRedirectTarget, documentPrefixResponse, releaseServerFromCookie } from "../lib/resource-route";
+import { legacyStaticViewRedirectTarget, staticViewFromUrl } from "../lib/static-view-routing";
+import { assetStaticDocumentFromUrl, legacyAssetRedirectTarget } from "../lib/asset-static-routing";
+import { legacyPlaylistRedirectTarget, playlistShellPath, playlistStaticDocumentFromUrl } from "../lib/playlists/static-routing";
+import { editorShellPath, legacyEditorRedirectTarget } from "../lib/editor-document-route";
+import { documentPrefixRedirectTarget, documentPrefixResponse, legacyEntityRedirectTarget, releaseServerFromCookie } from "../lib/resource-route";
 import { negotiateRequestLocale } from "../i18n/negotiation";
 import { sonolusShareRedirectTarget } from "../../worker/sonolus-share";
 
@@ -51,7 +52,12 @@ export function installProviderDevRouting(server: DevServer): void {
       const legacy =
         legacyCommunityStoryRedirectTarget(url.pathname, url.search) ??
         legacyCommunityChartRedirectTarget(url.pathname, url.search) ??
-        legacyProviderRedirectTarget(url.pathname, url.search);
+        legacyPlaylistRedirectTarget(url.pathname, url.search) ??
+        legacyStaticViewRedirectTarget(url.pathname, url.search) ??
+        legacyAssetRedirectTarget(url.pathname, url.search) ??
+        legacyEditorRedirectTarget(url.pathname, url.search) ??
+        legacyProviderRedirectTarget(url.pathname, url.search) ??
+        legacyEntityRedirectTarget(url.pathname, url.search);
       if (legacy && (request.method === "GET" || request.method === "HEAD")) {
         response.writeHead(308, { Location: legacy, "Cache-Control": "public, max-age=86400" });
         response.end();
@@ -68,7 +74,7 @@ export function installProviderDevRouting(server: DevServer): void {
           if (shell) request.url = `${shell}${url.search}`;
         }
       } else {
-        const view = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) || staticViewFromUrl(url);
+        const view = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) || playlistShellPath(url.pathname) || editorShellPath(url.pathname) || staticViewFromUrl(url);
         if (view) request.url = `${view}${url.search}`;
       }
       next();

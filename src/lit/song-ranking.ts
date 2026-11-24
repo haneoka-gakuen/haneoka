@@ -3,6 +3,8 @@
 // Output: Shared ranking rows, player search beside rank jumps, match selection, rank jumps and pagination.
 // Pos: [Map](L2-2.md); common leaderboard implementation for songs, events and Arena.
 // Effects/Dependencies: Reads saved ranking APIs; cancels obsolete board/search requests and restores page actions.
+import { searchIncludes } from "../lib/search-text";
+import "@material/web/textfield/outlined-text-field.js";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
@@ -606,7 +608,7 @@ export class SongRanking extends GameRecordsCardsElement {
     return {
       searchedTo: this.rows.length,
       matches: this.rows
-        .filter((row) => row.profileId === query || row.name.normalize("NFKC").toLowerCase().includes(normalized))
+        .filter((row) => row.profileId === query || searchIncludes(row.name, normalized))
         .map((row) => ({ rank: row.rank, profileId: row.profileId, name: row.name, point: row.score ?? 0 })),
     };
   }
@@ -645,7 +647,7 @@ export class SongRanking extends GameRecordsCardsElement {
     if (!after) {
       const normalized = query.normalize("NFKC").toLowerCase();
       const local = this.rows
-        .filter((row) => row.profileId === normalized || row.name.normalize("NFKC").toLowerCase().includes(normalized))
+        .filter((row) => row.profileId === normalized || searchIncludes(row.name, normalized))
         .map((row) => ({ rank: row.rank, profileId: row.profileId, name: row.name, point: row.score ?? 0 }));
       const exact = local.find((row) => row.profileId === normalized);
       if (exact) {
@@ -838,8 +840,7 @@ export class SongRanking extends GameRecordsCardsElement {
               if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
             }}
           >
-            <label class="field">
-              <input
+              <md-outlined-text-field
                 name="rank"
                 type="number"
                 inputmode="numeric"
@@ -847,10 +848,9 @@ export class SongRanking extends GameRecordsCardsElement {
                 max=${maximum || nothing}
                 step="1"
                 required
-                placeholder=${this.label("rank", "Rank")}
+                label=${this.label("rank", "Rank")}
                 aria-label=${t("jump", "Go to rank")}
-              />
-            </label>
+              ></md-outlined-text-field>
             <button
               class="icon-button icon-button--tonal"
               type="submit"
@@ -868,22 +868,21 @@ export class SongRanking extends GameRecordsCardsElement {
               if (value && !this.searching) void this.search(value);
             }}
           >
-            <label class="field">
-              <input
+              <md-outlined-text-field
+                class="is-search"
                 name="query"
                 type="search"
                 maxlength="100"
                 required
                 .value=${this.query}
-                placeholder=${t("playerSearch", "Player ID or username")}
+                label=${t("playerSearch", "Player ID or username")}
                 aria-label=${t("playerSearch", "Player ID or username")}
                 @input=${(event: InputEvent) => {
-                  this.query = (event.target as HTMLInputElement).value;
+                  this.query = (event.currentTarget as HTMLInputElement).value;
                   this.searchRequests.cancel();
                   this.searching = false;
                 }}
-              />
-            </label>
+              ></md-outlined-text-field>
             <button
               class="button button--tonal"
               type="submit"

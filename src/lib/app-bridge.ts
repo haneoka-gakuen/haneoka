@@ -135,7 +135,7 @@ interface HaneokaApp {
 /** Synchronous, so the first render already knows; the bridge object arrives at document start. */
 export const inApp = (): boolean => typeof navigator !== "undefined" && /\bHaneokaApp\//u.test(navigator.userAgent);
 
-export const appSaveImportHref = (locale: string): string => `/${locale}/account/?section=games#device-game-saves`;
+export const appSaveImportHref = (locale: string): string => `/${locale}/account/games/#device-game-saves`;
 
 export function appPlatform(): string | undefined {
   return (window as Window & { haneokaApp?: HaneokaApp }).haneokaApp?.platform;

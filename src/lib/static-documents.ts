@@ -5,7 +5,8 @@
 // Effects/Dependencies: 使用 Web Streams 等基础接口；调用者负责实际存储与网络读取。
 import { fnv1a32Shard } from "./hash-partition.ts";
 import { assetStaticLookupPath } from "./asset-static-routing.ts";
-import { playlistStaticLookupPath } from "./playlists/static-routing.ts";
+import { playlistShellPath, playlistStaticLookupPath } from "./playlists/static-routing.ts";
+import { editorShellPath } from "./editor-document-route.ts";
 import { communityStoryShellPath } from "./community-story-route.ts";
 import { communityChartShellPath } from "./community-chart-route.ts";
 import { providerEntityShellPath } from "./provider-entity-routing.ts";
@@ -180,6 +181,10 @@ export function staticDocumentLookupPath(pathname: string): string | undefined {
   if (storyShell) return coreStaticDocumentPath(storyShell);
   const chartShell = communityChartShellPath(pathname);
   if (chartShell) return coreStaticDocumentPath(chartShell);
+  const playlistShell = playlistShellPath(pathname);
+  if (playlistShell) return coreStaticDocumentPath(playlistShell);
+  const editorShell = editorShellPath(pathname);
+  if (editorShell) return coreStaticDocumentPath(editorShell);
   if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;
   if (pathname === "/data/sponsors/v1.json") return pathname;
   if (/^\/(?:provider-static|asset-static|playlist-static)\//u.test(pathname)) {

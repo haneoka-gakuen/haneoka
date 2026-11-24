@@ -3,6 +3,7 @@
 // Output: Administrative collections, editors, account lifecycle states and private archive dialogs.
 // Pos: [Map](L2-2.md); browser administration workspace.
 // Effects/Dependencies: Authenticated mutations and visible-page task polling; access loss clears private state.
+import { dateField } from "./ui/date-field";
 import { communityStoryPath } from "../lib/community-story-route";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
 import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, parseVisibilityPolicy,
@@ -1641,8 +1642,7 @@ export class AdminWorkspace extends LitElement {
           const form = new FormData(event.currentTarget as HTMLFormElement);
           void this.loadArchives(archive.region, { mode: archive.mode, day: String(form.get("day") ?? archive.day), target: String(form.get("target") ?? "") });
         }}>
-          ${archive.mode === "daily" ? html`<md-outlined-text-field type="date" name="day" required .value=${archive.day}
-            label=${this.label("archives.day", "Date (Japan time)")}></md-outlined-text-field>`
+          ${archive.mode === "daily" ? dateField({ name: "day", required: true, value: archive.day, label: this.label("archives.day", "Date (Japan time)") })
             : keyed(archive.targets, html`<md-outlined-select name="target" label=${this.label("archives.target", "Event / season")} .value=${archive.selected} ?disabled=${!archive.targets.length}>
               ${archive.targets.map((target) => {
                 const label = this.label(`archives.${target.kind}Target`, target.kind);
@@ -4944,16 +4944,15 @@ export class AdminWorkspace extends LitElement {
                                 ${
                                   this.section === "users" || this.section === "posts"
                                     ? html`
-                                        <form class="field admin-search" role="search" @submit=${this.search}>
-                                          ${icon("search", 20)}
-                                          <input
+                                        <form class="admin-search" role="search" @submit=${this.search}>
+                                          <md-outlined-text-field class="is-search"
                                             name="q"
                                             type="search"
                                             maxlength="100"
                                             .value=${this.query}
                                             aria-label=${this.section === "posts" ? this.label("creations.search", "Search content") : this.label("columns.user", "User")}
-                                            placeholder=${this.section === "posts" ? this.label("creations.search", "Search content") : this.label("columns.user", "User")}
-                                          />
+                                            label=${this.section === "posts" ? this.label("creations.search", "Search content") : this.label("columns.user", "User")}
+                                          ><span slot="leading-icon">${icon("search", 20)}</span></md-outlined-text-field>
                                           <button
                                             class="icon-button"
                                             type="submit"

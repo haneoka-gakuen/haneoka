@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
@@ -562,7 +563,7 @@ export class SpineWorkspace extends LitElement {
     });
   }
   private filteredModels() {
-    const needle = this.query.trim().normalize("NFKC").toLowerCase();
+    const needle = normalizeSearchText(this.query.trim());
     const direction = this.order === "asc" ? 1 : -1;
     return this.models
       .filter((model) => isContentListed("spine", model, String(model.id)))
@@ -574,10 +575,7 @@ export class SpineWorkspace extends LitElement {
           (!this.familyFilter || model.family === this.familyFilter) &&
           (!this.versionFilter || model.spineVersion === this.versionFilter) &&
           (!needle ||
-            `${this.modelTitle(model)} ${model.sourcePathKey || ""} ${model.family || ""} ${model.spineVersion || ""}`
-              .normalize("NFKC")
-              .toLowerCase()
-              .includes(needle)),
+            normalizeSearchText(`${this.modelTitle(model)} ${model.sourcePathKey || ""} ${model.family || ""} ${model.spineVersion || ""}`).includes(needle)),
       )
       .sort((left, right) => {
         let result = String(left.id || "").localeCompare(String(right.id || ""), "en", { numeric: true });

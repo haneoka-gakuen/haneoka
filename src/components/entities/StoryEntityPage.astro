@@ -24,14 +24,16 @@ interface Props {
   returnTo?: string;
   previous?: EntityLink;
   next?: EntityLink;
+  player?: boolean;
 }
-const { page, locale, server = "intl", canonical = false, returnTo, previous, next } = Astro.props;
+const { page, locale, server = "intl", canonical = false, returnTo, previous, next, player = false } = Astro.props;
 const modeLabel = (target: Locale) => t(target, page.mode === "birthday" ? "story.labels.birthdayStory" : `story.navigation.${page.mode}`, page.mode);
 const sectionRoute = `/catalog/stories/${page.mode}`;
 const sectionRouteDefinition = findRoute(sectionRoute);
 if (!sectionRouteDefinition) throw new Error(`Missing route definition for ${sectionRoute}`);
 const sectionTitle = titleOf(sectionRouteDefinition, locale);
-const canonicalHref = resourcePath({ server, locale, kind: "stories", id: page.storyId });
+const parentHref = resourcePath({ server, locale, kind: "stories", id: page.storyId });
+const canonicalHref = player ? `${parentHref}story/` : parentHref;
 const seoTitleValues = Object.fromEntries(
   LOCALES.map((target) => {
     const chapter = page.chapterNames[target];
@@ -65,7 +67,7 @@ const storyArtwork = (() => {
   return "";
 })();
 const pageDataId = `story-page-${page.storyId}`;
-const rendered = await renderStoryPage(payload, locale);
+const rendered = await renderStoryPage(payload, locale, player);
 const body = rendered.body;
 ---
 
@@ -74,6 +76,7 @@ const body = rendered.body;
   locale={locale}
   route={sectionRoute}
   canonicalRoute={canonical ? canonicalHref : undefined}
+  noindex={player}
   title={sectionTitle}
   titleKey={sectionRouteDefinition.titleKey}
   description={page.descriptions[locale]}
@@ -92,13 +95,14 @@ const body = rendered.body;
       canonical
         ? {
             title: displayTitle,
-            backHref: returnTo || storyCollectionPath({ server, locale, mode: page.mode }),
+            backHref: returnTo || (player ? parentHref : storyCollectionPath({ server, locale, mode: page.mode })),
             previous,
             next,
           }
         : undefined
     }
     appBar={rendered.appBar}
+    contained={player}
   >
     <script type="application/json" id={pageDataId} set:html={serializePageData(payload)}></script>
     <story-workspace locale={locale} mode={page.mode} entity-id={page.storyId} data-prerendered data-page-data={pageDataId} set:html={body}></story-workspace>

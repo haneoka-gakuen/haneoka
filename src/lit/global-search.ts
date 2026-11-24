@@ -1,3 +1,4 @@
+import { foldSearchGlyphs } from "../lib/search-text";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -387,13 +388,14 @@ export class GlobalSearch extends LitElement {
         this.total = cached.total; this.catalogMore = this.consumed < this.hits.length;
         return;
       }
-      const [available] = await Promise.all([api.filters(), api.preload(query)]);
+      const folded = foldSearchGlyphs(query);
+      const [available] = await Promise.all([api.filters(), api.preload(folded)]);
       if (!current()) return;
       const filters: Record<string, SearchFilter> = {};
       if (available.server) filters.server = { any: [server, "global"] };
       if (scope !== "all" && available.section) filters.section = scope;
       if (!append) {
-        const found = await api.search(query, { filters });
+        const found = await api.search(folded, { filters });
         if (!current()) return;
         this.hits = found.results;
         this.total = scope === "all" || available.section ? found.results.length : 0;

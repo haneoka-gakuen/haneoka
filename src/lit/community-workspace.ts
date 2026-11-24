@@ -3,7 +3,9 @@
 // Output: 社区浏览、编辑与相关操作的 Lit 界面；推荐动态保留 /community/feeds/ 规范地址。
 // Pos: [Map](L2-2.md)；社区交互和状态生命周期的协调枢纽。
 // Effects/Dependencies: 认证 HTTP、上传与持久操作由 API 执行；本文件管理 DOM、异步请求和界面状态。
+import { normalizeSearchText } from "../lib/search-text";
 import { formatDocumentTitle } from "../lib/document-title";
+import { parsePlaylistDocument, playlistPath } from "../lib/playlists/static-routing";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { readPageData } from "../lib/page-data";
@@ -49,7 +51,6 @@ import { resolveSongPerformer, type SongPerformer } from "../lib/song-performer"
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import {
-  openDetailLocation,
   closeDetailLocation,
   observeDetailLocation,
   navigateDetailPage,
@@ -608,7 +609,7 @@ export class CommunityWorkspace extends LitElement {
   }
   private restorePlaylist = () => {
     if (this.mode !== "playlists") return;
-    const id = new URLSearchParams(location.search).get("playlist") || "";
+    const id = parsePlaylistDocument(navigationDocumentUrl().pathname)?.id || "";
     if (id) void this.openPlaylist(id, false);
     else {
       this.playlistSequence++;
@@ -620,9 +621,8 @@ export class CommunityWorkspace extends LitElement {
   private async openPlaylist(id: string, push = true) {
     id=this.playlistLegacyKey(id,true);
     if (push) {
-      const params = new URLSearchParams(location.search);
-      params.set("playlist", id);
-      openDetailLocation(`${location.pathname}?${params}`);
+      await navigateDetailPage(playlistPath(this.locale, id));
+      return;
     }
     const sequence = ++this.playlistSequence;
     this.entityId = id;
@@ -652,11 +652,7 @@ export class CommunityWorkspace extends LitElement {
     }
   }
   private closePlaylist() {
-    const params = new URLSearchParams(location.search);
-    params.delete("playlist");
-    closeDetailLocation(
-      `${location.pathname}${params.size ? `?${params}` : ""}`,
-    );
+    closeDetailLocation(playlistPath(this.locale));
   }
 
   createRenderRoot() {
@@ -4776,7 +4772,7 @@ export class CommunityWorkspace extends LitElement {
         : [];
   }
   private playlistItems() {
-    const needle = this.query.trim().toLowerCase();
+    const needle = normalizeSearchText(this.query.trim());
     const direction = this.playlistOrder === "asc" ? 1 : -1;
     return this.items
       .filter((item) => {
@@ -4787,9 +4783,7 @@ export class CommunityWorkspace extends LitElement {
           return false;
         return (
           !needle ||
-          `${this.playlistTitle(item)} ${item.type || ""} ${item.source || ""}`
-            .toLowerCase()
-            .includes(needle)
+          normalizeSearchText(`${this.playlistTitle(item)} ${item.type || ""} ${item.source || ""}`).includes(needle)
         );
       })
       .sort((left, right) => {
@@ -5093,7 +5087,7 @@ export class CommunityWorkspace extends LitElement {
                 <ul class="playlist-grid" role="list">
                   ${entries.map(playlist=>html`
                     <li class="playlist-card">
-                      <a class="playlist-card__open" href=${`${this.path("/community/playlists")}?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                      <a class="playlist-card__open" href=${playlistPath(this.locale, String(playlist.id || playlist.playlistId || ""))}
                         @click=${(event:MouseEvent)=>{if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();void this.openPlaylist(String(playlist.id || playlist.playlistId || ""));}}>
                         <span class=${`playlist-card__art${playlist.contain ? " playlist-card__art--contain" : ""}`}>
                           ${this.playlistArtwork(playlist)}
@@ -5997,14 +5991,12 @@ export class CommunityWorkspace extends LitElement {
     );
   }
   private renderForumDirectory() {
-    const query = this.submittedQuery.toLocaleLowerCase();
+    const query = normalizeSearchText(this.submittedQuery);
     const forums = this.forums.filter(
       (forum) =>
         forum.capabilities.canRead &&
         (!query ||
-          `${this.forumName(forum)} ${localizedText(forum.descriptions, this.locale)}`
-            .toLocaleLowerCase()
-            .includes(query)),
+          normalizeSearchText(`${this.forumName(forum)} ${localizedText(forum.descriptions, this.locale)}`).includes(query)),
     );
     const groups = [
       ...this.forumGroups,

@@ -181,7 +181,9 @@ export function syncEntityNavigation(): void {
   if (!back) return;
   if (selection?.source === "canonical") delete back.dataset.astroHistory;
   const provider = providerEntityFromUrl(documentUrl);
-  const parent = provider?.view ? returnLink(providerEntityRoute({ ...provider, view: undefined })) : undefined;
+  const storyPlayer = selection?.route.kind === "stories" && selection.route.view === "story";
+  const parent = provider?.view ? returnLink(providerEntityRoute({ ...provider, view: undefined }))
+    : storyPlayer ? returnLink(resourcePath({ ...selection.route, view: undefined })) : undefined;
   if (provider && parent && back.dataset.entityFallbackHref !== parent) {
     back.dataset.entityFallbackHref = parent;
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
@@ -192,7 +194,7 @@ export function syncEntityNavigation(): void {
   }
   const returnTo = entityReturnHref();
   if (!returnTo) return;
-  back.href = parent && provider?.view === "story" && new URL(returnTo, documentUrl).pathname !== parent ? parent : returnTo;
+  back.href = parent && (storyPlayer || provider?.view === "story") && new URL(returnTo, documentUrl).pathname !== parent ? parent : returnTo;
   for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-entity-navigation]")) {
     const target = new URL(link.dataset.entityBaseHref || link.href, documentUrl);
     if (target.origin !== location.origin) continue;

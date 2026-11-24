@@ -73,7 +73,6 @@ export async function getStaticPaths() {
         id: page.storyId,
         title: page.titles,
         page,
-        query: { mode: page.mode },
         group: `stories:${page.mode}`,
       });
     for (const page of help)

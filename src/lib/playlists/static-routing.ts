@@ -1,9 +1,48 @@
 import { isLocale, type Locale } from "@haneoka/i18n";
+import { englishInterfacePath, interfaceLanguageFromPath, interfacePath } from "../../i18n/interface-route.ts";
 
 const uuid = /^[0-9a-f-]{36}$/iu;
-const validId = (value: string) => Boolean(value) && value.length <= 512 && !uuid.test(value) && !/[\\/\u0000-\u001f\u007f]/u.test(value);
+const validId = (value: string) => Boolean(value) && value.length <= 512 && ![".", "..", "_", "new"].includes(value) && !/[\\/\u0000-\u001f\u007f]/u.test(value);
+
+export function playlistPath(locale: string, id = "", edit = false): string {
+  const root = `/${locale}/community/playlists/`;
+  if (!id) return root;
+  if (edit && id === "new") return `${root}new/`;
+  return `${root}${encodeURIComponent(id)}/${edit ? "edit/" : ""}`;
+}
+
+export function parsePlaylistDocument(pathname: string) {
+  const [locale, community, playlists, value, action, ...extra] = englishInterfacePath(pathname).split("/").filter(Boolean);
+  if (!isLocale(locale) || community !== "community" || playlists !== "playlists" || !value || extra.length) return;
+  if (value === "new" && !action) return { locale, id: "new", edit: true };
+  try {
+    const id = decodeURIComponent(value);
+    if (validId(id) && (!action || action === "edit" && uuid.test(id))) return { locale, id, edit: Boolean(action) };
+  } catch { return; }
+  return undefined;
+}
+
+export function legacyPlaylistRedirectTarget(pathname: string, search: string): string | undefined {
+  const [locale, community, playlists, ...extra] = englishInterfacePath(pathname).split("/").filter(Boolean);
+  if (!isLocale(locale) || community !== "community" || playlists !== "playlists" || extra.length) return;
+  const query = new URLSearchParams(search);
+  const edit = query.get("edit") || "";
+  const id = edit || query.get("playlist") || "";
+  if (edit ? edit !== "new" && !uuid.test(edit) : !validId(id)) return;
+  query.delete("edit");
+  query.delete("playlist");
+  const href = playlistPath(locale, id, Boolean(edit));
+  const language = interfaceLanguageFromPath(pathname);
+  return (language ? interfacePath(href, language.value) : href) + (query.size ? `?${query}` : "");
+}
+
+export function playlistShellPath(pathname: string): string | undefined {
+  const route = parsePlaylistDocument(pathname);
+  return route && playlistPath(route.locale, "_");
+}
+
 export function playlistStaticId(id: string): string {
-  if (!validId(id)) throw new TypeError("Invalid public playlist id");
+  if (!validId(id) || uuid.test(id)) throw new TypeError("Invalid public playlist id");
   return btoa(String.fromCharCode(...new TextEncoder().encode(id))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 export function playlistStaticLocation(locale: unknown, id: string): { locale: Locale; id: string } | undefined {
@@ -25,10 +64,7 @@ export function playlistStaticLookupPath(pathname: string): string | undefined {
   return location && playlistStaticDocumentPath(location.locale, location.id);
 }
 export function playlistStaticDocumentFromUrl(url: URL): string | undefined {
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (!isLocale(parts[0]) || parts[1] !== "community" || parts[2] !== "playlists" || parts.length > 4 || url.searchParams.has("edit")) return;
-  try {
-    const id = url.searchParams.get("playlist") || decodeURIComponent(parts[3] || "");
-    return validId(id) ? playlistStaticDocumentPath(parts[0], id) : undefined;
-  } catch { return; }
+  const route = parsePlaylistDocument(url.pathname);
+  if (route && !route.edit && !uuid.test(route.id)) return playlistStaticDocumentPath(route.locale, route.id);
+  return undefined;
 }

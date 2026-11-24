@@ -3,6 +3,7 @@
 // Output: 复用故事页卡片、演出／主页对话媒体和筛选的故事选择器。
 // Pos: [Map](L2-2.md)；故事编辑器新建与服务器故事目录之间的选择入口。
 // Effects/Dependencies: 公开 GET 与图片惰性加载；断开时取消请求并释放观察器。
+import { searchIncludes } from "../lib/search-text";
 import { LitElement, html, nothing } from "lit";
 import type { StudioAssetSource } from "@haneoka/altair/studio-host";
 import { haneokaResourceRequestUrl } from "@haneoka/altair-plugin-haneoka/public-resource-url";
@@ -303,7 +304,7 @@ export class StoryImportPicker extends LitElement {
       .normalize("NFKC")
       .toLocaleLowerCase();
     return (
-      search.includes(this.query.normalize("NFKC").trim().toLocaleLowerCase()) &&
+      searchIncludes(search, this.query.trim()) &&
       axes.every(
         (axis) => axis === except || !this.filters[axis] || this.values(row, axis).includes(this.filters[axis]),
       )

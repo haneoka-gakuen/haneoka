@@ -533,14 +533,14 @@
     gap: 8px;
     min-inline-size: 0;
   }
-  .song-ranking-page .ranking-jump .field {
+  .song-ranking-page .ranking-jump md-outlined-text-field {
     inline-size: 168px;
     min-inline-size: 0;
   }
   .song-ranking-page .ranking-jump .button {
     flex: 0 0 auto;
   }
-  .song-ranking-page .ranking-jump--rank .field {
+  .song-ranking-page .ranking-jump--rank md-outlined-text-field {
     inline-size: 96px;
   }
   .song-ranking-page .ranking-secondary,
@@ -584,7 +584,7 @@
     .song-ranking-page .ranking-jump {
       flex: 1 1 100%;
     }
-    .song-ranking-page .ranking-jump .field {
+    .song-ranking-page .ranking-jump md-outlined-text-field {
       flex: 1 1 auto;
     }
   }

@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/search-text";
 import { siteAssetUrl } from "../lib/site-origin";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -554,11 +555,11 @@ export class ChartCreationLibrary extends LitElement {
       value,
       bandIds: [...new Set([...(Array.isArray(this.record(value).bandIds) ? this.record(value).bandIds as unknown[] : []), this.record(value).bandId].filter((id) => id !== undefined && id !== null).map(String))],
       characterIds: characterIds(value),
-      searchText: [id, String(value.musicId),
+      searchText: normalizeSearchText([id, String(value.musicId),
         songTitle(value as unknown as Record<string, unknown>, this.locale).text,
         resolveLocalizedText(value.musicTitle, this.locale).text,
         this.filterCatalog ? creationSongCredits(value, this.filterCatalog, this.locale).artist : resolveLocalizedText(value.bandName, this.locale).text,
-      ].join(" ").normalize("NFKC").toLocaleLowerCase(),
+      ].join(" ")),
     }));
     const bands = [...new Map(rows.map(({ value }) => [
       String(this.record(value).bandId ?? ""), resolveLocalizedText(value.bandName, this.locale).text,
@@ -600,7 +601,7 @@ export class ChartCreationLibrary extends LitElement {
     const { rows } = this.searchIndex();
     const options = this.filterOptions();
     const { band, category, attribute, gekisouTypes, gekisouMatch, minLevel, maxLevel, maxSeconds } = this.filters;
-    const query = this.query.normalize("NFKC").trim().toLocaleLowerCase();
+    const query = normalizeSearchText(this.query.trim());
     const matching = rows.flatMap((row) => {
       if ((band && !row.bandIds.includes(band)) || (category && !categoryValues(row.value).includes(category)) ||
         (attribute && String(row.value.musicType) !== attribute) ||

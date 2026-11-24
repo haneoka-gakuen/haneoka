@@ -188,7 +188,7 @@ export class AccountWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
     ]);
     const query = new URLSearchParams(location.search);
-    if (query.get("section") === "games") this.section = "games";
+    if (/\/account\/games\/?$/u.test(location.pathname) || query.get("section") === "games") this.section = "games";
     if (query.get("verified") === "1") this.message = this.label("verified", "Verified");
     if (query.get("deleted") === "1") this.message = this.label("accountDeleted", "Account deleted.");
     if (query.get("linked") === "1") this.message = this.label("accountLinked", "Account linked.");

@@ -379,12 +379,7 @@ filter-facet {
 }
 .filter-facet__search {
   width: 100%;
-  min-height: 44px;
   margin-block: 4px 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--md-sys-shape-corner-medium);
-  background: var(--md-sys-color-surface);
 }
 .filter-facet__options {
   display: grid;
@@ -416,8 +411,11 @@ filter-facet {
 }
 .filter-range {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+.filter-range:has(> .date-field) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
 }
 .filter-range--single {
   grid-template-columns: 1fr;
@@ -432,26 +430,6 @@ filter-facet {
 .filter-range--scores {
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
-}
-.filter-range.filter-range--five input {
-  padding-inline: 4px;
-  text-align: center;
-}
-.filter-range > label {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-  color: var(--md-sys-color-on-surface-variant);
-  font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) / var(--md-sys-typescale-body-small-line-height) var(--app-font);
-}
-.filter-range input {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--md-sys-color-outline);
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-surface);
 }
 
 /* The heading's artwork slot exists before the artwork does (the event

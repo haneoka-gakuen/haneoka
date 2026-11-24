@@ -3,6 +3,7 @@
 // Output: Grid chart selection, optional lower difficulties, ordinary and Gekiso Live recommendations and explicit apply/cancel.
 // Pos: [Map](../L2-2.md); shared team workspace chart chooser.
 // Effects/Dependencies: Lit modal, Box-persisted difficulty selection and lazy reads of release-pinned metadata and rates.
+import { normalizeSearchText } from "../../lib/search-text";
 import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
 import {
   catalogQueryNames,
@@ -215,7 +216,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     ],
   };
   const plan = parseCatalogQuery(state.query, queryContext);
-  const query = plan.text.normalize("NFKC").toLocaleLowerCase(host.locale);
+  const query = normalizeSearchText(plan.text, host.locale);
   const facets = plan.facets;
   const lower = [state.minLevel, ...(facets.minLevel?.map(Number) ?? [])].filter((v): v is number => v != null);
   const upper = [state.maxLevel, ...(facets.maxLevel?.map(Number) ?? [])].filter((v): v is number => v != null);
@@ -277,10 +278,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     }
     return (
       !query ||
-      `${catalog.songTitle(id)} ${catalog.songArtist(id)}`
-        .normalize("NFKC")
-        .toLocaleLowerCase(host.locale)
-        .includes(query)
+      normalizeSearchText(`${catalog.songTitle(id)} ${catalog.songArtist(id)}`, host.locale).includes(query)
     );
   });
   const visibleKeys = new Set(visible.map(chartKey));

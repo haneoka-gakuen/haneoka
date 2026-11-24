@@ -3,7 +3,10 @@
 // Output: 网站内故事制作、导入导出、云保存和发布；应用栏集中工程文件、编辑工具与发布操作，向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
 // Effects/Dependencies: 初始化后开放操作；延迟加载 iframe、账户与云 API，销毁时释放消息通道、请求和应用栏。
+import { normalizeSearchText, searchIncludes } from "../lib/search-text";
 import { LitElement, html, nothing } from "lit";
+import "@material/web/textfield/outlined-text-field.js";
+import { editorDocumentAddress, editorDocumentParams } from "../lib/editor-document-route";
 import robotoFontStyles from "@fontsource-variable/roboto/wght.css?url";
 import latinFontStyles from "@fontsource-variable/noto-sans/wght.css?url";
 import {
@@ -409,19 +412,15 @@ export class StoryCreationWorkspace extends LitElement {
     await this.run(async () => {
       await this.configure();
       if (client !== this.client) return;
-      const params = new URL(location.href).searchParams,
+      const address = new URL(location.href), params = editorDocumentParams(address),
         story = params.get("community") ?? params.get("story");
       if (story) {
         const remix = params.get("remix") === "1";
         const revision = params.has("revision") ? Number(params.get("revision")) : undefined;
         await this.openCloud(story, remix, false, client, revision);
         if (remix || revision !== undefined) {
-          const url = new URL(location.href);
-          url.searchParams.delete("story");
-          url.searchParams.delete("community");
-          url.searchParams.delete("remix");
-          url.searchParams.delete("revision");
-          history.replaceState(null, "", url);
+          for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+          history.replaceState(null, "", editorDocumentAddress(address, params));
         }
       } else if (params.get("importStory")) {
         this.progress = this.t("import");
@@ -440,10 +439,9 @@ export class StoryCreationWorkspace extends LitElement {
         });
         if (client === this.client) {
           this.state = state;
-          const url = new URL(location.href);
           for (const key of ["importStory", "importProvider", "importServer"])
-            url.searchParams.delete(key);
-          history.replaceState(null, "", url);
+            params.delete(key);
+          history.replaceState(null, "", editorDocumentAddress(address, params));
         }
       } else if (params.get("project")) {
         const state = await client.request<StudioState | null>("open-local", { id: params.get("project") });
@@ -458,12 +456,14 @@ export class StoryCreationWorkspace extends LitElement {
   }
   private rememberProject() {
     const url = new URL(location.href);
+    const params = editorDocumentParams(url);
     if (this.state?.projectId) {
-      url.searchParams.set("project", this.state.projectId);
+      params.set("project", this.state.projectId);
       for (const key of ["importStory", "importProvider", "importServer"])
-        url.searchParams.delete(key);
-    } else url.searchParams.delete("project");
-    if (url.href !== location.href) history.replaceState(null, "", url);
+        params.delete(key);
+    } else params.delete("project");
+    const target = editorDocumentAddress(url, params);
+    if (target !== url.pathname + url.search + url.hash) history.replaceState(null, "", target);
   }
   private async configure() {
     if (!this.client) return;
@@ -585,10 +585,9 @@ export class StoryCreationWorkspace extends LitElement {
     await this.run(async () => {
       if (["new", "import", "folder", "library"].includes(action)) {
         const url = new URL(location.href);
-        url.searchParams.delete("story");
-        url.searchParams.delete("community");
-        url.searchParams.delete("remix");
-        history.replaceState(null, "", url);
+        const params = editorDocumentParams(url);
+        for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+        history.replaceState(null, "", editorDocumentAddress(url, params));
       }
       const result = await this.client?.request<StudioDownload | undefined>(action);
       if (result?.kind === "download") this.download(result);
@@ -681,9 +680,9 @@ export class StoryCreationWorkspace extends LitElement {
       "effect",
       "post-effect",
     ];
-    const query = this.assetQuery.normalize("NFKC").trim().toLocaleLowerCase();
+    const query = normalizeSearchText(this.assetQuery.trim());
     const nodes = (this.assetCatalogue?.nodes ?? []).filter((node) =>
-      `${node.title} ${node.name}`.normalize("NFKC").toLocaleLowerCase().includes(query),
+      normalizeSearchText(`${node.title} ${node.name}`).includes(query),
     );
     const selected = this.assetCatalogue?.nodes.find((node) => node.id === this.assetSelected);
     const load = () => {
@@ -1047,7 +1046,7 @@ export class StoryCreationWorkspace extends LitElement {
   }
   private renderCoverPicker() {
     const images = this.images.filter((image) =>
-      image.path.toLocaleLowerCase(this.locale).includes(this.coverQuery.toLocaleLowerCase(this.locale)),
+      searchIncludes(image.path, this.coverQuery, this.locale),
     );
     return html`
       <dialog
@@ -1059,16 +1058,16 @@ export class StoryCreationWorkspace extends LitElement {
       >
         <div class="dialog__header stack">
           <h2 id="story-cover-heading">${this.t("selectCover")}</h2>
-          <label class="field">
-            ${this.t("searchAssets")}
-            <input
+            <md-outlined-text-field
+              class="is-search"
               type="search"
+              label=${this.t("searchAssets")}
+              aria-label=${this.t("searchAssets")}
               .value=${this.coverQuery}
               @input=${(event: Event) => {
-                this.coverQuery = (event.target as HTMLInputElement).value;
+                this.coverQuery = (event.currentTarget as HTMLInputElement).value;
               }}
-            />
-          </label>
+            ></md-outlined-text-field>
         </div>
         <div class="dialog__body">
           <div class="collection collection--system">
@@ -1172,7 +1171,7 @@ export class StoryCreationWorkspace extends LitElement {
         result = await openCommunityStory(id, this.lifetime.signal, remix, owner, revision);
       if (!remix && !result.story.canEdit) throw new Error("forbidden");
       if (!remix && !forceCloud && revision === undefined) {
-        const preferred = new URL(location.href).searchParams.get("project");
+        const preferred = editorDocumentParams(new URL(location.href)).get("project");
         const candidates = await findStoryDrafts(id, owner);
         candidates.sort((left, right) => Number(right.projectId === preferred) - Number(left.projectId === preferred));
         for (const candidate of candidates) {
@@ -1274,12 +1273,10 @@ export class StoryCreationWorkspace extends LitElement {
         this.cloud = undefined;
         await writeStoryDraft(copy.id, this.draft);
         const url = new URL(location.href);
-        url.searchParams.delete("story");
-        url.searchParams.delete("community");
-        url.searchParams.delete("remix");
-        url.searchParams.delete("revision");
-        url.searchParams.set("project", copy.id);
-        history.replaceState(null, "", url);
+        const params = editorDocumentParams(url);
+        for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+        params.set("project", copy.id);
+        history.replaceState(null, "", editorDocumentAddress(url, params));
         await this.saveDraft();
         snackbar(this.t("saved"));
       } finally {

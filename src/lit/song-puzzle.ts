@@ -3,6 +3,7 @@
 // Output: 华容道工作区视图、应用栏操作与状态。
 // Pos: [Map](L2-2.md)；玩家棋盘、解法回放与开局来源的持有者。
 // Effects/Dependencies: 启停求解 Worker 与回放定时器，监听窗口快捷键，写入应用栏槽；按需加载截图导入。
+import { normalizeSearchText } from "../lib/search-text";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { disambiguateTitles } from "../lib/title-disambiguation";
 import { defaultJapaneseSongTitles, japaneseSongTitles, observeSongDisplay, songTitle } from "../lib/song-display";
@@ -446,16 +447,13 @@ export class SongPuzzle extends LitElement {
     this.startBoard(event.detail.tiles);
   }
   private renderSongPicker() {
-    const query = this.query.normalize("NFKC").toLocaleLowerCase(this.locale).trim();
+    const query = normalizeSearchText(this.query, this.locale).trim();
     const visible = this.songs.filter((song) => isReleasedContent(song.row));
     const filtered = visible.filter(
       (song) =>
         (!this.pickerBand || localizedText(song.band, this.locale) === this.pickerBand) &&
         (!query ||
-          `${song.id} ${song.name} ${localizedText(song.band, this.locale)} ${localizedText(song.artist, this.locale)}`
-            .normalize("NFKC")
-            .toLocaleLowerCase(this.locale)
-            .includes(query)),
+          normalizeSearchText(`${song.id} ${song.name} ${localizedText(song.band, this.locale)} ${localizedText(song.artist, this.locale)}`, this.locale).includes(query)),
     );
     const bands = [...new Set(visible.map((song) => localizedText(song.band, this.locale)).filter(Boolean))];
     return selectionPane({

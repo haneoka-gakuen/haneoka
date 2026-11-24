@@ -2,6 +2,7 @@ import { canonicalEntityTarget, type CommunityEntityTarget } from "./community-e
 import { publishedCommunityStory } from "./community-stories";
 import { communitySonolusRows } from "./community-charts";
 import { publicPlaylistTitle } from "./community-playlists";
+import { playlistPath } from "../src/lib/playlists/static-routing";
 import { communityStoryPath } from "../src/lib/community-story-route";
 import { communityChartPath } from "../src/lib/community-chart-route";
 import { publicationFields } from "../src/lib/content-publication";
@@ -405,7 +406,7 @@ export function createCommunityEntityResolver(
       const locator = {
         routeKind: target.entityType,
         routeId: target.originalId,
-        detailPath: `/${locale}/community/playlists/?${new URLSearchParams({ playlist: target.originalId })}`,
+        detailPath: playlistPath(locale, target.originalId),
       };
       return {
         type: target.entityType, originalId: target.originalId, titles: { [locale]: title },

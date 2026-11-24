@@ -20,6 +20,7 @@ import { announcementPageData } from "./announcement-page-data";
 import { skillCatalogPayload, skillPageId } from "./skill-catalog";
 import { playlistPageData } from "./playlist-page-data";
 import { deserializeSongLibrary, officialPlaylists } from "../lib/playlists/library";
+import { playlistPath } from "../lib/playlists/static-routing";
 
 const ORIGIN = "https://haneoka.org";
 const LIMIT = 45_000;
@@ -69,7 +70,7 @@ async function buildDocuments(): Promise<SitemapDocument[]> {
   const playlists = await playlistPageData();
   for (const variant of Object.values(playlists.variants)) {
     for (const playlist of officialPlaylists(deserializeSongLibrary(variant), playlists.gamePlaylists)) {
-      for (const locale of LOCALES) add(locale, `/${locale}/community/playlists/?${new URLSearchParams({ playlist: playlist.id })}`);
+      for (const locale of LOCALES) add(locale, playlistPath(locale, playlist.id));
     }
   }
   return LOCALES.flatMap((locale) => {

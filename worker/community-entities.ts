@@ -1,3 +1,4 @@
+import { searchGlob } from "../src/lib/search-text";
 import { hasUserCapability } from "../src/lib/user-roles";
 
 import { measureCommunityRead } from "./community-read-timing";
@@ -354,8 +355,8 @@ async function entityFeed(request: Request, env: Env, url: URL, resolver: Commun
   const q = url.searchParams.get("q")?.normalize("NFKC").trim();
   if (q) {
     if ([...q].length > 100) return error(request, 400, "invalid_query", "Search is too long");
-    conditions.push("comment.body LIKE ? ESCAPE '\\'");
-    values.push(`%${q.replace(/[\\%_]/gu, "\\$&")}%`);
+    conditions.push("LOWER(comment.body) GLOB ?");
+    values.push(searchGlob(q));
   }
   const forumId = url.searchParams.get("forumId");
   if (forumId) {

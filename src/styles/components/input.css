@@ -9,7 +9,8 @@
 
 /* ---------- Material Web hosts ---------- */
 md-outlined-select,
-md-outlined-text-field {
+md-outlined-text-field,
+md-outlined-field.date-field {
   --md-outlined-field-container-shape: var(--md-sys-shape-corner-extra-small);
   --md-outlined-field-outline-color: var(--md-sys-color-outline);
   --md-outlined-field-focus-outline-color: var(--md-sys-color-primary);
@@ -26,6 +27,23 @@ md-outlined-select {
 md-outlined-text-field.number-field {
   min-inline-size: 0;
   inline-size: 100%;
+}
+md-outlined-field.date-field {
+  display: block;
+  min-inline-size: 0;
+  min-block-size: 56px;
+}
+.date-field > input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 56px;
+  padding: 0 16px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
+    var(--md-sys-typescale-body-large-line-height) var(--app-font);
 }
 /* Before its definition loads, a Material Web host is an unknown element
  * that lays out its light-DOM children (option labels, slotted icons) as

@@ -4,6 +4,7 @@
 // Pos: [Map](L2-2.md); semantic document projection for frontend finalization.
 // Effects/Dependencies: Parses public main content for Markdown and excludes page-data scripts.
 import { searchCategory } from "../../src/lib/search-categories.ts";
+import { foldSearchGlyphs } from "../../src/lib/search-text.ts";
 import { stripDocumentVersion } from "../../src/lib/document-address.ts";
 import { isSiteOrigin, CANONICAL_ORIGIN } from "../../src/lib/site-origin.ts";
 import { isPublicReleaseServer } from "../../src/lib/temporary-public-routing.ts";
@@ -130,8 +131,20 @@ export function withSearchMetadata(html, sourcePath) {
     copied = region.to;
   }
   remainder += document.slice(copied);
-  if (/data-pagefind-(?:meta|filter|sort|body|weight)\b/iu.test(remainder)) return document;
-  return `<!doctype html>${root[0]}${head[0]}<body>${shellHeading?.[0] || ""}${document.slice(main.index, end + 7)}</body></html>`;
+  if (/data-pagefind-(?:meta|filter|sort|body|weight)\b/iu.test(remainder))
+    return document.slice(0, main.index) + foldSearchBody(document.slice(main.index, end + 7)) + document.slice(end + 7);
+  return `<!doctype html>${root[0]}${head[0]}<body>${shellHeading?.[0] || ""}${foldSearchBody(document.slice(main.index, end + 7))}</body></html>`;
+}
+
+function foldSearchBody(html) {
+  if (!/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(html)) return html;
+  const fragment = parseFragment(html);
+  const fold = (node) => {
+    if (node.nodeName === "#text") node.value = foldSearchGlyphs(node.value);
+    if (!["script", "style"].includes(node.tagName)) node.childNodes?.forEach(fold);
+  };
+  fold(fragment);
+  return serialize(fragment);
 }
 
 const attrsOf = (node) => Object.fromEntries((node.attrs || []).map(({ name, value }) => [name, value]));

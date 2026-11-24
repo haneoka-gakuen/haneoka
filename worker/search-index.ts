@@ -4,7 +4,7 @@
 // Pos: [Map](L2.md); catalogue search. Community posts stay on the access-aware D1 route.
 // Effects/Dependencies: Reads catalogues; writes only the catalog_search tables, and only when a release changes.
 import { localizedFallbacks } from "../src/lib/localized-text";
-import HAN_FOLD from "./search-han-fold.json";
+import { foldSearchCharacter } from "../src/lib/search-text";
 
 const SEARCH_PATH = "/api/v1/search";
 const SERVERS = ["jp", "intl"] as const;
@@ -34,17 +34,7 @@ interface SearchDocument {
   texts: string[];
 }
 
-/** Simplified, traditional and shinjitai forms of one character share an index form, as do both kana. */
-const HAN = new Map<string, string>();
-{
-  const pairs = [...(HAN_FOLD as string)];
-  for (let index = 0; index + 1 < pairs.length; index += 2) HAN.set(pairs[index]!, pairs[index + 1]!);
-}
-const foldCharacter = (character: string) => {
-  const code = character.codePointAt(0)!;
-  if (code >= 0x3041 && code <= 0x3096) return String.fromCodePoint(code + 0x60);
-  return HAN.get(character) ?? character.toLowerCase();
-};
+const foldCharacter = (character: string) => foldSearchCharacter(character).toLowerCase();
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 /** FTS5's tokenizer has no CJK segmentation, so each such character becomes its own token. */
 const indexText = (value: string) =>

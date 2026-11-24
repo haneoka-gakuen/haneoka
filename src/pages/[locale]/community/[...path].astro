@@ -6,15 +6,15 @@ import { LOCALES, type Locale } from "../../../i18n/locales";
 
 export function getStaticPaths() {
   return staticBuildPaths("src/pages/[locale]/community/[...path].astro", LOCALES.flatMap((locale) =>
-    [undefined, "feeds", "latest", "following", "mine", "bookmarks", "notifications", "activity", "tags", "playlists", "forums"].map((path) => ({
+    [undefined, "feeds", "latest", "following", "mine", "bookmarks", "notifications", "activity", "tags", "playlists", "playlists/_", "forums"].map((path) => ({
       params: { locale, path },
-      props: { locale, path },
+      props: path === "playlists/_" ? { locale, path: "playlists", playlistShell: true } : { locale, path },
     })),
   ));
 }
-const { locale, path } = Astro.props as { locale: Locale; path?: string };
+const { locale, path, playlistShell } = Astro.props as { locale: Locale; path?: string; playlistShell?: boolean };
 ---
-{path ? <CommunityDocument locale={locale} path={path} /> : <HubDocument id="community" locale={locale} />}
+{path ? <CommunityDocument locale={locale} path={path} playlistShell={playlistShell} /> : <HubDocument id="community" locale={locale} />}
 <script>
   const preserveFeedQuery = () => {
     if (!/^\/[^/]+\/community\/?$/u.test(location.pathname)) return;

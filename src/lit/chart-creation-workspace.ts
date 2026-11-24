@@ -5,6 +5,7 @@
 // Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何与路径采样索引随原生谱面及节奏映射缓存；静态谱面与指针分层绘制，命中投影随视口缓存，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
+import { editorDocumentAddress, editorDocumentParams } from "../lib/editor-document-route";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -634,7 +635,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.rebuildPreview(draft.seconds);
       }
       this.documents = await this.store.list();
-      const cloudId = new URL(location.href).searchParams.get("community");
+      const cloudId = editorDocumentParams(new URL(location.href)).get("community");
       if (cloudId && /^[0-9a-f-]{36}$/u.test(cloudId)) await this.openCommunity(cloudId, signal);
       else if (!this.hasProject) {
         const recent = localStorage.getItem("haneoka-chart-last-project");
@@ -644,14 +645,14 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private async openLinkedBestdoriChart() {
     if (!this.isConnected) return;
-    const url = new URL(location.href), params = url.searchParams;
+    const url = new URL(location.href), params = editorDocumentParams(url);
     const region = params.get("region") ?? "jp", songId = params.get("songId") ?? "", difficulty = params.get("difficulty") ?? "";
     if (params.get("provider") !== "bestdori" || !isBestdoriServer(region) || !/^[1-9]\d{0,8}$/.test(songId) || !["easy", "normal", "hard", "expert", "special"].includes(difficulty)) return;
     await this.updateComplete;
     const library = this.querySelector<ChartCreationLibrary>("chart-creation-library");
     if (!library) return;
     for (const key of ["provider", "region", "songId", "difficulty"]) params.delete(key);
-    history.replaceState(history.state, "", url);
+    history.replaceState(history.state, "", editorDocumentAddress(url, params));
     if (this.narrow) this.closePanels();
     await library.show("bestdori", undefined, { region, songId, difficulty });
   }
@@ -1197,7 +1198,9 @@ export class ChartCreationWorkspace extends LitElement {
     });
   }
   private async openCommunity(id: string, signal: AbortSignal) {
-    const requestedRevision = Number(new URL(location.href).searchParams.get("revision"));
+    const address = new URL(location.href);
+    const params = editorDocumentParams(address);
+    const requestedRevision = Number(params.get("revision"));
     const result = await loadCommunityChart(id, signal, true, Number.isSafeInteger(requestedRevision) && requestedRevision > 0 ? requestedRevision : undefined);
     const response = await fetch(result.document.audioUrl, { signal, credentials: "same-origin" });
     if (!response.ok) throw new Error("audio_missing");
@@ -1221,7 +1224,9 @@ export class ChartCreationWorkspace extends LitElement {
       await saveChartCloudDraft(this.projectId, { ...publication, audio: publication.audio?.kind === "server" ? publication.audio : null, cover: publication.cover?.kind === "server" ? publication.cover : null, ...(coverFile ? { coverFile } : {}), upstreamId: id });
     }
     this.dirty = true; this.windowStart = 0; this.rebuildPreview(0); await this.save();
-    const url = new URL(location.href); url.searchParams.delete("community"); history.replaceState(history.state, "", url);
+    params.delete("community");
+    params.delete("revision");
+    history.replaceState(history.state, "", editorDocumentAddress(address, params));
   }
   private async open(id: string, revision?: number) {
     const signal = this.controller!.signal;

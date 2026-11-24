@@ -51,9 +51,10 @@ import {
 } from "../src/lib/static-documents.ts";
 import { legacyProviderRedirectTarget, providerEntityFromUrl, rewriteProviderPlayerDocument } from "../src/lib/provider-entity-routing.ts";
 import { providerEntityHtmlPath } from "../src/lib/provider-entity-data.ts";
-import { staticViewFromUrl } from "../src/lib/static-view-routing.ts";
-import { assetStaticDocumentFromUrl } from "../src/lib/asset-static-routing.ts";
-import { playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing.ts";
+import { legacyStaticViewRedirectTarget, staticViewFromUrl } from "../src/lib/static-view-routing.ts";
+import { assetBrowserLocation, assetStaticDocumentFromUrl, assetStaticDocumentPath, legacyAssetRedirectTarget } from "../src/lib/asset-static-routing.ts";
+import { legacyPlaylistRedirectTarget, playlistShellPath, playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing.ts";
+import { editorShellPath, legacyEditorRedirectTarget } from "../src/lib/editor-document-route.ts";
 import { isCommunityForumDetailPath, restoreCommunityForumDetailShell } from "../src/lib/community-forum-document.ts";
 import { eventArtworkIndex } from "../src/lib/event-artwork-index.ts";
 import {
@@ -1399,18 +1400,23 @@ function localReleaseRegistry(): JsonObject {
 
 function servePackedStaticDocument(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
   const provider = providerEntityFromUrl(url);
-  const corePath = staticDocumentLookupPath(staticViewFromUrl(url) || url.pathname);
-  let pathname = assetStaticDocumentFromUrl(url) || playlistStaticDocumentFromUrl(url) ||
+  const playlist = playlistStaticDocumentFromUrl(url);
+  const view = staticViewFromUrl(url);
+  const corePath = staticDocumentLookupPath(view || url.pathname);
+  let pathname = assetStaticDocumentFromUrl(url) || playlist ||
     (provider && !provider.view ? providerEntityHtmlPath(provider) : corePath);
   const shared = /^\/provider-static\/data\/([a-f0-9]{64})\.json$/u.exec(url.pathname);
-  const redirect = !url.pathname.endsWith("/") && !communityChartShellPath(url.pathname) && !communityStoryShellPath(url.pathname) && !!coreStaticDocumentPath(`${url.pathname}/`);
-  if (redirect) pathname = coreStaticDocumentPath(`${url.pathname}/`);
+  const redirect = !url.pathname.endsWith("/") && !communityChartShellPath(url.pathname) && !communityStoryShellPath(url.pathname) && !playlistShellPath(url.pathname) && !editorShellPath(url.pathname) && !!coreStaticDocumentPath(`${url.pathname}/`);
+  if (redirect) pathname = corePath || coreStaticDocumentPath(`${url.pathname}/`);
   if (!pathname && !shared) return false;
   let record: StaticDocumentRecord | undefined;
   if (pathname) {
     const candidates = [pathname];
-    if (provider && !redirect && corePath && corePath !== pathname) candidates.push(corePath);
-    for (const candidate of candidates) {
+    if ((provider || playlist) && !redirect && corePath && corePath !== pathname) candidates.push(corePath);
+    const location = assetBrowserLocation(url);
+    if (location && !redirect) for (const parts of [location.path, []])
+      candidates.push(assetStaticDocumentPath(location.server, location.locale, parts));
+    for (const candidate of new Set(candidates)) {
       const indexFile = safeFile(DIST, `provider-static/index/${staticDocumentShard(candidate)}.json`);
       if (!indexFile) continue;
       const index = JSON.parse(fs.readFileSync(indexFile, "utf8")) as {
@@ -1650,6 +1656,10 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     legacyCommunityStoryRedirectTarget(url.pathname, url.search) ??
     legacyCommunityChartRedirectTarget(url.pathname, url.search) ??
     legacyProviderRedirectTarget(url.pathname, url.search) ??
+    legacyPlaylistRedirectTarget(url.pathname, url.search) ??
+    legacyStaticViewRedirectTarget(url.pathname, url.search) ??
+    legacyAssetRedirectTarget(url.pathname, url.search) ??
+    legacyEditorRedirectTarget(url.pathname, url.search) ??
     legacyEntityRedirectTarget(url.pathname, url.search) ??
     legacyCollectionRedirectTarget(url.pathname, url.search) ??
     legacyHomeRedirectTarget(url.pathname, url.search);

@@ -4,7 +4,7 @@
 // Pos: [Map](L2-2.md)；站点与服务共享的资源路由契约。
 // Effects/Dependencies: 依赖基础 locale 定义；路径构造／解析本身不发请求。
 import { isLocale, type Locale } from "@haneoka/i18n";
-import { englishInterfacePath } from "../i18n/interface-route.ts";
+import { englishInterfacePath, interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
 import { CONTENT_SOURCE_IDS, isContentSourceId } from "./content-sources.ts";
 import { communityStoryPath, legacyCommunityStoryRedirectTarget } from "./community-story-route.ts";
 import { communityChartPath, legacyCommunityChartRedirectTarget } from "./community-chart-route.ts";
@@ -89,13 +89,20 @@ export const ANON_TOKYO_MODES = [
 ] as const;
 export type AnonTokyoMode = (typeof ANON_TOKYO_MODES)[number];
 
+export const CHARACTER_DETAIL_SECTIONS = ["profile", "cards", "stamps", "voices", "story", "friendships", "missions", "live2d", "songs"] as const;
+export type CharacterDetailSection = (typeof CHARACTER_DETAIL_SECTIONS)[number];
+export function isCharacterDetailSection(value: unknown): value is CharacterDetailSection {
+  return typeof value === "string" && (CHARACTER_DETAIL_SECTIONS as readonly string[]).includes(value);
+}
+
 export interface ResourceRoute {
   server: ReleaseServer;
   locale: Locale;
   kind: ResourceKind;
   id?: string;
   /** A child view rendered below an entity's canonical resource page. */
-  view?: "chart" | "ranking";
+  view?: "chart" | "ranking" | "story";
+  section?: CharacterDetailSection;
 }
 
 export interface EntityLink {
@@ -131,13 +138,14 @@ const isResourceId = (value: string): boolean =>
   value.length > 0 && value !== "." && value !== ".." && !/[\\/\u0000-\u001f\u007f]/u.test(value);
 
 /** Public resource addresses contain identity; community charts are shared across servers. */
-export function resourcePath({ server, locale, kind, id }: ResourceRoute): string {
+export function resourcePath({ server, locale, kind, id, section, view }: ResourceRoute): string {
   if (!isContentSourceId(server) || !isLocale(locale) || !isResourceKind(kind))
     throw new TypeError("Invalid resource route");
   if (id !== undefined && !isResourceId(id)) throw new TypeError("Invalid resource identity");
   if (kind === "community-stories") return communityStoryPath(server, locale, id);
   if (kind === "charts") return communityChartPath(server, locale, id);
-  return `/${server}/${locale}/${kind}/${id === undefined ? "" : `${encodeURIComponent(id)}/`}`;
+  const child = kind === "stories" && view === "story" ? "story" : section !== "profile" ? section : undefined;
+  return `/${server}/${locale}/${kind}/${id === undefined ? "" : `${encodeURIComponent(id)}/`}${child ? `${child}/` : ""}`;
 }
 
 export function homePath(server: ReleaseServer, locale: Locale): string {
@@ -191,12 +199,14 @@ export function parseResourceRoute(
   const [server, locale, kind, encodedId, child] = parts;
   if (!isReleaseServer(server, sources) || !isLocale(locale) || !isResourceKind(kind)) return undefined;
   if (kind === "events" && encodedId === "tracker") return undefined;
-  if (parts.length === 5 && !(kind === "songs" && (child === "chart" || child === "ranking"))) return undefined;
+  const section = kind === "characters" && isCharacterDetailSection(child) ? child : undefined;
+  const view = kind === "songs" && (child === "chart" || child === "ranking") || kind === "stories" && child === "story" ? child : undefined;
+  if (parts.length === 5 && !section && !view) return undefined;
   if (encodedId === undefined) return { server, locale, kind };
   try {
     const id = decodeURIComponent(encodedId);
     return isResourceId(id)
-      ? { server, locale, kind, id, ...(child ? { view: child as "chart" | "ranking" } : {}) }
+      ? { server, locale, kind, id, ...(section ? { section } : {}), ...(view ? { view } : {}) }
       : undefined;
   } catch {
     return undefined;
@@ -301,15 +311,32 @@ export function legacyEntityRoute(
 export function legacyEntityRedirectTarget(pathname: string, search = ""): string | undefined {
   const collection = parseResourceRoute(pathname);
   const param = collection ? selectionParamForKind(collection.kind) : undefined;
-  const selected = param ? new URLSearchParams(search).get(param) : undefined;
+  const params = new URLSearchParams(search);
+  const selected = param ? params.get(param) : undefined;
+  const mode = params.get("mode");
+  if (collection?.kind === "stories" && !collection.id && !selected && isStoryMode(mode)) {
+    params.delete("mode");
+    const target = storyCollectionPath({ ...collection, mode });
+    const language = interfaceLanguageFromPath(pathname);
+    return (language ? interfacePath(target, language.value) : target) + (params.size ? `?${params}` : "");
+  }
+  const story = collection?.kind === "stories" && collection.id && (params.has("mode") || params.get("playback") === "play")
+    ? collection : undefined;
   const route =
-    collection && !collection.id && selected && isResourceId(selected)
+    story ?? (collection && !collection.id && selected && isResourceId(selected)
       ? { ...collection, id: selected }
-      : legacyEntityRoute(pathname, search);
+      : legacyEntityRoute(pathname, search));
   if (!route) return undefined;
   const query = new URLSearchParams(queryStringWithoutSelection(search, route.kind));
   query.delete("server");
-  return `${resourcePath(route)}${query.size ? `?${query}` : ""}`;
+  if (route.kind === "stories") {
+    if (query.get("playback") === "play") route.view = "story";
+    query.delete("mode");
+    query.delete("playback");
+  }
+  const target = resourcePath(route);
+  const language = interfaceLanguageFromPath(pathname);
+  return `${language ? interfacePath(target, language.value) : target}${query.size ? `?${query}` : ""}`;
 }
 
 /** Map logical catalogue destinations to the selected server's collections. */
@@ -529,6 +556,7 @@ export function entityHref(options: {
   locale: Locale;
   kind: ResourceKind;
   id: string;
+  view?: "story";
   returnTo?: string;
   query?: string | URLSearchParams | Readonly<Record<string, string>>;
 }): string {

@@ -3,12 +3,14 @@
 // Output: 默认社区推荐排序、三种集合视图、独立滚动双栏详情／响应式评论、推荐难度、编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
+import { normalizeSearchText } from "../lib/search-text";
 import { formatDocumentTitle } from "../lib/document-title";
 import { sonolusServerLink } from "../config/sonolus";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import { LitElement, html, nothing } from "lit";
 import { parseCommunityChartDocument } from "../lib/community-chart-route";
+import { editorDocumentPath } from "../lib/editor-document-route";
 import { readReleaseServer } from "../lib/release-server";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { chartRequest, CHART_API } from "../lib/chart-creation/community";
@@ -416,7 +418,7 @@ export class CommunityCharts extends LitElement {
               <a
                 class="icon-button"
                 data-astro-reload
-                href=${`/${this.locale}/chart-editor/create/?community=${row.id}`}
+                href=${editorDocumentPath(this.locale, "chart-editor", new URLSearchParams({ community: row.id }))}
                 aria-label=${this.t(row.canEdit ? "edit" : "remixAction")}
               >
                 ${row.canEdit ? icon("edit") : icon("content_copy")}
@@ -539,7 +541,7 @@ export class CommunityCharts extends LitElement {
                                   <a
                                     class="list-item list-item--two-line list-item--interactive"
                                     data-astro-reload
-                                    href=${`/${this.locale}/chart-editor/create/?community=${row.id}&revision=${version.revision}`}
+                                    href=${editorDocumentPath(this.locale, "chart-editor", new URLSearchParams({ community: row.id, revision: String(version.revision) }))}
                                   >
                                     <span class="list-item__body">
                                       <strong class="list-item__headline">
@@ -679,13 +681,10 @@ export class CommunityCharts extends LitElement {
     `;
   }
   private matchingCharts() {
-    const q = this.query.normalize("NFKC").trim().toLocaleLowerCase();
+    const q = normalizeSearchText(this.query.trim());
     return this.items.filter(
       (row) =>
-        `${row.title} ${row.artist} ${row.charter} ${row.ownerName}`
-          .normalize("NFKC")
-          .toLocaleLowerCase()
-          .includes(q) &&
+        normalizeSearchText(`${row.title} ${row.artist} ${row.charter} ${row.ownerName}`).includes(q) &&
         (!this.difficulties.length || this.difficulties.includes(row.difficulty)),
     );
   }

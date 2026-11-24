@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
@@ -1277,7 +1278,7 @@ export class Live2DWorkspace extends LitElement {
     return items.filter((item) => item.count > 0);
   }
   private filteredModels() {
-    const needle = this.query.trim().normalize("NFKC").toLowerCase();
+    const needle = normalizeSearchText(this.query.trim());
     const direction = this.order === "asc" ? 1 : -1;
     let collator = modelCollators.get(this.locale);
     if (!collator) modelCollators.set(this.locale, collator = new Intl.Collator(this.locale, { numeric: true }));
@@ -1296,10 +1297,7 @@ export class Live2DWorkspace extends LitElement {
         if (this.typeFilter && String(model.modelType || "") !== this.typeFilter) return false;
         return (
           !needle ||
-          `${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${String(model.characterKey || "")} ${this.bandName(model)}`
-            .normalize("NFKC")
-            .toLowerCase()
-            .includes(needle)
+          normalizeSearchText(`${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${String(model.characterKey || "")} ${this.bandName(model)}`).includes(needle)
         );
       })
       .sort((left, right) => {

@@ -3,6 +3,7 @@
 // Output: Editable chart marks/difficulty counts, read-only totals, roster ratings and localized exports.
 // Pos: [Map](L2-2.md); song-progress workspace and roster-rating guidance.
 // Effects/Dependencies: Shares Box storage, lazy native roster searches, local save decoding and the app bridge.
+import { searchIncludes } from "../lib/search-text";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { live } from "lit/directives/live.js";
@@ -1155,8 +1156,8 @@ export class SongProgress extends LitElement {
       .filter(
         (chart) =>
           !this.query ||
-          chart.title.toLowerCase().includes(this.query) ||
-          chart.artist.toLowerCase().includes(this.query),
+          searchIncludes(chart.title, this.query) ||
+          searchIncludes(chart.artist, this.query),
       )
       .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId);
     const present = DIFFICULTIES.map((name, index) => ({ name, value: index === 4 ? 5 : index })).filter(({ value }) =>

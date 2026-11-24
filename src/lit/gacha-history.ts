@@ -3,6 +3,8 @@
 // Output: 账号概览、卡池、收获、长龙、明细与趋势及其图片导出。
 // Pos: [Map](L2-2.md)；抽卡历史展示与资料边界。
 // Effects/Dependencies: light DOM 与 SSR 共用；消费共享分析／图表／卡牌，导入及云状态由工作区持有。
+import { dateField } from "./ui/date-field";
+import { normalizeSearchText } from "../lib/search-text";
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { cardRarityName, cardRarityRank } from "../lib/card-rarity";
 import type { GachaTargetProgress } from "@haneoka/game-data-exporter/gacha-history-points";
@@ -404,19 +406,15 @@ export class GachaHistory extends LitElement {
     this.to = "";
   }
   private prizes(batch: GachaHistoryBatch) {
-    const query = this.query.normalize("NFKC").toLocaleLowerCase(this.locale).trim();
-    const poolMatches = this.poolMap
-      .get(batch.poolId)
-      ?.name.normalize("NFKC")
-      .toLocaleLowerCase(this.locale)
-      .includes(query);
+    const query = normalizeSearchText(this.query, this.locale).trim();
+    const poolMatches = normalizeSearchText(this.poolMap.get(batch.poolId)?.name || "", this.locale).includes(query);
     return batch.prizes.filter(
       (prize) =>
         (!this.filters.pickup.length ||
           this.filters.pickup.includes(prize.pickup == null ? "unknown" : prize.pickup ? "yes" : "no")) &&
         (!this.filters.kind.length || this.filters.kind.includes(prize.kind)) &&
         (!this.filters.rarity.length || this.filters.rarity.includes(String(prize.rarity))) &&
-        (!query || poolMatches || prize.name.normalize("NFKC").toLocaleLowerCase(this.locale).includes(query)),
+        (!query || poolMatches || normalizeSearchText(prize.name, this.locale).includes(query)),
     );
   }
   /** Pools by their period, newest first; a pool without one by its latest draw. */
@@ -701,30 +699,10 @@ export class GachaHistory extends LitElement {
             body: html`
               ${(Object.keys(this.filters) as Axis[]).map((axis) => facet(this.t(axis), this.locale, options(axis), this.filters[axis], (value) => this.toggle(axis, value)))}
               <div class="stack">
-                <label class="field">
-                  <span>${this.t("from")}</span>
-                  <input
-                    type="date"
-                    ?disabled=${!accountBatches.some((batch) => batch.pulledAt)}
-                    .value=${this.from}
-                    max=${this.to || nothing}
-                    @change=${(e: Event) => {
-                      this.from = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </label>
-                <label class="field">
-                  <span>${this.t("to")}</span>
-                  <input
-                    type="date"
-                    ?disabled=${!accountBatches.some((batch) => batch.pulledAt)}
-                    .value=${this.to}
-                    min=${this.from || nothing}
-                    @change=${(e: Event) => {
-                      this.to = (e.target as HTMLInputElement).value;
-                    }}
-                  />
-                </label>
+                ${dateField({ label: this.t("from"), value: this.from, max: this.to,
+                  disabled: !accountBatches.some((batch) => batch.pulledAt), onChange: (value) => { this.from = value; } })}
+                ${dateField({ label: this.t("to"), value: this.to, min: this.from,
+                  disabled: !accountBatches.some((batch) => batch.pulledAt), onChange: (value) => { this.to = value; } })}
               </div>
             `,
           },

@@ -1,4 +1,4 @@
-const pattern = (value: string) => `%${value.replace(/[\\%_]/gu, "\\$&")}%`;
+import { searchGlob } from "../src/lib/search-text";
 
 /** Bounded plain-language AND matching; every value remains a bound SQL parameter. */
 export function communitySearchTerms(query: string): string[] {
@@ -9,17 +9,20 @@ export function communitySearchTerms(query: string): string[] {
 export function communitySearchCondition(query: string) {
   const terms = communitySearchTerms(query);
   return {
-    sql: terms.map(() => "(post.title LIKE ? ESCAPE '\\' OR post.body LIKE ? ESCAPE '\\')").join(" AND "),
-    values: terms.flatMap((term) => [pattern(term), pattern(term)]),
+    sql: terms.map(() => "(LOWER(post.title) GLOB ? OR LOWER(post.body) GLOB ?)").join(" AND "),
+    values: terms.flatMap((term) => {
+      const pattern = searchGlob(term);
+      return [pattern, pattern];
+    }),
   };
 }
 
 export function communitySearchScore(query: string) {
   const terms = communitySearchTerms(query);
   return {
-    sql: `CASE WHEN LOWER(matched.title)=LOWER(?) THEN 3
-      WHEN matched.title LIKE ? ESCAPE '\\' THEN 2
-      WHEN ${terms.map(() => "matched.title LIKE ? ESCAPE '\\'").join(" AND ")} THEN 1 ELSE 0 END`,
-    values: [query.trim(), pattern(query.trim()), ...terms.map(pattern)],
+    sql: `CASE WHEN LOWER(matched.title) GLOB ? THEN 3
+      WHEN LOWER(matched.title) GLOB ? THEN 2
+      WHEN ${terms.map(() => "LOWER(matched.title) GLOB ?").join(" AND ")} THEN 1 ELSE 0 END`,
+    values: [searchGlob(query.trim(), true), searchGlob(query.trim()), ...terms.map((term) => searchGlob(term))],
   };
 }
