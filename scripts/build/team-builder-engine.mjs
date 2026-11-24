@@ -38,6 +38,9 @@ execFileSync(
     manifest,
     "--target-dir",
     target,
+    "--",
+    "-C",
+    "strip=symbols",
   ],
   { stdio: "inherit" },
 );

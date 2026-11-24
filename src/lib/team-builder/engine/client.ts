@@ -103,6 +103,18 @@ function workerEffect(row: DataRow): DataRow {
   };
 }
 
+// Same order as SkillEffect::from_skill_row in the native engine.
+const workerSkillFields = [
+  "id", "level", "skillTriggerType", "effectExecuteLimitCount", "effectExecuteLimitResetConditionGroup",
+  "skillEffectType", "effectValue", "activationTimeSecond", "skillConditionGroup", "skillTriggerConditionGroup",
+  "skillReleaseConditionGroup", "skillCumulativeConditionID", "skillTargetIDs", "effectLimitCount", "maxEffectValue",
+] as const;
+
+function workerSkillRow(row: DataRow) {
+  const effect = workerEffect(row);
+  return workerSkillFields.map(field => effect[field]);
+}
+
 function workerData(data: TeamBuilderData): Uint8Array {
   const cards = (rows: TeamBuilderData["members"] | TeamBuilderData["snapshots"]) => Object.fromEntries(Object.entries(rows).map(([id, row]) => {
     const { name: _name, image: _image, catalogMetadata: metadata, ...rules } = row;
@@ -114,7 +126,7 @@ function workerData(data: TeamBuilderData): Uint8Array {
     Object.fromEntries(Object.entries(definitions).map(([id, definition]) => [id, {
       gekisouMissionType: definition.gekisouMissionType,
       categories: definition.categories,
-      effects: dataRows(definition.effects).map(workerEffect),
+      effects: dataRows(definition.effects).map(workerSkillRow),
     }])),
   ]));
   const bandItems = Object.fromEntries(Object.entries(data.bandItems).map(([id, row]) => [id, {
@@ -147,7 +159,12 @@ function workerData(data: TeamBuilderData): Uint8Array {
   }));
   const songs = Object.fromEntries(Object.entries(data.songs).map(([id, row]) => {
     const { musicTitle: _title, bandName: _band, jacketThumbUrl: _jacket, ...rules } = row;
-    return [id, rules];
+    const difficulty = Array.isArray(row.difficulty)
+      ? dataRows(row.difficulty).map(({ difficulty, scoreId, playLevel, displayLevel, noteCount, file }) => ({
+        difficulty, scoreId, playLevel, displayLevel, noteCount, file,
+      }))
+      : row.difficulty;
+    return [id, { ...rules, difficulty }];
   }));
   return new TextEncoder().encode(JSON.stringify({
     ...data, members: cards(data.members), snapshots: cards(data.snapshots), skills, bandItems, events, songs,
