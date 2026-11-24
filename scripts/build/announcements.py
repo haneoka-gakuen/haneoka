@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from PIL import Image
 
-from core.config import PROJECT_ROOT, AnnouncementRegion, ServerConfig, load_server_config
+from core.config import AnnouncementRegion, ServerConfig, load_server_config
 from core.manifests import read_json, write_json
 from core.paths import build_layout, source_layout
 from ingest.api_egress import run_api_curl
@@ -583,11 +583,6 @@ def merge_announcement_archive(
     }
 
 
-def saved_announcement_archive(server: str) -> dict[str, Any] | None:
-    path = PROJECT_ROOT / "archive" / "announcements" / f"{server}.json"
-    return read_json(path) if path.exists() else None
-
-
 def _trusted_bootstrap_urls(value: str, *, allow_path: bool, host_suffixes: tuple[str, ...]) -> tuple[str, ...]:
     urls: list[str] = []
     for candidate in value.split("|"):
@@ -945,11 +940,7 @@ def build_announcements(
     snapshot_path = layout.assets / "operation" / "announcements.json"
     media_root = layout.assets / "operation" / "announcements" / "media"
     error: str | None = None
-    saved = saved_announcement_archive(config.id)
-    document = (
-        merge_announcement_archive(read_json(snapshot_path), saved)
-        if snapshot_path.exists() else saved
-    )
+    document = read_json(snapshot_path) if snapshot_path.exists() else None
     if config.announcements_endpoint:
         try:
             client_version = None
