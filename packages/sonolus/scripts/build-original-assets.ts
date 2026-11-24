@@ -19,6 +19,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import {
   buildNativeNoteSkinPacks,
   restoreNativeSkinSprites,
+  restoreBundledGekisouSkin,
   isOptionalOriginalSkinSprite,
   decodeRgba8Png,
   encodeRgba8Png,
@@ -461,6 +462,10 @@ try {
   buildSonolusBackgrounds(workspace.assetsRoot, resolve(out, "backgrounds"));
 
   for (const pack of nativeSkinPacks) {
+    pack.sprites += restoreBundledGekisouSkin(
+      resolve(engineRoot, "resources/presentation/skins", pack.skinName),
+      pack.outputDirectory,
+    );
     const file = resolve(pack.outputDirectory, "skin.data");
     const data = JSON.parse(gunzipSync(readFileSync(file)).toString("utf8")) as {
       sprites: Parameters<typeof restoreNativeSkinSprites>[0];

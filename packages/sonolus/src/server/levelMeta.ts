@@ -25,6 +25,9 @@ export interface MusicRow {
   _normalID: number;
   _hardID: number;
   _expertID: number;
+  _gekisouMission1?: number;
+  _gekisouMission2?: number;
+  _gekisouMission3?: number;
 }
 export interface ScoreRow {
   _id: number;

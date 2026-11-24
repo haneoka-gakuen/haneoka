@@ -1,15 +1,19 @@
 // L3 — GEB
 // Input: Released GEKISO prefab profiles, source textures, and Sonolus skins.
-// Output: Baked Light and Standard stage tracks and their skin sprites.
+// Output: Baked Light and Standard stage tracks, plus the authored GEKISO HUD sprites.
 // Pos: [Map](../L2-2.md); standalone Sonolus GEKISO stage asset authoring.
 // Effects/Dependencies: Updates the standalone engine ROM, ABI and three skin atlases.
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
-import { decodeRgba8Png, encodeRgba8Png } from "./pack-original-note-skins.ts";
+import { appendGekisouSkinTiles, decodeRgba8Png } from "./pack-original-note-skins.ts";
 import { OurNotesGekisouStageProjector } from "../particle-producer/profile/src/presentation/GekisouStageProjector.js";
 import type { OurNotesGekisouEffectProfile } from "../particle-producer/profile/src/presentation/GekisouStage.js";
+import { soloHudSpriteNames } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/soloModeHudSprites.ts";
+import { GEKISOU_COUNTDOWN_ROM, GEKISOU_STAGE_ROM } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/gekisouStageRomAbi.ts";
+import { OurNotesGekisouOverlayProjector } from "../particle-producer/profile/src/presentation/GekisouOverlay.js";
+import type { OurNotesGekisouMission } from "../particle-producer/profile/src/presentation/Gekisou.js";
+import laneHud from "../particle-producer/profile/src/assets/gekisou-lane-hud-profile.json";
 import type { RenderOverlaySprite } from "../particle-producer/profile/src/render/types.js";
 
 const [input, release, engine] = process.argv.slice(2);
@@ -47,9 +51,6 @@ const slotStride = 10;
 const atlasTileLimit = 128;
 const spriteLimit = 20;
 const spritePrefix = "Our Notes GEKISO Stage ";
-const transform = Object.fromEntries(
-  ["x1", "y1", "x2", "y2", "x3", "y3", "x4", "y4"].map((axis) => [axis, { [axis]: 1 }]),
-);
 type MaterialRecipe = {
   textureKey: string;
   uv: readonly [number, number, number, number];
@@ -76,7 +77,7 @@ const rows = [row(0, 1 / (fov * aspect)), row(1, 1 / fov), [0, 0, 0, 0], row(2, 
 const matrix = new Float64Array(rows.flatMap((_, column) => rows.map((r) => r[column]!)));
 
 /** Unity tight sprites use an affine UV mapping in homogeneous clip space. */
-function spriteQuad(draw: RenderOverlaySprite): number[] {
+function spriteQuad(draw: RenderOverlaySprite, preferCorners = false): number[] {
   const { indices, vertices } = draw;
   const u: number[] = [], v: number[] = [];
   for (let i = 0; i < vertices.length; i += 10) {
@@ -85,13 +86,18 @@ function spriteQuad(draw: RenderOverlaySprite): number[] {
   }
   const left = Math.min(...u), right = Math.max(...u);
   const top = Math.min(...v), bottom = Math.max(...v);
+  const corners = [[left, bottom], [left, top], [right, top], [right, bottom]];
+  if (preferCorners) {
+    const indices = corners.map(([x, y]) => u.findIndex((value, i) => value === x && v[i] === y));
+    if (indices.every(i => i >= 0)) return indices.flatMap(i => Array.from(vertices.subarray(i * 10, (i + 1) * 10)));
+  }
   for (let i = 0; i < indices.length; i += 3) {
     const a = indices[i]!, b = indices[i + 1]!, c = indices[i + 2]!;
     const du1 = u[b]! - u[a]!, du2 = u[c]! - u[a]!;
     const dv1 = v[b]! - v[a]!, dv2 = v[c]! - v[a]!;
     const area = du1 * dv2 - du2 * dv1;
     if (Math.abs(area) < 1e-8) continue;
-    return [[left, bottom], [left, top], [right, top], [right, bottom]].flatMap(([x, y]) => {
+    return corners.flatMap(([x, y]) => {
       const dx = x! - u[a]!, dy = y! - v[a]!;
       const wb = (dx * dv2 - dy * du2) / area;
       const wc = (dy * du1 - dx * dv1) / area;
@@ -238,67 +244,104 @@ const tiles = recipes.map(({ textureKey, uv: [left, top, right, bottom], rgb }, 
   return { name: spritePrefix + i, w, h, pixels };
 });
 
-type Rect = { x: number; y: number; w: number; h: number };
-for (const edition of ["skin001", "skin002", "skin003"]) {
-  const directory = resolvePath(engine, "resources/presentation/skins", edition);
-  const dataPath = resolvePath(directory, "skin.data");
-  const texturePath = resolvePath(directory, "skin.texture.png");
-  const data = JSON.parse(gunzipSync(readFileSync(dataPath)).toString()) as {
-    width: number;
-    sprites: Array<Rect & { name: string; transform: typeof transform }>;
-  };
-  const source = decodeRgba8Png(readFileSync(texturePath), texturePath);
-  const originalWidth = Math.min(source.width, 2048);
-  let width = originalWidth;
-  let spillY = 0;
-  const image = { ...source, pixels: Buffer.from(source.pixels) };
-  data.sprites = data.sprites.filter(({ name }) => !name.startsWith(spritePrefix));
-  const rowEnds = Array.from({ length: image.height }, (_, y) => data.sprites
-    .filter((s) => y >= s.y - 2 && y < s.y + s.h + 2)
-    .map((s) => [Math.max(0, s.x - 2), Math.min(originalWidth, s.x + s.w + 2)] as const));
-  for (const tile of [...tiles].sort((a, b) => b.w * b.h - a.w * a.h)) {
-    const { w, h, name, pixels } = tile;
-    const paddedWidth = w + 4;
-    const paddedHeight = h + 4;
-    let placement: Rect | undefined;
-    for (let y = 0; y <= image.height - paddedHeight && !placement; y += 2) {
-      const intervals = rowEnds.slice(y, y + paddedHeight).flat().sort((a, b) => a[0] - b[0]);
-      let x = 0;
-      for (const [left, right] of intervals) {
-        if (left - x >= paddedWidth) break;
-        x = Math.max(x, right);
-      }
-      if (x + paddedWidth > originalWidth) continue;
-      placement = { x: x + 2, y: y + 2, w, h };
-      for (let row = y; row < y + paddedHeight; row++) rowEnds[row]!.push([x, x + paddedWidth]);
+const laneHudPaths = new Map(laneHud.textures.map(texture => [texture.key, texture.path]));
+const hudPath = (index: number) => laneHudPaths.get(laneHud.sprites[index]!.texture)!;
+const atlasDir = resolvePath(release, hudPath(16), "..");
+const atlasSprites = new Map(readdirSync(atlasDir).map(file => [file.split("--Sprite")[0], resolvePath(atlasDir, file)]));
+const hudSources: Record<keyof typeof soloHudSpriteNames, number | string> = {
+  digit0: 1, digit1: 2, digit2: 3, digit3: 4, digit4: 5,
+  digit5: 6, digit6: 7, digit7: 8, digit8: 9, digit9: 10,
+  countdown1: 20, countdown2: 21, countdown3: 22,
+  modeCombo: 16, modeLuck: 18, modeJust: 17,
+  ready: 24, divider: 23,
+  countCombo: "SP_gekisou_count_combo", countLuck: "SP_gekisou_count_luck", countJust: 19,
+  luckGaugeBase: "gekisou_luck_gaugebase", luckGauge: "gekisou_luck_gauge", luckRushGauge: "gekisou_luckyrush_gauge",
+  noLuck: "gekisou_luck_noluck_text", luck: "gekisou_luck_lucky_text",
+  superLuck: "gekisou_luck_s_lucky_text", luckRush: "gekisou_luck_luckyrush_text",
+  modeAssist: "../LiveAtlas.spriteatlasv2/SP_AssistMode--Sprite--4011404251611919236.png",
+};
+const hudTiles = (Object.keys(hudSources) as (keyof typeof hudSources)[]).map(key => {
+  const source = hudSources[key];
+  const path = typeof source === "number" ? resolvePath(release, hudPath(source)) :
+    source.startsWith("../") ? resolvePath(atlasDir, source) : atlasSprites.get(source);
+  if (!path) throw new Error(`Missing authored GEKISO HUD sprite: ${source}`);
+  const image = decodeRgba8Png(readFileSync(path), path);
+  const scale = Math.min(1, atlasTileLimit / Math.max(image.width, image.height));
+  const w = Math.max(1, Math.round(image.width * scale));
+  const h = Math.max(1, Math.round(image.height * scale));
+  const pixels = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const x0 = Math.floor(x * image.width / w), x1 = Math.ceil((x + 1) * image.width / w);
+    const y0 = Math.floor(y * image.height / h), y1 = Math.ceil((y + 1) * image.height / h);
+    let alpha = 0, red = 0, green = 0, blue = 0;
+    for (let sy = y0; sy < y1; sy++) for (let sx = x0; sx < x1; sx++) {
+      const offset = (sy * image.width + sx) * 4;
+      const a = image.pixels[offset + 3]!;
+      alpha += a;
+      red += a * image.pixels[offset]!;
+      green += a * image.pixels[offset + 1]!;
+      blue += a * image.pixels[offset + 2]!;
     }
-    if (!placement) {
-      width = originalWidth + atlasTileLimit + 4;
-      if (spillY + paddedHeight > image.height) throw new Error(`${edition}: GEKISO spill exceeds atlas height`);
-      if (image.width !== width) {
-        const pixels = Buffer.alloc(width * image.height * 4);
-        for (let row = 0; row < image.height; row++)
-          image.pixels.copy(pixels, row * width * 4, row * image.width * 4, (row + 1) * image.width * 4);
-        image.width = width;
-        image.pixels = pixels;
-      }
-      placement = { x: originalWidth + 2, y: spillY + 2, w, h };
-      spillY += paddedHeight;
-    }
-    const { x, y } = placement;
-    for (let dy = -2; dy < h + 2; dy++) for (let dx = -2; dx < w + 2; dx++) {
-      const src = (Math.min(h - 1, Math.max(0, dy)) * w + Math.min(w - 1, Math.max(0, dx))) * 4;
-      pixels.copy(image.pixels, ((y + dy) * image.width + x + dx) * 4, src, src + 4);
-    }
-    data.sprites.push({ ...placement, name, transform });
+    if (alpha === 0) continue;
+    const offset = (y * w + x) * 4;
+    pixels[offset] = Math.round(red / alpha);
+    pixels[offset + 1] = Math.round(green / alpha);
+    pixels[offset + 2] = Math.round(blue / alpha);
+    pixels[offset + 3] = Math.round(alpha / ((x1 - x0) * (y1 - y0)));
   }
-  data.width = image.width;
-  writeFileSync(dataPath, gzipSync(JSON.stringify(data), { level: 9 }));
-  writeFileSync(texturePath, encodeRgba8Png(image, true));
+  return { name: soloHudSpriteNames[key], w, h, pixels };
+});
+const hudKeys = Object.keys(soloHudSpriteNames);
+const firstCountdownSprite = hudKeys.indexOf("countdown1");
+const textureSlots = new Map([
+  [20, "countdown1"], [21, "countdown2"], [22, "countdown3"],
+  [16, "modeCombo"], [18, "modeLuck"], [17, "modeJust"],
+  [23, "divider"], [24, "ready"],
+].map(([index, key]) => [laneHud.sprites[index as number]!.texture, hudKeys.indexOf(key as string) - firstCountdownSprite]));
+const countdownProjector = new OurNotesGekisouOverlayProjector();
+const countdownViewport = { width: 1920, height: 1080, worldToClip: matrix, displayPositionChanged: false };
+const countdownFrames = Math.round(GEKISOU_COUNTDOWN_ROM.durationMs / ticks);
+const countdownRom: number[] = [GEKISOU_COUNTDOWN_ROM.magic];
+for (let mission = 1; mission <= GEKISOU_COUNTDOWN_ROM.missionCount; mission++) {
+  for (let index = 0; index < countdownFrames; index++) {
+    const elapsed = index * ticks;
+    const count = Math.max(0, 3 - Math.floor(index / fps));
+    const clip = count === 3 ? "number3" : count === 2 ? "number2" : count === 1 ? "number1" : "out";
+    const draws = countdownProjector.project({
+      enabled: true, observedTimeMs: elapsed,
+      countdown: {
+        mission: mission as OurNotesGekisouMission,
+        rangeIndex: 0, count: count > 0 ? count as 1 | 2 | 3 : null,
+        clip, clipTimeSeconds: (index % fps) / fps, visible: true,
+      },
+      just: { rangeIndex: null, visible: false, count: 0, lastJudgedAtMs: null, lastAddedCount: 0 },
+    }, countdownViewport).toSorted((a, b) => a.sortingOrder - b.sortingOrder);
+    if (draws.length > GEKISOU_COUNTDOWN_ROM.slotCount) throw new Error("GEKISO countdown sprite limit exceeded");
+    for (let slot = 0; slot < GEKISOU_COUNTDOWN_ROM.slotCount; slot++) {
+      const draw = draws[slot];
+      if (!draw) {
+        countdownRom.push(...Array<number>(GEKISOU_COUNTDOWN_ROM.slotStride).fill(0));
+        continue;
+      }
+      const texture = textureSlots.get(draw.textureKey);
+      if (texture === undefined || texture < 0) throw new Error(`Unmapped GEKISO countdown texture: ${draw.textureKey}`);
+      const vertices = spriteQuad(draw, true);
+      const positions = Array.from({ length: 4 }, (_, i) => {
+        const v = i * 10;
+        return [vertices[v]! / vertices[v + 3]!, vertices[v + 1]! / vertices[v + 3]!];
+      }).flat();
+      if (positions.some(value => !Number.isFinite(value))) throw new Error(`Invalid GEKISO countdown quad: ${draw.id}`);
+      countdownRom.push(vertices[9]!, texture, ...positions);
+    }
+  }
+}
+for (const edition of ["skin001", "skin002", "skin003"]) {
+  appendGekisouSkinTiles(resolvePath(engine, "resources/presentation/skins", edition), [...tiles, ...hudTiles]);
 }
 
-const values = [63901, fps, standbyLeadMs, inFrames, loopFrames, outFrames, exitDelayMs, ...light, ...standard];
+const values = [GEKISOU_STAGE_ROM.magic, fps, standbyLeadMs, inFrames, loopFrames, outFrames, exitDelayMs,
+  ...light, ...standard, ...countdownRom];
 const rom = Buffer.alloc(values.length * 4);
 for (const [i, value] of values.entries()) rom.writeFloatLE(value, i * 4);
 writeFileSync(resolvePath(engine, "assets/GekisouStageRom"), rom);
-console.log(`GEKISO stage ROM: ${rom.length} bytes, ${tiles.length} skin tiles, profile sha256 ${createHash("sha256").update(bytes).digest("hex")}`);
+console.log(`GEKISO stage ROM: ${rom.length} bytes, ${tiles.length} stage tiles, ${hudTiles.length} HUD tiles, profile sha256 ${createHash("sha256").update(bytes).digest("hex")}`);
