@@ -54,7 +54,8 @@ const spritePrefix = "Our Notes GEKISO Stage ";
 type MaterialRecipe = {
   textureKey: string;
   uv: readonly [number, number, number, number];
-  rgb: readonly number[];
+  rgb: readonly [number, number, number];
+  additive: boolean;
 };
 const recipes: MaterialRecipe[] = [];
 const materialKeys = new Map<string, number>();
@@ -155,15 +156,20 @@ function quad(path: string, draw: RenderOverlaySprite | undefined): number[] {
       stableUv(left[0]!.v * scaleY + offsetY),
     ] as const;
     const group = path.replace(/(?:left|right|line_[lr])/g, "side");
-    const key = JSON.stringify([group, draw.textureKey, uv]);
+    const additive = draw.blend === "source-alpha-additive";
+    const key = JSON.stringify([group, draw.textureKey, uv, additive]);
     let material = materialKeys.get(key);
-    const rgb = [0, 1, 2].map((c) => vertices[offset + 6 + c]! * tintFactor(c));
+    const rgb: MaterialRecipe["rgb"] = [
+      vertices[offset + 6]! * tintFactor(0),
+      vertices[offset + 7]! * tintFactor(1),
+      vertices[offset + 8]! * tintFactor(2),
+    ];
     if (rgb.every((value) => value <= 0)) continue;
     if (material === undefined) {
       material = recipes.length;
       if (material >= spriteLimit) throw new Error("GEKISO stage material count exceeds the fixed skin table");
       materialKeys.set(key, material);
-      recipes.push({ textureKey: draw.textureKey, uv, rgb });
+      recipes.push({ textureKey: draw.textureKey, uv, rgb, additive });
     }
     const energy = (color: readonly number[]) => color[0]! * .2126 + color[1]! * .7152 + color[2]! * .0722;
     const gain = energy(rgb) / energy(recipes[material]!.rgb);
@@ -220,7 +226,7 @@ if (!standard.some((value, i) => value !== light[i]))
 
 const textures = new OurNotesGekisouStageProjector(profile, [], () => 1).textures((path) => path);
 const sourceImages = new Map<string, ReturnType<typeof decodeRgba8Png>>();
-const tiles = recipes.map(({ textureKey, uv: [left, top, right, bottom], rgb }, i) => {
+const tiles = recipes.map(({ textureKey, uv: [left, top, right, bottom], rgb, additive }, i) => {
   let image = sourceImages.get(textureKey);
   if (!image) {
     const source = resolvePath(release, textures[textureKey]!.url);
@@ -238,8 +244,17 @@ const tiles = recipes.map(({ textureKey, uv: [left, top, right, bottom], rgb }, 
     const sourceY = Math.min(image.height - 1, Math.max(0, Math.floor(top * image.height + (y + .5) * sourceHeight / h)));
     const src = (sourceY * image.width + sourceX) * 4;
     const dest = (y * w + x) * 4;
-    for (let c = 0; c < 3; c++) pixels[dest + c] = Math.min(255, Math.round(image.pixels[src + c]! * rgb[c]!));
-    pixels[dest + 3] = image.pixels[src + 3]!;
+    const r = Math.min(255, image.pixels[src]! * rgb[0]);
+    const g = Math.min(255, image.pixels[src + 1]! * rgb[1]);
+    const b = Math.min(255, image.pixels[src + 2]! * rgb[2]);
+    // Preserve emitted RGB over black using straight alpha. Dark texels in a
+    // source-alpha additive texture transmit the stage under Sonolus Draw.
+    const coverage = additive ? Math.max(r, g, b) / 255 : 1;
+    if (coverage <= 0) continue;
+    pixels[dest] = Math.round(r / coverage);
+    pixels[dest + 1] = Math.round(g / coverage);
+    pixels[dest + 2] = Math.round(b / coverage);
+    pixels[dest + 3] = Math.round(image.pixels[src + 3]! * coverage);
   }
   return { name: spritePrefix + i, w, h, pixels };
 });
