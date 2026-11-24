@@ -263,8 +263,10 @@ export function createFrozenShardPlan({ inputManifest, routeRoot, sourceRoot = p
         throw new Error("Invalid or duplicate planned Astro route");
       routes.set(row.astroPathname, { ...row, sourcePattern: producer.sourcePattern });
       if (!row.packable) continue;
-      if (expected.has(row.pathname) || localeForPath(row.pathname) !== row.locale)
-        throw new Error("Invalid or duplicate planned document route");
+      if (expected.has(row.pathname))
+        throw new Error(`Duplicate planned document route: ${row.pathname} (${producer.sourcePattern})`);
+      if (localeForPath(row.pathname) !== row.locale)
+        throw new Error(`Invalid planned document route: ${row.pathname} for ${row.locale} (${producer.sourcePattern})`);
       expected.set(row.pathname, {
         pathname: row.pathname,
         locale: row.locale,

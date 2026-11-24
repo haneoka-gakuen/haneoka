@@ -12,6 +12,7 @@ export function playlistPath(locale: string, id = "", edit = false): string {
 }
 
 export function parsePlaylistDocument(pathname: string) {
+  if (pathname.endsWith("/index.html")) return;
   const [locale, community, playlists, value, action, ...extra] = englishInterfacePath(pathname).split("/").filter(Boolean);
   if (!isLocale(locale) || community !== "community" || playlists !== "playlists" || !value || extra.length) return;
   if (value === "new" && !action) return { locale, id: "new", edit: true };
