@@ -92,15 +92,17 @@ import { handleSonolusAccountLink, handleSonolusAuthentication, readSonolusActor
 import {
   buildSonolusSnapshotBackground,
   composeSonolusSongBackground,
+  parseSonolusBackgroundRoute,
   snapshotArtPath,
   snapshotBackgroundItem,
   sonolusBackgroundJsonResource,
-  sonolusSnapshotBackgroundPath,
+  sonolusBackgroundName,
+  sonolusBackgroundResource,
+  type SonolusBackgroundRoute,
   sonolusSnapshotBackgroundSearch,
   sonolusSnapshotBackgroundTitle,
   sonolusSnapshotImageRevision,
   sonolusSongBackgroundAspect,
-  sonolusSongBackgroundPath,
   sonolusSongBackgroundVersion,
   sonolusSongBackgroundImageRevision,
 } from "./sonolus-background";
@@ -181,6 +183,7 @@ import {
 } from "../src/lib/resource-route";
 import {
   SONOLUS_VERSION,
+  OUR_NOTES_SONOLUS_ITEM_NAMES,
   sonolusClientVersion,
   createOurNotesSonolusItemLabels,
   encodeSonolusLocalizedText,
@@ -3343,8 +3346,7 @@ function ourNotesSonolusCatalogProvider(env: Env, ctx: ExecutionContext, release
               const publication = index?.publications?.[`songs:${songId}`];
               if (
                 coverUrl &&
-                typeof song.jacketUrl === "string" &&
-                song.jacketUrl.startsWith(`/assets/${release.server}/`) &&
+                sonolusSongJacketPath(release, song) &&
                 contentVisible(guest, "songs", { ...song, ...publication }, songId)
               ) {
                 return songBackgroundItem(release, title, songId, { url: pinnedSonolusJacketUrl(release, coverUrl, origin) }, origin);
@@ -3759,17 +3761,19 @@ async function releaseSonolusChartFacts(env: Env, releases: readonly Release[], 
   });
 }
 
-function sonolusBandId(value: unknown): keyof typeof OUR_NOTES_STAGE_NAMES {
-  return typeof value === "number" && Object.hasOwn(OUR_NOTES_STAGE_NAMES, value)
-    ? value as keyof typeof OUR_NOTES_STAGE_NAMES
+const sonolusStageNames = OUR_NOTES_SONOLUS_ITEM_NAMES.stages;
+
+function sonolusBandId(value: unknown): keyof typeof sonolusStageNames {
+  return typeof value === "number" && Object.hasOwn(sonolusStageNames, value)
+    ? value as keyof typeof sonolusStageNames
     : 0;
 }
 
 function sonolusBandBackground(page: JsonValue | null, bandId: unknown): JsonObject | undefined {
   if (!isJsonObject(page) || !Array.isArray(page.items)) return;
   const items = page.items;
-  const resolve = (band: keyof typeof OUR_NOTES_STAGE_NAMES) =>
-    items.find((item): item is JsonObject => isJsonObject(item) && item.name === OUR_NOTES_STAGE_NAMES[band]);
+  const resolve = (band: keyof typeof sonolusStageNames) =>
+    items.find((item): item is JsonObject => isJsonObject(item) && item.name === sonolusStageNames[band]);
   return resolve(sonolusBandId(bandId)) ?? resolve(0);
 }
 
@@ -3779,37 +3783,62 @@ function pinnedSonolusJacketUrl(release: Release, path: string, origin: string):
   return url.href;
 }
 
-function songBackgroundItem(release: Release, name: string, songId: string, cover: JsonObject, origin: string): JsonObject {
-  const identity = `haneoka-jacket-${release.server}-${release.releaseId}-${songId}`;
-  const resource = (kind: string) => ({
-    url: `${origin}/sonolus/backgrounds/${identity}/${kind}?v=${sonolusSongBackgroundImageRevision}`,
-  });
+function songBackgroundItem(release: Release, title: string, songId: string, cover: JsonObject, origin: string): JsonObject {
+  const name = sonolusBackgroundName("jacket", songId);
   return {
-    name: identity, version: sonolusSongBackgroundVersion, title: name, subtitle: "BanG Dream! Our Notes", author: "haneoka", tags: [],
-    source: origin, thumbnail: cover, image: resource("image"), data: resource("data"), configuration: resource("configuration"),
+    name, version: sonolusSongBackgroundVersion, title, subtitle: "BanG Dream! Our Notes", author: "haneoka", tags: [],
+    source: origin, thumbnail: cover,
+    image: sonolusBackgroundResource(origin, name, "image", release, sonolusSongBackgroundImageRevision),
+    data: sonolusBackgroundResource(origin, name, "data", release, sonolusSongBackgroundImageRevision),
+    configuration: sonolusBackgroundResource(origin, name, "configuration", release, sonolusSongBackgroundImageRevision),
   };
 }
 
-async function handleSonolusSongBackground(request: Request, env: Env, ctx: ExecutionContext, match: RegExpExecArray) {
-  const [, , slug, releaseId, songId, part] = match;
-  const server = slug && await activeResourceServer(env, slug);
-  const release = server && releaseId ? await requestedRelease(env, server, releaseId) : null;
-  if (!release || !songId) return Response.json({ message: "Background not found" }, { status: 404 });
-  if (request.method !== "GET" && request.method !== "HEAD")
-    return Response.json({ message: "Method not allowed" }, { status: 405 });
-  const storage = (await catalogStorageManifest(env, release))?.resources.songs?.entities;
-  const song = storage ? ownJsonValue(await readCatalogShard(env, release, storage, songId), songId) : undefined;
-  const view = await requestContentView(new Request(new URL(new URL(request.url).pathname, request.url)), env);
-  const visibility = await resourceContentIndex(env, ctx, release.server, release.releaseId);
-  if (!isJsonObject(song) || !contentVisible(view, "songs", { ...song, ...visibility?.publications?.[`songs:${songId}`] }, songId))
-    return Response.json({ message: "Background not found" }, { status: 404 });
+function sonolusSongJacketPath(release: Release, song: Readonly<Record<string, unknown>>) {
+  const prefix = `/assets/${release.server}/`;
+  return typeof song.jacketUrl === "string" && song.jacketUrl.startsWith(prefix)
+    ? song.jacketUrl.slice(prefix.length)
+    : undefined;
+}
 
+async function handleSonolusBackground(request: Request, env: Env, ctx: ExecutionContext, route: SonolusBackgroundRoute) {
+  const { id, kind, pin } = route;
+  if (pin === null) return sonolusBackgroundNotFound(request);
+  const view = await sonolusBackgroundVisibility(request, env);
+  const resource = kind === "snap" ? "support-cards" : "songs";
+  const releases = pin
+    ? [await activeResourceServer(env, pin.server).then(server => server ? requestedRelease(env, server, pin.releaseId) : null)]
+    : await activeSonolusReleases(env);
+  for (const release of releases) {
+    if (!release) continue;
+    const [manifest, visibility] = await Promise.all([
+      catalogStorageManifest(env, release),
+      resourceContentIndex(env, ctx, release.server, release.releaseId),
+    ]);
+    const storage = manifest?.resources[resource]?.entities;
+    const row = storage ? ownJsonValue(await readCatalogShard(env, release, storage, id), id) : undefined;
+    if (!isJsonObject(row) || !contentVisible(view, resource, {
+      ...row, ...visibility?.publications?.[`${resource}:${id}`],
+    }, id)) continue;
+
+    if (kind === "snap") {
+      const art = sonolusSnapshotArt(release, row);
+      if (!art.full) continue;
+      return handleSonolusSnapshotBackground(request, env, ctx, route, release, row, art.full, art.thumbnail);
+    }
+    const jacket = sonolusSongJacketPath(release, row);
+    if (!jacket && !pin) continue;
+    return handleSonolusSongBackground(request, env, ctx, route, release, row, jacket);
+  }
+  return sonolusBackgroundNotFound(request);
+}
+
+async function handleSonolusSongBackground(
+  request: Request, env: Env, ctx: ExecutionContext, { id: songId, part }: SonolusBackgroundRoute,
+  release: Release, song: JsonObject, jacket: string | undefined,
+) {
   const origin = siteOrigin(new URL(request.url));
   const band = sonolusBandId(song.bandId);
-  const prefix = `/assets/${release.server}/`;
-  const jacket = typeof song.jacketUrl === "string" && song.jacketUrl.startsWith(prefix)
-    ? `assets/${song.jacketUrl.slice(prefix.length)}`
-    : undefined;
   const cacheControl = "private, max-age=0, must-revalidate";
   const jsonHeaders = { ...SONOLUS_JSON_HEADERS, "Cache-Control": cacheControl };
   if (part === "data" || part === "configuration")
@@ -3830,10 +3859,9 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
         ? readReleaseBytes(env, release, path)
         : null;
     };
-    const readStage = (id: number) => readPng(`assets/Assets/AddressableResources/Band/${id}/live_stage/lightweight_background.png`);
     const [stage, cover] = await Promise.all([
-      readStage(band).then((bytes) => bytes ?? (band ? readStage(0) : null)),
-      jacket ? readPng(jacket) : null,
+      readPng(`assets/Assets/AddressableResources/Band/${band}/live_stage/lightweight_background.png`),
+      jacket ? readPng(`assets/${jacket}`) : null,
     ]);
     const headers = { "Content-Type": "image/png", "Cache-Control": cacheControl };
     let png: Uint8Array | undefined;
@@ -3846,7 +3874,8 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
       }
     }
     if (!png) {
-      const page = await readGlobalSonolusJson(env, "runtime/sonolus/backgrounds/list/page-0");
+      const path = "runtime/sonolus/backgrounds/list/page-0";
+      const page = await readGlobalSonolusJson(env, path) ?? await readReleaseJson(env, release, path);
       const fallback = sonolusBandBackground(sonolusThumbnailDocument(page, undefined, origin), band);
       const image = fallback?.image;
       if (isJsonObject(image) && typeof image.url === "string")
@@ -3862,13 +3891,19 @@ async function handleSonolusSongBackground(request: Request, env: Env, ctx: Exec
   const label = song.musicTitle;
   const title = typeof label === "string" ? label :
     Array.isArray(label) ? label.find((value): value is string => typeof value === "string" && value.length > 0) : undefined;
-  const thumbnail = jacket ? { url: pinnedSonolusJacketUrl(release, `/assets/${release.server}/${jacket.slice("assets/".length)}`, origin) }
-    : { url: `${origin}${new URL(request.url).pathname}/image` };
+  const thumbnail = jacket ? { url: pinnedSonolusJacketUrl(release, `/assets/${release.server}/${jacket}`, origin) }
+    : sonolusBackgroundResource(origin, sonolusBackgroundName("jacket", songId), "image", release, sonolusSongBackgroundImageRevision);
   const item = songBackgroundItem(release, title ?? songId, songId, thumbnail, origin);
   return new Response(request.method === "HEAD" ? null : JSON.stringify({ item, hasCommunity: false, actions: [], leaderboards: [], sections: [] }), { headers: jsonHeaders });
 }
 
-function sonolusSnapshotVisibility(request: Request, env: Env) {
+function sonolusBackgroundNotFound(request: Request) {
+  return new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Background not found" }), {
+    status: 404, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },
+  });
+}
+
+function sonolusBackgroundVisibility(request: Request, env: Env) {
   return requestContentView(new Request(new URL("/", request.url)), env);
 }
 
@@ -3895,7 +3930,7 @@ async function handleSonolusSnapshotCatalog(
   const url = new URL(request.url);
   const info = url.pathname.endsWith("/info");
   if (!info && !["snapshot", "quick"].includes(url.searchParams.get("type") ?? "")) return null;
-  const view = await sonolusSnapshotVisibility(request, env);
+  const view = await sonolusBackgroundVisibility(request, env);
   const sources = await Promise.all(releases.map(async (release) => {
     const [manifest, visibility] = await Promise.all([
       catalogStorageManifest(env, release), resourceContentIndex(env, ctx, release.server, release.releaseId),
@@ -3905,22 +3940,25 @@ async function handleSonolusSnapshotCatalog(
     return { release, catalog, publications: visibility?.publications };
   }));
   const keywords = (url.searchParams.get("keywords") ?? "").slice(0, 128).normalize("NFKC").toLowerCase().trim().split(/\s+/u);
-  const items = new Map<string, JsonObject>();
+  const snapshotsById = new Map<string, { release: Release; card: JsonObject; thumbnail: string | undefined; matches: boolean }>();
   for (const { release, catalog, publications } of sources) {
     if (!isJsonObject(catalog)) continue;
     for (const [id, card] of Object.entries(catalog)) {
-      if (items.has(id) || !/^[1-9]\d{0,15}$/u.test(id) || !isJsonObject(card) ||
+      const canonical = snapshotsById.get(id);
+      if (canonical?.matches || !/^[1-9]\d{0,15}$/u.test(id) || !isJsonObject(card) ||
           !contentVisible(view, "support-cards", { ...card, ...publications?.[`support-cards:${id}`] }, id)) continue;
       const { full, thumbnail } = sonolusSnapshotArt(release, card);
       if (!full) continue;
       const terms = [id, card.prefix, card.cardName, sonolusSnapshotBackgroundTitle].flat()
         .filter((value): value is string => typeof value === "string");
       const searchable = terms.join(" ").normalize("NFKC").toLowerCase();
-      if (keywords.every((word) => searchable.includes(word)))
-        items.set(id, snapshotBackgroundItem(release, id, card, thumbnail, origin));
+      const matches = keywords.every((word) => searchable.includes(word));
+      if (canonical) canonical.matches = matches;
+      else snapshotsById.set(id, { release, card, thumbnail, matches });
     }
   }
-  const snapshots = [...items.values()].reverse();
+  const snapshots = [...snapshotsById].reverse().flatMap(([id, entry]) =>
+    entry.matches ? [snapshotBackgroundItem(entry.release, id, entry.card, entry.thumbnail, origin)] : []);
   const loadStages = async () => {
     const path = "runtime/sonolus/backgrounds/list/page-0";
     const bands = await readGlobalSonolusJson(env, path) ?? (releases[0] ? await readReleaseJson(env, releases[0], path) : null);
@@ -3956,26 +3994,10 @@ async function handleSonolusSnapshotCatalog(
   });
 }
 
-async function handleSonolusSnapshotBackground(request: Request, env: Env, ctx: ExecutionContext, match: RegExpExecArray) {
-  const [, , slug, releaseId, id, part] = match;
-  const server = await activeResourceServer(env, slug!);
-  const release = server ? await requestedRelease(env, server, releaseId!) : null;
-  const notFound = () => new Response(request.method === "HEAD" ? null : JSON.stringify({ message: "Background not found" }), {
-    status: 404, headers: { ...SONOLUS_JSON_HEADERS, "Cache-Control": "no-store" },
-  });
-  if (!release || !id) return notFound();
-  const [manifest, visibility, view] = await Promise.all([
-    catalogStorageManifest(env, release),
-    resourceContentIndex(env, ctx, release.server, release.releaseId),
-    sonolusSnapshotVisibility(request, env),
-  ]);
-  const storage = manifest?.resources["support-cards"]?.entities;
-  const card = storage ? ownJsonValue(await readCatalogShard(env, release, storage, id), id) : undefined;
-  if (!isJsonObject(card) || !contentVisible(view, "support-cards", {
-    ...card, ...visibility?.publications?.[`support-cards:${id}`],
-  }, id)) return notFound();
-  const { full, thumbnail } = sonolusSnapshotArt(release, card);
-  if (!full) return notFound();
+async function handleSonolusSnapshotBackground(
+  request: Request, env: Env, ctx: ExecutionContext, { id, part }: SonolusBackgroundRoute,
+  release: Release, card: JsonObject, full: string, thumbnail: string | undefined,
+) {
   const cacheControl = "private, max-age=0, must-revalidate";
   if (part === "data" || part === "configuration")
     return sonolusBackgroundJsonResource(request, part === "data"
@@ -3993,11 +4015,11 @@ async function handleSonolusSnapshotBackground(request: Request, env: Env, ctx: 
     }
     const path = `assets/${full}`;
     const entry = await releaseEntry(env, release, path);
-    if (!entry || entry.bytes > 4 * 1024 * 1024 || entry.mediaType !== "image/png") return notFound();
+    if (!entry || entry.bytes > 4 * 1024 * 1024 || entry.mediaType !== "image/png") return sonolusBackgroundNotFound(request);
     const headers = { "Content-Type": "image/png", "Cache-Control": cacheControl };
     if (request.method === "HEAD") return new Response(null, { headers });
     const bytes = await readReleaseBytes(env, release, path);
-    if (!bytes) return notFound();
+    if (!bytes) return sonolusBackgroundNotFound(request);
     const body = new Uint8Array(buildSonolusSnapshotBackground(bytes)).buffer;
     ctx.waitUntil(caches.default.put(key, new Response(body, {
       headers: { ...headers, "Cache-Control": "public, max-age=31536000, immutable" },
@@ -4118,10 +4140,8 @@ async function handleSonolus(
   if (pathname === "/sonolus") return Response.redirect(new URL("/sonolus/", request.url).toString(), 308);
   if (!pathname.startsWith("/sonolus/")) return null;
   if (sonolusAuthRoute(pathname)) return handleSonolusAuthentication(request, env);
-  const backgroundPath = sonolusSongBackgroundPath.exec(pathname);
-  if (backgroundPath) return handleSonolusSongBackground(request, env, ctx, backgroundPath);
-  const snapshotPath = sonolusSnapshotBackgroundPath.exec(pathname);
-  if (snapshotPath) return handleSonolusSnapshotBackground(request, env, ctx, snapshotPath);
+  const background = parseSonolusBackgroundRoute(new URL(request.url));
+  if (background) return handleSonolusBackground(request, env, ctx, background);
   const discussionPath = sonolusDiscussionPath.exec(pathname);
   if (discussionPath?.[1] === "levels" && sonolusCommunityLevelPath.test(`/sonolus/levels/${discussionPath[2]}`)) {
     return handleSonolusCommunityDiscussion(env, request, discussionPath, async () => {
@@ -4168,7 +4188,7 @@ async function handleSonolus(
   const viewRequest = discussionPath ? new Request(catalogUrl) : request;
   const sonolusView = !isBestdoriCatalog && !isCommunityCatalog && (isCatalogRoute || assetUrl.pathname === "/sonolus/info" || assetUrl.pathname.startsWith("/sonolus/repository/")) ? await requestContentView(viewRequest, env) : undefined;
   const visibilityRevisions = sonolusView ? await Promise.all(releases.map(async (release) => contentCacheEpoch(await resourceContentIndex(env, ctx, release.server, release.releaseId), sonolusView.now))) : [];
-  const baseRevision = `identity-text-v14-background-${sonolusSongBackgroundImageRevision}-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
+  const baseRevision = `identity-text-v15-background-${sonolusSongBackgroundImageRevision}-origin:${origin}:${payloadRevision}:${ourNotesSonolusRevision(releases)}`;
   const ourNotesRevision = `${baseRevision}${sonolusView ? `:${sonolusView.key}:${visibilityRevisions.join(",")}` : ""}`;
   const bestdoriRevision = isBestdoriCatalog ? bestdoriSonolusRevision(Date.now(), env.BESTDORI_UPSTREAM_BASE) : "";
   let revision = isBestdoriCatalog

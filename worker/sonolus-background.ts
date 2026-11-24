@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Pinned lightweight stage, jacket and public Snapshot artwork.
-// Output: Lightweight backgrounds and Snapshot items for Sonolus.
+// Output: Stable Sonolus background names and pinned media links.
 // Pos: [Map](L2.md); Sonolus catalog background image adapter.
 // Effects/Dependencies: Uses the shared Our Notes compositor and a bounded PNG encoder.
 import { encodeSonolusLocalizedText } from "@haneoka/sonolus";
@@ -9,10 +9,47 @@ import type { BackgroundConfiguration, BackgroundData, BackgroundItem, ServerFor
 
 export { buildSonolusSnapshotBackground, composeSonolusSongBackground, sonolusSongBackgroundAspect } from "../packages/sonolus/src/shared/sonolusBackgroundImage";
 export const sonolusSongBackgroundVersion = 2;
-export const sonolusSongBackgroundImageRevision = 3;
-export const sonolusSongBackgroundPath = /^\/sonolus\/backgrounds\/(haneoka-jacket-(jp|intl)-(r-[a-f0-9]{20})-([1-9]\d{0,15}))(?:\/(image|data|configuration))?$/u;
-export const sonolusSnapshotBackgroundPath = /^\/sonolus\/backgrounds\/(haneoka-snap-(jp|intl)-(r-[a-f0-9]{20})-([1-9]\d{0,15}))(?:\/(image|data|configuration))?$/u;
+export const sonolusSongBackgroundImageRevision = 4;
 export const sonolusSnapshotImageRevision = 1;
+
+type SonolusBackgroundKind = "snap" | "jacket";
+type SonolusBackgroundPart = "image" | "data" | "configuration";
+type SonolusBackgroundRelease = { server: string; releaseId: string };
+export type SonolusBackgroundRoute = {
+  kind: SonolusBackgroundKind;
+  id: string;
+  part?: SonolusBackgroundPart;
+  pin?: SonolusBackgroundRelease | null;
+};
+
+const sonolusBackgroundPath = /^\/sonolus\/backgrounds\/haneoka-(snap|jacket)-(?:(jp|intl)-(r-[a-f0-9]{20})-)?([1-9]\d{0,15})(?:\/(image|data|configuration))?$/u;
+
+export function parseSonolusBackgroundRoute(url: URL): SonolusBackgroundRoute | undefined {
+  const match = sonolusBackgroundPath.exec(url.pathname);
+  if (!match) return undefined;
+  const [, kind, legacyServer, legacyRelease, id, part] = match;
+  const route: SonolusBackgroundRoute = {
+    kind: kind as SonolusBackgroundKind, id: id!,
+    ...(part ? { part: part as SonolusBackgroundPart } : {}),
+  };
+  if (legacyServer && legacyRelease) return { ...route, pin: { server: legacyServer, releaseId: legacyRelease } };
+  const servers = url.searchParams.getAll("server"), releases = url.searchParams.getAll("release");
+  if (!servers.length && !releases.length) return route;
+  const server = servers[0], releaseId = releases[0];
+  const pin = servers.length === 1 && releases.length === 1 && (server === "jp" || server === "intl") &&
+    releaseId && /^r-[a-f0-9]{20}$/u.test(releaseId) ? { server, releaseId } : null;
+  return { ...route, pin };
+}
+
+export const sonolusBackgroundName = (kind: SonolusBackgroundKind, id: string) => `haneoka-${kind}-${id}`;
+
+export function sonolusBackgroundResource(
+  origin: string, name: string, part: SonolusBackgroundPart, release: SonolusBackgroundRelease, revision?: number,
+): { url: string } {
+  const query = new URLSearchParams({ server: release.server, release: release.releaseId });
+  if (revision !== undefined) query.set("v", String(revision));
+  return { url: `${origin}/sonolus/backgrounds/${name}/${part}?${query}` };
+}
 
 export const sonolusSnapshotBackgroundTitle = encodeSonolusLocalizedText({
   en: "Snapshots", ja: "スナップ", ko: "스냅", "zh-CN": "留影", "zh-TW": "快照",
@@ -47,15 +84,14 @@ function snapshotText(value: JsonValue | undefined, fallback: string): string {
 }
 
 export function snapshotBackgroundItem(
-  release: { server: string; releaseId: string },
+  release: SonolusBackgroundRelease,
   id: string,
   card: JsonObject,
   thumbnail: string | undefined,
   origin: string,
 ): JsonObject {
   const { server, releaseId } = release;
-  const name = `haneoka-snap-${server}-${releaseId}-${id}`;
-  const resource = (part: string) => ({ url: `${origin}/sonolus/backgrounds/${name}/${part}` });
+  const name = sonolusBackgroundName("snap", id);
   return {
     name,
     version: 2,
@@ -67,9 +103,9 @@ export function snapshotBackgroundItem(
     thumbnail: { url: thumbnail
       ? `${origin}/assets/${server}/${thumbnail}?release=${releaseId}`
       : `${origin}/android-chrome-192x192.png` },
-    image: { url: `${resource("image").url}?v=${sonolusSnapshotImageRevision}` },
-    data: resource("data"),
-    configuration: resource("configuration"),
+    image: sonolusBackgroundResource(origin, name, "image", release, sonolusSnapshotImageRevision),
+    data: sonolusBackgroundResource(origin, name, "data", release),
+    configuration: sonolusBackgroundResource(origin, name, "configuration", release),
   } satisfies BackgroundItem;
 }
 
