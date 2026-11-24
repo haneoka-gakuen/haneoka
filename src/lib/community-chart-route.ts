@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: locale, community chart identity and old or canonical document URL.
-// Output: Cross-server chart paths, legacy redirects, shell lookup and preview metadata.
+// Output: Cross-server chart paths, legacy redirects to clean player URLs, shell lookup and preview metadata.
 // Pos: [Map](L2-2.md); shared by browser, static rendering and request handlers.
 // Effects/Dependencies: Pure URL and HTML transformations; no network or storage.
 import { englishInterfacePath } from "../i18n/interface-route.ts";
@@ -22,9 +22,20 @@ export function parseCommunityChartDocument(pathname: string) {
   return match ? { locale: match[1]!, id: match[2]!, player: !!match[3] } : undefined;
 }
 export function legacyCommunityChartRedirectTarget(pathname: string, search = ""): string | undefined {
-  const match = LEGACY.exec(pathname);
-  if (!match) return undefined;
-  return `${communityChartPath("", match[1]!, match[2])}${match[3] ? "chart/" : ""}${search}`;
+  const legacy = LEGACY.exec(pathname);
+  const player = legacy ? Boolean(legacy[3]) : Boolean(search && parseCommunityChartDocument(pathname)?.player);
+  const target = legacy
+    ? `${communityChartPath("", legacy[1]!, legacy[2])}${player ? "chart/" : ""}`
+    : pathname;
+  if (player) {
+    const query = new URLSearchParams(search);
+    if (query.has("revision")) {
+      query.delete("revision");
+      const canonical = target.endsWith("/") ? target : `${target}/`;
+      return canonical + (query.size ? `?${query}` : "");
+    }
+  }
+  return legacy ? target + search : undefined;
 }
 export function communityChartShellPath(pathname: string): string | undefined {
   const route = parseCommunityChartDocument(pathname);

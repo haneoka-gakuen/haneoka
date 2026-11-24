@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区谱面目录／详情、语言与账户可见状态。
-// Output: 默认社区推荐排序、三种集合视图、歌曲双栏详情／响应式评论、推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
+// Output: 默认社区推荐排序、三种集合视图、独立滚动双栏详情／响应式评论、推荐难度、编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
 import { formatDocumentTitle } from "../lib/document-title";
@@ -185,11 +185,8 @@ export class CommunityCharts extends LitElement {
     if (!keepResults) this.phase = "loading";
     try {
       if (this.chartId) {
-        const selection = new URLSearchParams({ draft: "1" });
-        const revision = navigationDocumentUrl().searchParams.get("revision");
-        if (this.chartPage && revision) selection.set("revision", revision);
         const { chart } = await chartRequest<{ chart: CommunityChartItem }>(
-          `${CHART_API}/${this.chartId}?${selection}`,
+          `${CHART_API}/${this.chartId}?draft=1`,
           {
             signal: controller.signal,
           },
@@ -292,9 +289,7 @@ export class CommunityCharts extends LitElement {
     }
   }
   private openChart(row: CommunityChartItem) {
-    const target = new URL(communityChartPlayerPath(this.server, this.locale, row.id), location.href);
-    target.searchParams.set("revision", String(row.revision));
-    return navigateDetailPage(target.href);
+    return navigateDetailPage(communityChartPlayerPath(this.server, this.locale, row.id));
   }
   private downloadChart(row: CommunityChartItem) {
     return this.querySelector<ChartSimulator>("chart-simulator")?.downloadOverview({
@@ -635,6 +630,7 @@ export class CommunityCharts extends LitElement {
             {
               hasMedia: !!row.coverUrl,
               placement: this.commentsCompact ? "bottom" : "media",
+              scrollColumns: true,
               comments: row.publishedRevision
                 ? html`
                     <entity-comments

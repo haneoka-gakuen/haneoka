@@ -6,14 +6,14 @@ import type { Locale } from "../i18n/locales";
 import { communityChartPath } from "../lib/community-chart-route";
 import "../styles/patterns/chart.css";
 import "../styles/community-charts.css";
-interface Props { locale: Locale; server: string; player?: boolean }
-const { locale, server, player = false } = Astro.props;
+interface Props { locale: Locale; server: string; entity?: boolean; player?: boolean }
+const { locale, server, entity = false, player = false } = Astro.props;
 const titleKey = "community.charts.title";
 const title = t(locale, titleKey);
 ---
 <Base locale={locale} route="/community/charts" title={title} titleKey={titleKey} canonicalRoute={communityChartPath(server, locale)}>
   <AppShell locale={locale} server={server} route="/community/charts" title={title} titleKey={titleKey} contained={player}>
-    <community-charts locale={locale} server={server} class="community-charts page"></community-charts>
+    <community-charts locale={locale} server={server} class:list={["community-charts", { page: !entity }]}></community-charts>
   </AppShell>
 </Base>
 <script>import "../lit/community-charts";</script>

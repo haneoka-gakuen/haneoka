@@ -7,6 +7,7 @@ export function detailLayout(media: unknown, content: unknown, discussion?: {
   comments: unknown;
   placement: "media" | "bottom";
   hasMedia: boolean;
+  scrollColumns?: boolean;
 }): TemplateResult {
   if (!discussion) return html`
     <div class="detail-layout">
@@ -14,14 +15,15 @@ export function detailLayout(media: unknown, content: unknown, discussion?: {
       <div class="detail-layout__content pane-sections">${content}</div>
     </div>`;
   const besideImage = discussion.hasMedia && discussion.placement === "media";
+  const scrollColumns = besideImage && discussion.scrollColumns;
   return html`
-    <div class="detail-layout detail-layout--with-comments" data-comments-placement=${besideImage ? "media" : "bottom"}>
+    <div class="detail-layout detail-layout--with-comments${scrollColumns ? " detail-layout--scroll-columns" : ""}" data-comments-placement=${besideImage ? "media" : "bottom"}>
       ${discussion.hasMedia ? html`
-        <div class="detail-layout__left">
+        <div class="detail-layout__left" tabindex=${scrollColumns ? 0 : nothing}>
           <div class="detail-layout__media">${media}</div>
           ${besideImage ? html`<div class="detail-layout__comments">${discussion.comments}</div>` : nothing}
         </div>` : nothing}
-      <div class="detail-layout__content pane-sections">${content}</div>
+      <div class="detail-layout__content pane-sections" tabindex=${scrollColumns ? 0 : nothing}>${content}</div>
       ${besideImage ? nothing : html`<div class="detail-layout__comments">${discussion.comments}</div>`}
     </div>`;
 }
