@@ -6,7 +6,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import "@material/web/progress/linear-progress.js";
 import type { TeamBuilder } from "../team-builder";
-import type { EngineRequest } from "../../lib/team-builder/engine/api";
+import type { EngineHit, EngineRequest, SongRef } from "../../lib/team-builder/engine/api";
 import { multiSongControl, songRulesControl } from "./song-rules";
 import { validatePtRequest, type PtIssue } from "../../lib/team-builder/engine/pt-eligibility";
 import {
@@ -16,6 +16,8 @@ import {
   ptComplete,
   ptAllComplete,
   ptChallengeBest,
+  ptChallengeCharts,
+  ptFollowUpTotals,
   ptFingerprint,
   PtRunner,
   ptSongRanking,
@@ -47,7 +49,7 @@ import { rovingKeydown, segmented } from "../ui/controls";
 import { icon } from "../ui/icon";
 import { accordion } from "../ui/accordion";
 import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
-import { farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
+import { chartKey, farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
 import { usesPtResults } from "./score-goal";
 import { changeRewardMode } from "../../lib/team-builder/reward-plan";
@@ -58,6 +60,7 @@ export class PtController {
   job: PtJob | null = null;
   running = false;
   showAll = false;
+  followUp: { key: string | EngineRequest; normal?: SongRef; challenge?: SongRef; plays?: number; cp?: number } | null = null;
   get measure(): PtMeasure {
     return farmingSettings(this.host.settings).measure === "items" ? "items" : "points";
   }
@@ -802,6 +805,65 @@ function renderRun(host: TeamBuilder): TemplateResult {
   `;
 }
 
+function renderFollowUp(host: TeamBuilder, key: string | EngineRequest, measure: PtMeasure, cost: number,
+                        normalRows: EngineHit[], challengeRows: EngineHit[], stale: boolean) {
+  const pt = host.pt;
+  const saved = pt.followUp?.key === key ? pt.followUp : { key };
+  const choose = (rows: EngineHit[], song?: SongRef) =>
+    (song && rows.find(row => chartKey(row.song!) === chartKey(song))) || rows[0]!;
+  const normal = choose(normalRows, saved.normal);
+  const challenge = choose(challengeRows, saved.challenge);
+  const defaultPlays = normal.event!.challengePoints > 0 ? Math.ceil(cost / normal.event!.challengePoints) : 1;
+  const plays = saved.plays ?? defaultPlays;
+  const cp = saved.cp ?? 0;
+  const update = (patch: Partial<NonNullable<PtController["followUp"]>>) => {
+    if (typeof key === "string" ? pt.job?.id !== key : host.resultInputs !== key) return;
+    pt.followUp = { ...saved, ...patch };
+    host.requestUpdate();
+  };
+  const counts = ptFollowUpTotals(normal, challenge, measure, plays, cp, cost);
+  const baseline = challenge === challengeRows[0] ? null
+    : ptFollowUpTotals(normal, challengeRows[0]!, measure, plays, cp, cost);
+  const number = (value: number | null, signDisplay?: "exceptZero") => value === null ? "—"
+    : Intl.NumberFormat(host.locale, { maximumFractionDigits: 1, signDisplay }).format(value);
+  const total = (value: number | null, reference?: number | null) => html`
+    ${number(value)}
+    ${value !== null && typeof reference === "number" && Math.abs(value - reference) >= 0.05
+      ? html`<span class="muted">(${number(value - reference, "exceptZero")})</span>` : nothing}
+  `;
+  const t = (key: string, fallback: string) => host.t(`pt.${key}`, fallback);
+  const field = (label: string, value: number, min: number, onChange: (value: number) => void) => html`
+    <md-outlined-text-field type="number" step="1" min=${min} max="1000000" label=${label}
+      .value=${String(value)} @change=${(event: Event) => {
+        const next = Number((event.target as HTMLInputElement).value);
+        if (Number.isSafeInteger(next) && next >= min && next <= 1000000) onChange(next);
+      }}></md-outlined-text-field>`;
+  return html`
+    <section class="card card--outlined stack">
+      ${sectionHeading({ icon: "swords", label: t("followUp", "Challenge follow-up") })}
+      <div class="stack stack--tight">
+        <strong>${t("normalTeamSong", "Regular Live chart")}</strong>
+        ${songList(host, [normal.song!], ([song]) => update({ normal: song }), true, undefined,
+          "tb-follow-up-normal", normalRows.map(row => row.song!), { context: "pt:follow-up:normal", songRules: null, showMissions: false, removable: false })}
+        <strong>${t("chooseChallenge", "Challenge songs")}</strong>
+        ${songList(host, [challenge.song!], ([song]) => update({ challenge: song }), true, undefined,
+          "tb-follow-up-challenge", challengeRows.map(row => row.song!), { context: "pt:follow-up:challenge", songRules: null, showMissions: false, removable: false })}
+      </div>
+      <div class="cluster">
+        ${field(t("normalRunCount", "Regular Live plays"), plays, 1, value => update({ plays: value }))}
+        ${field(t("startingCp", "Starting CP"), cp, 0, value => update({ cp: value }))}
+      </div>
+      <dl class="spec-list tabular">
+        <div><dt>${t("challengeRunCount", "Challenge Live plays")}</dt><dd>${number(counts.plays)}</dd></div>
+        <div><dt>${t("remainingCp", "Remaining CP")}</dt><dd>${number(counts.remaining)}</dd></div>
+        <div><dt>${t("points", "Event points")}</dt><dd>${total(counts.points, baseline?.points)}</dd></div>
+        <div><dt>${t("items", "Shop medals")}</dt><dd>${total(counts.items, baseline?.items)}</dd></div>
+      </dl>
+    </section>
+    ${renderHit(host, challenge, -1, { rank: icon("swords", 18), subtitle: t("challengeBest", "Challenge team"), stale })}
+  `;
+}
+
 function renderRanking(host: TeamBuilder): TemplateResult {
   const pt = host.pt;
   const t = (key: string, fallback: string, params?: Record<string, string | number>) =>
@@ -819,6 +881,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
           .map((task) => task.result ?? pendingSong(task.song)),
       );
   const filtered = host.analysis.filter(ranking);
+  const followUpCharts = job.cycle ? ptChallengeCharts(job, measure) : [];
   const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
   const number = (n: number) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: 1 }).format(n);
   const settled = job.tasks.filter(
@@ -852,11 +915,11 @@ function renderRanking(host: TeamBuilder): TemplateResult {
         aria-label=${t("start", "Calculate")}
       ></md-linear-progress>
       ${
-        challenge
-          ? html`
-              ${renderHit(host, challenge, -1, { rank: icon("swords", 18), subtitle: t("challengeBest", "Challenge team"), stale: pt.stale })}
-            `
-          : nothing
+        job.cycle && followUpCharts.length && filtered.length
+          ? renderFollowUp(host, job.id, measure, job.cycle.consumption, filtered, followUpCharts, pt.stale)
+          : challenge
+            ? renderHit(host, challenge, -1, { rank: icon("swords", 18), subtitle: t("challengeBest", "Challenge team"), stale: pt.stale })
+            : nothing
       }
       ${
         !ranking.length && !pt.running
@@ -919,6 +982,32 @@ function renderRanking(host: TeamBuilder): TemplateResult {
   `;
 }
 
+function rewardFollowUp(host: TeamBuilder) {
+  const { resultInputs, results } = host;
+  const goal = resultInputs?.goal;
+  if (!resultInputs || goal?.kind !== "event" || goal.measure === "challenge-points" || !goal.rewardPlan?.autoCp || !results?.cpChallenge?.song) return;
+  const challenge = new Map([[chartKey(results.cpChallenge.song), results.cpChallenge]]);
+  for (const hit of results.cpChallengeAlternatives ?? []) {
+    if (hit.song && hit.event) {
+      const key = chartKey(hit.song);
+      if (!challenge.has(key)) challenge.set(key, hit);
+    }
+  }
+  const normal = new Map<string, EngineHit>();
+  for (const hit of [...results.overall, ...results.results.flatMap(row => row.hits)]) {
+    for (const chart of hit.aggregate?.songs ?? [hit]) {
+      if (chart.song && chart.event) {
+        const key = chartKey(chart.song);
+        if (!normal.has(key)) normal.set(key, chart);
+      }
+    }
+  }
+  const rows = host.analysis.filter([...normal.values()]);
+  if (!rows.length) return;
+  return renderFollowUp(host, resultInputs, goal.measure, goal.rewardPlan.autoCp.consumption,
+    rows, [...challenge.values()], host.stale);
+}
+
 export function renderPtTab(host: TeamBuilder): TemplateResult {
   const mode = host.settings.rewardMode;
   if (mode !== "plan" && !host.pt.parking) host.pt.sync();
@@ -951,6 +1040,6 @@ export function renderPtTab(host: TeamBuilder): TemplateResult {
       ${modes}${renderSetup(host)} ${host.pt.showIssues && host.pt.issues.length ? renderIssues(host) : nothing}
     `,
     mode === "recommendation" ? renderRun(host) : renderBuildRun(host, false),
-    usesPtResults(host) ? renderRanking(host) : renderResults(host),
+    usesPtResults(host) ? renderRanking(host) : renderResults(host, rewardFollowUp(host)),
   );
 }

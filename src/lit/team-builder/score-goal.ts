@@ -129,11 +129,13 @@ export const usesPtResults = (host: TeamBuilder) =>
   host.tab === "pt" &&
   host.settings.rewardMode !== "plan" &&
   (host.farmResultMode ?? host.settings.rewardMode) === "recommendation";
+export const isCpChallenge = (host: TeamBuilder, hit: EngineHit) =>
+  hit === host.results?.cpChallenge || host.results?.cpChallengeAlternatives?.includes(hit) === true;
 export const resultRequest = (host: TeamBuilder, hit?: EngineHit): EngineRequest | null => {
   const manual = hit && manualResultSource(hit);
   if (manual) return manual.input;
   const input = usesPtResults(host) ? (host.pt.job?.request ?? null) : host.resultInputs;
-  if (!input || !hit || hit !== host.results?.cpChallenge || input.goal.kind !== "event") return input;
+  if (!input || !hit || !isCpChallenge(host, hit) || input.goal.kind !== "event") return input;
   const auto = input.goal.rewardPlan?.autoCp;
   if (!auto) return input;
   const { aggregation: _aggregation, shard: _shard, floors: _floors, cutoff: _cutoff, rewardCutoff: _rewardCutoff,
@@ -180,7 +182,7 @@ export const resultSettings = (
     };
   }
   const settings = host.resultSettings ?? host.searchSettings;
-  if (hit && hit === host.results?.cpChallenge) {
+  if (hit && isCpChallenge(host, hit)) {
     const input = resultRequest(host, hit);
     if (input?.goal.kind === "event") return { ...settings, route: "challenge", aggregation: "individual", ptCycle: false,
       ptMode: "solo", songs: input.goal.songs, challengePoints: input.goal.consumption,

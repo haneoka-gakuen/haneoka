@@ -1,8 +1,8 @@
 // L3 — GEB
-// Input: Ordinary Live request and release-pinned rates for the filtered charts.
+// Input: Live request, card collection and release-pinned rates for ordinary charts.
 // Output: Candidate charts ordered by estimated average score.
 // Pos: [Map](L2-2.md); approximate ranking before native team search.
-// Effects/Dependencies: Lazily decodes shared timelines and yields between charts.
+// Effects/Dependencies: Lazily decodes ordinary Live timelines and yields between charts.
 
 import { SKILL_WINDOWS, slotOrderRates, type ChartRateTable, type ChartRates } from "../chart-rates";
 import { prepareChartRecommendationPlay } from "./chart-recommendation-play";
@@ -175,6 +175,7 @@ function estimateLineups(master: EngineMaster, request: ScoreRequest, replay: bo
       const useTimeline = replay || programs.some(needsTimeline);
       return [{
         power,
+        members: team,
         useTimeline,
         programs: useTimeline && !replay
           ? team.map((member, i) => resolveSlotSkill(master, member, support[i] ?? null, undefined, true))
@@ -262,4 +263,49 @@ export async function rankPickerCharts(
   }
   return output.sort((a, b) => b.score - a.score || a.song.songId - b.song.songId || a.song.difficulty - b.song.difficulty)
     .map(({ song }) => song);
+}
+
+
+export async function rankGekisoPickerCharts(
+  master: EngineMaster, request: EngineRequest, signal: AbortSignal,
+): Promise<SongRef[]> {
+  const goal = request.goal;
+  if (goal.kind !== "gekiso") return [];
+  const arenaBand = goal.arena?.bandId;
+  const lineups = estimateLineups(master, {
+    ...request,
+    members: arenaBand === undefined ? request.members
+      : request.members.filter(row => master.members.get(row.cardId)?.bandId === arenaBand),
+    goal: {
+      kind: "score", criterion: "mean", songs: goal.songs, challengeEventId: null,
+      play: { great: goal.accuracy.great, good: 0, bad: 0, miss: 0, missEvery: goal.accuracy.missEvery },
+    },
+  }, false);
+  if (!lineups) return [];
+  const ranked: { song: SongRef; score: number }[] = [];
+  let until = performance.now() + 8;
+  for (const song of goal.songs) {
+    signal.throwIfAborted();
+    const source = master.songs.get(song.songId);
+    const difficulty = source?.difficulties.find(row => row.difficulty === song.difficulty);
+    if (!source || !difficulty) continue;
+    const missions = [0, 1, 2].map(index =>
+      goal.arena?.missions[index] || request.songRules?.missions[index] || source.gekisoMissions[index] || 0);
+    const teams = lineups(song.songId);
+    if (!teams.length) continue;
+    const score = Math.max(...teams.map(team => {
+      const matching = team.members.reduce((sum, member) => {
+        const type = master.gekisoSkills.get(member.card.gekisoSkillId)?.missionType;
+        return sum + missions.filter(mission => mission && (type === 4 || type === mission)).length;
+      }, 0);
+      return team.power * (1 + (difficulty.playLevel - 5) * .005) * (1 + matching * .01);
+    }));
+    ranked.push({ song, score });
+    if (performance.now() >= until) {
+      await (globalThis.scheduler?.yield?.() ?? new Promise<void>(resolve => setTimeout(resolve, 0)));
+      until = performance.now() + 8;
+    }
+  }
+  return ranked.sort((a, b) => b.score - a.score || a.song.songId - b.song.songId
+    || a.song.difficulty - b.song.difficulty).map(row => row.song);
 }

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Frozen comparison formations and native per-order, per-seed section distributions.
-// Output: Shared formation cards, LUCK point summaries and an interactive opponent-point distribution.
+// Output: Shared formation cards, LUCK point summaries, opponent distributions and whole-play score percentiles.
 // Pos: [Map](../L2-2.md); the LUCK view in the existing result diagnostics dialog.
 // Effects/Dependencies: Changes only the dialog's range and threshold; requests stay in ResultAnalysis.
 import { html, nothing, svg } from "lit";
@@ -39,6 +39,35 @@ export function luckMass(rows: SectionMetricDistribution[], range: number) {
     masses.set(points, (masses.get(points) ?? 0) + count / row.samples / selected.length);
   return [...masses].sort((a, b) => a[0] - b[0]);
 }
+interface LuckScoreSummary { mean: number; p10: number; p90: number; min: number; max: number }
+const scoreSummaries = new WeakMap<SectionMetricDistribution, { ranks: string; summary: LuckScoreSummary }>();
+export function luckScoreSummary(row?: SectionMetricDistribution, ranks?: readonly number[]) {
+  if (!row?.scores?.length || !row.samples) return null;
+  const key = ranks?.join(",") ?? "";
+  const known = scoreSummaries.get(row);
+  if (known?.ranks === key) return known.summary;
+  const { samples, scoreReplay } = row;
+  let scores = row.scores;
+  if (scoreReplay && ranks && row.scoredRanks?.join(",") !== key) {
+    const factors = ranks.map((rank, index) => scoreReplay.factors[index]![rank - 1]!);
+    const histogram = new Map<number, number>();
+    for (const [base, stages, count] of scoreReplay.samples) {
+      const score = stages.reduce((total, stage, index) =>
+        (total + Math.trunc(stage * factors[index]! / 100)) | 0, base);
+      histogram.set(score, (histogram.get(score) ?? 0) + count);
+    }
+    scores = [...histogram].sort(([a], [b]) => a - b).map(([score, count]) => ({ score, count }));
+  }
+  const mean = scores.reduce((sum, item) => sum + item.score * item.count, 0) / samples;
+  const quantile = (fraction: number) => {
+    let count = 0;
+    return scores.find(item => (count += item.count) >= samples * fraction)!.score;
+  };
+  const summary = { mean, p10: quantile(.1), p90: quantile(.9), min: scores[0]!.score, max: scores.at(-1)!.score };
+  scoreSummaries.set(row, { ranks: key, summary });
+  return summary;
+}
+
 export function renderLuckComparison(host: TeamBuilder, state: LuckState) {
   const t = (key: string) => host.t(`analysis.${key}`, key), catalog = host.catalog!;
   const number = (value: number, digits = 1) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);

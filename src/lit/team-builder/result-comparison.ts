@@ -12,7 +12,7 @@ import { modal } from "../ui/modal";
 import { iconButton, inputChip } from "../ui/controls";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
+import { isCpChallenge, resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
 import { manualResultHit } from "./manual-results";
 import { resultMetric, type ResultMetric } from "./result-metric";
 import { cardScopeLabel } from "./card-input-controls";
@@ -166,10 +166,17 @@ export class ResultComparison {
           )
         : [];
     }
-    const challenge = host.results?.cpChallenge;
-    const input = challenge ? resultRequest(host, challenge) : null;
-    const converted = challenge && input && selected.has(identity("cp-challenge", challenge))
-      ? [entry(host, challenge, "cp-challenge", { proven: true }, input, host.resultSession)] : [];
+    const converted: ComparisonEntry[] = [];
+    const challengeKeys = new Set<string>();
+    for (const hit of [host.results?.cpChallenge, ...(host.results?.cpChallengeAlternatives ?? [])]) {
+      if (!hit) continue;
+      const key = identity("cp-challenge", hit);
+      if (!selected.has(key) || challengeKeys.has(key)) continue;
+      const input = resultRequest(host, hit);
+      if (!input) continue;
+      challengeKeys.add(key);
+      converted.push(entry(host, hit, "cp-challenge", { proven: true }, input, host.resultSession, resultSettings(host, hit)));
+    }
     const manual = host.manualResultsFor === host.manualContext() ? (host.manualResults ?? [])
       .map(manualResultHit)
       .filter((hit) => selected.has(identity("manual", hit)))
@@ -191,7 +198,7 @@ export class ResultComparison {
     if (manual) return host.manualResultsFor === host.manualContext() && host.manualResults?.some((row) => manualResultHit(row) === hit)
       ? { input: manual.input, settings: manual.settings, session: manual.session, source: "manual", result: { proven: false } }
       : null;
-    if (hit === host.results?.cpChallenge) {
+    if (isCpChallenge(host, hit)) {
       const input = resultRequest(host, hit);
       return input ? { result: { proven: true }, input, source: "cp-challenge", settings: resultSettings(host, hit) } : null;
     }
@@ -313,6 +320,10 @@ export class ResultComparison {
         <header class="row row--between">
           <strong>${host.t("compareTeams", "Compare teams")}</strong>
           <div class="cluster tb-comparison-tools">
+            ${this.items[0] && host.analysis.canShowLuckScore(this.items[0]) && host.analysis.canCompareLuck(this.items) ? html`
+              <button class="button button--tonal" type="button" aria-haspopup="dialog"
+                @click=${() => { this.open = false; host.analysis.openLuckScoreSources(this.items); }}
+              >${host.t("analysis.luckDistribution", "LUCK score distribution")}</button>` : nothing}
             ${host.analysis.canCompareLuck(this.items) ? html`<button class="button button--tonal" type="button" aria-haspopup="dialog"
               @click=${() => { this.open = false; host.analysis.openLuckEntries(this.items); }}
             >${host.t("analysis.luckComparison", "LUCK pt comparison")}</button>` : nothing}

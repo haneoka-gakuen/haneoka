@@ -12,6 +12,8 @@ import type { EventTeamGrowthRequest, EventTeamSearchResult } from "../../event-
 
 export type EvaluateRequest = {
   songRules?: import("../arena").SongRules;
+  sampleMetric?: "score";
+  sampleOffset?: number;
   members: MemberInput[];
   snaps: SnapInput[];
   player: PlayerInput;
@@ -29,6 +31,12 @@ export interface SectionMetricDistribution {
   missions: number[];
   samples: number;
   distributions: { points: number; count: number }[][];
+  scores?: { score: number; count: number }[];
+  scoredRanks?: number[];
+  scoreReplay?: {
+    factors: number[][];
+    samples: [base: number, stages: [number, number, number], count: number][];
+  };
 }
 export interface PlaySample { score: number; lowestLife: number; notes: { index: number; timeMs: number; op: number; judgementType: number }[]; judgements: number[] }
 
@@ -47,6 +55,7 @@ export type ExplainRequest = {
 };
 export type EngineChartSources = Record<string, { identity: TeamBuilderData["identity"]; file: string; apiBase?: string }>;
 export type EngineChart = { song: SongRef; chart: Record<string, unknown> };
+export type EncodedEngineChart = { song: SongRef; bytes: Uint8Array };
 export type EngineCall = (
   | { type: "init"; id: number; data: string | Uint8Array; charts: EngineChartSources; module: WebAssembly.Module }
   | { type: "run"; id: number; request: EngineRequest; deferScores?: boolean; scoredSeeds?: unknown[]; cooperativeFloor?: boolean; initialFloor?: number; initialReward?: RewardFloor; reportRankChecks?: boolean }
@@ -59,7 +68,10 @@ export type EngineCall = (
   | { type: "sectionMetrics"; id: number; request: EvaluateRequest }
   | { type: "sample"; id: number; request: SampleRequest }
   | { type: "explain"; id: number; request: ExplainRequest }
-  | { type: "charts"; id: number; songs: SongRef[] }) & { loadedCharts?: EngineChart[] };
+  | { type: "charts"; id: number; songs: SongRef[] }) & {
+    loadedCharts?: EngineChart[];
+    loadedChartBytes?: EncodedEngineChart[];
+  };
 export type EngineReply =
   | { type: "started"; id: number }
   | { type: "fatal"; message: string }

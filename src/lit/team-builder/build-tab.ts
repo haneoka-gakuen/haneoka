@@ -333,7 +333,7 @@ export function songList(
   allowedSongIds?: number[],
   fieldId = "tb-songs",
   allowedCharts?: readonly SongRef[],
-  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean; poolAction?: TemplateResult | typeof nothing },
+  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean; removable?: boolean; poolAction?: TemplateResult | typeof nothing },
 ): TemplateResult {
   const catalog = host.catalog!;
   const activeRules = () => options?.songRules === null ? undefined : options?.songRules ?? (host.tab === "arena" ? host.arena.rule : host.songRules());
@@ -399,9 +399,9 @@ export function songList(
                           ${catalog.difficultyLabel(song.songId, song.difficulty)}${showMissions ? ` / ${missionSummary(songMissions(rules ? arenaSongView(catalog.song(song.songId), rules) : catalog.song(song.songId)))}` : ""}${!available(song) ? ` / ${host.t("unavailable", "Unavailable")}` : ""}
                         </span>
                       </span>
-                      <span class="list-item__trailing">
+                      ${options?.removable !== false ? html`<span class="list-item__trailing">
                         ${iconButton({ icon: "close", label: host.common("common.actions.remove", "Remove"), onClick: () => change(songs.filter((_, at) => at !== index)) })}
-                      </span>
+                      </span>` : nothing}
                     </div>
                   `,
                 )}

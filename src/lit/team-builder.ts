@@ -2200,20 +2200,16 @@ export class TeamBuilder extends LitElement {
     }
   }
   get canRecommendCharts(): boolean {
-    const s = this.settings;
-    return (
-      this.tab === "build" &&
-      this.buildMode === "automatic" &&
-      s.goal === "score" &&
-      s.aggregation !== "mean" &&
-      s.criterion === "mean" &&
-      s.scoreTarget === "none" &&
-      !s.challengeRules
-    );
+    const s = this.searchSettings;
+    if (this.tab === "arena" || this.tab === "build" && this.buildMode === "automatic" && s.goal === "gekiso") {
+      return s.goal === "gekiso" && s.arena?.objective !== "sections";
+    }
+    return this.tab === "build" && this.buildMode === "automatic" && s.goal === "score"
+      && s.aggregation !== "mean" && s.criterion === "mean" && s.scoreTarget === "none" && !s.challengeRules;
   }
   chartRecommendationRequest(songs: SongRef[]): EngineRequest | null {
     if (!this.canRecommendCharts) return null;
-    const settings = this.compatibleSettings({ ...this.settings, songs });
+    const settings = this.compatibleSettings({ ...this.searchSettings, songs });
     return this.request(this.goal(settings), settings);
   }
   request(goal = this.goal(), s = this.searchSettings): EngineRequest | null {

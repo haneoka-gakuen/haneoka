@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Scene-specific chart choices, catalogue and browse preferences.
-// Output: Grid chart selection, optional lower difficulties, ordinary Live recommendations and explicit apply/cancel.
+// Output: Grid chart selection, optional lower difficulties, ordinary and Gekiso Live recommendations and explicit apply/cancel.
 // Pos: [Map](../L2-2.md); shared team workspace chart chooser.
 // Effects/Dependencies: Lit modal, Box-persisted difficulty selection and lazy reads of release-pinned metadata and rates.
 import { matchesSongMissions, matchesSelections } from "../../lib/catalog-filters";
@@ -12,7 +12,8 @@ import {
 } from "../../lib/catalog-query";
 import { html, nothing, type TemplateResult } from "lit";
 import { CHART_RATE_SCHEMA, type ChartRateTable } from "../../lib/chart-rates";
-import type { EngineRequest, SongRef } from "../../lib/team-builder/engine/api";
+import { clock } from "../../lib/team-builder/engine/execution";
+import type { EngineRequest, EngineResponse, SongRef } from "../../lib/team-builder/engine/api";
 import { arenaSongView, type ArenaRule } from "../../lib/team-builder/arena";
 import { songPickerAppliedFilters, songPickerDifficultyFilters, songPickerFilterGroups } from "../ui/song-picker-filters";
 import { actionMenu } from "../ui/action-menu";
@@ -28,7 +29,10 @@ export interface SongPickerState {
   songs: SongRef[];
   single: boolean;
   recommend?: boolean;
-  recommendation?: { input: string; charts: SongRef[]; count: number; adopted: boolean };
+  recommendation?: {
+    input: string; charts: SongRef[]; count: number; adopted: boolean;
+    coverage?: { screened: number; scored: number; verified: number; candidates: number };
+  };
   recommendationRequest?: AbortController;
   recommendationError?: "data" | "team";
   query: string;
@@ -81,6 +85,7 @@ async function pickerRates(catalog: PickerCatalog, charts: readonly SongRef[], s
 }
 
 const DEFAULT_RECOMMENDATIONS = 5;
+const GEKISO_RECOMMENDATIONS = 6;
 const MAX_RECOMMENDATIONS = 10;
 const FILTER_KEYS = ["query", "bands", "categories", "attributes", "gekisouTypes", "gekisouMatch",
   "difficulties", "minLevel", "maxLevel", "maxSeconds"] as const;
@@ -118,11 +123,16 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const songView = (id: number) =>
     state.songRules ? arenaSongView(catalog.song(id), state.songRules) : catalog.song(id);
   const context = state.context ?? `${host.tab}:${state.single ? "single" : "charts"}`;
+  const restricted = state.single ? state.allowedCharts : undefined;
   if (!state.initialized) {
+    const preferences = host.songPickerPreferences.get(context);
+    const poolDifficulties = restricted && [...new Set(restricted.map(song => song.difficulty))].sort((a, b) => a - b);
     state = host.songPicker = {
       ...state,
-      ...host.songPickerPreferences.get(context),
-      difficulties: host.songDifficulties,
+      ...preferences,
+      difficulties: poolDifficulties
+        ? (preferences?.difficulties?.some(difficulty => poolDifficulties.includes(difficulty)) ? preferences.difficulties : poolDifficulties)
+        : host.songDifficulties,
       includeThrough: state.expandDifficulties ? host.songDifficultyCeiling : null,
       initialized: true,
       opener: typeof document === "undefined" ? undefined : (document.activeElement as HTMLElement),
@@ -155,7 +165,7 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
       maxLevel,
       maxSeconds,
     });
-    if (patch.difficulties) host.setSongPickerPreferences(patch.difficulties, host.songDifficultyCeiling);
+    if (patch.difficulties && !restricted) host.setSongPickerPreferences(patch.difficulties, host.songDifficultyCeiling);
     host.requestUpdate();
   };
   const close = () => {
@@ -213,20 +223,22 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const maxLevel = upper.length ? Math.min(...upper) : null;
   const missionMode = facets.gekisouMatch?.[0] ?? state.gekisouMatch;
   const difficulties = state.difficulties ?? [state.difficulty];
-  const legal = (song: SongRef) =>
-    (!state.allowedSongIds || state.allowedSongIds.includes(song.songId)) &&
-    (!state.allowedCharts ||
-      state.allowedCharts.some((ref) => ref.songId === song.songId && ref.difficulty === song.difficulty)) &&
+  const allowedSongs = state.allowedSongIds && new Set(state.allowedSongIds);
+  const allowedCharts = state.allowedCharts && new Set(state.allowedCharts.map(chartKey));
+  const allowed = (song: SongRef) => (!allowedSongs || allowedSongs.has(song.songId)) &&
+    (!allowedCharts || allowedCharts.has(chartKey(song)));
+  const legal = (song: SongRef) => allowed(song) &&
     catalog.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty);
-  const allCharts = Object.keys(catalog.data.songs)
-    .map(Number)
+  const songIds = state.allowedCharts ? [...new Set(state.allowedCharts.map(song => song.songId))]
+    : allowedSongs ? [...allowedSongs] : Object.keys(catalog.data.songs).map(Number);
+  const allCharts = songIds
     .filter((id) => catalog.songVisible(id))
     .sort((a, b) => b - a)
     .flatMap((songId) =>
       catalog
         .difficultyRows(songId)
         .map((row) => ({ songId, difficulty: Number(row.difficulty) }))
-        .filter(legal),
+        .filter(allowed),
     );
   catalog.loadSongMetadata(allCharts.map((song) => song.songId));
   const metricSort = songMetricSort(host);
@@ -296,9 +308,10 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     snackbar(host.t("selectionUpdated", "Selection updated"));
   };
   const recommend = async () => {
+    const deadline = clock() + 900;
     const request = host.chartRecommendationRequest(visible);
     const master = host.master;
-    if (!master || !request || request.goal.kind !== "score" || request.members.length < 5) {
+    if (!master || !request || (request.goal.kind !== "score" && request.goal.kind !== "gekiso") || request.members.length < 5) {
       update({ recommendationError: "team" });
       return;
     }
@@ -307,9 +320,57 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
     host.songPicker?.recommendationRequest?.abort();
     const samePicker = () => host.catalog === catalog && host.songPicker?.recommendationRequest === controller;
     const current = () => samePicker() && !controller.signal.aborted && host.isConnected &&
-      signature(host.chartRecommendationRequest(visible)) === input;
+      state.context === host.songPicker?.context;
     update({ recommendationRequest: controller, recommendationError: undefined });
     try {
+      if (request.goal.kind === "gekiso") {
+        const goal = request.goal;
+        const { rankGekisoPickerCharts } = await import("../../lib/team-builder/chart-recommendation");
+        const ranked = await rankGekisoPickerCharts(master, request, controller.signal);
+        if (!current()) return;
+        if (!ranked.length) {
+          update({ recommendationError: "team" });
+          return;
+        }
+        const candidates = ranked.slice(0, GEKISO_RECOMMENDATIONS);
+        const coverage = { screened: ranked.length, scored: 0, verified: 0, candidates: candidates.length };
+        const screened = { input, charts: candidates, count: candidates.length, adopted: false, coverage };
+        update({ view: "recommended", recommendation: screened });
+        const engine = host.engine;
+        if (!engine || clock() >= deadline) return;
+        const task = host.acquireTask("chart-recommendation");
+        if (!task) return;
+        const cancel = () => { if (host.ownsTask(task)) engine.cancel(); };
+        controller.signal.addEventListener("abort", cancel, { once: true });
+        try {
+          const requests = candidates.map(song => ({
+            ...request, aggregation: undefined, deadline, k: 1,
+            goal: { ...goal, songs: [song], ...(goal.arena ? { arena: { ...goal.arena, mode: "individual" as const } } : {}) },
+          }));
+          const scores = new Map<string, { value: number; proven: boolean }>();
+          const accept = (index: number, response: EngineResponse) => {
+            if (!current() || response.stopReason === "error") return;
+            const best = response.overall[0];
+            if (!best || !Number.isFinite(best.key)) return;
+            const key = chartKey(candidates[index]!);
+            const previous = scores.get(key);
+            const proven = response.results.length > 0 && response.results.every(result => result.proven);
+            if (previous?.proven || (previous && !proven && previous.value >= best.key)) return;
+            scores.set(key, { value: best.key, proven });
+            const charts = [...candidates].sort((a, b) =>
+              (scores.get(chartKey(b))?.value ?? -1) - (scores.get(chartKey(a))?.value ?? -1));
+            update({ recommendation: {
+              ...screened, charts,
+              coverage: { ...coverage, scored: scores.size, verified: [...scores.values()].filter(row => row.proven).length },
+            } });
+          };
+          await engine.runBatch(requests, accept, { snapshot: (index, snapshot) => accept(index, snapshot.response) });
+        } finally {
+          controller.signal.removeEventListener("abort", cancel);
+          host.releaseTask(task);
+        }
+        return;
+      }
       const [{ rankPickerCharts }, tableFor] = await Promise.all([
         import("../../lib/team-builder/chart-recommendation"),
         pickerRates(catalog, request.goal.songs, controller.signal),
@@ -458,8 +519,14 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
               ${showingRecommendations ? host.t("browseCharts", "Browse charts")
                 : recommendation ? host.t("recommendedCharts", "Recommended charts")
                 : state.recommendationRequest ? host.t("chartRecommendationLoading", "Finding charts…")
-                : host.t("recommendChartCount", "Recommend {count} charts", { count: DEFAULT_RECOMMENDATIONS })}
+                : host.t("recommendChartCount", "Recommend {count} charts", {
+                    count: host.searchSettings.goal === "gekiso" ? GEKISO_RECOMMENDATIONS : DEFAULT_RECOMMENDATIONS,
+                  })}
             </button>
+            ${showingRecommendations && recommendation.coverage ? html`
+              <span class="supporting-text tabular" role="status">${host.t(
+                "chartRecommendationCoverage", "Screened {screened} / Scored {scored} of {candidates} / Verified {verified}", recommendation.coverage,
+              )}</span>` : nothing}
             ${showingRecommendations && recommendation.charts.length > recommendation.count ? html`
               <button class="button button--text" type="button" @click=${expandRecommendation}>
                 ${host.t("expandChartRecommendations", "Expand to {count}", { count: recommendation.charts.length })}

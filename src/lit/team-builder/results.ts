@@ -1342,6 +1342,13 @@ export function renderHit(
       }
       <div class="tb-hit__actions">
         ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
+        ${(() => {
+          const input = resultRequest(host, hit);
+          return input && host.analysis.canShowLuckScore({ hit, input }) ? html`
+            <button class="button button--text" type="button" ?disabled=${host.running || stale}
+              @click=${() => host.analysis.openLuckScore(hit)}>${host.t("analysis.luckDistribution", "LUCK score distribution")}</button>`
+            : nothing;
+        })()}
         ${resultRequest(host,hit)?.goal.kind === "gekiso" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openPressure(hit)}>${host.t("analysis.pressure", "Opponent scenarios")}</button>` : nothing}
         ${resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
           <button class="button button--tonal" type="button" ?disabled=${host.running}
@@ -1523,7 +1530,7 @@ function bestResultsBySong(results: SongResult[], criterion: BuildSettings["crit
   return best;
 }
 
-export function renderResults(host: TeamBuilder): TemplateResult {
+export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
   const results = host.results;
   if (
     !results ||
@@ -1665,10 +1672,10 @@ export function renderResults(host: TeamBuilder): TemplateResult {
           : nothing
       }
       ${
-        results.cpChallenge
+        cpFollowUp ?? (results.cpChallenge
           ? renderHit(host, results.cpChallenge, -1, { rank: icon("swords", 18),
               subtitle: host.t("pt.challengeBest", "Challenge team"), stale })
-          : nothing
+          : nothing)
       }
       ${
         shown.length

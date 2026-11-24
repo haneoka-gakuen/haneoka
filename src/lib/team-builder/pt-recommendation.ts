@@ -141,6 +141,54 @@ export function ptChallengeBest(job: PtJob, measure: PtMeasure): EngineHit | nul
     return null;
   return ptSongRanking(job, measure, "challenge")[0] ?? null;
 }
+export function ptChallengeCharts(job: PtJob, measure: PtMeasure): EngineHit[] {
+  const charts = new Map<string, EngineHit>();
+  for (const task of job.tasks) {
+    if (task.route !== "challenge" || task.measure !== measure || !chartComplete(task)) continue;
+    for (const hit of task.result?.hits ?? []) {
+      if (!hit.song || !hit.event || !Number.isFinite(hit.event.mean)) continue;
+      const key = chartKey(hit.song);
+      const previous = charts.get(key);
+      if (!previous || compareHit(hit, previous) < 0) charts.set(key, hit);
+    }
+  }
+  return [...charts.values()].sort(compareHit);
+}
+
+export function ptFollowUpTotals(live: EngineHit, challenge: EngineHit, measure: PtMeasure,
+                                 normalPlays: number, startingCp: number, cost: number) {
+  const normal = live.event!;
+  const next = challenge.event!;
+  const cp = normal.rewardValues?.["challenge-points"];
+  const denominator = Number(cp?.denominator);
+  const numerator = Number(cp?.numerator);
+  const fraction = Number.isSafeInteger(denominator) && denominator > 0 && Number.isSafeInteger(numerator)
+    && Number.isSafeInteger(startingCp * denominator + numerator * normalPlays)
+    && Number.isSafeInteger(cost * denominator);
+  const orders = fraction ? denominator : Math.max(1, normal.orders ?? 1);
+  const earned = fraction ? numerator : Math.round(normal.challengePoints * orders);
+  const budget = startingCp * orders + earned * normalPlays;
+  const consumption = cost * orders;
+  const plays = Math.floor(budget / consumption);
+  const reward = (event: NonNullable<EngineHit["event"]>, metric: PtMeasure) => {
+    const value = event.rewardValues?.[metric]?.value ?? (metric === measure
+      ? event.directMean ?? event.mean - (event.convertedMean ?? 0) : event.otherMean);
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  const total = (metric: PtMeasure) => {
+    const live = reward(normal, metric);
+    const followUp = reward(next, metric);
+    return live !== null && (plays === 0 || followUp !== null)
+      ? live * normalPlays + (followUp ?? 0) * plays : null;
+  };
+  return {
+    plays,
+    remaining: (budget - plays * consumption) / orders,
+    points: total("points"),
+    items: total("items"),
+  };
+}
+
 export function ptCutoff(job: PtJob, measure: PtMeasure): number | undefined {
   return ptSongRanking(job, measure)[(job.scope === "top-one" ? 1 : 5) - 1]?.key;
 }
