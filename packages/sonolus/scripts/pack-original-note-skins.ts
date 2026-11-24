@@ -1260,8 +1260,6 @@ function readSkin(directory: string) {
 export function appendGekisouSkinTiles(directory: string, tiles: readonly Omit<PackedNativeSprite, "x" | "y">[]): number {
   const { data, texture: source, dataPath, texturePath } = readSkin(directory);
   const originalWidth = Math.min(source.width, NATIVE_TEXTURE_SIZE);
-  const spillWidth = originalWidth + Math.max(0, ...tiles.map(tile => tile.w)) + 4;
-  let spillY = 0;
   const isOwned = (name: string) => isGekisouSprite(name) || name.startsWith("Our Notes Solo ");
   if (data.sprites.some(sprite => sprite.x + sprite.w > originalWidth && !isOwned(sprite.name)))
     throw new Error(`${directory}: the GEKISO spill contains other skin sprites`);
@@ -1283,34 +1281,46 @@ export function appendGekisouSkinTiles(directory: string, tiles: readonly Omit<P
   const rowEnds = Array.from({ length: image.height }, (_, y) => data.sprites
     .filter((s) => y >= s.y - 2 && y < s.y + s.h + 2)
     .map((s) => [Math.max(0, s.x - 2), Math.min(originalWidth, s.x + s.w + 2)] as const));
-  for (const tile of [...tiles].sort((a, b) => b.w * b.h - a.w * a.h)) {
-    const { w, h, name, pixels } = tile;
-    const paddedWidth = w + 4;
-    const paddedHeight = h + 4;
-    let placement: { x: number; y: number; w: number; h: number } | undefined;
-    for (let y = 0; y <= image.height - paddedHeight && !placement; y += 2) {
-      const intervals = rowEnds.slice(y, y + paddedHeight).flat().sort((a, b) => a[0] - b[0]);
+  function place(rows: typeof rowEnds, width: number, w: number, h: number) {
+    const paddedWidth = w + 4, paddedHeight = h + 4;
+    for (let y = 0; y <= image.height - paddedHeight; y += 2) {
+      const intervals = rows.slice(y, y + paddedHeight).flat().sort((a, b) => a[0] - b[0]);
       let x = 0;
       for (const [left, right] of intervals) {
         if (left - x >= paddedWidth) break;
         x = Math.max(x, right);
       }
-      if (x + paddedWidth > originalWidth) continue;
-      placement = { x: x + 2, y: y + 2, w, h };
-      for (let row = y; row < y + paddedHeight; row++) rowEnds[row]!.push([x, x + paddedWidth]);
+      if (x + paddedWidth > width) continue;
+      for (let row = y; row < y + paddedHeight; row++) rows[row]!.push([x, x + paddedWidth]);
+      return { x: x + 2, y: y + 2, w, h };
     }
-    if (!placement) {
-      if (spillY + paddedHeight > image.height) throw new Error(`${directory}: GEKISO spill exceeds atlas height`);
-      if (image.width === originalWidth) {
-        const pixels = Buffer.alloc(spillWidth * image.height * 4);
-        for (let row = 0; row < image.height; row++)
-          image.pixels.copy(pixels, row * spillWidth * 4, row * image.width * 4, (row + 1) * image.width * 4);
-        image.width = spillWidth;
-        image.pixels = pixels;
+  }
+  const sorted = [...tiles].sort((a, b) => b.w * b.h - a.w * a.h);
+  const placements = sorted.map(tile => place(rowEnds, originalWidth, tile.w, tile.h));
+  const spill = sorted.flatMap((tile, index) => placements[index] ? [] : [index]);
+  if (spill.length > 0) {
+    const minimum = Math.max(...spill.map(i => sorted[i]!.w + 4));
+    for (let extra = minimum; extra <= 256; extra += 16) {
+      const rows: typeof rowEnds = Array.from({ length: image.height }, () => []);
+      const strip = spill.map(i => place(rows, extra, sorted[i]!.w, sorted[i]!.h));
+      if (strip.some(p => !p)) continue;
+      for (const [j, i] of spill.entries()) {
+        const slot = strip[j]!;
+        placements[i] = { ...slot, x: slot.x + originalWidth };
       }
-      placement = { x: originalWidth + 2, y: spillY + 2, w, h };
-      spillY += paddedHeight;
+      const width = image.width + extra;
+      const expanded = Buffer.alloc(width * image.height * 4);
+      for (let row = 0; row < image.height; row++)
+        image.pixels.copy(expanded, row * width * 4, row * image.width * 4, (row + 1) * image.width * 4);
+      image.width = width;
+      image.pixels = expanded;
+      break;
     }
+    if (placements.some(p => !p)) throw new Error(`${directory}: GEKISO sprites exceed the atlas layout`);
+  }
+  for (const [i, tile] of sorted.entries()) {
+    const { w, h, name, pixels } = tile;
+    const placement = placements[i]!;
     const { x, y } = placement;
     for (let dy = -2; dy < h + 2; dy++) for (let dx = -2; dx < w + 2; dx++) {
       const src = (Math.min(h - 1, Math.max(0, dy)) * w + Math.min(w - 1, Math.max(0, dx))) * 4;

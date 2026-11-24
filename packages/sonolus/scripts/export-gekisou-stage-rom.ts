@@ -15,6 +15,7 @@ import { OurNotesGekisouOverlayProjector } from "../particle-producer/profile/sr
 import type { OurNotesGekisouMission } from "../particle-producer/profile/src/presentation/Gekisou.js";
 import laneHud from "../particle-producer/profile/src/assets/gekisou-lane-hud-profile.json";
 import type { RenderOverlaySprite } from "../particle-producer/profile/src/render/types.js";
+import { bakeGekisouMissionHud } from "./export-gekisou-mission-hud.ts";
 
 const [input, release, engine] = process.argv.slice(2);
 if (!input || !release || !engine) throw new Error("Usage: export-gekisou-stage-rom PROFILE RELEASE_DIR ENGINE_DIR");
@@ -90,7 +91,7 @@ function spriteQuad(draw: RenderOverlaySprite, preferCorners = false): number[] 
   const corners = [[left, bottom], [left, top], [right, top], [right, bottom]];
   if (preferCorners) {
     const indices = corners.map(([x, y]) => u.findIndex((value, i) => value === x && v[i] === y));
-    if (indices.every(i => i >= 0)) return indices.flatMap(i => Array.from(vertices.subarray(i * 10, (i + 1) * 10)));
+    if (indices.every(i => i >= 0)) return indices.flatMap(i => Array.from({ length: 10 }, (_, j) => vertices[i * 10 + j]!));
   }
   for (let i = 0; i < indices.length; i += 3) {
     const a = indices[i]!, b = indices[i + 1]!, c = indices[i + 2]!;
@@ -263,18 +264,17 @@ const laneHudPaths = new Map(laneHud.textures.map(texture => [texture.key, textu
 const hudPath = (index: number) => laneHudPaths.get(laneHud.sprites[index]!.texture)!;
 const atlasDir = resolvePath(release, hudPath(16), "..");
 const atlasSprites = new Map(readdirSync(atlasDir).map(file => [file.split("--Sprite")[0], resolvePath(atlasDir, file)]));
-const hudSources: Record<keyof typeof soloHudSpriteNames, number | string> = {
+const hudSources = {
   digit0: 1, digit1: 2, digit2: 3, digit3: 4, digit4: 5,
   digit5: 6, digit6: 7, digit7: 8, digit8: 9, digit9: 10,
   countdown1: 20, countdown2: 21, countdown3: 22,
   modeCombo: 16, modeLuck: 18, modeJust: 17,
   ready: 24, divider: 23,
   countCombo: "SP_gekisou_count_combo", countLuck: "SP_gekisou_count_luck", countJust: 19,
-  luckGaugeBase: "gekisou_luck_gaugebase", luckGauge: "gekisou_luck_gauge", luckRushGauge: "gekisou_luckyrush_gauge",
   noLuck: "gekisou_luck_noluck_text", luck: "gekisou_luck_lucky_text",
   superLuck: "gekisou_luck_s_lucky_text", luckRush: "gekisou_luck_luckyrush_text",
   modeAssist: "../LiveAtlas.spriteatlasv2/SP_AssistMode--Sprite--4011404251611919236.png",
-};
+} satisfies Partial<Record<keyof typeof soloHudSpriteNames, number | string>>;
 const hudTiles = (Object.keys(hudSources) as (keyof typeof hudSources)[]).map(key => {
   const source = hudSources[key];
   const path = typeof source === "number" ? resolvePath(release, hudPath(source)) :
@@ -322,7 +322,7 @@ for (let mission = 1; mission <= GEKISOU_COUNTDOWN_ROM.missionCount; mission++) 
     const elapsed = index * ticks;
     const count = Math.max(0, 3 - Math.floor(index / fps));
     const clip = count === 3 ? "number3" : count === 2 ? "number2" : count === 1 ? "number1" : "out";
-    const draws = countdownProjector.project({
+    const draws = [...countdownProjector.project({
       enabled: true, observedTimeMs: elapsed,
       countdown: {
         mission: mission as OurNotesGekisouMission,
@@ -330,7 +330,7 @@ for (let mission = 1; mission <= GEKISOU_COUNTDOWN_ROM.missionCount; mission++) 
         clip, clipTimeSeconds: (index % fps) / fps, visible: true,
       },
       just: { rangeIndex: null, visible: false, count: 0, lastJudgedAtMs: null, lastAddedCount: 0 },
-    }, countdownViewport).toSorted((a, b) => a.sortingOrder - b.sortingOrder);
+    }, countdownViewport)].sort((a, b) => a.sortingOrder - b.sortingOrder);
     if (draws.length > GEKISOU_COUNTDOWN_ROM.slotCount) throw new Error("GEKISO countdown sprite limit exceeded");
     for (let slot = 0; slot < GEKISOU_COUNTDOWN_ROM.slotCount; slot++) {
       const draw = draws[slot];
@@ -350,12 +350,13 @@ for (let mission = 1; mission <= GEKISOU_COUNTDOWN_ROM.missionCount; mission++) 
     }
   }
 }
+const mission = bakeGekisouMissionHud(release, matrix, fov, aspect);
 for (const edition of ["skin001", "skin002", "skin003"]) {
-  appendGekisouSkinTiles(resolvePath(engine, "resources/presentation/skins", edition), [...tiles, ...hudTiles]);
+  appendGekisouSkinTiles(resolvePath(engine, "resources/presentation/skins", edition), [...tiles, ...hudTiles, ...mission.tiles]);
 }
 
 const values = [GEKISOU_STAGE_ROM.magic, fps, standbyLeadMs, inFrames, loopFrames, outFrames, exitDelayMs,
-  ...light, ...standard, ...countdownRom];
+  ...light, ...standard, ...countdownRom, ...mission.rom];
 const rom = Buffer.alloc(values.length * 4);
 for (const [i, value] of values.entries()) rom.writeFloatLE(value, i * 4);
 writeFileSync(resolvePath(engine, "assets/GekisouStageRom"), rom);
