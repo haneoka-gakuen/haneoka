@@ -2,7 +2,7 @@
 // Input: Haneoka App 在文档开始时注入的 window.haneokaApp 与其 User-Agent 标记。
 // Output: App 身份、平台与原生方法的 Promise 调用。
 // Pos: [Map](L2-2.md)；网页与 App 外壳之间的唯一接口。
-// Effects/Dependencies: 调用原生存档读取与存档页、游戏服务器读取、系统浏览器登录及全屏方向控制。
+// Effects/Dependencies: 调用原生存档、游戏服务器读取、系统浏览器登录、全屏方向与移动端音乐队列。
 
 export interface AppMethods {
   /** The chosen save as a `haneoka-game-save-v1` snapshot, with companion documents when requested. */
@@ -18,6 +18,7 @@ export interface AppMethods {
   /** Provider sign-in in the system browser; the page exchanges the code for its session. */
   signIn: { args: { provider: string }; result: { code: string; verifier: string } | null };
   orientation: { args: { orientation: "landscape" | "any" }; result: null };
+  audioPlayback: { args: AppAudioCommand & { queueRevision?: string }; result: AppAudioState };
   /** Game saves read on this device; `haneoka-app-accounts` fires on window when they change. */
   gameAccounts: { args: Record<string, never>; result: DeviceSave[] };
   /** The app's page for one save: progress, cards, clears, export and update. */
@@ -64,6 +65,46 @@ export interface AppMethods {
   refreshGameAccount: { args: { key: string }; result: null };
   exportGameAccount: { args: { key: string }; result: boolean };
   deleteGameAccount: { args: { key: string }; result: null };
+}
+
+export type AudioPlaybackMode = "sequential" | "repeat-all" | "repeat-one" | "shuffle";
+
+interface AppAudioTrack {
+  id: string;
+  queueId: string;
+  songKey?: string;
+  title: string;
+  titleLanguage?: string;
+  artist: string;
+  cover: string;
+  url: string;
+  detailPath?: string;
+}
+
+export type AppAudioCommand =
+  | { action: "state" | "play" | "pause" | "toggle" | "next" | "previous" | "clear" }
+  | { action: "seek"; position: number }
+  | { action: "mode"; mode: AudioPlaybackMode }
+  | { action: "volume"; volume: number }
+  | {
+      action: "configure";
+      queue: (AppAudioTrack & { source: string; artwork?: string })[];
+      index?: number;
+      position?: number;
+      playing?: boolean;
+      mode?: AudioPlaybackMode;
+      volume?: number;
+    };
+
+export interface AppAudioState {
+  queue?: AppAudioTrack[];
+  queueRevision: string;
+  index: number;
+  position: number;
+  duration: number;
+  playing: boolean;
+  mode: AudioPlaybackMode;
+  volume: number;
 }
 
 export type SaveSource = "files" | "folder" | "adb" | "iosBackup" | "shizuku" | "gameFolder";
