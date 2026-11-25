@@ -1,5 +1,5 @@
 # L3 — GEB
-# Input: A complete web player build and an authorized Tauri signing key.
+# Input: A complete web player build and the dedicated story-player signing key.
 # Output: An immutable player ZIP and a signed release pointer.
 # Pos: [Map](L2-2.md); independent App story-player publication.
 # Effects/Dependencies: Uses the Tauri signer, then uploads the ZIP before the pointer.
@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--release", required=True)
     parser.add_argument("--output", type=Path, default=Path(".output/offline-story-player-release"))
     parser.add_argument("--publish", action="store_true")
+    parser.add_argument("--cloudflare-token", action="store_true")
     args = parser.parse_args()
     if not all((args.directory / name).is_file() for name in ("index.html", "player.js", "player.css")):
         parser.error("Build the complete offline story player before signing")
@@ -52,7 +53,7 @@ def main():
     })
     (args.output / "latest.json").write_bytes(latest)
     if args.publish:
-        store = DownloadStore("haneoka-downloads")
+        store = DownloadStore("haneoka-downloads", cloudflare_token=args.cloudflare_token)
         store.put_file(f"story-player/{package.name}", package, "application/zip")
         store.put_bytes("story-player/v1/latest.json", latest, cache_control="public, max-age=60, must-revalidate")
 

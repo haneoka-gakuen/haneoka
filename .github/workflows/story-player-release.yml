@@ -17,8 +17,6 @@ jobs:
     timeout-minutes: 45
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - uses: actions/checkout@v7
@@ -41,6 +39,6 @@ jobs:
       - run: npm install --global @tauri-apps/cli@2.12.4
       - name: Sign and publish the independent player
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: python scripts/publish/offline_story_player.py --release "$GITHUB_SHA" --publish
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.STORY_PLAYER_SIGNING_PRIVATE_KEY }}
+        run: python scripts/publish/offline_story_player.py --release "$GITHUB_SHA" --publish --cloudflare-token
