@@ -17,7 +17,7 @@ import { story as zhTWRelationships } from "../../../public/i18n/zh-TW.json";
 import { story as zhCNRelationships } from "../../../public/i18n/zh-CN.json";
 import { story as koRelationships } from "../../../public/i18n/ko.json";
 import { CUBISM_CORE_URLS, loadCubismWebRuntime } from "../../lib/cubism-runtime";
-import { fetchJson, uiText } from "../shared/catalog";
+import { fetchJson, JsonResponseError, uiText } from "../shared/catalog";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
 import "@material/web/progress/linear-progress.js";
@@ -296,6 +296,10 @@ export class VegaStoryStage extends LitElement {
       const keys = (Array.isArray(assets.live2d) ? (assets.live2d as RecordValue[]) : [])
         .map((entry) => String(entry.live2dKey || ""))
         .filter(Boolean);
+      const loadModel = (key: string) => fetchJson<RecordValue>(url("live2d", key), { signal }).catch((error) => {
+        if (error instanceof JsonResponseError && (error.status === 404 || error.status === 410)) return {};
+        throw error;
+      });
       const [runtime, live2d] = await Promise.all([
         project || providerBase
           ? Promise.resolve(story.runtime || {})
@@ -311,7 +315,7 @@ export class VegaStoryStage extends LitElement {
                   { signal },
                 ).then((payload) => keys.map((key) => (payload.items as RecordValue | undefined)?.[key] || {}))
               : []
-            : Promise.all(keys.map((key) => fetchJson<RecordValue>(url("live2d", key), { signal }))),
+            : Promise.all(keys.map(loadModel)),
       ]);
       if (!active()) return;
       const resolvedRuntime = resolveStoryRuntimeAssets(merge(runtime, story.runtime), server);
@@ -348,9 +352,9 @@ export class VegaStoryStage extends LitElement {
           }
         }
       }
-      if (hydrated.runtime) {
-        Object.assign(hydrated.runtime, { audio: { ...hydrated.runtime.audio, preparationPlan } });
-      }
+      hydrated.runtime ??= {};
+      hydrated.runtime.allowMissingMedia = true;
+      Object.assign(hydrated.runtime, { audio: { ...hydrated.runtime.audio, preparationPlan } });
       this.phase = "booting";
       this.playerState = createVegaPlayerState();
       this.playerState.paused = true;

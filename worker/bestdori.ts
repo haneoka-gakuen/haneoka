@@ -1,3 +1,4 @@
+import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
 import { offlineProviderCatalog, offlineProviderStory, storyModelIds } from "./offline-story-data";
 import { localizedFallbacks } from "../src/lib/localized-text";
 import { providerFetch, providerEdgeCache, type ProviderSourceReader, type ProviderExecutionContext, type ProviderFetchInit } from "./provider-source";
@@ -2064,7 +2065,10 @@ export async function handleGarupaBestdoriApi(
       const selected = String(story.sourceServer || region);
       const candidates = [...new Set([selected, region, ...regionChainForLocale(lang)])].filter(isBestdoriRegion);
       const keys = storyModelIds(story);
-      const ids = new Set([...asArray(story.characterIds), story.characterId,
+      const cast = projectHaneokaTranscript(story).flatMap(({ command }) =>
+        asArray(command.targets).map((target) => asObj(target).characterId),
+      );
+      const ids = new Set([...asArray(story.characterIds), story.characterId, ...cast,
         ...asArray(asObj(story.assets).live2d).map((entry) => asObj(entry).characterId),
         ...keys.map((key) => Number(/^([0-9]+)_/u.exec(key)?.[1]))].map(Number).filter((id) => Number.isFinite(id) && id > 0));
       const [models, people] = await Promise.all([

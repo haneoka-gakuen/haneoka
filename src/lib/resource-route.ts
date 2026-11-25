@@ -74,6 +74,32 @@ export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 export const STORY_MODES = ["event", "band", "link", "birthday", "home", "afterlive", "tutorial"] as const;
 export type StoryMode = (typeof STORY_MODES)[number];
 
+/**
+ * The interactive screen derives the mode from the chapter: event-owned
+ * chapters are event stories, native birthday categories come next, other
+ * numbered chapters (below the synthetic 900000 range) are band stories,
+ * and the rest map by key.
+ */
+export function storyModeOf(episode: {chapterId?: unknown; chapterKey?: unknown; storyCategory?: unknown}, eventChapterIds: ReadonlySet<string>): StoryMode | undefined {
+  const chapterId = String(episode.chapterId || "");
+  if (eventChapterIds.has(chapterId)) return "event";
+  if (episode.storyCategory === "birthday") return "birthday";
+  if (Number(episode.chapterId || 0) < 900000) return "band";
+  switch (episode.chapterKey) {
+    case "asset_linkstory":
+      return "link";
+    case "asset_home":
+      return "home";
+    case "asset_afterlive":
+      return "afterlive";
+    case "asset_tutorial":
+      return "tutorial";
+    default:
+      return undefined;
+  }
+}
+
+
 /** First-party ANON TOKYO views. These are auxiliary collections rather than resource kinds. */
 export const ANON_TOKYO_MODES = [
   "characters",

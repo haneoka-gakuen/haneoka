@@ -2823,8 +2823,7 @@ export class StoryWorkspace extends LitElement {
     if (this.entityId && this.detailCard && !this.detailEpisode && !this.detailLoading && !this.detailError && appSupports("offlineQueueV1")) {
       const downloads = storyDownload(this.locale, this.offlineItems(this.detailCard, this.detailServer()), true);
       if (downloads !== nothing) {
-        setAppBarActions(this.appBarOwner, downloads, this);
-        this.appBarRegistered = true;
+        setAppBarActions(this, this.appBarOwner, downloads);
         return;
       }
     }
@@ -3310,13 +3309,13 @@ export class StoryWorkspace extends LitElement {
         ${[...new Set(images)].map(
           (image) => html`
             <img
-              src=${this.imageForLocale(image)}
+              data-src=${image}
               alt=""
               loading="lazy"
               decoding="async"
               width="48"
               height="48"
-              @error=${(event: Event) => ((event.currentTarget as HTMLImageElement).hidden = true)}
+              @error=${nextImageCandidate}
             />
           `,
         )}
@@ -3390,7 +3389,7 @@ export class StoryWorkspace extends LitElement {
       const target = aligned && index % 2 === 0 ? members[index / 2]?.target : undefined;
       const id = Number(target?.characterId);
       const href =
-        !this.isProvider() && isPublicReleaseServer(server) && Number.isSafeInteger(id) && id > 0 && this.character(id)
+        !this.reader?.offline && !this.isProvider() && isPublicReleaseServer(server) && Number.isSafeInteger(id) && id > 0 && this.character(id)
           ? entityHref({ server, locale: this.locale as Locale, kind: "characters", id: String(id) })
           : "";
       // Preserve the authored separator without adding template whitespace.

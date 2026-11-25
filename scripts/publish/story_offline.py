@@ -35,6 +35,7 @@ class StoryOfflineProjection:
         self.entries = {row["path"]: row for row in manifest["entries"]}
         self.catalog = self.read("api/v1/catalog/manifest.json")
         self.entities = {}
+        self.story_context = None
 
     def read(self, path):
         entry = self.entries[path]
@@ -131,6 +132,13 @@ class StoryOfflineProjection:
                 if path in self.entries:
                     refs[self.media(path)] = {"path": path}
                     pending.append(path)
+                    suffix = PurePosixPath(path).suffix
+                    if suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                        for language in ("en", "ko", "zh-Hans", "zh-Hant"):
+                            localized = f"{path[:-len(suffix)]}({language}){suffix}"
+                            if localized in self.entries:
+                                refs[self.media(localized)] = {"path": localized}
+                                pending.append(localized)
 
         for value in seeds:
             visit(value)
@@ -213,10 +221,24 @@ class StoryOfflineProjection:
                     return self.media(path)
         return None
 
+    def story_presentation(self, key, episode):
+        if self.story_context is None:
+            index, _ = self.resource("stories")
+            chapters = {str(row.get("chapterId")): row for row in index.get("chapters", {}).values()}
+            spots = {
+                str(talk.get("storyKey")): spot
+                for spot in index.get("homeSpots", {}).values()
+                for talk in spot.get("talks", [])
+                if talk.get("storyKey")
+            }
+            self.story_context = index.get("episodes", {}), chapters, spots
+        episodes, chapters, spots = self.story_context
+        return [episodes.get(key), chapters.get(str(episode.get("chapterId"))), spots.get(key)]
+
     def episode_manifest(self, key, thumbnail=None):
         value, path = self.entity("stories", key)
         refs = {self.api("stories/" + key): {"path": path, "selector": key}}
-        seeds = [value, thumbnail] if thumbnail else [value]
+        seeds = [value, thumbnail, *self.story_presentation(key, value)]
         models = {model["live2dKey"] for model in value.get("assets", {}).get("live2d", [])}
         for key in sorted(models):
             model, path = self.entity("live2d", key)

@@ -7,6 +7,8 @@ import "../styles/index.css";
 import "../styles/story.css";
 import "./player.css";
 import { initializeI18nClient } from "../i18n/client";
+import { installUiFonts } from "../lib/ui-fonts";
+import { storyModeOf } from "../lib/resource-route";
 import { normalizeLocale } from "@haneoka/i18n";
 import { DefaultStoryResourceResolver } from "@haneoka/vega/renderer-kit";
 import { fetchJson, recordValues, type JsonRecord } from "../lit/shared/catalog";
@@ -39,6 +41,7 @@ async function openDetail(): Promise<void> {
   const locale = normalizeLocale(session.locale);
   document.documentElement.lang = locale;
   document.documentElement.dataset.locale = locale;
+  installUiFonts();
   const preferred = matchMedia("(prefers-color-scheme: dark)");
   const applyTheme = () => {
     document.documentElement.dataset.theme = session.theme ?? (preferred.matches ? "dark" : "light");
@@ -62,7 +65,10 @@ async function openDetail(): Promise<void> {
   let story: JsonRecord;
   if (portable) {
     workspace.characters = portable.characters ?? [];
-    if (portable.provider) workspace.origin = session.server.startsWith("gbp.") ? "bestdori" : "sekai";
+    if (portable.provider) {
+      workspace.origin = session.server.startsWith("gbp.") ? "bestdori" : "sekai";
+      workspace.mode = session.episode.split(".", 1)[0] as typeof workspace.mode;
+    }
     story = portable.project
       ? {
           ...(await import("@haneoka/vega/web")).vegaProjectToAdvStory(portable.project),
@@ -77,9 +83,14 @@ async function openDetail(): Promise<void> {
       fetchJson<JsonRecord>(`${base}bands`),
     ]);
     workspace.chapters = recordValues(index.chapters);
+    workspace.spots = recordValues(index.homeSpots);
+    workspace.storyEvents = recordValues(index.storyEvents);
     workspace.characters = recordValues(characters);
     workspace.bands = recordValues(bands);
-    story = episode;
+    story = { ...(index.episodes as Record<string, JsonRecord> | undefined)?.[session.episode], ...episode };
+    const event = workspace.storyEvents.find((row) => String(row.chapterId) === String(story.chapterId));
+    if (event?.startAt && !story.releaseAt) story.releaseAt = event.startAt;
+    workspace.mode = storyModeOf(story, new Set(workspace.storyEvents.map((row) => String(row.chapterId)))) ?? workspace.mode;
   }
   const send = (action: "detail-ready" | "ready" | "progress", body?: string) =>
     fetch(`/offline/${action}`, { method: "POST", body, headers: { "X-Haneoka-Session": session.token } });
@@ -115,7 +126,11 @@ async function openDetail(): Promise<void> {
       },
     },
   };
-  document.querySelector("main")!.append(workspace);
+  const main = document.querySelector<HTMLElement>("main")!;
+  main.addEventListener("scroll", () => {
+    document.querySelector("[data-top-app-bar]")?.classList.toggle("is-scrolled", main.scrollTop > 0);
+  }, { passive: true });
+  main.append(workspace);
   await workspace.updateComplete;
   if (workspace.querySelector('.story-detail[data-view="text"]')) await send("detail-ready");
 }
