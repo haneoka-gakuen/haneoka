@@ -727,9 +727,9 @@ export class ImportController {
         const pending = JSON.parse(raw);
         if (pending.id !== saveId || typeof pending.text !== "string") throw new BoxImportError("box_no_player");
         const account = pending.accountId ?? `legacy-${pending.server}`;
-        if (pending.server !== this.box?.server || account !== this.host.gameAccount?.id ||
-            (pending.owner ?? null) !== this.host.snapshot?.owner)
-          throw new BoxImportError("box_incompatible_server");
+        if (pending.server !== this.box?.server) throw new BoxImportError("box_incompatible_server");
+        if (account !== this.host.gameAccount?.id || (pending.owner ?? null) !== this.host.snapshot?.owner)
+          throw new BoxImportError("box_review_context");
         await this.parse({ text: pending.text });
       } catch (error) {
         if (this.box)
