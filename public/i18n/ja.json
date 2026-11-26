@@ -2180,12 +2180,6 @@
         "failed": "エラーのため探索中断",
         "candidate": "候補編成あり"
       },
-      "modeSearch": {
-        "timedEmpty": "制限時間終了・候補チームなし",
-        "timedCandidate": "制限時間終了・候補チームあり",
-        "extend": "さらに{count}秒計算",
-        "untilProven": "最適性を確認するまで続ける"
-      },
       "rewardSearch": "報酬編成",
       "improvementBound": "改善上限 {percent}%",
       "recommendation": "おすすめ",

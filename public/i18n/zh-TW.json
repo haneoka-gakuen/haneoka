@@ -2180,12 +2180,6 @@
         "failed": "搜尋發生錯誤，已中斷",
         "candidate": "已找到候選隊伍"
       },
-      "modeSearch": {
-        "timedEmpty": "限時結束，尚無候選隊伍",
-        "timedCandidate": "限時結束，已找到候選隊伍",
-        "extend": "再算 {count} 秒",
-        "untilProven": "繼續至驗證最佳隊伍"
-      },
       "rewardSearch": "報酬配隊",
       "improvementBound": "可提升上限 {percent}%",
       "recommendation": "推薦",

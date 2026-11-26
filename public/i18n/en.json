@@ -2180,12 +2180,6 @@
         "failed": "Search interrupted by an error",
         "candidate": "Candidate found"
       },
-      "modeSearch": {
-        "timedEmpty": "Time limit reached · no candidate yet",
-        "timedCandidate": "Time limit reached · candidate found",
-        "extend": "Continue for {count} s",
-        "untilProven": "Continue until verified"
-      },
       "rewardSearch": "Reward team search",
       "improvementBound": "Up to {percent}% improvement",
       "recommendation": "Recommendation",

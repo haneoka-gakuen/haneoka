@@ -16,6 +16,7 @@ import { countChart, countChallengeSongs, loadChallengeTotal, saveChallengeTotal
   type ChallengeTotalResult } from "../../lib/team-builder/challenge-total";
 import { choiceField, sectionHeading } from "./catalog";
 import { cardScopeLabel } from "./card-input-controls";
+import { stoppedSearchLabel } from "./score-goal";
 import { saveTeam, teamFormation } from "./results";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 
@@ -281,6 +282,7 @@ export function totalResults(host: TeamBuilder) {
     songs: pool.map(song => ({ id: song.id, charts: total.charts(host.settings.eventId)
       .filter(chart => chart.songId === song.id).map(chart => ({ ...chart, proven: false })) })) };
   const counted = countChallengeSongs(state);
+  const stale = total.stale;
   const fmt = (score: number) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: 2 }).format(score);
   const complete = host.t("challenge.verified", "Verified for the selected search");
   const candidate = host.t("challenge.candidate", "Candidate");
@@ -296,20 +298,18 @@ export function totalResults(host: TeamBuilder) {
       <strong>${counted.covered === counted.songs.length && counted.covered ? t("current","Current total") : t("subtotal","Subtotal")}
         · ${fmt(counted.total)}</strong>
       <span>${host.t("challenge.covered","{done}/{total} songs with a score",{ done:counted.covered,total:counted.songs.length })}</span>
-      ${total.result?.stopped && !total.stale && !counted.complete ? html`<span>${state.stopReason === "budget"
-        ? counted.covered ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found")
-          : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet")
-        : state.stopReason === "cancelled" ? host.t("cancelled", "Search cancelled") : t("paused", "Paused")}</span>` : nothing}
-      ${total.stale ? html`<span>${host.t("stale","Conditions changed")}</span>` : counted.complete ? html`<span>${complete}</span>` : nothing}
+      ${total.result?.stopped && !stale && !counted.complete ? html`<span>${state.stopReason
+        ? stoppedSearchLabel(host, state.stopReason, counted.covered > 0) : t("paused", "Paused")}</span>` : nothing}
+      ${stale ? html`<span>${host.t("recomputeNeeded","Recalculation needed")}</span>` : counted.complete ? html`<span>${host.t("search.optimal", "Optimal within the selected search")}</span>` : nothing}
     </div>
-    ${total.stale && original ? html`<span>${[
+    ${stale && original ? html`<span>${[
       cardScopeLabel(host, original), original.difficulties.map(d => difficultyNames[d]).join(" / "),
       original.playMode === "ap" ? host.t("playAp", "All Perfect") : host.t("playCustom", "Custom"),
     ].join(" · ")}</span>` : nothing}
     ${state.shared ? html`<span>${t("shared","One team · highest mean across selected charts")}${state.sharedKey !== null ? " · " + fmt(state.sharedKey) : ""}</span>` : nothing}
     ${counted.songs.map(song => {
       const best = song.best, value = best?.candidate;
-      const status = !song.charts.length ? t("missing","No selected chart available")
+      const status = stale ? host.t("recomputeNeeded", "Recalculation needed") : !song.charts.length ? t("missing","No selected chart available")
         : song.charts.some(row => row.error) ? t("failed","Chart search failed")
         : song.complete ? value ? complete : t("empty","No eligible team")
         : value ? candidate : host.t("challenge.pending","Pending");
@@ -325,7 +325,7 @@ export function totalResults(host: TeamBuilder) {
             snap: snap ? cardIdOf(snap) : null, snapGrowth: snap ? growth("snaps", snap) : null };
         }), 0, false) : nothing}
         ${best && value ? html`<div class="cluster"><button type="button" class="button button--tonal" data-tb-save-team
-          ?disabled=${total.stale} @click=${() => saveTeam(host, value.members.map(cardIdOf),
+          ?disabled=${stale} @click=${() => saveTeam(host, value.members.map(cardIdOf),
             value.snaps.map(snap => snap ? cardIdOf(snap) : null), { songId: best.songId, difficulty: best.difficulty })}>
           ${host.t("saveTeam", "Save team")}</button></div>` : nothing}
       </section>`;

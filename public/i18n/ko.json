@@ -2180,12 +2180,6 @@
         "failed": "오류로 탐색이 중단됨",
         "candidate": "후보 팀 찾음"
       },
-      "modeSearch": {
-        "timedEmpty": "제한 시간 종료 · 후보 팀 없음",
-        "timedCandidate": "제한 시간 종료 · 후보 팀 발견",
-        "extend": "{count}초 더 계산",
-        "untilProven": "최적 팀 확인까지 계속"
-      },
       "rewardSearch": "보상 팀 편성",
       "improvementBound": "최대 {percent}% 향상",
       "recommendation": "추천",

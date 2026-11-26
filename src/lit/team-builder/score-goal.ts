@@ -202,19 +202,25 @@ export function scoreText(host: TeamBuilder, message: readonly [string, string])
   return host.t(message[0], message[1]);
 }
 
+export function stoppedSearchLabel(host: TeamBuilder, reason: "budget" | "cancelled", hasCandidate: boolean): string {
+  if (reason === "budget") return hasCandidate
+    ? host.t("search.timedCandidate", "Time limit reached · candidate found")
+    : host.t("search.timedEmpty", "Time limit reached · no candidate yet");
+  return hasCandidate
+    ? host.t("search.stoppedCandidate", "Stopped · candidate retained")
+    : host.t("search.stoppedEmpty", "Stopped · no candidate yet");
+}
+
 export function scoreProof(host: TeamBuilder, proven: boolean, sampled: boolean, hasCandidate: boolean): string {
   if (proven && hasCandidate) return sampled ? host.t("sampledProven", "Optimal within samples")
     : host.t("search.optimal", "Optimal within the selected search");
   if (proven) return host.t("noTeams", "No team meets these conditions");
   switch (host.results?.stopReason) {
     case "budget":
-      if (host.resultInputs?.timeLimitMs != null) return hasCandidate
-        ? host.t("search.timedCandidate", "Time limit reached · candidate found")
-        : host.t("search.timedEmpty", "Time limit reached · no candidate yet");
+      if (host.resultInputs?.timeLimitMs != null) return stoppedSearchLabel(host, "budget", hasCandidate);
       break;
     case "cancelled":
-      return hasCandidate ? host.t("search.stoppedCandidate", "Stopped · candidate retained")
-        : host.t("search.stoppedEmpty", "Stopped · no candidate yet");
+      return stoppedSearchLabel(host, "cancelled", hasCandidate);
     case "error":
       return host.t("search.failed", "Search interrupted by an error");
   }

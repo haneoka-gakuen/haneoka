@@ -52,7 +52,7 @@ import { accordion } from "../ui/accordion";
 import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
 import { chartKey, farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
-import { usesPtResults } from "./score-goal";
+import { stoppedSearchLabel, usesPtResults } from "./score-goal";
 import { sampledLuck } from "./result-metric";
 import { ORIGINAL_SONG_RULES } from "../../lib/team-builder/arena";
 import { changeRewardMode, legacyRewardPlan } from "../../lib/team-builder/reward-plan";
@@ -830,10 +830,10 @@ function renderRun(host: TeamBuilder): TemplateResult {
                 ?disabled=${blocked}
                 @click=${() => void pt.start(resume)}
               >
-                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume && budget ? host.t("modeSearch.extend", "Continue for {count} s", { count: budget }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
+                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume && budget ? host.t("search.extend", "Search another {count} s", { count: budget }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
               </button>
               ${resume && budget ? html`<button class="button button--text" type="button" ?disabled=${blocked}
-                @click=${() => void pt.start(true, undefined, true)}>${host.t("modeSearch.untilProven", "Continue until verified")}</button>` : nothing}
+                @click=${() => void pt.start(true, undefined, true)}>${host.t("search.verify", "Continue until optimal")}</button>` : nothing}
             `
       }
       ${
@@ -946,20 +946,18 @@ function renderRanking(host: TeamBuilder, selection: ReturnType<typeof rankingSe
     (task) => task.status === "complete" || task.status === "empty" || task.status === "pruned",
   ).length;
   const status = () => {
-    if (pt.stale) return host.t("stale", "Conditions changed");
+    if (pt.stale) return host.t("recomputeNeeded", "Recalculation needed");
     if (complete) {
       if (!ranking.length) return host.t("challenge.empty", "No eligible team");
       const goal = job.request.goal;
       const sampled = ranking.some(hit => sampledLuck(host, hit)) ||
         goal.kind === "event" && !!goal.gekiso?.luckSamples &&
           host.hasMission("Luck", goal.songs, job.request.songRules ?? ORIGINAL_SONG_RULES);
-      return sampled ? host.t("sampledProven", "Optimal within samples") : host.t("challenge.verified", "Verified for the selected search");
+      return sampled ? host.t("sampledProven", "Optimal within samples") : host.t("search.optimal", "Optimal within the selected search");
     }
-    if (job.stopReason === "budget") return ranking.length
-      ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found")
-      : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet");
-    if (job.stopReason === "cancelled") return host.t("cancelled", "Search cancelled");
-    return ranking.length ? host.t("challenge.candidate", "Candidate") : host.t("noCandidate", "No recommendation yet");
+    const hasCandidate = ranking.length > 0 || !!challenge;
+    if (job.stopReason) return stoppedSearchLabel(host, job.stopReason, hasCandidate);
+    return hasCandidate ? host.t("search.candidate", "Candidate found") : host.t("noCandidate", "No recommendation yet");
   };
   return html`
     <section id="pt-results" class="stack">
