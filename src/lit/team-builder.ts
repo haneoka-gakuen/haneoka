@@ -1366,12 +1366,21 @@ export class TeamBuilder extends LitElement {
   }
 
   openRoster(quick: boolean) {
+    const bands = this.tab === "arena" ? [this.arena.bandId] : [];
     this.setTab("box");
-    this.filters = { kind: "members", query: "", show: "owned", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+    this.filters = { kind: "members", query: "", show: "owned", bands, characters: [], attributes: [], rarities: [], facets: {} };
     this.filtersOpen = false;
     this.boxQuickEntry = quick;
     this.editing = null;
     this.requestUpdate();
+  }
+
+  private memberAvailableForTask(cardId: number) {
+    return this.tab !== "arena" || (
+      this.master?.members.get(cardId)?.bandId === this.arena.bandId &&
+      availableOnServer(this.data!, "members", cardId) &&
+      arenaReleased(this.data!.members[String(cardId)]?.catalogMetadata ?? {})
+    );
   }
 
   /** Cards taking part in a search, after the candidate filters. */
@@ -1448,10 +1457,7 @@ export class TeamBuilder extends LitElement {
         (row) =>
           !excludedMembers.has(row.cardId) &&
           plannerMetadata(this.data!.members[String(row.cardId)]!).active !== false &&
-          (this.tab !== "arena" ||
-            (master.members.get(row.cardId)?.bandId === this.arena.bandId &&
-              availableOnServer(this.data!, "members", row.cardId) &&
-              arenaReleased(this.data!.members[String(row.cardId)]?.catalogMetadata ?? {}))) &&
+          this.memberAvailableForTask(row.cardId) &&
           (fixedMembers.has(row.cardId) || memberOk(row.cardId)),
       ),
       snaps: base.snaps.filter(
@@ -1822,8 +1828,8 @@ export class TeamBuilder extends LitElement {
     const count = this.characterCount(candidateCards.members);
     if (count < 5) {
       let rosterFix: InputIssue["rosterFix"] = "limits";
-      if (s.scope === "box" && this.tab !== "arena") {
-        const owned = [...(this.view?.members.values() ?? [])];
+      if (s.scope === "box") {
+        const owned = [...(this.view?.members.values() ?? [])].filter(member => this.memberAvailableForTask(member.cardId));
         if (this.characterCount(owned) < 5) rosterFix = "add";
         else if (this.characterCount(owned.filter(member => member.use)) < 5) rosterFix = "include";
       }
