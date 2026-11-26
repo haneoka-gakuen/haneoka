@@ -322,7 +322,18 @@ export class TeamBuilder extends LitElement {
   set resultSession(value: string) {
     this.taskResult.session = value;
   }
-  buildMode: "automatic" | "manual" = "automatic";
+  private freeMode: "automatic" | "manual" = "automatic";
+  get buildMode() { return this.freeMode; }
+  set buildMode(mode: "automatic" | "manual") {
+    if (this.freeMode === mode) return;
+    this.freeMode = mode;
+    if (this.isConnected && this.tab === "build") {
+      const url = navigationDocumentUrl();
+      if (mode === "manual") url.searchParams.set("mode", mode);
+      else url.searchParams.delete("mode");
+      history.replaceState(history.state, "", url);
+    }
+  }
   tab: Tab = "build";
   buildDrafts = restoreTaskDrafts({});
   private get draftKind(): BuildDraftKind {
@@ -554,6 +565,8 @@ export class TeamBuilder extends LitElement {
     this.profileReturn = sectionFor[tab] === "box" && origin && sectionFor[linkedTab(origin)] !== "box"
       ? linkedTab(origin) : undefined;
     if (this.profileReturn) this.lastTaskTab = this.profileReturn;
+    if (tab === "build" || this.profileReturn === "build")
+      this.freeMode = params.get("mode") === "manual" ? "manual" : "automatic";
     const league = Number(params.get("league"));
     this.requestedArenaLeague = (tab === "arena" || this.profileReturn === "arena") && Number.isSafeInteger(league) && league > 0 ? league : 0;
     if (tab === "arena" && this.snapshot && this.requestedArenaLeague && this.requestedArenaLeague !== this.arena.draft.leagueId)
@@ -1328,9 +1341,11 @@ export class TeamBuilder extends LitElement {
       if (this.profileReturn) url.searchParams.set("fromTask", this.profileReturn);
       else url.searchParams.delete("fromTask");
       const task = this.profileReturn ?? tab;
+      if (task === "build" && this.buildMode === "manual") url.searchParams.set("mode", "manual");
+      else url.searchParams.delete("mode");
       if (task !== "arena") url.searchParams.delete("league");
       if (task !== "challenge")
-        for (const key of ["event", "challenge", "song", "difficulty", "region"]) url.searchParams.delete(key);
+        for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge"]) url.searchParams.delete(key);
       openDetailLocation(url.href);
       if (tab === "challenge") {
         this.challenge.readRoute(url.searchParams);
@@ -2594,7 +2609,7 @@ export class TeamBuilder extends LitElement {
         onSelect: (account) => {
           const url = navigationDocumentUrl();
           if (this.server !== account.server) {
-            for (const key of ["event", "challenge", "song", "difficulty", "region", "league"]) url.searchParams.delete(key);
+            for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge", "league"]) url.searchParams.delete(key);
             this.requestedArenaLeague = 0;
             this.challenge.readRoute(url.searchParams);
           }
