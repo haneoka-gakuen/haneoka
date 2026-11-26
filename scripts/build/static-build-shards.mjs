@@ -23,6 +23,7 @@ import {
   staticDocumentPackPath,
   staticDocumentShard,
   staticDocumentChunks,
+  isSharedStaticDataPath,
   isStaticDocumentRecord,
 } from "../../src/lib/static-documents.ts";
 
@@ -39,8 +40,7 @@ const writeJson = (file, value) => {
   fs.writeFileSync(file, JSON.stringify(value));
 };
 function localeForPath(pathname) {
-  if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return "ja";
-  if (pathname === "/data/sponsors/v1.json") return "ja";
+  if (isSharedStaticDataPath(pathname)) return "ja";
   const parts = pathname.split("/").filter(Boolean);
   let candidate;
   if (["jp", "intl", "playlist-static"].includes(parts[0])) candidate = parts[1];
