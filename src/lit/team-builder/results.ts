@@ -1592,7 +1592,7 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
           ${stale ? host.t("recomputeNeeded", "Recalculation needed") : html`${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, sampled, hadCandidates)}`}
         </span>
         ${goal?.kind === "score" ? html`
-          <span class="tb-results__meta">${host.t("calculationChartCount", "{count} charts in this search", { count: goal.songs.length })}</span>
+          <span class="tb-results__meta">${host.t("calculationChartCount", "Charts in this search · {count}", { count: goal.songs.length })}</span>
         ` : nothing}
         ${
           gap === null

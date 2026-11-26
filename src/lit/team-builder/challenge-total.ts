@@ -137,8 +137,9 @@ export class ChallengeTotal {
     return !this.stale && saved !== undefined ? saved : this.host.searchSettings.timeLimit;
   }
   get runningProgress() {
+    if (!this.runOwner || this.stale) return null;
     const charts = this.result?.songs.flatMap(song => song.charts) ?? [];
-    return { done: charts.filter(row => row.proven).length, total: charts.length };
+    return charts.length ? { done: charts.filter(row => row.proven).length, total: charts.length } : null;
   }
   dispose() {
     this.stop();
