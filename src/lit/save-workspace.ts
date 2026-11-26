@@ -2,7 +2,7 @@
 // Input: Local save files, native save snapshots and release-pinned catalogue data.
 // Output: Persistent save collection, readable progress and confirmed Box handoff.
 // Pos: [Map](L2-2.md); shared browser and native-shell save workspace.
-// Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads, tab-local handoff and the app's save sources (saveSourcesV1).
+// Effects/Dependencies: Local decoding Worker, IndexedDB, public catalogue reads, game-account and site-owner scoped tab-local handoff and the app's save sources (saveSourcesV1).
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { clientText } from "../i18n/client";
 import { viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
@@ -299,17 +299,23 @@ export class SaveWorkspace extends LitElement {
       const { player, ...snapshot } = record.snapshot;
       const uid = typeof player._profileId === "string" || typeof player._profileId === "number" ? String(player._profileId) : record.profile?.uid;
       let accountId: string | undefined;
+      const { captureGameToolSave, refreshGameToolAccounts, selectedGameToolAccount, gameToolOwner } = await import("../lib/game-tool-account-store");
+      await refreshGameToolAccounts();
+      const owner = gameToolOwner();
       if (uid) {
-        const { captureGameToolSave, refreshGameToolAccounts } = await import("../lib/game-tool-account-store");
-        await refreshGameToolAccounts();
         const account = await captureGameToolSave({
           key: `${snapshot.server}-${uid}`, profileId: uid, server: snapshot.server,
           name: record.profile?.name || record.label, region: record.profile?.region ?? null,
           rank: Number(record.profile?.rank) || null, savedAt: snapshot.savedAt ? Date.parse(snapshot.savedAt) : null,
           favoriteCardId: Number(player._favoriteMemberCardId) || null,
-        }, "team");
-        accountId = account?.id;
+        }, "team", owner);
+        accountId = account?.id ?? `legacy-${snapshot.server}`;
       }
+      if (!accountId) {
+        const selected = selectedGameToolAccount("team", snapshot.server);
+        accountId = selected.server === snapshot.server ? selected.id : `legacy-${snapshot.server}`;
+      }
+      if (owner !== gameToolOwner()) throw new Error("game_tool_account_changed");
       const box = Object.fromEntries(
         ["_memberCards", "_supportCards", "_characters", "_bandItems"].flatMap((key) =>
           player[key] === undefined ? [] : [[key, player[key]]],
@@ -317,10 +323,10 @@ export class SaveWorkspace extends LitElement {
       );
       sessionStorage.setItem(
         "haneoka:pending-save-box",
-        JSON.stringify({ id: record.id, server: snapshot.server, accountId, text: JSON.stringify({ ...snapshot, player: box }) }),
+        JSON.stringify({ id: record.id, server: snapshot.server, accountId, owner, text: JSON.stringify({ ...snapshot, player: box }) }),
       );
       location.assign(
-        `/${this.locale}/team-builder/?server=${snapshot.server}&tab=box&saveImport=${encodeURIComponent(record.id)}${accountId ? `&appBox=1&gameAccount=${accountId}` : ""}`,
+        `/${this.locale}/team-builder/?server=${snapshot.server}&tab=box&saveImport=${encodeURIComponent(record.id)}&appBox=1&gameAccount=${accountId}`,
       );
     });
   }

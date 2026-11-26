@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、按命名空间恢复配队默认选项，复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、按命名空间恢复配队默认选项，复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；本次配队的卡牌参与状态按任务覆盖，临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeDetailLocation, openDetailLocation } from "../lib/detail-navigation";
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { observeSongDisplay } from "../lib/song-display";
@@ -28,7 +28,7 @@ import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
-import { manualSettingsFromResult, seedManualOrder } from "./team-builder/manual-results";
+import { clearManualOrders, manualSettingsFromResult, seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -49,7 +49,7 @@ import { visibleContentServers } from "../lib/content-sources";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { maxAccountPlayer, maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
-import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
+import { clock, completeResponse, emptyResponse, singleSongRequest } from "../lib/team-builder/engine/execution";
 import { ENGINE_MODEL_VERSION, EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
 import type { EngineChart } from "../lib/team-builder/engine/protocol";
 import type {
@@ -108,9 +108,11 @@ import { Catalog } from "./team-builder/catalog";
 import { songMissions } from "../lib/catalog-filters";
 import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
+import "./team-builder/online-room";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { ChallengeController, renderChallengeTab } from "./team-builder/challenge-tab";
-import { availableOnServer, readFormation, type Formation } from "../lib/team-builder/song-comparison";
+import { stopParking } from "./team-builder/parking-view";
+import { availableOnServer, readFormation, type ComparisonSettings, type Formation } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
 import { appCall, inApp, type AppBoxImport } from "../lib/app-bridge";
@@ -127,7 +129,7 @@ import {
 import { setGameToolAccountAction } from "./game-tool-account-picker";
 
 const sectionFor = {
-  build: "build", live: "live", "song-comparison": "live", arena: "live",
+  build: "build", live: "live", "song-comparison": "live", arena: "live", room: "live",
   challenge: "challenge", pt: "challenge", box: "box", account: "box", teams: "box",
 } as const satisfies Record<Tab, Tab>;
 
@@ -174,6 +176,7 @@ export class TeamBuilder extends LitElement {
   catalog: Catalog | null = null;
   snapshot: BoxSnapshot | null = null;
   view: BoxView | null = null;
+  private participation = new Map<Tab, Record<TemporaryCardKind, Map<number, boolean>>>();
   private persistentBoxView: BoxView | null = null;
   readonly temporary = new TemporaryCards();
   readonly planner = new Planner(this);
@@ -191,6 +194,9 @@ export class TeamBuilder extends LitElement {
   private pendingAppBoxImport: AppBoxImport | null = null;
   private pendingBoxAccount = "";
   gameAccount?: GameToolAccount;
+  get checkpointOwner() {
+    return JSON.stringify([this.snapshot?.owner ?? null, this.gameAccount?.id]);
+  }
   private gameAccountOwner: string | null = null;
   private gameAccountsChanged = () => {
     const current = this.gameAccount && getGameToolAccount(this.gameAccount.id, "team");
@@ -235,6 +241,7 @@ export class TeamBuilder extends LitElement {
   }
   private confirmReset = false;
   private resetTasks() {
+    this.activeSearch = null;
     this.catalog?.dispose();
     this.skillRoleEditor = null;
     this.analysis.close();
@@ -242,6 +249,7 @@ export class TeamBuilder extends LitElement {
     this.songComparison.dispose();
     this.arena.dispose();
     this.pt.dispose();
+    this.challenge.total.dispose();
     this.farmResultMode = null;
     this.engine?.cancel();
     this.task = null;
@@ -253,10 +261,13 @@ export class TeamBuilder extends LitElement {
     this.manualSuggestions = null;
     this.manualSuggesting = -1;
     this.activeManualContext = "";
-    this.activeContext = "";
-    ++this.runGeneration;
     this.submitted = false;
     this.taskResults.clear();
+    this.participation.clear();
+    this.manualBaseline = null;
+    this.manualPin = false;
+    this.autoEvaluated = "";
+    clearManualOrders(this);
     this.comparisons.clear();
     this.conditionsOpen = false;
     this.scrollPositions.clear();
@@ -328,6 +339,7 @@ export class TeamBuilder extends LitElement {
   get buildMode() { return this.freeMode; }
   set buildMode(mode: "automatic" | "manual") {
     if (this.freeMode === mode) return;
+    if (this.tab === "build") this.activeSearch?.stop();
     this.freeMode = mode;
     if (this.isConnected && this.tab === "build") {
       if (mode === "automatic") this.classicAutoTab = "build";
@@ -523,7 +535,7 @@ export class TeamBuilder extends LitElement {
   requiredPicker: "members" | "snaps" | null = null;
   excludedPicker: "members" | "snaps" | null = null;
   notice = "";
-  private readonly images = new LazyImages();
+  private readonly images = new LazyImages({ filter: (image) => !image.closest("gekiso-online-room") });
   private unsubscribe?: () => void;
   private loadedServer = "";
   private dataController?: AbortController;
@@ -822,7 +834,7 @@ export class TeamBuilder extends LitElement {
       this.data?.identity.sourceId &&
       this.store &&
       this.view &&
-      this.snapshot &&
+      this.snapshot?.owner !== undefined &&
       (appImport
         ? appImport.server === this.data.identity.server && this.gameAccount?.id === this.pendingBoxAccount
         : navigationDocumentUrl().searchParams.has("saveImport"))
@@ -833,8 +845,8 @@ export class TeamBuilder extends LitElement {
       void this.imports.takePending(appImport);
     }
     if (!this.isConnected) return;
-    if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
-      this.engine?.cancel();
+    this.challenge.total.sync();
+    this.stopChangedSearch();
     if (
       (this.manualPin || this.manualBaseline) &&
       this.tab === "build" &&
@@ -848,12 +860,8 @@ export class TeamBuilder extends LitElement {
         void evaluateManual(this);
       }
     }
-    if (this.manualResults || this.task?.kind === "evaluation") {
-      const context = this.manualContext();
-      if (this.task?.kind === "evaluation" && this.activeManualContext && this.activeManualContext !== context)
-        this.engine?.cancel();
-      if (this.manualResultsFor !== context) this.manualResults = null;
-    }
+    if (this.task?.kind === "evaluation" && this.activeManualContext && this.activeManualContext !== this.manualContext())
+      this.engine?.cancel();
     if (this.manualSuggestions || this.task?.kind === "suggestion") {
       const context = this.manualSuggestionContext();
       if (this.task?.kind === "suggestion" && this.activeManualContext && this.activeManualContext !== context)
@@ -1060,7 +1068,10 @@ export class TeamBuilder extends LitElement {
   private adopt(snapshot: BoxSnapshot) {
     const ownerChanged = !this.snapshot || this.snapshot.owner !== snapshot.owner;
     if (ownerChanged) {
-      if (this.snapshot?.owner !== undefined) this.challenge.clearOwnerRoute();
+      if (this.snapshot?.owner !== undefined) {
+        this.challenge.clearOwnerRoute();
+        this.imports.dispose();
+      }
       this.resetTasks();
       this.temporary.clear();
       this.temporaryDraft = null;
@@ -1069,11 +1080,11 @@ export class TeamBuilder extends LitElement {
     }
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
-    if (ownerChanged) this.planner.restore(snapshot.owner);
+    if (ownerChanged) this.planner.restore();
     if (this.planner.cards.some((card) => !this.temporary.has(card.kind, card.id))) this.planner.restoreCards();
     if (versionChanged || ownerChanged) {
       this.persistentBoxView = readBox(snapshot.entries);
-      this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
+      this.refreshTemporaryView();
       this.restoreBuildPreferences(!ownerChanged);
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
@@ -1131,8 +1142,28 @@ export class TeamBuilder extends LitElement {
       return false;
     }
   }
+  setParticipation(kind: TemporaryCardKind, choices: readonly { id: number; use: boolean }[], task = this.lastTaskTab) {
+    let overrides = this.participation.get(task);
+    if (!overrides) {
+      overrides = { members: new Map(), snaps: new Map() };
+      this.participation.set(task, overrides);
+    }
+    for (const { id, use } of choices) overrides[kind].set(id, use);
+    this.refreshTemporaryView();
+  }
   refreshTemporaryView() {
-    if (this.snapshot) this.view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
+    if (!this.snapshot) return;
+    const view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
+    const overrides = this.participation.get(this.lastTaskTab);
+    if (overrides) {
+      for (const kind of ["members", "snaps"] as const) {
+        for (const [id, use] of overrides[kind]) {
+          const row = view[kind].get(id);
+          if (row) row.use = use;
+        }
+      }
+    }
+    this.view = view;
     this.requestUpdate();
   }
   removeTemporary(kind: TemporaryCardKind, id: number) {
@@ -1151,7 +1182,8 @@ export class TeamBuilder extends LitElement {
   }
   applyPlanningData() {
     if (!this.publicData) return;
-    this.engine?.cancel();
+    if (this.activeSearch) this.activeSearch.stop();
+    else this.engine?.cancel();
     const visuals = this.catalog?.visuals;
     const data = projectPlannerData(
       this.publicData,
@@ -1259,6 +1291,7 @@ export class TeamBuilder extends LitElement {
       (patch.rewardMode === "plan") !== (this.settings.rewardMode === "plan");
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
+    this.stopChangedSearch();
     this.engine?.prefetch(this.searchSettings.songs);
     if (Object.keys(patch).some((key) => key !== "required")) this.persistBuildDraft(this.draftKind);
     this.requestUpdate();
@@ -1281,13 +1314,15 @@ export class TeamBuilder extends LitElement {
     }
     this.updateSettings({ farming, rewardMode });
   }
-  openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null) {
+  openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null,
+    conditions?: Partial<ComparisonSettings>) {
     const team = formation ?? this.manual;
     this.setTab("song-comparison");
     this.slotPicker = null;
     this.manual = structuredClone(team);
-    if (source && challengeEventForGoal(source.goal) === null)
-      this.songComparison.update({ songRules: source.songRules });
+    this.songComparison.update({ farmingEvent: null,
+      ...(source && challengeEventForGoal(source.goal) === null ? { songRules: source.songRules } : {}), ...conditions,
+    });
     this.requestUpdate();
   }
   private scrollPositions = new Map<string, { main: number; config: number }>();
@@ -1366,6 +1401,9 @@ export class TeamBuilder extends LitElement {
     }
     if (tab === "live" || tab === "song-comparison") this.roomTab = tab;
     this.tab = tab;
+    if (sectionFor[previous] === "box" && tab === "build" && this.buildMode === "manual" && this.manualResults)
+      this.autoEvaluated = this.manualContext();
+    if (this.participation.size) this.refreshTemporaryView();
     this.submitted = false;
     if (writeHistory) {
       const url = navigationDocumentUrl();
@@ -1377,8 +1415,9 @@ export class TeamBuilder extends LitElement {
       if (task === "build" && this.buildMode === "manual") url.searchParams.set("mode", "manual");
       else url.searchParams.delete("mode");
       if (task !== "arena") url.searchParams.delete("league");
+      if (task !== "room") url.searchParams.delete("room");
       if (task !== "challenge")
-        for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge"]) url.searchParams.delete(key);
+        for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge", "ranking", "returnBoard"]) url.searchParams.delete(key);
       openDetailLocation(url.href);
       if (tab === "challenge") {
         this.challenge.readRoute(url.searchParams);
@@ -1419,6 +1458,10 @@ export class TeamBuilder extends LitElement {
   /** Cards taking part in a search, after the candidate filters. */
   engineCards() {
     if (!this.master || !this.view) return { members: [], snaps: [] };
+    if (this.pt.fixedTeam) {
+      const { members, snaps } = this.manualInputs(this.pt.fixedTeam, this.searchSettings);
+      return { members, snaps };
+    }
     const s = this.tab === "arena" ? this.searchSettings : this.settings;
     const base =
       s.scope === "theoretical"
@@ -1854,6 +1897,8 @@ export class TeamBuilder extends LitElement {
         message: this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min, max: MAX_GEKISO_COUNT }),
       });
     if (this.tab === "arena") issues.push(...this.arena.issues());
+    if (this.pt.fixedTeam && s.route !== "skip" && this.settings.songs.length !== s.songs.length)
+      add("tb-songs", "farm.replaceCharts", "Choose charts eligible for this event");
     const candidateCards = this.engineCards();
     const count = this.characterCount(candidateCards.members);
     if (count < 5) {
@@ -2004,7 +2049,7 @@ export class TeamBuilder extends LitElement {
     }
     const fixed = new Set([
       ...s.required.members,
-      ...(s.scope === "box"
+      ...(s.scope === "box" && !this.pt.fixedTeam
         ? [...(this.view?.members.values() ?? [])].filter((row) => row.use && row.lock).map((row) => row.cardId)
         : []),
       ...s.bindings.map(([member]) => member),
@@ -2018,7 +2063,7 @@ export class TeamBuilder extends LitElement {
       add("tb-cards", "fixedConflict", "Fixed members must be at most five different characters");
     const fixedSnaps = new Set([
       ...s.required.snaps,
-      ...(s.scope === "box"
+      ...(s.scope === "box" && !this.pt.fixedTeam
         ? [...(this.view?.snaps.values() ?? [])].filter((row) => row.use && row.lock).map((row) => row.cardId)
         : []),
       ...s.bindings.flatMap(([, snap]) => (snap === null ? [] : [snap])),
@@ -2113,7 +2158,8 @@ export class TeamBuilder extends LitElement {
         field: fields[0]!,
         fields,
         validation: true,
-        message: this.t("conditionsUnreachable", "These conditions cannot be met together"),
+        message: this.tab === "pt" ? this.t("noTeams", "No team meets these conditions")
+          : this.t("conditionsUnreachable", "These conditions cannot be met together"),
       });
     }
     this.issuesCache.set(recommendation, issues);
@@ -2360,6 +2406,42 @@ export class TeamBuilder extends LitElement {
     const settings = this.compatibleSettings({ ...this.searchSettings, songs });
     return this.request(this.goal(settings), settings);
   }
+  constraintsFor(goal: Goal, s: BuildSettings, view: BoxView): EngineRequest["constraints"] {
+    const theoretical = s.scope === "theoretical";
+    const locked = (kind: "m" | "s") => [
+      ...new Set([
+        ...(theoretical || this.pt.fixedTeam
+          ? []
+          : [...(kind === "m" ? view.members : view.snaps).values()]
+              .filter((row) => row.lock && row.use)
+              .map((row) => `${kind}${row.cardId}`)),
+        ...(kind === "m" ? s.required.members : s.required.snaps).map((id) => `${kind}${id}`),
+      ]),
+    ];
+    return {
+      requiredMembers: locked("m"),
+      excludedMembers: theoretical ? s.theoreticalExcluded.members.map((id) => `m${id}`) : [],
+      requiredSnaps: locked("s"),
+      excludedSnaps: theoretical ? s.theoreticalExcluded.snaps.map((id) => `s${id}`) : [],
+      leader: s.leader !== null ? `m${s.leader}` : null,
+      bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
+      noSnaps: s.noSnaps,
+      ...((goal.kind === "gekiso" || (goal.kind === "event" && !!goal.gekiso)) && hasSkillRoleLimits(s.skillRoles)
+        ? {
+            skillRoles: structuredClone(s.skillRoles),
+            skillRoleMissions: ["Combo", "Luck", "JustCount"].flatMap((type, index) =>
+              this.hasMission(type, s.songs) ? [index + 1] : [],
+            ),
+          }
+        : {}),
+      minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
+      ...(goal.kind === "gekiso" &&
+      (this.tab !== "build" || this.buildMode !== "manual") &&
+      s.minMissionMembers.some(Boolean)
+        ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] }
+        : {}),
+    };
+  }
   request(goal = this.goal(), s = this.searchSettings): EngineRequest | null {
     if (!goal || !this.view || (this.tab === "pt" && s.rewardMode === "event" && !s.rewardPlan && s.ptCycle))
       return null;
@@ -2371,16 +2453,6 @@ export class TeamBuilder extends LitElement {
     }
     const theoretical = s.scope === "theoretical";
     const player = this.playerInput(s);
-    const locked = (kind: "m" | "s") => [
-      ...new Set([
-        ...(theoretical
-          ? []
-          : [...(kind === "m" ? this.view!.members : this.view!.snaps).values()]
-              .filter((row) => row.lock && row.use)
-              .map((row) => `${kind}${row.cardId}`)),
-        ...(kind === "m" ? s.required.members : s.required.snaps).map((id) => `${kind}${id}`),
-      ]),
-    ];
     return singleSongRequest({
       songRules: this.songRules(goal),
       ...(s.aggregation === "mean" &&
@@ -2402,35 +2474,21 @@ export class TeamBuilder extends LitElement {
           : player,
       unknownPolicy: theoretical ? "max" : s.unknownPolicy,
       goal,
-      constraints: {
-        requiredMembers: locked("m"),
-        excludedMembers: theoretical ? s.theoreticalExcluded.members.map((id) => `m${id}`) : [],
-        requiredSnaps: locked("s"),
-        excludedSnaps: theoretical ? s.theoreticalExcluded.snaps.map((id) => `s${id}`) : [],
-        leader: s.leader !== null ? `m${s.leader}` : null,
-        bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
-        noSnaps: s.noSnaps,
-        ...((goal.kind === "gekiso" || (goal.kind === "event" && !!goal.gekiso)) && hasSkillRoleLimits(s.skillRoles)
-          ? {
-              skillRoles: structuredClone(s.skillRoles),
-              skillRoleMissions: ["Combo", "Luck", "JustCount"].flatMap((type, index) =>
-                this.hasMission(type, s.songs) ? [index + 1] : [],
-              ),
-            }
-          : {}),
-        minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
-        ...(goal.kind === "gekiso" &&
-        (this.tab !== "build" || this.buildMode !== "manual") &&
-        s.minMissionMembers.some(Boolean)
-          ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] }
-          : {}),
-      },
+      constraints: this.constraintsFor(goal, s, this.view),
       k: s.k,
       timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
     });
   }
-  private activeContext = "";
-  private runGeneration = 0;
+  private activeSearch: { current: () => boolean; stop: () => void } | null = null;
+  private stopChangedSearch() {
+    if (this.activeSearch && !this.activeSearch.current()) this.activeSearch.stop();
+  }
+  get resumable() {
+    return !!this.results && !!this.resultInputs && !this.stale && !completeResponse(this.results);
+  }
+  get searchBudgetSeconds() {
+    return this.resultSettings ? this.resultSettings.timeLimit : this.searchSettings.timeLimit;
+  }
   calculationContext() {
     const request = this.request();
     if (request) request.timeLimitMs = null;
@@ -2443,7 +2501,7 @@ export class TeamBuilder extends LitElement {
       request,
     ]);
   }
-  async run(verify = false) {
+  async run(mode: boolean | "extend" = false) {
     if (this.tab === "pt" && this.settings.rewardMode === "recommendation") {
       await this.pt.start(false);
       return;
@@ -2466,65 +2524,79 @@ export class TeamBuilder extends LitElement {
         return;
       }
     }
+    if (this.tab === "challenge" && this.challenge.total.selected) {
+      await this.challenge.total.run(mode);
+      return;
+    }
     const started = clock();
-    const request = this.request();
-    if (!request || !this.engine || this.running) return;
+    const draft = this.request(), engine = this.engine;
+    if (!draft || !engine || this.running) return;
     const task = this.acquireTask("build");
     if (!task) return;
     const contextKey = this.calculationContext();
-    const generation = ++this.runGeneration;
-    const continuing = verify && !this.stale;
-    let accepted = false;
-    const session = continuing ? this.resultSession : crypto.randomUUID();
-    const settings = structuredClone({ ...this.searchSettings, unknownPolicy: request.unknownPolicy });
-    const inputs = structuredClone(request);
-    request.contextKey = contextKey;
-    if (verify) {
-      request.timeLimitMs = null;
-      if (!this.stale) {
-        request.seeds = this.results?.results.flatMap((result) => result.hits);
-        if (request.goal.kind !== "plan") request.completed = this.results?.results.filter((result) => result.proven);
-      }
+    const slot = this.taskResult;
+    const continuing = this.resumable;
+    const settings = structuredClone(continuing ? slot.settings! : { ...this.searchSettings, unknownPolicy: draft.unknownPolicy });
+    if (mode === false) settings.timeLimit = this.searchSettings.timeLimit;
+    const inputs = structuredClone(continuing ? slot.inputs! : draft);
+    inputs.timeLimitMs = mode === true || settings.timeLimit === null ? null : settings.timeLimit * 1000;
+    const request = { ...inputs, contextKey, deadline: inputs.timeLimitMs === null ? Infinity : started + inputs.timeLimitMs };
+    if (continuing) {
+      request.seeds = slot.results!.results.flatMap(result => result.hits);
+      if (request.goal.kind !== "plan") request.completed = slot.results!.results.filter(result => result.proven);
+      slot.results = { ...slot.results!, stopReason: undefined, error: undefined };
+    } else {
+      slot.session = crypto.randomUUID();
+      slot.results = emptyResponse(inputs);
     }
-    request.deadline = request.timeLimitMs === null ? Infinity : started + request.timeLimitMs;
-    this.activeContext = contextKey;
-    this.running = true;
+    slot.inputs = inputs;
+    slot.settings = settings;
+    slot.context = contextKey;
+    const current = (): boolean => this.activeSearch?.current === current && this.ownsTask(task) && this.engine === engine && this.taskResult === slot &&
+      settings.scope === this.searchSettings.scope && contextKey === this.calculationContext();
+    const finish = () => {
+      if (!this.ownsTask(task)) return;
+      this.activeSearch = null;
+      this.progress = null;
+      this.releaseTask(task);
+    };
+    let stopping = false;
+    this.activeSearch = { current, stop: () => {
+      stopping = true;
+      // The client publishes its buffered cancellation checkpoint synchronously.
+      engine.cancel();
+      if (slot.results && !completeResponse(slot.results)) slot.results = { ...slot.results, stopReason: "cancelled" };
+      finish();
+    } };
     this.calculationSubmitted();
     this.error = "";
     this.progress = { done: 0, total: 1, started: performance.now() };
     this.expanded = new Set();
     this.requestUpdate();
     const accept = (response: EngineResponse) => {
-      if (generation !== this.runGeneration || contextKey !== this.calculationContext()) return;
+      if (!current() || (stopping && response.stopReason !== "cancelled")) return;
       if (response.stopReason === "error")
         this.error = this.t("searchFailed", "The search failed: {reason}", {
           reason: this.errorReason(response.error ?? "engine-error"),
         });
-      if (!accepted) {
-        this.resultSession = session;
-        accepted = true;
-      }
-      this.results = response;
-      this.resultsFor = contextKey;
-      this.resultSettings = settings;
-      this.resultInputs = inputs;
+      slot.results = response;
       if (settings.goal === "event" && this.tab === "pt") this.farmResultMode = "event";
       if (
-        this.resultTab !== "overall" &&
+        slot.tab !== "overall" &&
         !response.results.some(
-          (result) => result.song && `${result.song.songId}:${result.song.difficulty}` === this.resultTab,
+          (result) => result.song && `${result.song.songId}:${result.song.difficulty}` === slot.tab,
         )
       )
-        this.resultTab = "overall";
+        slot.tab = "overall";
       this.requestUpdate();
     };
     const loading = beginLoading(this.t("searching", "Searching teams"));
     try {
       accept(
-        await this.engine.run(
+        await engine.run(
           request,
           (done, total, proof) => {
-            if (generation !== this.runGeneration || contextKey !== this.calculationContext()) return;
+            if (stopping || !current()) return;
             this.progress = { ...this.progress!, done, total, proof };
             this.requestUpdate();
           },
@@ -2533,24 +2605,20 @@ export class TeamBuilder extends LitElement {
           },
         ),
       );
-      if (accepted && this.tab === "pt" && settings.goal === "event") await this.pt.rememberResult();
+      if (current() && this.tab === "pt" && settings.goal === "event") await this.pt.rememberResult();
     } catch (error) {
       if (
-        generation === this.runGeneration &&
-        contextKey === this.calculationContext() &&
+        current() &&
         !(error instanceof DOMException && error.name === "AbortError")
-      )
+      ) {
+        if (slot.results) slot.results = { ...slot.results, stopReason: "error" };
         this.error = this.t("searchFailed", "The search failed: {reason}", {
           reason: this.errorReason(error),
         });
+      }
     } finally {
       loading.finish();
-      if (generation === this.runGeneration) {
-        this.activeContext = "";
-        this.releaseTask(task);
-        this.progress = null;
-        this.requestUpdate();
-      }
+      finish();
     }
   }
 
@@ -2582,6 +2650,9 @@ export class TeamBuilder extends LitElement {
   }
 
   cancel() {
+    if (this.activeSearch) { this.activeSearch.stop(); return; }
+    if (this.taskKind === "challenge-total") { this.challenge.total.stop(); return; }
+    if (this.taskKind === "parking") { stopParking(this); return; }
     if (this.taskKind === "team-growth") {
       this.teamGrowth.stop();
       return;
@@ -2597,6 +2668,7 @@ export class TeamBuilder extends LitElement {
     return (
       !!this.results &&
       ((this.tab === "pt" && this.settings.rewardMode === "recommendation") ||
+        this.resultSettings?.scope !== this.searchSettings.scope ||
         this.resultsFor !== this.calculationContext())
     );
   }
@@ -2631,6 +2703,7 @@ export class TeamBuilder extends LitElement {
       const classic = [
         ["build", this.t("tabBuild", "Build"), icon("groups", 20)],
         ["arena", this.t("arena.tab", "GEKISO Arena"), icon("swords", 20)],
+        ["room", this.t("onlineRoom.title", "Co-op room"), icon("groups", 20)],
         ["song-comparison", this.t("sc.tab", "GEKISO songs"), icon("music_note", 20)],
         ["pt", this.t("pt.tab", "Event rewards"), icon("emoji_events", 20)],
         ["box", this.t("tabBox", "My cards"), icon("style", 20), this.view!.members.size + this.view!.snaps.size],
@@ -2644,9 +2717,9 @@ export class TeamBuilder extends LitElement {
     const room = this.t("nav.live", "GEKISO Live");
     return html`
       ${row(groups, section, this.t("title", "Team builder"), id => this.sectionTabs.get(id) ?? id, true)}
-      ${section === "live" ? row([[this.roomTab, room], ["arena", this.t("arena.tab", "GEKISO Arena")]],
-        this.tab === "arena" ? "arena" : this.roomTab, label) : nothing}
-      ${section === "live" && this.tab !== "arena" ? row([["live", this.t("automaticTeam", "Find a team")],
+      ${section === "live" ? row([[this.roomTab, room], ["room", this.t("onlineRoom.title", "Co-op room")], ["arena", this.t("arena.tab", "GEKISO Arena")]],
+        this.tab === "arena" || this.tab === "room" ? this.tab : this.roomTab, label) : nothing}
+      ${section === "live" && (this.tab === "live" || this.tab === "song-comparison") ? row([["live", this.t("automaticTeam", "Find a team")],
         ["song-comparison", this.t("nav.pickSong", "Choose songs for a team")]], this.tab, room) : nothing}
       ${section === "challenge" ? eventTabs() : nothing}
       ${section === "box" ? row([["box", this.t("tabBox", "My cards")],
@@ -2813,7 +2886,8 @@ export class TeamBuilder extends LitElement {
     this.comparison.sync(this);
     const buildPanel = () => (this.buildMode === "manual" ? renderManualTeamTab(this) : renderBuildTab(this));
     const panel =
-      this.tab === "challenge" ? renderChallengeTab(this)
+      this.tab === "room" ? html`<gekiso-online-room .builder=${this} .box=${this.persistentView} .route=${navigationDocumentUrl().searchParams.get("room") ?? ""} .server=${this.server}></gekiso-online-room>`
+      : this.tab === "challenge" ? renderChallengeTab(this)
       : this.tab === "live" ? renderBuildTab(this)
       : this.tab === "pt"
         ? renderPtTab(this)

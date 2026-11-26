@@ -3,6 +3,7 @@
 // Output: Migrated drafts, resolved LUCK counts and JUST windows, effective reward conditions and selection transactions.
 // Pos: [Map](../L2-2.md); team workspace input projection.
 // Effects/Dependencies: Pure transformations; no persistence or engine calls.
+import { readFormation } from "../../lib/team-builder/song-comparison";
 import { readSkillRoleLimits } from "../../lib/team-builder/skill-roles";
 import { dataRows, type TeamBuilderData } from "../../lib/team-builder/data";
 import { MAX_GEKISO_COUNT } from "../../lib/team-builder/constraint-feasibility";
@@ -143,6 +144,7 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
     };
   }
   settings.farming = { ...structuredClone(DEFAULT_FARMING), ...settings.farming, ...(CUSTOM_ACCURACY ? {} : { playMode: "ap" as const }) };
+  if (settings.farming.fixedTeam) settings.farming.fixedTeam = readFormation(settings.farming.fixedTeam);
   if (settings.farming.weighted && !settings.farming.rewardPlan) settings.farming.rewardPlan = legacyRewardPlan(settings.farming);
   settings.rewardMode = mode === "plan" && !settings.manualEventEnabled ? "plan" : farmingSettings(settings).rewardMode;
   return settings;
@@ -152,12 +154,12 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
 export function farmingConditions(draft: FarmingSettings): FarmingSettings {
   if (draft.play !== "gekiso") return { ...draft, playMode: draft.play === "skip" ? "ap" : draft.playMode, measure: draft.play === "challenge" && draft.measure === "challenge-points" ? "points" : draft.measure };
   return { ...draft, playMode: "ap", requireGrowth: true, unknownPolicy: "min", includeMemory: false,
-    measure: draft.measure === "items" ? "items" : "points", weighted: false, fullRanking: false, k: 1, timeLimit: null };
+    measure: draft.measure === "items" ? "items" : "points", weighted: false, fullRanking: false, k: 1 };
 }
 export function farmingMode(draft: FarmingSettings): "recommendation" | "event" {
   const s = farmingConditions(draft);
   return (s.play !== "gekiso" || s.rewardRoomMode === "battle" && s.rewardPlayers === 5 && s.rewardOtherScore === null) && s.aggregation !== "mean" && !s.rewardPlan && (s.play === "solo" || s.play === "gekiso") && s.playMode === "ap" && s.requireGrowth && !s.includeMemory &&
-    s.measure !== "challenge-points" && !s.weighted && !s.fullRanking && s.k === 1 && s.timeLimit === null ? "recommendation" : "event";
+    s.measure !== "challenge-points" && !s.weighted && !s.fullRanking && s.k === 1 && (s.timeLimit === null || s.play === "gekiso") ? "recommendation" : "event";
 }
 export function farmingSettings(settings: BuildSettings): BuildSettings {
   const draft = settings.manualEventEnabled
@@ -171,6 +173,12 @@ export function farmingSettings(settings: BuildSettings): BuildSettings {
         "challenge-points": { ...selectedPlan.options["challenge-points"], auto: false } } }
     : selectedPlan;
   return { ...settings, ...s, rewardPlan, rewardMode: mode, goal: "event",
+    ...(draft.fixedTeam ? {
+      scope: "box" as const, noSnaps: false, leader: draft.fixedTeam.members[draft.fixedTeam.leader] ?? null,
+      bindings: draft.fixedTeam.members.flatMap((id, slot): [number, number | null][] =>
+        id === null ? [] : [[id, draft.fixedTeam!.snaps[slot] ?? null]]),
+      required: { members: [], snaps: [] },
+    } : {}),
     farming: draft,
     eventId: settings.manualEventEnabled ? settings.manualEvent.templateId : settings.eventId,
     route: s.play === "solo" || s.play === "gekiso" ? "live" : s.play,

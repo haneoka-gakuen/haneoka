@@ -136,6 +136,7 @@ export class ResultAnalysis {
     if (identity !== this.identity) {
       this.close();
       this.cache.clear();
+      this.resetFilters();
       this.identity = identity;
     }
   }
@@ -415,6 +416,17 @@ export class ResultAnalysis {
         (!this.onlyHighest || value(hit) === maximum) &&
         (this.maxRisk === 1 || (rankRisk(hit, this.targetRank) ?? Infinity) <= this.maxRisk),
     );
+  }
+  private resetFilters() {
+    this.rewardBand = this.rewardMinLevel = this.rewardMaxLevel = null;
+    this.maxRisk = 1;
+    this.onlyHighest = false;
+    this.targetRank = 7;
+  }
+  emptyRewards(hadCandidates: boolean, proven: boolean, running: boolean) {
+    if (hadCandidates) return this.host.t("farm.filteredEmpty", "No teams match the filters");
+    if (proven) return this.host.t("noTeams", "No team meets these conditions");
+    return running ? this.host.t("searching", "Finding candidates") : this.host.t("noCandidate", "No recommendation yet");
   }
   filters() {
     const active = Number(this.maxRisk < 1) + Number(this.onlyHighest)
@@ -706,6 +718,10 @@ export class ResultAnalysis {
           }
         }}></md-outlined-text-field>`;
     return html`
+      <button type="button" class="button button--text" @click=${() => {
+        this.resetFilters();
+        this.host.requestUpdate();
+      }}>${this.host.t("clearFilters", "Clear filters")}</button>
       ${this.host.tab === "pt" && catalog ? html`
         ${choiceField({
           type: "select", label: t("rewardBand"),

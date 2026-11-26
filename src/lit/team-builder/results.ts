@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
-// Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作、逐步收益及贡献成员。
+// Output: 排名卡片、按玩法选择的队伍操作、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作、逐步收益及贡献成员。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
+// Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。结果卡面按冻结输入进入临时养成。
 import { evaluateResult, rankRisk } from "./result-analysis";
 import { cardScopeLabel } from "./card-input-controls";
 import { sectionResults } from "./section-results";
@@ -28,7 +28,7 @@ import { tileMedia } from "../ui/tile";
 import type { CardGrowth } from "../shared/card-growth";
 import { songPerformerAdornment } from "../shared/song-performer-adornment";
 import { sectionHeading } from "./catalog";
-import { renderChecklist } from "./tool-layout";
+import { mobilePrerequisite, mobileSaveAction, renderChecklist } from "./tool-layout";
 import { chartKey } from "./workspace-state";
 import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
@@ -204,8 +204,8 @@ export function resultSong(host: TeamBuilder, song: SongRef, rule: { musicType?:
   `;
 }
 
-function resultGrowth(host: TeamBuilder, kind: "members" | "snaps", key: string) {
-  const source = resultInputs(host);
+function resultGrowth(host: TeamBuilder, hit: EngineHit, kind: "members" | "snaps", key: string) {
+  const source = resultInputs(host, hit);
   const input =
     kind === "members" ? source?.members.find((row) => row.key === key) : source?.snaps.find((row) => row.key === key);
   return input && source ? host.catalog!.resolvedGrowth(kind, input, source.unknownPolicy) : null;
@@ -416,7 +416,17 @@ interface FormationSlot {
   flag?: TemplateResult;
 }
 
-export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0, interactive = true): TemplateResult {
+export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0, action: boolean | ((kind: "members" | "snaps", id: number) => void) = true): TemplateResult {
+  const interactive = !!action;
+  const actionLabel = typeof action === "function" ? host.t("tryGrowth", "Try an upgrade") : host.t("editGrowth", "Edit growth");
+  const open = (kind: "members" | "snaps", cardId: number) => {
+    if (typeof action === "function") action(kind, cardId);
+    else if (action) {
+      host.setTab("box");
+      host.editing = { kind, cardId };
+      host.requestUpdate();
+    }
+  };
   const catalog = host.catalog!;
   const order = slots.map((_, index) => index).filter((index) => index !== leader);
   if (leader >= 0) order.splice(Math.min(2, order.length), 0, leader);
@@ -436,11 +446,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
               class="tb-slot__member"
               type="button"
               ?disabled=${!interactive}
-              aria-label=${interactive ? `${host.t("editGrowth", "Edit growth")}: ${memberOptions?.label ?? member}` : memberOptions?.label ?? String(member)}
-              @click=${() => {
-                host.editing = { kind: "members", cardId: member };
-                host.requestUpdate();
-              }}
+              aria-label=${interactive ? `${actionLabel}: ${memberOptions?.label ?? member}` : memberOptions?.label ?? String(member)}
+              @click=${() => open("members", member)}
             >
               ${memberOptions ? tileMedia(memberOptions) : nothing}
             </button>
@@ -448,13 +455,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
               class="tb-slot__snap"
               type="button"
               ?disabled=${!interactive || snap === null}
-              aria-label=${snapOptions ? interactive ? `${host.t("editGrowth", "Edit growth")}: ${snapOptions.label}` : snapOptions.label : host.t("noSnap", "No snap")}
-              @click=${() => {
-                if (snap !== null) {
-                  host.editing = { kind: "snaps", cardId: snap };
-                  host.requestUpdate();
-                }
-              }}
+              aria-label=${snapOptions ? interactive ? `${actionLabel}: ${snapOptions.label}` : snapOptions.label : host.t("noSnap", "No snap")}
+              @click=${() => { if (snap !== null) open("snaps", snap); }}
             >
               ${
                 snapOptions
@@ -472,21 +474,23 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
   `;
 }
 
-export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
+export function formation(host: TeamBuilder, hit: EngineHit, allowGrowth = true): TemplateResult {
   const catalog = host.catalog!;
+  const settings = resultSettings(host, hit);
+  const canTry = allowGrowth && !host.running && settings.scope !== "theoretical" && settings.goal !== "plan";
   return teamFormation(host, hit.members.map((key, index) => {
     const member = cardIdOf(key);
     const snapKey = hit.snaps[index];
     return {
       member,
       snap: snapKey ? cardIdOf(snapKey) : null,
-      memberGrowth: resultGrowth(host, "members", key),
-      snapGrowth: snapKey ? resultGrowth(host, "snaps", snapKey) : null,
+      memberGrowth: resultGrowth(host, hit, "members", key),
+      snapGrowth: snapKey ? resultGrowth(host, hit, "snaps", snapKey) : null,
       title: `${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`,
-      flag: !host.view?.members.has(member) && resultSettings(host).scope === "theoretical"
+      flag: !host.view?.members.has(member) && settings.scope === "theoretical"
         ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : undefined,
     };
-  }));
+  }), 0, canTry && ((kind, cardId) => host.teamGrowth.tryCard(hit, kind, cardId)));
 }
 
 type ResultRoom = { players: number; otherAverageScore?: number };
@@ -1133,7 +1137,7 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
               : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
           </span>` : nothing}
       <div class="cluster">${chips(host, hit)}</div>
-      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference)) : nothing}
+      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference, false)) : nothing}
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
       ${hit.justWindow?.coverage ? justWindowResults(host, hit.justWindow) : nothing}
@@ -1307,6 +1311,52 @@ export function renderHit(
       })}`, host.server, host.locale as Locale)
     : undefined;
   const main = primary(host, hit);
+  const source = resultRequest(host, hit);
+  const settings = resultSettings(host, hit);
+  const songs = hit.aggregate?.songs.flatMap(part => part.song ? [part.song] : []) ?? (hit.song ? [hit.song] : []);
+  const team = { members: hit.members.map(cardIdOf), snaps: hit.snaps.map(key => key ? cardIdOf(key) : null), leader: 0 };
+  const fromEvent = host.tab === "pt" && source?.goal.kind === "event" && !source.goal.eventEffects && settings.route !== "skip";
+  const fromLive = host.tab === "live" && source?.goal.kind === "gekiso" && settings.scope !== "theoretical";
+  const hasPresentation = !usesPtResults(host) || !!host.pt.job?.presentation;
+  const edit = !settings.arena && hit.song && !hit.aggregate && hasPresentation ? {
+    label: host.t("editCompare", "Edit and compare"), disabled: stale || host.running, run: () => host.compareTeam(hit),
+  } : null;
+  const mistakes = hit.song && hit.score && settings.route !== "skip" ? {
+    label: host.t("analysis.mistakes", "Mistake positions"), disabled: stale || host.running, run: () => host.analysis.openMistakes(hit),
+  } : null;
+  const pressure = source?.goal.kind === "gekiso" ? {
+    label: host.t("analysis.pressure", "Opponent scenarios"), disabled: stale || host.running, run: () => host.analysis.openPressure(hit),
+  } : null;
+  const selectSong = !settings.arena && settings.scope !== "theoretical" && hasPresentation ? {
+    label: fromEvent ? host.t("farm.tuneTeam", "Adjust this team in GEKISO") : host.t("sc.useTeam", "Compare songs with this team"),
+    disabled: stale || host.running,
+    run: () => host.openSongComparison(fromEvent ? host.pt.fixedTeam ?? team : team, source,
+      fromEvent && source.goal.kind === "event" ? {
+        farmingEvent: { id: source.goal.eventId, challenge: settings.route === "challenge" },
+        songs, mode: "ap", just: settings.ptJust, ranks: [1, 1, 1],
+        players: source.goal.rewardRoom?.mode === "battle" ? Math.max(2, source.goal.rewardRoom.players) : 5,
+        songRules: settings.route === "challenge" ? undefined : source.songRules,
+      } : undefined),
+  } : null;
+  const compare = reference ? {
+    label: host.t(compared ? "comparisonAdded" : "addComparison", compared ? "Added to comparison" : "Add to comparison"),
+    run: () => host.comparison.toggle(host, hit),
+  } : null;
+  const actions = [
+    selectSong, edit, compare, mistakes, pressure,
+    fromLive && source.goal.kind === "gekiso" && songs.length ? {
+      label: host.t("farm.teamRewards", "Check event rewards with this team"), disabled: stale || host.running,
+      run: () => host.pt.openRewards(team, songs, { just: source.goal.kind === "gekiso" ? source.goal.accuracy.just * 100 : null, songRules: source.songRules }),
+    } : null,
+    source && host.analysis.canShowLuckScore({ hit, input: source }) ? {
+      label: host.t("analysis.luckDistribution", "LUCK score distribution"), disabled: stale || host.running, run: () => host.analysis.openLuckScore(hit),
+    } : null,
+    settings.scope !== "theoretical" && settings.goal !== "plan" && source ? {
+      label: host.t("tg.title", "Team growth comparison"), disabled: host.running, run: () => host.teamGrowth.openResult(hit),
+    } : null,
+  ].filter(action => action !== null);
+  const next = fromEvent || fromLive ? selectSong : host.tab === "challenge" ? mistakes : settings.arena ? pressure : edit;
+  const onCard = host.classicLayout ? actions : next ? [next] : [];
   return html`
     <article
       data-result-key=${key}
@@ -1365,65 +1415,18 @@ export function renderHit(
         <button class="button button--tonal" type="button" data-tb-save-team ?disabled=${stale}
           @click=${() => saveResultTeam(host, hit)}>${host.t("saveTeam", "Save team")}</button>
         ${paceHref ? html`<a class="button button--text" href=${paceHref}>${host.t("openPacePlanner", "Plan with these points")}</a>` : nothing}
-        ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
-        ${(() => {
-          const input = resultRequest(host, hit);
-          return input && host.analysis.canShowLuckScore({ hit, input }) ? html`
-            <button class="button button--text" type="button" ?disabled=${host.running || stale}
-              @click=${() => host.analysis.openLuckScore(hit)}>${host.t("analysis.luckDistribution", "LUCK score distribution")}</button>`
-            : nothing;
-        })()}
-        ${resultRequest(host,hit)?.goal.kind === "gekiso" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openPressure(hit)}>${host.t("analysis.pressure", "Opponent scenarios")}</button>` : nothing}
-        ${resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
-          <button class="button button--tonal" type="button" ?disabled=${host.running}
-            @click=${() => host.teamGrowth.openResult(hit)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
-        ${
-          resultSettings(host).arena ||
-          resultSettings(host).scope === "theoretical" || (usesPtResults(host) && !host.pt.job?.presentation)
-            ? nothing
-            : html`
-                <button
-                  class="button button--text"
-                  type="button"
-                  ?disabled=${stale}
-                  @click=${() => {
-                    host.openSongComparison({
-                      members: hit.members.map(cardIdOf),
-                      snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
-                      leader: 0,
-                    }, resultInputs(host, hit));
-                  }}
-                >
-                  ${host.t("sc.useTeam", "Compare songs with this team")}
-                </button>
-              `
-        }
-        ${
-          resultSettings(host).arena || !hit.song || hit.aggregate || (usesPtResults(host) && !host.pt.job?.presentation)
-            ? nothing
-            : html`
-                <button class="button button--text" type="button" ?disabled=${stale || host.running} @click=${() => host.compareTeam(hit)}>
-                  ${host.t("editCompare", "Edit and compare")}
-                </button>
-              `
-        }
-        ${
-          reference
-            ? html`
-                <button
-                  class="button button--text"
-                  aria-pressed=${compared}
-                  @click=${() => host.comparison.toggle(host, hit)}
-                >
-                  ${host.t(compared ? "comparisonAdded" : "addComparison", compared ? "Added to comparison" : "Add to comparison")}
-                </button>
-              `
-            : nothing
-        }
+        ${onCard.map(action => html`<button class="button button--text" type="button"
+          ?disabled=${"disabled" in action && action.disabled}
+          aria-pressed=${action === compare ? String(compared) : nothing}
+          @click=${action.run}>${action.label}</button>`)}
         ${actionMenu({
           id: `tb-result-actions-${index}`,
-          label: host.common("common.actions.moreActions", "More"),
+          label: host.compactConditions && !host.classicLayout
+            ? html`${icon("more_horiz", 20)}<span class="sr-only">${host.common("common.actions.moreActions", "More")}</span>`
+            : host.common("common.actions.moreActions", "More"),
           items: [
+            ...actions.filter(action => !onCard.includes(action)),
+            ...(host.compactConditions && host.comparison.items.length >= 2 ? [host.comparison.compareAction(host)] : []),
             { label: host.t("copyTeam", "Copy as text"), icon: "content_copy", run: () => copyText(host, hit) },
             { label: host.t("saveImage", "Save image"), icon: "image", run: () => void exportImage(host, key, hit) },
             ...(() => {
@@ -1561,33 +1564,49 @@ export function resultSelection(host: TeamBuilder, results: NonNullable<TeamBuil
   const shown = settings.goal === "event" && settings.route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
   const groups =
     selectedChart ? [selectedChart] : results.results;
-  return { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups };
+  return { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups, hadCandidates: unfiltered.length > 0 };
 }
 
-export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
+function taskResults(host: TeamBuilder) {
   const results = host.results;
   if (
     !results ||
     ["event", "plan"].includes(host.resultSettings?.goal ?? "score") !== (host.tab === "pt") ||
     (host.tab === "pt" && (host.resultSettings?.goal === "plan") !== (host.settings.rewardMode === "plan"))
   ) {
-    return renderChecklist(host);
+    return null;
   }
+  return results;
+}
+
+export function searchMobileAction(host: TeamBuilder) {
+  if (!host.compactConditions || host.classicLayout || host.running) return null;
+  const prerequisite = mobilePrerequisite(host);
+  const results = taskResults(host);
+  if (prerequisite || !results || host.stale || !results.results.length || !results.results.every(row => row.proven))
+    return prerequisite;
+  return mobileSaveAction(host, resultSelection(host, results).shown.length + Number(!!results.cpChallenge));
+}
+
+export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
+  const results = taskResults(host);
+  if (!results) return renderChecklist(host);
   const catalog = host.catalog!;
   const stale = host.stale;
-  const { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups } = resultSelection(host, results);
+  const { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups, hadCandidates } = resultSelection(host, results);
   const proven = groups.length > 0 && groups.every((result) => result.proven);
+  const sampled = proven && groups.some(group => group.hits.some(hit => sampledLuck(host, hit)));
   const gap = proven ? null : improvementPercent(groups);
   const goal = resultRequest(host)?.goal;
   return html`
     <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
         ${resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filters() : nothing}
-        <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
-          ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}
+        <span class=${`tb-proof${proven && !stale ? " is-proven" : ""}`} role="status">
+          ${stale ? host.t("recomputeNeeded", "Recalculation needed") : html`${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, sampled, hadCandidates)}`}
         </span>
         ${goal?.kind === "score" ? html`
-          <span class="tb-results__meta">${host.t("calculationChartCount", "{count} charts in this search", { count: goal.songs.length })}</span>
+          <span class="tb-results__meta">${host.t("calculationChartCount", "Charts in this search · {count}", { count: goal.songs.length })}</span>
         ` : nothing}
         ${
           gap === null
@@ -1714,7 +1733,7 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
           : html`
               <div class="state">
                 <p class="state__title">
-                  ${proven ? host.t("noTeams", "No team meets these conditions") : host.t("noCandidate", "No recommendation yet")}
+                  ${host.analysis.emptyRewards(hadCandidates, proven, host.running)}
                 </p>
               </div>
             `
