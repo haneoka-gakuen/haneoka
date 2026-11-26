@@ -174,6 +174,11 @@ export function isCoreFallbackShell(pathname: string): boolean {
   if (/^\/(jp|intl)\/(ja|en|ko|zh-CN|zh-TW)\/(?:calendar\/|announcements\/)?$/u.test(routePath)) return true;
   return false;
 }
+export function isSharedStaticDataPath(pathname: string): boolean {
+  return pathname === "/data/sponsors/v1.json" ||
+    /^\/data\/(?:chart-rates|story-dialogue)\/(?:jp|intl)\.json$/u.test(pathname);
+}
+
 export function staticDocumentLookupPath(pathname: string): string | undefined {
   const providerShell = providerEntityShellPath(pathname);
   if (providerShell) return coreStaticDocumentPath(providerShell);
@@ -185,8 +190,7 @@ export function staticDocumentLookupPath(pathname: string): string | undefined {
   if (playlistShell) return coreStaticDocumentPath(playlistShell);
   const editorShell = editorShellPath(pathname);
   if (editorShell) return coreStaticDocumentPath(editorShell);
-  if (/^\/data\/(?:chart-rates|story-dialogue)\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;
-  if (pathname === "/data/sponsors/v1.json") return pathname;
+  if (isSharedStaticDataPath(pathname)) return pathname;
   if (/^\/(?:provider-static|asset-static|playlist-static)\//u.test(pathname)) {
     const parts = pathname.split("/").filter(Boolean);
     if (pathname.endsWith("/index.html") && (parts[0] !== "provider-static" || parts.length === 6))
