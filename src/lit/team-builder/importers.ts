@@ -8,7 +8,7 @@ import { practiceRanges } from "../../lib/team-builder/inventory";
 import { parseBoxLocally } from "../../lib/team-builder/box-import/client";
 import { isInventoryListInput, previewInventoryListInput } from "../../lib/team-builder/box-import/list";
 import { BoxImportError } from "@haneoka/game-data-exporter";
-import { previewBoxImport, type BoxReviewContext } from "../../lib/team-builder/box-import/preview";
+import { previewBoxImport, withTgwRank, type BoxReviewContext } from "../../lib/team-builder/box-import/preview";
 import { applyConfirmedBoxImport, type BoxConfirmation } from "../../lib/team-builder/box-import/merge";
 import { completeGameToolSaveMerge } from "../../lib/game-tool-account-store";
 import { buildBoxImportReview } from "../../lib/team-builder/box-review-model";
@@ -239,7 +239,7 @@ export class ImportController {
     this.boxStore = null;
     this.host.requestUpdate();
   }
-  private async parse(input: { files: readonly File[] } | { text: string }) {
+  private async parse(input: { files: readonly File[] } | { text: string }, tgwPoints?: number | null) {
     if ("files" in input && input.files.length === 1 && /\.(zip|imazingapp)$/i.test(input.files[0]!.name)) {
       return this.importSource(
         (signal, progress) => readLocalSource({ archive: input.files[0]! }, "archive", "", { signal, progress }),
@@ -289,8 +289,11 @@ export class ImportController {
         },
       });
       if (generation !== this.generation || !this.box) return;
-      this.box = { ...this.box, phase: "choose", candidates: parsed.candidates, progress: null };
-      if (parsed.candidates.length === 1) this.select(parsed.candidates[0]!.id);
+      const candidates = parsed.candidates.length === 1 && tgwPoints != null
+        ? [withTgwRank(parsed.candidates[0]!, this.host.data!, tgwPoints)]
+        : parsed.candidates;
+      this.box = { ...this.box, phase: "choose", candidates, progress: null };
+      if (candidates.length === 1) this.select(candidates[0]!.id);
     } catch (error) {
       if (generation === this.generation && this.box)
         this.box = {
@@ -742,7 +745,7 @@ export class ImportController {
       this.host.requestUpdate();
       return;
     }
-    await this.parse({ text: appImport.text });
+    await this.parse({ text: appImport.text }, appImport.tgwPoints);
   }
 
   render(): TemplateResult | typeof nothing {

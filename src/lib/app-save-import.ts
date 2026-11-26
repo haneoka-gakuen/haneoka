@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: App-queued imports from the device's own saves.
+// Input: App-queued imports from the device's own saves and optional TGW points from the game.
 // Output: Background writes to the save's server-specific Box and song progress, and the site's history library.
 // Pos: [Map](L2-2.md); app save import handoff.
 // Effects/Dependencies: Uses the native bridge and existing import/storage adapters. Never navigates.
@@ -44,8 +44,8 @@ function overwrite(store: BoxStore, changes: CountChanges, matches: (key: string
   return [...next].map(([key, value]) => ({ key, value }));
 }
 
-async function importTeam(text: string, store: BoxStore, account: GameToolAccount, verify: () => Promise<boolean>) {
-  const [{ fetchTeamBuilderData }, { createEmptyInventory }, { parseBoxText }, { previewBoxImport, applyConfirmedBoxImport }, { inventoryChanges }] =
+async function importTeam(text: string, store: BoxStore, account: GameToolAccount, verify: () => Promise<boolean>, tgwPoints?: number | null) {
+  const [{ fetchTeamBuilderData }, { createEmptyInventory }, { parseBoxText }, { previewBoxImport, applyConfirmedBoxImport, withTgwRank }, { inventoryChanges }] =
     await Promise.all([
       import("./team-builder/data/fetch"),
       import("./team-builder/inventory"),
@@ -59,7 +59,7 @@ async function importTeam(text: string, store: BoxStore, account: GameToolAccoun
   if (!candidate || !sourceId) throw new Error("save_import_box");
   const inventory = createEmptyInventory(data.identity);
   const context = { ...data.identity, sourceId, ownerId: "app", revision: 0 };
-  const preview = previewBoxImport(candidate, inventory, data, context);
+  const preview = previewBoxImport(withTgwRank(candidate, data, tgwPoints), inventory, data, context);
   if (preview.issues.length || !preview.cards.length) throw new Error("save_import_box");
   const confirmed = applyConfirmedBoxImport(inventory, preview, {
     ownership: "replace",
@@ -242,9 +242,10 @@ async function repairImportedProfiles(devices: DeviceSave[], queued: SaveImportJ
               repaired = await store.flushPending();
               if (repaired && target.settings?.mergeSave) await completeGameToolSaveMerge(target, owner);
             }
-            else if (action === "team")
-              repaired = await importTeam((await appCall("saveSnapshot", { key: save.key, complete: true })).text, store, target, async () => gameToolOwner() === owner);
-            else {
+            else if (action === "team") {
+              const snapshot = await appCall("saveSnapshot", { key: save.key, complete: true });
+              repaired = await importTeam(snapshot.text, store, target, async () => gameToolOwner() === owner, snapshot.tgwPoints);
+            } else {
               const progress = await appCall("songProgress", { server: account.server, key: save.key });
               if (progress) {
                 const result = await importSongs(progress, store, target);
@@ -284,7 +285,7 @@ async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<s
     }) }, owner);
   }
   if (action === "team" || action === "songs") {
-    const payload = result as AppSongProgress | (Pick<AppBoxImport, "text"> & Partial<Pick<AppBoxImport, "server">>);
+    const payload = result as AppSongProgress | (Omit<AppBoxImport, "server"> & { server?: AppBoxImport["server"] });
     if (!isPublicReleaseServer(job.server) || !job.key.startsWith(`${job.server}-`) ||
         (payload.server !== undefined && payload.server !== job.server) ||
         ("key" in payload && payload.key !== undefined && payload.key !== job.key))
@@ -305,7 +306,7 @@ async function apply(job: SaveImportJob, action: SaveImportAction, stores: Map<s
       return flushed;
     }
     if (action === "team" && "text" in payload) return importTeam(payload.text, store, account,
-      async () => gameToolOwner() === owner && await currentJob(job, "team") && gameToolOwner() === owner);
+      async () => gameToolOwner() === owner && await currentJob(job, "team") && gameToolOwner() === owner, payload.tgwPoints);
     if (action === "songs" && "marks" in payload) {
       const { applied, countError } = await importSongs(payload, store, account);
       if (applied && countError) throw new Error(countError);

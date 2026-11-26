@@ -16,10 +16,10 @@ export interface AppMethods {
   offlineEnqueue: { args: { items: OfflineStoryItem[] }; result: { queued: number; alreadySaved: number; alreadyQueued: number } };
   offlineStatus: { args: { items: OfflineStoryItem[] }; result: { items: (OfflineStoryItem & { state: OfflineStoryState })[] } };
   /** The chosen save as a `haneoka-game-save-v1` snapshot, with companion documents when requested. */
-  saveSnapshot: { args: { key: string; complete?: boolean }; result: { text: string } };
+  saveSnapshot: { args: { key: string; complete?: boolean }; result: Pick<AppBoxImport, "text" | "tgwPoints"> };
   checkAppUpdate: { args: Record<string, never>; result: "current" | "handled" | "busy" | "unavailable" | "install_failed" };
-  /** The chosen game account's card, character and band item progress as `ONPKG1:` text. */
-  boxAccount: { args: { server: string; key?: string }; result: { text: string } | null };
+  /** The chosen game account's Box progress, with TGW points when read from the game. */
+  boxAccount: { args: { server: string; key?: string }; result: Pick<AppBoxImport, "text" | "tgwPoints"> | null };
   /** Gacha history read from the game server, as companion files (`{key}.json`). */
   gachaHistory: {
     args: { key?: string; account?: string };
@@ -135,6 +135,7 @@ export interface AppBoxImport {
   server: SaveImportJob["server"];
   key?: string;
   text: string;
+  tgwPoints?: number | null;
 }
 
 export interface AppSongProgress {

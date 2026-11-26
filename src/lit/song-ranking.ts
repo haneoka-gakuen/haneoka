@@ -869,16 +869,16 @@ export class SongRanking extends GameRecordsCardsElement {
             }}
           >
               <md-outlined-text-field
-                class="is-search"
                 name="query"
                 type="search"
-                maxlength="100"
                 required
                 .value=${this.query}
                 label=${t("playerSearch", "Player ID or username")}
                 aria-label=${t("playerSearch", "Player ID or username")}
                 @input=${(event: InputEvent) => {
-                  this.query = (event.currentTarget as HTMLInputElement).value;
+                  const input = event.currentTarget as HTMLInputElement;
+                  this.query = input.value.slice(0, 100);
+                  if (input.value !== this.query) input.value = this.query;
                   this.searchRequests.cancel();
                   this.searching = false;
                 }}

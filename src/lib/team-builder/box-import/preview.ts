@@ -59,6 +59,23 @@ export function sameBoxContext(context: BoxReviewContext, data: TeamBuilderData)
     context.sourceId === data.identity.sourceId
   );
 }
+
+export function withTgwRank(candidate: BoxCandidate, data: TeamBuilderData, observedPoints?: number | null): BoxCandidate {
+  const points = integer(observedPoints);
+  const table = data.runtimeRules?.tables.vipRanks;
+  if (points === null || data.runtimeRules?.status !== "ready" || table?.status !== "ready") return candidate;
+
+  let rank = 0, threshold = -1;
+  for (const row of table.rows) {
+    const required = integer(row.point), nextRank = integer(row.vipRank);
+    if (required === null || nextRank === null || nextRank < 1 || required > points) continue;
+    if (required > threshold || required === threshold && nextRank > rank) {
+      threshold = required;
+      rank = nextRank;
+    }
+  }
+  return rank ? { ...candidate, playerScalars: { ...candidate.playerScalars, vipRank: rank } } : candidate;
+}
 function fromExp(
   rows: Record<string, unknown>[],
   exp: string | null,

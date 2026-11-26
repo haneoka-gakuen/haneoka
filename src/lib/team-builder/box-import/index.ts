@@ -1,6 +1,6 @@
 export { parseBoxFiles, parseBoxText } from "./parser";
 export { parseBoxLocally } from "./client";
-export { previewBoxImport } from "./preview";
+export { previewBoxImport, withTgwRank } from "./preview";
 export { applyConfirmedBoxImport } from "./merge";
 export { BoxImportError, BOX_LIMITS } from "@haneoka/game-data-exporter";
 export type { BoxCandidate, BoxParseResult, BoxParseOptions } from "@haneoka/game-data-exporter";
