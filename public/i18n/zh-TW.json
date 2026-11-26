@@ -3286,6 +3286,11 @@
         "correctionHelp": "正在修改活動收益所需的輸入",
         "back": "返回"
       },
+      "challenge": {
+        "title": "挑戰曲拚榜",
+        "backEvent": "返回活動詳情",
+        "backRanking": "返回單曲排行榜"
+      },
       "criterionMax": "單次最高分（衝榜）",
       "criterionMaxBestTiming": "最高分最佳時序",
       "criterionMaxWorstTiming": "最高分最差時序",

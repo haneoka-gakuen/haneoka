@@ -108,6 +108,7 @@ import { songMissions } from "../lib/catalog-filters";
 import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
+import { ChallengeController, renderChallengeTab } from "./team-builder/challenge-tab";
 import { availableOnServer, readFormation, type Formation } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
@@ -208,6 +209,7 @@ export class TeamBuilder extends LitElement {
   songComparison = new SongComparison(this);
   teamGrowth = new TeamGrowthComparison(this);
   arena = new ArenaController(this);
+  readonly challenge = new ChallengeController(this);
   private task: { token: symbol; kind: string } | null = null;
   acquireTask(kind: string) {
     if (this.task || this.running || this.manualBusy) return null;
@@ -1046,6 +1048,7 @@ export class TeamBuilder extends LitElement {
       this.restoreBuildPreferences(!ownerChanged);
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
+      if (this.tab === "challenge") this.challenge.applyRoute();
       this.engine?.prefetch(this.searchSettings.songs);
       this.imports.rebase();
     }
@@ -1329,6 +1332,10 @@ export class TeamBuilder extends LitElement {
       if (task !== "challenge")
         for (const key of ["event", "challenge", "song", "difficulty", "region"]) url.searchParams.delete(key);
       openDetailLocation(url.href);
+      if (tab === "challenge") {
+        this.challenge.readRoute(url.searchParams);
+        this.challenge.applyRoute();
+      }
     }
     this.requestUpdate();
     void this.restoreScroll(focusPanel);

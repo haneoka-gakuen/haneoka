@@ -3257,6 +3257,11 @@
         "correctionHelp": "Editar una entrada para los premios de eventos",
         "back": "Atrás"
       },
+      "challenge": {
+        "title": "Récord de la canción de desafío",
+        "backEvent": "Volver al evento",
+        "backRanking": "Volver a la clasificación de la canción"
+      },
       "criterionMax": "Máxima de un solo relojo (Ranking)",
       "criterionMaxBestTiming": "Punto máximo · Mejor tiempo",
       "criterionMaxWorstTiming": "Punto máximo · peor tiempo",

@@ -70,6 +70,10 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
     `${host.t("unknownPolicy", "Growth")}: ${growthPolicyLabel(host, s)}`,
     `${host.t("scope", "Cards")}: ${cardScopeLabel(host, s)}`,
     `${host.t("goal", "Goal")}: ${primary(host, hit).label}`,
+    ...(input?.goal.kind === "score" && input.goal.challengeEventId !== null
+      ? [host.t("challengeRules", "Challenge live rules (event parameter bonus)") + " / " +
+          (host.catalog!.events().find(event => event.id === s.eventId)?.name ?? `#${input.goal.challengeEventId}`)]
+      : []),
     ...(s.goal === "event" || s.goal === "plan"
       ? [
           `${host.t("farm.memory", "Character / song memory bonuses")}: ${s.goal === "plan" || (s.farming.includeMemory && s.rewardMode !== "recommendation") ? host.t("farm.included", "Included") : host.t("farm.excluded", "Excluded")}`,

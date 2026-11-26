@@ -3286,6 +3286,11 @@
         "correctionHelp": "이벤트 보상 입력 수정 중",
         "back": "뒤로"
       },
+      "challenge": {
+        "title": "챌린지 곡 최고 점수 도전",
+        "backEvent": "이벤트 상세로 돌아가기",
+        "backRanking": "곡 랭킹으로 돌아가기"
+      },
       "criterionMax": "최고 점수 (랭킹)",
       "criterionMaxBestTiming": "최고 점수 · 최선 타이밍",
       "criterionMaxWorstTiming": "최고 점수 · 최악 타이밍",

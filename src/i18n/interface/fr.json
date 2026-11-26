@@ -3257,6 +3257,11 @@
         "correctionHelp": "Rédaction d'une entrée pour les récompenses d'événement",
         "back": "Dos"
       },
+      "challenge": {
+        "title": "Record du morceau défi",
+        "backEvent": "Revenir à l’événement",
+        "backRanking": "Revenir au classement du morceau"
+      },
       "criterionMax": "Le maximum de la course (Ranking)",
       "criterionMaxBestTiming": "Le meilleur score, le meilleur timing",
       "criterionMaxWorstTiming": "Le score maximum · pire timing",

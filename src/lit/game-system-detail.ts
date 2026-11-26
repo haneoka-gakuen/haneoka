@@ -43,6 +43,8 @@ import { isContentListed } from "../lib/content-release";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { clientText } from "../i18n/client";
+import { eventChallengeHref } from "../lib/event-challenge-route";
+import { isPublicReleaseServer } from "../lib/temporary-public-routing";
 import {
   canSimulate,
   drawCountOf,
@@ -1214,6 +1216,27 @@ function renderEventSong(c: Controller, item: Item) {
   `;
 }
 
+function renderChallengeLinks(c: Controller, item: Item) {
+  if (item.kind !== "game-event") return nothing;
+  const server = c.unionDetail?.activeServer ?? c.itemSourceServer(item);
+  if (!isPublicReleaseServer(server)) return nothing;
+  const locale = c.settings.locale;
+  const label = clientText(locale, "tools.teamBuilder.challenge.title", "Challenge song ranking");
+  const tracks = item.challengeServer === server ? eventRows(item.challengeTracks).filter(row => isContentListed("songs", row, String(row.musicId))) : [];
+  const event = String(item.id);
+  return html`<section class="detail-section">
+    ${renderDetailSectionHeading(label, "songs")}
+    ${tracks.length ? html`<div class="collection collection--song">
+      ${tracks.map(track => tile({ ...c.songTileOptions(track),
+        ...(!track.musicTitle ? { title: `#${track.musicId}` } : {}),
+        href: eventChallengeHref(locale, server, event, { id: Number(track.id), musicId: Number(track.musicId) }),
+      }))}
+    </div>` : html`<a class="button button--tonal" href=${eventChallengeHref(locale, server, event)}>
+      ${clientText(locale, "tools.teamBuilder.planChallengeSongs", "Challenge songs")}
+    </a>`}
+  </section>`;
+}
+
 function renderEventCardGrid(c: Controller, cards: Item[]) {
   return renderRewardGrid(c, cards, (card) =>
     Number(card.rate) > 0
@@ -1695,7 +1718,7 @@ export function renderGameSystemDetail(c: Controller, item: Item) {
   switch (resource) {
     case "events":
       return html`
-        ${renderRotatingOverview(c, item)} ${renderEventRecruitments(c, item)} ${renderEventPickups(c, item)}
+        ${renderRotatingOverview(c, item)} ${renderChallengeLinks(c, item)} ${renderEventRecruitments(c, item)} ${renderEventPickups(c, item)}
         ${renderEventEffects(c, item)} ${renderEventSong(c, item)} ${renderEventStory(c, item)}
         ${renderEventRankings(c, item)} ${renderEventRewards(c, item)} ${renderEventMissions(c, item)}
         ${

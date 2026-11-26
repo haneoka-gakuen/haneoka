@@ -3257,6 +3257,11 @@
         "correctionHelp": "Tạo một bản ghi cho sự kiện phần thưởng",
         "back": "Mặt sau"
       },
+      "challenge": {
+        "title": "Chinh phục điểm cao bài thử thách",
+        "backEvent": "Quay lại sự kiện",
+        "backRanking": "Quay lại bảng xếp hạng bài hát"
+      },
       "criterionMax": "Độ bền tối đa (Ranking)",
       "criterionMaxBestTiming": "Tỷ lệ tối đa · Best timing",
       "criterionMaxWorstTiming": "Tỷ lệ tối đa · Thời gian tồi tệ nhất",

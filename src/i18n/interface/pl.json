@@ -3257,6 +3257,11 @@
         "correctionHelp": "Wydawanie wpisów na nagrody wydarzeń",
         "back": "Wstecz"
       },
+      "challenge": {
+        "title": "Rekord w utworze wyzwania",
+        "backEvent": "Wróć do wydarzenia",
+        "backRanking": "Wróć do rankingu utworu"
+      },
       "criterionMax": "Maksymalny pojedynczy przejazd (ranking)",
       "criterionMaxBestTiming": "Maksymalny wynik · najlepszy czas",
       "criterionMaxWorstTiming": "Maksymalny wynik · Najgorszy czas",

@@ -3286,6 +3286,11 @@
         "correctionHelp": "Editing an input for event rewards",
         "back": "Back"
       },
+      "challenge": {
+        "title": "Challenge song ranking",
+        "backEvent": "Return to event",
+        "backRanking": "Return to song ranking"
+      },
       "criterionMax": "Single-run maximum (ranking)",
       "criterionMaxBestTiming": "Maximum score · best timing",
       "criterionMaxWorstTiming": "Maximum score · worst timing",

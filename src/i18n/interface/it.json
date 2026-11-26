@@ -3257,6 +3257,11 @@
         "correctionHelp": "Editare un input per i premi di evento",
         "back": "Indietro"
       },
+      "challenge": {
+        "title": "Record del brano sfida",
+        "backEvent": "Torna all’evento",
+        "backRanking": "Torna alla classifica del brano"
+      },
       "criterionMax": "Il massimo di un singolo (rango)",
       "criterionMaxBestTiming": "Score massimo · migliore tempistica",
       "criterionMaxWorstTiming": "Score massimo · peggior timing",

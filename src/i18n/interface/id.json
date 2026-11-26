@@ -3257,6 +3257,11 @@
         "correctionHelp": "Mengedit input untuk hadiah acara",
         "back": "Kembali"
       },
+      "challenge": {
+        "title": "Kejar skor tertinggi lagu tantangan",
+        "backEvent": "Kembali ke acara",
+        "backRanking": "Kembali ke peringkat lagu"
+      },
       "criterionMax": "Satu-satu yang maksimal (Ranking)",
       "criterionMaxBestTiming": "Titik maksimum · Waktu terbaik",
       "criterionMaxWorstTiming": "Titik maksimum · Waktu terburuk",

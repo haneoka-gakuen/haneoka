@@ -3257,6 +3257,11 @@
         "correctionHelp": "Editar uma entrada para o evento recompensas",
         "back": "Voltar"
       },
+      "challenge": {
+        "title": "Recorde da música de desafio",
+        "backEvent": "Voltar ao evento",
+        "backRanking": "Voltar à classificação da música"
+      },
       "criterionMax": "Máxima de um único curso (Ranking)",
       "criterionMaxBestTiming": "Melhor tempo de pontuação · melhor tempo",
       "criterionMaxWorstTiming": "Ponto máximo · pior tempo",

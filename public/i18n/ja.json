@@ -3286,6 +3286,11 @@
         "correctionHelp": "イベント報酬の入力を編集中",
         "back": "戻る"
       },
+      "challenge": {
+        "title": "チャレンジ楽曲でハイスコアを狙う",
+        "backEvent": "イベント詳細に戻る",
+        "backRanking": "楽曲ランキングに戻る"
+      },
       "criterionMax": "最高スコア（ランキング）",
       "criterionMaxBestTiming": "最高スコア・最良タイミング",
       "criterionMaxWorstTiming": "最高スコア・最悪タイミング",

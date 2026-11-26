@@ -3257,6 +3257,11 @@
         "correctionHelp": "Ein Beitrag für Veranstaltungspreise zu veröffentlichen",
         "back": "Zurück"
       },
+      "challenge": {
+        "title": "Highscore für den Challenge-Song",
+        "backEvent": "Zurück zum Event",
+        "backRanking": "Zurück zur Songrangliste"
+      },
       "criterionMax": "Einfache Fahrt maximal (Ranking)",
       "criterionMaxBestTiming": "Maximale Score · Beste Timing",
       "criterionMaxWorstTiming": "Maximale Score · Schlimmste Timing",
