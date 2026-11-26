@@ -2213,7 +2213,6 @@
         "consent": "The host receives your owned member cards and snapshots, including disabled cards, along with their growth, account bonuses and play conditions. Disabled cards are excluded from teams. Everyone in the room can see the resulting teams.",
         "update": "Update my submission",
         "submit": "Submit my cards",
-        "five": "Add at least five available member cards in My cards.",
         "results": "Room results",
         "complete": "Search complete for the selected samples.",
         "partial": "Search in progress. The teams shown are the best found so far.",

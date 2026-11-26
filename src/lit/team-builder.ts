@@ -535,7 +535,7 @@ export class TeamBuilder extends LitElement {
   requiredPicker: "members" | "snaps" | null = null;
   excludedPicker: "members" | "snaps" | null = null;
   notice = "";
-  private readonly images = new LazyImages();
+  private readonly images = new LazyImages({ filter: (image) => !image.closest("gekiso-online-room") });
   private unsubscribe?: () => void;
   private loadedServer = "";
   private dataController?: AbortController;

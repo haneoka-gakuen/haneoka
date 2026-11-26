@@ -226,6 +226,8 @@ class OnlineRoom extends LitElement {
       const { exportRoomPlayer, assertRoomRelease } = await import("../../lib/team-builder/cooperative-room");
       const h = this.builder,
         { song } = view.settings;
+      const count = this.eligibleCharacters();
+      if (count < 5) throw new Error(h.t("eligibleCharacters", "{count}/5 eligible characters", { count }));
       assertRoomRelease(h.publicData!, view.settings);
       const options = {
         ...h.buildDrafts.live,
@@ -451,6 +453,13 @@ class OnlineRoom extends LitElement {
       </form>
     `;
   }
+  private eligibleCharacters() {
+    const h = this.builder;
+    return h.characterCount(
+      [...this.box.members.values()].filter((card) => card.use && availableOnServer(h.publicData!, "members", card.cardId)),
+    );
+  }
+
   private seatForm(view: RoomView) {
     const { song } = view.settings,
       h = this.builder,
@@ -459,6 +468,7 @@ class OnlineRoom extends LitElement {
     const choices: [number, string][] = diffs.map((id) => [id, h.catalog!.difficultyLabel(song.songId, id)]);
     const members = [...this.box.members.values()].filter((card) => card.use).length;
     const snaps = [...this.box.snaps.values()].filter((card) => card.use).length;
+    const count = this.eligibleCharacters();
     return html`
       <form class="surface stack" @submit=${this.form(() => this.submit(view))}>
         <h3 class="detail-section-title">${this.t("mySeat", "My seat · {id}", { id: view.seatId })}</h3>
@@ -513,15 +523,15 @@ class OnlineRoom extends LitElement {
             data-room-action="submit"
             class="button button--filled"
             type="submit"
-            ?disabled=${this.busy || !choices.length || members < 5}
+            ?disabled=${this.busy || !choices.length || count < 5}
           >
             ${seat.ready ? this.t("update", "Update my submission") : this.t("submit", "Submit my cards")}
           </button>
         </div>
         ${
-          members < 5
+          count < 5
             ? html`
-                <p>${this.t("five", "Add at least five available member cards in My cards.")}</p>
+                <p role="status">${h.t("eligibleCharacters", "{count}/5 eligible characters", { count })}</p>
               `
             : nothing
         }
