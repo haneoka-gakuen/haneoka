@@ -1569,6 +1569,7 @@ export class TeamBuilder extends LitElement {
     return JSON.stringify([this.manualContext(), this.engineCards(), this.view && engineInputs(this.view, true)]);
   }
   private get workspaceSettings(): BuildSettings {
+    if (this.tab === "challenge") return this.challenge.settings;
     const settings =
       this.tab === "arena"
         ? this.arena.settings

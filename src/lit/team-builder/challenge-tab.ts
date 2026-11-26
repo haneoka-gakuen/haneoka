@@ -5,6 +5,7 @@
 // Effects/Dependencies: Updates the challenge draft and current URL, delegates search and saving to the existing engine and results.
 import { html, nothing } from "lit";
 import type { TeamBuilder } from "../team-builder";
+import type { BuildSettings } from "./types";
 import { playConditions, renderBuildRun, renderCandidates } from "./build-tab";
 import { choiceField, sectionHeading } from "./catalog";
 import { renderResults } from "./results";
@@ -19,11 +20,16 @@ function queryInteger(params: URLSearchParams, name: string, minimum = 1) {
 
 export class ChallengeController {
   private route = new URLSearchParams();
+  private unavailable: Pick<BuildSettings, "eventId" | "songs"> | null = null;
 
   constructor(private readonly host: TeamBuilder) {}
 
   readRoute(params: URLSearchParams) {
     this.route = new URLSearchParams(params);
+    this.unavailable = null;
+  }
+  get settings(): BuildSettings {
+    return this.unavailable ? { ...this.host.settings, ...this.unavailable } : this.host.settings;
   }
 
   events() {
@@ -63,7 +69,21 @@ export class ChallengeController {
       const selected = tracks.find(track => (challenge === null || challenge === track.id) && (song === null || song === track.liveMusicId));
       songs = selected ? this.chart(selected.liveMusicId, difficulty) : [];
     } else if (requestedEvent !== null && current.eventId !== requestedEvent) songs = [];
-    host.settings = { ...current, eventId: event?.id ?? null, songs };
+    const selection = { eventId: event?.id ?? null, songs };
+    if ((requestedEvent !== null && !event) || (this.wantedChart && !songs.length)) {
+      this.unavailable = selection;
+    } else {
+      this.unavailable = null;
+      const challengeBoard = this.routeBoard();
+      const oldSong = current.songs[0], newSong = songs[0];
+      if (selection.eventId !== current.eventId || oldSong?.songId !== newSong?.songId || oldSong?.difficulty !== newSong?.difficulty ||
+          challengeBoard?.region !== current.challengeBoard?.region || challengeBoard?.eventId !== current.challengeBoard?.eventId ||
+          challengeBoard?.challengeId !== current.challengeBoard?.challengeId) {
+        const patch = { ...selection, challengeBoard };
+        if (requestedEvent !== null && host.snapshot) host.updateSettings(patch);
+        else host.settings = { ...current, ...patch };
+      }
+    }
     host.requestUpdate();
   }
 
@@ -71,8 +91,14 @@ export class ChallengeController {
     const track = this.tracks(eventId).find(row => row.id === challengeId);
     const songs = track ? this.chart(track.liveMusicId, difficulty ?? null) : [];
     const url = new URL(location.href);
+    const board = this.routeBoard();
     url.searchParams.set("event", String(eventId));
-    for (const key of ["challenge", "song", "difficulty"]) url.searchParams.delete(key);
+    for (const key of ["challenge", "song", "difficulty", "returnEvent", "returnChallenge"]) url.searchParams.delete(key);
+    if (board) {
+      url.searchParams.set("region", board.region);
+      if (eventId !== board.eventId) url.searchParams.set("returnEvent", String(board.eventId));
+      if (challengeId !== board.challengeId) url.searchParams.set("returnChallenge", String(board.challengeId));
+    }
     if (track) {
       url.searchParams.set("challenge", String(track.id));
       url.searchParams.set("song", String(track.liveMusicId));
@@ -80,25 +106,30 @@ export class ChallengeController {
     }
     this.readRoute(url.searchParams);
     history.replaceState(history.state, "", url);
-    this.host.updateSettings({ eventId, songs });
+    this.host.updateSettings({ eventId, songs, challengeBoard: board });
   }
 
-  get region() {
+  private routeBoard(): NonNullable<BuildSettings["challengeBoard"]> | null {
+    if (!this.wantedEvent) return this.host.settings.challengeBoard ?? null;
     const region = this.route.get("region");
-    return (this.host.server === "jp" && region === "jp") ||
-      (this.host.server === "intl" && (region === "en" || region === "tw" || region === "kr")) ? region : null;
+    const eventId = queryInteger(this.route, "returnEvent") ?? queryInteger(this.route, "event");
+    const challengeId = queryInteger(this.route, "returnChallenge") ?? queryInteger(this.route, "challenge");
+    if (!eventId || !challengeId) return null;
+    return ((this.host.server === "jp" && region === "jp") ||
+      (this.host.server === "intl" && (region === "en" || region === "tw" || region === "kr"))) ? { eventId, challengeId, region } : null;
   }
+  get region() { return this.routeBoard()?.region; }
 
   get returnHref() {
     const { host } = this;
-    const event = host.settings.eventId ?? queryInteger(this.route, "event");
-    if (!Number.isSafeInteger(event)) return null;
     const base = `/${host.server}/${host.locale}/events/`;
-    if (!this.region) return `${base}${event}/`;
-    const params = new URLSearchParams({ event: String(event), region: this.region, board: "challenge" });
-    const selected = queryInteger(this.route, "challenge");
-    if (selected) params.set("challenge", String(selected));
-    return `${base}tracker/?${params}`;
+    const board = this.routeBoard();
+    if (board) {
+      const params = new URLSearchParams({ event: String(board.eventId), region: board.region, board: "challenge", challenge: String(board.challengeId) });
+      return `${base}tracker/?${params}`;
+    }
+    const event = this.settings.eventId ?? queryInteger(this.route, "event");
+    return event && host.data?.events[String(event)] ? `${base}${event}/` : null;
   }
   get wantedEvent() { return this.route.has("event"); }
   get wantedChart() { return this.route.has("challenge") || this.route.has("song"); }
