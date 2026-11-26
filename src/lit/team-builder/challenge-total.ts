@@ -26,8 +26,7 @@ export class ChallengeTotal {
   private releaseFlags = new Map<string, boolean | undefined>();
   private scope = "";
   private restoring?: Promise<void>;
-  private runKey = "";
-  private stopRequested = false;
+  private runOwner?: { token: symbol; context: string; scope: string; cardScope: string; engine: NonNullable<TeamBuilder["engine"]> };
   private record?: ChallengeTotalResult;
   get result() { return this.scope === this.key() ? this.record : undefined; }
   storageError = false;
@@ -80,7 +79,11 @@ export class ChallengeTotal {
   private context() {
     return JSON.stringify([this.host.calculationContext(), this.pool(this.host.settings.eventId), this.difficulties]);
   }
-  get stale() { return !!this.result && this.result.context !== this.context(); }
+  get stale() {
+    const result = this.result;
+    return !!result && (result.context !== this.context() ||
+      !!result.conditions && result.conditions.scope !== this.host.searchSettings.scope);
+  }
 
   sync() {
     const h = this.host;
@@ -117,45 +120,69 @@ export class ChallengeTotal {
       this.scope = key;
       this.record = undefined;
       this.storageError = false;
-      this.restoring = key ? loadChallengeTotal(key).then(saved => {
-        if (this.scope === key) this.record = saved;
-      }).catch(() => { if (this.scope === key) this.storageError = true; }).finally(() => h.requestUpdate()) : undefined;
+      const restoring = key ? loadChallengeTotal(key).then(saved => {
+        if (this.restoring === restoring) this.record = saved;
+      }).catch(() => { if (this.restoring === restoring) this.storageError = true; }).finally(() => h.requestUpdate()) : undefined;
+      this.restoring = restoring;
       h.requestUpdate();
-    } else if (this.runKey && this.runKey !== this.context()) this.stop();
+    } else if (this.runOwner && (this.runOwner.context !== this.context() || this.runOwner.cardScope !== h.searchSettings.scope)) this.stop();
   }
 
   get resumable() {
     return !!this.result && !this.stale && this.result.songs.some(song => song.charts.some(row => !row.proven));
   }
+  get budgetSeconds() {
+    const saved = this.result?.budgetSeconds;
+    return !this.stale && saved !== undefined ? saved : this.host.searchSettings.timeLimit;
+  }
+  get runningProgress() {
+    const charts = this.result?.songs.flatMap(song => song.charts) ?? [];
+    return { done: charts.filter(row => row.proven).length, total: charts.length };
+  }
   dispose() {
     this.stop();
-    this.runKey = "";
     this.scope = "";
     this.record = undefined;
+    this.restoring = undefined;
   }
   stop() {
-    if (!this.runKey || this.stopRequested) return;
-    this.stopRequested = true;
-    this.host.engine?.cancel();
+    const owner = this.runOwner;
+    if (!owner) return;
+    this.runOwner = undefined;
+    if (this.record?.context === owner.context) {
+      this.record.stopped = true;
+      this.record.stopReason = "cancelled";
+      void this.save(owner.scope, this.record);
+    }
+    if (this.host.ownsTask(owner.token)) {
+      owner.engine.cancel();
+      this.host.releaseTask(owner.token);
+    }
   }
 
-  async run() {
+  private async save(scope: string, record: ChallengeTotalResult) {
+    try { await saveChallengeTotal(scope, record); }
+    catch {
+      if (this.scope === scope && this.record === record) {
+        this.storageError = true;
+        this.host.requestUpdate();
+      }
+    }
+  }
+
+  async run(mode: boolean | "extend" = false) {
     const h = this.host, engine = h.engine, request = h.request();
     if (!engine || request?.goal.kind !== "score" || !this.selected) return;
     const token = h.acquireTask("challenge-total");
     if (!token) return;
     const goal = request.goal, scope = this.key(), context = this.context(), shared = this.shared;
-    this.runKey = context;
-    this.stopRequested = false;
-    const active = () => h.ownsTask(token) && this.scope === scope && !this.stopRequested && this.runKey === context;
-    const save = async (snapshot: ChallengeTotalResult) => {
-      try { await saveChallengeTotal(scope, snapshot); }
-      catch { if (this.scope === scope) this.storageError = true; }
-    };
+    const owner = this.runOwner = { token, context, scope, engine, cardScope: h.searchSettings.scope };
+    const active = () => this.runOwner === owner && h.ownsTask(token) && h.engine === engine &&
+      this.key() === scope && h.searchSettings.scope === owner.cardScope && this.context() === context;
     try {
       await this.restoring;
       if (!active()) return;
-      const continuing = this.result?.context === context;
+      const continuing = this.resumable;
       const result: ChallengeTotalResult = this.record = continuing ? this.result! : {
         context, shared, sharedKey: null,
         songs: this.pool(h.settings.eventId).map(song => ({ id: song.id,
@@ -168,19 +195,26 @@ export class ChallengeTotal {
       };
       const inputs = new Map([...request.members, ...request.snaps].map(row => [row.key, row]));
       result.stopped = false;
+      delete result.stopReason;
+      if (mode === false || result.budgetSeconds === undefined)
+        result.budgetSeconds = request.timeLimitMs === null ? null : request.timeLimitMs / 1000;
       h.calculationSubmitted();
-      const deadline = request.timeLimitMs === null || continuing ? Infinity : clock() + request.timeLimitMs;
+      const deadline = mode === true || result.budgetSeconds === null ? Infinity : clock() + result.budgetSeconds * 1000;
       const charts = result.songs.flatMap(song => song.charts);
       const groups = shared ? [charts] : charts.filter(row => !row.proven).map(chart => [chart]);
       for (const group of groups) {
         if (!active() || !group.length || group.every(chart => chart.proven) || clock() >= deadline) break;
-        let savedKey = -Infinity;
+        const first = group[0]!;
+        let savedKey = first.seed?.key ?? -Infinity;
+        let groupOpen = true;
         const accept = (response: EngineResponse) => {
-          if (!active()) return;
+          if (!groupOpen || !active()) return;
           const part = response.results[0], hit = part?.hits[0];
           if (!part) return;
           if (shared && hit && result.sharedKey !== null && hit.key < result.sharedKey) return;
           if (shared && hit) result.sharedKey = hit.key;
+          if (part.proven) delete first.seed;
+          else if (hit && hit.key >= savedKey) first.seed = hit;
           const scores = shared && group.length > 1 ? hit?.aggregate?.songs ?? [] : hit ? [hit] : [];
           for (const chart of group) {
             const score = scores.find(row => row.song?.songId === chart.songId && row.song.difficulty === chart.difficulty);
@@ -192,31 +226,33 @@ export class ChallengeTotal {
           }
           if (hit && hit.key > savedKey) {
             savedKey = hit.key;
-            void save(result);
+            void this.save(scope, result);
           }
           h.requestUpdate();
         };
         try {
-          const response = await engine.run(singleSongRequest({ ...request, deadline, k: 1,
+          const response = await engine.run(singleSongRequest({ ...request, deadline, k: 1, seeds: first.seed ? [first.seed] : [],
             goal: { ...goal, songs: group.map(({ songId, difficulty }) => ({ songId, difficulty })) } }),
             undefined, snapshot => accept(snapshot.response));
           accept(response);
+          if (active() && response.stopReason === "budget") result.stopReason = "budget";
         } catch (error) {
           if (active()) for (const chart of group) chart.error = h.errorReason(error);
         }
-        await save(result);
+        groupOpen = false;
+        if (!active()) break;
+        await this.save(scope, result);
         h.requestUpdate();
       }
-      if (result.songs.some(song => song.charts.some(chart => !chart.proven)) &&
-        (this.stopRequested || clock() >= deadline)) {
+      if (active() && result.songs.some(song => song.charts.some(chart => !chart.proven)) &&
+        (result.stopReason === "budget" || clock() >= deadline)) {
         result.stopped = true;
-        await save(result);
+        result.stopReason = "budget";
+        await this.save(scope, result);
       }
     } finally {
-      if (h.ownsTask(token)) {
-        this.runKey = "";
-        h.releaseTask(token);
-      }
+      if (this.runOwner === owner) this.runOwner = undefined;
+      h.releaseTask(token);
     }
   }
 }
@@ -260,7 +296,10 @@ export function totalResults(host: TeamBuilder) {
       <strong>${counted.covered === counted.songs.length && counted.covered ? t("current","Current total") : t("subtotal","Subtotal")}
         · ${fmt(counted.total)}</strong>
       <span>${host.t("challenge.covered","{done}/{total} songs with a score",{ done:counted.covered,total:counted.songs.length })}</span>
-      ${total.result?.stopped && !total.stale ? html`<span>${t("paused", "Paused")}</span>` : nothing}
+      ${total.result?.stopped && !total.stale && !counted.complete ? html`<span>${state.stopReason === "budget"
+        ? counted.covered ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found")
+          : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet")
+        : state.stopReason === "cancelled" ? host.t("cancelled", "Search cancelled") : t("paused", "Paused")}</span>` : nothing}
       ${total.stale ? html`<span>${host.t("stale","Conditions changed")}</span>` : counted.complete ? html`<span>${complete}</span>` : nothing}
     </div>
     ${total.stale && original ? html`<span>${[

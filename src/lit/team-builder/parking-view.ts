@@ -45,7 +45,8 @@ class ParkingDraft {
   includeManual = false;
   teamIds = new Set<string>();
   submitted = false;
-  running = false;
+  task: symbol | null = null;
+  get running() { return this.task !== null; }
   error = "";
   revision = 0;
   prefetched = "";
@@ -57,9 +58,17 @@ class ParkingDraft {
   resultSignature = "";
 }
 const drafts = new WeakMap<TeamBuilder, ParkingDraft>();
+export function stopParking(host: TeamBuilder) {
+  const draft = drafts.get(host);
+  if (!draft?.task || !host.ownsTask(draft.task)) return;
+  const task = draft.task;
+  draft.task = null;
+  host.engine?.cancel();
+  host.releaseTask(task);
+}
 const ranks = ["", "E", "D", "C", "B", "A", "S", "SS"];
 function draftFor(host: TeamBuilder) {
-  const owner = JSON.stringify([host.snapshot?.owner ?? "local", host.data!.identity]);
+  const owner = JSON.stringify([host.checkpointOwner, host.data!.identity]);
   let d = drafts.get(host);
   if (!d || owner !== d.owner) {
     d = new ParkingDraft(); d.owner = owner; d.includeManual = manualReady(host);
@@ -79,7 +88,7 @@ function selectedTeams(host: TeamBuilder, d: ParkingDraft): Candidate[] {
   return selected.map(row => ({ ...row, inputs: host.manualInputs(row.team) }));
 }
 function inputKey(host: TeamBuilder, d: ParkingDraft, withTarget = true) {
-  return JSON.stringify([host.snapshot?.owner, host.data!.identity, host.settings.eventId, host.settings.scope,
+  return JSON.stringify([host.checkpointOwner, host.data!.identity, host.settings.eventId, host.settings.scope,
     host.settings.frameRate, withTarget ? d.current : null, withTarget ? d.target : null, d.challenge, d.consumption, d.songId, d.difficulty,
     host.view!.player, selectedTeams(host, d)]);
 }
@@ -190,7 +199,7 @@ export function renderParking(host: TeamBuilder, modes: TemplateResult) {
     const task = host.acquireTask("parking");
     if (!task) return;
     const engine = host.engine, revision = d.revision, jobs = structuredClone(candidates), rows: TeamRow[] = [];
-    d.running = true; host.requestUpdate();
+    d.task = task; host.requestUpdate();
     try {
       for (const job of jobs) {
         const cacheKey = JSON.stringify([d.owner, eventId, d.songId, d.difficulty, d.challenge, d.consumption, host.settings.frameRate, host.view!.player, job]);
@@ -222,9 +231,11 @@ export function renderParking(host: TeamBuilder, modes: TemplateResult) {
       if (!options.length) d.error = t("noStableTeams", "No selected team has stable PT per play");
       host.closeConditions();
     } catch (error) {
-      if (host.ownsTask(task) && revision === d.revision && !(error instanceof DOMException && error.name === "AbortError")) d.error = host.errorReason(error);
+      if (host.ownsTask(task) && revision === d.revision && signature === inputKey(host, d) &&
+        !(error instanceof DOMException && error.name === "AbortError")) d.error = host.errorReason(error);
     } finally {
-      d.running = false; host.releaseTask(task); host.requestUpdate();
+      if (d.task === task) d.task = null;
+      host.releaseTask(task); host.requestUpdate();
     }
   };
   const result = (plan: ParkingPlan, title: string) => {

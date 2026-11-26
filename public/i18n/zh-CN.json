@@ -2180,6 +2180,12 @@
         "failed": "搜索出错，已中断",
         "candidate": "已找到候选队"
       },
+      "modeSearch": {
+        "timedEmpty": "限时结束，尚无候选队",
+        "timedCandidate": "限时结束，已找到候选队",
+        "extend": "再算 {count} 秒",
+        "untilProven": "继续至验证最优"
+      },
       "rewardSearch": "奖励配队",
       "improvementBound": "可提升上限 {percent}%",
       "recommendation": "推荐",

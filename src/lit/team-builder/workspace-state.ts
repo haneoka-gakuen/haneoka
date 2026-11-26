@@ -154,12 +154,12 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
 export function farmingConditions(draft: FarmingSettings): FarmingSettings {
   if (draft.play !== "gekiso") return { ...draft, playMode: draft.play === "skip" ? "ap" : draft.playMode, measure: draft.play === "challenge" && draft.measure === "challenge-points" ? "points" : draft.measure };
   return { ...draft, playMode: "ap", requireGrowth: true, unknownPolicy: "min", includeMemory: false,
-    measure: draft.measure === "items" ? "items" : "points", weighted: false, fullRanking: false, k: 1, timeLimit: null };
+    measure: draft.measure === "items" ? "items" : "points", weighted: false, fullRanking: false, k: 1 };
 }
 export function farmingMode(draft: FarmingSettings): "recommendation" | "event" {
   const s = farmingConditions(draft);
   return (s.play !== "gekiso" || s.rewardRoomMode === "battle" && s.rewardPlayers === 5 && s.rewardOtherScore === null) && s.aggregation !== "mean" && !s.rewardPlan && (s.play === "solo" || s.play === "gekiso") && s.playMode === "ap" && s.requireGrowth && !s.includeMemory &&
-    s.measure !== "challenge-points" && !s.weighted && !s.fullRanking && s.k === 1 && s.timeLimit === null ? "recommendation" : "event";
+    s.measure !== "challenge-points" && !s.weighted && !s.fullRanking && s.k === 1 && (s.timeLimit === null || s.play === "gekiso") ? "recommendation" : "event";
 }
 export function farmingSettings(settings: BuildSettings): BuildSettings {
   const draft = settings.manualEventEnabled

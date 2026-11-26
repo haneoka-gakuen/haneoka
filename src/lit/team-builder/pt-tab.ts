@@ -27,7 +27,7 @@ import {
   type PtMeasure,
   type PtScope,
 } from "../../lib/team-builder/pt-recommendation";
-import { completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
+import { clock, completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
 import { PtCheckpoint } from "../../lib/team-builder/pt-checkpoint";
 import { teamFormation, renderHit, renderResults } from "./results";
 import {
@@ -270,6 +270,7 @@ export class PtController {
     return (
       !!this.job &&
       (this.host.settings.rewardMode !== "recommendation" ||
+        !!this.job.presentation && this.job.presentation.scope !== this.host.searchSettings.scope ||
         canonical([this.job.request, this.job.cycle, this.job.owner, this.host.data?.identity]) !==
           this.inputSignature() ||
         this.job.owner !== this.owner ||
@@ -281,6 +282,9 @@ export class PtController {
     if (!data || this.host.snapshot?.owner === undefined) return;
     const key = `${data.identity.server}|${this.owner}|${data.identity.releaseId}`;
     if (key === this.restoreKey) return;
+    this.stop();
+    this.job = null;
+    this.dataFingerprint = "";
     this.restoreKey = key;
     const generation = ++this.generation;
     const owner = this.owner;
@@ -315,19 +319,25 @@ export class PtController {
     const host = this.host;
     if (!host.data || !host.results || !host.resultInputs || !host.resultSettings || !this.dataFingerprint
         || !completeResponse(host.results) || host.results.stopReason !== "complete") return;
+    const generation = this.generation;
     try {
       await this.store.saveResult({ server: host.data.identity.server, owner: this.owner, dataFingerprint: this.dataFingerprint,
         contextKey: host.resultsFor, request: host.resultInputs, response: host.results, settings: host.resultSettings,
         session: host.resultSession, updatedAt: Date.now() });
     } catch {
-      this.storageError = true;
+      if (generation === this.generation) this.storageError = true;
     }
   }
   stop() {
+    if (!this.task) return;
     ++this.generation;
-    if (this.task && this.host.ownsTask(this.task)) {
+    if (this.host.ownsTask(this.task)) {
       this.runner?.stop();
+      this.host.releaseTask(this.task);
     }
+    this.task = null;
+    this.runner = null;
+    this.running = false;
     this.host.requestUpdate();
   }
   dispose() {
@@ -342,9 +352,7 @@ export class PtController {
     this.storageError = false;
     this.error = "";
   }
-  async start(resume: boolean, scope?: PtScope) {
-    // Results stream in as they are found; the search runs until every song is proven or it is stopped.
-    const deadline = Infinity;
+  async start(resume: boolean, scope?: PtScope, untilProven = false) {
     this.sync();
     const host = this.host;
     host.submitted = true;
@@ -376,15 +384,20 @@ export class PtController {
     const task = host.acquireTask("pt");
     if (!task) return;
     this.task = task;
-    const generation = this.generation;
+    const generation = ++this.generation;
     const cycle = this.cycle();
     const signature = this.inputSignature();
+    const engine = host.engine;
+    const cardScope = host.searchSettings.scope;
+    const current = () => generation === this.generation && host.ownsTask(task) && host.engine === engine &&
+      host.tab === "pt" && host.settings.rewardMode === "recommendation" && cardScope === host.searchSettings.scope && signature === this.inputSignature();
     this.running = host.running = true;
     this.error = "";
     host.requestUpdate();
     try {
       let job = this.job;
       const fingerprint = await ptFingerprint(request, this.dataFingerprint, this.owner, cycle);
+      if (!current()) return;
       if (!resume || !job || job.fingerprint !== fingerprint) {
         if (resume) throw new Error("pt-input-changed");
         job = await createPtJob(
@@ -401,31 +414,31 @@ export class PtController {
         );
         job.presentation = { scope: host.searchSettings.scope, maxAccountBonuses: host.searchSettings.maxAccountBonuses };
       }
-      if (generation !== this.generation || signature !== this.inputSignature()) return;
+      if (!current()) return;
+      if (!untilProven || job.budgetSeconds === undefined) job.budgetSeconds = host.searchSettings.timeLimit;
+      const deadline = untilProven || job.budgetSeconds === null ? Infinity : clock() + job.budgetSeconds * 1000;
       this.job = job;
       host.calculationSubmitted();
       host.farmResultMode = "recommendation";
       this.runner = new PtRunner(
-        host.engine,
+        engine,
         this.store,
-        (next) => {
-          if (generation !== this.generation || signature !== this.inputSignature()) return;
-          this.job = next;
-          host.requestUpdate();
-        },
+        () => host.requestUpdate(),
         () => {
           if (generation === this.generation) {
             this.storageError = true;
             host.requestUpdate();
           }
         },
+        current,
       );
       await this.runner.run(job, scope, deadline);
     } catch (error) {
-      if (generation === this.generation) this.error = host.errorReason(error);
+      if (current()) this.error = host.errorReason(error);
     } finally {
       if (this.task === task) {
         this.running = false;
+        this.runner = null;
         this.task = null;
       }
       host.releaseTask(task);
@@ -718,15 +731,15 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                       options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
                       onSelect: value => set({k: Number(value)}),
                     })}
-                    ${choiceField({
-                      type: "select",
-                      label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
-                      options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
-                        ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
-                      onSelect: value => set({timeLimit: Number(value) || null}),
-                    })}
                   `
             }
+            ${choiceField({
+              type: "select",
+              label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
+              options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
+                ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
+              onSelect: value => set({timeLimit: Number(value) || null}),
+            })}
           </div>
         `,
       })}
@@ -779,6 +792,7 @@ function renderRun(host: TeamBuilder): TemplateResult {
   const job = pt.job;
   const blocked = host.running || host.manualBusy || !pt.dataFingerprint;
   const resume = !!job && !ptComplete(job) && !pt.stale;
+  const budget = host.searchSettings.timeLimit;
   return html`
     <div class="tb-run">
       ${
@@ -814,8 +828,10 @@ function renderRun(host: TeamBuilder): TemplateResult {
                 ?disabled=${blocked}
                 @click=${() => void pt.start(resume)}
               >
-                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
+                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume && budget ? host.t("modeSearch.extend", "Continue for {count} s", { count: budget }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
               </button>
+              ${resume && budget ? html`<button class="button button--text" type="button" ?disabled=${blocked}
+                @click=${() => void pt.start(true, undefined, true)}>${host.t("modeSearch.untilProven", "Continue until verified")}</button>` : nothing}
             `
       }
       ${
@@ -927,7 +943,11 @@ function renderRanking(host: TeamBuilder): TemplateResult {
       <div class="pt-results-bar">
         ${host.analysis.filters()}
         <span class="tb-proof">
-          ${ptComplete(job) ? ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation")}${
+          ${pt.stale ? host.t("stale", "Conditions changed") : ptComplete(job)
+            ? !ranking.length ? host.t("challenge.empty", "No eligible team") : ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("challenge.verified", "Verified for the selected search")
+            : job.stopReason === "budget" ? ranking.length ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found") : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet")
+            : job.stopReason === "cancelled" ? host.t("cancelled", "Search cancelled")
+            : ranking.length ? host.t("challenge.candidate", "Candidate") : host.t("noCandidate", "No recommendation yet")}${
             gap === null
               ? nothing
               : html`
@@ -936,13 +956,6 @@ function renderRanking(host: TeamBuilder): TemplateResult {
           }
         </span>
         <span class="pt-progress tabular">${settled}/${job.tasks.length}</span>
-        ${
-          pt.stale
-            ? html`
-                <span class="chip chip--static"><span class="chip__label">${t("stale", "Inputs changed")}</span></span>
-              `
-            : nothing
-        }
       </div>
       <md-linear-progress
         style=${pt.running ? "" : "visibility: hidden"}

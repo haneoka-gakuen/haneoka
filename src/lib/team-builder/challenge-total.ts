@@ -8,6 +8,8 @@ import type { EngineHit, SongRef } from "./engine/api";
 
 export interface RankedChart extends SongRef {
   proven: boolean;
+  /** The first chart in an unfinished group keeps the native candidate for the next run. */
+  seed?: EngineHit;
   candidate?: { score: number; members: string[]; snaps: (string | null)[] };
   error?: string;
 }
@@ -15,6 +17,8 @@ export interface RankedChart extends SongRef {
 export interface ChallengeTotalResult {
   context: string;
   stopped?: boolean;
+  stopReason?: "budget" | "cancelled";
+  budgetSeconds?: number | null;
   conditions?: {
     scope: "box" | "theoretical";
     maxAccountBonuses: boolean;

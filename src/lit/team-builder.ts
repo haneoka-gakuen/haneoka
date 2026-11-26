@@ -110,6 +110,7 @@ import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { ChallengeController, renderChallengeTab } from "./team-builder/challenge-tab";
+import { stopParking } from "./team-builder/parking-view";
 import { availableOnServer, readFormation, type ComparisonSettings, type Formation } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
@@ -2645,6 +2646,7 @@ export class TeamBuilder extends LitElement {
   cancel() {
     if (this.activeSearch) { this.activeSearch.stop(); return; }
     if (this.taskKind === "challenge-total") { this.challenge.total.stop(); return; }
+    if (this.taskKind === "parking") { stopParking(this); return; }
     if (this.taskKind === "team-growth") {
       this.teamGrowth.stop();
       return;
