@@ -72,8 +72,8 @@ export async function staticEventSongs<T extends Record<string, unknown>>(
 
 export async function eventSongPayload(payload: EntityPayload): Promise<EntityPayload> {
   if (!payload.sourceId) return payload;
+  const identity = { server: payload.server, releaseId: payload.releaseId, sourceId: payload.sourceId };
   if (payload.resource === "events" && payload.item.kind === "game-event" && !payload.item.challengeTracks) {
-    const identity = { server: payload.server, releaseId: payload.releaseId, sourceId: payload.sourceId };
     const music = await staticEventMusic(identity);
     const tracks = music.tracks.filter(row => row.eventId === Number(payload.id));
     const challengeTracks = await Promise.all(tracks.map(async track => {
@@ -91,11 +91,7 @@ export async function eventSongPayload(payload: EntityPayload): Promise<EntityPa
     !Object.values(songs || {}).some(needsEventSongRelease)
   )
     return payload;
-  const releases = await staticEventSongReleases({
-    server: payload.server,
-    releaseId: payload.releaseId,
-    sourceId: payload.sourceId,
-  });
+  const releases = await staticEventSongReleases(identity);
   return {
     ...payload,
     item: payload.resource === "songs" ? withEventSongRelease(payload.item, releases) : payload.item,
