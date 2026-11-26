@@ -53,6 +53,8 @@ import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
 import { chartKey, farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
 import { usesPtResults } from "./score-goal";
+import { sampledLuck } from "./result-metric";
+import { ORIGINAL_SONG_RULES } from "../../lib/team-builder/arena";
 import { changeRewardMode, legacyRewardPlan } from "../../lib/team-builder/reward-plan";
 
 export class PtController {
@@ -930,7 +932,8 @@ function renderRanking(host: TeamBuilder, selection: ReturnType<typeof rankingSe
   const job = pt.job;
   if (!job || !selection) return renderChecklist(host, host.inputIssues(true));
   const { measure, ranking, challenge, filtered, shown } = selection;
-  const gap = ptComplete(job)
+  const complete = ptComplete(job);
+  const gap = complete || pt.stale
     ? null
     : improvementPercent(
         job.tasks
@@ -942,16 +945,28 @@ function renderRanking(host: TeamBuilder, selection: ReturnType<typeof rankingSe
   const settled = job.tasks.filter(
     (task) => task.status === "complete" || task.status === "empty" || task.status === "pruned",
   ).length;
+  const status = () => {
+    if (pt.stale) return host.t("stale", "Conditions changed");
+    if (complete) {
+      if (!ranking.length) return host.t("challenge.empty", "No eligible team");
+      const goal = job.request.goal;
+      const sampled = ranking.some(hit => sampledLuck(host, hit)) ||
+        goal.kind === "event" && !!goal.gekiso?.luckSamples &&
+          host.hasMission("Luck", goal.songs, job.request.songRules ?? ORIGINAL_SONG_RULES);
+      return sampled ? host.t("sampledProven", "Optimal within samples") : host.t("challenge.verified", "Verified for the selected search");
+    }
+    if (job.stopReason === "budget") return ranking.length
+      ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found")
+      : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet");
+    if (job.stopReason === "cancelled") return host.t("cancelled", "Search cancelled");
+    return ranking.length ? host.t("challenge.candidate", "Candidate") : host.t("noCandidate", "No recommendation yet");
+  };
   return html`
     <section id="pt-results" class="stack">
       <div class="pt-results-bar">
         ${host.analysis.filters()}
         <span class="tb-proof">
-          ${pt.stale ? host.t("stale", "Conditions changed") : ptComplete(job)
-            ? !ranking.length ? host.t("challenge.empty", "No eligible team") : ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("challenge.verified", "Verified for the selected search")
-            : job.stopReason === "budget" ? ranking.length ? host.t("modeSearch.timedCandidate", "Time limit reached · candidate found") : host.t("modeSearch.timedEmpty", "Time limit reached · no candidate yet")
-            : job.stopReason === "cancelled" ? host.t("cancelled", "Search cancelled")
-            : ranking.length ? host.t("challenge.candidate", "Candidate") : host.t("noCandidate", "No recommendation yet")}${
+          ${status()}${
             gap === null
               ? nothing
               : html`
