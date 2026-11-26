@@ -111,7 +111,8 @@
     "max_instances": 2
   }],
   "durable_objects": {"bindings": [
-    {"name": "MEDIA_PROCESSOR", "class_name": "CommunityMediaContainer"}
+    {"name": "MEDIA_PROCESSOR", "class_name": "CommunityMediaContainer"},
+    {"name": "GEKISO_ROOMS", "class_name": "GekisoRoom"}
   ]},
   "migrations": [
     {"tag": "community-media-v1", "new_sqlite_classes": ["CommunityMediaContainer"]},
@@ -119,7 +120,8 @@
     {"tag": "search-container-v1", "new_sqlite_classes": ["SearchContainer"]},
     {"tag": "search-container-v2", "deleted_classes": ["SearchContainer"]},
     {"tag": "self-hosted-v1", "deleted_classes": ["CommunityMediaContainer", "OfficialRankingCollector"]},
-    {"tag": "community-media-v2", "new_sqlite_classes": ["CommunityMediaContainer"]}
+    {"tag": "community-media-v2", "new_sqlite_classes": ["CommunityMediaContainer"]},
+    {"tag": "gekiso-rooms-v1", "new_sqlite_classes": ["GekisoRoom"]}
   ],
 
   "browser": { "binding": "BROWSER" },

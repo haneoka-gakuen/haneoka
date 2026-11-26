@@ -45,6 +45,8 @@ import { handleCommunityBootstrap } from "./community-bootstrap";
 import { retainRequestRead, withRequestWork } from "./request-work";
 import { handleCommunityMediaQueue, reconcileCommunityMedia } from "./community-media";
 export { CommunityMediaContainer } from "./community-media-container";
+import { handleGekisoRoom } from "./gekiso-room";
+export { GekisoRoom } from "./gekiso-room";
 import { sonolusShareRedirectTarget } from "./sonolus-share";
 import { handleOfficialPlayerApi } from "./official-player-api";
 import { cleanupUnverifiedAccounts } from "./account-lifecycle";
@@ -5466,6 +5468,7 @@ async function cleanupDatabase(env: Env): Promise<void> {
 const worker: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
+      if (new URL(request.url).pathname.startsWith("/api/gekiso-rooms/")) return await handleGekisoRoom(request, env);
       return await withRequestWork(ctx, () =>
         withD1Session(request, env, async (routedEnv) => {
           let communityVisibility = "";

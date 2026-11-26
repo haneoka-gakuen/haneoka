@@ -108,6 +108,7 @@ import { Catalog } from "./team-builder/catalog";
 import { songMissions } from "../lib/catalog-filters";
 import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
+import "./team-builder/online-room";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { ChallengeController, renderChallengeTab } from "./team-builder/challenge-tab";
 import { stopParking } from "./team-builder/parking-view";
@@ -128,7 +129,7 @@ import {
 import { setGameToolAccountAction } from "./game-tool-account-picker";
 
 const sectionFor = {
-  build: "build", live: "live", "song-comparison": "live", arena: "live",
+  build: "build", live: "live", "song-comparison": "live", arena: "live", room: "live",
   challenge: "challenge", pt: "challenge", box: "box", account: "box", teams: "box",
 } as const satisfies Record<Tab, Tab>;
 
@@ -1414,6 +1415,7 @@ export class TeamBuilder extends LitElement {
       if (task === "build" && this.buildMode === "manual") url.searchParams.set("mode", "manual");
       else url.searchParams.delete("mode");
       if (task !== "arena") url.searchParams.delete("league");
+      if (task !== "room") url.searchParams.delete("room");
       if (task !== "challenge")
         for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge", "ranking", "returnBoard"]) url.searchParams.delete(key);
       openDetailLocation(url.href);
@@ -2404,6 +2406,42 @@ export class TeamBuilder extends LitElement {
     const settings = this.compatibleSettings({ ...this.searchSettings, songs });
     return this.request(this.goal(settings), settings);
   }
+  constraintsFor(goal: Goal, s: BuildSettings, view: BoxView): EngineRequest["constraints"] {
+    const theoretical = s.scope === "theoretical";
+    const locked = (kind: "m" | "s") => [
+      ...new Set([
+        ...(theoretical || this.pt.fixedTeam
+          ? []
+          : [...(kind === "m" ? view.members : view.snaps).values()]
+              .filter((row) => row.lock && row.use)
+              .map((row) => `${kind}${row.cardId}`)),
+        ...(kind === "m" ? s.required.members : s.required.snaps).map((id) => `${kind}${id}`),
+      ]),
+    ];
+    return {
+      requiredMembers: locked("m"),
+      excludedMembers: theoretical ? s.theoreticalExcluded.members.map((id) => `m${id}`) : [],
+      requiredSnaps: locked("s"),
+      excludedSnaps: theoretical ? s.theoreticalExcluded.snaps.map((id) => `s${id}`) : [],
+      leader: s.leader !== null ? `m${s.leader}` : null,
+      bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
+      noSnaps: s.noSnaps,
+      ...((goal.kind === "gekiso" || (goal.kind === "event" && !!goal.gekiso)) && hasSkillRoleLimits(s.skillRoles)
+        ? {
+            skillRoles: structuredClone(s.skillRoles),
+            skillRoleMissions: ["Combo", "Luck", "JustCount"].flatMap((type, index) =>
+              this.hasMission(type, s.songs) ? [index + 1] : [],
+            ),
+          }
+        : {}),
+      minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
+      ...(goal.kind === "gekiso" &&
+      (this.tab !== "build" || this.buildMode !== "manual") &&
+      s.minMissionMembers.some(Boolean)
+        ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] }
+        : {}),
+    };
+  }
   request(goal = this.goal(), s = this.searchSettings): EngineRequest | null {
     if (!goal || !this.view || (this.tab === "pt" && s.rewardMode === "event" && !s.rewardPlan && s.ptCycle))
       return null;
@@ -2415,16 +2453,6 @@ export class TeamBuilder extends LitElement {
     }
     const theoretical = s.scope === "theoretical";
     const player = this.playerInput(s);
-    const locked = (kind: "m" | "s") => [
-      ...new Set([
-        ...(theoretical || this.pt.fixedTeam
-          ? []
-          : [...(kind === "m" ? this.view!.members : this.view!.snaps).values()]
-              .filter((row) => row.lock && row.use)
-              .map((row) => `${kind}${row.cardId}`)),
-        ...(kind === "m" ? s.required.members : s.required.snaps).map((id) => `${kind}${id}`),
-      ]),
-    ];
     return singleSongRequest({
       songRules: this.songRules(goal),
       ...(s.aggregation === "mean" &&
@@ -2446,29 +2474,7 @@ export class TeamBuilder extends LitElement {
           : player,
       unknownPolicy: theoretical ? "max" : s.unknownPolicy,
       goal,
-      constraints: {
-        requiredMembers: locked("m"),
-        excludedMembers: theoretical ? s.theoreticalExcluded.members.map((id) => `m${id}`) : [],
-        requiredSnaps: locked("s"),
-        excludedSnaps: theoretical ? s.theoreticalExcluded.snaps.map((id) => `s${id}`) : [],
-        leader: s.leader !== null ? `m${s.leader}` : null,
-        bindings: s.bindings.map(([member, snap]) => [`m${member}`, snap === null ? null : `s${snap}`]),
-        noSnaps: s.noSnaps,
-        ...((goal.kind === "gekiso" || (goal.kind === "event" && !!goal.gekiso)) && hasSkillRoleLimits(s.skillRoles)
-          ? {
-              skillRoles: structuredClone(s.skillRoles),
-              skillRoleMissions: ["Combo", "Luck", "JustCount"].flatMap((type, index) =>
-                this.hasMission(type, s.songs) ? [index + 1] : [],
-              ),
-            }
-          : {}),
-        minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
-        ...(goal.kind === "gekiso" &&
-        (this.tab !== "build" || this.buildMode !== "manual") &&
-        s.minMissionMembers.some(Boolean)
-          ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] }
-          : {}),
-      },
+      constraints: this.constraintsFor(goal, s, this.view),
       k: s.k,
       timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
     });
@@ -2697,6 +2703,7 @@ export class TeamBuilder extends LitElement {
       const classic = [
         ["build", this.t("tabBuild", "Build"), icon("groups", 20)],
         ["arena", this.t("arena.tab", "GEKISO Arena"), icon("swords", 20)],
+        ["room", this.t("onlineRoom.title", "Co-op room"), icon("groups", 20)],
         ["song-comparison", this.t("sc.tab", "GEKISO songs"), icon("music_note", 20)],
         ["pt", this.t("pt.tab", "Event rewards"), icon("emoji_events", 20)],
         ["box", this.t("tabBox", "My cards"), icon("style", 20), this.view!.members.size + this.view!.snaps.size],
@@ -2710,9 +2717,9 @@ export class TeamBuilder extends LitElement {
     const room = this.t("nav.live", "GEKISO Live");
     return html`
       ${row(groups, section, this.t("title", "Team builder"), id => this.sectionTabs.get(id) ?? id, true)}
-      ${section === "live" ? row([[this.roomTab, room], ["arena", this.t("arena.tab", "GEKISO Arena")]],
-        this.tab === "arena" ? "arena" : this.roomTab, label) : nothing}
-      ${section === "live" && this.tab !== "arena" ? row([["live", this.t("automaticTeam", "Find a team")],
+      ${section === "live" ? row([[this.roomTab, room], ["room", this.t("onlineRoom.title", "Co-op room")], ["arena", this.t("arena.tab", "GEKISO Arena")]],
+        this.tab === "arena" || this.tab === "room" ? this.tab : this.roomTab, label) : nothing}
+      ${section === "live" && (this.tab === "live" || this.tab === "song-comparison") ? row([["live", this.t("automaticTeam", "Find a team")],
         ["song-comparison", this.t("nav.pickSong", "Choose songs for a team")]], this.tab, room) : nothing}
       ${section === "challenge" ? eventTabs() : nothing}
       ${section === "box" ? row([["box", this.t("tabBox", "My cards")],
@@ -2879,7 +2886,8 @@ export class TeamBuilder extends LitElement {
     this.comparison.sync(this);
     const buildPanel = () => (this.buildMode === "manual" ? renderManualTeamTab(this) : renderBuildTab(this));
     const panel =
-      this.tab === "challenge" ? renderChallengeTab(this)
+      this.tab === "room" ? html`<gekiso-online-room .builder=${this} .box=${this.persistentView} .route=${navigationDocumentUrl().searchParams.get("room") ?? ""} .server=${this.server}></gekiso-online-room>`
+      : this.tab === "challenge" ? renderChallengeTab(this)
       : this.tab === "live" ? renderBuildTab(this)
       : this.tab === "pt"
         ? renderPtTab(this)

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 // L3 — GEB
-// Input: EngineCall、UTF-8 或字符串序列化的 release、谱面固定来源索引／JSON 对象或 UTF-8 载荷及编译后的 WASM 模块。
+// Input: EngineCall、联机房各席条件和步进预算、UTF-8 或字符串序列化的 release、谱面固定来源索引／JSON 对象或 UTF-8 载荷及编译后的 WASM 模块。
 // Output: EngineReply（含执行应答及实例故障）、评级资格检查计数、候选快照、活动养成分页更新、区间任务点数频数、计算结果或错误；固定顺序样例沿用本地原生计分；时间线以请求队长为首映射成员与留影槽位；私有补分请求保留最终待评分候选，公开候选只含完整评分。
 // Pos: [Map](L2-2.md)；当前 Rust/WASM 配队引擎的浏览器 Worker 适配。
 // Effects/Dependencies: 补取未提供的固定谱面、实例化独立 WASM 内存；普通计时沿用同步导入，协作分片通过零指针进度回调按需让出；准备期间保留当前调用的排序下界，JSPI 暂停期间实时接收下界；活动养成复用句柄按八毫秒原生步进，每页就绪后保留搜索前沿，任务队列让出并支持可见性暂停，不读取谱面。
@@ -261,6 +261,12 @@ async function execute(call: EngineCall) {
       } finally {
         onProgress = null;
       }
+    } else if (call.type === "roomStart" || call.type === "roomStep") {
+      const budget = { maxWork: call.maxWork, budgetMs: call.budgetMs };
+      const result = call.type === "roomStart"
+        ? await invoke(requestWithCharts({ op: "roomSearchStart", handle, ...call.request, ...budget }, await charts(call.songs, loaded)))
+        : await invoke({ op: "roomSearchStep", handle, searchId: call.searchId, ...budget });
+      post({ type: "result", id: call.id, result, cachedCharts: cached });
     } else if (call.type === "eventGrowth" || call.type === "eventGrowthPage") {
       try {
         await waitEventGrowth(call.id);
