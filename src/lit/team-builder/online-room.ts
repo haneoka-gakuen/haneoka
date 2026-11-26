@@ -6,6 +6,7 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { teamFormation } from "./results";
 import { LazyImages } from "../ui/lazy-images";
+import { modal } from "../ui/modal";
 import { live } from "lit/directives/live.js";
 import { navigationDocumentUrl } from "../../lib/document-url";
 import { isReleasedContent } from "../../lib/content-release";
@@ -49,6 +50,7 @@ class OnlineRoom extends LitElement {
   private seed = 0;
   private busy = false;
   private copied = false;
+  private confirmLeave = false;
   private error = "";
   private search?: { id: string; revision: number; controller: AbortController };
   private songs?: { owner: TeamBuilder["publicData"]; locale: string; choices: [number, string][] };
@@ -78,6 +80,7 @@ class OnlineRoom extends LitElement {
       this.busy = false;
       this.error = "";
       this.copied = false;
+      this.confirmLeave = false;
       this.draft = freshDraft(this.builder);
       this.room.open(this.route || "", this.server);
       if (this.route && this.room.hasSeat) {
@@ -289,19 +292,38 @@ class OnlineRoom extends LitElement {
       }
     });
   }
-  private async leave(view: RoomView) {
-    if (
-      !window.confirm(
-        view.host
-          ? this.t("confirmClose", "Close the room for everyone?")
-          : this.t("confirmLeave", "Leave this seat and remove your submitted cards?"),
-      )
-    )
-      return;
+  private async leave() {
     await this.action(async (signal) => {
       await this.room.request("/leave", "POST", {}, signal);
       if (!signal.aborted) this.clearRoom();
     });
+  }
+  private leaveDialog(view: RoomView) {
+    if (!this.confirmLeave) return nothing;
+    const dismiss = () => {
+      this.confirmLeave = false;
+      this.requestUpdate();
+    };
+    const title = view.host ? this.t("close", "Close room") : this.t("leave", "Leave room");
+    return html`
+      <dialog class="dialog" aria-labelledby="tb-room-leave-title" ${modal(dismiss)}>
+        <header class="dialog__header"><h2 id="tb-room-leave-title">${title}</h2></header>
+        <div class="dialog__body"><p>
+          ${view.host
+            ? this.t("confirmClose", "Close the room for everyone?")
+            : this.t("confirmLeave", "Leave this seat and remove your submitted cards?")}
+        </p></div>
+        <footer class="dialog__actions">
+          <button class="button button--text" type="button" @click=${dismiss} autofocus>
+            ${this.builder.common("common.actions.cancel", "Cancel")}
+          </button>
+          <button class="button" type="button" data-room-action="confirm-leave" @click=${() => {
+            dismiss();
+            void this.leave();
+          }}>${title}</button>
+        </footer>
+      </dialog>
+    `;
   }
   private clearRoom() {
     localStorage.removeItem(draftKey(this.room.id));
@@ -691,7 +713,10 @@ class OnlineRoom extends LitElement {
           ${this.button("copy", this.copied ? this.t("copied", "Copied") : this.t("copy", "Copy invitation"), () =>
             this.copyInvite(href),
           )}
-          ${this.button("leave", view.host ? this.t("close", "Close room") : this.t("leave", "Leave room"), () => this.leave(view), this.busy)}
+          ${this.button("leave", view.host ? this.t("close", "Close room") : this.t("leave", "Leave room"), () => {
+            this.confirmLeave = true;
+            this.requestUpdate();
+          }, this.busy)}
         </div>
         <ul class="stack stack--tight">
           ${seats.map(
@@ -777,6 +802,7 @@ class OnlineRoom extends LitElement {
             : nothing
         }
         ${this.room.view ? this.active(this.room.view) : this.lobby()}
+        ${this.room.view ? this.leaveDialog(this.room.view) : nothing}
       </div>
     `;
   }
