@@ -1153,7 +1153,8 @@ function freeMobileAction(host: TeamBuilder) {
 export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): TemplateResult {
   const s = host.searchSettings,
     progress = host.progress;
-  const resumable = !host.stale && !!host.results && host.results.results.some((result) => !result.proven);
+  const total = host.tab === "challenge" && host.challenge.total.selected ? host.challenge.total : null;
+  const resumable = total ? total.resumable : !host.stale && !!host.results && host.results.results.some((result) => !result.proven);
   const proof = progress?.proof;
   let status = host.computationStatus();
   if (proof && progress && (progress.done > 0 || proof.checkedTeams !== undefined)) {
@@ -1195,7 +1196,7 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
           : nothing
       }
       ${
-        host.taskKind === "build"
+        host.taskKind === "build" || host.taskKind === "challenge-total"
           ? html`
               <button
                 class="button button--tonal button--full tb-run__button"
@@ -1225,10 +1226,10 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
                       ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues().length })
                     : resumable
                       ? host.t("continueOptimal", "Continue verifying optimality")
-                      : host.stale
+                      : (total ? total.stale : host.stale)
                         ? host.t("rerun", "Search again")
                         : html`
-                            ${icon("search", 20)}${host.tab === "pt" ? (s.goal === "plan" ? host.t("farm.planRun", "Calculate resource plan") : s.route === "skip" ? host.t("farm.skipRun", "Recommend skip team") : host.t("farm.run", "Recommend songs and teams")) : host.t("findTeams", "Find teams")}
+                            ${icon("search", 20)}${total ? host.t("challenge.runTotal", "Calculate song total") : host.tab === "pt" ? (s.goal === "plan" ? host.t("farm.planRun", "Calculate resource plan") : s.route === "skip" ? host.t("farm.skipRun", "Recommend skip team") : host.t("farm.run", "Recommend songs and teams")) : host.t("findTeams", "Find teams")}
                           `
                 }
               </button>

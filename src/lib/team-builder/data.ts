@@ -322,6 +322,8 @@ export function adaptTeamBuilderData(
               "endAt",
               "displayEndAt",
               "eventType",
+              "musicRankingDisabled",
+              "totalMusicRankingEnabled",
               "musicId",
               "eventItem",
               "effects",

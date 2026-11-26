@@ -242,6 +242,7 @@ export class TeamBuilder extends LitElement {
     this.songComparison.dispose();
     this.arena.dispose();
     this.pt.dispose();
+    this.challenge.total.dispose();
     this.farmResultMode = null;
     this.engine?.cancel();
     this.task = null;
@@ -833,6 +834,7 @@ export class TeamBuilder extends LitElement {
       void this.imports.takePending(appImport);
     }
     if (!this.isConnected) return;
+    this.challenge.total.sync();
     if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
       this.engine?.cancel();
     if (
@@ -1380,7 +1382,7 @@ export class TeamBuilder extends LitElement {
       else url.searchParams.delete("mode");
       if (task !== "arena") url.searchParams.delete("league");
       if (task !== "challenge")
-        for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge"]) url.searchParams.delete(key);
+        for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge", "ranking", "returnBoard"]) url.searchParams.delete(key);
       openDetailLocation(url.href);
       if (tab === "challenge") {
         this.challenge.readRoute(url.searchParams);
@@ -2475,6 +2477,10 @@ export class TeamBuilder extends LitElement {
         return;
       }
     }
+    if (this.tab === "challenge" && this.challenge.total.selected) {
+      await this.challenge.total.run();
+      return;
+    }
     const started = clock();
     const request = this.request();
     if (!request || !this.engine || this.running) return;
@@ -2591,6 +2597,7 @@ export class TeamBuilder extends LitElement {
   }
 
   cancel() {
+    if (this.taskKind === "challenge-total") { this.challenge.total.stop(); return; }
     if (this.taskKind === "team-growth") {
       this.teamGrowth.stop();
       return;

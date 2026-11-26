@@ -10,6 +10,9 @@ export type Tab = "build" | "live" | "challenge" | "arena" | "box" | "account" |
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
 export type LuckSamplingMode = "auto" | "manual";
 export interface BuildSettings {
+  challengeTotal?: boolean;
+  challengeShared?: boolean;
+  challengeDifficulties?: number[];
   challengeBoard?: { eventId: number; challengeId: number; region: import("../../lib/game-records").GameRecordsRegion } | null;
   aggregation: "individual" | "mean";
   songRules?: import("../../lib/team-builder/arena").SongRules;
