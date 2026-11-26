@@ -2,7 +2,8 @@
 // Input: Box ownership and growth, catalogue limits and per-card editor state.
 // Output: Permanent and temporary card controls with shared live stat and skill comparisons.
 // Pos: [Map](../L2-2.md); My cards and its member / Snapshot editor.
-// Effects/Dependencies: Permanent edits use BoxStore; temporary edits stay in the workspace overlay until explicitly saved. Public skill details are loaded by card-editor-preview.
+// Effects/Dependencies: Ownership and explicit growth edits use BoxStore; participation applies only to the originating task; temporary edits stay in the workspace overlay until explicitly saved. Public skill details are loaded by card-editor-preview.
+import { PLANNER_ID_START } from "../../lib/team-builder/planner-data";
 import { CARD_SKILL_FACETS } from "../../lib/catalog-filters";
 import { matchesCardFilters, renderCardFilters } from "./card-filters";
 import { ptField } from "./pt-fields";
@@ -33,10 +34,11 @@ interface Row {
 
 export function visibleCards(host: TeamBuilder): Row[] {
   const catalog = host.catalog!;
-  const view = host.view!;
+  const view = (host.boxQuickEntry ? host.persistentView : host.view)!;
   const f = host.filters;
   const kind = f.kind;
-  const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number);
+  const ids = Object.keys(kind === "members" ? catalog.data.members : catalog.data.snapshots).map(Number)
+    .filter(id => !host.boxQuickEntry || id < PLANNER_ID_START);
   const owned = kind === "members" ? view.members : view.snaps;
   return sortedCards(host, kind, ids
     .filter((id) => host.boxQuickEntry || (f.show === "owned" ? owned.has(id) : f.show === "unowned" ? !owned.has(id) : true))
@@ -58,19 +60,21 @@ function bulk(host: TeamBuilder, label: string, changes: { key: string; value: B
     return { key, value: local === undefined ? host.snapshot!.entries[key]?.v ?? null : local };
   });
   if (!host.write(changes, permanent)) return;
-  host.notice = label;
-  undo = { notice: label, changes: previous, store: host.store, owner: host.snapshot.owner, temporaryVersion: host.temporary.version, permanent };
-  host.requestUpdate();
+  rememberUndo(host, label, () => { host.write(previous, permanent); });
 }
 /** The last bulk edit's previous values, offered while its snackbar shows. */
-let undo: { notice: string; changes: { key: string; value: BoxValue }[]; store: TeamBuilder["store"]; owner: string | null | undefined; temporaryVersion: number; permanent: boolean } | null = null;
+let undo: { notice: string; restore: () => void; store: TeamBuilder["store"]; owner: string | null | undefined; temporaryVersion: number } | null = null;
+function rememberUndo(host: TeamBuilder, notice: string, restore: () => void) {
+  undo = { notice, restore, store: host.store, owner: host.snapshot?.owner, temporaryVersion: host.temporary.version };
+  host.notice = notice;
+  host.requestUpdate();
+}
 
 export function renderUndoAction(host: TeamBuilder) {
   if (!undo || undo.notice !== host.notice || undo.store !== host.store || undo.owner !== host.snapshot?.owner || undo.temporaryVersion !== host.temporary.version) return nothing;
-  const changes = undo.changes;
-  const permanent = undo.permanent;
+  const restore = undo.restore;
   return html`<button class="button button--text" type="button" @click=${() => {
-    host.write(changes, permanent);
+    restore();
     undo = null;
     host.notice = "";
     host.requestUpdate();
@@ -94,15 +98,14 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
   const options = catalog.cardOptions(row.kind, row.id, quick ? null : undefined);
   if (!options) return html``;
   const owned = row.owned;
-  const temporary = host.temporary.has(row.kind, row.id);
+  const temporary = !quick && host.temporary.has(row.kind, row.id);
   const using = !!owned && (quick || owned.use);
   const toggle = () => {
     const p = prefix(row.kind);
-    if (quick) host.write([{ key: `${p}.${row.id}.own`, value: !owned }]);
-    else if (!owned) host.write([{ key: `${p}.${row.id}.own`, value: true }, { key: `${p}.${row.id}.use`, value: true }]);
-    else host.write([{ key: `${p}.${row.id}.use`, value: !owned.use }]);
+    if (quick) host.write([{ key: `${p}.${row.id}.own`, value: !owned }], true);
+    else if (owned) host.setParticipation(row.kind, [{ id: row.id, use: !owned.use }]);
   };
-  const checkLabel = owned ? host.t("useInSearch", "Use in team search") : host.t("markOwned", "Mark as owned");
+  const checkLabel = host.t("useInSearch", "Use for this search");
   const open = () => {
     if (quick) { toggle(); return; }
     host.editing = { kind: row.kind, cardId: row.id };
@@ -117,7 +120,7 @@ function renderCard(host: TeamBuilder, row: Row): TemplateResult {
         onOpen: open,
       })}
       ${temporary ? html`<span class="badge badge--primary tb-card__temporary">${host.t("temporaryBadge", "Temporary")}</span>` : nothing}
-      <button class="tb-card__check" type="button" role="checkbox" aria-checked=${String(using)}
+      <button class="tb-card__check" type="button" role="checkbox" ?disabled=${!quick && !owned} aria-checked=${String(using)}
         aria-label=${`${quick ? host.t("showOwned", "Owned") : checkLabel}: ${options.label}`} title=${quick ? host.t("showOwned", "Owned") : checkLabel} @click=${toggle}>
         <span class="tb-card__selection" aria-hidden="true">${using ? icon("check", 16) : nothing}</span>
       </button>
@@ -172,7 +175,7 @@ function clearOwnershipDialog(host: TeamBuilder) {
 }
 
 export function renderBoxTab(host: TeamBuilder): TemplateResult {
-  const view = host.view!;
+  const view = (host.boxQuickEntry ? host.persistentView : host.view)!;
   const f = host.filters;
   const rows = visibleCards(host);
   const set = (patch: Partial<typeof f>) => {
@@ -180,6 +183,14 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
     host.requestUpdate();
   };
   const ownedRows = rows.filter((row) => row.owned);
+  const participate = (use: boolean) => {
+    const task = host.lastTaskTab;
+    const previous = ownedRows.map(row => ({ id: row.id, use: row.owned!.use }));
+    host.setParticipation(f.kind, previous.map(row => ({ id: row.id, use })));
+    const label = use ? host.t("bulkUsedDone", "{count} cards take part", { count: previous.length })
+      : host.t("bulkUnusedDone", "{count} cards left out", { count: previous.length });
+    rememberUndo(host, label, () => host.setParticipation(f.kind, previous, task));
+  };
   const activeFilters = f.bands.length + f.characters.length + f.attributes.length + f.rarities.length + Object.values(f.facets).reduce((sum, values) => sum + values.length, 0);
   const ownedCount = f.kind === "members" ? view.members.size : view.snaps.size;
   const usedCount = [...(f.kind === "members" ? view.members : view.snaps).values()].filter((row) => row.use).length;
@@ -247,7 +258,7 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
         <span class="row__spacer"></span>
         ${host.boxQuickEntry
           ? html`<button class="button button--text" type="button" ?disabled=${!rows.length}
-              @click=${() => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.own`, value: true })))}>
+              @click=${() => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.own`, value: true })), true)}>
               ${icon("library_add_check", 18)}${host.t("quickOwnAll", "Select all")}</button>`
           : actionMenu({
               id: "tb-box-actions",
@@ -259,9 +270,9 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
                 { label: host.t("bulkOwn", "Own all shown"), icon: "library_add_check", disabled: !rows.length,
                   run: () => bulk(host, host.t("bulkOwned", "Marked {count} cards as owned", { count: rows.length }), rows.flatMap((row) => [{ key: `${prefix(row.kind)}.${row.id}.own`, value: true }, ...(row.owned ? [] : [{ key: `${prefix(row.kind)}.${row.id}.use`, value: true }])])) },
                 { label: host.t("bulkUse", "Use all"), icon: "check_box", disabled: !ownedRows.length,
-                  run: () => bulk(host, host.t("bulkUsedDone", "{count} cards take part", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: true }))) },
+                  run: () => participate(true) },
                 { label: host.t("bulkUnuse", "Use none"), icon: "check_box_outline_blank", disabled: !ownedRows.length,
-                  run: () => bulk(host, host.t("bulkUnusedDone", "{count} cards left out", { count: ownedRows.length }), ownedRows.map((row) => ({ key: `${prefix(row.kind)}.${row.id}.use`, value: false }))) },
+                  run: () => participate(false) },
                 { label: host.t("bulkMax", "Full growth"), icon: "upgrade", disabled: !ownedRows.length,
                   run: () => bulk(host, host.t("bulkMaxDone", "Set {count} cards to full growth", { count: ownedRows.length }), ownedRows.flatMap((row) => maxChanges(host, row))) },
                 { label: host.t("clearRequired", "Clear all required marks"), icon: "push_pin", disabled: !requiredCount,
@@ -376,6 +387,10 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
     (row) => row.cardId !== cardId && row.lock && catalog.member(row.cardId)?.characterId === characterId,
   );
   const write = (field: string, value: BoxValue) => {
+    if (field === "use") {
+      if (owned) host.setParticipation(kind, [{ id: cardId, use: value === true }]);
+      return;
+    }
     const changes = [{ key: `${p}.${cardId}.${field}`, value }];
     // Lowering training or limit break lowers the cap; a level above it cannot exist in the game.
     const capField = kind === "members" ? "awk" : "rnk";
@@ -492,7 +507,7 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         <section class="tb-editor__settings">
         <div class="tb-editor__fields">${fields}${preview.bonuses}</div>
         ${ptField(host, fieldKey("use"), html`<div class="tb-editor__flags">
-          ${flag(host.t("useInSearch", "Use in team search"), "use", owned?.use ?? false)}
+          ${flag(host.t("useInSearch", "Use for this search"), "use", owned?.use ?? false, !owned)}
           ${flag(characterRequired ? host.t("requiredOnePerCharacter", "One required card per character") : host.t("required", "Always include"), "lock", owned?.lock ?? false, characterRequired)}
         </div>`)}
         </section>

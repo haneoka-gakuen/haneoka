@@ -2,7 +2,7 @@
 // Input: 页面资料、跨服选择、Box 状态与用户设置。
 // Output: 配队、成长、活动、导入和结果展示的 Lit 工作区。
 // Pos: [Map](L2-2.md)；当前配队界面状态所有者，连接子视图与控制器。
-// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、按命名空间恢复配队默认选项，复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
+// Effects/Dependencies: 创建 BoxStore／EngineClient，加载资料、按命名空间恢复配队默认选项，复用固定谱面缓存按 JUST 覆盖条件更新上限、预取已选谱面、同步账户数据并管理 Worker 与 DOM 生命周期；仅为当前挑战演出投影活动属性；本次配队的卡牌参与状态按任务覆盖，临时卡仅覆盖工作视图，离页或切换账号／区服清除；连接期间更新标题栏，按任务隔离结果并恢复滚动。
 import { observeDetailLocation, openDetailLocation } from "../lib/detail-navigation";
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { observeSongDisplay } from "../lib/song-display";
@@ -28,7 +28,7 @@ import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
-import { manualSettingsFromResult, seedManualOrder } from "./team-builder/manual-results";
+import { clearManualOrders, manualSettingsFromResult, seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -174,6 +174,7 @@ export class TeamBuilder extends LitElement {
   catalog: Catalog | null = null;
   snapshot: BoxSnapshot | null = null;
   view: BoxView | null = null;
+  private participation = new Map<Tab, Record<TemporaryCardKind, Map<number, boolean>>>();
   private persistentBoxView: BoxView | null = null;
   readonly temporary = new TemporaryCards();
   readonly planner = new Planner(this);
@@ -191,6 +192,9 @@ export class TeamBuilder extends LitElement {
   private pendingAppBoxImport: AppBoxImport | null = null;
   private pendingBoxAccount = "";
   gameAccount?: GameToolAccount;
+  get checkpointOwner() {
+    return JSON.stringify([this.snapshot?.owner ?? null, this.gameAccount?.id]);
+  }
   private gameAccountOwner: string | null = null;
   private gameAccountsChanged = () => {
     const current = this.gameAccount && getGameToolAccount(this.gameAccount.id, "team");
@@ -258,6 +262,11 @@ export class TeamBuilder extends LitElement {
     ++this.runGeneration;
     this.submitted = false;
     this.taskResults.clear();
+    this.participation.clear();
+    this.manualBaseline = null;
+    this.manualPin = false;
+    this.autoEvaluated = "";
+    clearManualOrders(this);
     this.comparisons.clear();
     this.conditionsOpen = false;
     this.scrollPositions.clear();
@@ -823,7 +832,7 @@ export class TeamBuilder extends LitElement {
       this.data?.identity.sourceId &&
       this.store &&
       this.view &&
-      this.snapshot &&
+      this.snapshot?.owner !== undefined &&
       (appImport
         ? appImport.server === this.data.identity.server && this.gameAccount?.id === this.pendingBoxAccount
         : navigationDocumentUrl().searchParams.has("saveImport"))
@@ -850,12 +859,8 @@ export class TeamBuilder extends LitElement {
         void evaluateManual(this);
       }
     }
-    if (this.manualResults || this.task?.kind === "evaluation") {
-      const context = this.manualContext();
-      if (this.task?.kind === "evaluation" && this.activeManualContext && this.activeManualContext !== context)
-        this.engine?.cancel();
-      if (this.manualResultsFor !== context) this.manualResults = null;
-    }
+    if (this.task?.kind === "evaluation" && this.activeManualContext && this.activeManualContext !== this.manualContext())
+      this.engine?.cancel();
     if (this.manualSuggestions || this.task?.kind === "suggestion") {
       const context = this.manualSuggestionContext();
       if (this.task?.kind === "suggestion" && this.activeManualContext && this.activeManualContext !== context)
@@ -1062,7 +1067,10 @@ export class TeamBuilder extends LitElement {
   private adopt(snapshot: BoxSnapshot) {
     const ownerChanged = !this.snapshot || this.snapshot.owner !== snapshot.owner;
     if (ownerChanged) {
-      if (this.snapshot?.owner !== undefined) this.challenge.clearOwnerRoute();
+      if (this.snapshot?.owner !== undefined) {
+        this.challenge.clearOwnerRoute();
+        this.imports.dispose();
+      }
       this.resetTasks();
       this.temporary.clear();
       this.temporaryDraft = null;
@@ -1071,11 +1079,11 @@ export class TeamBuilder extends LitElement {
     }
     const versionChanged = this.snapshot?.version !== snapshot.version;
     this.snapshot = snapshot;
-    if (ownerChanged) this.planner.restore(snapshot.owner);
+    if (ownerChanged) this.planner.restore();
     if (this.planner.cards.some((card) => !this.temporary.has(card.kind, card.id))) this.planner.restoreCards();
     if (versionChanged || ownerChanged) {
       this.persistentBoxView = readBox(snapshot.entries);
-      this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
+      this.refreshTemporaryView();
       this.restoreBuildPreferences(!ownerChanged);
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
@@ -1133,8 +1141,28 @@ export class TeamBuilder extends LitElement {
       return false;
     }
   }
+  setParticipation(kind: TemporaryCardKind, choices: readonly { id: number; use: boolean }[], task = this.lastTaskTab) {
+    let overrides = this.participation.get(task);
+    if (!overrides) {
+      overrides = { members: new Map(), snaps: new Map() };
+      this.participation.set(task, overrides);
+    }
+    for (const { id, use } of choices) overrides[kind].set(id, use);
+    this.refreshTemporaryView();
+  }
   refreshTemporaryView() {
-    if (this.snapshot) this.view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
+    if (!this.snapshot) return;
+    const view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
+    const overrides = this.participation.get(this.lastTaskTab);
+    if (overrides) {
+      for (const kind of ["members", "snaps"] as const) {
+        for (const [id, use] of overrides[kind]) {
+          const row = view[kind].get(id);
+          if (row) row.use = use;
+        }
+      }
+    }
+    this.view = view;
     this.requestUpdate();
   }
   removeTemporary(kind: TemporaryCardKind, id: number) {
@@ -1370,6 +1398,9 @@ export class TeamBuilder extends LitElement {
     }
     if (tab === "live" || tab === "song-comparison") this.roomTab = tab;
     this.tab = tab;
+    if (sectionFor[previous] === "box" && tab === "build" && this.buildMode === "manual" && this.manualResults)
+      this.autoEvaluated = this.manualContext();
+    if (this.participation.size) this.refreshTemporaryView();
     this.submitted = false;
     if (writeHistory) {
       const url = navigationDocumentUrl();

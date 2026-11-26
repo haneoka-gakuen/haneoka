@@ -2,7 +2,7 @@
 // Input: 冻结的自动／手动配队请求、结果、设置、已存编队槽位与目录。
 // Output: 排名卡片、共用编队、评分及区间目标详情、卡面技能顺序和按谱面时间合并的技能／COMBO 凹分操作、逐步收益及贡献成员。
 // Pos: [Map](../L2-2.md)；配队结果视图与网页／API 图片共同的展示逻辑。
-// Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。
+// Effects/Dependencies: 按冻结请求隔离时间线与展开时计算的联合教程；谱面片段按操作懒加载；导出沿用原结果。结果卡面按冻结输入进入临时养成。
 import { evaluateResult, rankRisk } from "./result-analysis";
 import { cardScopeLabel } from "./card-input-controls";
 import { sectionResults } from "./section-results";
@@ -202,8 +202,8 @@ export function resultSong(host: TeamBuilder, song: SongRef, rule: { musicType?:
   `;
 }
 
-function resultGrowth(host: TeamBuilder, kind: "members" | "snaps", key: string) {
-  const source = resultInputs(host);
+function resultGrowth(host: TeamBuilder, hit: EngineHit, kind: "members" | "snaps", key: string) {
+  const source = resultInputs(host, hit);
   const input =
     kind === "members" ? source?.members.find((row) => row.key === key) : source?.snaps.find((row) => row.key === key);
   return input && source ? host.catalog!.resolvedGrowth(kind, input, source.unknownPolicy) : null;
@@ -414,7 +414,17 @@ interface FormationSlot {
   flag?: TemplateResult;
 }
 
-export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0, interactive = true): TemplateResult {
+export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[], leader = 0, action: boolean | ((kind: "members" | "snaps", id: number) => void) = true): TemplateResult {
+  const interactive = !!action;
+  const actionLabel = typeof action === "function" ? host.t("tryGrowth", "Try an upgrade") : host.t("editGrowth", "Edit growth");
+  const open = (kind: "members" | "snaps", cardId: number) => {
+    if (typeof action === "function") action(kind, cardId);
+    else if (action) {
+      host.setTab("box");
+      host.editing = { kind, cardId };
+      host.requestUpdate();
+    }
+  };
   const catalog = host.catalog!;
   const order = slots.map((_, index) => index).filter((index) => index !== leader);
   if (leader >= 0) order.splice(Math.min(2, order.length), 0, leader);
@@ -434,11 +444,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
               class="tb-slot__member"
               type="button"
               ?disabled=${!interactive}
-              aria-label=${interactive ? `${host.t("editGrowth", "Edit growth")}: ${memberOptions?.label ?? member}` : memberOptions?.label ?? String(member)}
-              @click=${() => {
-                host.editing = { kind: "members", cardId: member };
-                host.requestUpdate();
-              }}
+              aria-label=${interactive ? `${actionLabel}: ${memberOptions?.label ?? member}` : memberOptions?.label ?? String(member)}
+              @click=${() => open("members", member)}
             >
               ${memberOptions ? tileMedia(memberOptions) : nothing}
             </button>
@@ -446,13 +453,8 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
               class="tb-slot__snap"
               type="button"
               ?disabled=${!interactive || snap === null}
-              aria-label=${snapOptions ? interactive ? `${host.t("editGrowth", "Edit growth")}: ${snapOptions.label}` : snapOptions.label : host.t("noSnap", "No snap")}
-              @click=${() => {
-                if (snap !== null) {
-                  host.editing = { kind: "snaps", cardId: snap };
-                  host.requestUpdate();
-                }
-              }}
+              aria-label=${snapOptions ? interactive ? `${actionLabel}: ${snapOptions.label}` : snapOptions.label : host.t("noSnap", "No snap")}
+              @click=${() => { if (snap !== null) open("snaps", snap); }}
             >
               ${
                 snapOptions
@@ -470,21 +472,23 @@ export function teamFormation(host: TeamBuilder, slots: readonly FormationSlot[]
   `;
 }
 
-export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
+export function formation(host: TeamBuilder, hit: EngineHit, allowGrowth = true): TemplateResult {
   const catalog = host.catalog!;
+  const settings = resultSettings(host, hit);
+  const canTry = allowGrowth && !host.running && settings.scope !== "theoretical" && settings.goal !== "plan";
   return teamFormation(host, hit.members.map((key, index) => {
     const member = cardIdOf(key);
     const snapKey = hit.snaps[index];
     return {
       member,
       snap: snapKey ? cardIdOf(snapKey) : null,
-      memberGrowth: resultGrowth(host, "members", key),
-      snapGrowth: snapKey ? resultGrowth(host, "snaps", snapKey) : null,
+      memberGrowth: resultGrowth(host, hit, "members", key),
+      snapGrowth: snapKey ? resultGrowth(host, hit, "snaps", snapKey) : null,
       title: `${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`,
-      flag: !host.view?.members.has(member) && resultSettings(host).scope === "theoretical"
+      flag: !host.view?.members.has(member) && settings.scope === "theoretical"
         ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : undefined,
     };
-  }));
+  }), 0, canTry && ((kind, cardId) => host.teamGrowth.tryCard(hit, kind, cardId)));
 }
 
 type ResultRoom = { players: number; otherAverageScore?: number };
@@ -1131,7 +1135,7 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
               : host.t("resultElapsed", "{ms} ms", { ms: format(host, host.results.elapsedMs) })}
           </span>` : nothing}
       <div class="cluster">${chips(host, hit)}</div>
-      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference)) : nothing}
+      ${hit.sectionPerformance ? sectionResults(host, hit, formation(host, hit.sectionPerformance.reference, false)) : nothing}
       ${eventBonusDetails(host, hit)}
       ${hit.justWindow ? specList([{ label: host.t("justWindowActual", "JUST tap window"), value: justWindowValue(host, hit.justWindow) }]) : nothing}
       ${hit.justWindow?.coverage ? justWindowResults(host, hit.justWindow) : nothing}
@@ -1581,8 +1585,8 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
     <section class="tb-results stack stack--flex">
       <div class="row row--wrap row--between tb-results__summary">
         ${resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filters() : nothing}
-        <span class=${`tb-proof${proven ? " is-proven" : ""}`}>
-          ${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}
+        <span class=${`tb-proof${proven && !stale ? " is-proven" : ""}`} role="status">
+          ${stale ? host.t("recomputeNeeded", "Recalculation needed") : html`${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}`}
         </span>
         ${goal?.kind === "score" ? html`
           <span class="tb-results__meta">${host.t("calculationChartCount", "{count} charts in this search", { count: goal.songs.length })}</span>

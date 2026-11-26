@@ -152,7 +152,7 @@ export class PtController {
     });
   }
   private get owner() {
-    return this.host.snapshot?.owner ?? "local";
+    return this.host.checkpointOwner;
   }
   request(): EngineRequest | null {
     const { view } = this.host;
