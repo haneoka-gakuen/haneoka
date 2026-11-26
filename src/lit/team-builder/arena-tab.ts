@@ -161,6 +161,9 @@ export class ArenaController {
   }
   league(leagueId: number) {
     this.host.requestedArenaLeague = 0;
+    const url = new URL(location.href);
+    url.searchParams.set("league", String(leagueId));
+    history.replaceState(history.state, "", url);
     this.opponents = [];
     this.update({ leagueId, build: { ...this.draft.build, songs: [], leader: null, bindings: [] } });
   }

@@ -28,7 +28,7 @@ import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
-import { clearManualOrders, seedManualOrder } from "./team-builder/manual-results";
+import { seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -70,7 +70,6 @@ import { modal } from "./ui/modal";
 import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import {
-  DEFAULT_SETTINGS,
   type BoxFilters,
   type BuildSettings,
   type FarmingSettings,
@@ -86,7 +85,9 @@ import {
   resolveLuckSamples,
   resolveJustWindow,
   validJustWindowInput,
-  restoreBuildSettings,
+  BUILD_DRAFTS,
+  restoreTaskDrafts,
+  type BuildDraftKind,
 } from "./team-builder/workspace-state";
 import { renderGekisoHelp } from "./team-builder/gekiso-help";
 import { renderBuildTab } from "./team-builder/build-tab";
@@ -107,7 +108,7 @@ import { songMissions } from "../lib/catalog-filters";
 import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
-import { availableOnServer } from "../lib/team-builder/song-comparison";
+import { availableOnServer, readFormation, type Formation } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
 import { appCall, inApp, type AppBoxImport } from "../lib/app-bridge";
@@ -143,15 +144,10 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
   title: "common.fields.title",
 };
 
-const SETTINGS_KEY = "pref.build";
-const BUILD_PREFERENCES = [SETTINGS_KEY, "pref.arena", "pref.song-comparison", "pref.song-picker"] as const;
+const BUILD_PREFERENCES = ["pref.build", ...BUILD_DRAFTS.map(key => `pref.${key}`), "pref.arena", "pref.song-comparison", "pref.song-picker"] as const;
 const SYNC_OWNER = "team-builder-sync";
 const SEARCH_OWNER = "team-builder-search";
-export interface ManualTeam {
-  members: (number | null)[];
-  snaps: (number | null)[];
-  leader: number;
-}
+export type ManualTeam = Formation;
 
 export class TeamBuilder extends LitElement {
   static properties = {
@@ -318,7 +314,16 @@ export class TeamBuilder extends LitElement {
   }
   buildMode: "automatic" | "manual" = "automatic";
   tab: Tab = "build";
-  settings: BuildSettings = { ...DEFAULT_SETTINGS };
+  buildDrafts = restoreTaskDrafts({});
+  private get draftKind(): BuildDraftKind {
+    return this.tab === "challenge" || this.tab === "live" || this.tab === "pt" ? this.tab : "free";
+  }
+  get settings(): BuildSettings {
+    return this.buildDrafts[this.draftKind];
+  }
+  set settings(settings: BuildSettings) {
+    this.buildDrafts[this.draftKind] = settings;
+  }
   submitted = false;
   lastTaskTab: Tab = "build";
   songPickerPreferences = new Map<string, Partial<SongPickerState>>();
@@ -449,7 +454,17 @@ export class TeamBuilder extends LitElement {
   error = "";
   loadError = "";
   expanded = new Set<string>();
-  manual: ManualTeam = { members: [null, null, null, null, null], snaps: [null, null, null, null, null], leader: 2 };
+  private manualFormation = readFormation();
+  comparisonFormation = readFormation();
+  get manual(): ManualTeam {
+    return this.tab === "song-comparison" ? this.comparisonFormation : this.manualFormation;
+  }
+  set manual(formation: ManualTeam) {
+    const comparison = this.tab === "song-comparison";
+    if (comparison) this.comparisonFormation = formation;
+    else this.manualFormation = formation;
+    this.write([{ key: comparison ? "pref.comparison-team" : "pref.manual-team", value: { ...formation } }]);
+  }
   manualResults: TeamEvaluation[] | null = null;
   manualResultsFor = "";
   manualSuggestions: { slot: number; hits: EngineHit[] } | null = null;
@@ -1018,15 +1033,9 @@ export class TeamBuilder extends LitElement {
     if (ownerChanged) this.planner.restore(snapshot.owner);
     if (this.planner.cards.some((card) => !this.temporary.has(card.kind, card.id))) this.planner.restoreCards();
     if (versionChanged || ownerChanged) {
-      const required = this.settings.required;
       this.persistentBoxView = readBox(snapshot.entries);
       this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
-      this.settings = this.readBuildPreferences();
-      if (!ownerChanged) this.settings.required = required;
-      if (this.settings.goal === "event" || this.settings.goal === "plan") {
-        this.settings = { ...this.settings, rewardMode: this.settings.goal, goal: "score" };
-        if (ownerChanged && this.tab === "build") this.tab = "pt";
-      }
+      this.restoreBuildPreferences(!ownerChanged);
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
       this.engine?.prefetch(this.searchSettings.songs);
@@ -1120,18 +1129,23 @@ export class TeamBuilder extends LitElement {
     this.engine.prefetch(this.searchSettings.songs);
     this.requestUpdate();
   }
-  private readBuildPreferences() {
-    const value = this.view?.prefs[SETTINGS_KEY.slice(5)];
+  private restoreBuildPreferences(preserveRequired = false) {
+    const value = this.view?.prefs.build;
     const stored = value && typeof value === "object" ? (value as Partial<BuildSettings>) : {};
     const legacyChallengeType =
       stored.scopedSongAttribute !== true &&
       (stored.challengeRules || stored.route === "challenge" || stored.farming?.play === "challenge")
         ? this.challengeSongType(stored.eventId ?? null)
         : undefined;
-    return restoreBuildSettings(stored, legacyChallengeType);
+    const next = restoreTaskDrafts(this.view?.prefs ?? {}, legacyChallengeType);
+    if (preserveRequired)
+      for (const kind of BUILD_DRAFTS) next[kind].required = this.buildDrafts[kind].required;
+    this.buildDrafts = next;
+    this.comparisonFormation = readFormation(this.view?.prefs["comparison-team"]);
+    this.manualFormation = readFormation(this.view?.prefs["manual-team"]);
   }
   restorePlanningPreferences() {
-    this.settings = this.readBuildPreferences();
+    this.restoreBuildPreferences();
     this.arena.restore();
     this.songComparison.restore();
     this.requestUpdate();
@@ -1203,15 +1217,16 @@ export class TeamBuilder extends LitElement {
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
     this.engine?.prefetch(this.searchSettings.songs);
-    if (Object.keys(patch).some((key) => key !== "required")) {
-      const { required: _required, ...stored } = this.settings;
-      this.write([{ key: SETTINGS_KEY, value: stored as unknown as BoxValue }]);
-    }
+    if (Object.keys(patch).some((key) => key !== "required")) this.persistBuildDraft(this.draftKind);
     this.requestUpdate();
     if (scopeChanged) {
       this.submitted = false;
       void this.restoreScroll();
     }
+  }
+  persistBuildDraft(kind: BuildDraftKind) {
+    const { required: _required, ...stored } = this.buildDrafts[kind];
+    this.write([{ key: `pref.${kind}`, value: stored as unknown as BoxValue }]);
   }
   updateFarming(patch: Partial<FarmingSettings>) {
     const farming = { ...this.settings.farming, ...patch };
@@ -1224,15 +1239,13 @@ export class TeamBuilder extends LitElement {
     this.updateSettings({ farming, rewardMode });
   }
   openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null) {
+    const team = formation ?? this.manual;
+    this.setTab("song-comparison");
+    this.slotPicker = null;
+    this.manual = structuredClone(team);
     if (source && challengeEventForGoal(source.goal) === null)
       this.songComparison.update({ songRules: source.songRules });
-    if (formation) {
-      clearManualOrders(this);
-      this.manual = structuredClone(formation);
-      this.manualResults = null;
-    }
-    this.slotPicker = null;
-    this.setTab("song-comparison");
+    this.requestUpdate();
   }
   private scrollPositions = new Map<string, { main: number; config: number }>();
   private scrollScope() {
@@ -1477,6 +1490,9 @@ export class TeamBuilder extends LitElement {
   /** Opens a result's formation in the manual editor and pins its evaluation as the baseline. */
   compareTeam(hit: EngineHit) {
     seedManualOrder(this, hit);
+    const manualScoreMode = this.resultInputs?.goal.kind === "gekiso" ? "gekiso" : "score";
+    this.buildMode = "manual";
+    this.setTab("build");
     this.manual = {
       members: hit.members.map(cardIdOf),
       snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
@@ -1484,13 +1500,11 @@ export class TeamBuilder extends LitElement {
     };
     this.updateSettings({
       ...(hit.song ? { songs: [hit.song] } : {}),
-      manualScoreMode: this.resultInputs?.goal.kind === "gekiso" ? "gekiso" : "score",
+      manualScoreMode,
     });
     this.manualResults = null;
     this.manualBaseline = null;
     this.manualPin = true;
-    this.buildMode = "manual";
-    this.setTab("build");
   }
   manualContext() {
     return JSON.stringify([
@@ -1562,8 +1576,7 @@ export class TeamBuilder extends LitElement {
     const rule = type === undefined ? s.songRules : { ...ORIGINAL_SONG_RULES, musicType: type };
     return activeSongRules(rule, s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso"));
   }
-  hasMission(type: string, songs = this.effectiveSettings().songs): boolean {
-    const rule = this.tab === "arena" ? this.arena.rule : this.songRules();
+  hasMission(type: string, songs = this.effectiveSettings().songs, rule = this.tab === "arena" ? this.arena.rule : this.songRules()): boolean {
     if (rule)
       return rule.missions.some((mission, index) =>
         mission === 0
@@ -2248,7 +2261,7 @@ export class TeamBuilder extends LitElement {
   }
   get canRecommendCharts(): boolean {
     const s = this.searchSettings;
-    if (this.tab === "arena" || this.tab === "build" && this.buildMode === "automatic" && s.goal === "gekiso") {
+    if (this.tab === "arena" || this.tab === "live") {
       return s.goal === "gekiso" && s.arena?.objective !== "sections";
     }
     return this.tab === "build" && this.buildMode === "automatic" && s.goal === "score"
@@ -2319,7 +2332,7 @@ export class TeamBuilder extends LitElement {
           : {}),
         minBonusPercent: goal.kind === "event" || goal.kind === "plan" ? s.minBonus : null,
         ...(goal.kind === "gekiso" &&
-        (this.tab === "arena" || this.buildMode !== "manual") &&
+        (this.tab !== "build" || this.buildMode !== "manual") &&
         s.minMissionMembers.some(Boolean)
           ? { minMissionMembers: [...s.minMissionMembers] as [number, number, number] }
           : {}),

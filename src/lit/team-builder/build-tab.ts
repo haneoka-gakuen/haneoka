@@ -33,7 +33,6 @@ import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/const
 
 const GOALS = [
   { id: "score", icon: "music_note" },
-  { id: "gekiso", icon: "local_fire_department" },
   { id: "power", icon: "bolt" },
   { id: "potential", icon: "auto_awesome" },
 ] as const;
@@ -946,11 +945,11 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     () => html`
       ${leading ?? nothing}
       ${
-        host.tab === "build"
+        host.tab === "build" || host.tab === "live"
           ? html`
               <section class="surface stack">
                 ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
-                <div
+                ${host.tab === "build" ? html`<div
                   class="cluster tb-goals"
                   role="radiogroup"
                   aria-label=${host.t("goal", "Goal")}
@@ -974,7 +973,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                       </button>
                     `,
                   )}
-                </div>
+                </div>` : nothing}
                 ${
                   s.goal === "score" || s.goal === "gekiso"
                     ? html`

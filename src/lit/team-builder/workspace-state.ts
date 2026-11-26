@@ -77,6 +77,25 @@ export function challengeEventForGoal(goal: Goal | null | undefined): number | n
   return goal?.kind === "event" && goal.route === "challenge" ? goal.eventId : null;
 }
 
+export const BUILD_DRAFTS = ["free", "live", "challenge", "pt"] as const;
+export type BuildDraftKind = (typeof BUILD_DRAFTS)[number];
+
+export function restoreTaskDrafts(prefs: Record<string, unknown>, legacyChallengeType?: number): Record<BuildDraftKind, BuildSettings> {
+  const read = (value: unknown) => value && typeof value === "object" ? value as Partial<BuildSettings> : undefined;
+  const legacy = read(prefs.build);
+  const free = restoreBuildSettings(read(prefs.free) ?? legacy, legacyChallengeType);
+  if (free.goal === "gekiso" || free.goal === "event" || free.goal === "plan") free.goal = "score";
+  const live = restoreBuildSettings(read(prefs.live) ?? (legacy?.goal === "gekiso" ? legacy : undefined), legacyChallengeType);
+  live.goal = "gekiso";
+  const pt = restoreBuildSettings(read(prefs.pt) ?? legacy, legacyChallengeType);
+  const challenge = restoreBuildSettings(read(prefs.challenge));
+  return { free, live, pt, challenge: {
+    ...challenge, goal: "score", challengeRules: true, manualEventEnabled: false,
+    aggregation: "individual", criterion: "max", scoreTarget: "none",
+    songs: challenge.songs.slice(0, 1),
+  } };
+}
+
 export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacyChallengeType?: number): BuildSettings {
   const settings = { ...structuredClone(DEFAULT_SETTINGS), ...stored, songRules: readSongRules(stored.songRules) };
   if (stored.scopedSongAttribute !== true && settings.songRules.musicType === legacyChallengeType)

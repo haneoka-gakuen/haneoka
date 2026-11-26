@@ -6,6 +6,7 @@
 import type { TeamBuilder } from "../team-builder";
 import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import type { EngineHit, SongRef } from "../../lib/team-builder/engine/api";
+import { ORIGINAL_SONG_RULES } from "../../lib/team-builder/arena";
 import { CUSTOM_ACCURACY } from "./types";
 import { canonical } from "../../lib/team-builder/pt-recommendation";
 import {
@@ -53,7 +54,7 @@ export class SongComparison {
   private order: number[] = [];
   constructor(private readonly host: TeamBuilder) {}
   team() {
-    return fixedFormation(this.host.master!, this.host.view!, this.host.manual);
+    return fixedFormation(this.host.master!, this.host.view!, this.host.comparisonFormation);
   }
   restore() {
     this.settings = readComparisonSettings(this.host.view?.prefs[PREF]);
@@ -66,7 +67,7 @@ export class SongComparison {
         availableOnServer(this.host.data!, "songs", song.songId) &&
         this.host.catalog!.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty),
     );
-    return { ...this.settings, songs, just: this.host.hasMission("JustCount", songs) ? this.settings.just : 100 };
+    return { ...this.settings, songs, just: this.host.hasMission("JustCount", songs, this.settings.songRules ?? ORIGINAL_SONG_RULES) ? this.settings.just : 100 };
   }
   private context() {
     const host = this.host,
@@ -152,10 +153,10 @@ export class SongComparison {
       ...team.issues,
       ...comparisonIssues({ ...this.effectiveSettings, songs: this.rows.map((row) => row.song) }),
     ];
-    for (const [slot, id] of this.host.manual.members.entries())
+    for (const [slot, id] of this.host.comparisonFormation.members.entries())
       if (id !== null && !availableOnServer(this.host.data!, "members", id))
         this.issues.push({ field: `sc-slot-${slot}`, reason: "source", slot });
-    for (const [slot, id] of this.host.manual.snaps.entries())
+    for (const [slot, id] of this.host.comparisonFormation.snaps.entries())
       if (id !== null && !availableOnServer(this.host.data!, "snapshots", id))
         this.issues.push({ field: `sc-slot-${slot}`, reason: "source", slot });
   }

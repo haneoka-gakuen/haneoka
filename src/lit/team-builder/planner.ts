@@ -22,6 +22,7 @@ import {
   type PlannerEvent,
   type PlannerSkill,
 } from "../../lib/team-builder/planner-data";
+import { BUILD_DRAFTS } from "./workspace-state";
 import { BoxClock, validEntry, type BoxEntry, type BoxValue } from "../../lib/team-builder/sync/box-doc";
 import { ownMemberChanges, ownSnapChanges } from "../../lib/team-builder/sync/box-view";
 import { maxMemberGrowth, maxSnapGrowth, memberGrowth, snapGrowth } from "../../lib/team-builder/engine/box";
@@ -435,12 +436,13 @@ export class Planner {
   private replaceReferences(ids: ReadonlyMap<number, number>) {
     const replace = <T>(value: T): T => rewritePlannerReferences(value, ids);
     const { host } = this;
-    host.manual = replace(host.manual);
-    const settings = replace(host.settings);
-    if (JSON.stringify(settings) !== JSON.stringify(host.settings)) {
-      host.settings = settings;
-      const { required: _required, ...stored } = settings;
-      host.write([{ key: "pref.build", value: stored as unknown as BoxValue }]);
+    const manual = replace(host.manual);
+    if (JSON.stringify(manual) !== JSON.stringify(host.manual)) host.manual = manual;
+    for (const kind of BUILD_DRAFTS) {
+      const draft = host.buildDrafts[kind], updated = replace(draft);
+      if (JSON.stringify(draft) === JSON.stringify(updated)) continue;
+      host.buildDrafts[kind] = updated;
+      host.persistBuildDraft(kind);
     }
     const arena = replace(host.arena.draft.build);
     if (JSON.stringify(arena) !== JSON.stringify(host.arena.draft.build)) host.arena.updateBuild(arena);
