@@ -15,8 +15,11 @@ import { clock, singleSongRequest } from "../../lib/team-builder/engine/executio
 import { countChart, countChallengeSongs, loadChallengeTotal, saveChallengeTotal,
   type ChallengeTotalResult } from "../../lib/team-builder/challenge-total";
 import { choiceField, sectionHeading } from "./catalog";
+import { cardScopeLabel } from "./card-input-controls";
 import { teamFormation } from "./results";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
+
+const difficultyNames = ["EASY", "NORMAL", "HARD", "EXPERT", "SPECIAL"];
 
 export class ChallengeTotal {
   private archives = new Map<string, TrackedEventDto[]>();
@@ -25,7 +28,8 @@ export class ChallengeTotal {
   private restoring?: Promise<void>;
   private runKey = "";
   private stopRequested = false;
-  result?: ChallengeTotalResult;
+  private record?: ChallengeTotalResult;
+  get result() { return this.scope === this.key() ? this.record : undefined; }
   storageError = false;
   constructor(private readonly host: TeamBuilder) {}
 
@@ -111,10 +115,10 @@ export class ChallengeTotal {
     if (key !== this.scope) {
       this.stop();
       this.scope = key;
-      this.result = undefined;
+      this.record = undefined;
       this.storageError = false;
       this.restoring = key ? loadChallengeTotal(key).then(saved => {
-        if (this.scope === key) this.result = saved;
+        if (this.scope === key) this.record = saved;
       }).catch(() => { if (this.scope === key) this.storageError = true; }).finally(() => h.requestUpdate()) : undefined;
       h.requestUpdate();
     } else if (this.runKey && this.runKey !== this.context()) this.stop();
@@ -127,7 +131,7 @@ export class ChallengeTotal {
     this.stop();
     this.runKey = "";
     this.scope = "";
-    this.result = undefined;
+    this.record = undefined;
   }
   stop() {
     if (!this.runKey || this.stopRequested) return;
@@ -152,11 +156,17 @@ export class ChallengeTotal {
       await this.restoring;
       if (!active()) return;
       const continuing = this.result?.context === context;
-      const result: ChallengeTotalResult = this.result = continuing ? this.result! : {
+      const result: ChallengeTotalResult = this.record = continuing ? this.result! : {
         context, shared, sharedKey: null,
         songs: this.pool(h.settings.eventId).map(song => ({ id: song.id,
           charts: goal.songs.filter(row => row.songId === song.id).map(row => ({ ...row, proven: false })) })),
       };
+      const settings = h.searchSettings;
+      const conditions = result.conditions ??= {
+        scope: settings.scope, maxAccountBonuses: settings.maxAccountBonuses, difficulties: [...this.difficulties],
+        playMode: settings.playMode, unknownPolicy: request.unknownPolicy, cards: {},
+      };
+      const inputs = new Map([...request.members, ...request.snaps].map(row => [row.key, row]));
       result.stopped = false;
       h.calculationSubmitted();
       const deadline = request.timeLimitMs === null || continuing ? Infinity : clock() + request.timeLimitMs;
@@ -174,6 +184,9 @@ export class ChallengeTotal {
           const scores = shared && group.length > 1 ? hit?.aggregate?.songs ?? [] : hit ? [hit] : [];
           for (const chart of group) {
             const score = scores.find(row => row.song?.songId === chart.songId && row.song.difficulty === chart.difficulty);
+            if (score) for (const key of [...score.members, ...score.snaps]) {
+              if (key) conditions.cards[key] = inputs.get(key)!;
+            }
             countChart(chart, score, part.proven, shared);
             chart.error = response.error;
           }
@@ -214,7 +227,7 @@ export function totalControls(host: TeamBuilder) {
   return html`
     <div class="stack stack--tight"><span class="tb-field__label">${host.t("difficulty", "Difficulty")}</span>
       ${songPickerDifficultyFilters({ label: host.t("difficulty", "Difficulty"),
-        choices: levels.map(value => ({ value, label: ["EASY", "NORMAL", "HARD", "EXPERT", "SPECIAL"][value]! })),
+        choices: levels.map(value => ({ value, label: difficultyNames[value]! })),
         selected: total.difficulties, change: values => host.updateSettings({ challengeDifficulties: values.sort((a, b) => a - b) }),
         allLabel: host.t("allChartDifficulties", "All difficulties") })}
     </div>
@@ -228,7 +241,7 @@ export function totalControls(host: TeamBuilder) {
 export function totalResults(host: TeamBuilder) {
   const { total } = host.challenge;
   const pool = total.pool(host.settings.eventId);
-  const state = total.result ?? { context: "", shared: total.shared, sharedKey: null,
+  const state: ChallengeTotalResult = total.result ?? { context: "", shared: total.shared, sharedKey: null,
     songs: pool.map(song => ({ id: song.id, charts: total.charts(host.settings.eventId)
       .filter(chart => chart.songId === song.id).map(chart => ({ ...chart, proven: false })) })) };
   const counted = countChallengeSongs(state);
@@ -236,6 +249,11 @@ export function totalResults(host: TeamBuilder) {
   const complete = host.t("challenge.verified", "Verified for the selected search");
   const candidate = host.t("challenge.candidate", "Candidate");
   const t = (k: string, label: string) => host.t("challenge." + k, label);
+  const original = state.conditions;
+  const growth = (kind: "members" | "snaps", key: string) => {
+    const input = original?.cards[key];
+    return original && input ? host.catalog!.resolvedGrowth(kind, input, original.unknownPolicy) : null;
+  };
   return html`<section class="surface stack" data-challenge-total-results>
     ${sectionHeading({ icon:"emoji_events", label:t("estimated","Estimated song total") })}
     <div class="cluster">
@@ -245,6 +263,10 @@ export function totalResults(host: TeamBuilder) {
       ${total.result?.stopped && !total.stale ? html`<span>${t("paused", "Paused")}</span>` : nothing}
       ${total.stale ? html`<span>${host.t("stale","Conditions changed")}</span>` : counted.complete ? html`<span>${complete}</span>` : nothing}
     </div>
+    ${total.stale && original ? html`<span>${[
+      cardScopeLabel(host, original), original.difficulties.map(d => difficultyNames[d]).join(" / "),
+      original.playMode === "ap" ? host.t("playAp", "All Perfect") : host.t("playCustom", "Custom"),
+    ].join(" · ")}</span>` : nothing}
     ${state.shared ? html`<span>${t("shared","One team · highest mean across selected charts")}${state.sharedKey !== null ? " · " + fmt(state.sharedKey) : ""}</span>` : nothing}
     ${counted.songs.map(song => {
       const best = song.best, value = best?.candidate;
@@ -258,7 +280,11 @@ export function totalResults(host: TeamBuilder) {
           <span>${status}</span>
           <span>${host.t("provenChartProgress","Charts proven {done}/{total}",{done:song.proven,total:song.charts.length})}</span>
         </div>
-        ${value ? teamFormation(host, value.members.map((member,index) => ({ member:cardIdOf(member), snap:value.snaps[index] ? cardIdOf(value.snaps[index]!) : null })),0,false) : nothing}
+        ${value ? teamFormation(host, value.members.map((member,index) => {
+          const snap = value.snaps[index];
+          return { member: cardIdOf(member), memberGrowth: growth("members", member),
+            snap: snap ? cardIdOf(snap) : null, snapGrowth: snap ? growth("snaps", snap) : null };
+        }), 0, false) : nothing}
       </section>`;
     })}
     ${total.storageError ? html`<span role="status">${host.t("pt.storageError","Progress could not be saved on this device")}</span>` : nothing}

@@ -3,6 +3,7 @@
 // Output: One counted score per song and a device-only resumable checkpoint.
 // Pos: [Map](L2-2.md); event song leaderboard scores.
 // Effects/Dependencies: IndexedDB stores checkpoints separately from the player's card collection.
+import type { MemberInput, SnapInput, UnknownPolicy } from "./engine/box";
 import type { EngineHit, SongRef } from "./engine/api";
 
 export interface RankedChart extends SongRef {
@@ -14,6 +15,14 @@ export interface RankedChart extends SongRef {
 export interface ChallengeTotalResult {
   context: string;
   stopped?: boolean;
+  conditions?: {
+    scope: "box" | "theoretical";
+    maxAccountBonuses: boolean;
+    difficulties: number[];
+    playMode: "ap" | "custom";
+    unknownPolicy: UnknownPolicy;
+    cards: Record<string, MemberInput | SnapInput>;
+  };
   shared: boolean;
   /** For the shared team, the mean over every selected chart, before best-difficulty selection. */
   sharedKey: number | null;
