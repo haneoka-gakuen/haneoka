@@ -46,11 +46,12 @@ export async function renderStory(payload: StoryPayload, locale: Locale): Promis
   return (await renderStoryPage(payload, locale)).body;
 }
 
-export async function renderStoryPage(payload: StoryPayload, locale: Locale): Promise<StaticWorkspacePage> {
+export async function renderStoryPage(payload: StoryPayload, locale: Locale, player = false): Promise<StaticWorkspacePage> {
   const { StoryWorkspace } = await import("../lit/story-workspace");
-  const route = resourcePath({ server: payload.server, locale, kind: "stories", id: payload.id });
+  const route = resourcePath({ server: payload.server, locale, kind: "stories", id: payload.id, view: player ? "story" : undefined });
   useStaticLocale(locale, route);
   const workspace = new StoryWorkspace();
   workspace.prepareEntity(payload, locale);
+  if (player) workspace.detailMode = "play";
   return renderWorkspacePage(workspace, locale, route);
 }

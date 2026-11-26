@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 目录、谱面、repository 和服务实现模块。
-// Output: SonolusLevelService、投影、检索、缓存及类型。
+// Output: SonolusLevelService、关卡和歌曲详情投影、谱面统计格式、检索、缓存及类型。
 // Pos: [Map](../../L2.md)；通用 Sonolus 资料服务的公开入口。
 // Effects/Dependencies: 重导出 repository／service；实际资料获取经调用者提供的 provider。
 export {
@@ -29,6 +29,9 @@ export {
   sonolusServerFromLevelName,
   sonolusSourceRoot,
   sonolusDifficultyTitle,
+  sonolusChartFacts,
+  sonolusMetadataLine,
+  sonolusPublicationLine,
 } from "./projection.js";
 export { SonolusLevelService } from "./service.js";
 export type {

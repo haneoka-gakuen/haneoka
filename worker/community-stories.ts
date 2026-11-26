@@ -6,7 +6,7 @@
 import { getAuthSession } from "./auth";
 import { communityAccessState } from "./access";
 import { withPrimaryD1 } from "./d1-session";
-import { inspectCommunityText } from "./moderation";
+import { inspectCommunityText, scheduleSubmittedAttachmentReviews } from "./moderation";
 import { compileCommunityStory } from "../src/lib/story-creation/project";
 import {
   STORY_API,
@@ -627,6 +627,8 @@ async function mutateStory(
     }
     if (plan.issues.length)
       return response(request, { error: { code: "resource_missing", resources: plan.issues } }, 422);
+    if (inspectCommunityText(JSON.stringify([row.title, row.summary, plan.project])).verdict !== "allow")
+      return response(request, { error: { code: "text_blocked" } }, 422);
     statements.push(
       env.DB.prepare(
         `UPDATE community_story SET publishing_revision=head,publish_token=?,publish_error=NULL,version=version+1,updated_at=? WHERE ${guard}`,
@@ -640,8 +642,20 @@ async function mutateStory(
     throw new Error("version_conflict");
   }
   if (kind === "publish") {
-    await reconcileStoryAssets(env);
-    await finalize(env, row.id);
+    try {
+      const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
+      await scheduleStoryResourceChecks(env, { storyId: row.id, revision });
+      const { results: attachments } = await env.DB.prepare(`SELECT DISTINCT a.attachment_id AS id
+        FROM community_story_revision_asset ra JOIN community_story_asset a ON a.id=ra.asset_id
+        WHERE ra.story_id=? AND ra.revision=? AND ra.is_public=1 AND a.attachment_id IS NOT NULL`)
+        .bind(row.id, revision).all<{ id: string }>();
+      await scheduleSubmittedAttachmentReviews(env, attachments.map(({ id }) => id));
+      await finalize(env, row.id);
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: "story.publish_recovery_needed", errorName: error instanceof Error ? error.name : "Error",
+      }));
+    }
   }
   return await actionReceipt(request, env, row.id, owner, { kind, hash, version, revision });
 }
@@ -654,6 +668,7 @@ async function finalize(env: Env, id: string): Promise<void> {
   if (!intent) return;
   const row = await find(env, id, intent.ownerId, true, intent.revision);
   if (!row) return;
+  await reconcileStoryAssets(env, { storyId: id, revision: intent.revision });
   const unavailable = await env.DB.prepare(
     `SELECT a.state,b.moderation_status AS moderation FROM community_story_revision_asset ra JOIN community_story_asset a ON a.id=ra.asset_id JOIN community_story_blob b ON b.hash=a.blob_hash
  WHERE ra.story_id=? AND ra.revision=? AND ra.is_public=1 AND (a.state<>'ready' OR b.state<>'active' OR b.moderation_status<>'allow')`,
@@ -722,17 +737,13 @@ export async function readCommunityStoryForAdmin(
     throw error;
   }
 }
-export async function reconcileCommunityStories(env: Env): Promise<void> {
-  const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
-  await scheduleStoryResourceChecks(env);
-  await reconcileStoryAssets(env);
+export async function reconcilePendingCommunityStories(env: Env): Promise<void> {
   const rows = await env.DB.prepare(
     "SELECT id FROM community_story WHERE publishing_revision IS NOT NULL AND deleted_at IS NULL ORDER BY updated_at LIMIT 30",
   ).all<{ id: string }>();
   for (const row of rows.results) await finalize(env, row.id);
 }
 export async function cleanupCommunityStories(env: Env): Promise<void> {
-  await reconcileCommunityStories(env);
   const cutoff = Date.now() - 7 * 86400000;
   // Cloud saves are capped per story. The current draft (head), the published
   // and the in-flight revision, and every revision that was ever published
@@ -895,7 +906,7 @@ export async function handleCommunityStoryRequest(
               state:
                 row.state === "rejected" || row.moderation === "block"
                   ? "rejected"
-                  : row.state === "ready" && row.moderation === "allow"
+                  : row.state === "ready"
                     ? "ready"
                     : "processing",
             })),
@@ -957,10 +968,11 @@ export async function handleCommunityStoryRequest(
           );
         }
         if (request.method !== "GET" && request.method !== "HEAD") throw new Error("method_not_allowed");
-        const mine = url.searchParams.get("scope") === "mine";
+        const offline = url.searchParams.get("offline") === "1";
+        const mine = !offline && url.searchParams.get("scope") === "mine";
         if (mine && !user) throw new Error("authentication_required");
         const rows = await env.DB.prepare(
-          `SELECT ${columns} ${joined} WHERE s.deleted_at IS NULL AND r.deleted_at IS NULL AND r.revision=${mine ? "s.head" : "s.published_revision"} AND ${mine ? "s.owner_id=?1" : `${publicAccess} AND r.visibility='public'`} ORDER BY ${mine ? "s.updated_at" : "r.published_at"} DESC,s.id`,
+          `SELECT ${columns} ${joined} WHERE s.deleted_at IS NULL AND r.deleted_at IS NULL AND r.revision=${mine ? "s.head" : "s.published_revision"} AND ${mine ? "s.owner_id=?1" : `${publicAccess} AND r.visibility='public'${offline ? " AND r.remix=1" : ""}`} ORDER BY ${mine ? "s.updated_at" : "r.published_at"} DESC,s.id`,
         )
           .bind(owner)
           .all<Row>();
@@ -985,6 +997,29 @@ export async function handleCommunityStoryRequest(
         if (!current) throw new Error("story_missing");
         if (current.ownerId !== author.id) throw new Error("forbidden");
         return await mutateStory(request, env, current, author.id, value, actionKind);
+      }
+      if (parts[1] === "offline" && ["GET", "HEAD"].includes(request.method)) {
+        const selected = await find(env, id);
+        if (!selected?.remix) throw new Error("story_missing");
+        const data = await runtime(env, selected);
+        if (data.error || !data.project) throw new Error("invalid_project");
+        const allowed = new Set(data.resources);
+        const base = `${STORY_API}/${id}/assets/${selected.revision}/`;
+        const cloud = await manifest(env, selected);
+        return response(request, {
+          schema: "haneoka-portable-story-v1",
+          story: { storyId: `community:${id}:${selected.revision}`, title: selected.title },
+          thumbnail: selected.coverPath ? storyAssetUrl(id, selected.revision, selected.coverPath) : null,
+          project: mapStoryProjectResources(data.project, (source) => {
+            const path = source.replace(/^\.\//u, "");
+            return allowed.has(path) ? storyAssetUrl(id, selected.revision, path) : source;
+          }, base),
+          assets: cloud.files.filter((file) => allowed.has(file.path)).map((file) => ({
+            url: storyAssetUrl(id, selected.revision, file.path),
+            sha256: file.hash,
+            bytes: file.bytes,
+          })),
+        });
       }
       const requestedRevision =
         parts[1] === "assets" || parts[1] === "source"
@@ -1056,7 +1091,6 @@ export async function handleCommunityStoryRequest(
         }
         if (!parts[1]) {
           if (row.ownerId === owner && row.publishingRevision) {
-            await reconcileStoryAssets(env);
             await finalize(env, id);
             row = (await find(env, id, owner, url.searchParams.get("draft") === "1", requestedRevision))!;
           }

@@ -3,6 +3,7 @@
 // Output: Editable chart marks/difficulty counts, read-only totals, roster ratings and localized exports.
 // Pos: [Map](L2-2.md); song-progress workspace and roster-rating guidance.
 // Effects/Dependencies: Shares Box storage, lazy native roster searches, local save decoding and the app bridge.
+import { searchIncludes } from "../lib/search-text";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { live } from "lit/directives/live.js";
@@ -25,7 +26,7 @@ import {
   selectedGameToolAccount,
   selectGameToolAccount,
 } from "../lib/game-tool-account-store";
-import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
+import { setGameToolAccountAction } from "./game-tool-account-picker";
 import { GAME_REGION_NAMES } from "../lib/game-records";
 import { createPerformerRegistry, resolveSongPerformer, type SongPerformer } from "../lib/song-performer";
 import { resolveRelationshipText } from "../lib/localized-text";
@@ -37,7 +38,7 @@ import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
 import type { PublicSongsPageData } from "../server/tool-page-data";
 import { BoxStore, type BoxSnapshot } from "../lib/team-builder/sync/box-store";
-import { setAppBarSearch, clearAppBarSearch, setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { setAppBarSearch, setAppBarActions } from "../lib/app-bar";
 import { appCall, appSupports, inApp, type AppSongProgress } from "../lib/app-bridge";
 import { snackbar } from "../lib/snackbar";
 import { beginLoading } from "../lib/loading-progress";
@@ -233,7 +234,7 @@ export class SongProgress extends LitElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    setAppBarSearch(OWNER, {
+    setAppBarSearch(this, OWNER, {
       value: this.query,
       label: uiText(this.locale, "common.actions.search"),
       onInput: (value) => {
@@ -250,6 +251,7 @@ export class SongProgress extends LitElement {
       this,
     );
     setAppBarActions(
+      this,
       OWNER,
       html`
         ${this.counts.renderImportMenu()}
@@ -389,9 +391,6 @@ export class SongProgress extends LitElement {
   disconnectedCallback() {
     window.removeEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     this.disposeSongDisplay?.();
-    clearAppBarSearch(OWNER);
-    clearAppBarActions(OWNER);
-    clearGameToolAccountAction("songs");
     this.unsubscribe?.();
     ++this.ratingGeneration;
     this.roster?.dispose();
@@ -1157,8 +1156,8 @@ export class SongProgress extends LitElement {
       .filter(
         (chart) =>
           !this.query ||
-          chart.title.toLowerCase().includes(this.query) ||
-          chart.artist.toLowerCase().includes(this.query),
+          searchIncludes(chart.title, this.query) ||
+          searchIncludes(chart.artist, this.query),
       )
       .sort((a, b) => b.level - a.level || a.title.localeCompare(b.title, this.locale) || a.songId - b.songId);
     const present = DIFFICULTIES.map((name, index) => ({ name, value: index === 4 ? 5 : index })).filter(({ value }) =>

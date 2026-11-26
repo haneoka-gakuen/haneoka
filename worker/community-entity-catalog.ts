@@ -2,6 +2,7 @@ import { canonicalEntityTarget, type CommunityEntityTarget } from "./community-e
 import { publishedCommunityStory } from "./community-stories";
 import { communitySonolusRows } from "./community-charts";
 import { publicPlaylistTitle } from "./community-playlists";
+import { playlistPath } from "../src/lib/playlists/static-routing";
 import { communityStoryPath } from "../src/lib/community-story-route";
 import { communityChartPath } from "../src/lib/community-chart-route";
 import { publicationFields } from "../src/lib/content-publication";
@@ -118,13 +119,6 @@ const RULES: Record<string, Rule> = {
   stickers: { resource: "stickers", routeKind: "stickers", field: "stickerId" },
   backgrounds: { resource: "backgrounds", routeKind: "backgrounds", field: "backgroundId" },
   events: { resource: "events", routeKind: "events", field: "id", kind: "game-event", sourceTable: "MasterEvent" },
-  "real-lives": {
-    resource: "real-lives",
-    routeKind: "real-lives",
-    field: "id",
-    kind: "real-live",
-    prefix: "real-live-",
-  },
   gacha: { resource: "gacha", routeKind: "gacha", field: "id", kind: "gacha" },
   "login-campaigns": { resource: "login-campaigns", routeKind: "login-campaigns", field: "id", kind: "login" },
   exchange: { resource: "exchange", routeKind: "exchange", field: "id", kind: "exchange" },
@@ -405,7 +399,7 @@ export function createCommunityEntityResolver(
       const locator = {
         routeKind: target.entityType,
         routeId: target.originalId,
-        detailPath: `/${locale}/community/playlists/?${new URLSearchParams({ playlist: target.originalId })}`,
+        detailPath: playlistPath(locale, target.originalId),
       };
       return {
         type: target.entityType, originalId: target.originalId, titles: { [locale]: title },

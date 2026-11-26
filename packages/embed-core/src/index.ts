@@ -9,6 +9,7 @@ export { EmbedHttpError } from "./io.js";
 export type {
   DataContext,
   DataSource,
+  DataSourceInput,
   EmbedEvent,
   EmbedFetcher,
   EmbedLoader,

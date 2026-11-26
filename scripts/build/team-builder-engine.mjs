@@ -38,6 +38,11 @@ execFileSync(
     manifest,
     "--target-dir",
     target,
+    "--",
+    "-C",
+    "strip=symbols",
+    "-C",
+    "link-arg=--compress-relocations",
   ],
   { stdio: "inherit" },
 );

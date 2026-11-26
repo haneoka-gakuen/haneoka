@@ -3,10 +3,11 @@
 // Output: 赞助者列表与筛选、逐字段覆盖与恢复跟随来源的编辑对话框（金额与币种成对编辑，可清除为不公开）、手动条目的新增／删除、隐藏／恢复，以及档位整体编辑。
 // Pos: [Map](L2-2.md)；管理面板内的赞助区。
 // Effects/Dependencies: 管理员 API（版本检查与幂等键）、应用栏搜索与 snackbar；失去权限时通知工作区并清理私有状态。
+import { searchIncludes } from "../lib/search-text";
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { fetchJson, JsonResponseError } from "./shared/catalog";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { collectionList } from "./ui/collection-view";
 import { segmented } from "./ui/controls";
 import { icon } from "./ui/icon";
@@ -159,14 +160,13 @@ export class SponsorAdmin extends LitElement {
   override disconnectedCallback() {
     this.lifetime.abort();
     this.stopLocale?.();
-    clearAppBarSearch("sponsor-admin");
     this.document = null;
     this.draft = null;
     this.tierDraft = null;
     super.disconnectedCallback();
   }
   private syncSearch() {
-    setAppBarSearch("sponsor-admin", {
+    setAppBarSearch(this, "sponsor-admin", {
       value: this.query,
       label: this.t("search"),
       onInput: (value) => {
@@ -627,7 +627,7 @@ export class SponsorAdmin extends LitElement {
     return entries.filter((entry) => {
       if (this.filter === "hidden" ? !entry.hidden : this.filter !== "all" && (entry.hidden || entry.effective.active !== (this.filter === "active")))
         return false;
-      return !this.query || entry.effective.name.toLocaleLowerCase().includes(this.query);
+      return !this.query || searchIncludes(entry.effective.name, this.query);
     });
   }
   private renderList() {

@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { normalizeAuthorLocale } from "@haneoka/i18n";
 import { mergeAnnouncements, parseAnnouncementList, parseAnnouncementDetail, selectAnnouncementLocale, type Announcement } from "../lib/announcements";
 import type { AnnouncementPageData } from "../lib/announcement-page-data";
@@ -15,13 +13,19 @@ const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(va
 class OperationUnavailable extends Error {}
 async function operationJson(path: string) {
   try {
-    const response = await fetch(new URL(path, origin), {
+    const signal = AbortSignal.timeout(30_000);
+    const request = () => fetch(new URL(path, origin), {
       headers: {
         accept: "application/json",
         ...(process.env.STATIC_CATALOG_TOKEN ? { "x-haneoka-build-token": process.env.STATIC_CATALOG_TOKEN } : {}),
       },
-      signal: AbortSignal.timeout(30_000),
+      signal,
     });
+    let response = await request();
+    if (response.status >= 500) {
+      await response.body?.cancel();
+      response = await request();
+    }
     if (!response.ok) throw new OperationUnavailable(`Announcement HTTP ${response.status}`);
     return { value: await response.json(), fetchedAt: response.headers.get("x-haneoka-announcement-fetched-at") };
   } catch (error) {
@@ -44,29 +48,19 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
   const relative = "assets/operation/announcements.json";
   const declared = await fetchStaticReleaseEntry(relative, server, release);
   let released: AnnouncementPageData | undefined;
-  const savedPath = path.resolve("archive", "announcements", `${server}.json`);
-  const snapshots: { value: unknown; origin: "release" | "archive" }[] = [];
-  if (fs.existsSync(savedPath)) {
-    const value: unknown = JSON.parse(fs.readFileSync(savedPath, "utf8"));
-    snapshots.push({ value, origin: "archive" });
-  }
-  if (declared) snapshots.push({ value: await fetchStaticReleaseJson(relative, server, release), origin: "release" });
-  let archived: Announcement[] = [];
-  let archivedFetchedAt: string | null = null;
-  let available = false;
-  for (const source of snapshots) {
-    const snapshot = source.value as Record<string, unknown>;
-    if (snapshot.server !== server || typeof snapshot.available !== "boolean" || !Array.isArray(snapshot.announcements))
-      throw new TypeError("Invalid announcement snapshot");
-    archived = mergeAnnouncements(snapshot.announcements as Announcement[], archived, snapshot.fetchedAt as string | null, archivedFetchedAt);
-    available ||= snapshot.available;
-    if (Date.parse(String(snapshot.fetchedAt)) >= (Date.parse(archivedFetchedAt || "") || 0)) archivedFetchedAt = snapshot.fetchedAt as string | null;
-  }
-  const selectedEntries = (entries: Announcement[]) => {
+  const snapshot = declared
+    ? await fetchStaticReleaseJson(relative, server, release) as Record<string, unknown> | null
+    : null;
+  if (declared && (!snapshot || snapshot.server !== server || typeof snapshot.available !== "boolean" || !Array.isArray(snapshot.announcements)))
+    throw new TypeError("Invalid announcement release snapshot");
+  const archived = (snapshot?.announcements ?? []) as Announcement[];
+  const archivedFetchedAt = (snapshot?.fetchedAt ?? null) as string | null;
+  const archivedAvailable = snapshot?.available === true;
+  const selectedEntries = (entries: Announcement[], available: boolean, fetchedAt: string | null) => {
     const selection = selectAnnouncementLocale(entries, requestedLocale);
     const list = parseAnnouncementList(
       {
-        server, available, fetchedAt: archivedFetchedAt,
+        server, available, fetchedAt,
         requestedLocale,
         actualSourceLocale: selection.actualSourceLocale,
         availableSourceLocales: selection.availableSourceLocales,
@@ -80,15 +74,15 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
     );
     return list.announcements;
   };
-  if (snapshots.length) {
-    const entries = selectedEntries(archived);
+  if (snapshot) {
+    const entries = selectedEntries(archived, archivedAvailable, archivedFetchedAt);
     released = {
       schema: "haneoka-announcement-page-v1",
       server,
       locale,
-      phase: available ? "ready" : "unavailable",
+      phase: archivedAvailable ? "ready" : "unavailable",
       entries,
-      snapshot: { origin: declared ? "release" : "archive", fetchedAt: archivedFetchedAt, sha256: digest(entries), ...(declared ? { releaseId: release.releaseId } : {}) },
+      snapshot: { origin: "release", fetchedAt: archivedFetchedAt, sha256: digest(entries), releaseId: release.releaseId },
     };
   }
   try {
@@ -112,12 +106,13 @@ async function loadData(server: ReleaseServer, locale: Locale): Promise<Announce
         }
       }),
     );
-    const allEntries = selectedEntries(mergeAnnouncements(entries, archived, list.fetchedAt, archivedFetchedAt));
+    const available = list.available || archivedAvailable;
+    const allEntries = selectedEntries(mergeAnnouncements(entries, archived, list.fetchedAt, archivedFetchedAt), available, list.fetchedAt);
     return {
       schema: "haneoka-announcement-page-v1",
       server,
       locale,
-      phase: list.available || released?.phase === "ready" ? "ready" : "unavailable",
+      phase: available ? "ready" : "unavailable",
       entries: allEntries,
       ...(detailErrors.length ? { detailErrors } : {}),
       snapshot: { origin: "operational", fetchedAt: list.fetchedAt, sha256: digest(allEntries) },

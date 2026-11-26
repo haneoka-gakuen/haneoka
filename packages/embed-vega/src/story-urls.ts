@@ -8,6 +8,7 @@ const urls = new Set([
   "src",
   "playableUrl",
   "imageUrl",
+  "image",
   "model",
   "modelUrl",
   "model3Json",
@@ -68,14 +69,18 @@ export async function resolveStoryUrls(
   loader: EmbedLoader<AdvStory>,
   signal: AbortSignal,
   playbackUrl?: (key: string) => Promise<string>,
+  modelUrl?: (key: string) => Promise<string>,
+  inspectModel?: (record: Record<string, unknown>) => void,
 ): Promise<AdvStory> {
   const seen = new WeakMap<object, unknown>();
   const resolve = (value: string) => (value ? loader.resourceUrl(value, { signal }) : Promise.resolve(value));
   const visit = async (value: unknown, field = "", parent = "", mapValue = false): Promise<unknown> => {
     signal.throwIfAborted();
     if (typeof value === "string") {
+      if (modelUrl && ["model", "modelUrl", "model3Json"].includes(field)) return modelUrl(value);
       if (
         urls.has(field) ||
+        (field === "json" && parent === "runtime") ||
         (field === "source" && ["fonts", "motions", "expressions", "textureVariants"].includes(parent)) ||
         (field === "runtime" && ["motions", "expressions"].includes(parent)) ||
         mapValue
@@ -97,12 +102,14 @@ export async function resolveStoryUrls(
       for (const [key, entry] of Object.entries(value)) output[await resolve(key)] = entry;
       return output;
     }
-    const output: Record<string, unknown> = {};
+    const output: Record<string, unknown> = Object.create(null);
     seen.set(value, output);
-    for (const [key, entry] of Object.entries(value)) {
+    const record = value as Record<string, unknown>;
+    inspectModel?.(record);
+    for (const [key, entry] of Object.entries(record)) {
       // Array elements carry their declaration kind into the resource record.
       // Map values can be URLs; nested record fields keep their own semantics.
-      output[key] = await visit(entry, key, field || parent, maps.has(field));
+      output[key] = await visit(entry, key, field || parent, maps.has(field) || (key === "json" && !!record.atlas));
     }
     return output;
   };

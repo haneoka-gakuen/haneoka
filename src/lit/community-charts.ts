@@ -1,14 +1,16 @@
 // L3 — GEB
 // Input: 社区谱面目录／详情、语言与账户可见状态。
-// Output: 默认社区推荐排序、三种集合视图、歌曲双栏详情／响应式评论、推荐难度、继续编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
+// Output: 默认社区推荐排序、三种集合视图、独立滚动双栏详情／响应式评论、推荐难度、编辑及改编入口、2D／3D 谱面页和 Sonolus 入口。
 // Pos: [Map](L2-2.md)；社区谱面浏览工作区。
 // Effects/Dependencies: 社区 HTTP、应用栏接管、音频与懒加载图片；离开释放请求和应用栏。
+import { normalizeSearchText } from "../lib/search-text";
 import { formatDocumentTitle } from "../lib/document-title";
 import { sonolusServerLink } from "../config/sonolus";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import { LitElement, html, nothing } from "lit";
 import { parseCommunityChartDocument } from "../lib/community-chart-route";
+import { editorDocumentPath } from "../lib/editor-document-route";
 import { readReleaseServer } from "../lib/release-server";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { chartRequest, CHART_API } from "../lib/chart-creation/community";
@@ -18,7 +20,7 @@ import {
   communityChartPlayerPath,
   type CommunityChartItem,
 } from "../lib/chart-creation/community-types";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { songTile } from "./shared/song-tile";
@@ -31,7 +33,7 @@ import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import { LazyImages } from "./ui/lazy-images";
 import { modal } from "./ui/modal";
@@ -155,7 +157,7 @@ export class CommunityCharts extends LitElement {
       this.requestUpdate();
     });
     if (!this.chartId)
-      setAppBarSearch("community-charts", {
+      setAppBarSearch(this, "community-charts", {
         value: this.query,
         label: this.t("search"),
         onInput: (value) => {
@@ -169,8 +171,6 @@ export class CommunityCharts extends LitElement {
     this.unlocale?.();
     this.unmedia?.();
     this.images.disconnect();
-    clearBrowseBar();
-    clearAppBarSearch("community-charts");
     super.disconnectedCallback();
   }
   protected override updated() {
@@ -187,11 +187,8 @@ export class CommunityCharts extends LitElement {
     if (!keepResults) this.phase = "loading";
     try {
       if (this.chartId) {
-        const selection = new URLSearchParams({ draft: "1" });
-        const revision = navigationDocumentUrl().searchParams.get("revision");
-        if (this.chartPage && revision) selection.set("revision", revision);
         const { chart } = await chartRequest<{ chart: CommunityChartItem }>(
-          `${CHART_API}/${this.chartId}?${selection}`,
+          `${CHART_API}/${this.chartId}?draft=1`,
           {
             signal: controller.signal,
           },
@@ -294,9 +291,7 @@ export class CommunityCharts extends LitElement {
     }
   }
   private openChart(row: CommunityChartItem) {
-    const target = new URL(communityChartPlayerPath(this.server, this.locale, row.id), location.href);
-    target.searchParams.set("revision", String(row.revision));
-    return navigateDetailPage(target.href);
+    return navigateDetailPage(communityChartPlayerPath(this.server, this.locale, row.id));
   }
   private downloadChart(row: CommunityChartItem) {
     return this.querySelector<ChartSimulator>("chart-simulator")?.downloadOverview({
@@ -423,7 +418,7 @@ export class CommunityCharts extends LitElement {
               <a
                 class="icon-button"
                 data-astro-reload
-                href=${`/${this.locale}/chart-editor/create/?community=${row.id}`}
+                href=${editorDocumentPath(this.locale, "chart-editor", new URLSearchParams({ community: row.id }))}
                 aria-label=${this.t(row.canEdit ? "edit" : "remixAction")}
               >
                 ${row.canEdit ? icon("edit") : icon("content_copy")}
@@ -546,7 +541,7 @@ export class CommunityCharts extends LitElement {
                                   <a
                                     class="list-item list-item--two-line list-item--interactive"
                                     data-astro-reload
-                                    href=${`/${this.locale}/chart-editor/create/?community=${row.id}&revision=${version.revision}`}
+                                    href=${editorDocumentPath(this.locale, "chart-editor", new URLSearchParams({ community: row.id, revision: String(version.revision) }))}
                                   >
                                     <span class="list-item__body">
                                       <strong class="list-item__headline">
@@ -637,6 +632,7 @@ export class CommunityCharts extends LitElement {
             {
               hasMedia: !!row.coverUrl,
               placement: this.commentsCompact ? "bottom" : "media",
+              scrollColumns: true,
               comments: row.publishedRevision
                 ? html`
                     <entity-comments
@@ -685,13 +681,10 @@ export class CommunityCharts extends LitElement {
     `;
   }
   private matchingCharts() {
-    const q = this.query.normalize("NFKC").trim().toLocaleLowerCase();
+    const q = normalizeSearchText(this.query.trim());
     return this.items.filter(
       (row) =>
-        `${row.title} ${row.artist} ${row.charter} ${row.ownerName}`
-          .normalize("NFKC")
-          .toLocaleLowerCase()
-          .includes(q) &&
+        normalizeSearchText(`${row.title} ${row.artist} ${row.charter} ${row.ownerName}`).includes(q) &&
         (!this.difficulties.length || this.difficulties.includes(row.difficulty)),
     );
   }

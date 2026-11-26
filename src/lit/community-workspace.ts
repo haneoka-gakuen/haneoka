@@ -3,7 +3,9 @@
 // Output: 社区浏览、编辑与相关操作的 Lit 界面；推荐动态保留 /community/feeds/ 规范地址。
 // Pos: [Map](L2-2.md)；社区交互和状态生命周期的协调枢纽。
 // Effects/Dependencies: 认证 HTTP、上传与持久操作由 API 执行；本文件管理 DOM、异步请求和界面状态。
+import { normalizeSearchText } from "../lib/search-text";
 import { formatDocumentTitle } from "../lib/document-title";
+import { parsePlaylistDocument, playlistPath } from "../lib/playlists/static-routing";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import type { CommunityForumDirectory } from "../lib/community-forum-directory";
 import { readPageData } from "../lib/page-data";
@@ -49,14 +51,13 @@ import { resolveSongPerformer, type SongPerformer } from "../lib/song-performer"
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import {
-  openDetailLocation,
   closeDetailLocation,
   observeDetailLocation,
   navigateDetailPage,
 } from "../lib/detail-navigation";
 import {
+  appBarElement,
   setAppBarActions,
-  clearAppBarActions,
   setAppBarSearch,
   clearAppBarSearch,
 } from "../lib/app-bar";
@@ -608,7 +609,7 @@ export class CommunityWorkspace extends LitElement {
   }
   private restorePlaylist = () => {
     if (this.mode !== "playlists") return;
-    const id = new URLSearchParams(location.search).get("playlist") || "";
+    const id = parsePlaylistDocument(navigationDocumentUrl().pathname)?.id || "";
     if (id) void this.openPlaylist(id, false);
     else {
       this.playlistSequence++;
@@ -620,9 +621,8 @@ export class CommunityWorkspace extends LitElement {
   private async openPlaylist(id: string, push = true) {
     id=this.playlistLegacyKey(id,true);
     if (push) {
-      const params = new URLSearchParams(location.search);
-      params.set("playlist", id);
-      openDetailLocation(`${location.pathname}?${params}`);
+      await navigateDetailPage(playlistPath(this.locale, id));
+      return;
     }
     const sequence = ++this.playlistSequence;
     this.entityId = id;
@@ -652,11 +652,7 @@ export class CommunityWorkspace extends LitElement {
     }
   }
   private closePlaylist() {
-    const params = new URLSearchParams(location.search);
-    params.delete("playlist");
-    closeDetailLocation(
-      `${location.pathname}${params.size ? `?${params}` : ""}`,
-    );
+    closeDetailLocation(playlistPath(this.locale));
   }
 
   createRenderRoot() {
@@ -826,7 +822,6 @@ export class CommunityWorkspace extends LitElement {
     if (this.savedLeading?.isConnected && this.movedMenu)
       this.savedLeading.prepend(this.movedMenu);
     this.menuGroup?.remove();
-    clearAppBarSearch(COMMUNITY_BAR_OWNER);
     this.disposeSongDisplay?.();
     this.releaseLocation?.();
     removeEventListener("haneoka:locale-ready", this.onLocale);
@@ -834,7 +829,6 @@ export class CommunityWorkspace extends LitElement {
     this.playlistPlaybackIntent++;
     this.paneFocus.detach();
     window.clearTimeout(this.undoTimer);
-    clearAppBarActions(COMMUNITY_BAR_OWNER);
     if (this.routeKind === "post-new" && !this.published && this.uploads.length)
       void this.discardUploads();
     super.disconnectedCallback();
@@ -1025,13 +1019,11 @@ export class CommunityWorkspace extends LitElement {
   /** The tab title follows the content; the app bar's heading stays the
    * section name, exactly as the catalog's entity pages keep "图鉴". */
   private setDocumentTitle(value: string) {
-    if (!value) return;
+    if (!value || !this.isConnected) return;
     const siteTitle = uiText(this.locale, "common.seo.siteTitle");
     document.title = formatDocumentTitle(value, siteTitle);
     if (this.routeKind !== "collection") {
-      const heading = document.querySelector<HTMLElement>(
-        "[data-top-app-bar] h1",
-      );
+      const heading = appBarElement(this)?.querySelector<HTMLElement>("h1");
       if (heading) {
         heading.textContent =
           this.routeKind === "post-detail"
@@ -3039,13 +3031,14 @@ export class CommunityWorkspace extends LitElement {
         phase:
           attachment.status === "deleted"
             ? "failed"
+            : attachment.reviewDeferred === true ? "ready"
             : String(attachment.status || "scanning"),
         progress: 100,
       });
       progress.finish();
       for (
         let attempt = 0;
-        ["reserved", "scanning"].includes(String(attachment.status));
+        attachment.reviewDeferred !== true && ["reserved", "scanning"].includes(String(attachment.status));
         attempt++
       ) {
         if (attempt >= 20) {
@@ -3083,7 +3076,7 @@ export class CommunityWorkspace extends LitElement {
         }
         this.updateUpload(key, {
           attachment,
-          phase: String(attachment.status || "scanning"),
+          phase: attachment.reviewDeferred === true ? "ready" : String(attachment.status || "scanning"),
         });
       }
     } catch (error) {
@@ -3862,9 +3855,8 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private installBack() {
-    const leading = document.querySelector<HTMLElement>(
-      ".top-app-bar__leading",
-    );
+    const bar = appBarElement(this);
+    const leading = bar?.querySelector<HTMLElement>("[data-top-app-bar-leading]");
     if (!leading || this.backLink) return;
     this.savedLeading = leading;
     const link = document.createElement("a");
@@ -3889,9 +3881,7 @@ export class CommunityWorkspace extends LitElement {
     leading.prepend(link);
     this.backLink = link;
     const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]");
-    const actions = document.querySelector<HTMLElement>(
-      "[data-top-app-bar-actions]",
-    );
+    const actions = bar?.querySelector<HTMLElement>("[data-top-app-bar-actions]");
     if (menu && actions) {
       this.movedMenu = menu;
       const group = document.createElement("div");
@@ -3985,6 +3975,7 @@ export class CommunityWorkspace extends LitElement {
     });
     const postLocation = this.ipLocation(post.ipLocation);
     setAppBarActions(
+      this,
       COMMUNITY_BAR_OWNER,
       html`
         ${viewer.canEdit ? iconButton({ icon: "edit", label: this.label("editPost", "Edit post"), onClick: () => void navigateDetailPage(this.detailHref(`/community/posts/${this.entityId}/edit`)) }) : nothing}
@@ -4781,7 +4772,7 @@ export class CommunityWorkspace extends LitElement {
         : [];
   }
   private playlistItems() {
-    const needle = this.query.trim().toLowerCase();
+    const needle = normalizeSearchText(this.query.trim());
     const direction = this.playlistOrder === "asc" ? 1 : -1;
     return this.items
       .filter((item) => {
@@ -4792,9 +4783,7 @@ export class CommunityWorkspace extends LitElement {
           return false;
         return (
           !needle ||
-          `${this.playlistTitle(item)} ${item.type || ""} ${item.source || ""}`
-            .toLowerCase()
-            .includes(needle)
+          normalizeSearchText(`${this.playlistTitle(item)} ${item.type || ""} ${item.source || ""}`).includes(needle)
         );
       })
       .sort((left, right) => {
@@ -4942,7 +4931,7 @@ export class CommunityWorkspace extends LitElement {
     `;
   }
   private renderPlaylists(collectionOnly = false): TemplateResult {
-    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
+    setAppBarActions(this, COMMUNITY_BAR_OWNER, this.collectionBar());
     const playlist = this.document;
     if (!collectionOnly && this.routeKind === "playlist-detail") {
       const tracks = playlist ? this.playlistTracks(playlist) : [];
@@ -5098,7 +5087,7 @@ export class CommunityWorkspace extends LitElement {
                 <ul class="playlist-grid" role="list">
                   ${entries.map(playlist=>html`
                     <li class="playlist-card">
-                      <a class="playlist-card__open" href=${`${this.path("/community/playlists")}?playlist=${encodeURIComponent(String(playlist.id || playlist.playlistId || ""))}`}
+                      <a class="playlist-card__open" href=${playlistPath(this.locale, String(playlist.id || playlist.playlistId || ""))}
                         @click=${(event:MouseEvent)=>{if(event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)return;event.preventDefault();void this.openPlaylist(String(playlist.id || playlist.playlistId || ""));}}>
                         <span class=${`playlist-card__art${playlist.contain ? " playlist-card__art--contain" : ""}`}>
                           ${this.playlistArtwork(playlist)}
@@ -5137,8 +5126,9 @@ export class CommunityWorkspace extends LitElement {
     const editor =
       this.routeKind === "post-new" || this.routeKind === "post-edit";
     if (this.routeKind !== "collection" && this.mode !== "playlists") {
-      clearAppBarSearch(COMMUNITY_BAR_OWNER);
+      clearAppBarSearch(this, COMMUNITY_BAR_OWNER);
       setAppBarActions(
+        this,
         COMMUNITY_BAR_OWNER,
         editor
           ? html`
@@ -5155,7 +5145,7 @@ export class CommunityWorkspace extends LitElement {
       if (this.routeKind === "user-detail") return this.renderUserDetail();
     }
     if (this.mode !== "notifications")
-      setAppBarSearch(COMMUNITY_BAR_OWNER, {
+      setAppBarSearch(this, COMMUNITY_BAR_OWNER, {
         value: this.query,
         label: this.label("search", "Search community"),
         onInput: (value) => {
@@ -5547,7 +5537,7 @@ export class CommunityWorkspace extends LitElement {
     );
   }
   private renderCollection() {
-    setAppBarActions(COMMUNITY_BAR_OWNER, this.collectionBar());
+    setAppBarActions(this, COMMUNITY_BAR_OWNER, this.collectionBar());
     return html`
       <section class="community-page page">
         ${this.renderMutationProgress()}
@@ -6001,14 +5991,12 @@ export class CommunityWorkspace extends LitElement {
     );
   }
   private renderForumDirectory() {
-    const query = this.submittedQuery.toLocaleLowerCase();
+    const query = normalizeSearchText(this.submittedQuery);
     const forums = this.forums.filter(
       (forum) =>
         forum.capabilities.canRead &&
         (!query ||
-          `${this.forumName(forum)} ${localizedText(forum.descriptions, this.locale)}`
-            .toLocaleLowerCase()
-            .includes(query)),
+          normalizeSearchText(`${this.forumName(forum)} ${localizedText(forum.descriptions, this.locale)}`).includes(query)),
     );
     const groups = [
       ...this.forumGroups,

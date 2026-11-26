@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "./search-text";
 export type SourceTree = { [name: string]: SourceNode };
 export type SourceNode = number | SourceTree;
 export interface SourceEntry {
@@ -46,7 +47,7 @@ export function sourceEntries(node: SourceTree, languages: readonly string[]): S
   }
   return entries.sort((a, b) => a.label.localeCompare(b.label, "en", { numeric: true }));
 }
-const normalized = (value: string) => value.normalize("NFKC").toLowerCase();
+const normalized = normalizeSearchText;
 /** Index source leaves only: no descriptor requests or decoded-output inference. */
 export function indexSourceTree(tree: SourceTree, languages: readonly string[]): SourceSearchRow[] {
   const rows: SourceSearchRow[] = [];

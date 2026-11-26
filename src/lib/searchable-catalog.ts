@@ -188,17 +188,6 @@ const COLLECTIONS: CollectionDefinition[] = [
     optional: true,
   },
   {
-    collection: "real-lives",
-    resource: "real-lives",
-    route: "/catalog/real-lives",
-    selectionParam: "entry",
-    kind: "system",
-    document: "entries",
-    titleField: "title",
-    subtitle: "kind",
-    optional: true,
-  },
-  {
     collection: "gacha",
     resource: "gacha",
     route: "/catalog/gacha",

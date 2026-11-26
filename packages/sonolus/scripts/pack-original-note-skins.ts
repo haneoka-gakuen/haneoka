@@ -1,11 +1,11 @@
 // L3 — GEB
-// Input: Native note atlases, common skin texture and the engine lane-clip contract.
+// Input: Native note atlases, common skin texture and the engine's lane-clip and GEKISO sprites.
 // Output: Three original note skins, compact original sprite references and optional coverage rules.
 // Pos: [Map](../L2-2.md); native Sonolus note skin packer.
 // Effects/Dependencies: Decodes PNGs and writes skin data and texture resources.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { deflateSync, gzipSync, inflateSync } from "node:zlib";
+import { deflateSync, gunzipSync, gzipSync, inflateSync } from "node:zlib";
 import {
   DEFAULT_RENDER_SETTINGS,
   OUR_NOTES_SLIDE_LINE_STYLES,
@@ -19,11 +19,7 @@ import {
   laneBase,
   nativeOutsideLineAlpha,
 } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/lane.ts";
-import {
-  soloHudSpriteNames,
-  soloModeHudAtlas,
-  soloModeHudFrames,
-} from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/soloModeHudSprites.ts";
+import { soloHudSpriteNames } from "../../../.dependencies/sonolus-our-notes/shared/src/engine/data/soloModeHudSprites.ts";
 import { isNativeLaneClipReference } from "../src/shared/nativeLaneClipReferences.ts";
 
 type VertexComponent = "x1" | "y1" | "x2" | "y2" | "x3" | "y3" | "x4" | "y4";
@@ -230,7 +226,12 @@ export function decodeRgba8Png(input: Buffer, sourceName: string): DecodedRgbaPn
   return { signature, chunks, width, height, pixels };
 }
 
-export function encodeRgba8Png({ signature, chunks, width, height, pixels }: DecodedRgbaPng): Buffer {
+const signedMagnitude = (value: number) => Math.min(value, 256 - value);
+
+export function encodeRgba8Png(
+  { signature, chunks, width, height, pixels }: DecodedRgbaPng,
+  filterRows = false,
+): Buffer {
   const stride = width * 4;
   if (pixels.length !== stride * height) {
     throw new Error(`Invalid RGBA pixel buffer: ${pixels.length} != ${stride * height}`);
@@ -239,7 +240,35 @@ export function encodeRgba8Png({ signature, chunks, width, height, pixels }: Dec
   for (let y = 0; y < height; y++) {
     const target = y * (stride + 1);
     scanlines[target] = 0;
-    pixels.copy(scanlines, target + 1, y * stride, (y + 1) * stride);
+    const offset = y * stride;
+    pixels.copy(scanlines, target + 1, offset, offset + stride);
+    if (!filterRows) continue;
+    const filters = [Buffer.allocUnsafe(stride), Buffer.allocUnsafe(stride), Buffer.allocUnsafe(stride)];
+    let best = 0;
+    let bestCost = 0;
+    for (let x = 0; x < stride; x++) bestCost += signedMagnitude(pixels[offset + x]!);
+    for (const [i, row] of filters.entries()) {
+      let cost = 0;
+      for (let x = 0; x < stride; x++) {
+        const left = x < 4 ? 0 : pixels[offset + x - 4]!;
+        const up = y === 0 ? 0 : pixels[offset - stride + x]!;
+        const upperLeft = x < 4 || y === 0 ? 0 : pixels[offset - stride + x - 4]!;
+        const p = left + up - upperLeft;
+        const pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - upperLeft);
+        const predictor = i === 0 ? left : i === 1 ? up : pa <= pb && pa <= pc ? left : pb <= pc ? up : upperLeft;
+        const value = (pixels[offset + x]! - predictor) & 255;
+        row[x] = value;
+        cost += signedMagnitude(value);
+      }
+      if (cost < bestCost) {
+        best = i + 1;
+        bestCost = cost;
+      }
+    }
+    if (best > 0) {
+      scanlines[target] = best === 3 ? 4 : best;
+      filters[best - 1]!.copy(scanlines, target + 1);
+    }
   }
   const encoded = pngChunk("IDAT", deflateSync(scanlines, { level: 9 }));
   const output: Buffer[] = [signature];
@@ -249,7 +278,12 @@ export function encodeRgba8Png({ signature, chunks, width, height, pixels }: Dec
       output.push(encoded);
       inserted = true;
     }
-    output.push(chunk.bytes);
+    if (chunk.type === "IHDR" && (chunk.bytes.readUInt32BE(8) !== width || chunk.bytes.readUInt32BE(12) !== height)) {
+      const header = Buffer.from(chunk.bytes.subarray(8, 21));
+      header.writeUInt32BE(width, 0);
+      header.writeUInt32BE(height, 4);
+      output.push(pngChunk("IHDR", header));
+    } else output.push(chunk.bytes);
   }
   if (!inserted) throw new Error("PNG contains no IEND chunk");
   return Buffer.concat(output);
@@ -651,10 +685,6 @@ function createSkinSprites(
   alias("Our Notes Guideline Space", "guideline_space");
   alias("Our Notes Outside Line", "outside_line");
   alias("Our Notes Judgment Line", "judgment_line");
-  for (const key of Object.keys(soloModeHudFrames) as (keyof typeof soloModeHudFrames)[]) {
-    const [x, y, w, h] = soloModeHudFrames[key];
-    sprites.push({ name: soloHudSpriteNames[key], x: soloModeHudAtlas.x + x, y: soloModeHudAtlas.y + y, w, h, transform: identity });
-  }
   alias("#LANE", "lane_base");
   alias("#STAGE_LEFT_BORDER", "lane_side");
   alias("#STAGE_RIGHT_BORDER", "lane_side");
@@ -1092,20 +1122,6 @@ function copySprite(texture: DecodedRgbaPng, sprite: PackedNativeSprite): void {
   }
 }
 
-function bakeSoloModeHud(texture: DecodedRgbaPng): void {
-  const png = decodeRgba8Png(
-    readFileSync(new URL("../../../.dependencies/sonolus-our-notes/resources/presentation/solo-mode-hud.png", import.meta.url)),
-    "solo mode HUD",
-  );
-  const { x, y, w, h } = soloModeHudAtlas;
-  if (png.width !== w || png.height !== h) throw new Error("Solo mode HUD dimensions differ from the skin layout");
-  for (let row = 0; row < h; row++) {
-    const start = row * w * 4;
-    const target = ((y + row) * texture.width + x) * 4;
-    png.pixels.copy(texture.pixels, target, start, start + w * 4);
-  }
-}
-
 function packSkin(
   skinName: BundledNoteSkin,
   atlas: BundledNoteAtlas,
@@ -1140,7 +1156,6 @@ function packSkin(
   bakeSkinLaneGuidelines(texture);
   bakeSkinLaneBackdrop(texture);
   bakeSkinOutsideLineFade(texture);
-  bakeSoloModeHud(texture);
   // Solid compatibility texels baked by build-original-assets. A transparent
   // texel here silently disables an engine feature (published skins once
   // shipped an invisible judgment line and simultaneous-press line).
@@ -1177,9 +1192,10 @@ export function restoreNativeSkinSprites(sprites: readonly SkinSprite[]): SkinSp
 export function isOptionalOriginalSkinSprite(name: string): boolean {
   const base = name.replace(/ Lane Clip \d+$/u, "");
   // Outside boundaries use the mirrored right cap; authored left tier 6 is empty.
-  // Only four Up tiers are reachable, and each pack has one animation marker.
+  // Only four Up tiers and 17 GEKISO stage tiles are referenced by the authored tracks.
   return (
     base.startsWith("Our Notes Slot ") ||
+    /^Our Notes GEKISO Stage 1[7-9]$/u.test(base) ||
     /^Our Notes Native (Tap|Slide|End|Flick|FlickLeft|FlickRight|Trace|Node) Left 6$/u.test(base) ||
     /Our Notes Flick Arrow (Red|Yellow) Up [5-8]$/u.test(base) ||
     /Our Notes Native Flick Arrow Animation Skin \d{3}$/u.test(base)
@@ -1225,4 +1241,109 @@ export function buildNativeNoteSkinPacks(
     });
   }
   return summaries;
+}
+
+const gekisouHudNames = new Set<string>(Object.values(soloHudSpriteNames));
+const isGekisouSprite = (name: string) => name.startsWith("Our Notes GEKISO Stage ") || gekisouHudNames.has(name);
+
+function readSkin(directory: string) {
+  const dataPath = `${directory}/skin.data`;
+  const texturePath = `${directory}/skin.texture.png`;
+  const data = JSON.parse(gunzipSync(readFileSync(dataPath)).toString("utf8")) as {
+    width: number;
+    sprites: SkinSprite[];
+  };
+  const texture = decodeRgba8Png(readFileSync(texturePath), texturePath);
+  return { data, texture, dataPath, texturePath };
+}
+
+export function appendGekisouSkinTiles(directory: string, tiles: readonly Omit<PackedNativeSprite, "x" | "y">[]): number {
+  const { data, texture: source, dataPath, texturePath } = readSkin(directory);
+  const originalWidth = Math.min(source.width, NATIVE_TEXTURE_SIZE);
+  const isOwned = (name: string) => isGekisouSprite(name) || name.startsWith("Our Notes Solo ");
+  if (data.sprites.some(sprite => sprite.x + sprite.w > originalWidth && !isOwned(sprite.name)))
+    throw new Error(`${directory}: the GEKISO spill contains other skin sprites`);
+  const pixels = Buffer.alloc(originalWidth * source.height * 4);
+  for (let row = 0; row < source.height; row++) {
+    const start = row * source.width * 4;
+    source.pixels.copy(pixels, row * originalWidth * 4, start, start + originalWidth * 4);
+  }
+  const image = { ...source, width: originalWidth, pixels };
+  for (const sprite of data.sprites) {
+    if (!isOwned(sprite.name) || sprite.x >= originalWidth) continue;
+    for (let y = sprite.y; y < sprite.y + sprite.h; y++) {
+      const start = (y * image.width + sprite.x) * 4;
+      image.pixels.fill(0, start, start + sprite.w * 4);
+    }
+  }
+  const previousCount = data.sprites.length;
+  data.sprites = data.sprites.filter(({ name }) => !isOwned(name));
+  const rowEnds = Array.from({ length: image.height }, (_, y) => data.sprites
+    .filter((s) => y >= s.y - 2 && y < s.y + s.h + 2)
+    .map((s) => [Math.max(0, s.x - 2), Math.min(originalWidth, s.x + s.w + 2)] as const));
+  function place(rows: typeof rowEnds, width: number, w: number, h: number) {
+    const paddedWidth = w + 4, paddedHeight = h + 4;
+    for (let y = 0; y <= image.height - paddedHeight; y += 2) {
+      const intervals = rows.slice(y, y + paddedHeight).flat().sort((a, b) => a[0] - b[0]);
+      let x = 0;
+      for (const [left, right] of intervals) {
+        if (left - x >= paddedWidth) break;
+        x = Math.max(x, right);
+      }
+      if (x + paddedWidth > width) continue;
+      for (let row = y; row < y + paddedHeight; row++) rows[row]!.push([x, x + paddedWidth]);
+      return { x: x + 2, y: y + 2, w, h };
+    }
+  }
+  const sorted = [...tiles].sort((a, b) => b.w * b.h - a.w * a.h);
+  const placements = sorted.map(tile => place(rowEnds, originalWidth, tile.w, tile.h));
+  const spill = sorted.flatMap((tile, index) => placements[index] ? [] : [index]);
+  if (spill.length > 0) {
+    const minimum = Math.max(...spill.map(i => sorted[i]!.w + 4));
+    for (let extra = minimum; extra <= 256; extra += 16) {
+      const rows: typeof rowEnds = Array.from({ length: image.height }, () => []);
+      const strip = spill.map(i => place(rows, extra, sorted[i]!.w, sorted[i]!.h));
+      if (strip.some(p => !p)) continue;
+      for (const [j, i] of spill.entries()) {
+        const slot = strip[j]!;
+        placements[i] = { ...slot, x: slot.x + originalWidth };
+      }
+      const width = image.width + extra;
+      const expanded = Buffer.alloc(width * image.height * 4);
+      for (let row = 0; row < image.height; row++)
+        image.pixels.copy(expanded, row * width * 4, row * image.width * 4, (row + 1) * image.width * 4);
+      image.width = width;
+      image.pixels = expanded;
+      break;
+    }
+    if (placements.some(p => !p)) throw new Error(`${directory}: GEKISO sprites exceed the atlas layout`);
+  }
+  for (const [i, tile] of sorted.entries()) {
+    const { w, h, name, pixels } = tile;
+    const placement = placements[i]!;
+    const { x, y } = placement;
+    for (let dy = -2; dy < h + 2; dy++) for (let dx = -2; dx < w + 2; dx++) {
+      const src = (Math.min(h - 1, Math.max(0, dy)) * w + Math.min(w - 1, Math.max(0, dx))) * 4;
+      pixels.copy(image.pixels, ((y + dy) * image.width + x + dx) * 4, src, src + 4);
+    }
+    data.sprites.push({ ...placement, name, transform: identity });
+  }
+  data.width = image.width;
+  writeFileSync(dataPath, gzipSync(JSON.stringify(data), { level: 9 }));
+  writeFileSync(texturePath, encodeRgba8Png(image, true));
+  return data.sprites.length - previousCount;
+}
+
+// Asset candidates reuse the independent engine's reviewed GEKISO sprites.
+export function restoreBundledGekisouSkin(sourceDirectory: string, outputDirectory: string): number {
+  const { data, texture } = readSkin(sourceDirectory);
+  const tiles = data.sprites.filter(({ name }) => isGekisouSprite(name)).map(({ name, x, y, w, h }) => {
+    const pixels = Buffer.alloc(w * h * 4);
+    for (let row = 0; row < h; row++) {
+      const start = ((y + row) * texture.width + x) * 4;
+      texture.pixels.copy(pixels, row * w * 4, start, start + w * 4);
+    }
+    return { name, w, h, pixels };
+  });
+  return appendGekisouSkinTiles(outputDirectory, tiles);
 }

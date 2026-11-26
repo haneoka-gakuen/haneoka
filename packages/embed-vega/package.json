@@ -42,7 +42,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@haneoka/embed-core": "^0.1.0"
+    "@haneoka/embed-core": "^0.1.0",
+    "fflate": "catalog:"
   },
   "peerDependencies": {
     "@haneoka/vega": "^0.1.0",
@@ -53,11 +54,19 @@
     "@haneoka/vega-theme-haneoka": "^0.1.0",
     "@haneoka/vega-plugin-haneoka": "^0.1.0",
     "@haneoka/vega-plugin-cubism": "^0.1.0",
+    "@haneoka/vega-plugin-spine": "^0.1.0",
+    "@esotericsoftware/spine-threejs": "4.2.119",
     "howler": ">=2.2.0 <3",
     "three": ">=0.184.0 <0.185.0",
     "@haneoka/api-client": "^0.1.0"
   },
   "peerDependenciesMeta": {
+    "@haneoka/vega-plugin-spine": {
+      "optional": true
+    },
+    "@esotericsoftware/spine-threejs": {
+      "optional": true
+    },
     "@haneoka/vega-shell-default": {
       "optional": true
     },

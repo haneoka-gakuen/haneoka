@@ -1,3 +1,5 @@
+import { projectHaneokaTranscript } from "@haneoka/vega-plugin-haneoka/transcript";
+import { offlineProviderCatalog, offlineProviderStory, storyModelIds } from "./offline-story-data";
 import { localizedFallbacks } from "../src/lib/localized-text";
 import { providerFetch, providerEdgeCache, type ProviderSourceReader, type ProviderExecutionContext, type ProviderFetchInit } from "./provider-source";
 let sourceReader: ProviderSourceReader | undefined;
@@ -1756,7 +1758,25 @@ export async function loadBestdoriSonolusCatalog(
 ): Promise<{ bands: Record<string, unknown>; songs: Record<string, unknown> }> {
   configureUpstreamBase(configuredUpstreamBase);
   const [rawSongs, bands] = await Promise.all([all8(), allBands()]);
-  return { bands, songs: transformSongs(rawSongs) };
+  const published = recordsPublishedInAnyRegion(rawSongs, "publishedAt");
+  const songs = transformSongs(published);
+  for (const [id, song] of Object.entries(songs)) {
+    const raw = asObj(published[id]);
+    const bpm = asObj(raw.bpm);
+    for (const [index, name] of DIFFICULTY_NAMES.entries()) {
+      const chart = asArray(asObj(song).difficulty).find((value) => asObj(value).difficulty === name);
+      if (!chart) continue;
+      const values = asArray(bpm[String(index)]).flatMap((segment) => {
+        const value = num(asObj(segment).bpm);
+        return value && value > 0 ? [value] : [];
+      });
+      Object.assign(asObj(chart), {
+        seconds: num(raw.length),
+        ...(values.length ? { minBpm: Math.min(...values), maxBpm: Math.max(...values) } : {}),
+      });
+    }
+  }
+  return { bands, songs };
 }
 
 const transformSongMeta = (raw: Record<string, unknown>, metaRaw: Record<string, unknown>): Obj => {
@@ -1990,6 +2010,74 @@ export async function handleGarupaBestdoriApi(
       return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => jsonBody({ items: {}, missing: [] }));
     return serveCached(request, ctx, JSON_CACHE_CONTROL, () => live2dEntries(ids, regionCandidates));
   }
+  const offlineCatalog = /^offline-catalog\/(event|band|main|afterlive|card)$/u.exec(tail)?.[1];
+  if (offlineCatalog) {
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
+      if (offlineCatalog !== "card") {
+        const rows = await buildStoryCollection(offlineCatalog as "event" | "band" | "main" | "afterlive", lang);
+        return jsonBody(offlineProviderCatalog(rows));
+      }
+      const cards = transformCards(recordsPublishedInAnyRegion(await allCards(), "releasedAt"), lang);
+      return jsonBody(Object.values(cards).flatMap((raw) => {
+        const card = asObj(raw);
+        return asArray(card.episodes).flatMap((rawEpisode) => {
+          const episode = asObj(rawEpisode);
+          const resource = String(episode.resourceSetName || "");
+          const scenario = String(episode.scenarioId || "");
+          return resource && scenario ? [{
+            id: `card.${resource}.${scenario}`,
+            title: episode.title || card.prefix || scenario,
+            group: card.prefix,
+            groupId: `card.${resource}`,
+            thumbnail: asObj(card.cardThumbnails).normal || card.cardImage || null,
+          }] : [];
+        });
+      }));
+    });
+  }
+  const offline = /^offline\/((?:event|band|main|afterlive|card)\.[^/]+)$/u.exec(tail);
+  if (offline) {
+    const id = decodeRoutePart(offline[1]!);
+    if (id === null) return invalidPathResponse();
+    return serveCached(request, ctx, JSON_CACHE_CONTROL, async () => {
+      const detail = JSON.parse((await storyDetail(id, region, lang)).body) as Obj;
+      const [section, resource, ...suffix] = id.split(".");
+      let summary: Obj;
+      if (section === "card") {
+        const entry = Object.entries(await allCards()).find(([, raw]) => asObj(raw).resourceSetName === resource);
+        const card = entry ? asObj(transformCards({ [entry[0]]: entry[1] }, lang)[entry[0]]) : {};
+        const episode = asArray(card.episodes).map(asObj).find((row) => row.scenarioId === suffix.join("."));
+        summary = episode ? {
+          title: episode.title || card.prefix,
+          chapterName: card.prefix,
+          chapterKey: `card.${resource}`,
+          publishedAt: card.releasedAt,
+          releaseAt: card.releaseAt,
+          cardId: card.cardId,
+          characterId: card.characterId,
+          thumbnail: asObj(card.cardThumbnails).normal || card.cardImage,
+        } : {};
+      } else {
+        summary = asObj((await buildStoryCollection(section as "event" | "band" | "main" | "afterlive", lang))[id]);
+      }
+      const { image, ...metadata } = summary;
+      const story = { ...metadata, thumbnail: summary.thumbnail || image, ...detail } as Obj;
+      const selected = String(story.sourceServer || region);
+      const candidates = [...new Set([selected, region, ...regionChainForLocale(lang)])].filter(isBestdoriRegion);
+      const keys = storyModelIds(story);
+      const cast = projectHaneokaTranscript(story).flatMap(({ command }) =>
+        asArray(command.targets).map((target) => asObj(target).characterId),
+      );
+      const ids = new Set([...asArray(story.characterIds), story.characterId, ...cast,
+        ...asArray(asObj(story.assets).live2d).map((entry) => asObj(entry).characterId),
+        ...keys.map((key) => Number(/^([0-9]+)_/u.exec(key)?.[1]))].map(Number).filter((id) => Number.isFinite(id) && id > 0));
+      const [models, people] = await Promise.all([
+        keys.length ? live2dEntries(keys, candidates).then(({ body }) => JSON.parse(body) as Obj) : Promise.resolve({}),
+        ids.size ? allCharactersFull().then((rows) => transformCharacters(rows, region)) : Promise.resolve({} as Obj),
+      ]);
+      return jsonBody(offlineProviderStory(story, models, [...ids].flatMap((id) => people[id] ? [people[id]] : [])));
+    });
+  }
   const storyCollection = /^stories\/(event|band|main|afterlive)$/.exec(tail);
   if (storyCollection) {
     const section = storyCollection[1]! as "event" | "band" | "main" | "afterlive";
@@ -2087,7 +2175,14 @@ export async function handleGarupaBestdoriApi(
         : /\.(mp4)$/i.test(upstreamPath)
           ? "video/mp4"
           : "application/octet-stream";
-    return proxyMedia(request, upstreamPath, fallback);
+    const response = await proxyMedia(request, upstreamPath, fallback);
+    if (response.status !== 404) return response;
+    // Some older scenarios point to a tutorial bundle whose exported image is
+    // only available in its numbered background bundle.
+    const background = /^\/assets\/([a-z]+)\/bg\/[^/]+_rip\/(bg([0-9]{5})\.png)$/u.exec(upstreamPath);
+    if (!background) return response;
+    const canonical = `/assets/${background[1]}/bg/scenario${Math.floor(Number(background[3]) / 10)}_rip/${background[2]}`;
+    return canonical === upstreamPath ? response : proxyMedia(request, canonical, fallback);
   }
 
   return null;

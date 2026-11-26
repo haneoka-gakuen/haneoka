@@ -1,7 +1,7 @@
 /** Merges the responses of a sharded search (one shard of leaders per Worker) into one response. Every team has one
  * leader, so each shard's per-song top k is exact over its leaders; the union, deduplicated by member set (the same
  * set can lead with a different member in another shard), holds the exact global top k. */
-import type { EngineHit, EngineResponse, Goal, PlanSummary, SongResult } from "./api";
+import type { EngineHit, EngineResponse, Goal, PlanSummary, SongRef, SongResult } from "./api";
 
 const songKey = (hit: EngineHit) => (hit.song ? `${hit.song.songId}:${hit.song.difficulty}` : "-");
 const identityOrder = (a: EngineHit, b: EngineHit) =>
@@ -39,6 +39,43 @@ export function topDistinct(hits: readonly EngineHit[], k: number): EngineHit[] 
     if (!known || compareHits(hit, known) < 0) best.set(key, hit);
   }
   return [...best.values()].sort(compareHits).slice(0, k);
+}
+
+export function mergeLockedGekiso(
+  songs: readonly SongRef[], responses: readonly EngineResponse[], elapsedMs: number,
+): EngineResponse | undefined {
+  const first = responses[0]?.overall[0];
+  if (!first?.score || !first.aggregate) return undefined;
+  const formation = (hit: EngineHit) => JSON.stringify([hit.members, hit.snaps]);
+  const expected = formation(first);
+  const charts = new Map<string, EngineHit>();
+  for (const response of responses) {
+    const hit = response.overall[0];
+    if (response.error || response.stopReason !== "complete" || response.results.length !== 1 || !response.results[0]!.proven ||
+        !hit?.aggregate || formation(hit) !== expected) return undefined;
+    for (const chart of hit.aggregate.songs) {
+      if (!chart.song || chart.score?.orders.length !== 120 || charts.has(songKey(chart))) return undefined;
+      charts.set(songKey(chart), chart);
+    }
+  }
+  const ordered = songs.map(song => charts.get(`${song.songId}:${song.difficulty}`));
+  if (charts.size !== songs.length || ordered.some(chart => !chart)) return undefined;
+  const complete = ordered as EngineHit[];
+  const mean = (value: (chart: EngineHit) => number) => complete.reduce((sum, chart) => sum + value(chart), 0) / complete.length;
+  const hit: EngineHit = {
+    ...first,
+    key: mean(chart => chart.score!.mean),
+    power: mean(chart => chart.power),
+    slotPowers: first.slotPowers.map((_, index) => mean(chart => chart.slotPowers[index]!)),
+    score: {
+      ...first.score, mean: mean(chart => chart.score!.mean),
+      min: mean(chart => chart.score!.min), max: mean(chart => chart.score!.max),
+      median: mean(chart => chart.score!.median),
+    },
+    aggregate: { kind: "mean", songs: complete },
+  };
+  const merged = mergeShardResponses(responses, 1, elapsedMs);
+  return { ...merged, overall: [hit], results: [{ ...merged.results[0]!, hits: [hit] }] };
 }
 
 export function mergeShardResponses(

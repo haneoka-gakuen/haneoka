@@ -120,7 +120,7 @@ import {
   selectedGameToolAccount,
   selectGameToolAccount,
 } from "../lib/game-tool-account-store";
-import { clearGameToolAccountAction, setGameToolAccountAction } from "./game-tool-account-picker";
+import { setGameToolAccountAction } from "./game-tool-account-picker";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -655,10 +655,6 @@ export class TeamBuilder extends LitElement {
     this.layoutObserver?.disconnect();
     clearTimeout(this.noticeTimer);
     super.disconnectedCallback();
-    clearAppBarActions(SYNC_OWNER);
-    clearGameToolAccountAction("team");
-    clearAppBarActions("team-builder-quick-entry");
-    clearAppBarActions("team-builder-planner");
     this.releaseSearch?.();
     this.releaseSearch = undefined;
     this.dataController?.abort();
@@ -2204,20 +2200,16 @@ export class TeamBuilder extends LitElement {
     }
   }
   get canRecommendCharts(): boolean {
-    const s = this.settings;
-    return (
-      this.tab === "build" &&
-      this.buildMode === "automatic" &&
-      s.goal === "score" &&
-      s.aggregation !== "mean" &&
-      s.criterion === "mean" &&
-      s.scoreTarget === "none" &&
-      !s.challengeRules
-    );
+    const s = this.searchSettings;
+    if (this.tab === "arena" || this.tab === "build" && this.buildMode === "automatic" && s.goal === "gekiso") {
+      return s.goal === "gekiso" && s.arena?.objective !== "sections";
+    }
+    return this.tab === "build" && this.buildMode === "automatic" && s.goal === "score"
+      && s.aggregation !== "mean" && s.criterion === "mean" && s.scoreTarget === "none" && !s.challengeRules;
   }
   chartRecommendationRequest(songs: SongRef[]): EngineRequest | null {
     if (!this.canRecommendCharts) return null;
-    const settings = this.compatibleSettings({ ...this.settings, songs });
+    const settings = this.compatibleSettings({ ...this.searchSettings, songs });
     return this.request(this.goal(settings), settings);
   }
   request(goal = this.goal(), s = this.searchSettings): EngineRequest | null {
@@ -2526,9 +2518,10 @@ export class TeamBuilder extends LitElement {
       },
       this,
     );
-    clearAppBarActions("team-builder-planner");
+    clearAppBarActions(this, "team-builder-planner");
     if (this.tab === "box")
       setAppBarActions(
+        this,
         "team-builder-quick-entry",
         html`
           <button
@@ -2546,9 +2539,8 @@ export class TeamBuilder extends LitElement {
           </button>
           ${renderTemporaryActions(this)}
         `,
-        this,
       );
-    else clearAppBarActions("team-builder-quick-entry");
+    else clearAppBarActions(this, "team-builder-quick-entry");
 
     const snapshot = this.snapshot;
     const status = snapshot?.status ?? "local";
@@ -2564,6 +2556,7 @@ export class TeamBuilder extends LitElement {
     };
     const { icon: name, label } = map[status] ?? map.local!;
     setAppBarActions(
+      this,
       SYNC_OWNER,
       html`
         ${iconButton({
@@ -2606,10 +2599,9 @@ export class TeamBuilder extends LitElement {
           }
         </span>
       `,
-      this,
     );
     if (this.tab === "box" && this.data && !this.releaseSearch)
-      this.releaseSearch = setAppBarSearch(SEARCH_OWNER, {
+      this.releaseSearch = setAppBarSearch(this, SEARCH_OWNER, {
         value: this.filters.query,
         label: this.common("common.actions.search", "Search"),
         onInput: (query) => {

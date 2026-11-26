@@ -1,7 +1,16 @@
-import type { DataSource, EmbedEvent, EmbedLoaderOptions } from "@haneoka/embed-core";
+import type {
+  DataSource,
+  DataSourceInput,
+  EmbedEvent,
+  EmbedLoaderOptions,
+  ResourceLocation,
+} from "@haneoka/embed-core";
 import type { AdvStory, VegaPlayerHandle, VegaPlayerShellOptions } from "@haneoka/vega/web";
 import type { VegaPlugin } from "@haneoka/vega/plugin";
 import type { ThreeRendererPluginOptions } from "@haneoka/vega-renderer-three";
+import type { CubismEmbedOptions } from "./haneoka.js";
+
+type CharacterModel = NonNullable<AdvStory["characterModels"]>[string];
 
 export type StoryEmbedPhase = "loading" | "ready" | "cancelled" | "error" | "disposed";
 export interface StoryEmbedSnapshot {
@@ -22,7 +31,7 @@ export type StoryEmbedEvent =
 
 type StoryInput =
   | { readonly document: AdvStory; readonly source?: never }
-  | { readonly source: DataSource<AdvStory>; readonly document?: never };
+  | { readonly source: DataSourceInput<AdvStory>; readonly document?: never };
 export type MountStoryOptions = StoryInput &
   Omit<EmbedLoaderOptions<AdvStory>, "source"> & {
     /** Existing portable UI by default; Haneoka requires plugins from the ./theme entry. */
@@ -32,6 +41,12 @@ export type MountStoryOptions = StoryInput &
     readonly shell?: false | VegaPlayerShellOptions;
     /** Additional model/command providers use Vega's existing plugin contract. */
     readonly plugins?: readonly VegaPlugin[];
+    /** Existing sound/cue IDs mapped to playable source URLs or local audio files. */
+    readonly sounds?: Readonly<Record<string, ResourceLocation>>;
+    /** Character references mapped to Cubism 3 JSON/ZIP URLs or portable descriptors. */
+    readonly models?: Readonly<Record<string, string | URL | CharacterModel>>;
+    readonly cubism?: CubismEmbedOptions;
+    readonly runtimeManifestUrl?: string | URL;
     readonly renderer?: ThreeRendererPluginOptions;
     /** Total deadline per resource adapter load; defaults to 30 seconds. */
     readonly resourceTimeoutMs?: number;

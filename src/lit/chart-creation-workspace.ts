@@ -1,10 +1,11 @@
 // L3 — GEB
-// Input: 本地／云端普通工程、GBP／SEKAI 曲库及导入地址、可选音频与原生素材 release 身份。
+// Input: 本地谱面和音乐、本地／云端工程、曲库和导入地址、原生素材 release 身份。
 // Output: 与来源无关的谱面及滑条编辑、可后补音频的保存／备份、可编辑坐标／对象顺序／节点属性、全局及分组可逆变速、入门与工具、图案／键位、原生统计和社区发布；编辑视图可切换时间轴方向；预览复用 chart-simulator。
 // Pos: [Map](L2-2.md)；谱面创作工作区。
 // Effects/Dependencies: 进入页共享加载原生音符图集供工具图像和画布使用，滑条几何与路径采样索引随原生谱面及节奏映射缓存；静态谱面与指针分层绘制，命中投影随视口缓存，工程／视口／选区／主题／字体变化重绘底层，断开释放画布；IndexedDB、localStorage、媒体、Web Audio 与应用栏；消费导入地址并保存原工程，预览退出和断开时销毁查看器并释放素材 URL。
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { snackbar } from "../lib/snackbar";
+import { editorDocumentAddress, editorDocumentParams } from "../lib/editor-document-route";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
 import { readPageData } from "../lib/page-data";
@@ -47,7 +48,7 @@ import { iconButton, segmented } from "./ui/controls";
 import { actionMenu } from "./ui/action-menu";
 import { icon } from "./ui/icon";
 import { trapFocus } from "../lib/overlay";
-import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { accordion } from "./ui/accordion";
 import "./chart-creation-library";
 import "./chart-publication";
@@ -150,6 +151,30 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 };
 
 const fineSnapDivisions = [96, 192, 384, 480, 960, 1920];
+const localChartExtensions = ["mmws", "ccmmws", "ucmmws", "json", "sus", "txt", "ss", "usc"];
+const localAudioExtensions = ["aac", "aif", "aiff", "caf", "flac", "m4a", "mp3", "oga", "ogg", "opus", "wav", "weba", "wma"];
+const localFileAccept = ["audio/*", ...[...localAudioExtensions, ...localChartExtensions].map(ext => `.${ext}`)].join(",");
+
+function isLocalAudio(file: File) {
+  const extension = file.name.split(".").at(-1)?.toLowerCase() ?? "";
+  return !localChartExtensions.includes(extension) && (file.type.startsWith("audio/") || localAudioExtensions.includes(extension));
+}
+
+async function readLocalChart(file: File, signal: AbortSignal) {
+  if (file.size > 2 * 1024 * 1024) throw new Error("chart_size");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  signal.throwIfAborted();
+  const binary = isMmws(bytes);
+  const text = binary ? Array.from(bytes, byte => String.fromCharCode(byte)).join("") : new TextDecoder().decode(bytes);
+  const imported = importChart(binary ? bytes : text);
+  compileOurNotesCreation(imported.project);
+  readAuthorCollections(imported.project);
+  return {
+    project: imported.project,
+    warnings: imported.warnings,
+    source: { name: file.name, text, ...(binary ? { encoding: "binary" as const } : {}) },
+  };
+}
 
 interface EditAudioTransport {
   clock: MediaClock;
@@ -564,7 +589,7 @@ export class ChartCreationWorkspace extends LitElement {
     super.update(changed);
   }
   renderStaticChrome() {
-    setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
+    setAppBarActions(this, this.toolbarOwner, this.renderAppActions());
   }
   private connectEditor() {
     if (!this.isConnected) return;
@@ -610,7 +635,7 @@ export class ChartCreationWorkspace extends LitElement {
         this.rebuildPreview(draft.seconds);
       }
       this.documents = await this.store.list();
-      const cloudId = new URL(location.href).searchParams.get("community");
+      const cloudId = editorDocumentParams(new URL(location.href)).get("community");
       if (cloudId && /^[0-9a-f-]{36}$/u.test(cloudId)) await this.openCommunity(cloudId, signal);
       else if (!this.hasProject) {
         const recent = localStorage.getItem("haneoka-chart-last-project");
@@ -620,14 +645,14 @@ export class ChartCreationWorkspace extends LitElement {
   }
   private async openLinkedBestdoriChart() {
     if (!this.isConnected) return;
-    const url = new URL(location.href), params = url.searchParams;
+    const url = new URL(location.href), params = editorDocumentParams(url);
     const region = params.get("region") ?? "jp", songId = params.get("songId") ?? "", difficulty = params.get("difficulty") ?? "";
     if (params.get("provider") !== "bestdori" || !isBestdoriServer(region) || !/^[1-9]\d{0,8}$/.test(songId) || !["easy", "normal", "hard", "expert", "special"].includes(difficulty)) return;
     await this.updateComplete;
     const library = this.querySelector<ChartCreationLibrary>("chart-creation-library");
     if (!library) return;
     for (const key of ["provider", "region", "songId", "difficulty"]) params.delete(key);
-    history.replaceState(history.state, "", url);
+    history.replaceState(history.state, "", editorDocumentAddress(url, params));
     if (this.narrow) this.closePanels();
     await library.show("bestdori", undefined, { region, songId, difficulty });
   }
@@ -639,7 +664,6 @@ export class ChartCreationWorkspace extends LitElement {
     this.panelMedia?.removeEventListener("change", this.mediaChanged);
     this.releasePanelFocus?.();
     this.focusedPanel = undefined;
-    clearAppBarActions(this.toolbarOwner);
     document.removeEventListener("keydown", this.keydown);
     cancelAnimationFrame(this.cursorFrame);
     this.cursorFrame = 0;
@@ -692,7 +716,7 @@ export class ChartCreationWorkspace extends LitElement {
     this.paint();
     this.paintToolIcons();
     this.fitPalette();
-    setAppBarActions(this.toolbarOwner, this.renderAppActions(), this);
+    setAppBarActions(this, this.toolbarOwner, this.renderAppActions());
     const panel = this.narrow ? this.querySelector<HTMLElement>(".chart-studio__panel:not([hidden])") : null;
     if (panel !== (this.focusedPanel ?? null)) {
       this.releasePanelFocus?.();
@@ -1167,18 +1191,6 @@ export class ChartCreationWorkspace extends LitElement {
     this.preview?.pause();
     this.requestUpdate();
   }
-  private loadAudio(file: File) {
-    return this.run(async (signal) => {
-      const audio = await decodeCreationAudio(file, signal);
-      await this.save();
-      this.preview?.dispose();
-      this.audio = audio;
-      this.preciseSeekSeconds = undefined;
-      this.dirty = true;
-      this.windowStart = 0;
-      this.rebuildPreview(0);
-    });
-  }
   private async removeAudio() {
     await this.run(async () => {
       await this.save(); await this.disposePreview(); this.preview?.dispose(); this.preview = undefined;
@@ -1186,7 +1198,9 @@ export class ChartCreationWorkspace extends LitElement {
     });
   }
   private async openCommunity(id: string, signal: AbortSignal) {
-    const requestedRevision = Number(new URL(location.href).searchParams.get("revision"));
+    const address = new URL(location.href);
+    const params = editorDocumentParams(address);
+    const requestedRevision = Number(params.get("revision"));
     const result = await loadCommunityChart(id, signal, true, Number.isSafeInteger(requestedRevision) && requestedRevision > 0 ? requestedRevision : undefined);
     const response = await fetch(result.document.audioUrl, { signal, credentials: "same-origin" });
     if (!response.ok) throw new Error("audio_missing");
@@ -1210,7 +1224,9 @@ export class ChartCreationWorkspace extends LitElement {
       await saveChartCloudDraft(this.projectId, { ...publication, audio: publication.audio?.kind === "server" ? publication.audio : null, cover: publication.cover?.kind === "server" ? publication.cover : null, ...(coverFile ? { coverFile } : {}), upstreamId: id });
     }
     this.dirty = true; this.windowStart = 0; this.rebuildPreview(0); await this.save();
-    const url = new URL(location.href); url.searchParams.delete("community"); history.replaceState(history.state, "", url);
+    params.delete("community");
+    params.delete("revision");
+    history.replaceState(history.state, "", editorDocumentAddress(address, params));
   }
   private async open(id: string, revision?: number) {
     const signal = this.controller!.signal;
@@ -1279,40 +1295,75 @@ export class ChartCreationWorkspace extends LitElement {
   private pick(selector: string) {
     (this.querySelector(selector) as HTMLInputElement).click();
   }
-  private importFile(event: Event, backup = false) {
-    const input = event.target as HTMLInputElement,
-      file = input.files?.[0];
+  private openBackupFile(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
     input.value = "";
     if (!file) return;
-    void this.run(async (signal) => {
+    void this.run(async () => {
       await this.save();
-      if (backup) {
-        const id = await this.store.import(file);
-        await this.open(id);
-        this.documents = await this.store.list();
-        return;
-      }
-      if (file.size > 2 * 1024 * 1024) throw new Error("chart_size");
-      const bytes = new Uint8Array(await file.arrayBuffer()), binary = isMmws(bytes);
-      const text = binary ? Array.from(bytes, byte => String.fromCharCode(byte)).join("") : new TextDecoder().decode(bytes),
-        imported = importChart(binary ? bytes : text);
+      const id = await this.store.import(file);
+      await this.open(id);
+      this.documents = await this.store.list();
+    });
+  }
+  private loadLocalFiles(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (!files.length) return;
+    const audioFiles: File[] = [], chartFiles: File[] = [];
+    for (const file of files) (isLocalAudio(file) ? audioFiles : chartFiles).push(file);
+
+    void this.run(async signal => {
+      const [audioFile] = audioFiles, [chartFile] = chartFiles;
+      const [audioResult, chartResult] = await Promise.allSettled([
+        audioFiles.length === 1 && audioFile ? decodeCreationAudio(audioFile, signal) : undefined,
+        chartFiles.length === 1 && chartFile ? readLocalChart(chartFile, signal) : undefined,
+      ]);
       signal.throwIfAborted();
-      compileOurNotesCreation(imported.project);
-      readAuthorCollections(imported.project);
-      this.collectionScope = {}; this.deletingProject = false;
-      this.history.reset(imported.project);
-      this.original = structuredClone(imported.project);
-      this.source = { name: file.name, text, ...(binary ? { encoding: "binary" as const } : {}) };
-      this.projectId = crypto.randomUUID();
-      this.head = 0;
-      this.activeRevision = 0;
-      this.revisions = [];
-      this.setSelection([]);
-      this.pending = undefined;
-      this.dirty = true;
-      this.frameProjectStart();
-      this.rebuildPreview(0);
-      this.status = imported.warnings.length ? this.t("warnings") : this.t("ready");
+
+      const audio = audioResult.status === "fulfilled" ? audioResult.value : undefined;
+      const chart = chartResult.status === "fulfilled" ? chartResult.value : undefined;
+      if (audio || chart) {
+        await this.save(true);
+        signal.throwIfAborted();
+        if (this.stageMode === "preview") await this.disposePreview();
+        signal.throwIfAborted();
+        if (audio) this.audio = audio;
+        if (chart) {
+          this.collectionScope = {}; this.deletingProject = false;
+          this.history.reset(chart.project);
+          this.original = structuredClone(chart.project);
+          this.source = chart.source;
+          this.previewIdentity = undefined;
+          this.projectId = crypto.randomUUID();
+          this.head = 0;
+          this.activeRevision = 0;
+          this.revisions = [];
+          this.setSelection([]);
+          this.pending = undefined;
+          this.frameProjectStart();
+        } else {
+          this.preciseSeekSeconds = undefined;
+        }
+        this.projectReady = true;
+        this.dirty = true;
+        this.rebuildPreview(audio ? Math.min(this.seconds, audio.analysis.duration) : this.seconds);
+        await this.save(true);
+        this.documents = await this.store.list();
+        this.status = chart?.warnings.length ? this.t("warnings") : this.t("ready");
+      }
+
+      const errors: string[] = [];
+      if (audioFiles.length > 1 || chartFiles.length > 1) errors.push(this.t("loadOnePerType"));
+      const addError = (file: File, reason: unknown, fallback: string) => {
+        const id = reason instanceof Error ? reason.message : "failed";
+        errors.push(`${file.name} · ${clientText(this.locale, `editors.chart.creation.${id}`, fallback)}`);
+      };
+      if (audioFile && audioResult.status === "rejected") addError(audioFile, audioResult.reason, this.t("creation.audio_decode"));
+      if (chartFile && chartResult.status === "rejected") addError(chartFile, chartResult.reason, this.t("loadFailed"));
+      this.error = errors.join(" · ");
     });
   }
   private selectionNodes(project = this.chart) {
@@ -3602,11 +3653,8 @@ export class ChartCreationWorkspace extends LitElement {
         <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.showLibrary()}>
           ${this.t("serverLibrary")}
         </button>
-        <button class="button button--filled" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>
-          ${this.t("importLocalAudio")}
-        </button>
-        <button class="button" ?disabled=${this.busy} @click=${() => this.pick("[data-chart]")}>
-          ${this.t("importLocalChart")}
+        <button class="button button--filled" type="button" ?disabled=${this.busy} @click=${() => this.pick("[data-local-files]")}>
+          ${this.t("loadLocalFiles")}
         </button>
         <button
           class="button"
@@ -3639,7 +3687,6 @@ export class ChartCreationWorkspace extends LitElement {
       </div>
     `;
     const audioPanel = html`
-      <button class="button button--tonal" ?disabled=${this.busy} @click=${() => this.pick("[data-audio]")}>${this.t("importLocalAudio")}</button>
       ${
         this.audio
           ? html`
@@ -4309,20 +4356,8 @@ export class ChartCreationWorkspace extends LitElement {
       </div>
     `;
     return html`
-      <input
-        hidden
-        data-audio
-        type="file"
-        accept="audio/*"
-        @change=${(e: Event) => {
-          const input = e.target as HTMLInputElement,
-            file = input.files?.[0];
-          input.value = "";
-          if (file) this.loadAudio(file);
-        }}
-      />
-      <input hidden data-chart type="file" accept=".mmws,.ccmmws,.ucmmws,.json,.sus,.txt,.ss,.usc" @change=${(e: Event) => this.importFile(e)} />
-      <input hidden data-backup type="file" accept=".zip" @change=${(e: Event) => this.importFile(e, true)} />
+      <input hidden data-local-files type="file" multiple accept=${localFileAccept} @change=${this.loadLocalFiles} />
+      <input hidden data-backup type="file" accept=".zip" @change=${this.openBackupFile} />
       ${
         this.conflict
           ? html`
@@ -4571,11 +4606,11 @@ export class ChartCreationWorkspace extends LitElement {
                       <button class="button button--filled" type="button" ?disabled=${this.busy} @click=${() => void this.newProject()}>${icon("add", 20)}${this.t("newProject")}</button>
                       ${this.renderLibraryButton()}
                       <button
-                        class="button button--filled"
+                        class="button button--filled" type="button"
                         ?disabled=${this.busy}
-                        @click=${() => this.pick("[data-audio]")}
+                        @click=${() => this.pick("[data-local-files]")}
                       >
-                        ${icon("library_music")}${this.t("importLocalAudio")}
+                        ${icon("folder_open", 20)}${this.t("loadLocalFiles")}
                       </button>
                     </div>
                   `

@@ -297,6 +297,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       import { installUpdateCheck } from "../lib/update-check";
       import { installAppUpdateNotice } from "../lib/app-update-notice";
       import { installFullscreen } from "../lib/fullscreen";
+      import { installScrollbarHover } from "../lib/scrollbar-hover";
       import { appSupports } from "../lib/app-bridge";
       import { installSpoilerNavigation } from "../lib/spoiler-navigation";
       import { installNavigationPrefetch } from "../lib/navigation-prefetch";
@@ -312,6 +313,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
       installI18nDom();
       installUpdateCheck();
       installFullscreen();
+      installScrollbarHover();
       if (appSupports("saveAutomationV1")) {
         const runSaveImports = () => void import("../lib/app-save-import")
           .then(({ runAppSaveImports }) => runAppSaveImports()).catch(() => {});
@@ -326,8 +328,10 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
         addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}), { once: true });
       const restoreAudioDock = async () => {
         try {
-          const value = JSON.parse(localStorage.getItem("haneoka:audio:v2") || "null");
-          if (!Array.isArray(value?.queue) || !value.queue.length) return;
+          if (!appSupports("audioPlaybackV1")) {
+            const value = JSON.parse(localStorage.getItem("haneoka:audio:v2") || "null");
+            if (!Array.isArray(value?.queue) || !value.queue.length) return;
+          }
           if (!customElements.get("audio-dock")) await import("../lit/runtime/audio-dock");
           if (!document.querySelector("audio-dock")) {
             const dock = document.createElement("audio-dock");

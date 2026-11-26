@@ -1,0 +1,29 @@
+---
+import { staticBuildPaths } from "../../../../../server/static-build";
+import StoryEntityPage from "../../../../../components/entities/StoryEntityPage.astro";
+import { LOCALES, type Locale } from "../../../../../i18n/locales";
+import { staticCatalogPageServers } from "../../../../../lib/entity-graph";
+import { searchableStoryPages, type SearchableStoryPage } from "../../../../../lib/searchable-stories";
+import { resourcePath, type EntityLink } from "../../../../../lib/resource-route";
+import type { ReleaseServer } from "../../../../../lib/release-server";
+
+type Props = { server: ReleaseServer; locale: Locale; page: SearchableStoryPage; previous?: EntityLink; next?: EntityLink };
+export async function getStaticPaths() {
+  const lists = await Promise.all((await staticCatalogPageServers(true)).map(async server => {
+    const groups = Map.groupBy(await searchableStoryPages(server), page => page.mode);
+    return [...groups.values()].flatMap(pages => pages.flatMap((page, index) => LOCALES.map(locale => {
+      const link = (peer: SearchableStoryPage | undefined): EntityLink | undefined => peer && ({
+        href: resourcePath({ server, locale, kind: "stories", id: peer.storyId, view: "story" }),
+        title: peer.titles[locale],
+      });
+      return {
+        params: { server, locale, id: page.storyId },
+        props: { server, locale, page, previous: link(pages[index - 1]), next: link(pages[index + 1]) },
+      };
+    })));
+  }));
+  return staticBuildPaths("src/pages/[server]/[locale]/stories/[id]/story.astro", lists.flat());
+}
+const props = Astro.props as Props;
+---
+<StoryEntityPage {...props} canonical player />

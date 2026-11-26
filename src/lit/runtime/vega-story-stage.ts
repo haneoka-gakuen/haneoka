@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 故事资料、媒体地址、舞台选项与本地画面偏好。
-// Output: 共用 Our Notes 主题与 Three 舞台的 Vega 播放、控制及生命周期适配。
+// Output: 共用 Our Notes 舞台、供应方故事运镜、Vega 播放、控制及生命周期适配。
 // Pos: [Map](L2-2.md)；故事工作区与外部故事引擎的浏览器桥。
 // Effects/Dependencies: 按需加载引擎／资源，创建渲染与媒体状态，清理依赖 dispose／舞台生命周期。
 import { BESTDORI_CATALOG_VERSION } from "@haneoka/bestdori/resources";
@@ -17,7 +17,7 @@ import { story as zhTWRelationships } from "../../../public/i18n/zh-TW.json";
 import { story as zhCNRelationships } from "../../../public/i18n/zh-CN.json";
 import { story as koRelationships } from "../../../public/i18n/ko.json";
 import { CUBISM_CORE_URLS, loadCubismWebRuntime } from "../../lib/cubism-runtime";
-import { fetchJson, uiText } from "../shared/catalog";
+import { fetchJson, JsonResponseError, uiText } from "../shared/catalog";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
 import "@material/web/progress/linear-progress.js";
@@ -33,7 +33,7 @@ import type { VegaProject } from "@haneoka/vega-protocol";
 import { describeSpineModel } from "@haneoka/vega-plugin-spine";
 import { createVegaFullPreset } from "@haneoka/vega-preset-full";
 import type { StoryResolvedText } from "@haneoka/vega/runtime";
-import { iterateAdvCommands } from "@haneoka/vega/renderer-kit";
+import { iterateAdvCommands, type StoryResourceResolver } from "@haneoka/vega/renderer-kit";
 import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
 import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { applyRenderQuality, observeRenderQuality } from "../../lib/render-quality";
@@ -126,6 +126,7 @@ type StoryTransportKey =
 export class VegaStoryStage extends LitElement {
   static properties = {
     story: { attribute: false },
+    initialCommand: { attribute: false },
     communityProject: { attribute: false },
     server: { type: String },
     locale: { type: String },
@@ -144,6 +145,7 @@ export class VegaStoryStage extends LitElement {
     completed: { state: true },
   };
   declare story: RecordValue;
+  declare initialCommand?: number;
   declare communityProject: VegaProject | undefined;
   declare server: string;
   declare locale: string;
@@ -164,6 +166,10 @@ export class VegaStoryStage extends LitElement {
   declare completed: boolean;
   private loadedKey = "";
   private appliedLocale = "";
+  offlineProgress?: { ordinal: number; save(ordinal: number): void };
+  offlineResources?: StoryResourceResolver;
+  offlineLive2d?: readonly RecordValue[];
+
   private engine?: VegaEngine;
   private handle?: VegaPlayerHandle;
   private playerState?: ReturnType<typeof createVegaPlayerState>;
@@ -292,20 +298,26 @@ export class VegaStoryStage extends LitElement {
       const keys = (Array.isArray(assets.live2d) ? (assets.live2d as RecordValue[]) : [])
         .map((entry) => String(entry.live2dKey || ""))
         .filter(Boolean);
+      const loadModel = (key: string) => fetchJson<RecordValue>(url("live2d", key), { signal }).catch((error) => {
+        if (error instanceof JsonResponseError && (error.status === 404 || error.status === 410)) return {};
+        throw error;
+      });
       const [runtime, live2d] = await Promise.all([
         project || providerBase
           ? Promise.resolve(story.runtime || {})
           : fetchJson<RecordValue>(url("story-runtime"), { signal }),
         project
           ? Promise.resolve([])
-          : providerBase
+          : this.offlineLive2d
+            ? Promise.resolve(keys.map((key) => this.offlineLive2d?.find((row) => row.id === key) ?? {}))
+            : providerBase
             ? keys.length
               ? fetchJson<RecordValue>(
                   `${providerBase}/live2d?projection=${encodeURIComponent(BESTDORI_CATALOG_VERSION)}&${keys.map((key) => `id=${encodeURIComponent(key)}`).join("&")}${story.sourceServer ? `&server=${encodeURIComponent(String(story.sourceServer))}` : ""}`,
                   { signal },
                 ).then((payload) => keys.map((key) => (payload.items as RecordValue | undefined)?.[key] || {}))
               : []
-            : Promise.all(keys.map((key) => fetchJson<RecordValue>(url("live2d", key), { signal }))),
+            : Promise.all(keys.map(loadModel)),
       ]);
       if (!active()) return;
       const resolvedRuntime = resolveStoryRuntimeAssets(merge(runtime, story.runtime), server);
@@ -318,16 +330,17 @@ export class VegaStoryStage extends LitElement {
           textureCacheMegabytes: 128,
         });
       }
-      const hydrated = project
-        ? ({ ...story, runtime: resolvedRuntime } as AdvStory)
-        : (hydrateStoryPayload({
-            ...story,
-            assets: {
-              ...assets,
-              live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })),
-            },
-            runtime: resolvedRuntime,
-          }) as AdvStory);
+      const payload = {
+        ...story,
+        assets: { ...assets, live2d: live2d.map((entry, index) => ({ id: keys[index], ...(entry as RecordValue) })) },
+        runtime: resolvedRuntime,
+      };
+      let hydrated = { ...story, runtime: resolvedRuntime } as AdvStory;
+      if (!project && providerBase) {
+        const { compileProviderStory } = await import("@haneoka/altair-plugin-vega-preview/projection");
+        if (!active()) return;
+        hydrated = vegaProjectToAdvStory(compileProviderStory(payload));
+      } else if (!project) hydrated = hydrateStoryPayload(payload) as AdvStory;
       const preparationPlan: Array<{
         index: number;
         category: "Voice" | "Se";
@@ -341,9 +354,9 @@ export class VegaStoryStage extends LitElement {
           }
         }
       }
-      if (hydrated.runtime) {
-        Object.assign(hydrated.runtime, { audio: { ...hydrated.runtime.audio, preparationPlan } });
-      }
+      hydrated.runtime ??= {};
+      hydrated.runtime.allowMissingMedia = true;
+      Object.assign(hydrated.runtime, { audio: { ...hydrated.runtime.audio, preparationPlan } });
       this.phase = "booting";
       this.playerState = createVegaPlayerState();
       this.playerState.paused = true;
@@ -453,6 +466,7 @@ export class VegaStoryStage extends LitElement {
       const player = await engine.createPlayer({
         mount,
         story: hydrated,
+        ...(this.offlineResources ? { resources: this.offlineResources } : {}),
         state: playerState,
         resolveLocalizedText: this.localizedTextResolver(),
         displayNameJoiner: this.speakerNameJoiner(),
@@ -492,7 +506,20 @@ export class VegaStoryStage extends LitElement {
       player.player.setLocale(this.locale, { refresh: true });
       this.appliedLocale = this.locale;
       loadingReporter.finish();
+      if (this.offlineProgress?.ordinal) {
+        const { maximum } = player.player.currentSeekProgress();
+        if (maximum > 0) {
+          const ratio = Math.min(1, this.offlineProgress.ordinal / maximum);
+          await player.player.seekTo(player.player.resolveSeekRatio(ratio), { resume: false }).catch(console.warn);
+          if (!active()) return;
+        }
+      } else if (this.initialCommand !== undefined && this.initialCommand > 0 &&
+        player.player.reachableSeekBoundaries().includes(this.initialCommand)) {
+        await player.player.seekTo(this.initialCommand, { resume: false }).catch(console.warn);
+        if (!active()) return;
+      }
       this.phase = "ready";
+      if (this.offlineProgress) this.dispatchEvent(new Event("vega-offline-ready"));
       if (continuePlayback) this.startPlayback();
       this.completionEmitted = false;
       this.startTransportLoop();
@@ -706,6 +733,7 @@ export class VegaStoryStage extends LitElement {
     cancelAnimationFrame(this.transportFrame);
     let previousPaint = -Infinity;
     let preparedCommand = -1;
+    let savedOrdinal = this.offlineProgress?.ordinal;
     const paint = (time: number) => {
       const handle = this.handle;
       if (!handle) return;
@@ -739,6 +767,10 @@ export class VegaStoryStage extends LitElement {
       if (Boolean(state.finished) !== this.completed) this.completed = Boolean(state.finished);
       if (timeline.maximum !== this.maximum) this.maximum = timeline.maximum;
       if (!this.scrubbing && timeline.ordinal !== this.ordinal) this.ordinal = timeline.ordinal;
+      if (visible && this.started && !this.scrubbing && this.offlineProgress && timeline.ordinal !== savedOrdinal) {
+        this.offlineProgress.save(timeline.ordinal);
+        savedOrdinal = timeline.ordinal;
+      }
       this.transportFrame = requestAnimationFrame(paint);
     };
     this.transportFrame = requestAnimationFrame(paint);

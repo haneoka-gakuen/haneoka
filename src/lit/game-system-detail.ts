@@ -947,18 +947,6 @@ function renderPassMissions(c: Controller, tasks: Item[]) {
   );
 }
 
-function renderEventBands(c: Controller, bands: Item[]) {
-  if (!bands.length) return nothing;
-  return html`
-    <section class="detail-section">
-      ${renderDetailSectionHeading(c.label("bands", "Bands"), "details", { count: bands.length })}
-      <ul class="detail-object-list" role="list">
-        ${bands.map((band) => rewardRow(c, { name: band.name, image: band.logo || band.icon } as Item))}
-      </ul>
-    </section>
-  `;
-}
-
 function eventRewardValue(row: Item): Item {
   const nested = row.reward && typeof row.reward === "object" ? (row.reward as Item) : row;
   return nested && typeof nested === "object" ? nested : {};
@@ -1752,8 +1740,6 @@ export function renderGameSystemDetail(c: Controller, item: Item) {
             ${renderPassLevels(c, (Array.isArray(item.levels) ? item.levels : []) as Item[])}
             ${renderPassMissions(c, (Array.isArray(item.tasks) ? item.tasks : []) as Item[])}
           `;
-    case "real-lives":
-      return renderEventBands(c, (Array.isArray(item.bands) ? item.bands : []) as Item[]);
     default:
       return nothing;
   }

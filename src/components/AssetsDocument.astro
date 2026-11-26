@@ -13,7 +13,7 @@ import "../styles/catalog.css";
 import "../styles/tools.css";
 const { locale, server, path = [], selected = "" } = Astro.props as { locale: Locale; server?: ReleaseServer; path?: string[]; selected?: string };
 const title = t(locale, "navigation.assets", "Assets");
-const canonicalRoute = server ? assetPublicDocumentUrl({ server: server as "jp" | "intl", locale, path, selected: "" }) : undefined;
+const canonicalRoute = server ? assetPublicDocumentUrl({ server: server as "jp" | "intl", locale, path, selected }) : undefined;
 const payload = await assetPageData(server || "intl");
 const view = await assetViewData(server || "intl", locale, path, selected);
 const page = await renderAssets(payload, locale, view);

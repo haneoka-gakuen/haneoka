@@ -65,7 +65,7 @@ const messages = {
   import { appSupports, inApp } from "../../lib/app-bridge";
 
   if (inApp() && !appSupports("saveSourcesV1")) {
-    location.replace(`/${document.documentElement.dataset.locale}/account/?section=games`);
+    location.replace(`/${document.documentElement.dataset.locale}/account/games/`);
   } else {
     void import("../../lit/save-workspace");
   }

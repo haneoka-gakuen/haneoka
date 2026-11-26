@@ -492,7 +492,6 @@
     padding: var(--md-sys-spacing-4) var(--md-sys-spacing-5, 20px);
     overflow: auto;
     overscroll-behavior: contain;
-    scrollbar-width: thin;
   }
   /* Sections of the settings panel read as one sheet divided by rules. */
   .tb-config-body > :is(.surface, .md-accordion, .tb-mode),
@@ -563,7 +562,6 @@
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
-    scrollbar-width: thin;
     padding-inline-end: var(--md-sys-spacing-1);
   }
   /* Pre-rendered markup is the wide layout; keep it hidden where the script switches to the narrow one. */

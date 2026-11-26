@@ -89,6 +89,7 @@ export class RenderQualitySettings extends LitElement {
         <h4>${this.text("title")}</h4>
         ${this.story ? html`
             <md-outlined-select
+              menu-positioning="fixed"
               label=${this.text("frameRateLimit")}
               .value=${String(this.settings.storyFrameRateLimit)}
               @change=${(event: Event) => writeRenderQuality({
@@ -104,6 +105,7 @@ export class RenderQualitySettings extends LitElement {
             </md-outlined-select>
         ` : nothing}
           <md-outlined-select
+            menu-positioning="fixed"
             label=${this.text("resolution")}
             .value=${String(this.settings.factor)}
             @change=${(event: Event) =>

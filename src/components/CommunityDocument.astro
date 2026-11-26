@@ -5,6 +5,7 @@ import { type Locale } from "../i18n/locales";
 import { t } from "../i18n/messages";
 import { playlistPageData, serializedPlaylistPage } from "../server/playlist-page-data";
 import { renderPlaylistHub } from "../server/render-playlist-hub";
+import { playlistPath } from "../lib/playlists/static-routing";
 import { renderPublicForumDirectory } from "../server/render-community";
 import { serializePageData } from "../lib/page-data";
 import { STATIC_DOCUMENT_UNDERLAY_START, STATIC_DOCUMENT_UNDERLAY_END } from "../lib/static-documents";
@@ -12,7 +13,7 @@ import "../lit/community-workspace";
 import "../styles/catalog.css";
 import "../styles/community.css";
 import "../styles/playlists.css";
-const { locale, path, playlist = "", playlistServer = "intl" } = Astro.props as { locale: Locale; path?: string; playlist?: string; playlistServer?: string };
+const { locale, path, playlist = "", playlistServer = "intl", playlistShell = false } = Astro.props as { locale: Locale; path?: string; playlist?: string; playlistServer?: string; playlistShell?: boolean };
 const mode = path || "feeds";
 const route = `/community${path ? `/${path}` : ""}`;
 const modeTitleKeys: Record<string, string> = {
@@ -23,11 +24,11 @@ const modeTitleKeys: Record<string, string> = {
 const titleKey = modeTitleKeys[mode] || "navigation.community";
 const title = t(locale, titleKey, mode === "feeds" ? "Community" : mode);
 const playlistPayload = mode === "playlists" ? await playlistPageData() : undefined;
-const playlistPage = playlistPayload ? await renderPlaylistHub(playlistPayload, locale, playlist, playlistServer) : undefined;
+const playlistPage = playlistPayload && !playlistShell ? await renderPlaylistHub(playlistPayload, locale, playlist, playlistServer) : undefined;
 const forum = mode === "forums" ? await renderPublicForumDirectory(locale) : undefined;
 
 ---
-<Base locale={locale} route={route} title={playlistPage?.selectedTitle || title} titleKey={playlist ? undefined : titleKey} canonicalRoute={playlist ? `/${locale}/community/playlists/?${new URLSearchParams({ playlist })}` : undefined}>
+<Base locale={locale} route={route} title={playlistPage?.selectedTitle || title} titleKey={playlist ? undefined : titleKey} canonicalRoute={playlist ? playlistPath(locale, playlist) : undefined} noindex={playlistShell}>
 <script slot="head-early" is:inline>
   // Start the community bootstrap read while stylesheets and the module graph
   // are still downloading. <community-workspace> adopts it only when it would

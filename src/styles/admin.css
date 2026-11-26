@@ -1135,10 +1135,10 @@
     width: min(100%, 380px);
     min-width: 0;
     align-items: center;
+    gap: 8px;
     margin: 0;
-    padding-inline: 12px 4px;
   }
-  .admin-search input {
+  .admin-search md-outlined-text-field {
     width: 100%;
     min-width: 0;
   }

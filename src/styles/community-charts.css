@@ -1,4 +1,7 @@
 @layer pages {
+  .community-charts:not(.page) {
+    display: block;
+  }
   .community-charts .detail-layout__content {
     overflow-wrap: anywhere;
   }

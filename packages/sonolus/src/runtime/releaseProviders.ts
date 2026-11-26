@@ -2,6 +2,7 @@ import {
   projectCatalogCharts,
   sonolusLevelName,
   type CatalogLocale,
+  type CatalogProjectionOptions,
   type ChartCatalogProvider,
   type ChartCatalogSnapshot,
   type ChartDataPayload,
@@ -171,6 +172,7 @@ export interface ReleaseChartCatalogProviderOptions {
   localeOrder?: readonly CatalogLocale[];
   mediaBaseUrl?: string;
   onInvalidCharts?: (names: readonly string[]) => void;
+  songBackground?: CatalogProjectionOptions["songBackground"];
   readJson: ReleaseJsonReader;
   release: ReleaseChartProvenance;
   revision: string;
@@ -206,6 +208,7 @@ export class ReleaseChartCatalogProvider implements ChartCatalogProvider {
     const release = releaseChartProvenance(this.#options.release);
     const projection = projectCatalogCharts(songs, bands, {
       categoryTitle: sonolusSongCategoryTitle,
+      ...(this.#options.songBackground ? { songBackground: this.#options.songBackground } : {}),
       encodeText: encodeSonolusLocalizedText,
       ...(this.#options.localeOrder ? { localeOrder: this.#options.localeOrder } : {}),
       ...(this.#options.mediaBaseUrl ? { mediaBaseUrl: this.#options.mediaBaseUrl } : {}),

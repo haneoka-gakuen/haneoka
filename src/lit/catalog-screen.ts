@@ -3,6 +3,8 @@
 // Output: 目录筛选、排序、视图、实体详情、激奏边界时机、媒体及关联评论交互。
 // Pos: [Map](L2-2.md)；集合与实体资料的 Lit 协调枢纽。
 // Effects/Dependencies: DOM、事件、HTTP／资源加载和页面状态；部分渲染被构建期 SSR 复用。
+import { dateField } from "./ui/date-field";
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../packages/api-client/src/chart-assets";
 import { communityVisible } from "../lib/site-community";
@@ -36,7 +38,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
-import { cardTile } from "./shared/card-tile";
+import { catalogCardTile } from "./shared/card-tile";
 import { announcementLink } from "./shared/announcement";
 import { announcementPath, parseAnnouncementRoute } from "../lib/announcements";
 import { loadCardAcquisitionSources, readCardAcquisitionCatalogue, type CardAcquisitionSource } from "../lib/card-acquisition";
@@ -82,6 +84,7 @@ import { publicMediaAddress } from "../lib/document-address";
 import { eventArtworkIndex } from "../lib/event-artwork-index";
 import { releaseChartLevelName } from "@haneoka/sonolus";
 import { navigationDocumentUrl, returnLink } from "../lib/document-url";
+import { editorDocumentPath } from "../lib/editor-document-route";
 import { localizedContent, localizedList } from "./ui/localized-content";
 import "../styles/model-tile.css";
 import "../styles/character-voices.css";
@@ -158,9 +161,9 @@ import { CHARACTER_ART } from "../config/character-art";
 import { sonolusServerLink } from "../config/sonolus";
 import { type GridIdentityAdornment } from "./shared/grid-identity";
 import { DENSITY_EVENT, currentDensity, type Density } from "../lib/density";
-import { clearBrowseBar, renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
+import { renderBrowse, filterGroup, collectionSkeleton } from "./ui/browse";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
-import { iconButton, inputChip, segmented } from "./ui/controls";
+import { iconButton, inputChip, numberField, segmented } from "./ui/controls";
 import {
   certainScore,
   eventLiveItems,
@@ -184,6 +187,7 @@ import {
   chartPath,
   rankingPath,
   entityHref,
+  isCharacterDetailSection,
   resourceCollectionHref,
   catalogResourceHref,
   parseEntitySelection,
@@ -640,16 +644,6 @@ const profiles: Record<string, Profile> = {
   // status is a facet, with availability/date sorting and per-resource sections in
   // the detail pane (rewards, rates, goods, levels).
   events: {
-    id: ["id"],
-    title: ["title"],
-    image: ["image"],
-    document: "entries",
-    detail: ["kind", "startAt", "endAt"],
-    presentation: "system",
-    defaultSort: "release",
-    defaultOrder: "desc",
-  },
-  "real-lives": {
     id: ["id"],
     title: ["title"],
     image: ["image"],
@@ -1793,7 +1787,6 @@ export class CatalogScreen extends LitElement {
           songs: "song",
           "song-meta": "song",
           events: "entry",
-          "real-lives": "entry",
           gacha: "entry",
           "login-campaigns": "entry",
           shop: "entry",
@@ -2038,7 +2031,7 @@ export class CatalogScreen extends LitElement {
       }
     }
     this.activeMedia = params.get("media") || "full";
-    this.characterSection = params.get("section") || "profile";
+    this.characterSection = selection?.route.section || "profile";
     if (!this.hasAttribute("data-page-data")) this.ensureSongMeta();
     void this.load().finally(() => this.pageRefresh.check());
   }
@@ -2069,16 +2062,12 @@ export class CatalogScreen extends LitElement {
     this.releaseLocation?.();
     document.removeEventListener("astro:before-preparation", this.captureDocumentState);
     document.removeEventListener("astro:page-load", this.restoreLocationState);
-    clearBrowseBar();
     this.paneFocus.detach();
     this.filterFocus.detach();
     this.disposeMedia.forEach((dispose) => dispose());
     this.disposeMedia = [];
     this.lazyImages.disconnect();
     this.viewportGrid.disconnect();
-    clearAppBarActions(this.entityAppBarOwner);
-    clearAppBarIdentity(this.entityAppBarOwner);
-    clearAppBarSearch(this.entityAppBarOwner);
     window.removeEventListener(DENSITY_EVENT, this.onDensity);
     window.removeEventListener("keydown", this.onKeydown);
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
@@ -2120,27 +2109,23 @@ export class CatalogScreen extends LitElement {
     const item = this.selected;
     if (item && this.detailReady && isContentVisible(this.settings.resource, item, this.itemId(item))) {
       setAppBarIdentity(
+        this,
         this.entityAppBarOwner,
         html`
           ${this.renderDetailLeading(item)}
           ${this.settings.resource === "songs" && this.pageChartState === "pending" ? html`<span class="chip" role="status">${this.label("chartPending", "")}</span>` : nothing}
         `,
-        this,
       );
       setAppBarActions(
+        this,
         this.entityAppBarOwner,
         html`
           ${this.settings.chartPage ? this.renderChartPageActions(item) : this.renderDetailActions(item)}
         `,
-        this,
       );
     } else {
-      if (item && !isContentVisible(this.settings.resource, item, this.itemId(item))) {
-        setAppBarActions(this.entityAppBarOwner, html``);
-        setAppBarIdentity(this.entityAppBarOwner, html``);
-      }
-      clearAppBarActions(this.entityAppBarOwner);
-      clearAppBarIdentity(this.entityAppBarOwner);
+      clearAppBarActions(this, this.entityAppBarOwner);
+      clearAppBarIdentity(this, this.entityAppBarOwner);
     }
   }
   private async navigateEntityBack() {
@@ -2240,7 +2225,7 @@ export class CatalogScreen extends LitElement {
       this.renderEntityChrome();
       return;
     }
-    setAppBarSearch(this.entityAppBarOwner, {
+    setAppBarSearch(this, this.entityAppBarOwner, {
       value: this.query,
       label: this.label("search", "Search"),
       onInput: (value) => {
@@ -2265,12 +2250,11 @@ export class CatalogScreen extends LitElement {
       () => (this.filtersOpen = false),
     );
     if (this.settings.entityContext) {
-      clearBrowseBar();
-      clearAppBarSearch(this.entityAppBarOwner);
+      clearAppBarSearch(this, this.entityAppBarOwner);
       this.syncEntityChrome();
     } else {
-      clearAppBarActions(this.entityAppBarOwner);
-      clearAppBarIdentity(this.entityAppBarOwner);
+      clearAppBarActions(this, this.entityAppBarOwner);
+      clearAppBarIdentity(this, this.entityAppBarOwner);
       this.renderStaticChrome();
     }
     // tile() defers its artwork as `data-src`; this is what promotes it.
@@ -3113,12 +3097,12 @@ export class CatalogScreen extends LitElement {
       ? query.facets.gekisouMatch : this.facets.gekisouMatch?.length ? this.facets.gekisouMatch : ["only"] } };
   }
   private queryTextMatches(item: Item, text: string) {
-    const needle = text.trim().toLocaleLowerCase(this.settings.locale);
+    const needle = normalizeSearchText(text.trim(), this.settings.locale);
     if (!needle) return true;
-    return `${this.profile.presentation === "song" ? JSON.stringify([...this.songPerformer(item).names, ...this.songPerformer(item).portraits.map((p) => p.name), ...this.songPerformer(item).unresolvedNames]) : ""} ${
+    return normalizeSearchText(`${this.profile.presentation === "song" ? JSON.stringify([...this.songPerformer(item).names, ...this.songPerformer(item).portraits.map((p) => p.name), ...this.songPerformer(item).unresolvedNames]) : ""} ${
       typeof item.__haystack === "string" && item.__haystack ? item.__haystack
         : `${this.itemId(item)} ${this.itemTitle(item)} ${this.secondary(item)} ${JSON.stringify(item)}`
-    }`.toLocaleLowerCase(this.settings.locale).includes(needle);
+    }`, this.settings.locale).includes(needle);
   }
   private computeResults() {
     const query = this.currentQuery();
@@ -3488,23 +3472,9 @@ export class CatalogScreen extends LitElement {
         segmented({ label: text(key, fallback), value: String(value), grow: true, options, onSelect: (next) => this.setDeck({ [field]: Number(next) }) }),
       );
     if (this.metaMode === "gekisou") return choice("deckRoom", "Players in room", this.deck.room, players, "room");
-    const number = (value: number, name: string, max: number, step: string, apply: (value: number) => void) => html`
-      <label>
-        ${name}
-        <input
-          type="number"
-          min="0"
-          max=${max}
-          step=${step}
-          inputmode="decimal"
-          .value=${String(Math.round(value * 100) / 100)}
-          @change=${(event: Event) => {
-            const parsed = Number((event.target as HTMLInputElement).value);
-            if (Number.isFinite(parsed) && parsed >= 0 && parsed <= max) apply(parsed);
-          }}
-        />
-      </label>
-    `;
+    const number = (value: number, name: string, max: number, step: string, apply: (value: number) => void) =>
+      numberField({ label: name, value: Math.round(value * 100) / 100, min: 0, max, step: Number(step),
+        commitOnChange: true, onInput: apply });
     const slot = (index: number, change: Partial<DeckSlot>) =>
       this.setDeck({ slots: this.deck.slots.map((entry, at) => (at === index ? { ...entry, ...change } : entry)) });
     return html`
@@ -3606,23 +3576,9 @@ export class CatalogScreen extends LitElement {
     if (!table?.events.length) return nothing;
     const current = this.deckEvent(table);
     const events = [...table.events].sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0));
-    const field = (key: "boosts" | "pointBonus" | "itemBonus", name: string, max: number) => html`
-      <label>
-        ${name}
-        <input
-          type="number"
-          min="0"
-          max=${max}
-          step="1"
-          inputmode="numeric"
-          .value=${String(this.deck[key])}
-          @change=${(event: Event) => {
-            const value = Math.round(Number((event.target as HTMLInputElement).value));
-            if (Number.isFinite(value) && value >= 0 && value <= max) this.setDeck({ [key]: value });
-          }}
-        />
-      </label>
-    `;
+    const field = (key: "boosts" | "pointBonus" | "itemBonus", name: string, max: number) =>
+      numberField({ label: name, value: this.deck[key], min: 0, max, commitOnChange: true,
+        onInput: (value) => this.setDeck({ [key]: Math.round(value) }) });
     return filterGroup(
       text("deckEvent", "Event"),
       html`
@@ -5074,7 +5030,7 @@ export class CatalogScreen extends LitElement {
     this.detailRank = number("rank", this.detailRank);
     this.detailLiveLevel = number("liveLevel", this.detailLiveLevel);
     this.detailGekisouLevel = number("gekisouLevel", this.detailGekisouLevel);
-    this.characterSection = params.get("section") || "profile";
+    this.characterSection = parseResourceRoute(navigationDocumentUrl().pathname)?.section || "profile";
   }
   private persistCardDetailQuery() {
     this.setDetailQueries({
@@ -5463,22 +5419,17 @@ export class CatalogScreen extends LitElement {
             html`
               <div class="filter-range">
                 ${["min", "max"].map(
-                  (bound) => html`
-                    <label>
-                      ${uiText(this.settings.locale, bound === "min" ? "common.fields.minimum" : "common.fields.maximum")}
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        .value=${this.facets[`${bound}${key}`]?.[0] || ""}
-                        @input=${(event: Event) => {
-                          const value = (event.target as HTMLInputElement).value;
-                          this.facets = { ...this.facets, [`${bound}${key}`]: value ? [value] : [] };
-                          this.syncUrl();
-                        }}
-                      />
-                    </label>
-                  `,
+                  (bound) => {
+                    const field = `${bound}${key}`, value = this.facets[field]?.[0];
+                    return numberField({
+                      label: uiText(this.settings.locale, bound === "min" ? "common.fields.minimum" : "common.fields.maximum"),
+                      min: 0, step: "any", nullable: true, value: value ? Number(value) : null,
+                      onInput: (value) => {
+                        this.facets = { ...this.facets, [field]: value === null ? [] : [String(value)] };
+                        this.syncUrl();
+                      },
+                    });
+                  },
                 )}
               </div>
             `,
@@ -5489,20 +5440,14 @@ export class CatalogScreen extends LitElement {
         html`
           <div class="filter-range">
             ${["releaseFrom", "releaseTo"].map(
-              (key, index) => html`
-                <label>
-                  ${uiText(this.settings.locale, index ? "common.fields.maximum" : "common.fields.minimum")}
-                  <input
-                    type="date"
-                    .value=${this.facets[key]?.[0] || ""}
-                    @change=${(event: Event) => {
-                      const value = (event.target as HTMLInputElement).value;
-                      this.facets = { ...this.facets, [key]: value ? [value] : [] };
-                      this.syncUrl();
-                    }}
-                  />
-                </label>
-              `,
+              (key, index) => dateField({
+                label: uiText(this.settings.locale, index ? "common.fields.maximum" : "common.fields.minimum"),
+                value: this.facets[key]?.[0] || "",
+                onChange: (value) => {
+                  this.facets = { ...this.facets, [key]: value ? [value] : [] };
+                  this.syncUrl();
+                },
+              }),
             )}
           </div>
         `,
@@ -5749,13 +5694,11 @@ export class CatalogScreen extends LitElement {
     const attributeLabel = this.fieldValue(item, "cardType");
     const rarityLabel = this.fieldValue(item, "rarity");
     return {
-      ...cardTile({
+      ...catalogCardTile({
         kind,
         title,
         titleLanguage: resolved.locale,
-        subtitle: relation.content,
-        adornment: relation.adornment,
-        label: [title, relation.label, rarityLabel, attributeLabel].filter(Boolean).join(" / "),
+        relation,
         image,
         attributeIcon: attribute,
         attributeLabel,
@@ -5763,7 +5706,6 @@ export class CatalogScreen extends LitElement {
         rarityLabel,
       }),
       imageFallback: image,
-      aspectRatio: kind === "support" ? "16 / 9" : "3 / 4",
       onImageError: this.imageError,
     };
   }
@@ -6391,7 +6333,7 @@ export class CatalogScreen extends LitElement {
       provider: "bestdori", region: this.bestdoriRegion(), songId: String(item.musicId),
       difficulty: difficultyKey(this.chartRow(item), this.detailDifficulty),
     });
-    return `/${this.settings.locale}/chart-editor/create/?${query}`;
+    return editorDocumentPath(this.settings.locale, "chart-editor", query);
   }
   /** Sekai scores are SUS files; the player reads them through the Sekai plugin. */
   private renderChartPlayer(item: Item, chart: Item, label: string) {
@@ -6403,6 +6345,10 @@ export class CatalogScreen extends LitElement {
         offset-ms=${sekai ? Number(item.chartOffsetMs || 0) : 0}
         audio-url=${String(item.musicUrl || "")}
         band-id=${Number(item.bandId || 1)}
+        .performanceSource=${!sekai && this.dataServer() !== "bestdori" && typeof item.musicId === "number"
+          ? { musicId: item.musicId, mvUrl: typeof item.mvUrl === "string" ? item.mvUrl : undefined,
+              bandId: Number(item.bandId || 0) }
+          : undefined}
         .gekisouMissionTypes=${!sekai && item.gekisou && typeof item.gekisou === "object"
           ? (item.gekisou as { missionTypes?: readonly number[] }).missionTypes : undefined}
         .introContent=${{
@@ -6802,8 +6748,15 @@ export class CatalogScreen extends LitElement {
     return this.renderCostList(`cost-${group}`, this.label("required", "Required"), rows, { initial: 1, to: level });
   }
   private setCharacterSection(section: string) {
+    if (!isCharacterDetailSection(section)) return;
+    const url = navigationDocumentUrl();
+    const route = parseResourceRoute(url.pathname);
+    if (route?.kind === "characters" && route.id) {
+      url.searchParams.delete("section");
+      void navigateDetailPage(resourcePath({ ...route, section }) + url.search);
+      return;
+    }
     this.characterSection = section;
-    this.setDetailQuery("section", section);
   }
   private isCommentCataloguePage(item: Item): boolean {
     if (typeof window === "undefined") return false;
@@ -6865,20 +6818,18 @@ export class CatalogScreen extends LitElement {
     let type = resource === "song-meta" ? "songs" : resource;
     let id: string | null;
     if (fields[resource]) id = decimal(item[fields[resource]]);
-    else if (resource === "passes" || resource === "missions" || resource === "real-lives") {
+    else if (resource === "passes" || resource === "missions") {
       const variants: Record<string, [string, string]> = {
         "season-pass": ["passes-season", "season-"],
         "monthly-pass": ["passes-monthly", "monthly-"],
         "regular-mission": ["missions-regular", "regular-mission-"],
         "limited-mission": ["missions-limited", "limited-mission-"],
-        "real-live": ["real-lives", "real-live-"],
       };
       const variant = variants[String(item.kind || "")];
       if (
         !variant ||
         (resource === "passes" && !variant[0].startsWith("passes-")) ||
-        (resource === "missions" && !variant[0].startsWith("missions-")) ||
-        (resource === "real-lives" && variant[0] !== "real-lives")
+        (resource === "missions" && !variant[0].startsWith("missions-"))
       )
         return null;
       type = variant[0];

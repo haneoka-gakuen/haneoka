@@ -1,3 +1,4 @@
+import { offlineProviderCatalog, offlineProviderStory, storyModelIds } from "./offline-story-data";
 import {
   providerFetch,
   providerEdgeCache,
@@ -1077,20 +1078,35 @@ export async function handleSekaiApi(
   if (tail === "bands") return serveJson(request, ctx, async () => unitRecords());
   // The catalogue asks every provider for these; Sekai has neither a cast index nor score metadata.
   if (tail === "characters" || tail === "song-meta") return serveJson(request, ctx, async () => ({}));
-  if (tail === "stories/event") return serveJson(request, ctx, () => storyList(region));
-  if (tail === "stories/unit") return serveJson(request, ctx, () => unitStoryList(region));
-  const others: Record<string, () => Promise<Obj>> = {
-    "stories/character": characterStoryList,
-    "stories/card": cardStoryList,
-    "stories/area": areaTalkList,
-    "stories/special": specialStoryList,
-    "stories/mysekai": mysekaiTalkList,
-    "stories/live": virtualLiveList,
+  const collections: Record<string, () => Promise<Obj>> = {
+    event: () => storyList(region),
+    unit: () => unitStoryList(region),
+    character: characterStoryList,
+    card: cardStoryList,
+    area: areaTalkList,
+    special: specialStoryList,
+    mysekai: mysekaiTalkList,
+    live: virtualLiveList,
   };
-  if (others[tail]) return serveJson(request, ctx, others[tail]);
+  const collection = /^(stories|offline-catalog)\/([a-z]+)$/u.exec(tail);
+  const section = collection?.[2];
+  const project = section && Object.hasOwn(collections, section) ? collections[section] : undefined;
+  if (project) return serveJson(request, ctx, collection?.[1] === "stories" ? project
+    : async () => offlineProviderCatalog(await project()));
   if (tail === "live2d") {
     const ids = [...new Set(url.searchParams.getAll("id"))].filter((id) => /^[\w-]+$/.test(id)).slice(0, 64);
     return serveJson(request, ctx, () => live2dEntries(ids));
+  }
+  const offline = /^offline\/((?:event|unit|character|card|area|special|mysekai|live)\.[\w-]+)$/u.exec(tail);
+  if (offline) {
+    return serveJson(request, ctx, async () => {
+      const id = offline[1]!;
+      const [detail, rows] = await Promise.all([storyDetail(region, id), collections[id.split(".")[0]!]!()]);
+      const { image, ...summary } = (rows[id] || {}) as Obj;
+      const story = { ...summary, thumbnail: summary.thumbnail || image, ...detail };
+      const keys = storyModelIds(story);
+      return offlineProviderStory(story, keys.length ? await live2dEntries(keys) : {});
+    });
   }
   let match: RegExpMatchArray | null;
   if ((match = /^songs\/(\d+)$/.exec(tail))) {

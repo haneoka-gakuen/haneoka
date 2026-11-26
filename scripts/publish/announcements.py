@@ -24,11 +24,10 @@ from build.announcements import (
     merge_announcement_archive,
     package_client_version,
     public_announcement_document,
-    saved_announcement_archive,
 )
 from core.config import ServerConfig, load_server_config
 from core.manifests import read_json, stable_json
-from core.paths import safe_id, server_layout, source_layout
+from core.paths import normalize_release_path, safe_id, server_layout, source_layout
 from ingest.version_api import DiscoveryUnavailable
 from publish.r2 import IMMUTABLE_CACHE, R2Store
 
@@ -111,15 +110,24 @@ def repair_published_announcements(store: R2Store, config: ServerConfig) -> dict
     }
 
 
-def restore_saved_announcements(store: R2Store, config: ServerConfig) -> dict[str, Any]:
-    saved = saved_announcement_archive(config.id)
-    if saved is None:
-        raise ValueError(f"no saved announcement archive for {config.id}")
-    _validate_published_snapshot(saved, config.id)
+def restore_announcement_snapshot(
+    store: R2Store, config: ServerConfig, source_key: str
+) -> dict[str, Any]:
     snapshot_key = f"servers/{config.id}/{OPERATION_PREFIX}/announcements.json"
+    source_key = normalize_release_path(source_key)
+    if source_key == snapshot_key or not source_key.startswith(f"servers/{config.id}/") or not source_key.endswith(".json"):
+        raise ValueError("recovery requires a separate R2 JSON snapshot for the selected server")
+    saved = store.get_json(source_key)
+    if not isinstance(saved, dict):
+        raise ValueError(f"announcement recovery snapshot is missing: {source_key}")
+    _validate_published_snapshot(saved, config.id)
     previous = store.get_json_with_version(snapshot_key)
-    current = previous[0] if previous else saved
-    document = merge_announcement_archive(current, saved)
+    current = previous[0] if previous else None
+    if previous:
+        if not isinstance(current, dict):
+            raise ValueError("invalid current announcement snapshot")
+        _validate_published_snapshot(current, config.id)
+    document = merge_announcement_archive(current, saved) if isinstance(current, dict) else saved
     _validate_published_snapshot(document, config.id)
     store.put_json(
         snapshot_key, document, SNAPSHOT_CACHE,
@@ -131,7 +139,8 @@ def restore_saved_announcements(store: R2Store, config: ServerConfig) -> dict[st
         "server": config.id,
         "available": True,
         "announcements": len(document["announcements"]),
-        "recovered": len(document["announcements"]) - len(previous[0]["announcements"]) if previous else len(document["announcements"]),
+        "recovered": len(document["announcements"]) - len(current["announcements"]) if current is not None else len(document["announcements"]),
+        "sourceKey": source_key,
         "snapshotKey": snapshot_key,
     }
 
@@ -229,8 +238,7 @@ def publish_announcements(
             _validate_published_snapshot(previous, config.id)
         document = merge_announcement_archive(
             public_announcement_document(collection, config.id, base_url),
-            merge_announcement_archive(previous, saved_announcement_archive(config.id))
-            if previous else saved_announcement_archive(config.id),
+            previous,
         )
         if document["available"]:
             _validate_published_snapshot(document, config.id)
@@ -301,8 +309,8 @@ def main() -> int:
     parser.add_argument("--base-url", default=PUBLIC_BASE_URL)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
-        "--restore-archive", action="store_true",
-        help="merge saved historical announcements into R2 without requesting the game API",
+        "--restore-snapshot", metavar="R2_KEY",
+        help="merge an existing R2 JSON snapshot for this server without requesting the game API",
     )
     mode.add_argument(
         "--repair-published", action="store_true",
@@ -314,8 +322,8 @@ def main() -> int:
     )
     args = parser.parse_args()
     config = load_server_config(args.server)
-    if args.restore_archive:
-        result = restore_saved_announcements(R2Store(config, args.concurrency), config)
+    if args.restore_snapshot:
+        result = restore_announcement_snapshot(R2Store(config, args.concurrency), config, args.restore_snapshot)
     elif args.repair_published:
         result = repair_published_announcements(R2Store(config, args.concurrency), config)
     else:

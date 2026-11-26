@@ -6,8 +6,8 @@
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { storyRequest, StoryRequestError } from "../lib/story-creation/community";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { setAppBarSearch } from "../lib/app-bar";
+import { renderBrowse } from "./ui/browse";
 import { collectionList, collectionTable, collectionView, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { segmented } from "./ui/controls";
@@ -111,7 +111,7 @@ export class StoryAssetReviews extends LitElement {
       this.locale = c.locale;
       this.requestUpdate();
     });
-    setAppBarSearch("story-reviews", {
+    setAppBarSearch(this, "story-reviews", {
       value: this.query,
       label: this.t("searchAssets"),
       onInput: (value) => {
@@ -132,8 +132,6 @@ export class StoryAssetReviews extends LitElement {
     this.pauseMedia();
     this.rows = [];
     this.selected = undefined;
-    clearBrowseBar();
-    clearAppBarSearch("story-reviews");
     super.disconnectedCallback();
   }
   protected override updated() {

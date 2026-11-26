@@ -23,7 +23,7 @@ import {
   playerProfileRankingEndpoint,
 } from "../lib/player-profile-route";
 import { emptyState, errorState } from "./ui/state";
-import { clearAppBarActions, clearAppBarSearch, setAppBarActions, setAppBarSearch } from "../lib/app-bar";
+import { setAppBarActions, setAppBarSearch } from "../lib/app-bar";
 import { GAME_RECORDS_REGIONS, defaultGameRecordsRegion, gameAccountRegion } from "./shared/game-records";
 import "../styles/player-profile.css";
 import { signedInHint } from "../lib/community-viewer";
@@ -185,8 +185,6 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
     this.profileRequests.cancel();
     this.resetProfileImage();
     this.lifetime?.abort();
-    clearAppBarActions(this.owner);
-    clearAppBarSearch(this.owner);
     super.disconnectedCallback();
   }
   private currentProfile(signal: AbortSignal, region: GameRecordsRegion, id: string) {
@@ -365,6 +363,7 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
   private syncChrome(staticPage = false) {
     const returnTo = staticPage ? null : playerProfileReturn(navigationDocumentUrl().searchParams.get("return"));
     setAppBarActions(
+      this,
       this.owner,
       html`
         ${
@@ -383,9 +382,8 @@ export class PlayerProfileWorkspace extends GameRecordsCardsElement {
         }
         ${iconButton({ label: clientText(this.locale, "common.actions.refresh", "Refresh"), icon: "refresh", disabled: !this.selectedProfileId || this.profilePhase === "loading", onClick: () => void this.loadProfile(this.selectedProfileId) })}
       `,
-      this,
     );
-    setAppBarSearch(this.owner, {
+    setAppBarSearch(this, this.owner, {
       value: this.profileQuery,
       label: this.label("profileSearch", "Player profile ID"),
       onInput: (value) => {

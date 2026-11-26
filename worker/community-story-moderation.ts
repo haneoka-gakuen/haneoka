@@ -5,6 +5,7 @@
 // Effects/Dependencies: R2、D1、既有审核队列与策略；租约和来源检查保护人工决定。
 import { moderateImageWithAi, moderateTextWithAi, toBase64 } from "./moderation";
 import { parseFragment } from "parse5";
+import { storySubmissionSql } from "./community-publication-review";
 
 const POLICY = "story-resource-v1-content-v2";
 const LEASE = 5 * 60_000;
@@ -24,44 +25,63 @@ interface Check {
   hash: string;
   leaseUntil: number | null;
   nextAttemptAt: number;
+  submitted: number;
 }
 
-export async function scheduleStoryResourceChecks(env: Env, hash?: string): Promise<void> {
+export async function scheduleStoryResourceChecks(env: Env, publication?: { storyId: string; revision: number }): Promise<void> {
   const now = Date.now();
+  const scope = publication ? "AND ra.story_id=? AND ra.revision=?" : "";
+  const submitted = storySubmissionSql(`asset.blob_hash=r.blob_hash ${scope}`);
+  const review = `AND EXISTS (SELECT 1 FROM community_story_resource_review r WHERE r.id=review_id
+    AND ${submitted})`;
+  const scoped = publication ? [publication.storyId, publication.revision] : [];
+  const pendingScope = publication ? "AND story.id=? AND story.publishing_revision=?" : "";
   await env.DB.prepare(
-    `INSERT OR IGNORE INTO community_story_resource_check(review_id,status,next_attempt_at,policy_version,created_at,updated_at)
-    SELECT r.id,'queued',?,?,?,? FROM community_story_resource_review r JOIN community_story_blob b ON b.hash=r.blob_hash
-    WHERE r.status='review' AND r.source='upload' AND b.state='active' ${hash ? "AND b.hash=?" : ""}`,
+    `WITH pending_assets AS MATERIALIZED (
+      SELECT DISTINCT ra.asset_id
+      FROM community_story story
+      CROSS JOIN community_story_revision_asset ra ON ra.story_id=story.id AND ra.revision=story.publishing_revision
+      JOIN community_story_revision revision ON revision.story_id=ra.story_id AND revision.revision=ra.revision
+      WHERE story.publishing_revision IS NOT NULL AND story.deleted_at IS NULL
+        AND revision.deleted_at IS NULL AND ra.is_public=1 ${pendingScope}
+    )
+    INSERT OR IGNORE INTO community_story_resource_check(review_id,status,next_attempt_at,policy_version,created_at,updated_at)
+    SELECT r.id,'queued',?,?,?,? FROM pending_assets
+    JOIN community_story_asset asset ON asset.id=pending_assets.asset_id
+    JOIN community_story_resource_review r ON r.blob_hash=asset.blob_hash
+    JOIN community_story_blob b ON b.hash=r.blob_hash
+    WHERE r.status='review' AND r.source='upload' AND b.state='active'
+      AND NOT EXISTS(SELECT 1 FROM community_story_resource_check c WHERE c.review_id=r.id)`,
   )
-    .bind(now, POLICY, now, now, ...(hash ? [hash] : []))
+    .bind(...scoped, now, POLICY, now, now)
     .run();
   await env.DB.prepare(
     `UPDATE community_story_resource_check SET status='queued',lease_token=NULL,lease_until=NULL,
-    dispatch_token=NULL,dispatched_at=NULL,updated_at=? WHERE status='processing' AND lease_until<?`,
+    dispatch_token=NULL,dispatched_at=NULL,updated_at=? WHERE status='processing' AND lease_until<? ${review}`,
   )
-    .bind(now, now)
+    .bind(now, now, ...scoped)
     .run();
   if (!env.MODERATION_QUEUE) {
     await env.DB.prepare(
-      "UPDATE community_story_resource_check SET status='review',reason_code='queue_unavailable',updated_at=? WHERE status='queued'",
+      `UPDATE community_story_resource_check SET status='review',reason_code='queue_unavailable',updated_at=? WHERE status='queued' ${review}`,
     )
-      .bind(now)
+      .bind(now, ...scoped)
       .run();
     return;
   }
   const jobs = await env.DB.prepare(
     `SELECT review_id AS id FROM community_story_resource_check
-    WHERE status='queued' AND next_attempt_at<=? AND (dispatched_at IS NULL OR dispatched_at<?) ORDER BY next_attempt_at LIMIT 30`,
+    WHERE status='queued' AND next_attempt_at<=? AND (dispatched_at IS NULL OR dispatched_at<?) ${review} ORDER BY next_attempt_at LIMIT 30`,
   )
-    .bind(now, now - LEASE)
+    .bind(now, now - LEASE, ...scoped)
     .all<{ id: string }>();
   for (const job of jobs.results) {
     const token = crypto.randomUUID();
     const claimed = await env.DB.prepare(
       `UPDATE community_story_resource_check SET dispatch_token=?,dispatched_at=?,updated_at=?
-      WHERE review_id=? AND status='queued' AND (dispatched_at IS NULL OR dispatched_at<?)`,
+      WHERE review_id=? AND status='queued' AND (dispatched_at IS NULL OR dispatched_at<?) ${review}`,
     )
-      .bind(token, now, now, job.id, now - LEASE)
+      .bind(token, now, now, job.id, now - LEASE, ...scoped)
       .run();
     if (!claimed.meta.changes) continue;
     try {
@@ -138,7 +158,8 @@ export async function handleStoryResourceCheck(env: Env, message: Message<unknow
   }
   const check = await env.DB.prepare(
     `SELECT c.review_id AS id,c.status,c.attempts,c.lease_until AS leaseUntil,c.next_attempt_at AS nextAttemptAt,
-    r.source,r.status AS reviewStatus,r.media_type AS mediaType,r.file_name AS fileName,b.hash,b.object_key AS objectKey,b.byte_size AS bytes
+    r.source,r.status AS reviewStatus,r.media_type AS mediaType,r.file_name AS fileName,b.hash,b.object_key AS objectKey,b.byte_size AS bytes,
+    ${storySubmissionSql("asset.blob_hash=r.blob_hash")} AS submitted
     FROM community_story_resource_check c JOIN community_story_resource_review r ON r.id=c.review_id JOIN community_story_blob b ON b.hash=r.blob_hash
     WHERE c.review_id=? AND b.state='active'`,
   )
@@ -157,12 +178,19 @@ export async function handleStoryResourceCheck(env: Env, message: Message<unknow
     message.ack();
     return true;
   }
+  if (!check.submitted) {
+    await env.DB.prepare(`UPDATE community_story_resource_check SET dispatch_token=NULL,dispatched_at=NULL
+      WHERE review_id=? AND status='queued' AND dispatched_at IS NOT NULL`).bind(check.id).run();
+    message.ack();
+    return true;
+  }
   const now = Date.now(),
     token = crypto.randomUUID();
   const claim = await env.DB.prepare(
     `UPDATE community_story_resource_check SET status='processing',attempts=attempts+1,
     lease_token=?,lease_until=?,dispatch_token=NULL,dispatched_at=NULL,updated_at=?
-    WHERE review_id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND lease_until<?))`,
+    WHERE review_id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND lease_until<?))
+      AND EXISTS(SELECT 1 FROM community_story_resource_review r WHERE r.id=review_id AND ${storySubmissionSql("asset.blob_hash=r.blob_hash")})`,
   )
     .bind(token, now + LEASE, now, check.id, now, now)
     .run();

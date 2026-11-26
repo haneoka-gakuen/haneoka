@@ -12,7 +12,7 @@ import { createServerI18nContext } from "../i18n/server";
 import { initializeI18nClient } from "../i18n/client";
 import type { Locale } from "../i18n/locales";
 import { html } from "lit";
-import { captureAppBar } from "../lib/app-bar";
+import { appBarOwnerKind as kind, captureAppBar } from "../lib/app-bar";
 import { unpublishedState } from "../lit/ui/unpublished-state";
 import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
@@ -90,7 +90,6 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
     workspace.renderStaticChrome?.();
     return withPrerenderView(false, () => markup(workspace.render()));
   });
-  const kind = (owner: string) => owner.replace(/-\d+$/u, "");
   const { result: publicBody, bar: publicBar } = captureAppBar(locale, () =>
     withPrerenderView(true, () => {
       workspace.renderStaticChrome?.();

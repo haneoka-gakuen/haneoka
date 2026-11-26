@@ -47,6 +47,7 @@ from build.card_videos import build_card_videos
 from build.story_unlocks import enrich_story_unlocks
 from build.story_birthdays import enrich_story_birthdays
 from build.runtime_texture_projection import RuntimeTextureProjection
+from build.live_stage import build_live_stage
 from build.game_systems import build_game_systems
 from build.jp_shop import bind_jp_shop_metadata
 from build.studio import build_studio
@@ -6585,12 +6586,13 @@ def _adv_chat_window_rect(
 
 def _adv_chat_assets(data: BuildData) -> dict[str, Any]:
     chat_root = "Assets/AddressableResources/Adv/Chat"
-    template_data_root = f"{chat_root}/Data/_template/data/ChatLINE"
+    template_data_root = f"{chat_root}/Data/_template/data"
     template_prefab = f"{chat_root}/Prefabs/_template/_template.prefab"
-    template_sprite = f"{chat_root}/Data/_template/data/chatwindow_image.png"
+    template_sprite = f"{template_data_root}/chatwindow_image.png"
+    template_icon = f"{template_data_root}/ChatLINE/ADVChatIconLine_Plus.png"
     if not all(
         source in data.source_path_set
-        for source in (template_prefab, template_sprite, template_data_root + "/ADVChatIconLine_Plus.png")
+        for source in (template_prefab, template_sprite, template_icon)
     ):
         # Pre-launch packages ship no ADV chat template; chatAssets arrive with
         # the CDN-served story bundles after release.
@@ -8829,9 +8831,11 @@ def build_api(
     story_assets = project("story-assets", _story_assets_catalog, data, stories, source_id)
     spine = project("spine", build_spine_catalog, data, source_id)
     anon_tokyo = project("anon-tokyo", build_anon_tokyo_catalog, data, source_id, spine)
+    characters = project("characters", _characters, data)
+    project("live stage", build_live_stage, data, characters, live2d, video_records)
     documents = {
         "bands": project("bands", _bands, data),
-        "characters": project("characters", _characters, data),
+        "characters": characters,
         "cards": project("cards", _cards, data, "MasterMemberCard"),
         "support-cards": project("support-cards", _cards, data, "MasterSupportCard", True),
         "songs": songs,

@@ -436,6 +436,7 @@ export function communityPlaylist(value: RecordValue, complete = false): Playlis
 
 /** Jackets for a cover: the chosen song, else a mosaic of the first four. */
 export function coverImages(playlist: Playlist, library: SongLibrary | null): { single?: string; mosaic: string[] } {
+  if (playlist.id === "official:bgm") return { single: "/images/our-notes-official.png", mosaic: [] };
   if (playlist.cover.kind === "upload" && playlist.cover.url) return { single: playlist.cover.url, mosaic: [] };
   const jacket = (ref: TrackRef | null | undefined) => (ref && library?.byKey.get(refKey(ref))?.jacket) || "";
   if ((playlist.cover.kind === "song" || playlist.cover.kind === "band") && jacket(playlist.cover.song))

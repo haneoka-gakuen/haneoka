@@ -1,18 +1,21 @@
 // L3 — GEB
 // Input: Frozen result teams, native score distributions and current release identity.
-// Output: Reward filters, mistake samples, assumed-placement comparisons and LUCK point distributions.
+// Output: Reward filters, mistake samples, assumed-placement comparisons, LUCK point distributions and score resampling.
 // Pos: [Map](../L2-2.md); on-demand diagnostics reuse the existing engine queue and chart preview.
 // Effects/Dependencies: Bounded identity-scoped caches; opening controls does no scoring; cancellation releases the workspace task.
 import { html, nothing } from "lit";
 import "@material/web/switch/switch.js";
 import type { TeamBuilder } from "../team-builder";
-import type { EngineHit, EngineRequest, TeamEvaluation, TimingWindow } from "../../lib/team-builder/engine/api";
+import type { EngineHit, EngineRequest, SongRef, TeamEvaluation, TimingWindow } from "../../lib/team-builder/engine/api";
 import type { EvaluateRequest, PlaySample, SampleRequest, SectionMetricDistribution } from "../../lib/team-builder/engine/protocol";
-import { luckMass, luckRanges, renderLuckComparison } from "./luck-comparison";
+import { luckMass, luckRanges, luckScoreSummary, renderLuckComparison } from "./luck-comparison";
 import { resultRequest } from "./score-goal";
+import { chartKey } from "./workspace-state";
 import { dataRows } from "../../lib/team-builder/data";
 import { modal } from "../ui/modal";
 import { accordion } from "../ui/accordion";
+import { songList } from "./build-tab";
+import { choiceField } from "./choice-field";
 import { iconButton, segmented, filterChip } from "../ui/controls";
 import { icon } from "../ui/icon";
 import type { ComparisonEntry } from "./result-comparison";
@@ -89,10 +92,13 @@ export function rankRisk(hit: EngineHit, rank: number): number | null {
   return total ? rows.reduce((sum, [value, count]) => sum + (Number(value) < rank ? count : 0), 0) / total : null;
 }
 export class ResultAnalysis {
-  mode: "filters" | "mistakes" | "pressure" | "luckComparison" | null = null;
+  mode: "filters" | "mistakes" | "pressure" | "luckComparison" | "luckDistribution" | null = null;
   targetRank = 7;
   maxRisk = 1;
   onlyHighest = false;
+  private rewardBand: number | null = null;
+  private rewardMinLevel: number | null = null;
+  private rewardMaxLevel: number | null = null;
   count = 1;
   full = false;
   error = false;
@@ -107,6 +113,11 @@ export class ResultAnalysis {
   private luckThresholdAuto = true;
   private luckSubmitted = false;
   private luckSamples = 32;
+  private scoreSongs: SongRef[] = [];
+  private scoreSong: SongRef | null = null;
+  private scoreRanks: [number, number, number] = [1, 1, 1];
+  private scoreSamples: (SectionMetricDistribution | undefined)[] = [];
+  private scoreRecheck: { index: number; row: SectionMetricDistribution }[] = [];
   selected = 0;
   private position = 0;
   private detailed = false;
@@ -175,6 +186,8 @@ export class ResultAnalysis {
     this.samples = [];
     this.pressureRows = [];
     this.luckRows = [];
+    this.scoreSamples = [];
+    this.scoreRecheck = [];
   }
   openMistakes(hit: EngineHit) {
     const input = resultRequest(this.host, hit);
@@ -222,6 +235,155 @@ export class ResultAnalysis {
     this.error = false;
     this.host.requestUpdate();
   }
+  canShowLuckScore(source: Source) {
+    return luckRanges(this.host, source).length > 0;
+  }
+  openLuckScore(hit: EngineHit) {
+    const input = resultRequest(this.host, hit);
+    if (!input) return;
+    const sources = [{ hit, input }];
+    if (input.goal.kind === "gekiso" && hit.song && !hit.pendingScores) {
+      const row = this.host.results?.results.find(row => row.song && chartKey(row.song) === chartKey(hit.song!));
+      const top = row?.hits[0];
+      const identity = (candidate: EngineHit) => JSON.stringify([candidate.members, candidate.snaps]);
+      if (top && identity(top) === identity(hit)) {
+        const seen = new Set([identity(hit)]);
+        for (const candidate of row!.hits.slice(1)) {
+          if (sources.length >= 3 || hit.key - candidate.key > Math.abs(hit.key) * 0.01) break;
+          const key = identity(candidate);
+          if (!candidate.pendingScores && !seen.has(key)) {
+            seen.add(key);
+            sources.push({ hit: candidate, input });
+          }
+        }
+      }
+    }
+    this.openLuckScoreSources(sources);
+  }
+  openLuckScoreSources(sources: Source[]) {
+    const first = sources[0];
+    if (!first || !this.canShowLuckScore(first)) return;
+    const base = evaluateResult(first);
+    const accuracy = base.gekiso!;
+    const songs = base.songs.filter(song => [0, 1, 2].some(range =>
+      (accuracy.arena?.missions[range] || base.songRules?.missions[range] ||
+        this.host.master?.songs.get(song.songId)?.gekisoMissions[range]) === 2));
+    if (!songs.length) return;
+    this.close();
+    this.mode = "luckDistribution";
+    this.sources = structuredClone(sources);
+    this.scoreSongs = songs;
+    this.scoreSong = songs[0]!;
+    this.scoreRanks = accuracy.ranks ?? [accuracy.rank, accuracy.rank, accuracy.rank];
+    this.luckSamples = accuracy.seeds > 0 ? accuracy.seeds : 32;
+    this.error = false;
+    this.host.requestUpdate();
+  }
+  private closestScores() {
+    const ranking = this.scoreSamples.flatMap((row, index) => {
+      const summary = luckScoreSummary(row, this.scoreRanks);
+      return summary ? [{ index, mean: summary.mean }] : [];
+    }).sort((a, b) => b.mean - a.mean || a.index - b.index);
+    const best = ranking[0]?.mean;
+    return best === undefined ? [] : ranking.filter(row => best - row.mean <= Math.abs(best) * 0.01).slice(0, 3);
+  }
+  private async loadScoreDistribution(recheck: boolean, generation: number) {
+    const base = evaluateResult(this.sources[0]!);
+    const indexes = recheck ? this.closestScores().map(row => row.index) : this.sources.map((_, index) => index);
+    const requests = indexes.map(index => ({
+      ...evaluateResult(this.sources[index]!),
+      songRules: base.songRules,
+      songs: [this.scoreSong!],
+      sampleMetric: "score" as const,
+      sampleOffset: recheck ? this.luckSamples : 0,
+      gekiso: {
+        ...base.gekiso!,
+        rank: this.scoreRanks[0],
+        ranks: this.scoreRanks,
+        seeds: this.luckSamples,
+        arena: base.gekiso?.arena ? { ...base.gekiso.arena, objective: "score" as const, opponents: undefined } : undefined,
+      },
+    }));
+    const keys = requests.map(request => JSON.stringify([this.identity, "luck-score", request]));
+    const rows = keys.map(key => this.cache.get(key) as SectionMetricDistribution[] | undefined);
+    const missing = requests.flatMap((request, index) => rows[index] ? [] : [{ request, index }]);
+    this.total = requests.length;
+    if (missing.length) {
+      const fresh = await this.host.engine!.sectionMetricsBatch(missing.map(row => row.request));
+      if (generation !== this.generation) return;
+      missing.forEach((row, index) => {
+        rows[row.index] = fresh[index]!;
+        this.remember(keys[row.index]!, fresh[index]!);
+      });
+    }
+    if (recheck) {
+      this.scoreRecheck = indexes.flatMap((index, position) => rows[position]?.[0] ? [{ index, row: rows[position][0]! }] : []);
+    } else {
+      this.scoreSamples = rows.map(row => row?.[0]);
+      this.scoreRecheck = [];
+    }
+    this.progress = this.total;
+  }
+  private renderLuckScore() {
+    const host = this.host;
+    const number = Intl.NumberFormat(host.locale, { maximumFractionDigits: 0 });
+    const t = (key: string) => this.t(key);
+    const reset = (keepSamples = false) => {
+      this.stop();
+      if (!keepSamples) this.scoreSamples = [];
+      const close = this.closestScores().map(row => row.index);
+      if (!keepSamples || this.scoreRecheck.length !== close.length
+        || this.scoreRecheck.some(({ index, row }) => !row.scoreReplay || !close.includes(index))) {
+        this.scoreRecheck = [];
+      }
+      this.error = false;
+      host.requestUpdate();
+    };
+    const rechecked = this.scoreRecheck.map(({ index, row }) => ({ index, mean: luckScoreSummary(row, this.scoreRanks)!.mean }))
+      .sort((a, b) => b.mean - a.mean || a.index - b.index);
+    const best = this.closestScores()[0]?.index;
+    return html`
+      ${this.scoreSongs.length > 1 ? songList(host, [this.scoreSong!], ([song]) => {
+        if (song) { this.scoreSong = song; reset(); }
+      }, true, undefined, "tb-luck-score-song", this.scoreSongs, { context: "analysis:luck-score", songRules: null, showMissions: true, removable: false }) : nothing}
+      <div class="cluster">
+        ${this.scoreRanks.map((rank, range) => choiceField({
+          type: "select",
+          label: host.t("analysis.distributionRank", "Section {count} placement", { count: range + 1 }),
+          value: String(rank),
+          options: [1, 2, 3, 4, 5].map(value => ({ value: String(value), label: String(value) })),
+          onSelect: value => {
+            this.scoreRanks = this.scoreRanks.map((old, index) => index === range ? Number(value) : old) as [number, number, number];
+            reset(this.scoreSamples.every(row => !!row?.scoreReplay));
+          },
+        }))}
+      </div>
+      <div class="cluster">
+        ${this.runButton()}
+        ${this.closestScores().length >= 2 ? html`<button class="button button--tonal" type="button"
+          ?disabled=${!!this.task || host.running} @click=${() => void this.run(true)}>${t("recheckSamples")}</button>` : nothing}
+        ${rechecked.length > 1 ? html`<span role="status">${t(rechecked[0]!.index === best ? "recheckStable" : "recheckChanged")}</span>` : nothing}
+      </div>
+      ${this.error ? html`<span role="alert">${t("failed")}</span>` : nothing}
+      ${this.scoreSamples.map((row, index) => {
+        const stats = luckScoreSummary(row, this.scoreRanks);
+        if (!stats) return nothing;
+        const second = this.scoreRecheck.find(result => result.index === index);
+        const sample = second && luckScoreSummary(second.row, this.scoreRanks);
+        return html`<article class="card card--outlined stack stack--tight">
+          ${this.sources.length > 1 ? html`<strong>#${index + 1}</strong>` : nothing}
+          <dl class="spec-list tabular">
+            <div><dt>${t("luckMeanScore")}</dt><dd>${number.format(stats.mean)}</dd></div>
+            <div><dt>P10–P90</dt><dd>${number.format(stats.p10)} – ${number.format(stats.p90)}</dd></div>
+            <div><dt>${t("observedRange")}</dt><dd>${number.format(stats.min)} – ${number.format(stats.max)}</dd></div>
+            <div><dt>${t("luckRuns")}</dt><dd>${number.format(row!.samples)}</dd></div>
+            ${sample ? html`<div><dt>${t("recheckMean")}</dt><dd>${number.format(sample.mean)}</dd></div>` : nothing}
+          </dl>
+        </article>`;
+      })}
+    `;
+  }
+
   private openPressureSources(sources: Source[]) {
     this.close();
     this.sources = structuredClone(sources);
@@ -232,6 +394,19 @@ export class ResultAnalysis {
     this.host.requestUpdate();
   }
   filter(rows: EngineHit[]): EngineHit[] {
+    const catalog = this.host.catalog;
+    if (this.host.tab === "pt" && catalog && (this.rewardBand !== null ||
+        this.rewardMinLevel !== null || this.rewardMaxLevel !== null)) {
+      rows = rows.filter(hit => {
+        if (!hit.song) return false;
+        const { songId, difficulty } = hit.song;
+        if (this.rewardBand !== null && !catalog.songBands(songId).includes(this.rewardBand)) return false;
+        const chart = catalog.difficultyRows(songId).find(row => Number(row.difficulty) === difficulty);
+        const level = Number(chart?.displayLevel ?? chart?.playLevel);
+        return (this.rewardMinLevel === null || level >= this.rewardMinLevel)
+          && (this.rewardMaxLevel === null || level <= this.rewardMaxLevel);
+      });
+    }
     if (this.maxRisk === 1 && !this.onlyHighest) return rows;
     const value = (hit: EngineHit) => hit.event?.mean ?? hit.key;
     const maximum = Math.max(...rows.map(value));
@@ -242,7 +417,9 @@ export class ResultAnalysis {
     );
   }
   filters() {
-    const active = Number(this.maxRisk < 1) + Number(this.onlyHighest);
+    const active = Number(this.maxRisk < 1) + Number(this.onlyHighest)
+      + (this.host.tab === "pt" ? Number(this.rewardBand !== null)
+        + Number(this.rewardMinLevel !== null || this.rewardMaxLevel !== null) : 0);
     return html`
       <button
         class=${active ? "button button--tonal" : "button button--text"}
@@ -258,7 +435,7 @@ export class ResultAnalysis {
       </button>
     `;
   }
-  async run() {
+  async run(recheck = false) {
     if (!this.host.engine || this.task) return;
     if (this.mode === "luckComparison") {
       this.luckSubmitted = true;
@@ -321,6 +498,8 @@ export class ResultAnalysis {
             this.progress++;
             this.host.requestUpdate();
           }
+      } else if (this.mode === "luckDistribution") {
+        await this.loadScoreDistribution(recheck, generation);
       } else if (this.mode === "luckComparison") {
         const base = evaluateResult(this.sources[0]!);
         this.total = this.sources.length;
@@ -515,7 +694,30 @@ export class ResultAnalysis {
   }
   private renderFilters() {
     const t = (key: string) => this.t(key);
+    const catalog = this.host.catalog;
+    const level = (label: string, value: number | null, change: (value: number | null) => void) => html`
+      <md-outlined-text-field type="number" min="0" max="100" step=".1" label=${label}
+        .value=${value === null ? "" : String(value)} @change=${(event: Event) => {
+          const raw = (event.target as HTMLInputElement).value;
+          const parsed = Number(raw);
+          if (raw === "" || Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+            change(raw === "" ? null : parsed);
+            this.host.requestUpdate();
+          }
+        }}></md-outlined-text-field>`;
     return html`
+      ${this.host.tab === "pt" && catalog ? html`
+        ${choiceField({
+          type: "select", label: t("rewardBand"),
+          value: this.rewardBand === null ? "" : String(this.rewardBand),
+          options: [{ value: "", label: this.host.t("allBands", "All bands") },
+            ...Object.keys(this.host.data?.bands ?? {}).map(id => ({ value: id, label: catalog.bandName(Number(id)) }))],
+          onSelect: value => { this.rewardBand = value ? Number(value) : null; this.host.requestUpdate(); },
+        })}
+        <div class="cluster">
+          ${level(t("rewardMinLevel"), this.rewardMinLevel, value => { this.rewardMinLevel = value; })}
+          ${level(t("rewardMaxLevel"), this.rewardMaxLevel, value => { this.rewardMaxLevel = value; })}
+        </div>` : nothing}
       ${this.field(t("targetRank"), this.rankControl(true))}
       ${this.field(
         t("maxRisk"),
@@ -804,6 +1006,7 @@ export class ResultAnalysis {
             ? this.renderFilters()
             : this.mode === "mistakes"
               ? this.renderMistakes()
+              : this.mode === "luckDistribution" ? this.renderLuckScore()
               : this.mode === "luckComparison" ? renderLuckComparison(this.host, {
                   sources: this.sources, rows: this.luckRows, range: this.luckRange, threshold: this.luckThreshold,
                   samples: this.luckSamples, action: this.runButton(), error: this.error, submitted: this.luckSubmitted,

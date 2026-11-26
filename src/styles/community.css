@@ -1746,7 +1746,6 @@
       overflow: auto;
       overscroll-behavior: contain;
       padding-inline-end: 8px;
-      scrollbar-width: thin;
     }
     .has-media .community-post-media {
       position: static;
@@ -1813,7 +1812,6 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
     gap: 0;
     border: 0;
     padding: 4px;

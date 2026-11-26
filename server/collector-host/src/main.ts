@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Collector callbacks on loopback, the Worker's authenticated calls, the host's secrets and local data.
-// Output: The regional collectors running outside Cloudflare, their schedules, and their changes replicated to D1.
+// Output: Regional collectors, authenticated staged observations, and rows for the site's D1 projection.
 // Pos: [Map](../../L2.md); entry point of the collector host.
 // Effects/Dependencies: Listens on HOST_PORT; reads and writes DATA_DIR; calls the site's internal endpoints and the local collector.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -149,6 +149,17 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://host");
   try {
     if (url.pathname === "/health") return send(response, 200, { ok: true, outbox: outboxSize(), replicatedAt: lastReplication });
+    if (url.pathname === "/staged-observation" && request.method === "GET") {
+      if (!authorized(request)) return send(response, 401, { error: "unauthorized" });
+      const key = url.searchParams.get("key"), hash = url.searchParams.get("hash");
+      if (!key || !/^official\/2\/(jp|tw|en|kr)\/batches\/[a-f0-9-]{36}\.json$/u.test(key) || !hash || !/^[a-f0-9]{64}$/u.test(hash))
+        return send(response, 400, { error: "invalid_payload" });
+      const row = d1.handle.prepare("SELECT body_json FROM official_observation_payloads WHERE payload_key=? AND payload_hash=?")
+        .get(key, hash) as { body_json: string } | undefined;
+      if (!row) return send(response, 404, { error: "not_found" });
+      response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return response.end(row.body_json);
+    }
     const callback = /^\/api\/internal\/official-rankings\/(jp|tw|en|kr)\/([a-f0-9]{32})$/u.exec(url.pathname);
     if (callback && request.method === "POST") {
       const region = callback[1] as Region;
@@ -188,7 +199,7 @@ async function replicate(): Promise<void> {
       const response = await fetch(new URL("/api/internal/official-host/sync", siteOrigin), {
         method: "POST",
         headers: { Authorization: `Bearer ${hostToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ operations }),
+        body: JSON.stringify({ operations, projection: "host-staging-v1" }),
         signal: AbortSignal.timeout(60_000),
       });
       if (!response.ok) throw new Error(`sync_${response.status}: ${(await response.text()).slice(0, 300)}`);

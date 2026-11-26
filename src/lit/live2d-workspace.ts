@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
@@ -14,7 +15,7 @@ import { collectionList, collectionTable, collectionView, viewSwitch, type Colle
 import { LitElement, html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { catalogUrl, fetchJson, localizedText, preferredLocale, readPath, uiText } from "./shared/catalog";
-import { clearBrowseBar, collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
+import { collectionSkeleton, filterGroup, renderBrowse } from "./ui/browse";
 import { modelTile, modelTitle, modelPreviewSources, subCharacterLabel } from "./ui/model-tile";
 
 import { EXPANDED, matches, watchMedia } from "./ui/media";
@@ -467,7 +468,6 @@ export class Live2DWorkspace extends LitElement {
       window.clearTimeout(this.initializationTimer);
       this.initializationTimer = undefined;
     }
-    clearBrowseBar();
     this.lazyImages.disconnect();
     this.disposeMedia?.();
     this.paneFocus.detach();
@@ -1278,7 +1278,7 @@ export class Live2DWorkspace extends LitElement {
     return items.filter((item) => item.count > 0);
   }
   private filteredModels() {
-    const needle = this.query.trim().normalize("NFKC").toLowerCase();
+    const needle = normalizeSearchText(this.query.trim());
     const direction = this.order === "asc" ? 1 : -1;
     let collator = modelCollators.get(this.locale);
     if (!collator) modelCollators.set(this.locale, collator = new Intl.Collator(this.locale, { numeric: true }));
@@ -1297,10 +1297,7 @@ export class Live2DWorkspace extends LitElement {
         if (this.typeFilter && String(model.modelType || "") !== this.typeFilter) return false;
         return (
           !needle ||
-          `${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${String(model.characterKey || "")} ${this.bandName(model)}`
-            .normalize("NFKC")
-            .toLowerCase()
-            .includes(needle)
+          normalizeSearchText(`${this.key(model)} ${this.modelTitle(model)} ${this.characterName(model)} ${String(model.characterKey || "")} ${this.bandName(model)}`).includes(needle)
         );
       })
       .sort((left, right) => {
@@ -1316,10 +1313,7 @@ export class Live2DWorkspace extends LitElement {
   }
   updated() {
     if (this.entityId && this.detail && isContentVisible("live2d", this.detail, this.entityId))
-      updateEntityHeading(
-        this,
-        [...new Set([this.characterName(this.detail), this.modelTitle(this.detail)].filter(Boolean))].join(" / "),
-      );
+      updateEntityHeading(this, this.modelTitle(this.detail));
     this.removeSsrStageWhenOwned();
     // Collection details are modal panes; canonical entity routes are ordinary
     // page flow and must leave focus in the shell/document.
@@ -1480,7 +1474,6 @@ export class Live2DWorkspace extends LitElement {
   private renderCatalogWorkspace() {
     const models = this.filteredModels();
     if (this.entityId || this.selected) {
-      clearBrowseBar();
       return this.renderModelDetail();
     }
     const types = [...new Set(this.models.map((model) => String(model.modelType || "")).filter(Boolean))];

@@ -3,6 +3,8 @@
 // Output: Chart/playlist/story review records and version-checked soft removal.
 // Pos: [Map](L2.md); administration of community creations.
 // Effects/Dependencies: D1 only; caller owns authoritative access and operation reservation.
+import { searchGlob } from "../src/lib/search-text";
+
 export type CreationKind = "charts" | "playlists" | "stories";
 type Row = Record<string, string | number | null>;
 export const creationTable = (kind: CreationKind) => kind === "charts" ? "community_chart" : kind === "stories" ? "community_story" : "community_playlist";
@@ -18,8 +20,8 @@ export async function listAdminCreations(env: Env, kind: CreationKind, options: 
   if (options.id) { conditions.push("c.id = ?"); values.push(options.id); }
   if (options.status !== "all") { conditions.push(`${state} = ?`); values.push(options.status); }
   if (options.query) {
-    conditions.push(`(${title} LIKE ? ESCAPE '\\' OR ${body} LIKE ? ESCAPE '\\' OR c.id = ?${versioned ? " OR r.title LIKE ? ESCAPE '\\' OR r.summary LIKE ? ESCAPE '\\'" : ""})`);
-    const pattern = `%${options.query.replace(/[\\%_]/gu, "\\$&")}%`;
+    conditions.push(`(LOWER(${title}) GLOB ? OR LOWER(${body}) GLOB ? OR c.id = ?${versioned ? " OR LOWER(r.title) GLOB ? OR LOWER(r.summary) GLOB ?" : ""})`);
+    const pattern = searchGlob(options.query);
     values.push(pattern, pattern, options.query);
     if (versioned) values.push(pattern, pattern);
   }

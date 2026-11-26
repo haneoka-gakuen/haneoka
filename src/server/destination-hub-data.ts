@@ -63,7 +63,6 @@ const resources: Record<HubId, CrossCatalogResource[]> = {
     "stickers",
     "items",
     "band-items",
-    "real-lives",
     "missions",
     "passes",
     "shop",
@@ -220,7 +219,6 @@ async function loadMedia(id: HubId, server: ReleaseServer, locale: Locale): Prom
   for (const kind of [
     "items",
     "band-items",
-    "real-lives",
     "stickers",
     "missions",
     "passes",

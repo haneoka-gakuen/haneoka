@@ -52,6 +52,8 @@ import {
 import { SONOLUS_ITEM_VERSIONS } from "./itemVersions";
 import { buildLevelMetas, type BandRow, type LevelMeta, type MusicRow, type ScoreRow, type TextRow } from "./levelMeta";
 import { resolveSonolusReleaseWorkspace } from "./releaseWorkspace";
+import { levelWithSoloModes, projectSoloModeParameters } from "../runtime/soloModeLevelData";
+import { sonolusClientVersion } from "../protocol";
 
 // Repo root: the server is run from the repo root (cwd), or set OUR_NOTES_ROOT.
 const engineRoot =
@@ -233,6 +235,9 @@ function bgmPath(cueName: string | undefined): string | null {
 
 function main() {
   const music = master("MasterLiveMusic");
+  const missionsBySong = new Map(music.map(row => [
+    row._id, [row._gekisouMission1, row._gekisouMission2, row._gekisouMission3],
+  ]));
   const scores = master("MasterLiveMusicScore");
   const texts = master("MasterText");
   const bands = master("MasterBand");
@@ -460,7 +465,11 @@ function main() {
     let data: Srl;
     try {
       const chart = convertChart(readFileSync(cp, "utf8"));
-      const levelData = chartToLevelData(chart);
+      const parameters = projectSoloModeParameters(
+        { gekisou: { missionTypes: missionsBySong.get(meta.musicId) } },
+        { playLevel: meta.rating },
+      );
+      const levelData = levelWithSoloModes(chartToLevelData(chart), chart, parameters);
       data = s.add(gzipSync(Buffer.from(JSON.stringify(levelData))));
     } catch (error) {
       skipped++;
@@ -620,6 +629,15 @@ function main() {
     s.engine.items,
   ]);
   const app = express();
+  // The pinned Express SDK sets its own version before sending Sonolus JSON.
+  const sendJson = app.response.json;
+  app.response.json = function (this: express.Response, body?: unknown) {
+    if (this.hasHeader("Sonolus-Version")) {
+      this.set("Sonolus-Version", sonolusClientVersion(this.req.get("User-Agent")));
+      this.vary("User-Agent");
+    }
+    return sendJson.call(this, body);
+  };
   app.use((request, response, next) => {
     const hash = /^\/sonolus\/repository\/([a-f0-9]{40})$/u.exec(request.path)?.[1];
     if ((request.method === "GET" || request.method === "HEAD") && hash && imageHashes.has(hash))

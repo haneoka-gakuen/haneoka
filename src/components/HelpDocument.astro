@@ -17,7 +17,7 @@ const payload = await workspaceCollectionData("help", server || "intl", locale);
 const page = await renderHelpView(payload, locale, view);
 const dataId = "help-collection-" + payload.server + "-" + locale;
 ---
-<Base locale={locale} route="/catalog/help" canonicalRoute={server ? resourcePath({ server, locale, kind: "help" }) : undefined} title={title} titleKey="navigation.help">
+<Base locale={locale} route="/catalog/help" canonicalRoute={server ? resourcePath({ server, locale, kind: "help", id: view?.mode === "tips" ? "tips" : view?.topic }) : undefined} title={title} titleKey="navigation.help">
   <AppShell locale={locale} route="/catalog/help" title={title} titleKey="navigation.help" server={server} appBar={page.appBar}>
     <script is:inline type="application/json" id={dataId} set:html={serializePageData(page.payload)}></script>
     <help-workspace locale={locale} data-page-data={dataId} data-prerendered set:html={page.body}></help-workspace>

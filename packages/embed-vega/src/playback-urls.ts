@@ -13,6 +13,10 @@ const mediaTypes: Record<string, string> = {
   webm: "audio/webm",
 };
 
+function audioExtension(url: string): string | undefined {
+  return /\.([a-z0-9]+)$/iu.exec(new URL(url).pathname)?.[1]?.toLowerCase();
+}
+
 /** Materialize playback URLs through the bounded host transport. */
 export function createPlaybackUrls(loader: EmbedLoader<AdvStory>, signal: AbortSignal, timeoutMs: number) {
   const pending = new Map<string, Promise<string>>();
@@ -37,18 +41,20 @@ export function createPlaybackUrls(loader: EmbedLoader<AdvStory>, signal: AbortS
     keyed = (async () => {
       signal.throwIfAborted();
       const source = await sourceFor(key);
-      if (!/^https?:\/\//iu.test(source)) return source;
+      if (!/^(?:https?:\/\/|blob:)/iu.test(source)) return source;
       let result = pending.get(source);
       if (!result) {
         result = (async () => {
-          const bytes = await loader.resourceBytes(source, {
+          const file = await loader.resourceBlob(source, {
             signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
           });
           signal.throwIfAborted();
-          const extension = /\.([a-z0-9]+)$/iu.exec(new URL(source).pathname)?.[1]?.toLowerCase();
-          const blob = new Blob([new Uint8Array(bytes).buffer], {
-            type: mediaTypes[extension ?? ""] ?? "application/octet-stream",
-          });
+          const type = file.type.split(";", 1)[0];
+          const extension =
+            (type === "audio/x-wav" ? "wav" : undefined) ??
+            Object.keys(mediaTypes).find((key) => mediaTypes[key] === type) ??
+            audioExtension(source);
+          const blob = file.type ? file : new Blob([file], { type: mediaTypes[extension ?? ""] ?? "" });
           const url = URL.createObjectURL(blob);
           owned.add(url);
           // Howler selects its decoder from the canonical playback URL suffix.
@@ -65,10 +71,10 @@ export function createPlaybackUrls(loader: EmbedLoader<AdvStory>, signal: AbortS
     resolve,
     async reference(key: string): Promise<string> {
       const source = await sourceFor(key);
-      if (!/^https?:\/\//iu.test(source)) return source;
+      const extension = audioExtension(source);
+      if (!/^https?:\/\//iu.test(source) || !extension) return resolve(key);
       let value = references.get(source);
       if (!value) {
-        const extension = /\.([a-z0-9]+)$/iu.exec(new URL(source).pathname)?.[1]?.toLowerCase() ?? "bin";
         value = `embed-playback://${namespace}/${references.size}.${extension}`;
         references.set(source, value);
         referenceKeys.set(value, key);

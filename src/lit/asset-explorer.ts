@@ -1,6 +1,8 @@
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { contentRequestUrl } from "../lib/content-request";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink } from "../lib/document-url";
+import { assetBrowserLocation, assetPublicDocumentUrl } from "../lib/asset-static-routing";
+import { isPublicReleaseServer } from "../lib/temporary-public-routing";
 import { RequestScope } from "../lib/request-scope";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -10,7 +12,8 @@ import { emptyState, errorState, loadingState } from "./ui/state";
 import { catalogUrl, fetchJson, currentReleaseServer, preferredLocale, uiText } from "./shared/catalog";
 import { localizedFallbacks } from "../lib/localized-text";
 import { localeFromPath } from "../i18n/locales";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity, setAppBarSearch } from "../lib/app-bar";
+import { normalizeLocale } from "@haneoka/i18n";
+import { appBarElement, clearAppBarIdentity, setAppBarActions, setAppBarIdentity, setAppBarSearch } from "../lib/app-bar";
 import { viewSwitch, type CollectionView } from "./ui/collection-view";
 import { icon } from "./ui/icon";
 import { assetItem, assetKindText, assetKindIcon } from "./ui/asset-item";
@@ -102,6 +105,7 @@ export class AssetExplorer extends LitElement {
   }
   private syncActions() {
     setAppBarActions(
+      this,
       "asset-explorer",
       viewSwitch(preferredLocale(), this.view, (view) => {
         this.view = view;
@@ -124,6 +128,7 @@ export class AssetExplorer extends LitElement {
   private syncIdentity() {
     if (this.path.length || this.selected)
       setAppBarIdentity(
+        this,
         "asset-explorer",
         html`
           <div class="browse__crumbs">
@@ -146,9 +151,8 @@ export class AssetExplorer extends LitElement {
             }
           </div>
         `,
-        this,
       );
-    else clearAppBarIdentity("asset-explorer");
+    else clearAppBarIdentity(this, "asset-explorer");
   }
   /** After hydration, so the prerendered list stays the first paint's match. */
   firstUpdated() {
@@ -165,7 +169,7 @@ export class AssetExplorer extends LitElement {
   updated() {
     this.syncIdentity();
     requestAnimationFrame(() => {
-      const crumbs = document.querySelector<HTMLElement>(".top-app-bar .browse__crumbs");
+      const crumbs = appBarElement(this)?.querySelector<HTMLElement>(".browse__crumbs");
       if (crumbs) crumbs.scrollLeft = crumbs.scrollWidth;
     });
   }
@@ -232,15 +236,16 @@ export class AssetExplorer extends LitElement {
     void import("@material/web/progress/circular-progress.js");
     const documentUrl = navigationDocumentUrl();
     const params = documentUrl.searchParams;
+    const assetDocument = assetBrowserLocation(documentUrl);
     const routePath = documentUrl.pathname.replace(
       /^\/(?:(?:jp|intl|jp-cbt|intl-cbt)\/(?:ja|en|zh-TW|zh-CN|ko)\/assets|(?:ja|en|zh-TW|zh-CN|ko)\/catalog\/assets)\/?/u,
       "",
     );
-    const path = (routePath || params.get("path") || "")
+    const path = assetDocument?.path ?? (routePath || params.get("path") || "")
       .split("/")
       .filter(Boolean)
       .map((part) => decodeURIComponent(part));
-    const selected = params.get("file") || "";
+    const selected = assetDocument?.selected ?? params.get("file") ?? "";
     const prepared = !!view && JSON.stringify(view.path) === JSON.stringify(path) && view.selected === selected;
     const query = params.get("q") || "";
     if (prepared && page) {
@@ -264,7 +269,7 @@ export class AssetExplorer extends LitElement {
     }
   }
   private syncSearch() {
-    this.releaseSearch = setAppBarSearch("asset-explorer", {
+    this.releaseSearch = setAppBarSearch(this, "asset-explorer", {
       value: this.query,
       label: uiText(preferredLocale(), "common.actions.search"),
       onInput: (value) => {
@@ -277,8 +282,6 @@ export class AssetExplorer extends LitElement {
     removeEventListener("haneoka:locale-ready", this.onLocale);
     this.previewRequest.cancel();
     this.releaseSearch?.();
-    clearAppBarIdentity("asset-explorer");
-    clearAppBarActions("asset-explorer");
     super.disconnectedCallback();
   }
   private siblingNames(): string[] {
@@ -332,10 +335,13 @@ export class AssetExplorer extends LitElement {
     const spoiler = navigationDocumentUrl().searchParams.get("spoiler");
     if (spoiler !== null) params.set("spoiler", spoiler);
     if (this.query.trim()) params.set("q", this.query.trim());
-    if (this.selected) params.set("file", this.selected);
-    const locale = localeFromPath(location.pathname) || preferredLocale();
-    const pathname = `/${this.server()}/${locale}/assets/${this.path.map(encodeURIComponent).join("/")}${this.path.length ? "/" : ""}`;
-    history.replaceState(history.state, "", `${pathname}${params.size ? `?${params}` : ""}`);
+    const locale = localeFromPath(location.pathname) || normalizeLocale(preferredLocale());
+    const server = this.server();
+    const pathname = isPublicReleaseServer(server)
+      ? assetPublicDocumentUrl({ server, locale, path: this.path, selected: this.selected })
+      : `/${server}/${locale}/assets/${this.path.map(encodeURIComponent).join("/")}${this.path.length ? "/" : ""}`;
+    if (this.selected && !isPublicReleaseServer(server)) params.set("file", this.selected);
+    history.replaceState(history.state, "", returnLink(`${pathname}${params.size ? `?${params}` : ""}`));
   }
   private async choose(parts: string[]) {
     this.previewRequest.cancel();
@@ -441,6 +447,8 @@ export class AssetExplorer extends LitElement {
         `
       : nothing;
     if (typeof node === "number") {
+      const server = this.server();
+      const locale = normalizeLocale(preferredLocale());
       return html`
         ${back}
         ${this.files.map((file) => {
@@ -448,6 +456,7 @@ export class AssetExplorer extends LitElement {
           const image = this.view !== "table" && this.kind(file) === "image" ? this.assetPath(file) : "";
           return assetItem({
             name, image, icon: this.fileIcon(file), selected: this.selected === file,
+            href: isPublicReleaseServer(server) ? returnLink(assetPublicDocumentUrl({ server, locale, path: this.path, selected: file })) : undefined,
             meta: assetKindText(this.kind(file), preferredLocale()),
             onOpen: () => this.select(file),
           });

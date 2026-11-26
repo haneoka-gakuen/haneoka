@@ -1,0 +1,64 @@
+---
+import Base from "../layouts/Base.astro";
+import AppShell from "./AppShell.astro";
+import type { Locale } from "../i18n/locales";
+import { t } from "../i18n/messages";
+
+interface Entry {
+  sha: string;
+  subject: string;
+  date: string;
+}
+
+interface Props {
+  locale: Locale;
+  entries: Entry[];
+}
+
+const { locale, entries } = Astro.props;
+const route = "/changelog";
+const titleKey = "navigation.changelog";
+const title = t(locale, titleKey, "Changelog");
+const dayFormat = new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" });
+
+const groups = new Map<string, Entry[]>();
+for (const entry of entries) {
+  const day = new Date(entry.date).toISOString().slice(0, 10);
+  const group = groups.get(day);
+  if (group) group.push(entry);
+  else groups.set(day, [entry]);
+}
+---
+
+<Base locale={locale} route={route} title={title} titleKey={titleKey}>
+  <AppShell locale={locale} route={route} title={title} titleKey={titleKey}>
+    <div class="page stack">
+      {
+        groups.size === 0 ? (
+          <p>{t(locale, "legal.changelog.empty", "No commits available")}</p>
+        ) : (
+          [...groups].map(([day, commits]) => (
+            <section class="surface stack" aria-labelledby={`changelog-${day}`}>
+              <h2 class="detail-section-title" id={`changelog-${day}`}>
+                <time datetime={day}>{dayFormat.format(new Date(`${day}T00:00:00Z`))}</time>
+              </h2>
+              <ol class="detail-object-list">
+                {commits.map((commit) => (
+                  <li class="stack">
+                    <a class="detail-object" href={`https://github.com/haneoka-gakuen/haneoka/commit/${commit.sha}`} title={commit.subject}>
+                      <span class="truncate">{commit.subject}</span>
+                      <code class="shrink-0">{commit.sha.slice(0, 7)}</code>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))
+        )
+      }
+      <a class="button button--text" href="https://github.com/haneoka-gakuen/haneoka/commits/main/">
+        {t(locale, "legal.changelog.source", "All commits on GitHub")}
+      </a>
+    </div>
+  </AppShell>
+</Base>

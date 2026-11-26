@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 社区故事素材上传、既有附件、D1 和 R2。
-// Output: 账户素材授权、不可变内容池和有界流上传。
+// Output: 账户素材授权、不可变内容池和按素材或故事修订补偿的审核状态。
 // Pos: [Map](L2.md)；故事素材持久化与审核状态所有者。
 // Effects/Dependencies: 写 D1／R2；附件限定故事范围，音频／SVG 按哈希审核；生命周期回收由社区故事协调。
 import { STORY_LIMITS, type StoryAssetReceipt } from "../src/lib/story-creation/types";
@@ -33,7 +33,7 @@ export const storyAssetReceipt = (row: StoryAssetRow): StoryAssetReceipt => ({
   state:
     row.state === "rejected" || row.moderation === "block"
       ? "rejected"
-      : row.state === "ready" && row.blobState === "active" && row.moderation === "allow"
+      : row.state === "ready" && row.blobState === "active"
         ? "ready"
         : "processing",
 });
@@ -394,10 +394,6 @@ export async function putStoryAsset(env: Env, row: StoryAssetRow, request: Reque
       row.id,
     ),
   ]);
-  if (svg || audioType) {
-    const { scheduleStoryResourceChecks } = await import("./community-story-moderation");
-    await scheduleStoryResourceChecks(env, row.hash);
-  }
   return storyAssetReceipt((await storyAsset(env, row.id, row.ownerId))!);
 }
 
@@ -419,9 +415,10 @@ async function ensureStoryResourceReview(env: Env, asset: StoryAssetRow, name: s
       now,
     ),
     env.DB.prepare(
-      `UPDATE community_story_blob SET moderation_status=(SELECT status FROM community_story_resource_review WHERE blob_hash=?),updated_at=?
-      WHERE hash=? AND moderation_status<>'block'`,
-    ).bind(asset.hash, now, asset.hash),
+      `UPDATE community_story_blob AS blob SET moderation_status=review.status,updated_at=?
+      FROM community_story_resource_review review
+      WHERE blob.hash=? AND review.blob_hash=blob.hash AND blob.moderation_status NOT IN ('block',review.status)`,
+    ).bind(now, asset.hash),
   ]);
 }
 
@@ -558,25 +555,44 @@ function audioOnlyContainer(bytes: Uint8Array, format: "mp4" | "webm" | "ogg"): 
   }
   return audio > 0;
 }
-export async function reconcileStoryAssets(env: Env, id?: string): Promise<void> {
-  const assetState = `CASE WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.id=attachment_id
-      AND a.deleted_at IS NULL AND a.status='ready' AND a.moderation_status='allow') THEN 'ready'
-      WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.id=attachment_id AND a.deleted_at IS NULL AND a.status NOT IN ('rejected','deleted') AND a.moderation_status NOT IN ('block')) THEN 'processing'
+export async function reconcileStoryAssets(
+  env: Env,
+  scope?: string | { storyId: string; revision: number },
+): Promise<void> {
+  const assetScope = typeof scope === "string" ? "AND a.id=?" : scope
+    ? `AND a.id IN (SELECT asset_id FROM community_story_revision_asset WHERE story_id=? AND revision=? AND is_public=1)`
+    : "";
+  const bindings = typeof scope === "string" ? [scope] : scope ? [scope.storyId, scope.revision] : [];
+  const scopedHashes = scope ? `SELECT a.blob_hash FROM community_story_asset a WHERE 1=1 ${assetScope}
+    AND EXISTS(SELECT 1 FROM community_story_asset linked WHERE linked.blob_hash=a.blob_hash AND linked.attachment_id IS NOT NULL)`
+    : `SELECT blob_hash FROM community_story_asset WHERE attachment_id IS NOT NULL`;
+  const assetState = `CASE WHEN EXISTS(SELECT 1 FROM community_attachment attachment WHERE attachment.id=a.attachment_id
+      AND attachment.deleted_at IS NULL AND attachment.status='ready' AND attachment.moderation_status='allow') THEN 'ready'
+      WHEN EXISTS(SELECT 1 FROM community_attachment attachment WHERE attachment.id=a.attachment_id
+        AND attachment.deleted_at IS NULL AND attachment.status NOT IN ('rejected','deleted') AND attachment.moderation_status<>'block') THEN 'processing'
       ELSE 'rejected' END`;
   const moderation = `CASE
       WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.sha256=community_story_blob.hash AND a.moderation_status='block' AND a.deleted_at IS NULL) THEN 'block'
-      WHEN EXISTS(SELECT 1 FROM community_attachment a JOIN community_moderation_case c ON c.entity_id=a.id AND c.entity_kind='attachment'
-        WHERE a.sha256=community_story_blob.hash AND a.moderation_status='allow' AND a.deleted_at IS NULL AND c.status='allow' AND c.source IN ('manual','appeal')) THEN 'allow'
+      WHEN EXISTS(SELECT 1 FROM community_attachment a
+        WHERE a.sha256=community_story_blob.hash AND a.moderation_status='allow' AND a.deleted_at IS NULL
+        AND EXISTS(SELECT 1 FROM community_moderation_case c WHERE c.entity_kind='attachment' AND c.entity_id=a.id
+          AND c.status='allow' AND c.source IN ('manual','appeal'))) THEN 'allow'
       WHEN moderation_status='block' THEN 'block'
       WHEN EXISTS(SELECT 1 FROM community_attachment a WHERE a.sha256=community_story_blob.hash AND a.moderation_status<>'allow' AND a.deleted_at IS NULL) THEN 'review'
       ELSE 'allow' END`;
   await env.DB.batch([
     env.DB.prepare(
-      `UPDATE community_story_asset SET state=${assetState} WHERE attachment_id IS NOT NULL AND state<>(${assetState}) ${id ? "AND id=?" : ""}`,
-    ).bind(...(id ? [id] : [])),
+      `UPDATE community_story_asset AS a SET state=${assetState} WHERE attachment_id IS NOT NULL ${assetScope}
+        AND state<>(${assetState})`,
+    ).bind(...bindings),
     env.DB.prepare(
-      `UPDATE community_story_blob SET moderation_status=${moderation} WHERE moderation_status<>(${moderation}) AND EXISTS(SELECT 1 FROM community_story_asset a WHERE a.blob_hash=community_story_blob.hash AND a.attachment_id IS NOT NULL) ${id ? "AND hash=(SELECT blob_hash FROM community_story_asset WHERE id=?)" : ""}`,
-    ).bind(...(id ? [id] : [])),
+      `WITH desired AS MATERIALIZED (
+        SELECT hash,${moderation} AS status FROM community_story_blob
+        WHERE hash IN (${scopedHashes})
+      )
+      UPDATE community_story_blob SET moderation_status=desired.status FROM desired
+      WHERE community_story_blob.hash=desired.hash AND moderation_status<>desired.status`,
+    ).bind(...bindings),
   ]);
 }
 

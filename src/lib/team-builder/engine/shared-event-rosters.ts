@@ -228,6 +228,8 @@ export async function proveSharedEventRosters(
   data: TeamBuilderData,
   request: EngineRequest,
   floor: RewardFraction,
+  seedHits: readonly EngineHit[],
+  chartProofs: ReadonlyMap<string, EngineHit>,
   workerCount: number,
   runBatch: PartitionBatch,
   stopped: () => boolean,
@@ -271,23 +273,46 @@ export async function proveSharedEventRosters(
   };
   const subrequest: EngineRequest = { ...request, k: 1, aggregation: undefined, completed: undefined, seeds: undefined };
   // Score has no event bonus. Removing that condition only enlarges the score cap search.
-  const scoreRows = await native(songs.map(song => ({
+  const bestScore = new Map<string, number>();
+  for (const hit of seedHits) {
+    for (const chart of hit.aggregate?.songs ?? []) {
+      if (!chart.song || !chart.score || chart.score.orders.length !== orders || !Number.isFinite(chart.score.max)) continue;
+      const key = chartKey(chart.song);
+      bestScore.set(key, Math.max(bestScore.get(key) ?? 0, chart.score.max));
+    }
+  }
+  const rootWitnesses = songs.map(song => {
+    const hit = chartProofs.get(chartKey(song));
+    if (!hit || !contains(request.constraints, hit) ||
+        Math.round((hit.event?.bonusPercent ?? NaN) * 100) !== model.rosterBonus(hit.members)) return undefined;
+    const points = pointSum(hit);
+    return points === null ? undefined : { hit, points };
+  });
+  // Reuse the scout's exact chart reward. For the remaining charts, a
+  // replay at the maximum payout rank already makes the score cap final.
+  const maximumPoints = songs.map((_, index) => model.basePoints(index, Infinity));
+  const safeProduct = (points: number) => BigInt(points) * BigInt(model.rate) * BigInt(10_000 + overallBonus) <= BigInt(intMax);
+  const basePoints = songs.map((song, index) => rootWitnesses[index]
+    ? maximumPoints[index]!
+    : model.basePoints(index, bestScore.get(chartKey(song)) ?? 0));
+  const needsScore = songs.flatMap((song, index) => safeProduct(basePoints[index]!) &&
+    (rootWitnesses[index] || basePoints[index] === maximumPoints[index])
+    ? [] : [{ song, index }]);
+  const scoreRows = await native(needsScore.map(({ song }) => ({
     ...subrequest, constraints: { ...request.constraints, minBonusPercent: null },
     goal: { kind: "score", songs: [song], criterion: "max", challengeEventId: null, play: goal.play },
   })));
   if (stopped()) return null;
-  const basePoints: number[] = [];
-  for (const [index, song] of songs.entries()) {
-    const row = completedRow(scoreRows[index], song);
+  for (const [query, { song, index }] of needsScore.entries()) {
+    const row = completedRow(scoreRows[query], song);
     const score = row?.hits[0]?.score;
     if (!score || !Number.isFinite(score.max) || score.orders.length !== orders) return null;
-    const points = model.basePoints(index, score.max);
-    if (BigInt(points) * BigInt(model.rate) * BigInt(10_000 + overallBonus) > BigInt(intMax)) return null;
-    basePoints.push(points);
+    basePoints[index] = model.basePoints(index, score.max);
   }
+  if (!basePoints.every(safeProduct)) return null;
 
   const cap = (chart: number, bonus: number) => Math.floor(basePoints[chart]! * model.rate * (10_000 + bonus) / 10_000) * orders;
-  const atBonus = (bonus: number) => sum(basePoints.map((_, index) => cap(index, bonus)));
+  const atBonus = (bonus: number) => sum(basePoints.map((_, index) => Math.min(rootWitnesses[index]?.points ?? Infinity, cap(index, bonus))));
   let minBonus = Math.max(0, Math.floor((request.constraints.minBonusPercent ?? 0) * 100 + 0.5));
   let high = overallBonus;
   const maximum = atBonus(high);
@@ -305,12 +330,12 @@ export async function proveSharedEventRosters(
   const enqueue = (constraints: ConstraintInput, parent?: Domain): boolean => {
     const bonus = model.domainBonus(constraints, forcedMembers(constraints));
     if (bonus === null || bonus < minBonus) return true;
-    const bounds = songs.map((_, index) => Math.min(parent?.bounds[index] ?? Infinity, cap(index, bonus)));
+    const bounds = songs.map((_, index) => Math.min(parent?.bounds[index] ?? rootWitnesses[index]?.points ?? Infinity, cap(index, bonus)));
     const total = sum(bounds);
     if (total < threshold) return true;
     const witnesses = songs.map((_, index) => {
-      const witness = parent?.witnesses[index];
-      return witness && contains(constraints, witness.hit) ? witness : undefined;
+      const witness = parent ? parent.witnesses[index] : rootWitnesses[index];
+      return witness && model.rosterBonus(witness.hit.members) >= minBonus && contains(constraints, witness.hit) ? witness : undefined;
     });
     if (witnesses.some((witness, index) => witness && witness.points !== bounds[index])) return false;
     pending.push({ constraints, bounds, total, witnesses, queries: 0 });

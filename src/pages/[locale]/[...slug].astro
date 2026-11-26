@@ -3,6 +3,8 @@ import { staticBuildPaths } from "../../server/static-build";
 import RouteDocument from "../../components/RouteDocument.astro";
 import SongSlidePuzzleDocument from "../../components/SongSlidePuzzleDocument.astro";
 import StampMakerDocument from "../../components/StampMakerDocument.astro";
+import CommitHistoryDocument from "../../components/CommitHistoryDocument.astro";
+import { repositoryCommits } from "../../server/repository-commits";
 import { ROUTES, titleOf, type RouteDefinition } from "../../config/routes";
 import { LOCALES, type Locale } from "../../i18n/locales";
 import { resourceCollectionHref } from "../../lib/resource-route";
@@ -36,6 +38,8 @@ if (entry.staticRedirect) return Astro.redirect(`/${locale}${entry.staticRedirec
   <SongSlidePuzzleDocument locale={locale} />
 ) : entry.kind === "stamp-maker" ? (
   <StampMakerDocument locale={locale} />
+) : entry.kind === "changelog" ? (
+  <CommitHistoryDocument locale={locale} entries={repositoryCommits()} />
 ) : (
   <RouteDocument locale={locale} entry={entry} title={title} />
 )}

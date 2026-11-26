@@ -96,6 +96,8 @@ export class AccountWorkspace extends LitElement {
     apiTokenValue: { state: true },
     apiTokenRevoking: { state: true },
     apiTokenEvents: { state: true },
+    sonolusLink: { state: true },
+    sonolusLinkUrl: { state: true },
     avatarFile: { state: true },
     avatarPreview: { state: true },
     appealOpen: { state: true },
@@ -123,6 +125,8 @@ export class AccountWorkspace extends LitElement {
   declare apiTokenValue: string;
   declare apiTokenRevoking: Value | null;
   declare apiTokenEvents: Value[];
+  declare sonolusLink: Value;
+  declare sonolusLinkUrl: string;
   declare busy: boolean;
   declare message: string;
   declare error: string;
@@ -156,6 +160,8 @@ export class AccountWorkspace extends LitElement {
     this.mode = "signIn";
     this.section = "profile";
     this.apiTokens = [];
+    this.sonolusLink = {};
+    this.sonolusLinkUrl = "";
     this.apiTokenValue = "";
     this.apiTokenRevoking = null;
     this.apiTokenEvents = [];
@@ -182,7 +188,7 @@ export class AccountWorkspace extends LitElement {
       import("@material/web/textfield/outlined-text-field.js"),
     ]);
     const query = new URLSearchParams(location.search);
-    if (query.get("section") === "games") this.section = "games";
+    if (/\/account\/games\/?$/u.test(location.pathname) || query.get("section") === "games") this.section = "games";
     if (query.get("verified") === "1") this.message = this.label("verified", "Verified");
     if (query.get("deleted") === "1") this.message = this.label("accountDeleted", "Account deleted.");
     if (query.get("linked") === "1") this.message = this.label("accountLinked", "Account linked.");
@@ -279,6 +285,8 @@ export class AccountWorkspace extends LitElement {
     this.message = "";
   }
   private clearSession() {
+    this.sonolusLink = {};
+    this.sonolusLinkUrl = "";
     this.loadRequests.cancel();
     this.profileRequests.cancel();
     this.securityRequests.cancel();
@@ -441,17 +449,19 @@ export class AccountWorkspace extends LitElement {
     const userId = this.user()?.id;
     const init: RequestInit = { signal: ownSignal };
     const optional = (url: string) => this.request(url, init).catch((): Value => ({}));
-    const [sessions, accounts, games, relationships, apiTokens] = await Promise.all([
+    const [sessions, accounts, games, relationships, apiTokens, sonolusLink] = await Promise.all([
       speculative?.sessions ?? this.request("/api/auth/list-sessions", init),
       speculative?.accounts ?? this.request("/api/auth/list-accounts", init),
       optional("/api/v1/account/game-accounts"),
       optional("/api/v1/community/me/relationships"),
       this.request("/api/v1/account/api-tokens", { ...init, headers: this.ownerHeaders() }).catch((): Value => ({})),
+      optional("/api/v1/account/sonolus-link"),
     ]);
     if (!this.isConnected || !this.securityRequests.current(ownSignal) || userId !== this.user()?.id) return;
     this.games = Array.isArray(games.accounts) ? (games.accounts as Value[]) : [];
     this.apiTokens = Array.isArray(apiTokens.tokens) ? (apiTokens.tokens as Value[]) : [];
     this.apiTokenEvents = Array.isArray(apiTokens.events) ? (apiTokens.events as Value[]) : [];
+    this.sonolusLink = sonolusLink;
     this.relationships = Array.isArray(relationships.relationships) ? (relationships.relationships as Value[]) : [];
     this.sessions = Array.isArray(sessions)
       ? (sessions as unknown as Value[])
@@ -1792,12 +1802,58 @@ export class AccountWorkspace extends LitElement {
     `;
   }
 
+  private async updateSonolusLink(method: "POST" | "GET" | "PUT" | "DELETE") {
+    const endpoint = "/api/v1/account/sonolus-link";
+    const headers = new Headers(this.ownerHeaders());
+    if (method === "PUT") {
+      const version = this.sonolusLink.pendingVersion;
+      if (typeof version !== "string") return;
+      headers.set("X-Haneoka-Sonolus-Challenge", version);
+    }
+    const result = await this.action(() => this.request(endpoint, { method, headers }));
+    if (!result) return;
+    if (method === "POST") {
+      this.sonolusLinkUrl = typeof result.url === "string" && result.url.startsWith("sonolus://external-login/") ? result.url : "";
+    } else if (method === "GET") {
+      this.sonolusLink = result;
+    } else {
+      this.sonolusLinkUrl = "";
+      await this.loadSecurity();
+    }
+  }
+
+  private renderSonolusLink() {
+    const linked = this.sonolusLink.linkedName;
+    const pending = this.sonolusLink.pendingName;
+    return html`
+      <article class="surface account-block">
+        ${this.heading(icon("link", 18), "Sonolus")}
+        ${typeof linked === "string"
+          ? html`<div class="account-setting-row">
+              <strong>${linked}</strong>
+              <button class="button button--text" ?disabled=${this.busy} @click=${() => this.updateSonolusLink("DELETE")}>${this.label("unlink", "Unlink")}</button>
+            </div>`
+          : html`<div class="cluster">
+              ${typeof pending === "string"
+                ? html`<strong>${pending}</strong>
+                    <button class="button" ?disabled=${this.busy} @click=${() => this.updateSonolusLink("PUT")}>${this.label("confirmSonolusLink", "Confirm link")}</button>`
+                : this.sonolusLinkUrl
+                  ? html`<a class="button" href=${this.sonolusLinkUrl}>${this.label("openSonolusLink", "Open Sonolus")}</a>
+                      <button class="button button--text" ?disabled=${this.busy} @click=${() => this.updateSonolusLink("GET")}>${this.label("checkSonolusLink", "Check link")}</button>
+                      <button class="button button--text" ?disabled=${this.busy} @click=${() => this.updateSonolusLink("POST")}>${this.label("linkSonolus", "Link Sonolus")}</button>`
+                  : html`<button class="button" ?disabled=${this.busy} @click=${() => this.updateSonolusLink("POST")}>${this.label("linkSonolus", "Link Sonolus")}</button>`}
+            </div>`}
+      </article>
+    `;
+  }
+
   private renderSecurity() {
     const user = this.user() || {};
     const providers = Array.isArray(this.config.providers) ? this.config.providers.map(String) : [];
     const linked = new Set(this.accounts.map((account) => String(account.providerId)));
     return html`
       <section class="account-section">
+        ${user.emailVerified ? this.renderSonolusLink() : nothing}
         <article class="surface account-block">
           ${this.heading(icon("alternate_email", 18), this.label("emailSettings", "Email address"))}
           <div class="account-setting-row">

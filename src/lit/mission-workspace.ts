@@ -9,8 +9,9 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { navigationDocumentUrl } from "../lib/document-url";
+import { missionGroupFromPath } from "../lib/static-view-routing";
 import {
   groupMissions,
   missionCategory,
@@ -18,7 +19,7 @@ import {
   type Mission,
   type MissionGroup,
 } from "../lib/mission-groups";
-import { syncEntityNavigation, updateEntityHeading } from "../lib/detail-navigation";
+import { navigateDetailPage, syncEntityNavigation, updateEntityHeading } from "../lib/detail-navigation";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
 import {
   catalogResourceHref,
@@ -168,14 +169,15 @@ export class MissionWorkspace extends LitElement {
     this.locale = preferredLocale(this.locale);
     const url = new URL(navigationDocumentUrl());
     const route = parseResourceRoute(url.pathname);
+    const group = missionGroupFromPath(url.pathname);
     this.entityId = route?.kind === "missions" ? route.id || "" : "";
-    this.server = route?.kind === "missions" ? route.server : (currentReleaseServer() as ReleaseServer);
+    this.server = group?.server ?? (route?.kind === "missions" ? route.server : currentReleaseServer() as ReleaseServer);
     addEventListener("haneoka:locale-ready", this.localeListener);
     void import("@material/web/progress/circular-progress.js");
     const params = url.searchParams;
     this.mode =
       params.get("mode") === "regular" || params.get("mode") === "limited" ? (params.get("mode") as Mode) : "all";
-    this.groupKey = params.get("group") || "";
+    this.groupKey = group?.group || "";
     addEventListener("popstate", this.popState);
     this.clock = setInterval(() => {
       this.now = Date.now();
@@ -185,10 +187,9 @@ export class MissionWorkspace extends LitElement {
   }
   private popState = () => {
     const params = new URLSearchParams(location.search);
-    this.groupKey = params.get("group") || "";
+    this.groupKey = missionGroupFromPath(location.pathname)?.group || "";
     this.mode =
       params.get("mode") === "regular" || params.get("mode") === "limited" ? (params.get("mode") as Mode) : "all";
-    if (!this.groupKey) this.openedInPlace = false;
   };
   disconnectedCallback() {
     removeEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
@@ -196,8 +197,6 @@ export class MissionWorkspace extends LitElement {
     this.request?.abort();
     this.request = undefined;
     this.loading?.cancel();
-    clearAppBarActions("missions");
-    clearAppBarIdentity("missions");
     this.restoreGroupShell();
     removeEventListener("popstate", this.popState);
     removeEventListener("haneoka:locale-ready", this.localeListener);
@@ -280,9 +279,7 @@ export class MissionWorkspace extends LitElement {
         this.groupMenu = { menu, leading, group: container };
       }
     }
-    const url = new URL(navigationDocumentUrl());
-    url.searchParams.delete("group");
-    this.groupBack.href = `${url.pathname}${url.search}`;
+    this.groupBack.href = this.groupHref();
     this.groupBack.dataset.entityFallbackHref = this.groupBack.href;
     this.groupBack.setAttribute("aria-label", uiText(this.locale, "common.actions.back"));
   }
@@ -369,8 +366,6 @@ export class MissionWorkspace extends LitElement {
     const params = new URLSearchParams(location.search);
     params.delete("mode");
     if (this.mode !== "all") params.set("mode", this.mode);
-    params.delete("group");
-    if (this.groupKey) params.set("group", this.groupKey);
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
   }
   private categoryLabel(category: number) {
@@ -418,32 +413,17 @@ export class MissionWorkspace extends LitElement {
   private openGroup(event: MouseEvent, key: string) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    this.groupKey = key;
-    this.openedInPlace = true;
-    const params = new URLSearchParams(location.search);
-    params.set("group", key);
-    history.pushState(history.state, "", `${location.pathname}?${params}`);
-    this.closest<HTMLElement>("#main-content")?.scrollTo({ top: 0 });
+    void navigateDetailPage(this.groupHref(key));
   }
-  /** True while the open group was pushed from the overview, so Back can simply pop it. */
-  private openedInPlace = false;
   private closeGroup() {
-    if (this.openedInPlace) {
-      this.openedInPlace = false;
-      history.back();
-      return;
-    }
-    this.groupKey = "";
-    this.sync();
+    void navigateDetailPage(this.groupHref(), "replace");
   }
-  private groupHref(key: string) {
+  private groupHref(key?: string) {
     const url = this.isConnected ? navigationDocumentUrl() : undefined;
     const params = new URLSearchParams(url?.search);
-    params.set("group", key);
-    const pathname = this.isConnected
-      ? url!.pathname
-      : resourcePath({ server: this.server, locale: this.locale as Locale, kind: "missions" });
-    return `${pathname}?${params}`;
+    params.delete("group");
+    const root = resourcePath({ server: this.server, locale: this.locale as Locale, kind: "missions" });
+    return root + (key ? `groups/${encodeURIComponent(key)}/` : "") + (params.size ? `?${params}` : "");
   }
   private groupCard(group: MissionGroup) {
     const totals = this.rewardTotals(group.rows);
@@ -662,7 +642,7 @@ export class MissionWorkspace extends LitElement {
     const mission = this.entityId ? this.missions[0] : undefined;
     const group = mission ? groupMissions([mission], this.locale)[0] : selected;
     const count = selected ? selected.rows.length : groups.reduce((total, value) => total + value.rows.length, 0);
-    setAppBarIdentity("missions", html`
+    setAppBarIdentity(this, "missions", html`
       <div class="browse__crumbs">
         ${!mission ? html`
           <span class="chip chip--static tabular" role="status">
@@ -675,8 +655,8 @@ export class MissionWorkspace extends LitElement {
         ` : nothing}
       </div>
     `);
-    if (mission || selected) clearAppBarActions("missions");
-    else setAppBarActions("missions", this.modeFilter());
+    if (mission || selected) clearAppBarActions(this, "missions");
+    else setAppBarActions(this, "missions", this.modeFilter());
   }
 
   render() {

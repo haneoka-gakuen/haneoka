@@ -22,11 +22,10 @@ on:
         description: Package source whose version should be sent to the bootstrap API
         type: string
         required: false
-      restore_archive:
-        description: Restore saved historical announcements without requesting the game API
-        type: boolean
+      restore_snapshot_key:
+        description: R2 key of a recovery snapshot for the selected server
+        type: string
         required: false
-        default: false
   workflow_call:
     inputs:
       source_repository:
@@ -52,10 +51,9 @@ on:
         type: boolean
         required: false
         default: false
-      restore_archive:
-        type: boolean
+      restore_snapshot_key:
+        type: string
         required: false
-        default: false
     secrets:
       RESOURCE_PIPELINE_CONFIG:
         required: true
@@ -89,6 +87,7 @@ jobs:
       RESOURCE_PIPELINE_CONFIG: ${{ secrets.RESOURCE_PIPELINE_CONFIG }}
       RESOURCE_SERVER: ${{ inputs.server }}
       SOURCE_ID: ${{ inputs.source_id }}
+      RESTORE_SNAPSHOT_KEY: ${{ inputs.restore_snapshot_key }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.cloudflare_account_id || secrets.CLOUDFLARE_ACCOUNT_ID }}
       AWS_ACCESS_KEY_ID: ${{ secrets.r2_access_key_id || secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.r2_secret_access_key || secrets.R2_SECRET_ACCESS_KEY }}
@@ -112,7 +111,7 @@ jobs:
           python -m core.server_policy --server "$RESOURCE_SERVER" --audience "$audience"
       - uses: ./.github/actions/setup-resource-pipeline
       - name: Start resource API egress
-        if: ${{ !inputs.restore_archive && (inputs.api_egress || startsWith(inputs.server, 'jp')) && (env.RESOURCE_API_EGRESS_SUBSCRIPTION != '' || env.JP_VERSION_SUBSCRIPTION != '') }}
+        if: ${{ !inputs.restore_snapshot_key && (inputs.api_egress || startsWith(inputs.server, 'jp')) && (env.RESOURCE_API_EGRESS_SUBSCRIPTION != '' || env.JP_VERSION_SUBSCRIPTION != '') }}
         uses: ./.github/actions/setup-jp-api-egress
         with:
           subscription_url: ${{ env.RESOURCE_API_EGRESS_SUBSCRIPTION || env.JP_VERSION_SUBSCRIPTION }}
@@ -120,7 +119,7 @@ jobs:
           regional_fallback: ${{ inputs.server == 'jp' }}
       - name: Refresh announcement snapshot
         run: |
-          if [[ "${{ inputs.restore_archive }}" != "true" && "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then
+          if [[ -z "$RESTORE_SNAPSHOT_KEY" && "$(python -m core.config --server "$RESOURCE_SERVER" --field has-announcements)" != "true" ]]; then
             echo "No announcement endpoint is configured for $RESOURCE_SERVER"
             exit 0
           fi
@@ -128,8 +127,8 @@ jobs:
           if [[ -n "$SOURCE_ID" ]]; then
             args+=(--source "$SOURCE_ID")
           fi
-          if [[ "${{ inputs.restore_archive }}" == "true" ]]; then
-            args+=(--restore-archive)
+          if [[ -n "$RESTORE_SNAPSHOT_KEY" ]]; then
+            args+=(--restore-snapshot "$RESTORE_SNAPSHOT_KEY")
           elif [[ "${{ inputs.repair_published }}" == "true" ]]; then
             args+=(--repair-published)
           fi

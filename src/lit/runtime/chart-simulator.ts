@@ -5,6 +5,9 @@
 // Effects/Dependencies: 公开舞台／按需乐队开场清单、Cassiopeia、媒体、WebGL 和音频；缓冲／定位时停绘并随媒体恢复，背景采用当前图集纯白 Sprite 近似，切源与离开取消装载并释放运行资源。
 import { PreparedResource } from "@haneoka/cassiopeia-host-web";
 import { LitElement, html, nothing } from "lit";
+import type { MdOutlinedSelect } from "@material/web/select/outlined-select.js";
+import "@material/web/switch/switch.js";
+import type { MdSwitch } from "@material/web/switch/switch.js";
 import {
   HANEOKA_CHART_ASSETS_PROJECTION,
   type HaneokaChartAssets,
@@ -92,6 +95,7 @@ import {
 } from "./chart-overview-renderer";
 import { PlaybackControlsController } from "../ui/playback-controls";
 import { ViewportFullscreenController } from "./viewport-fullscreen";
+import type { ChartPerformance, ChartPerformanceLayer } from "./chart-live-stage";
 import {
   chartImageFileName,
   renderChartOverviewPng,
@@ -100,6 +104,7 @@ import {
   type ChartOverviewExportMeta,
 } from "./chart-image-export";
 import { loadingIndicator } from "../ui/loading-indicator";
+import { dismissSnackbar, snackbar } from "../../lib/snackbar";
 import {
   applyRenderQuality,
   observeRenderQuality,
@@ -140,9 +145,15 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 type RuntimeOutput = HaneokaChartAssetOutput;
 type RuntimeDescriptor = HaneokaChartAssetSource;
 type StageBackground = "auto" | "none" | "0" | "1" | "2" | "3" | "4" | "5";
+const stageIntroCameraPath = unityStringHash("TimelineBrainVirtualCamera/vcam");
 type NumericRenderSetting =
   "noteSpeed" | "noteSize" | "longAlpha" | "guideAlpha" | "guidelineOpacity" | "laneOpacity" | "backgroundBrightness";
 type ChartUiKey =
+  | "performance"
+  | "performanceLightweight"
+  | "performanceMv"
+  | "performanceLive2d"
+  | "performanceUnavailable"
   | "liveMode"
   | "normalLive"
   | "gekisouLive"
@@ -162,6 +173,11 @@ type ChartUiKey =
   | "noteSkin"
   | "noteEffectSkin"
   | "liveQuality"
+  | "lightweightMode"
+  | "gekisouEffectMode"
+  | "gekisouEffectOff"
+  | "gekisouEffectLight"
+  | "gekisouEffectStandard"
   | "noteSe"
   | "noteSeLoading"
   | "noteSeError"
@@ -240,9 +256,11 @@ export class ChartSimulator extends LitElement {
     bandId: { type: Number, attribute: "band-id" },
     introCharacterId: { type: Number, attribute: "intro-character-id" },
     introContent: { attribute: false },
+    performanceSource: { attribute: false },
     gekisouMissionTypes: { attribute: false },
     liveMode: { type: String, attribute: "live-mode" },
     gekisouEffectMode: { type: Number, attribute: "gekisou-effect-mode" },
+    lightweightMode: { type: Boolean, attribute: "lightweight-mode" },
     label: { type: String },
     server: { type: String },
     locale: { type: String },
@@ -262,6 +280,8 @@ export class ChartSimulator extends LitElement {
     noteSoundSwapTarget: { state: true },
     noteSoundStatus: { state: true },
     stageBackground: { state: true },
+    performance: { state: true },
+    performanceStatus: { state: true },
     playbackRate: { state: true },
     volume: { state: true },
     transportCollapsed: { state: true },
@@ -278,9 +298,16 @@ export class ChartSimulator extends LitElement {
   /** Explicit live-start Leader identity supplied by the owning page/session. */
   declare introCharacterId?: number;
   declare introContent?: TitleIntroductionContent;
+  declare performanceSource?: { musicId: number; mvUrl?: string; bandId: number };
+  declare performance: ChartPerformance;
+  declare performanceStatus: "loading" | "error" | undefined;
+  private performanceStage?: ChartPerformanceLayer;
+  private performanceLoad?: AbortController;
+  private performanceNotice?: number;
   declare gekisouMissionTypes?: readonly number[];
   declare liveMode: "normal" | "gekisou";
   declare gekisouEffectMode?: OurNotesGekisouEffectMode;
+  declare lightweightMode: boolean;
   private gekisouPlan?: OurNotesGekisouPlan;
   private gekisouStage?: OurNotesGekisouStageProjector;
   private gekisouStageSource?: OurNotesGekisouEffectProfile;
@@ -456,12 +483,14 @@ export class ChartSimulator extends LitElement {
     this.playerSettings = { ...DEFAULT_RENDER_SETTINGS };
     this.noteSkin = "skin001";
     this.noteEffectSkin = "effect001";
-    // Native High quality: full effect001 prefabs and a 1.0 effect-camera scale.
-    this.liveQuality = 0;
+    // MasterOptionDefault sets LiveQuality to the middle preset.
+    this.liveQuality = 1;
+    this.lightweightMode = false;
     this.noteSeGroup = 1;
     this.noteSoundSwapTarget = undefined;
     this.noteSoundStatus = "idle";
     this.stageBackground = "auto";
+    this.performance = "lightweight";
     this.playbackRate = 1;
     this.volume = 0.8;
     this.transportCollapsed = false;
@@ -505,8 +534,20 @@ export class ChartSimulator extends LitElement {
     if ((this.source || this.playback) && (key !== this.loadedKey || this.playback !== this.loadedPlayback))
       void this.load();
     if (changed.has("liveMode") && this.phase === "ready") this.setLiveMode(this.liveMode);
-    if (changed.has("gekisouEffectMode")) {
-      this.renderer?.invalidateEffectFrame();
+    if (changed.has("gekisouEffectMode") || changed.has("lightweightMode")) {
+      const renderer = this.renderer;
+      const signal = this.loadAbort?.signal;
+      if (changed.has("lightweightMode") && this.intro) this.configureNativeIntroTitle();
+      renderer?.invalidateEffectFrame();
+      if (renderer && signal && this.gekisouPlan && !this.gekisouStage && this.shouldLoadGekisouStage()) {
+        void this.prepareGekisouStage(signal).then(() => {
+          if (renderer !== this.renderer || signal.aborted) return;
+          renderer.invalidateEffectFrame();
+          this.draw();
+        }, (error: unknown) => {
+          if (!signal.aborted) console.error(error);
+        });
+      }
       this.draw();
     }
     this.transportVisibility.bind(this.querySelector<HTMLElement>(".playback-controls"));
@@ -558,8 +599,7 @@ export class ChartSimulator extends LitElement {
     if (release && !/^r-[a-f0-9]{20}$/u.test(release)) throw new Error("Invalid chart release pin");
     return release;
   }
-  private pinResourceUrl(path: string): string {
-    const release = this.sourceRelease();
+  private pinResourceUrl(path: string, release = this.sourceRelease()): string {
     if (!release || !path) return path;
     const url = new URL(path, window.location.href);
     const sourceOrigin = new URL(this.source, window.location.href).origin;
@@ -1021,11 +1061,14 @@ export class ChartSimulator extends LitElement {
       const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null") as {
         render?: Partial<RenderSettings>;
         stageBackground?: StageBackground;
+        performance?: ChartPerformance;
         playbackRate?: number;
         volume?: number;
         noteSkin?: OurNotesNoteSkin;
         noteEffectSkin?: OurNotesNoteEffectSkin;
         liveQuality?: OurNotesLiveQuality;
+        lightweightMode?: boolean;
+        gekisouEffectMode?: OurNotesGekisouEffectMode;
         noteSeGroup?: OurNotesNoteSeGroup;
       } | null;
       if (!saved) return;
@@ -1069,6 +1112,11 @@ export class ChartSimulator extends LitElement {
         this.noteEffectSkin = saved.noteEffectSkin!;
       if (OUR_NOTES_LIVE_QUALITIES.includes(saved.liveQuality as OurNotesLiveQuality))
         this.liveQuality = saved.liveQuality!;
+      if (typeof saved.lightweightMode === "boolean") this.lightweightMode = saved.lightweightMode;
+      if (saved.performance === "mv" || saved.performance === "live2d")
+        this.performance = saved.performance;
+      if (saved.gekisouEffectMode === 0 || saved.gekisouEffectMode === 1 || saved.gekisouEffectMode === 2)
+        this.gekisouEffectMode = saved.gekisouEffectMode;
       if (OUR_NOTES_NOTE_SE_GROUP_IDS.includes(saved.noteSeGroup as OurNotesNoteSeGroup))
         this.noteSeGroup = saved.noteSeGroup!;
     } catch {
@@ -1082,11 +1130,14 @@ export class ChartSimulator extends LitElement {
         JSON.stringify({
           render: this.playerSettings,
           stageBackground: this.stageBackground,
+          performance: this.performance,
           playbackRate: this.playbackRate,
           volume: this.volume,
           noteSkin: this.noteSkin,
           noteEffectSkin: this.noteEffectSkin,
           liveQuality: this.liveQuality,
+          lightweightMode: this.lightweightMode,
+          gekisouEffectMode: this.gekisouEffectMode,
           noteSeGroup: this.noteSeGroup,
         }),
       );
@@ -1095,42 +1146,54 @@ export class ChartSimulator extends LitElement {
     }
   }
   private backgroundRevision = 0;
+  private backgroundComposite?: { key: string; canvas: Promise<HTMLCanvasElement> };
+  private backgroundBand() {
+    return this.stageBackground === "auto" || this.stageBackground === "none"
+      ? (OUR_NOTES_STAGE_NAMES[this.bandId] ? this.bandId : 0)
+      : this.stageBackground;
+  }
   private stageBackgroundUrl() {
     if (this.stageBackground === "none") return undefined;
-    const band =
-      this.stageBackground === "auto" ? (OUR_NOTES_STAGE_NAMES[this.bandId] ? this.bandId : 0) : this.stageBackground;
     return this.pinResourceUrl(
-      `/assets/${encodeURIComponent(this.server)}/Assets/AddressableResources/Band/${band}/live_stage/lightweight_background.png`,
+      `/assets/${encodeURIComponent(this.server)}/Assets/AddressableResources/Band/${this.backgroundBand()}/live_stage/lightweight_background.png`,
     );
   }
   private async applyStageBackground() {
     const revision = ++this.backgroundRevision;
+    const renderer = this.renderer;
+    if (!renderer) return;
     try {
       const stageUrl = this.stageBackgroundUrl();
       if (!stageUrl) {
-        this.renderer?.setBackgroundCanvas(undefined);
+        renderer.setBackgroundCanvas(undefined);
       } else {
         const atlas = this.backgroundLiveAtlas;
         if (!atlas || atlas.server !== this.server || atlas.release !== this.sourceRelease())
           throw new Error("Missing current background LiveAtlas descriptor");
-        const jacketUrl = this.introContent?.jacketUrl;
-        const [stage, jacket, baseWhite] = await Promise.all([
-          loadBackgroundPixels(stageUrl),
-          jacketUrl ? loadBackgroundPixels(this.mediaUrl(jacketUrl)) : undefined,
-          loadBackgroundPixels(this.output(atlas.descriptor, "Sprite", "live_game_white.png")),
-        ]);
-        if (baseWhite.rgba.some((channel) => channel !== 255))
-          throw new Error("Background white Sprite is not opaque white");
-        if (
-          revision !== this.backgroundRevision ||
-          atlas.server !== this.server ||
-          atlas.release !== this.sourceRelease()
-        )
-          return;
-        const composite = buildOurNotesLightweightBackground({ stage, jacket, baseWhite });
-        this.renderer?.setBackgroundCanvas(backgroundPixelsCanvas(composite), 0);
+        const jacketUrl = this.introContent?.jacketUrl ? this.mediaUrl(this.introContent.jacketUrl) : undefined;
+        const whiteUrl = this.output(atlas.descriptor, "Sprite", "live_game_white.png");
+        const key = JSON.stringify([stageUrl, jacketUrl, whiteUrl]);
+        if (this.backgroundComposite?.key !== key) {
+          const canvas = Promise.all([
+            loadBackgroundPixels(stageUrl),
+            jacketUrl ? loadBackgroundPixels(jacketUrl) : undefined,
+            loadBackgroundPixels(whiteUrl),
+          ]).then(([stage, jacket, baseWhite]) => {
+            if (baseWhite.rgba.some((channel) => channel !== 255))
+              throw new Error("Background white Sprite is not opaque white");
+            return backgroundPixelsCanvas(buildOurNotesLightweightBackground({ stage, jacket, baseWhite }));
+          });
+          this.backgroundComposite = { key, canvas };
+        }
+        const canvas = await this.backgroundComposite.canvas;
+        if (revision !== this.backgroundRevision || this.renderer !== renderer ||
+            atlas.server !== this.server || atlas.release !== this.sourceRelease()) return;
+        renderer.setBackgroundCanvas(canvas, 0);
       }
     } catch (error) {
+      if (revision !== this.backgroundRevision || this.renderer !== renderer) return;
+      this.backgroundComposite = undefined;
+      renderer.setBackgroundCanvas(undefined);
       console.warn("Unable to load the selected chart background", error);
     }
     this.draw();
@@ -1203,11 +1266,91 @@ export class ChartSimulator extends LitElement {
     this.stageBackground = value;
     this.persistSettings();
     await this.applyStageBackground();
+    await this.applyPerformance();
+  }
+
+  private releasePerformance() {
+    this.renderer?.setPerformanceBackground();
+    this.performanceLoad?.abort();
+    this.performanceLoad = undefined;
+    this.performanceStage?.dispose();
+    this.performanceStage = undefined;
+    if (this.performanceNotice !== undefined) dismissSnackbar(this.performanceNotice);
+    this.performanceNotice = undefined;
+  }
+
+  private selectedPerformance(): ChartPerformance {
+    if (this.performance === "mv" && !this.performanceSource?.mvUrl) return "lightweight";
+    if (this.performance === "live2d" && !(this.performanceSource && this.performanceSource.bandId > 0))
+      return "lightweight";
+    return this.performance;
+  }
+
+  private async applyPerformance() {
+    this.releasePerformance();
+    this.performanceStatus = undefined;
+    const { renderer, performanceSource: source } = this;
+    const mode = this.selectedPerformance();
+    if (!renderer || !source || this.stageBackground === "none" || mode === "lightweight") {
+      if (this.intro) this.configureNativeIntroTitle();
+      this.draw();
+      return;
+    }
+    const load = new AbortController();
+    this.performanceLoad = load;
+    this.performanceStatus = "loading";
+    this.performanceNotice = snackbar(this.ui("loading"), { durationMs: 0 });
+    try {
+      const [{ ChartLiveStage, createChartMovie }, { identity }] = await Promise.all([
+        import("./chart-live-stage"),
+        this.chartAssets(load.signal),
+      ]);
+      load.signal.throwIfAborted();
+      const pin = (path: string) => this.pinResourceUrl(path, identity.releaseId);
+      const root = `/runtime/${encodeURIComponent(this.server)}/live-stage/v1`;
+      const requestFrame = () => { if (this.performanceLoad === load) this.draw(); };
+      const stage = mode === "mv" && source.mvUrl ? await createChartMovie(pin(source.mvUrl), load.signal, requestFrame) : await ChartLiveStage.load({
+        commonUrl: pin(`${root}/common.json`),
+        bandUrl: pin(`${root}/band-${this.backgroundBand()}.json`),
+        lineupUrl: pin(`${root}/lineup.json`),
+        songsUrl: pin(`${root}/songs.json`),
+        cameraUrl: (profile) => pin(`${root}/camera-${profile}.json`),
+        musicId: source.musicId,
+        stageBand: Number(this.backgroundBand()),
+        performingBand: source.bandId,
+        tempos: this.chart?.bpmChanges ?? [],
+        quality: this.liveQuality,
+        ...(this.introContent?.jacketUrl ? { jacketUrl: this.introContent.jacketUrl } : {}),
+        resolveMedia: pin,
+        requestFrame,
+        signal: load.signal,
+      });
+      if (this.performanceLoad !== load || this.renderer !== renderer) {
+        stage.dispose();
+        return;
+      }
+      this.performanceStage = stage;
+      renderer.setPerformanceBackground(stage.texture);
+      if (this.intro) this.configureNativeIntroTitle();
+      this.performanceStatus = undefined;
+      dismissSnackbar(this.performanceNotice);
+      this.performanceNotice = undefined;
+    } catch (error) {
+      if (this.performanceLoad !== load || load.signal.aborted) return;
+      if (this.intro) this.configureNativeIntroTitle();
+      this.performanceStatus = "error";
+      this.performanceNotice = snackbar(this.ui("performanceUnavailable"), { error: true });
+      console.warn("Unable to load live stage", error);
+    }
+    this.draw();
   }
   private async resetSettings() {
     writeRenderQuality(DEFAULT_RENDER_QUALITY);
     this.playerSettings = { ...DEFAULT_RENDER_SETTINGS };
     this.stageBackground = "auto";
+    this.performance = "lightweight";
+    this.lightweightMode = false;
+    this.gekisouEffectMode = undefined;
     this.playbackRate = 1;
     this.volume = 0.8;
     if (this.clock) {
@@ -1216,6 +1359,7 @@ export class ChartSimulator extends LitElement {
     }
     this.persistSettings();
     await this.applyStageBackground();
+    await this.applyPerformance();
     this.draw();
   }
   private async initialize(signal: AbortSignal) {
@@ -1302,6 +1446,7 @@ export class ChartSimulator extends LitElement {
     clock.audio.addEventListener("pause", () => {
       if (!ownsClock()) return;
       this.playing = false;
+      this.performanceStage?.pause();
       cancelAnimationFrame(this.animationFrame);
       void introContext?.suspend();
     });
@@ -1312,6 +1457,7 @@ export class ChartSimulator extends LitElement {
       if (!ownsClock() || (this.intro && this.intro.phase !== "complete")) return;
       cancelAnimationFrame(this.animationFrame);
       if (this.playing) this.draw();
+      this.performanceStage?.pause();
     };
     clock.audio.addEventListener("playing", resumeFrames, { signal });
     clock.audio.addEventListener("seeked", resumeFrames, { signal });
@@ -1325,6 +1471,7 @@ export class ChartSimulator extends LitElement {
     });
     this.duration = Math.max(this.clock.durationMs, this.chart.durationMs) / 1000;
     this.resize();
+    void this.applyPerformance();
     this.draw();
   }
   private hasNativeIntroSource(): boolean {
@@ -1531,8 +1678,6 @@ export class ChartSimulator extends LitElement {
             state.get("0:4:3:2") ?? 1,
           ]);
         }
-        // Normal Web chart uses LightWeight: the camera/background/light roles retain their
-        // original evaluated state while their 3D background owner is inactive.
       },
     });
     const runtimeTracks = new Map(
@@ -1595,7 +1740,7 @@ export class ChartSimulator extends LitElement {
         },
         {
           isGekisouEnabled: Boolean(this.gekisouPlan),
-          isLightweightMode: false,
+          isLightweightMode: !this.performanceStage || this.lightweightMode,
         },
       ),
     });
@@ -1662,6 +1807,13 @@ export class ChartSimulator extends LitElement {
 
   private async prepareGekisouStage(signal: AbortSignal): Promise<void> {
     const renderer = this.renderer!;
+    const resolve = (path: string) => this.profileResourceUrl(path);
+    if (this.gekisouMissionTypes?.includes(2)) {
+      await renderer.loadOverlayTextures(this.gekisouOverlayProjector.textures(resolve, "luck"));
+      signal.throwIfAborted();
+      if (renderer !== this.renderer) return;
+    }
+    if (!this.shouldLoadGekisouStage()) return;
     const resource = (this.gekisouStageResources ??= new PreparedResource(async (owner) => {
       const response = await fetch(OUR_NOTES_GEKISOU_STAGE_PROFILE_URL, { signal: owner });
       if (!response.ok) throw new Error(`Gekisou Source profile ${response.status}`);
@@ -1672,11 +1824,7 @@ export class ChartSimulator extends LitElement {
         [],
         () => crypto.getRandomValues(this.gekisouStageSeed)[0]!,
       );
-      const resolve = (path: string) => this.profileResourceUrl(path);
-      await renderer.loadOverlayTextures({
-        ...projector.textures(resolve),
-        ...(this.gekisouMissionTypes?.includes(2) ? this.gekisouOverlayProjector.textures(resolve, "luck") : {}),
-      });
+      await renderer.loadOverlayTextures(projector.textures(resolve));
       owner.throwIfAborted();
       return source;
     }));
@@ -1687,6 +1835,10 @@ export class ChartSimulator extends LitElement {
     this.configureGekisouStage();
   }
 
+  private shouldLoadGekisouStage(): boolean {
+    return !this.lightweightMode && this.gekisouEffectMode !== 0;
+  }
+
   private applyGekisouStage(frame: ReturnType<RenderFrameBuilder["buildReusable"]>, sampledTimeMs: number): void {
     if (!this.gekisouStage || !this.gekisouPlan) return;
     frame.overlays = [
@@ -1694,6 +1846,7 @@ export class ChartSimulator extends LitElement {
       ...this.gekisouStage.project(
         {
           timeMs: sampledTimeMs,
+          lightweightMode: this.lightweightMode,
           ...(this.gekisouEffectMode !== undefined ? { mode: this.gekisouEffectMode } : {}),
         },
         this.gekisouOverlayContext,
@@ -2156,6 +2309,25 @@ export class ChartSimulator extends LitElement {
       }
     }
     const time = this.intro && this.intro.phase !== "complete" ? 0 : this.clock?.timeMs || this.currentTime * 1000;
+    if (this.performanceStage) {
+      const canvas = this.renderer.renderer.domElement;
+      const intro = this.intro && this.intro.phase !== "complete" ? introTime : undefined;
+      const camera = intro !== undefined ? this.introRoleValues.get("LiveCamerasTrack") : undefined;
+      const positions = camera ? [0, 1, 2].map((axis) => camera.get(`${stageIntroCameraPath}:4:1:${axis}`)) : undefined;
+      const [x, y, z] = positions ?? [];
+      if (this.performanceStage.render(this.renderer.renderer, {
+        seconds: time / 1000,
+        duration: this.duration,
+        playing: this.playing && Boolean(this.clock && !this.clock.audio.paused && !this.clock.audio.seeking &&
+          this.clock.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA),
+        playbackRate: this.playbackRate,
+        ...(intro !== undefined ? { introSeconds: intro } : {}),
+        ...(x !== undefined && y !== undefined && z !== undefined ? { introCamera: [x, y, z] } : {}),
+        width: canvas.width,
+        height: canvas.height,
+        quality: this.liveQuality,
+      })) this.renderer.refreshBackgroundLayout();
+    }
     const probe = this.chartPerfEnabled ? (this.chartPerfProbe ??= new ChartPerfProbe()) : undefined;
     const started = probe ? performance.now() : 0;
     if (probe) {
@@ -2553,7 +2725,9 @@ export class ChartSimulator extends LitElement {
     this.disposeStage();
   }
   private disposeStage() {
+    this.releasePerformance();
     ++this.backgroundRevision;
+    this.backgroundComposite = undefined;
     this.backgroundLiveAtlas = undefined;
     ++this.liveModeRevision;
     this.gekisouStage = undefined;
@@ -2641,7 +2815,9 @@ export class ChartSimulator extends LitElement {
           min=${minimum}
           max=${maximum}
           step=${step}
-          .value=${String(value)}
+          .value=${value}
+          labeled
+          .valueLabel=${format(value)}
           @input=${(event: Event) =>
             this.setRenderOption(key, Number((event.target as HTMLElement & { value?: number }).value))}
           aria-label=${label}
@@ -2656,11 +2832,11 @@ export class ChartSimulator extends LitElement {
     return html`
       <label class="chart-runtime__setting chart-runtime__setting--toggle">
         <span>${label}</span>
-        <input
-          type="checkbox"
-          .checked=${Boolean(this.playerSettings[key])}
-          @change=${(event: Event) => this.setRenderOption(key, (event.currentTarget as HTMLInputElement).checked)}
-        />
+        <md-switch
+          aria-label=${label}
+          .selected=${Boolean(this.playerSettings[key])}
+          @change=${(event: Event) => this.setRenderOption(key, (event.currentTarget as MdSwitch).selected)}
+        ></md-switch>
       </label>
     `;
   }
@@ -2689,21 +2865,18 @@ export class ChartSimulator extends LitElement {
               this.assets?.particles.laneEffects.gekisou &&
               this.gekisouMissionTypes?.some((mission) => mission > 0)
                 ? html`
-                    <label class="chart-runtime__setting chart-runtime__setting--select">
-                      <span>${this.ui("liveMode")}</span>
-                      <select
+                    <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("liveMode")} .value=${this.liveMode}
                         @change=${async (event: Event) => {
-                          const select = event.currentTarget as HTMLSelectElement;
+                          const select = event.currentTarget as MdOutlinedSelect;
                           await this.setLiveMode(select.value as "normal" | "gekisou");
                           if (select.isConnected) select.value = this.liveMode;
                         }}
                       >
-                        <option value="normal" ?selected=${this.liveMode === "normal"}>${this.ui("normalLive")}</option>
-                        <option value="gekisou" ?selected=${this.liveMode === "gekisou"}>
+                        <md-select-option value="normal" ?selected=${this.liveMode === "normal"}><div slot="headline">${this.ui("normalLive")}</div></md-select-option>
+                        <md-select-option value="gekisou" ?selected=${this.liveMode === "gekisou"}><div slot="headline">
                           ${this.ui("gekisouLive")}
-                        </option>
-                      </select>
-                    </label>
+                        </div></md-select-option>
+                      </md-outlined-select>
                   `
                 : nothing
             }
@@ -2717,36 +2890,33 @@ export class ChartSimulator extends LitElement {
                 min="0"
                 max="1"
                 step="0.05"
-                .value=${String(this.volume)}
+                .value=${this.volume}
+                labeled
+                .valueLabel=${percent(this.volume)}
                 @input=${(event: Event) =>
                   this.setVolume(Number((event.target as HTMLElement & { value?: number }).value))}
                 aria-label=${this.ui("volume")}
               ></md-slider>
             </label>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("playbackSpeed")}</span>
-              <select
-                @change=${(event: Event) => this.setPlaybackRate(Number((event.currentTarget as HTMLSelectElement).value))}
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("playbackSpeed")} .value=${String(this.playbackRate)}
+                @change=${(event: Event) => this.setPlaybackRate(Number((event.currentTarget as MdOutlinedSelect).value))}
               >
                 ${[0.5, 0.75, 1, 1.25, 1.5, 2].map(
                   (value) => html`
-                    <option value=${value} ?selected=${this.playbackRate === value}>
+                    <md-select-option value=${value} ?selected=${this.playbackRate === value}><div slot="headline">
                       ${value.toFixed(value % 1 ? 2 : 1)}×
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
+              </md-outlined-select>
           </section>
           <section>
             <h4>${this.ui("notes")}</h4>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("noteSkin")}</span>
-              <select
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("noteSkin")} .value=${this.noteSkin}
                 @change=${(event: Event) => {
                   const position = this.currentTime;
                   const resume = this.playing;
-                  this.noteSkin = (event.currentTarget as HTMLSelectElement).value as OurNotesNoteSkin;
+                  this.noteSkin = (event.currentTarget as MdOutlinedSelect).value as OurNotesNoteSkin;
                   this.persistSettings();
                   void this.load().then(async () => {
                     if (this.phase !== "ready") return;
@@ -2757,20 +2927,17 @@ export class ChartSimulator extends LitElement {
               >
                 ${this.availableNoteSkins.map(
                   (skin) => html`
-                    <option value=${skin} ?selected=${this.noteSkin === skin}>
+                    <md-select-option value=${skin} ?selected=${this.noteSkin === skin}><div slot="headline">
                       ${OUR_NOTES_NOTE_SKIN_NAMES[skin][this.locale] || OUR_NOTES_NOTE_SKIN_NAMES[skin].en}
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("noteEffectSkin")}</span>
-              <select
+              </md-outlined-select>
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("noteEffectSkin")} .value=${this.noteEffectSkin}
                 @change=${(event: Event) => {
                   const position = this.currentTime;
                   const resume = this.playing;
-                  this.noteEffectSkin = (event.currentTarget as HTMLSelectElement).value as OurNotesNoteEffectSkin;
+                  this.noteEffectSkin = (event.currentTarget as MdOutlinedSelect).value as OurNotesNoteEffectSkin;
                   this.persistSettings();
                   void this.load().then(async () => {
                     if (this.phase !== "ready") return;
@@ -2781,22 +2948,19 @@ export class ChartSimulator extends LitElement {
               >
                 ${this.availableNoteEffectSkins.map(
                   (skin) => html`
-                    <option value=${skin} ?selected=${this.noteEffectSkin === skin}>
+                    <md-select-option value=${skin} ?selected=${this.noteEffectSkin === skin}><div slot="headline">
                       ${
                         OUR_NOTES_NOTE_EFFECT_SKIN_NAMES[skin][this.locale] || OUR_NOTES_NOTE_EFFECT_SKIN_NAMES[skin].en
                       }
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("liveQuality")}</span>
-              <select
+              </md-outlined-select>
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("liveQuality")} .value=${String(this.liveQuality)}
                 @change=${(event: Event) => {
                   const position = this.currentTime;
                   const resume = this.playing;
-                  this.liveQuality = Number((event.currentTarget as HTMLSelectElement).value) as OurNotesLiveQuality;
+                  this.liveQuality = Number((event.currentTarget as MdOutlinedSelect).value) as OurNotesLiveQuality;
                   this.persistSettings();
                   void this.load().then(async () => {
                     if (this.phase !== "ready") return;
@@ -2807,30 +2971,51 @@ export class ChartSimulator extends LitElement {
               >
                 ${OUR_NOTES_LIVE_QUALITIES.map(
                   (quality) => html`
-                    <option value=${quality} ?selected=${this.liveQuality === quality}>
+                    <md-select-option value=${quality} ?selected=${this.liveQuality === quality}><div slot="headline">
                       ${OUR_NOTES_LIVE_QUALITY_NAMES[quality][this.locale] || OUR_NOTES_LIVE_QUALITY_NAMES[quality].en}
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("noteSe")}</span>
-              <select
+              </md-outlined-select>
+            ${this.chartFormat === "" ? html`
+              <label class="chart-runtime__setting chart-runtime__setting--toggle">
+                <span>${this.ui("lightweightMode")}</span>
+                <md-switch
+                  aria-label=${this.ui("lightweightMode")}
+                  .selected=${this.lightweightMode}
+                  @change=${(event: Event) => {
+                    this.lightweightMode = (event.currentTarget as MdSwitch).selected;
+                    this.persistSettings();
+                  }}
+                ></md-switch>
+              </label>
+              ${this.gekisouMissionTypes?.some((mission) => mission > 0) ? html`
+                <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("gekisouEffectMode")} .value=${String(this.gekisouEffectMode ?? 2)}
+                    @change=${(event: Event) => {
+                      this.gekisouEffectMode = Number((event.currentTarget as MdOutlinedSelect).value) as OurNotesGekisouEffectMode;
+                      this.persistSettings();
+                    }}
+                  >
+                    <md-select-option value="0"><div slot="headline">${this.ui("gekisouEffectOff")}</div></md-select-option>
+                    <md-select-option value="1"><div slot="headline">${this.ui("gekisouEffectLight")}</div></md-select-option>
+                    <md-select-option value="2"><div slot="headline">${this.ui("gekisouEffectStandard")}</div></md-select-option>
+                  </md-outlined-select>
+              ` : nothing}
+            ` : nothing}
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("noteSe")} .value=${String(this.noteSoundSwapTarget ?? this.noteSeGroup)}
                 @change=${(event: Event) =>
                   void this.switchNoteSeGroup(
-                    Number((event.currentTarget as HTMLSelectElement).value) as OurNotesNoteSeGroup,
+                    Number((event.currentTarget as MdOutlinedSelect).value) as OurNotesNoteSeGroup,
                   )}
               >
                 ${OUR_NOTES_NOTE_SE_GROUP_IDS.map(
                   (group) => html`
-                    <option value=${group} ?selected=${(this.noteSoundSwapTarget ?? this.noteSeGroup) === group}>
+                    <md-select-option value=${group} ?selected=${(this.noteSoundSwapTarget ?? this.noteSeGroup) === group}><div slot="headline">
                       ${OUR_NOTES_NOTE_SE_GROUP_NAMES[group][this.locale] || OUR_NOTES_NOTE_SE_GROUP_NAMES[group].en}
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
+              </md-outlined-select>
             ${
               this.noteSoundStatus === "loading"
                 ? html`
@@ -2856,39 +3041,47 @@ export class ChartSimulator extends LitElement {
           </section>
           <section>
             <h4>${this.ui("stage")}</h4>
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("stageBackground")}</span>
-              <select
+            ${this.performanceSource ? html`
+              <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("performance")} .value=${this.selectedPerformance()}
+                  aria-busy=${this.performanceStatus === "loading" ? "true" : "false"}
+                  @change=${(event: Event) => {
+                    this.performance = (event.currentTarget as MdOutlinedSelect).value as ChartPerformance;
+                    this.persistSettings();
+                    void this.applyPerformance();
+                  }}
+                >
+                  <md-select-option value="lightweight"><div slot="headline">${this.ui("performanceLightweight")}</div></md-select-option>
+                  ${this.performanceSource.mvUrl ? html`<md-select-option value="mv"><div slot="headline">${this.ui("performanceMv")}</div></md-select-option>` : nothing}
+                  ${this.performanceSource.bandId > 0 ? html`<md-select-option value="live2d"><div slot="headline">${this.ui("performanceLive2d")}</div></md-select-option>` : nothing}
+                </md-outlined-select>
+            ` : nothing}
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("stageBackground")} .value=${this.stageBackground}
                 @change=${(event: Event) =>
-                  void this.setStageBackground((event.currentTarget as HTMLSelectElement).value as StageBackground)}
+                  void this.setStageBackground((event.currentTarget as MdOutlinedSelect).value as StageBackground)}
               >
-                <option value="auto" ?selected=${this.stageBackground === "auto"}>${this.ui("songBand")}</option>
+                <md-select-option value="auto" ?selected=${this.stageBackground === "auto"}><div slot="headline">${this.ui("songBand")}</div></md-select-option>
                 ${Object.entries(OUR_NOTES_STAGE_NAMES).map(
                   ([id, names]) => html`
-                    <option value=${id} ?selected=${this.stageBackground === id}>
+                    <md-select-option value=${id} ?selected=${this.stageBackground === id}><div slot="headline">
                       ${names[this.locale] || names.en}
-                    </option>
+                    </div></md-select-option>
                   `,
                 )}
-                <option value="none" ?selected=${this.stageBackground === "none"}>${this.ui("noBackground")}</option>
-              </select>
-            </label>
+                <md-select-option value="none" ?selected=${this.stageBackground === "none"}><div slot="headline">${this.ui("noBackground")}</div></md-select-option>
+              </md-outlined-select>
             ${this.renderSettingSlider("backgroundBrightness", this.ui("backgroundBrightness"), 0, 1, 0.05, percent)}
             ${this.renderSettingSlider("laneOpacity", this.ui("laneOpacity"), 0, 1, 0.05, percent)}
             ${this.renderSettingSlider("guidelineOpacity", this.ui("guidelineOpacity"), 0, 1, 0.05, percent)}
-            <label class="chart-runtime__setting chart-runtime__setting--select">
-              <span>${this.ui("guidelineCount")}</span>
-              <select
+            <md-outlined-select class="chart-runtime__setting chart-runtime__setting--select" menu-positioning="fixed" label=${this.ui("guidelineCount")} .value=${String(this.playerSettings.guidelineCount)}
                 @change=${(event: Event) =>
-                  this.setRenderOption("guidelineCount", Number((event.currentTarget as HTMLSelectElement).value))}
+                  this.setRenderOption("guidelineCount", Number((event.currentTarget as MdOutlinedSelect).value))}
               >
                 ${OUR_NOTES_CHART_UI_PROFILE.guidelineCounts.map(
                   (value) => html`
-                    <option value=${value} ?selected=${this.playerSettings.guidelineCount === value}>${value}</option>
+                    <md-select-option value=${value} ?selected=${this.playerSettings.guidelineCount === value}><div slot="headline">${value}</div></md-select-option>
                   `,
                 )}
-              </select>
-            </label>
+              </md-outlined-select>
           </section>
         </div>
       </aside>

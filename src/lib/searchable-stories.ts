@@ -12,7 +12,8 @@ import {
 import { disambiguateTitles } from "./title-disambiguation";
 import type { ReleaseServer } from "./release-server";
 
-export type StoryMode = "event" | "band" | "link" | "birthday" | "home" | "afterlive" | "tutorial";
+import { storyModeOf, type StoryMode } from "./resource-route";
+export type { StoryMode } from "./resource-route";
 
 export interface SearchableStoryPage {
   mode: StoryMode;
@@ -47,31 +48,6 @@ const text = (value: unknown, locale: Locale): string => resolveLocalizedText(va
 
 const localizedAll = (value: unknown): Record<Locale, string> =>
   Object.fromEntries(LOCALES.map((locale) => [locale, text(value, locale)])) as Record<Locale, string>;
-
-/**
- * The interactive screen derives the mode from the chapter: event-owned
- * chapters are event stories, native birthday categories come next, other
- * numbered chapters (below the synthetic 900000 range) are band stories,
- * and the rest map by key.
- */
-function modeOf(episode: EpisodeRecord, eventChapterIds: ReadonlySet<string>): StoryMode | undefined {
-  const chapterId = String(episode.chapterId || "");
-  if (eventChapterIds.has(chapterId)) return "event";
-  if (episode.storyCategory === "birthday") return "birthday";
-  if (Number(episode.chapterId || 0) < 900000) return "band";
-  switch (episode.chapterKey) {
-    case "asset_linkstory":
-      return "link";
-    case "asset_home":
-      return "home";
-    case "asset_afterlive":
-      return "afterlive";
-    case "asset_tutorial":
-      return "tutorial";
-    default:
-      return undefined;
-  }
-}
 
 /** First spoken line, kept unlocalised so every locale's meta can resolve it. */
 function firstLineValue(episode: EpisodeRecord): unknown {
@@ -122,7 +98,7 @@ async function buildSearchableStoryPages(server: ReleaseServer): Promise<Searcha
 
   const wanted = Object.entries(episodes).flatMap(([key, raw]) => {
     const episode = asRecord(raw) as EpisodeRecord | undefined;
-    const mode = episode ? modeOf(episode, eventChapterIds) : undefined;
+    const mode = episode ? storyModeOf(episode, eventChapterIds) : undefined;
     return episode && mode ? [[key, episode, mode] as [string, EpisodeRecord, StoryMode]] : [];
   });
   const details = await fetchStaticCatalogBatch("stories", wanted.map(([key]) => key), server, release);

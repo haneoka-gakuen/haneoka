@@ -1,5 +1,6 @@
 import { isLocale, type Locale } from "@haneoka/i18n";
 import { isPublicReleaseServer } from "./temporary-public-routing.ts";
+import { englishInterfacePath, interfaceLanguageFromPath, interfacePath } from "../i18n/interface-route.ts";
 
 export interface AssetStaticLocation {
   server: "jp" | "intl";
@@ -55,8 +56,12 @@ export function assetStaticLookupPath(pathname: string): string | undefined {
   const location = assetStaticLocation(match[1], match[2], match[3]!);
   return location && assetStaticDocumentPath(location.server, location.locale, location.path, location.selected);
 }
-export function assetStaticDocumentFromUrl(url: URL): string | undefined {
-  const parts = url.pathname.split("/").filter(Boolean);
+export function assetBrowserLocation(url: URL): AssetStaticLocation | undefined {
+  const parts = englishInterfacePath(url.pathname).split("/").filter(Boolean);
+  if (parts[2] === "asset-files") {
+    const location = assetStaticLocation(parts[0], parts[1], parts.slice(3).join("/"));
+    return location?.selected ? location : undefined;
+  }
   const canonical = isPublicReleaseServer(parts[0]) && isLocale(parts[1]) && parts[2] === "assets";
   const legacy = isLocale(parts[0]) && parts[1] === "catalog" && parts[2] === "assets";
   if (!canonical && !legacy) return;
@@ -66,15 +71,35 @@ export function assetStaticDocumentFromUrl(url: URL): string | undefined {
   try {
     const source = parts.slice(3).map(decodeURIComponent);
     const path = source.length ? source : (url.searchParams.get("path") || "").split("/").filter(Boolean);
-    return assetStaticDocumentPath(server, locale, path, url.searchParams.get("file") || "");
+    return safePath(path) ? { server, locale, path, selected: url.searchParams.get("file") || "" } : undefined;
   } catch {
     return;
   }
+}
+export function assetStaticDocumentFromUrl(url: URL): string | undefined {
+  const location = assetBrowserLocation(url);
+  if (!location) return;
+  try {
+    return assetStaticDocumentPath(location.server, location.locale, location.path, location.selected);
+  } catch { return; }
+}
+export function legacyAssetRedirectTarget(pathname: string, search: string): string | undefined {
+  if (!search || !/\/assets(?:\/|$)|\/asset-files\//u.test(pathname)) return;
+  const url = new URL(pathname + search, "https://route.invalid");
+  if (!url.searchParams.has("file") && !url.searchParams.has("path")) return;
+  const location = assetBrowserLocation(url);
+  if (!location || !assetStaticDocumentFromUrl(url)) return;
+  url.searchParams.delete("file");
+  url.searchParams.delete("path");
+  url.searchParams.delete("server");
+  const target = assetPublicDocumentUrl(location);
+  const language = interfaceLanguageFromPath(pathname);
+  return (language ? interfacePath(target, language.value) : target) + url.search;
 }
 export function isAssetBrowserDocument(url: URL): boolean {
   return Boolean(assetStaticDocumentFromUrl(url) || assetStaticLookupPath(url.pathname));
 }
 export function assetPublicDocumentUrl(location: AssetStaticLocation): string {
-  const pathname = `/${location.server}/${location.locale}/assets/${location.path.map(encodeURIComponent).join("/")}${location.path.length ? "/" : ""}`;
-  return pathname + (location.selected ? `?${new URLSearchParams({ file: location.selected })}` : "");
+  if (location.selected) return `/${location.server}/${location.locale}/asset-files/${assetStaticId(location.path, location.selected)}/`;
+  return `/${location.server}/${location.locale}/assets/${location.path.map(encodeURIComponent).join("/")}${location.path.length ? "/" : ""}`;
 }

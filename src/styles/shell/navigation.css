@@ -147,7 +147,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
   overflow-anchor: none;
 }
 .nav__destinations,

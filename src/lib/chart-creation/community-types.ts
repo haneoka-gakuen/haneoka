@@ -58,6 +58,7 @@ export interface CommunityChartItem {
   version: number;
   revision: number;
   publishedRevision: number | null;
+  publicationStatus?: "pending" | "block";
   publishedAt: number | null;
   updatedAt: number;
   coverUrl: string;

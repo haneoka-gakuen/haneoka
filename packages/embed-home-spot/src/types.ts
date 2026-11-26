@@ -1,4 +1,4 @@
-import type { DataSource, EmbedEvent, EmbedLoaderOptions } from "@haneoka/embed-core";
+import type { DataSourceInput, EmbedEvent, EmbedLoaderOptions } from "@haneoka/embed-core";
 import type {
   HaneokaHomeSpotPngOptions,
   HaneokaHomeSpotRuntimeModules,
@@ -8,7 +8,7 @@ import type {
 export type HomeSpotDocument = HaneokaHomeSpotSceneDescriptor;
 export type HomeSpotInput =
   | { readonly document: HomeSpotDocument; readonly source?: never }
-  | { readonly source: DataSource<HomeSpotDocument>; readonly document?: never };
+  | { readonly source: DataSourceInput<HomeSpotDocument>; readonly document?: never };
 
 export type HomeSpotEvent =
   | { readonly type: "resource"; readonly event: EmbedEvent }

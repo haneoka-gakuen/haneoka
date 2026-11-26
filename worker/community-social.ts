@@ -1,7 +1,9 @@
+import { searchGlob } from "../src/lib/search-text";
 import { entityCommentTextOnly, entityThreadForPost, entityThreadSql } from "./community-entity-guard";
 import { forumReadSql, canAccessPostForum } from "./community-forums";
 import { communityAccessState, type CommunityRestrictionKind } from "./access";
 import { getAuthSession, type AuthSession } from "./auth";
+import { writableSonolusOwner, type SonolusCommunityActor } from "./sonolus-auth";
 import { COMMENT_LAST_EDITED_AT_SELECT } from "./community-revision";
 import { ipDetailsJson, publicIpLocation, requestIpMetadata } from "./ip-address";
 import { inspectCommunityText, scheduleEntityModeration } from "./moderation";
@@ -278,37 +280,38 @@ const requireMutationAccess = async (
 ): Promise<MutationAccess> => {
   const session = await getAuthSession(request, env);
   if (!session?.user?.id) return { ok: false, response: error(request, 401, "authentication_required", message) };
-  if (!session.user.emailVerified) {
-    return {
-      ok: false,
-      response: error(request, 403, "email_verification_required", "Verify the account email before continuing"),
-    };
+  const rejection = await mutationUserRejection(request, env, session.user, restrictionKinds);
+  return rejection ? { ok: false, response: rejection } : { ok: true, session };
+};
+
+const mutationUserRejection = async (
+  request: Request,
+  env: Env,
+  user: Pick<Session["user"], "id" | "emailVerified">,
+  restrictionKinds: readonly CommunityRestrictionKind[] = ["sign_in", "write"],
+): Promise<Response | null> => {
+  if (!user.emailVerified) {
+    return error(request, 403, "email_verification_required", "Verify the account email before continuing");
   }
-  const access = await communityAccessState(env, session.user.id, restrictionKinds);
+  const access = await communityAccessState(env, user.id, restrictionKinds);
   if (!access || access.status !== "active") {
-    return { ok: false, response: error(request, 403, "account_unavailable", "This account is not active") };
+    return error(request, 403, "account_unavailable", "This account is not active");
   }
   if (access.restriction) {
-    return {
-      ok: false,
-      response: error(request, 403, "community_action_restricted", "This account cannot perform this action"),
-    };
+    return error(request, 403, "community_action_restricted", "This account cannot perform this action");
   }
   if (env.COMMUNITY_RATE_LIMITER) {
-    const result = await env.COMMUNITY_RATE_LIMITER.limit({ key: session.user.id });
+    const result = await env.COMMUNITY_RATE_LIMITER.limit({ key: user.id });
     if (!result.success) {
-      return {
-        ok: false,
-        response: json(
+      return json(
           request,
           { error: { code: "rate_limit_exceeded", message: "Too many community actions" } },
           429,
           { "Retry-After": "60" },
-        ),
-      };
+      );
     }
   }
-  return { ok: true, session: session as Session };
+  return null;
 };
 
 const parseLimit = (url: URL): number | null => {
@@ -565,10 +568,10 @@ const getTags = async (request: Request, env: Env, url: URL): Promise<Response> 
   const values: BindValue[] = [...readablePostValues, viewerId];
   if (query) {
     conditions.push(
-      "(tag.normalized_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR tag.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE)",
+      "(LOWER(tag.normalized_name) GLOB ? OR LOWER(tag.display_name) GLOB ?)",
     );
-    const escaped = query.replace(/[\\%_]/gu, (character) => `\\${character}`);
-    values.push(`%${escaped}%`, `%${escaped}%`);
+    const pattern = searchGlob(query);
+    values.push(pattern, pattern);
   }
   if (cursor) {
     conditions.push(
@@ -1453,11 +1456,26 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
   if (typeof payload.value.active !== "boolean") {
     return error(request, 422, "invalid_reaction", "The active boolean is required");
   }
-  const viewerId = access.session.user.id;
-  const active = payload.value.active;
+  return writeCommentReaction(request, env, commentId, access.session.user.id, payload.value.active);
+};
+
+export async function submitSonolusCommentReaction(
+  request: Request, env: Env, commentId: string, postId: string, actor: SonolusCommunityActor, active: boolean,
+): Promise<Response> {
+  const rejection = await mutationUserRejection(request, env, actor);
+  if (rejection) return rejection;
+  return writeCommentReaction(request, env, commentId, actor.id, active, { actor, postId });
+}
+
+async function writeCommentReaction(
+  request: Request, env: Env, commentId: string, viewerId: string, active: boolean,
+  native?: { actor: SonolusCommunityActor; postId: string },
+): Promise<Response> {
   const target = await accessibleCommentReactionTarget(env, commentId, viewerId);
-  if (!target) return error(request, 404, "comment_not_found", "Comment not found");
+  if (!target || (native && (target.postId !== native.postId || !(await canAccessPostForum(env, target.postId, viewerId, "read")))))
+    return error(request, 404, "comment_not_found", "Comment not found");
   const now = Date.now();
+  const actorProof = native ? [viewerId, native.actor.tokenDigest, now, now] : [];
   const activationId = crypto.randomUUID();
   const write = active
     ? env.DB.prepare(
@@ -1470,15 +1488,17 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
            AND comment.moderation_status = 'allow'
            AND post.status = 'published' AND post.deleted_at IS NULL AND post.archived_at IS NULL
            AND post.moderation_status = 'allow' AND post.visibility IN ('public', 'protected')
+           ${native ? `AND ${writableSonolusOwner} AND ${forumReadSql("post", "?")}` : ""}
            AND NOT EXISTS (
              SELECT 1 FROM community_user_block AS block
              WHERE (block.blocker_user_id = ? AND block.blocked_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END))
                 OR (block.blocker_user_id IN (comment.author_id, CASE WHEN NOT ${entityThreadSql("post.id")} THEN post.author_id ELSE NULL END) AND block.blocked_user_id = ?)
            )`,
-      ).bind(viewerId, now, activationId, commentId, viewerId, viewerId)
+      ).bind(viewerId, now, activationId, commentId, ...actorProof, ...(native ? [viewerId] : []), viewerId, viewerId)
     : env.DB.prepare(
         `DELETE FROM community_comment_reaction
          WHERE comment_id = ? AND user_id = ? AND kind = 'like'
+           ${native ? `AND ${writableSonolusOwner}` : ""}
            AND EXISTS (
              SELECT 1 FROM community_comment AS comment
              JOIN community_post AS post ON post.id = comment.post_id
@@ -1486,8 +1506,9 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
                AND comment.moderation_status = 'allow'
                AND post.status = 'published' AND post.deleted_at IS NULL AND post.archived_at IS NULL
                AND post.moderation_status = 'allow' AND post.visibility IN ('public', 'protected')
+               ${native ? `AND ${forumReadSql("post", "?")}` : ""}
            )`,
-      ).bind(commentId, viewerId, commentId);
+      ).bind(commentId, viewerId, ...actorProof, commentId, ...(native ? [viewerId] : []));
   const statements = [write];
   if (active) {
     statements.push(
@@ -1516,7 +1537,7 @@ const putCommentReaction = async (request: Request, env: Env, commentId: string)
   const updated = results.at(-1)?.results[0] ?? null;
   if (!updated) return error(request, 404, "comment_not_found", "Comment not found");
   return json(request, { active, likeCount: updated.likeCount });
-};
+}
 
 const methodNotAllowed = (request: Request, allow: string): Response =>
   json(request, { error: { code: "method_not_allowed", message: "Method not allowed" } }, 405, { Allow: allow });

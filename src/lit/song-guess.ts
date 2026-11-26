@@ -11,6 +11,8 @@ import { segmented } from "./ui/controls";
 import { errorState, loadingState } from "./ui/state";
 import { icon } from "./ui/icon";
 import { clientText } from "../i18n/client";
+import { resolveLocalizedText } from "../lib/localized-text";
+import { isReleasedContent } from "../lib/content-release";
 import type { Locale } from "@haneoka/i18n";
 import type { ReleaseServer } from "../lib/release-server";
 import "../styles/song-guess.css";
@@ -32,11 +34,13 @@ const ZOOMS = [6, 3.5, 2, 1];
 export class SongGuess extends LitElement {
   static properties = {
     locale: { type: String },
+    subject: { type: String },
     phase: { state: true },
     pool: { state: true },
     round: { state: true },
   };
   declare locale: string;
+  declare subject: "songs" | "characters";
   declare phase: "loading" | "ready" | "error";
   declare pool: Pool;
   declare round: { answer: Song; options: Song[]; misses: number[]; focus: [number, number]; solved: boolean } | null;
@@ -47,6 +51,7 @@ export class SongGuess extends LitElement {
   constructor() {
     super();
     this.locale = "ja";
+    this.subject = "songs";
     this.phase = "loading";
     this.pool = "all";
     this.round = null;
@@ -60,6 +65,7 @@ export class SongGuess extends LitElement {
     if (payload?.schema === "haneoka-public-songs-page-v1") this.preparePage(payload);
     super.connectedCallback();
     this.disposeSongDisplay = observeSongDisplay(() => {
+      if (this.subject === "characters") return;
       for (const song of this.songs) {
         const title = songTitle(song.source, this.locale);
         song.title = title.text;
@@ -117,8 +123,19 @@ export class SongGuess extends LitElement {
     if (this.pageData?.variants[this.server]) { this.preparePage(this.pageData, this.server); this.next(); return; }
     const progress = beginLoading(uiText(this.locale, "common.states.loading"), { scope: "owner" });
     try {
-      const songs = await fetchJson<Record<string, Record<string, unknown>>>(catalogUrl("songs", "", this.server));
-      this.applySongs(songs);
+      const catalog = await fetchJson<Record<string, Record<string, unknown>>>(catalogUrl(this.subject, "", this.server));
+      if (this.subject === "characters") {
+        this.songs = Object.values(catalog).flatMap((row) => {
+          const id = Number(row.characterId);
+          const name = resolveLocalizedText(row.characterName, this.locale);
+          const image = String(row.faceImage || row.thumbnailImage || "");
+          return id && name.text && image && isReleasedContent(row)
+            ? [{ id, title: name.text, titleLanguage: name.locale, source: row, band: "", bandId: Number(row.bandId || 0), jacket: image }]
+            : [];
+        });
+      } else {
+        this.applySongs(catalog);
+      }
       this.phase = "ready";
       this.next();
       progress.finish();
@@ -164,13 +181,14 @@ export class SongGuess extends LitElement {
     if (!round) return nothing;
     const zoom = round.solved ? 1 : ZOOMS[Math.min(round.misses.length, ZOOMS.length - 1)]!;
     const [x, y] = round.focus;
-    const href = resourcePath({ server: this.server, locale: this.locale as Locale, kind: "songs", id: String(round.answer.id) });
+    const characters = this.subject === "characters";
+    const href = resourcePath({ server: this.server, locale: this.locale as Locale, kind: this.subject, id: String(round.answer.id) });
     const number = (value: number) => value.toLocaleString(this.locale);
     return html`
       <section class="page song-guess">
         <div class="song-guess__layout">
           <div class="song-guess__stage">
-            <div class="song-guess__jacket" role="img" aria-label=${round.solved ? round.answer.title : this.text("jacket", "Jacket")}>
+            <div class="song-guess__jacket" role="img" aria-label=${round.solved ? round.answer.title : characters ? this.text("portrait", "Character portrait") : this.text("jacket", "Jacket")}>
               <img
                 src=${round.answer.jacket}
                 alt=""
@@ -197,7 +215,7 @@ export class SongGuess extends LitElement {
             </ol>
             <div class="song-guess__bar">
               ${round.solved
-                ? html`<a class="button button--text" href=${href}>${icon("library_music", 18)}<span lang=${round.answer.titleLanguage}>${round.answer.title}</span></a>`
+                ? html`<a class="button button--text" href=${href}>${characters ? icon("person", 18) : icon("library_music", 18)}<span lang=${round.answer.titleLanguage}>${round.answer.title}</span></a>`
                 : html`<span></span>`}
               <button class="button" type="button" @click=${() => this.next()}>
                 ${icon(round.solved ? "arrow_forward" : "skip_next", 18)}${round.solved ? this.text("next", "Next") : this.text("skip", "Skip")}
@@ -209,7 +227,7 @@ export class SongGuess extends LitElement {
               label: this.text("choices", "Choices"),
               value: this.pool,
               options: [
-                { value: "all", label: this.text("anyBand", "All songs") },
+                { value: "all", label: characters ? this.text("allCharacters", "All characters") : this.text("anyBand", "All songs") },
                 { value: "band", label: this.text("sameBand", "Same band") },
               ],
               onSelect: (pool) => {

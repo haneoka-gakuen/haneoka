@@ -886,24 +886,7 @@
       var(--md-sys-typescale-headline-small-line-height) var(--app-font);
   }
   .playlist-picker__search {
-    display: flex;
-    min-height: 48px;
-    align-items: center;
-    gap: 8px;
-    padding-inline: 16px;
-    color: var(--md-sys-color-on-surface-variant);
-    border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container-highest);
-  }
-  .playlist-picker__search > input {
-    min-width: 0;
-    flex: 1;
-    color: var(--md-sys-color-on-surface);
-    border: 0;
-    outline: 0;
-    background: none;
-    font: var(--md-sys-typescale-body-large-weight) var(--md-sys-typescale-body-large-size) /
-      var(--md-sys-typescale-body-large-line-height) var(--app-font);
+    inline-size: 100%;
   }
   .playlist-picker__bands {
     display: flex;

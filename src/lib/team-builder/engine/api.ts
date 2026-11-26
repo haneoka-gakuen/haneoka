@@ -248,6 +248,8 @@ export interface EngineRequest {
   /** Private sampled warm pass; retained candidates still use every requested seed. */
   seedVariant?: "sample" | "quiet";
   seeded?: boolean;
+  /** Shared-search shards can begin while a separate Worker scores a candidate. */
+  deferWarmStart?: boolean;
   /** Private full reward tuple search; its scalar lower floor remains cooperative. */
   rewardLexicographic?: boolean;
   rewardIncumbent?: RewardFloor;
@@ -348,6 +350,8 @@ export interface EngineResponse {
   resolvedRewardPlan?: RewardRankingPlan;
   /** Proven challenge team used to price automatic CP conversion. */
   cpChallenge?: EngineHit;
+  /** Best proven challenge team per chart in that same calibration. */
+  cpChallengeAlternatives?: EngineHit[];
   stopReason?: StopReason;
   error?: string;
   /** Phase durations sum work across Workers; wallMs includes queueing and all phases. */

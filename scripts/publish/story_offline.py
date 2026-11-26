@@ -17,7 +17,7 @@ from urllib.parse import unquote, urlsplit
 
 from download_store import DownloadStore, json_bytes
 
-SCHEMA = "haneoka-story-offline-v1"
+SCHEMA = "haneoka-story-offline-v2"
 RECIPE = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 COMMON_SOURCES = (
     "Assets/AddressableResources/Common/Prefab/CameraManager.prefab",
@@ -35,6 +35,7 @@ class StoryOfflineProjection:
         self.entries = {row["path"]: row for row in manifest["entries"]}
         self.catalog = self.read("api/v1/catalog/manifest.json")
         self.entities = {}
+        self.story_context = None
 
     def read(self, path):
         entry = self.entries[path]
@@ -131,6 +132,13 @@ class StoryOfflineProjection:
                 if path in self.entries:
                     refs[self.media(path)] = {"path": path}
                     pending.append(path)
+                    suffix = PurePosixPath(path).suffix
+                    if suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                        for language in ("en", "ko", "zh-Hans", "zh-Hant"):
+                            localized = f"{path[:-len(suffix)]}({language}){suffix}"
+                            if localized in self.entries:
+                                refs[self.media(localized)] = {"path": localized}
+                                pending.append(localized)
 
         for value in seeds:
             visit(value)
@@ -171,62 +179,123 @@ class StoryOfflineProjection:
                         for path in sorted(paths)},
         }
 
-    def publish(self):
-        release, server = self.manifest["releaseId"], self.server
-        prefix = f"servers/{server}/releases/{release}/offline/"
-        previous = self.store.get_json(prefix + "latest.json")
-        if previous and previous.get("schema") == SCHEMA and previous.get("recipeSHA256") == RECIPE:
-            return previous
+    def common_manifest(self):
         documents = {}
-        indexes = {}
         for name in ("stories", "story-runtime", "characters", "bands"):
-            value, spec = self.resource(name)
-            indexes[name] = value
+            spec = self.catalog["resources"][name]
             documents[self.api(name)] = {"path": spec["index"]}
         common_sources = [f"metadata/sources/{path}.json" for path in COMMON_SOURCES]
-        common_sources.extend(path for path in self.entries if path.startswith("metadata/sources/Assets/AddressableResources/Adv/Transition/"))
+        common_sources.extend(
+            path for path in self.entries
+            if path.startswith("metadata/sources/Assets/AddressableResources/Adv/Transition/")
+        )
         for path in common_sources:
             if path in self.entries:
                 documents[self.api("sources/" + path[len("metadata/sources/"):-5])] = {"path": path}
         for path in self.entries:
             if path.startswith("assets/Assets/AddressableResources/Adv/Chat/Stamp/"):
                 documents[self.media(path)] = {"path": path}
-        common = self.collect([], documents)
+        return self.collect([], documents)
+
+    def thumbnail(self, key, summary):
+        value, _ = self.entity("stories", key)
+        candidates = [summary.get(field) for field in ("episodeImage", "thumbnail", "image")]
+        backgrounds = value.get("assets", {}).get("backgrounds") or {}
+        if isinstance(backgrounds, dict):
+            candidates.extend(backgrounds.values())
+        elif isinstance(backgrounds, list):
+            candidates.extend(backgrounds)
+        for item in candidates:
+            if isinstance(item, dict):
+                item = item.get("url") or item.get("imageUrl") or item.get("src")
+            if not isinstance(item, str):
+                continue
+            raw = unquote(urlsplit(item).path)
+            for tree in ("assets", "runtime", "objects"):
+                prefix = f"/{tree}/{self.server}/"
+                if not raw.startswith(prefix):
+                    continue
+                path = tree + "/" + raw[len(prefix):]
+                record = self.entries.get(path)
+                if record and record["mediaType"].split(";", 1)[0] in {"image/jpeg", "image/png", "image/webp"}:
+                    return self.media(path)
+        return None
+
+    def story_presentation(self, key, episode):
+        if self.story_context is None:
+            index, _ = self.resource("stories")
+            chapters = {str(row.get("chapterId")): row for row in index.get("chapters", {}).values()}
+            spots = {
+                str(talk.get("storyKey")): spot
+                for spot in index.get("homeSpots", {}).values()
+                for talk in spot.get("talks", [])
+                if talk.get("storyKey")
+            }
+            self.story_context = index.get("episodes", {}), chapters, spots
+        episodes, chapters, spots = self.story_context
+        return [episodes.get(key), chapters.get(str(episode.get("chapterId"))), spots.get(key)]
+
+    def episode_manifest(self, key, thumbnail=None):
+        value, path = self.entity("stories", key)
+        refs = {self.api("stories/" + key): {"path": path, "selector": key}}
+        seeds = [value, thumbnail, *self.story_presentation(key, value)]
+        models = {model["live2dKey"] for model in value.get("assets", {}).get("live2d", [])}
+        for key in sorted(models):
+            model, path = self.entity("live2d", key)
+            refs[self.api("live2d/" + key)] = {"path": path, "selector": key}
+            seeds.append({
+                "sourcePath": model.get("sourcePath"),
+                "runtime": model.get("runtime", {}),
+                "motions": model.get("motions", []),
+                "expressions": model.get("expressions", []),
+            })
+        return self.collect(seeds, refs)
+
+    def publish(self):
+        release, server = self.manifest["releaseId"], self.server
+        prefix = f"servers/{server}/releases/{release}/offline/"
+        previous = self.store.get_json(prefix + "latest.json")
+        if previous and previous.get("schema") == SCHEMA and previous.get("recipeSHA256") == RECIPE:
+            return previous
+        stories = self.resource("stories")[0]
+        common = self.common_manifest()
         allowed = dict(common["objects"])
 
-        def publish_manifest(value):
+        def manifest_bytes(value):
             body = json_bytes(value)
-            sha = hashlib.sha256(body).hexdigest()
-            self.store.put_bytes(prefix + f"manifests/{sha}.json", body)
-            return sha
+            return hashlib.sha256(body).hexdigest(), body
 
-        common_hash = publish_manifest(common)
+        def publish_manifest(encoded):
+            sha, body = encoded
+            self.store.put_bytes(prefix + f"manifests/{sha}.json", body)
+
+        common_hash, body = manifest_bytes(common)
+        publish_manifest((common_hash, body))
         grouped = defaultdict(list)
-        for key, episode in indexes["stories"].get("episodes", {}).items():
+        for key, episode in stories.get("episodes", {}).items():
             grouped[str(episode.get("chapterId") or episode.get("chapterKey") or key)].append((key, episode))
         packages = []
-        for chapter, episodes in sorted(grouped.items()):
-            refs, seeds = {}, []
-            for key, summary in episodes:
-                value, path = self.entity("stories", key)
-                refs[self.api("stories/" + key)] = {"path": path, "selector": key}
-                seeds.append(value)
-                for model in value.get("assets", {}).get("live2d", []):
-                    key = model["live2dKey"]
-                    model_value, model_path = self.entity("live2d", key)
-                    refs[self.api("live2d/" + key)] = {"path": model_path, "selector": key}
-                    runtime = model_value.get("runtime", {})
-                    seeds.append({"sourcePath": model_value.get("sourcePath"),
-                                  "runtime": {key: runtime[key] for key in ("moc", "textures") if key in runtime}})
-            package = self.collect(seeds, refs)
-            allowed.update(package["objects"])
-            first = episodes[0][1]
-            packages.append({"id": "chapter-" + chapter, "title": first.get("chapterName") or first.get("title"),
-                             "bandId": first.get("bandId"), "manifest": publish_manifest(package),
-                             "bytes": sum(row["bytes"] for row in package["objects"].values()),
-                             "episodes": [{"id": key, "title": value.get("title"), "episodeNumber": value.get("episodeNumber")}
-                                          for key, value in episodes]})
-            print(f"Prepared {server} chapter {chapter}: {len(package['objects'])} objects", flush=True)
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for chapter, episodes in sorted(grouped.items()):
+                objects = {}
+                rows, writes = [], {}
+                for key, summary in episodes:
+                    thumbnail = self.thumbnail(key, summary)
+                    value = self.episode_manifest(key, thumbnail)
+                    objects.update(value["objects"])
+                    digest, body = manifest_bytes(value)
+                    writes[digest] = body
+                    rows.append({"id": key, "title": summary.get("title"),
+                                 "episodeNumber": summary.get("episodeNumber"), "manifest": digest, "thumbnail": thumbnail,
+                                 "bytes": sum(entry["bytes"] for entry in value["objects"].values())})
+                allowed.update(objects)
+                first = episodes[0][1]
+                list(executor.map(publish_manifest, writes.items()))
+                packages.append({"id": "chapter-" + chapter, "title": first.get("chapterName") or first.get("title"),
+                                 "bandId": first.get("bandId"),
+                                 "thumbnail": next((row["thumbnail"] for row in rows if row["thumbnail"]), None),
+                                 "bytes": sum(row["bytes"] for row in objects.values()), "episodes": rows})
+                print(f"Prepared {server} chapter {chapter}: {len(rows)} episode manifests", flush=True)
         root = {"schema": SCHEMA, "server": server, "common": common_hash, "packages": packages,
                 "totalBytes": sum(row["bytes"] for row in allowed.values()), "objectCount": len(allowed)}
         root_body = json_bytes(root)
@@ -237,7 +306,7 @@ class StoryOfflineProjection:
 
         def publish_objects(item):
             shard, rows = item
-            if previous:
+            if previous and previous.get("schema") == SCHEMA:
                 rows = {**(self.store.get_json(prefix + f"objects/{shard}.json") or {}), **rows}
             self.store.put_bytes(prefix + f"objects/{shard}.json", json_bytes(rows))
 

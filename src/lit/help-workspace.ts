@@ -9,8 +9,9 @@ import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import { LitElement, html, nothing } from "lit";
 import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
 import { beginLoading, type LoadingReporter } from "../lib/loading-progress";
-import { updateEntityHeading } from "../lib/detail-navigation";
-import { parseEntitySelection } from "../lib/resource-route";
+import { navigateDetailPage, updateEntityHeading } from "../lib/detail-navigation";
+import { parseEntitySelection, resourcePath, type ReleaseServer } from "../lib/resource-route";
+import type { Locale } from "../i18n/locales";
 import { currentReleaseServer } from "./shared/catalog";
 import { fetchCrossServerCatalogs } from "../lib/cross-server/fetch";
 import { crossCatalogPresentation, type CrossCatalogPresentation } from "../lib/cross-server/presentation";
@@ -107,14 +108,13 @@ export class HelpWorkspace extends LitElement {
     if (!this.isConnected) return;
     const url = navigationDocumentUrl();
     const selection = parseEntitySelection(url.pathname);
-    if (selection?.source === "canonical" && selection.route.kind === "help") {
-      this.entityId = selection.route.id;
-      this.sourceServer = selection.route.server;
-    }
+    const help = selection?.source === "canonical" && selection.route.kind === "help" ? selection.route : undefined;
+    if (help) this.sourceServer = help.server;
+    if (help && help.id !== "tips") this.entityId = help.id;
     this.locale = preferredLocale(this.locale);
     void Promise.all([import("@material/web/progress/circular-progress.js")]);
     const p = url.searchParams;
-    this.mode = p.get("mode") === "tips" ? "tips" : "manual";
+    this.mode = help?.id === "tips" ? "tips" : "manual";
     this.selectedTopic = this.entityId || p.get("topic") || "";
     void this.load();
   }
@@ -123,7 +123,6 @@ export class HelpWorkspace extends LitElement {
     this.request?.abort();
     this.request = undefined;
     this.loading?.cancel();
-    clearAppBarActions("help");
     super.disconnectedCallback();
   }
   public prepareCollection(payload: HelpCollectionPageData, locale: string, _mode?: string): void {
@@ -160,7 +159,7 @@ export class HelpWorkspace extends LitElement {
   private prepareDocument(d: JsonRecord): JsonRecord | undefined {
     this.categories = recordValues(d.categories).sort((a, b) => Number(a.order) - Number(b.order));
     this.tips = recordValues(d.loadingTips).sort((a, b) => Number(a.tipId) - Number(b.tipId));
-    // A deep-linked topic (?topic=) opens the category that contains it.
+    // A deep-linked topic opens its containing category.
     const selected = this.topicForId(this.categories.flatMap(category => Array.isArray(category.subcategories) ? category.subcategories as JsonRecord[] : []), this.selectedTopic);
     const linked = selected
       ? this.categories.find((category) =>
@@ -244,11 +243,6 @@ export class HelpWorkspace extends LitElement {
       }
     }
   }
-  private sync() {
-    const p = new URLSearchParams();
-    if (this.mode !== "manual") p.set("mode", this.mode);
-    history.replaceState(history.state, "", `${location.pathname}${p.size ? `?${p}` : ""}`);
-  }
   private filteredEntries() {
     if (this.mode === "tips") return this.entityId ? this.tips : this.tips.filter((item)=>isContentListed("help-tips",item,String(item.tipId)));
     const category = this.categories.find((item) => Number(item.categoryId) === this.selectedCategory);
@@ -260,7 +254,7 @@ export class HelpWorkspace extends LitElement {
       return unpublishedState(this.locale);
     const entries = this.filteredEntries();
     if (this.entityId) {
-      clearAppBarActions("help");
+      clearAppBarActions(this, "help");
       if (this.phase === "loading") return loadingState(uiText(this.locale, "common.states.loading"));
       if (this.phase === "error")
         return errorState(
@@ -302,6 +296,7 @@ export class HelpWorkspace extends LitElement {
     // The manual/tips switch is a page-level action, so it belongs in the top
     // app bar rather than floating over it.
     setAppBarActions(
+      this,
       "help",
       segmented({
         label: uiText(this.locale, "common.actions.view"),
@@ -311,10 +306,12 @@ export class HelpWorkspace extends LitElement {
           { value: "manual" as const, label: uiText(this.locale, "settings.labels.manual"), icon: "menu_book" },
           { value: "tips" as const, label: uiText(this.locale, "settings.labels.loadingTips"), icon: "lightbulb" },
         ],
-        onSelect: (mode) => {
-          this.mode = mode;
-          this.sync();
-        },
+        onSelect: (mode) => void navigateDetailPage(resourcePath({
+          server: (this.sourceServer || currentReleaseServer()) as ReleaseServer,
+          locale: this.locale as Locale,
+          kind: "help",
+          id: mode === "tips" ? "tips" : undefined,
+        })),
       }),
     );
     return html`

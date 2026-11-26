@@ -104,15 +104,3 @@ table {
 [data-scroll-region]:focus {
   outline: none;
 }
-
-/* ---------- Scrollbars ----------
- * Thin, on the surface tint, so a horizontally scrolling table reads as part
- * of the component rather than as a browser artefact. */
-@supports (scrollbar-width: thin) {
-  [data-scroll-region],
-  .scroll-x,
-  .scroll-y {
-    scrollbar-color: var(--md-sys-color-outline-variant) transparent;
-    scrollbar-width: thin;
-  }
-}

@@ -25,18 +25,17 @@ function firstVisible(a: PathPoint, b: PathPoint, end: number) {
   for (const clock of [a.left, a.right, b.left, b.right]) for (const segment of clock.segments)
     if (segment.timeMs > first && segment.timeMs < end) times.add(segment.timeMs);
   const delta = (point: PathPoint, now: number) => point.value - point.left.at(now) * (1 - point.ratio) - point.right.at(now) * point.ratio;
-  const visible = (x: number, y: number) => Math.max(x, y) >= low && Math.min(x, y) <= high;
   const boundaries = [...times].sort((x, y) => x - y);
   for (let index = 0; index < boundaries.length - 1; index++) {
     const start = boundaries[index]!, stop = boundaries[index + 1]!, x = delta(a, start), y = delta(b, start);
-    if (visible(x, y)) return start / 1000;
-    const dx = delta(a, stop) - x, dy = delta(b, stop) - y, candidates: number[] = [];
-    for (const [value, change] of [[x, dx], [y, dy]]) if (change) for (const limit of [low, high]) {
-      const ratio = (limit - value!) / change!;
-      if (ratio >= 0 && ratio <= 1) candidates.push(ratio);
-    }
-    for (const ratio of candidates.sort((x, y) => x - y)) if (visible(x + dx * ratio, y + dy * ratio))
-      return (start + (stop - start) * ratio) / 1000;
+    const before = Math.max(x, y) < low;
+    if (!before && Math.min(x, y) <= high) return start / 1000;
+    const limit = before ? low : high;
+    const xEnd = delta(a, stop), yEnd = delta(b, stop);
+    const xEntry = (before ? xEnd >= limit : xEnd <= limit) ? (limit - x) / (xEnd - x) : Infinity;
+    const yEntry = (before ? yEnd >= limit : yEnd <= limit) ? (limit - y) / (yEnd - y) : Infinity;
+    const entry = Math.min(xEntry, yEntry);
+    if (entry <= 1) return (start + (stop - start) * entry) / 1000;
   }
   return end / 1000;
 }
@@ -63,6 +62,7 @@ export function compileCreationSonolus(project: Project, compiled = compileOurNo
     clock.segments.forEach((segment, index) => level.entities.push({
       archetype: "ScrollClock", name: name(index), data: [
         { name: "clockHead", value: index === 0 ? 1 : 0 },
+        ...(index === 0 ? [{ name: "clockExactSpawn", value: 1 }] : []),
         { name: "#BEAT", value: tempo.secondsToTick(segment.timeMs / 1000) / project.resolution },
         { name: "clockTime", value: segment.timeMs / 1000 },
         { name: "clockValue", value: segment.value / 1000 },

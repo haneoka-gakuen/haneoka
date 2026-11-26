@@ -2,7 +2,7 @@
 // Input: 歌曲与社区谱面的音轨、队列和播放操作。
 // Output: 全站持久音频播放器与统一队列。
 // Pos: [Map](L2-2.md)；音频播放及 ensure 单例入口。
-// Effects/Dependencies: DOM、Audio、MediaSession 和本地播放状态；关闭清空队列并释放播放。
+// Effects/Dependencies: 浏览器 Audio／MediaSession 或移动 App 音乐桥接；关闭清空队列并释放播放。
 import { audioTrackKey } from "../../lib/audio-track-key";
 import { audioTrackDetailPath } from "../../lib/audio-track-link";
 import { observeSongDisplay, songTitle } from "../../lib/song-display";
@@ -15,6 +15,8 @@ import { wavyProgress } from "../ui/wavy-progress";
 import { trapFocus } from "../../lib/overlay";
 import { preferredLocale, uiText } from "../shared/catalog";
 import { contentRequestUrl } from "../../lib/content-request";
+import { appCall, appSupports, type AppAudioCommand, type AppAudioState, type AudioPlaybackMode } from "../../lib/app-bridge";
+import { snackbar } from "../../lib/snackbar";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -59,7 +61,7 @@ export interface AudioTrack {
   detailPath?: string;
 }
 
-type PlaybackMode = "sequential" | "repeat-all" | "repeat-one" | "shuffle";
+type PlaybackMode = AudioPlaybackMode;
 interface Snapshot {
   queue: AudioTrack[];
   index: number;
@@ -111,20 +113,27 @@ export class AudioDock extends LitElement {
   };
   private disposeSongDisplay?: () => void;
   private refreshLabels() {
-    this.queue = this.queue.map((track) => {
+    let changed = false;
+    const queue = this.queue.map((track) => {
       const title =
         track.titleSource == null
           ? { text: track.title, locale: track.titleLanguage || this.uiLanguage }
           : songTitle({ title: track.titleSource }, this.uiLanguage);
+      const artist =
+        track.artistSource == null ? track.artist : resolveLocalizedText(track.artistSource, this.uiLanguage).text;
+      if (title.text === track.title && title.locale === track.titleLanguage && artist === track.artist) return track;
+      changed = true;
       return {
         ...track,
         title: title.text,
         titleLanguage: title.locale,
-        artist:
-          track.artistSource == null ? track.artist : resolveLocalizedText(track.artistSource, this.uiLanguage).text,
+        artist,
       };
     });
-    if (this.track) this.updateMetadata(this.track);
+    if (changed) this.queue = queue;
+    if (this.nativePlayback) {
+      if (changed && this.nativeRevision && this.nativeRevision !== "empty") void this.configureNative();
+    } else if (this.track) this.updateMetadata(this.track);
   }
   private updateMetadata(track: AudioTrack) {
     if ("mediaSession" in navigator && "MediaMetadata" in window)
@@ -161,6 +170,14 @@ export class AudioDock extends LitElement {
   declare mode: PlaybackMode;
   declare draggedIndex: number;
   declare dropIndex: number;
+  private readonly nativePlayback = appSupports("audioPlaybackV1");
+  private nativeReady = Promise.resolve();
+  private nativeOperations = Promise.resolve();
+  private nativeRequestId = 0;
+  private nativeRevision?: string;
+  private nativeQueue: NonNullable<AppAudioState["queue"]> = [];
+  private displayedNativeRevision?: string;
+  private nativePoll?: number;
   private audio = new Audio();
   private playbackGeneration = 0;
   private restoredTime = 0;
@@ -208,7 +225,7 @@ export class AudioDock extends LitElement {
     this.audio.preload = "metadata";
     this.restore();
     this.audio.volume = this.volume;
-    this.observeAudio(this.audio);
+    if (!this.nativePlayback) this.observeAudio(this.audio);
   }
 
   private observeAudio(audio: HTMLAudioElement) {
@@ -260,8 +277,12 @@ export class AudioDock extends LitElement {
     document.addEventListener("astro:page-load", this.afterPageLoad);
     addEventListener("popstate", this.onPopState);
     addEventListener("keydown", this.onKeydown);
-    if (this.track) void this.prepare(false, false);
-    if ("mediaSession" in navigator) {
+    if (this.nativePlayback) {
+      this.nativeReady = this.requestNative({ action: "state" });
+      document.addEventListener("visibilitychange", this.refreshNative);
+      addEventListener("pageshow", this.refreshNative);
+    } else if (this.track) void this.prepare(false, false);
+    if (!this.nativePlayback && "mediaSession" in navigator) {
       try {
         navigator.mediaSession.setActionHandler("play", () => {
           if (this.track && this.audio.paused) void this.togglePlayback();
@@ -283,6 +304,9 @@ export class AudioDock extends LitElement {
     this.disposeSongDisplay?.();
     removeEventListener("haneoka:locale-ready", this.onLocale);
     removeEventListener("pagehide", this.persistBound);
+    document.removeEventListener("visibilitychange", this.refreshNative);
+    removeEventListener("pageshow", this.refreshNative);
+    window.clearTimeout(this.nativePoll);
     document.removeEventListener("astro:after-swap", this.afterNavigation);
     document.removeEventListener("astro:page-load", this.afterPageLoad);
     this.releaseQueueFocus?.();
@@ -344,6 +368,7 @@ export class AudioDock extends LitElement {
   }
 
   async playTrack(track: AudioTrack, queue: AudioTrack[]) {
+    if (this.nativePlayback) await this.nativeReady;
     const normalizedQueue = (queue.length ? queue : [track]).flatMap((entry, occurrence) => {
       const normalized = normalizedTrack(entry, occurrence);
       return normalized ? [normalized] : [];
@@ -359,7 +384,7 @@ export class AudioDock extends LitElement {
       await this.togglePlayback();
       return;
     }
-    this.audio.pause();
+    if (!this.nativePlayback) this.audio.pause();
     this.queue = normalizedQueue;
     this.index = Math.max(
       0,
@@ -374,6 +399,7 @@ export class AudioDock extends LitElement {
   }
 
   async enqueueTrack(track: AudioTrack, playAdded = false) {
+    if (this.nativePlayback) await this.nativeReady;
     const requested = normalizedTrack(track, this.queue.length);
     if (!requested) return;
     const key = audioTrackKey(requested);
@@ -398,7 +424,8 @@ export class AudioDock extends LitElement {
     } else if (playAdded) {
       this.index = this.queue.length - 1;
       await this.prepare(true, true);
-    } else this.persist();
+    } else if (this.nativePlayback) await this.configureNative();
+    else this.persist();
     this.emitState();
   }
 
@@ -445,9 +472,89 @@ export class AudioDock extends LitElement {
     }
   }
 
+  private configureNative(index?: number, position?: number, playing?: boolean) {
+    return this.requestNative(this.nativeQueueCommand(index, position, playing));
+  }
+
+  private nativeQueueCommand(index?: number, position?: number, playing?: boolean): AppAudioCommand {
+    return {
+      action: "configure",
+      queue: this.queue.map(({ titleSource: _titleSource, artistSource: _artistSource, ...track }) => {
+        const source = new URL(contentRequestUrl(track.url), location.href);
+        const cover = track.cover ? new URL(contentRequestUrl(track.cover), location.href) : undefined;
+        return {
+          ...track,
+          queueId: track.queueId!,
+          source: source.href,
+          artwork: cover && /^https?:$/u.test(cover.protocol) ? cover.href : undefined,
+        };
+      }),
+      index,
+      position,
+      playing,
+      mode: index === undefined ? undefined : this.mode,
+      volume: index === undefined ? undefined : this.volume,
+    };
+  }
+
+  private requestNative(command: AppAudioCommand) {
+    window.clearTimeout(this.nativePoll);
+    const requestId = ++this.nativeRequestId;
+    this.nativeOperations = this.nativeOperations.then(async () => {
+      try {
+        let state = await appCall("audioPlayback", { ...command, queueRevision: this.nativeRevision });
+        if (command.action === "state" && state.queueRevision === "empty" &&
+            requestId === this.nativeRequestId && this.isConnected && this.track) {
+          state = await appCall("audioPlayback", this.nativeQueueCommand(this.index, this.currentTime, false));
+        }
+        if (state.queue) this.nativeQueue = state.queue;
+        this.nativeRevision = state.queueRevision;
+        if (requestId === this.nativeRequestId && this.isConnected) this.applyNativeState(state);
+      } catch {
+        this.displayedNativeRevision = undefined;
+        if (command.action !== "state" && requestId === this.nativeRequestId && this.isConnected)
+          snackbar(this.t("errors.service_unavailable"));
+      } finally {
+        if (requestId === this.nativeRequestId && this.isConnected && this.track && !document.hidden) {
+          this.nativePoll = window.setTimeout(this.refreshNative, this.playing ? 500 : 1_000);
+        }
+      }
+    });
+    return this.nativeOperations;
+  }
+
+  private refreshNative = () => {
+    if (!document.hidden) void this.requestNative({ action: "state" });
+    else window.clearTimeout(this.nativePoll);
+  };
+
+  private applyNativeState(state: AppAudioState) {
+    if (state.queueRevision === "empty") return;
+    const current = this.track?.queueId;
+    const wasPlaying = this.playing;
+    const queueChanged = this.displayedNativeRevision !== state.queueRevision;
+    if (queueChanged) {
+      const previous = new Map(this.queue.map((track) => [track.queueId, track]));
+      this.queue = this.nativeQueue.map((track) => ({ ...previous.get(track.queueId), ...track }));
+      this.displayedNativeRevision = state.queueRevision;
+    }
+    this.index = state.index;
+    this.currentTime = state.position;
+    this.duration = state.duration;
+    this.playing = state.playing;
+    this.mode = state.mode;
+    this.volume = state.volume;
+    if (state.volume > 0) this.unmutedVolume = state.volume;
+    if (queueChanged || current !== this.track?.queueId || wasPlaying !== this.playing) {
+      this.persist();
+      this.emitState();
+    }
+  }
+
   private async prepare(reset: boolean, shouldPlay = true) {
     const track = this.track;
     if (!track) return;
+    if (this.nativePlayback) return this.configureNative(this.index, reset ? 0 : undefined, shouldPlay);
     const generation = ++this.playbackGeneration;
     const audio = this.audio;
     const source = contentRequestUrl(track.url);
@@ -488,6 +595,10 @@ export class AudioDock extends LitElement {
   }
   private async next(automatic = false) {
     if (!this.queue.length) return;
+    if (this.nativePlayback) {
+      await this.nativeReady;
+      return this.requestNative({ action: "next" });
+    }
     if (automatic && this.mode === "repeat-one") {
       this.seek(0);
       await this.audio.play().catch(() => undefined);
@@ -507,6 +618,10 @@ export class AudioDock extends LitElement {
   }
   private async previous() {
     if (!this.queue.length) return;
+    if (this.nativePlayback) {
+      await this.nativeReady;
+      return this.requestNative({ action: "previous" });
+    }
     if (this.audio.currentTime > 3) {
       this.seek(0);
       return;
@@ -518,18 +633,21 @@ export class AudioDock extends LitElement {
   private cycleMode() {
     this.mode = MODES[(MODES.indexOf(this.mode) + 1) % MODES.length] || "repeat-all";
     this.persist();
+    if (this.nativePlayback) void this.requestNative({ action: "mode", mode: this.mode });
   }
   private seek(seconds: number) {
-    if (!Number.isFinite(this.duration) || this.duration <= 0 || this.audio.readyState < 1) return;
+    if (!Number.isFinite(this.duration) || this.duration <= 0 || (!this.nativePlayback && this.audio.readyState < 1)) return;
     const value = clamp(Number(seconds) || 0, 0, this.duration);
-    this.audio.currentTime = value;
+    if (this.nativePlayback) void this.requestNative({ action: "seek", position: value });
+    else this.audio.currentTime = value;
     this.currentTime = value;
     this.persist();
   }
   private setVolume(value: number) {
     if (this.volume > 0) this.unmutedVolume = this.volume;
     this.volume = clamp(Number(value) || 0, 0, 1);
-    this.audio.volume = this.volume;
+    if (this.nativePlayback) void this.requestNative({ action: "volume", volume: this.volume });
+    else this.audio.volume = this.volume;
     this.persist();
   }
 
@@ -545,7 +663,8 @@ export class AudioDock extends LitElement {
     this.queue = next;
     if (index < this.index) this.index -= 1;
     else if (removingCurrent) this.index = Math.min(index, next.length - 1);
-    if (removingCurrent) void this.prepare(true, resume);
+    if (this.nativePlayback) void this.configureNative();
+    else if (removingCurrent) void this.prepare(true, resume);
     this.persist();
   }
 
@@ -561,6 +680,7 @@ export class AudioDock extends LitElement {
       0,
       next.findIndex((entry) => entry.queueId === current),
     );
+    if (this.nativePlayback) void this.configureNative();
     this.persist();
   }
 
@@ -575,14 +695,17 @@ export class AudioDock extends LitElement {
     ++this.playbackGeneration;
     // Retire the old element so its queued events and play promises cannot
     // change a player that is closed or has already started another track.
-    const audio = this.audio;
-    this.audio = new Audio();
-    this.audio.preload = "metadata";
-    this.audio.volume = this.volume;
-    this.observeAudio(this.audio);
-    audio.pause();
-    audio.removeAttribute("src");
-    audio.load();
+    if (this.nativePlayback) void this.requestNative({ action: "clear" });
+    else {
+      const audio = this.audio;
+      this.audio = new Audio();
+      this.audio.preload = "metadata";
+      this.audio.volume = this.volume;
+      this.observeAudio(this.audio);
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
     this.queue = [];
     this.index = -1;
     this.playing = false;
@@ -604,7 +727,7 @@ export class AudioDock extends LitElement {
     document.documentElement.style.removeProperty("--audio-dock-clearance");
     this.syncCollapsedSlots();
     if (returnFocus) document.querySelector<HTMLElement>("#main-content")?.focus({ preventScroll: true });
-    if ("mediaSession" in navigator) {
+    if (!this.nativePlayback && "mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
       try {
@@ -671,10 +794,15 @@ export class AudioDock extends LitElement {
   }
 
   pausePlayback() {
-    this.audio.pause();
+    if (this.nativePlayback) void this.nativeReady.then(() => this.requestNative({ action: "pause" }));
+    else this.audio.pause();
   }
   private async togglePlayback() {
     if (!this.track) return;
+    if (this.nativePlayback) {
+      await this.nativeReady;
+      return this.requestNative({ action: "toggle" });
+    }
     const generation = this.playbackGeneration;
     const audio = this.audio;
     if (this.playing) this.audio.pause();
@@ -894,7 +1022,8 @@ export class AudioDock extends LitElement {
     const track = this.track;
     if (!track) return nothing;
     const full = !this.collapsed;
-    const progress = this.duration > 0 ? clamp(this.currentTime / this.duration, 0, 1) : 0;
+    const seekPosition = clamp(this.currentTime, 0, this.duration);
+    const progress = this.duration > 0 ? seekPosition / this.duration : 0;
     const title = html`
       <strong lang=${track.titleLanguage || this.uiLanguage}>${track.title}</strong>
       <small>${track.artist || "\u00a0"}</small>
@@ -947,7 +1076,7 @@ export class AudioDock extends LitElement {
             .min=${0}
             .max=${this.duration || 1}
             .step=${0.01}
-            .value=${this.currentTime}
+            .value=${seekPosition}
             .valueLabel=${this.format(this.currentTime)}
             ?disabled=${this.duration <= 0}
             aria-label=${this.t("playbackPosition")}

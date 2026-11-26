@@ -1,8 +1,8 @@
 // L3 — GEB
 // Input: AppShell geometry and page action labels, controls and priority.
-// Output: Responsive icon labels and an overflow menu preserving every action.
+// Output: Responsive icon labels with entity navigation labels removed first, and an overflow menu.
 // Pos: [Map](L2-2.md); shared title-bar fitting for static and hydrated controls.
-// Effects/Dependencies: Measures browser layout and updates action attributes; opens a proxy menu without moving source controls.
+// Effects/Dependencies: Measures visible actions; closes a proxy menu when its source controls leave the active view.
 /**
  * Top app bar overflow (Material 3): when a page's actions do not fit beside
  * the title, the trailing ones move into an overflow menu behind a ⋮ button
@@ -34,6 +34,9 @@ const labelOf = (node: Element): string =>
 
 const compactWindow = typeof matchMedia === "function" ? matchMedia("(max-width: 599px)") : undefined;
 const SWITCH = "[data-app-bar-switch]";
+const ENTITY_NAVIGATION = "[data-entity-navigation]";
+const active = (node: Element) => !node.closest("[hidden]");
+const openMenus = new WeakMap<HTMLElement, { menu: HTMLElement; targets: HTMLElement[] }>();
 
 function actionRowItems(actions: HTMLElement) {
   return [...actions.children].flatMap(child =>
@@ -43,12 +46,12 @@ function actionRowItems(actions: HTMLElement) {
 /** Candidates in the order they overflow: entity arrows first, then page actions from the end. */
 function candidates(actions: HTMLElement): HTMLElement[] {
   const secondary = [
-    ...actions.querySelectorAll<HTMLElement>(".top-app-bar__secondary-actions > [data-entity-navigation]"),
+    ...actions.querySelectorAll<HTMLElement>(`.top-app-bar__secondary-actions > ${ENTITY_NAVIGATION}`),
   ];
   const page = [...actions.querySelectorAll<HTMLElement>(".top-app-bar__group > *")]
     .filter((node) => !node.matches("[data-app-bar-keep], [data-app-bar-search], .top-app-bar__overflow"))
     .reverse();
-  return [...secondary, ...page.filter(node => !node.matches(SWITCH))];
+  return [...secondary, ...page.filter(node => !node.matches(SWITCH))].filter(active);
 }
 
 function collapseSwitch(actions: HTMLElement, group: HTMLElement) {
@@ -94,7 +97,7 @@ function menuEntries(actions: HTMLElement, switches?: HTMLElement[]) {
   // Overflow order is reversed page order; show entries in page order.
   hidden.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const entries: { label: string; icon?: Element | null; checked?: boolean; target: HTMLElement }[] = [];
-  for (const node of hidden) {
+  for (const node of hidden.filter(active)) {
     if (isInteractive(node)) {
       const label = labelOf(node);
       if (label) entries.push({ label, icon: node.querySelector(".material-icon, img"), target: node });
@@ -103,12 +106,12 @@ function menuEntries(actions: HTMLElement, switches?: HTMLElement[]) {
     for (const input of node.querySelectorAll<HTMLInputElement>("input[type='radio'], input[type='checkbox']")) {
       const holder = input.closest("label") ?? input;
       const label = labelOf(input) || labelOf(holder);
-      if (!label || input.disabled) continue;
+      if (!label || input.disabled || !active(input)) continue;
       entries.push({ label, icon: holder.querySelector("img, .material-icon"), checked: input.checked, target: input });
     }
     for (const control of node.querySelectorAll<HTMLElement>("button, a[href]")) {
       const label = labelOf(control);
-      if (!label || control.matches(":disabled")) continue;
+      if (!label || control.matches(":disabled") || !active(control)) continue;
       const pressed =
         control.getAttribute("aria-pressed") ??
         control.getAttribute("aria-checked") ??
@@ -135,6 +138,7 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement, switches?: HT
     document.body.append(menu);
   }
   const entries = menuEntries(actions, switches);
+  openMenus.set(actions, { menu, targets: entries.map(entry => entry.target) });
   menu.replaceChildren(
     ...entries.map((entry) => {
       const item = document.createElement("button");
@@ -173,6 +177,12 @@ function openMenu(actions: HTMLElement, button: HTMLButtonElement, switches?: HT
 
 /** Re-fits the bar: restores every action, then overflows from the lowest priority until the title fits. */
 export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
+  const open = openMenus.get(actions);
+  if (open && open.targets.some(target => !actions.contains(target) || !active(target))) {
+    if (open.menu.matches(":popover-open")) open.menu.hidePopover();
+    open.menu.replaceChildren();
+    openMenus.delete(actions);
+  }
   const leading = bar.querySelector<HTMLElement>("[data-top-app-bar-leading]");
   const title = bar.querySelector<HTMLElement>("h1");
   const style = getComputedStyle(bar);
@@ -182,15 +192,18 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
     delete node.dataset.appBarShowLabel;
   for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-overflowed]")) delete node.dataset[HIDDEN];
   for (const node of actions.querySelectorAll<HTMLElement>("[data-app-bar-switch-collapsed]")) delete node.dataset.appBarSwitchCollapsed;
-  for (const node of actions.querySelectorAll<HTMLButtonElement>(".top-app-bar__switch-popup")) node.hidden = true;
-  const switches = [...actions.querySelectorAll<HTMLElement>(`.top-app-bar__group > ${SWITCH}`)];
+  const switches = [...actions.querySelectorAll<HTMLElement>(`.top-app-bar__group > ${SWITCH}`)].filter(active);
+  for (const node of actions.querySelectorAll<HTMLButtonElement>(".top-app-bar__switch-popup")) {
+    if (switches.some(group => group.dataset.appBarSwitch === node.dataset.appBarSwitch)) node.hidden = true;
+    else node.remove();
+  }
   if (compactWindow?.matches) for (const group of switches) collapseSwitch(actions, group);
   const button = actions.querySelector<HTMLElement>(":scope > .top-app-bar__overflow");
   if (button) button.hidden = true;
   // On compact windows a detail page's leading slot is Back, so the
   // navigation menu is an overflow entry rather than a second trailing icon.
   const compactOnly = compactWindow?.matches
-    ? [...actions.querySelectorAll<HTMLElement>("[data-app-bar-overflow-compact]")]
+    ? [...actions.querySelectorAll<HTMLElement>("[data-app-bar-overflow-compact]")].filter(active)
     : [];
   for (const node of compactOnly) node.dataset[HIDDEN] = "true";
   const identity = bar.querySelector<HTMLElement>("[data-top-app-bar-identity]");
@@ -213,7 +226,8 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
   // scrollWidth is the title's untruncated width, padding included.
   const minimum = title && !title.hidden ? Math.min(title.scrollWidth, TITLE_MAX_RESERVED) : 0;
   const fitLabels = () => {
-    if (actions.querySelector(".top-app-bar__search[data-search-expanded='true']")) return;
+    const expanded = actions.querySelector("[data-app-bar-search]:not([hidden]) .top-app-bar__search[data-search-expanded='true']");
+    if (expanded) return;
     const reserved = title && !title.hidden ? Math.min(title.scrollWidth, Math.max(minimum, titleRoom())) : 0;
     const controls = [...bar.querySelectorAll<HTMLElement>(".icon-button:not([data-nav-toggle]), .segmented--icon > button")].filter(
       (node) => node.getBoundingClientRect().width > 0,
@@ -231,7 +245,10 @@ export function fitAppBarActions(bar: HTMLElement, actions: HTMLElement): void {
       if (text.textContent !== label) text.textContent = label;
       control.dataset.appBarShowLabel = "true";
     }
-    for (const control of controls.reverse()) {
+    const hidingOrder = controls.reverse().sort(
+      (left, right) => Number(right.matches(ENTITY_NAVIGATION)) - Number(left.matches(ENTITY_NAVIGATION)),
+    );
+    for (const control of hidingOrder) {
       if (titleRoom() >= reserved) break;
       delete control.dataset.appBarShowLabel;
     }

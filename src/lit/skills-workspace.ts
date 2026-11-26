@@ -3,6 +3,7 @@
 // Output: Searchable skill effects, level values and links to associated cards.
 // Pos: [Map](L2-2.md); skill collection and detail workspace.
 // Effects/Dependencies: Shared browse and detail components; card pages own upgrade requirements.
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { LitElement, html, nothing } from "lit";
 import { clientText } from "../i18n/client";
@@ -14,7 +15,7 @@ import type { Locale } from "../i18n/locales";
 import type { SkillCatalogEntry, SkillCatalogPayload, SkillFamily } from "../server/skill-catalog";
 import { skillPageId } from "../lib/skill-page";
 import { setAppBarSearch } from "../lib/app-bar";
-import { clearBrowseBar, renderBrowse } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { isContentListed, isContentVisible } from "../lib/content-release";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
@@ -114,7 +115,7 @@ export class SkillsWorkspace extends LitElement {
     this.syncSearch();
   }
   private syncSearch() {
-    this.releaseSearch = setAppBarSearch(SEARCH_OWNER, {
+    this.releaseSearch = setAppBarSearch(this, SEARCH_OWNER, {
       value: this.query,
       label: this.text("common.actions.search", "Search"),
       onInput: (value) => {
@@ -126,7 +127,6 @@ export class SkillsWorkspace extends LitElement {
   disconnectedCallback() {
     removeEventListener(SPOILER_CONTENT_EVENT, this.policyChanged);
     this.releaseSearch?.();
-    clearBrowseBar();
     this.lazyImages.disconnect();
     super.disconnectedCallback();
   }
@@ -206,17 +206,14 @@ export class SkillsWorkspace extends LitElement {
         : entry ? this.renderDetail(data, entry) : nothing;
     }
     const source = data.entries.filter((entry) => (this.includeUnlinked || entry.cards.length > 0) && isContentListed("skills", entry, skillPageId(entry)));
-    const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase(this.locale);
+    const needle = normalizeSearchText(this.query.trim(), this.locale);
     const matches = (entry: SkillCatalogEntry, skip?: Facet) =>
       (skip === "family" || !this.facets.family.length || this.facets.family.includes(entry.family)) &&
       (skip === "effect" ||
         !this.facets.effect.length ||
         entry.effects.some((effect) => this.facets.effect.includes(String(effect.id)))) &&
       (!needle ||
-        `${entry.id} ${this.name(entry.name)} ${this.effectNames(entry)} ${entry.levels.map((level) => this.name(level.description)).join(" ")}`
-          .normalize("NFKC")
-          .toLocaleLowerCase(this.locale)
-          .includes(needle));
+        normalizeSearchText(`${entry.id} ${this.name(entry.name)} ${this.effectNames(entry)} ${entry.levels.map((level) => this.name(level.description)).join(" ")}`, this.locale).includes(needle));
     const rows = source.filter((entry) => matches(entry));
     const effects = new Map<string, unknown>();
     for (const entry of source) for (const effect of entry.effects) effects.set(String(effect.id), effect.name);

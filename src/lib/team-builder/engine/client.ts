@@ -2,17 +2,17 @@
 // Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
 // Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
-// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存；复用同输入已证明的自动 CP 校准；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
+// Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存，多曲载荷只编码一次，与引擎初始化并行加载；复用同输入已证明的自动 CP 校准；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
-import { dataRows, objectRow, type TeamBuilderData } from "../data";
+import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
 import type { EngineHit, EngineRequest, EngineResponse, GrowthResult, SongRef, TeamEvaluation, Timeline, RewardFloor } from "./api";
-import type { EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
+import type { EncodedEngineChart, EngineCall, EngineChart, EngineChartSources, EngineReply, EvaluateRequest, ExplainRequest, EngineSnapshot, StopReason } from "./protocol";
 import type { EventTeamGrowthRequest, EventTeamSearchPage, EventTeamSearchResult } from "../../event-team-analysis";
 import { RequestScope, throwIfAborted } from "../../request-scope";
 import { clock, deadlineOf, remaining, emptyResponse, completeResponse, requestSongs, requestChartSongs, singleSongRequest } from "./execution";
-import { aspirationHeld, compareHits, memberSetKey, mergeShardResponses } from "./merge";
+import { aspirationHeld, compareHits, memberSetKey, mergeLockedGekiso, mergeShardResponses } from "./merge";
 import { canPartitionEvent, partitionEvent, type PartitionBatch } from "./event-partitions";
 import { canUseSharedEventRosters } from "./shared-event-rosters";
 import { proveSharedEvent } from "./shared-event-search";
@@ -23,6 +23,29 @@ import engineUrl from "./generated/team-engine.wasm?url";
 let compiledEngine: Promise<WebAssembly.Module> | null = null;
 const WORKER_ACK_TIMEOUT_MS = 60_000;
 const SCORE_REPLY_GRACE_MS = 8;
+const encodedCharts = new WeakMap<EngineChart, EncodedEngineChart>();
+const chartEncoder = new TextEncoder();
+
+function encodeNote(value: unknown): unknown[] {
+  const note = objectRow(value);
+  // Match the runtime chart reader's note tuple, including nested hold nodes.
+  const fields = [note.type, note.t, note.pos, note.size, note.crit, note.dir, note.ease,
+    note.visible, Array.isArray(note.node) ? note.node.map(encodeNote) : undefined];
+  while (fields.length && fields[fields.length - 1] == null) fields.pop();
+  return fields;
+}
+
+function encodeChart(row: EngineChart): EncodedEngineChart {
+  const cached = encodedCharts.get(row);
+  if (cached) return cached;
+  const score = objectRow(row.chart.score);
+  const payload = Array.isArray(score.notes) && row.chart._engineNoteTuples !== true
+    ? { ...row, chart: { ...row.chart, _engineNoteTuples: true, score: { ...score, notes: score.notes.map(encodeNote) } } }
+    : row;
+  const encoded = { song: row.song, bytes: chartEncoder.encode(JSON.stringify(payload)) };
+  encodedCharts.set(row, encoded);
+  return encoded;
+}
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => reject(signal.reason ?? new DOMException("Cancelled", "AbortError"));
@@ -59,14 +82,93 @@ const rewardFloor = (hit: EngineHit): RewardFloor => [hit.key, hit.event?.otherM
 export interface FinalEngineResult { requestId: string; contextKey: string; response: EngineResponse }
 type FinalResultHandler = (result: FinalEngineResult) => void;
 
+function workerEffect(row: DataRow): DataRow {
+  const effect = row.raw === undefined ? row : nativeRow(row);
+  return {
+    id: effect.id,
+    level: effect.level,
+    skillTriggerType: effect.skillTriggerType,
+    effectExecuteLimitCount: effect.effectExecuteLimitCount,
+    effectExecuteLimitResetConditionGroup: effect.effectExecuteLimitResetConditionGroup,
+    skillEffectType: effect.skillEffectType ?? effect.effectType,
+    effectValue: effect.effectValue,
+    activationTimeSecond: effect.activationTimeSecond,
+    skillConditionGroup: effect.skillConditionGroup ?? effect.conditionGroup,
+    skillTriggerConditionGroup: effect.skillTriggerConditionGroup ?? effect.triggerConditionGroup,
+    skillReleaseConditionGroup: effect.skillReleaseConditionGroup ?? effect.releaseConditionGroup,
+    skillCumulativeConditionID: effect.skillCumulativeConditionID ?? effect.cumulativeConditionId,
+    skillTargetIDs: effect.skillTargetIDs ?? effect.targetIds,
+    effectLimitCount: effect.effectLimitCount,
+    maxEffectValue: effect.maxEffectValue,
+  };
+}
+
+// Same order as SkillEffect::from_skill_row in the native engine.
+const workerSkillFields = [
+  "id", "level", "skillTriggerType", "effectExecuteLimitCount", "effectExecuteLimitResetConditionGroup",
+  "skillEffectType", "effectValue", "activationTimeSecond", "skillConditionGroup", "skillTriggerConditionGroup",
+  "skillReleaseConditionGroup", "skillCumulativeConditionID", "skillTargetIDs", "effectLimitCount", "maxEffectValue",
+] as const;
+
+function workerSkillRow(row: DataRow) {
+  const effect = workerEffect(row);
+  return workerSkillFields.map(field => effect[field]);
+}
+
 function workerData(data: TeamBuilderData): Uint8Array {
   const cards = (rows: TeamBuilderData["members"] | TeamBuilderData["snapshots"]) => Object.fromEntries(Object.entries(rows).map(([id, row]) => {
-    const metadata = objectRow(row.catalogMetadata);
-    if (!("resolvedSkills" in metadata)) return [id, row];
-    const { resolvedSkills: _display, ...catalogMetadata } = metadata;
-    return [id, { ...row, catalogMetadata }];
+    const { name: _name, image: _image, catalogMetadata: metadata, ...rules } = row;
+    const { resolvedSkills: _skills, ...catalogMetadata } = objectRow(metadata);
+    return [id, metadata ? { ...rules, catalogMetadata } : rules];
   }));
-  return new TextEncoder().encode(JSON.stringify({ ...data, members: cards(data.members), snapshots: cards(data.snapshots) }));
+  const skills = Object.fromEntries(Object.entries(data.skills).map(([group, definitions]) => [
+    group,
+    Object.fromEntries(Object.entries(definitions).map(([id, definition]) => [id, {
+      gekisouMissionType: definition.gekisouMissionType,
+      categories: definition.categories,
+      effects: dataRows(definition.effects).map(workerSkillRow),
+    }])),
+  ]));
+  const bandItems = Object.fromEntries(Object.entries(data.bandItems).map(([id, row]) => [id, {
+    bandItemId: row.bandItemId,
+    bandId: row.bandId,
+    levels: dataRows(row.levels).map(({ level }) => ({ level })),
+    effects: dataRows(row.effects).map(effect => ({
+      ...workerEffect(effect),
+      effectType: effect.effectType,
+      targets: dataRows(effect.targets).map(({ bandId, characterId, cardType }) => ({ bandId, characterId, cardType })),
+    })),
+  }]));
+  const eventTables = ["MasterEventEffect", "MasterLiveEventPoint", "MasterChallengeLiveEventPoint", "MasterLiveEventReward", "MasterChallengeLiveEventReward"];
+  const events = Object.fromEntries(Object.entries(data.events).map(([id, row]) => {
+    const tables = objectRow(row.tables);
+    return [id, {
+      id: row.id,
+      startAt: row.startAt,
+      endAt: row.endAt,
+      musicId: row.musicId,
+      eventItemId: row.eventItemId,
+      eventItem: row.eventItem,
+      plannerRules: row.plannerRules,
+      groups: row.groups,
+      liveEventPointGroup: row.liveEventPointGroup,
+      challengeLiveEventPointGroup: row.challengeLiveEventPointGroup,
+      effects: row.effects,
+      tables: Object.fromEntries(eventTables.map(key => [key, tables[key]])),
+    }];
+  }));
+  const songs = Object.fromEntries(Object.entries(data.songs).map(([id, row]) => {
+    const { musicTitle: _title, bandName: _band, jacketThumbUrl: _jacket, ...rules } = row;
+    const difficulty = Array.isArray(row.difficulty)
+      ? dataRows(row.difficulty).map(({ difficulty, scoreId, playLevel, displayLevel, noteCount, file }) => ({
+        difficulty, scoreId, playLevel, displayLevel, noteCount, file,
+      }))
+      : row.difficulty;
+    return [id, { ...rules, difficulty }];
+  }));
+  return new TextEncoder().encode(JSON.stringify({
+    ...data, members: cards(data.members), snapshots: cards(data.snapshots), skills, bandItems, events, songs,
+  }));
 }
 
 /** One engine Worker: compiles the release once, then serves calls. */
@@ -186,7 +288,9 @@ class EngineWorker {
     return message.type === "run" && !message.request.noFloor && !message.request.seedOnly
       && message.request.k === 1 && (message.request.shard?.count ?? 1) > 1 && (message.request.goal.kind === "event"
         ? (!!message.request.rewardPhase || message.request.rewardLexicographic === true) && !!message.request.goal.gekiso
-        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" || (["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16 && !message.request.goal.opponents)));
+        : message.request.goal.kind === "gekiso" && (message.request.goal.arena?.mode === "shared" || message.request.aggregation === "mean" ||
+          !message.request.goal.opponents && ((message.request.goal.accuracy.missEvery ?? 0) > 0 ||
+            ["mean", "max"].includes(message.request.goal.criterion) && message.request.goal.seeds >= 16)));
   }
   private call(message: EngineCall, progress?: Pending["progress"], snapshot?: Pending["snapshot"], eventGrowth?: Pending["eventGrowth"],
     checkedTeams?: Pending["checkedTeams"], replyWindow?: Pending["replyWindow"]): Promise<unknown> {
@@ -261,7 +365,7 @@ class EngineWorker {
         return index < 0;
       });
       let loading = true;
-      const requestedCharts = new Set(songs.map(chartKey));
+      const requestedCharts = new Set(missing.map(chartKey));
       const loaded = (
         message.loadedCharts
           ? Promise.resolve(message.loadedCharts.filter(row => requestedCharts.has(chartKey(row.song))))
@@ -274,7 +378,11 @@ class EngineWorker {
       else if (message.type === "evaluate" || message.type === "sectionMetrics" || message.type === "eventGrowth" || message.type === "eventGrowthPage") this.setPhase("computationMs");
       if (message.type === "run" && searchBudgetMs !== undefined)
         message = { ...message, request: { ...message.request, deadline: Math.min(message.request.deadline ?? Infinity, clock() + searchBudgetMs) } };
-      return (await this.call({ ...message, loadedCharts, ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}), ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams, replyWindow)) as T;
+      const packed = message.type !== "charts" && loadedCharts && loadedCharts.length > 4
+        ? loadedCharts.map(encodeChart) : undefined;
+      return (await this.call({ ...message, loadedCharts: packed ? undefined : loadedCharts, loadedChartBytes: packed,
+        ...(message.type === "run" && Number.isFinite(preparation?.floor) ? { initialFloor: preparation!.floor } : {}),
+        ...(preparation?.reward ? { initialReward: preparation.reward } : {}) }, progress, snapshot, eventGrowth, checkedTeams, replyWindow)) as T;
     } finally {
       if (this.preparing === preparation) this.preparing = null;
       if (worker && worker === this.worker && this.pending.size === 0) this.setPhase(null);
@@ -295,11 +403,12 @@ class EngineWorker {
   async preload(songs: readonly SongRef[]): Promise<EngineChart[]> {
     const ready = this.spawn();
     const signal = this.lifetime!.signal;
-    await ready;
-    throwIfAborted(signal);
-    this.setPhase("networkMs");
+    let loading = true;
+    const loaded = this.downloads.loadMany(songs).finally(() => { loading = false; });
+    const initialized = ready.then(() => { if (loading && !signal.aborted) this.setPhase("networkMs"); });
     try {
-      return await untilAborted(this.downloads.loadMany(songs), signal);
+      const [, charts] = await untilAborted(Promise.all([initialized, loaded]), signal);
+      return charts;
     } finally {
       if (!signal.aborted) this.setPhase(null);
     }
@@ -553,7 +662,10 @@ export class EngineClient {
   }
 
   /** Independent complete scenarios share the existing Worker pool and the normal request pipeline. */
-  runBatch(requests: readonly EngineRequest[], onResult?: (index: number, response: EngineResponse) => void): Promise<EngineResponse[]> {
+  runBatch(requests: readonly EngineRequest[], onResult?: (index: number, response: EngineResponse) => void, options?: {
+    prepare?: (index: number, request: EngineRequest) => EngineRequest;
+    snapshot?: (index: number, snapshot: EngineSnapshot) => void;
+  }): Promise<EngineResponse[]> {
     if (!requests.length) return Promise.resolve([]);
     const started = clock();
     const generation = this.generation;
@@ -572,7 +684,10 @@ export class EngineClient {
         try {
           while (!failed && generation === this.generation && next < tasks.length) {
             const index = next++;
-            const response = await this.execute(tasks[index]!, started, undefined, undefined, undefined, null, [worker]);
+            const task = tasks[index]!;
+            const request = options?.prepare?.(index, task) ?? task;
+            const snapshot = options?.snapshot ? (value: EngineSnapshot) => options.snapshot!(index, value) : undefined;
+            const response = await this.execute(request, started, undefined, snapshot, undefined, null, [worker]);
             responses[index] = response;
             onResult?.(index, response);
             if (generation !== this.generation) throw new DOMException("Cancelled", "AbortError");
@@ -611,6 +726,7 @@ export class EngineClient {
     const partitioned = canPartition && canPartitionEvent(request);
     const snapshotInterval = partitioned ? 250 : joint ? Math.min(1000, Math.max(100, requestChartSongs(request).length * 20)) : 100;
     let cpChallenge: EngineHit | undefined;
+    let cpChallengeAlternatives: EngineHit[] | undefined;
     const showLatest = () => {
       clearTimeout(publishTimer);
       publishTimer = undefined;
@@ -623,6 +739,8 @@ export class EngineClient {
       if (stopped) return;
       if (response.cpChallenge) cpChallenge = response.cpChallenge;
       if (cpChallenge) response.cpChallenge = cpChallenge;
+      if (response.cpChallengeAlternatives) cpChallengeAlternatives = response.cpChallengeAlternatives;
+      if (cpChallengeAlternatives) response.cpChallengeAlternatives = cpChallengeAlternatives;
       const hadCandidate = latest.overall.length > 0;
       response.results = response.results.map(result => {
         const previous = latest.results.find(part => part.song?.songId === result.song?.songId && part.song?.difficulty === result.song?.difficulty);
@@ -691,13 +809,35 @@ export class EngineClient {
           seeds: _seeds, completed: _completed, ...input } = request;
         const key = JSON.stringify(input);
         const cached = this.cpCalibration?.key === key ? this.cpCalibration.response : null;
-        const resolved = cached ? structuredClone(cached)
-          : await idlest().send<EngineResponse>({ type: "run", id: 0, request: { ...request, resolveRewardPlan: true } });
+        const calibration = { ...request, resolveRewardPlan: true };
+        const plan = request.goal.rewardPlan;
+        const auto = plan.autoCp!;
+        const count = request.songRules ? 1 : Math.min(pool.length, 3, auto.songs.length);
+        const calibrate = async () => {
+          if (count <= 1) return idlest().send<EngineResponse>({ type: "run", id: 0, request: calibration });
+          const goal = request.goal as Extract<EngineRequest["goal"], { kind: "event" }>;
+          const parts = await Promise.all(pool.slice(0, count).map((worker, index) =>
+            worker.send<EngineResponse>({ type: "run", id: 0, request: {
+              ...calibration, goal: { ...goal, rewardPlan: { ...plan, autoCp: {
+                ...auto, songs: auto.songs.filter((_, song) => song % count === index),
+              } } },
+            } }),
+          ));
+          const incomplete = parts.find(part => !part.resolvedRewardPlan && part.stopReason !== "complete");
+          if (incomplete) return incomplete;
+          const proven = parts.filter(part => part.cpChallenge);
+          proven.sort((a, b) => compareHits(a.cpChallenge!, b.cpChallenge!));
+          const best = proven[0];
+          return best ? { ...best,
+            cpChallengeAlternatives: proven.flatMap(part => part.cpChallengeAlternatives ?? [part.cpChallenge!]),
+          } : parts[0]!;
+        };
+        const resolved = cached ? structuredClone(cached) : await calibrate();
         if (stopped) return latest;
         if (!resolved.resolvedRewardPlan) return { ...latest, stopReason: resolved.stopReason ?? "budget" };
         cpChallenge = resolved.cpChallenge;
         if (!cached && cpChallenge) this.cpCalibration = { key, response: structuredClone(resolved) };
-        if (cpChallenge) publish({ ...latest, cpChallenge }, true);
+        if (cpChallenge) publish({ ...latest, cpChallenge, cpChallengeAlternatives: resolved.cpChallengeAlternatives }, true);
         request = { ...request, goal: { ...request.goal, rewardPlan: resolved.resolvedRewardPlan } };
       }
       const songs = requestSongs(request);
@@ -842,21 +982,77 @@ export class EngineClient {
         return result;
       }
       if ((request.aggregation === "mean" && (request.goal.kind === "score" || request.goal.kind === "event" || request.goal.kind === "gekiso")) || (request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared")) {
+        const goal = request.goal;
+        const scoreLockedCharts = async (scoped: EngineRequest, chartGoal: Extract<EngineRequest["goal"], { kind: "gekiso" }>, loadedCharts: EngineChart[], scorers = pool) => {
+          const count = Math.min(scorers.length, Math.floor(chartGoal.songs.length / 2));
+          const parts = await Promise.allSettled(scorers.slice(0, count).map((worker, index) => worker.send<EngineResponse>({
+            type: "run", id: 0, loadedCharts,
+            request: { ...scoped, goal: { ...chartGoal, songs: chartGoal.songs.filter((_, position) => position % count === index) } },
+          })));
+          if (stopped) return undefined;
+          const complete = parts.flatMap(part => part.status === "fulfilled" ? [part.value] : []);
+          return complete.length === count ? mergeLockedGekiso(chartGoal.songs, complete, clock() - started) : undefined;
+        };
+        if (goal.kind === "gekiso" && goal.criterion === "mean" && goal.songs.length >= 8 && request.k === 1
+            && !onFinalResult && !request.shard && !request.seedOnly && !request.seeded && !request.seeds?.length
+            && !request.completed?.length && !justWindow && request.constraints.leader !== null && pool.length > 1) {
+          const slots = new Set(request.constraints.bindings.map(([member]) => member));
+          const roster = new Set([request.constraints.leader, ...request.constraints.requiredMembers, ...slots]);
+          if (slots.size === 5 && roster.size === 5) {
+            const loadedCharts = await pool[0]!.preload(goal.songs);
+            if (stopped) return latest;
+            const locked = await scoreLockedCharts(request, goal, loadedCharts);
+            if (stopped) return latest;
+            if (locked) {
+              progress?.(goal.songs.length, goal.songs.length, { unit: "charts" });
+              publish(locked, true);
+              return locked;
+            }
+          }
+        }
         const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
         const compactArena = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared" && request.goal.songs.length <= 32;
-        const count = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? compactArena ? 2 : 1 : request.goal.kind === "gekiso" ? 6 : 2);
+        const maximum = request.constraints.leader !== null ? 1 : Math.min(pool.length, memory <= 4 ? compactArena ? 2 : 1 : goal.kind === "gekiso" ? 6 : 2);
+        const singleSongSeed = goal.kind === "gekiso" && !request.noFloor && maximum > 1 && request.k === 1
+          && goal.songs.length >= 8 && goal.seeds === 0 && goal.accuracy.great === 0 && !goal.accuracy.missEvery
+          && !goal.justWindow && (goal.minComboBonus ?? 1) <= 1
+          && goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3));
+        const powerSeed = goal.kind === "gekiso" && goal.criterion === "mean" && goal.songs.length >= 8 && pool.length > 1
+          && request.k === 1 && !request.noFloor && !request.seedOnly && !request.seeded && !request.shard
+          && !request.seeds?.length && !request.completed?.length && !justWindow
+          && !goal.seeds && !goal.accuracy.great && !goal.accuracy.missEvery
+          && (goal.minComboBonus ?? 1) <= 1 && request.constraints.minBonusPercent == null;
+        const overlapSeed = powerSeed && !singleSongSeed && memory > 4 && maximum >= 4 && goal.songs.length >= 48;
+        const concurrentSeed = overlapSeed && remaining(deadline) >= 1800;
+        const count = maximum;
         const workers = pool.slice(0, count);
-        if (count > 1) for (const worker of workers) void worker.warm().catch(() => {});
+        const seedWorkers = concurrentSeed ? workers.slice(-2) : [];
+        if (maximum > 1) for (const worker of pool.slice(0, maximum)) void worker.warm().catch(() => {});
         const loadedCharts = await workers[0]!.preload(request.goal.songs);
         if (stopped) return latest;
         let sharedSeed: EngineHit | undefined;
         let sharedUnknown: string[] = [];
-        if (!request.noFloor && count > 1 && request.k === 1 && request.goal.kind === "gekiso" && request.goal.songs.length >= 8
-          && request.goal.seeds === 0 && request.goal.accuracy.great === 0 && !request.goal.accuracy.missEvery
-          && !request.goal.justWindow
-          && (request.goal.minComboBonus ?? 1) <= 1
-          && request.goal.songs.every(song => requestMissions(this.data, request, song).every(type => type === 3))) {
-          const goal = request.goal;
+        const scorePowerSeed = async (scorers: EngineWorker[], alive: () => boolean, scoutDeadline = deadline) => {
+          if (goal.kind !== "gekiso") return;
+          const warm = await scorers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
+            request: { ...request, deadline: scoutDeadline, aggregation: undefined, noFloor: true,
+              members: goal.arena ? request.members.filter(member => this.data.members[member.cardId]?.bandId === goal.arena!.bandId) : request.members,
+              goal: { kind: "power", song: goal.songs[0]!, challengeEventId: null } } },
+            undefined, undefined, 80);
+          if (stopped || !alive()) return;
+          const team = warm.overall[0];
+          sharedUnknown = warm.unknownCards;
+          if (team?.members.length !== 5 || team.snaps.length !== 5) return;
+          const fixed: EngineRequest = { ...request, deadline: scoutDeadline, noFloor: true, constraints: {
+            ...request.constraints, leader: team.members[0]!, requiredMembers: team.members,
+            bindings: team.members.map((member, index) => [member, team.snaps[index]!] as [string, string | null]),
+          } };
+          const locked = await scoreLockedCharts(fixed, goal, loadedCharts, scorers);
+          if (stopped || !alive() || !locked) return;
+          sharedSeed = locked.overall[0];
+          sharedUnknown = [...new Set([...sharedUnknown, ...locked.unknownCards])];
+        };
+        if (singleSongSeed && goal.kind === "gekiso") {
           const warm = await workers[0]!.send<EngineResponse>({ type: "run", id: 0, loadedCharts,
             request: { ...request, aggregation: undefined, seedOnly: true, seeded: undefined, shard: undefined, floors: undefined, completed: undefined, noFloor: true,
               deadline,
@@ -888,6 +1084,9 @@ export class EngineClient {
                 median: average(hit => hit.score!.median), orders: [], ranks: {}, bestOrder: [], worstOrder: [] },
               event: null, skipScore: null, potential: null, aggregate: { kind: "mean", songs } } : undefined;
           }
+        } else if (powerSeed && !overlapSeed) {
+          await scorePowerSeed(pool, () => true);
+          if (stopped) return latest;
         }
         const parts = workers.map(() => emptyResponse(request));
         const reportArenaProof = request.goal.kind === "gekiso" && request.goal.arena?.mode === "shared"
@@ -915,10 +1114,32 @@ export class EngineClient {
         };
         if (sharedSeed) publishShared();
         if (stopped) return latest;
+        let finishSeed: (() => void) | undefined;
+        let seedReady: Promise<void> | undefined;
+        if (concurrentSeed) {
+          let active = true;
+          let done!: () => void;
+          seedReady = new Promise<void>(resolve => { done = resolve; });
+          finishSeed = () => {
+            if (!active) return;
+            active = false;
+            clearTimeout(timer);
+            for (const worker of seedWorkers) if (worker.load) worker.cancel();
+            done();
+          };
+          const scoutBudget = Math.min(1200, remaining(deadline) / 4);
+          const timer = setTimeout(finishSeed, scoutBudget + 32);
+          void scorePowerSeed(seedWorkers, () => active, clock() + scoutBudget).then(() => {
+            if (!stopped && active && sharedSeed) publishShared();
+          }).then(finishSeed, finishSeed);
+        }
         let scoutEmpty: EngineResponse | undefined;
         const proof = Promise.all(
           workers.map(async (worker, index) => {
+            if (seedReady && seedWorkers.includes(worker)) await seedReady;
+            if (stopped) return;
             const part = { ...request, ...(count > 1 ? { shard: { index, count } } : {}),
+              ...(overlapSeed && index > 0 ? { deferWarmStart: true } : {}),
               ...(sharedSeed ? { seeded: true, seeds: [sharedSeed], floors: { [chartKey(request.goal.kind === "gekiso" ? request.goal.songs[0]! : requestChartSongs(request)[0]!)]: sharedSeed.key } } : {}) };
             parts[index] = await worker.send<EngineResponse>(
               { type: "run", id: 0, request: part, loadedCharts },
@@ -975,6 +1196,7 @@ export class EngineClient {
         try {
           await (scoutProof ? Promise.race([proof, scoutProof]) : proof);
         } finally {
+          finishSeed?.();
           stopScout?.();
         }
         if (scoutEmpty && !stopped) {
@@ -1033,7 +1255,10 @@ export class EngineClient {
             return response;
           });
           const warm = Array.from({ length: seedCount }, () => emptyResponse(part));
-          return { request: part, responses, warm, scoredSeeds: new Map<EngineWorker, unknown[]>(), deferred: false, seeded: request.seeded === true, seedNext: 0, seedDone: 0, next: 0, finished: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
+          const directReplay = request.k === 1 && !justWindow && (goal.accuracy.missEvery ?? 0) > 0
+            && (goal.seeds > 0 || !requestMissions(this.data, request, song).includes(2));
+          return { request: part, responses, warm, scoredSeeds: new Map<EngineWorker, unknown[]>(), deferred: false, directReplay,
+            seeded: directReplay || request.seeded === true, seedNext: 0, seedDone: 0, next: 0, finished: 0, running: 0, done: completeResponse({ ...latest, results: [parts[index]!] }) };
         });
         const merged = (): EngineResponse => ({ ...latest, results: [...parts], overall: [], unknownCards: [...unknownCards], elapsedMs: clock() - started });
         const waiters = new Set<() => void>();
@@ -1097,7 +1322,7 @@ export class EngineClient {
             const floors = privateHits.length >= request.k ? { [key]: privateHits[request.k - 1]!.key } : {};
             const part: EngineRequest = { ...state.request, seeds: privateHits, floors,
               ...(job.shard === null ? { seedOnly: true, seedVariant: seedCount === 2 ? (job.seed === 0 ? "sample" as const : "quiet" as const) : undefined }
-                : { seeded: true, seedOnly: false, seedVariant: undefined, shard: { index: job.shard, count } }) };
+                : { seeded: !state.directReplay, seedOnly: false, seedVariant: undefined, shard: { index: job.shard, count } }) };
             const update = (response: EngineResponse) => {
               state.deferred ||= response.results.some(part => part.hits.some(pendingScores));
               if (state.deferred) for (const part of response.results) for (const hit of part.hits)
@@ -1131,7 +1356,7 @@ export class EngineClient {
                 parts[job.index] = mergeShardResponses(state.responses.map(scoredResponse), request.k, clock() - started).results[0]!;
               }
               const best = parts[job.index]!.hits[0];
-              if (sampledLive && best) for (const [worker, running] of activeScores)
+              if ((sampledLive || state.directReplay) && best) for (const [worker, running] of activeScores)
                 if (running.index === job.index && best.key > running.floor && worker.raiseFloor(best.key)) running.floor = best.key;
               publish(merged());
             };

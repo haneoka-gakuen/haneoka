@@ -1,0 +1,25 @@
+---
+import Base from "../../../../layouts/Base.astro";
+import AppShell from "../../../../components/AppShell.astro";
+import { t } from "../../../../i18n/messages";
+import { LOCALES, type Locale } from "../../../../i18n/locales";
+import { staticCatalogPageServers } from "../../../../lib/entity-graph";
+import type { ReleaseServer } from "../../../../lib/release-server";
+import { staticBuildPaths } from "../../../../server/static-build";
+
+export async function getStaticPaths() {
+  return staticBuildPaths("src/pages/[server]/[locale]/stories/search.astro", (await staticCatalogPageServers()).flatMap((server) =>
+    LOCALES.map((locale) => ({ params: { server, locale }, props: { server, locale } })),
+  ));
+}
+const { server, locale } = Astro.props as { server: ReleaseServer; locale: Locale };
+const titleKey = "story.dialogueSearch.title";
+const title = t(locale, titleKey, "Search dialogue");
+const route = "/catalog/stories/search";
+---
+<Base locale={locale} route={route} canonicalRoute={`/${server}/${locale}/stories/search/`} title={title} titleKey={titleKey}>
+  <AppShell locale={locale} server={server} route={route} title={title} titleKey={titleKey}>
+    <story-dialogue-search locale={locale} server={server}></story-dialogue-search>
+  </AppShell>
+</Base>
+<script>import "../../../../lit/story-dialogue-search";</script>

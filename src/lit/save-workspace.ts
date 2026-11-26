@@ -43,7 +43,7 @@ import { modal } from "./ui/modal";
 import { gameHistoryHelp } from "./ui/game-history-help";
 import { downloadBlob } from "../lib/canvas-capture";
 import { formatDate } from "../lib/date-format";
-import { setAppBarActions, clearAppBarActions } from "../lib/app-bar";
+import { appBarElement, setAppBarActions } from "../lib/app-bar";
 import { songProgressProfile } from "../lib/song-progress-profile";
 
 const SAVE_SECTIONS = ["overview", "_characters", "_characterFriendships", "collection", "records", "saveData"] as const;
@@ -174,7 +174,6 @@ export class SaveWorkspace extends LitElement {
     this.catalogServer = "";
     window.removeEventListener("hashchange", this.route);
     window.removeEventListener("haneoka-app-accounts", this.nativeChanged);
-    clearAppBarActions("save-workspace");
     this.lazyImages.disconnect();
     this.restoreShell();
   }
@@ -967,14 +966,16 @@ export class SaveWorkspace extends LitElement {
     }
   }
   private syncShell() {
+    const bar = appBarElement(this);
+    if (!bar) return;
     const record = this.record;
-    const heading = document.querySelector<HTMLElement>("[data-top-app-bar] h1");
+    const heading = bar.querySelector<HTMLElement>("h1");
     if (heading) heading.textContent = record?.profile?.name || record?.label || this.t("title");
     if (!record) {
       this.restoreShell();
       return;
     }
-    const leading = document.querySelector<HTMLElement>("[data-top-app-bar-leading]");
+    const leading = bar.querySelector<HTMLElement>("[data-top-app-bar-leading]");
     if (leading && !this.shellBack) {
       const back = document.createElement("a");
       back.href = "#";
@@ -989,7 +990,7 @@ export class SaveWorkspace extends LitElement {
       leading.prepend(back);
       this.shellBack = back;
       const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]");
-      const actions = document.querySelector<HTMLElement>("[data-top-app-bar-actions]");
+      const actions = bar.querySelector<HTMLElement>("[data-top-app-bar-actions]");
       if (menu && actions) {
         const group = document.createElement("div");
         group.className = "top-app-bar__group";
@@ -1010,6 +1011,7 @@ export class SaveWorkspace extends LitElement {
     this.syncShell();
     const record = this.record;
     setAppBarActions(
+      this,
       "save-workspace",
       html`
         <button class="icon-button" type="button" aria-label=${this.t("readHelp")} @click=${() => { this.historyHelpOpen = true; }}>${icon("help")}</button>

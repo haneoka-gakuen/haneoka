@@ -1,9 +1,12 @@
 // L3 — GEB
 // Input: 网页账户、Altair 同源宿主会话、工程模板来源与社区故事版本。
-// Output: 网站内故事制作、导入导出、云保存和发布；应用栏连接 AI 服务、修改提案和全工程分镜，向制作器同步主题、字体与 Material 图标。
+// Output: 网站内故事制作、导入导出、云保存和发布；应用栏集中工程文件、编辑工具与发布操作，向制作器同步主题、字体与 Material 图标。
 // Pos: [Map](L2-2.md)；AppShell 与 Altair 制作器的网页接入。
 // Effects/Dependencies: 初始化后开放操作；延迟加载 iframe、账户与云 API，销毁时释放消息通道、请求和应用栏。
+import { normalizeSearchText, searchIncludes } from "../lib/search-text";
 import { LitElement, html, nothing } from "lit";
+import "@material/web/textfield/outlined-text-field.js";
+import { editorDocumentAddress, editorDocumentParams } from "../lib/editor-document-route";
 import robotoFontStyles from "@fontsource-variable/roboto/wght.css?url";
 import latinFontStyles from "@fontsource-variable/noto-sans/wght.css?url";
 import {
@@ -19,7 +22,7 @@ import {
   type StudioStoryPickerResult,
 } from "@haneoka/altair/studio-host";
 import { clientText, initializeI18nClient } from "../i18n/client";
-import { setAppBarActions, clearAppBarActions, setAppBarIdentity, clearAppBarIdentity } from "../lib/app-bar";
+import { setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
 import { readCommunityViewer } from "../lib/community-viewer";
 import { CUBISM_CORE_URLS } from "../lib/cubism-runtime";
 import {
@@ -45,6 +48,7 @@ import {
   StoryRequestError,
 } from "../lib/story-creation/community";
 import { icon } from "./ui/icon";
+import { actionMenu } from "./ui/action-menu";
 import { snackbar } from "../lib/snackbar";
 import { modal } from "./ui/modal";
 import { readReleaseServer } from "../lib/release-server";
@@ -148,26 +152,77 @@ export class StoryCreationWorkspace extends LitElement {
     return this;
   }
   private t = (key: string) => clientText(this.locale, `community.stories.${key}`);
-  private actionButton(action: StudioAction, artwork: unknown) {
-    const label = this.t(action === "stories" ? "importStory" : action);
-    const disabled =
+  private actionLabel(action: StudioAction) {
+    return this.t(action === "stories" ? "importStory" : action);
+  }
+  private actionDisabled(action: StudioAction) {
+    return Boolean(
       !this.studioReady ||
       this.busy ||
       this.state?.busy ||
       (action === "undo" && !this.state?.canUndo) ||
       (action === "redo" && !this.state?.canRedo) ||
-      (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action));
-    return html`
-      <button
-        class="icon-button"
-        title=${label}
-        aria-label=${label}
-        ?disabled=${disabled}
-        @click=${() => void this.action(action)}
-      >
-        ${artwork}
-      </button>
-    `;
+      (!this.state?.projectId && !["new", "import", "stories", "folder", "library", "ai-settings"].includes(action))
+    );
+  }
+  private menuAction(action: StudioAction, leading: ReturnType<typeof icon>) {
+    return {
+      label: this.actionLabel(action),
+      leading,
+      disabled: this.actionDisabled(action),
+      run: () => void this.action(action),
+    };
+  }
+  private fileMenu() {
+    const server = readReleaseServer();
+    const community = communityStoryPath(server, this.locale);
+    const story = this.cloud && communityStoryPath(server, this.locale, this.cloud.id);
+    return actionMenu({
+      id: `${this.toolbarOwner}-file`,
+      label: this.t("fileMenu"),
+      keepInAppBar: true,
+      items: [
+        this.menuAction("new", icon("add")),
+        this.menuAction("library", icon("folder")),
+        this.menuAction("folder", icon("folder_open")),
+        this.menuAction("import", icon("upload_file")),
+        this.menuAction("stories", icon("auto_stories")),
+        this.menuAction("assets", icon("perm_media")),
+        {
+          label: this.t("save"),
+          leading: icon("cloud_upload"),
+          disabled: this.actionDisabled("save"),
+          run: () => void this.save(),
+        },
+        {
+          label: this.t("saveCopy"),
+          leading: icon("content_copy"),
+          disabled: this.actionDisabled("export-project"),
+          run: () => void this.saveCopy(),
+        },
+        this.menuAction("export-project", icon("download")),
+        this.menuAction("export-game", icon("sports_esports")),
+        { label: this.t("mine"), leading: icon("auto_stories"), href: community + "?scope=mine" },
+        ...(story && this.cloud?.publishedRevision ? [{ label: this.t("read"), leading: icon("play_arrow"), href: story }] : []),
+        ...(story ? [{ label: this.t("detail"), leading: icon("info"), href: story + "?draft=1" }] : []),
+      ],
+    });
+  }
+  private toolsMenu() {
+    return actionMenu({
+      id: `${this.toolbarOwner}-tools`,
+      label: clientText(this.locale, "navigation.tools"),
+      keepInAppBar: true,
+      items: [
+        this.menuAction("timeline", icon("timeline")),
+        this.menuAction("undo", icon("undo")),
+        this.menuAction("redo", icon("redo")),
+        this.menuAction("settings", icon("settings")),
+        this.menuAction("assistant", icon("auto_awesome")),
+        this.menuAction("cinematic", icon("movie_filter")),
+        this.menuAction("ai-settings", icon("settings_suggest")),
+      ],
+    });
   }
   override connectedCallback() {
     super.connectedCallback();
@@ -188,8 +243,6 @@ export class StoryCreationWorkspace extends LitElement {
     this.assetImages?.disconnect();
     this.releaseCoverImages();
     window.removeEventListener("beforeunload", this.beforeUnload);
-    clearAppBarActions(this.toolbarOwner);
-    clearAppBarIdentity(this.toolbarOwner);
     super.disconnectedCallback();
   }
   private beforeUnload = (event: BeforeUnloadEvent) => {
@@ -247,88 +300,32 @@ export class StoryCreationWorkspace extends LitElement {
                 ? localStatus
                 : this.t("local");
     setAppBarActions(
+      this,
       this.toolbarOwner,
       html`
-        <button
-          class="icon-button"
-          data-app-bar-keep
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
-          title=${this.t("save")}
-          aria-label=${this.t("save")}
-          @click=${() => void this.save()}
-        >
-          ${icon("cloud_upload")}
-        </button>
+        ${this.fileMenu()}
+        ${this.toolsMenu()}
         <button
           class="button button--filled"
           data-app-bar-keep
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
+          ?disabled=${this.actionDisabled("save")}
           @click=${() => void this.showPublication()}
         >
           ${this.t("publish")}
         </button>
-        ${this.actionButton("undo", icon("undo"))} ${this.actionButton("redo", icon("redo"))}
-        ${this.actionButton("assistant", icon("auto_awesome"))} ${this.actionButton("cinematic", icon("movie_filter"))} ${this.actionButton("ai-settings", icon("settings_suggest"))}
-        ${this.actionButton("assets", icon("perm_media"))} ${this.actionButton("import", icon("upload_file"))}
-        ${this.actionButton("stories", icon("auto_stories"))}
-        ${this.actionButton("export-game", icon("sports_esports"))}
-        ${this.actionButton("export-project", icon("download"))} ${this.actionButton("settings", icon("settings"))}
-        ${this.actionButton("library", icon("folder"))} ${this.actionButton("new", icon("add"))}
-        ${this.actionButton("folder", icon("folder_open"))}
-        <button
-          class="icon-button"
-          title=${this.t("saveCopy")}
-          aria-label=${this.t("saveCopy")}
-          ?disabled=${!this.studioReady || this.busy || this.state?.busy || !this.state?.projectId}
-          @click=${() => void this.saveCopy()}
-        >
-          ${icon("content_copy")}
-        </button>
-        <a
-          class="icon-button"
-          title=${this.t("mine")}
-          aria-label=${this.t("mine")}
-          href=${communityStoryPath(readReleaseServer(), this.locale) + "?scope=mine"}
-        >
-          ${icon("auto_stories")}
-        </a>
-        ${
-          this.cloud?.publishedRevision
-            ? html`
-                <a
-                  class="icon-button"
-                  title=${this.t("read")}
-                  aria-label=${this.t("read")}
-                  href=${communityStoryPath(readReleaseServer(), this.locale, this.cloud.id)}
-                >
-                  ${icon("play_arrow")}
-                </a>
-              `
-            : nothing
-        }
-        ${
-          this.cloud
-            ? html`
-                <a
-                  class="icon-button"
-                  title=${this.t("detail")}
-                  aria-label=${this.t("detail")}
-                  href=${communityStoryPath(readReleaseServer(), this.locale, this.cloud.id) + "?draft=1"}
-                >
-                  ${icon("info")}
-                </a>
-              `
-            : nothing
-        }
       `,
-      this,
     );
     setAppBarIdentity(
+      this,
       this.toolbarOwner,
       html`
+        ${this.state?.projectId && this.state.title
+          ? html`<span class="story-creation__project-title" dir="auto" title=${this.state.title}>${this.state.title}</span>`
+          : nothing}
         <span
-          class="chip"
+          class="story-creation__status"
           role="status"
+          aria-label=${status}
           title=${[
             this.state?.storagePath || storage,
             localStatus,
@@ -347,10 +344,9 @@ export class StoryCreationWorkspace extends LitElement {
             .join(" · ")}
         >
           ${cloudSaved ? icon("cloud_done", 18) : this.state?.storage === "folder" ? icon("folder", 18) : icon("save", 18)}
-          ${status}
+          <span class="story-creation__status-label">${status}</span>
         </span>
       `,
-      this,
     );
     if (this.assetLibraryOpen || this.publicationOpen) {
       const root = this.querySelector(
@@ -416,19 +412,15 @@ export class StoryCreationWorkspace extends LitElement {
     await this.run(async () => {
       await this.configure();
       if (client !== this.client) return;
-      const params = new URL(location.href).searchParams,
+      const address = new URL(location.href), params = editorDocumentParams(address),
         story = params.get("community") ?? params.get("story");
       if (story) {
         const remix = params.get("remix") === "1";
         const revision = params.has("revision") ? Number(params.get("revision")) : undefined;
         await this.openCloud(story, remix, false, client, revision);
         if (remix || revision !== undefined) {
-          const url = new URL(location.href);
-          url.searchParams.delete("story");
-          url.searchParams.delete("community");
-          url.searchParams.delete("remix");
-          url.searchParams.delete("revision");
-          history.replaceState(null, "", url);
+          for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+          history.replaceState(null, "", editorDocumentAddress(address, params));
         }
       } else if (params.get("importStory")) {
         this.progress = this.t("import");
@@ -447,10 +439,9 @@ export class StoryCreationWorkspace extends LitElement {
         });
         if (client === this.client) {
           this.state = state;
-          const url = new URL(location.href);
           for (const key of ["importStory", "importProvider", "importServer"])
-            url.searchParams.delete(key);
-          history.replaceState(null, "", url);
+            params.delete(key);
+          history.replaceState(null, "", editorDocumentAddress(address, params));
         }
       } else if (params.get("project")) {
         const state = await client.request<StudioState | null>("open-local", { id: params.get("project") });
@@ -465,12 +456,14 @@ export class StoryCreationWorkspace extends LitElement {
   }
   private rememberProject() {
     const url = new URL(location.href);
+    const params = editorDocumentParams(url);
     if (this.state?.projectId) {
-      url.searchParams.set("project", this.state.projectId);
+      params.set("project", this.state.projectId);
       for (const key of ["importStory", "importProvider", "importServer"])
-        url.searchParams.delete(key);
-    } else url.searchParams.delete("project");
-    if (url.href !== location.href) history.replaceState(null, "", url);
+        params.delete(key);
+    } else params.delete("project");
+    const target = editorDocumentAddress(url, params);
+    if (target !== url.pathname + url.search + url.hash) history.replaceState(null, "", target);
   }
   private async configure() {
     if (!this.client) return;
@@ -592,10 +585,9 @@ export class StoryCreationWorkspace extends LitElement {
     await this.run(async () => {
       if (["new", "import", "folder", "library"].includes(action)) {
         const url = new URL(location.href);
-        url.searchParams.delete("story");
-        url.searchParams.delete("community");
-        url.searchParams.delete("remix");
-        history.replaceState(null, "", url);
+        const params = editorDocumentParams(url);
+        for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+        history.replaceState(null, "", editorDocumentAddress(url, params));
       }
       const result = await this.client?.request<StudioDownload | undefined>(action);
       if (result?.kind === "download") this.download(result);
@@ -688,9 +680,9 @@ export class StoryCreationWorkspace extends LitElement {
       "effect",
       "post-effect",
     ];
-    const query = this.assetQuery.normalize("NFKC").trim().toLocaleLowerCase();
+    const query = normalizeSearchText(this.assetQuery.trim());
     const nodes = (this.assetCatalogue?.nodes ?? []).filter((node) =>
-      `${node.title} ${node.name}`.normalize("NFKC").toLocaleLowerCase().includes(query),
+      normalizeSearchText(`${node.title} ${node.name}`).includes(query),
     );
     const selected = this.assetCatalogue?.nodes.find((node) => node.id === this.assetSelected);
     const load = () => {
@@ -1054,7 +1046,7 @@ export class StoryCreationWorkspace extends LitElement {
   }
   private renderCoverPicker() {
     const images = this.images.filter((image) =>
-      image.path.toLocaleLowerCase(this.locale).includes(this.coverQuery.toLocaleLowerCase(this.locale)),
+      searchIncludes(image.path, this.coverQuery, this.locale),
     );
     return html`
       <dialog
@@ -1066,16 +1058,16 @@ export class StoryCreationWorkspace extends LitElement {
       >
         <div class="dialog__header stack">
           <h2 id="story-cover-heading">${this.t("selectCover")}</h2>
-          <label class="field">
-            ${this.t("searchAssets")}
-            <input
+            <md-outlined-text-field
+              class="is-search"
               type="search"
+              label=${this.t("searchAssets")}
+              aria-label=${this.t("searchAssets")}
               .value=${this.coverQuery}
               @input=${(event: Event) => {
-                this.coverQuery = (event.target as HTMLInputElement).value;
+                this.coverQuery = (event.currentTarget as HTMLInputElement).value;
               }}
-            />
-          </label>
+            ></md-outlined-text-field>
         </div>
         <div class="dialog__body">
           <div class="collection collection--system">
@@ -1179,7 +1171,7 @@ export class StoryCreationWorkspace extends LitElement {
         result = await openCommunityStory(id, this.lifetime.signal, remix, owner, revision);
       if (!remix && !result.story.canEdit) throw new Error("forbidden");
       if (!remix && !forceCloud && revision === undefined) {
-        const preferred = new URL(location.href).searchParams.get("project");
+        const preferred = editorDocumentParams(new URL(location.href)).get("project");
         const candidates = await findStoryDrafts(id, owner);
         candidates.sort((left, right) => Number(right.projectId === preferred) - Number(left.projectId === preferred));
         for (const candidate of candidates) {
@@ -1281,12 +1273,10 @@ export class StoryCreationWorkspace extends LitElement {
         this.cloud = undefined;
         await writeStoryDraft(copy.id, this.draft);
         const url = new URL(location.href);
-        url.searchParams.delete("story");
-        url.searchParams.delete("community");
-        url.searchParams.delete("remix");
-        url.searchParams.delete("revision");
-        url.searchParams.set("project", copy.id);
-        history.replaceState(null, "", url);
+        const params = editorDocumentParams(url);
+        for (const key of ["story", "community", "remix", "revision"]) params.delete(key);
+        params.set("project", copy.id);
+        history.replaceState(null, "", editorDocumentAddress(url, params));
         await this.saveDraft();
         snackbar(this.t("saved"));
       } finally {

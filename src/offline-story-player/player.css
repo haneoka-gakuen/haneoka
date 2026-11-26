@@ -1,0 +1,10 @@
+@layer pages {
+  .app-shell--offline {
+    --shell-width: 0px;
+  }
+
+  #error {
+    position: absolute;
+    inset: auto 16px 16px;
+  }
+}

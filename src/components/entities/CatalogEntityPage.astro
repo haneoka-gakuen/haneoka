@@ -8,6 +8,7 @@ import { findRoute, titleOf } from "../../config/routes";
 import { LOCALES, type Locale } from "../../i18n/locales";
 import {
   resourceKindForCollection,
+  isCharacterDetailSection,
   chartPath,
   resourcePath,
   type EntityLink,
@@ -43,7 +44,8 @@ if (!collectionRoute) throw new Error(`Missing route definition for ${page.route
 const sectionTitle = titleOf(collectionRoute, locale);
 const kind = resourceKindForCollection(page.collection) as ResourceKind;
 const parentHref = resourcePath({ server, locale, kind, id: page.id });
-const canonicalHref = chartPage ? chartPath({ server, locale, id: page.id }) : parentHref;
+const canonicalHref = chartPage ? chartPath({ server, locale, id: page.id })
+  : isCharacterDetailSection(section) ? resourcePath({ server, locale, kind, id: page.id, section }) : parentHref;
 const route = canonical ? canonicalHref : `${page.route}/${page.id}`;
 const backHref = returnTo || (chartPage ? parentHref : resourcePath({ server, locale, kind }));
 const seoTitleValues = Object.fromEntries(

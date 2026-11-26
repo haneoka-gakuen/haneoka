@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Haneoka</title>
+  <link rel="stylesheet" href="/fonts/roboto/wght.css">
+  <link rel="stylesheet" href="/fonts/noto-sans/wght.css">
+  <link rel="stylesheet" href="/player.css">
+  <script type="module" src="/player.js"></script>
+</head>
+<body>
+  <div class="app-shell app-shell--offline" data-shell>
+    <div class="app-shell__body">
+      <header class="top-app-bar" data-top-app-bar>
+        <div class="top-app-bar__leading" data-top-app-bar-leading>
+          <a class="icon-button" data-entity-back><svg class="material-icon" aria-hidden="true"><use href="/icons.svg#arrow_back"></use></svg></a>
+        </div>
+        <h1 data-entity-title data-pagefind-meta="title"></h1>
+        <div class="top-app-bar__identity" data-top-app-bar-identity></div>
+        <div class="top-app-bar__actions" data-top-app-bar-actions></div>
+      </header>
+      <div class="app-shell__progress" aria-hidden="true"></div>
+      <main class="app-shell__main page-stage" id="main-content" tabindex="-1"></main>
+    </div>
+  </div>
+  <p id="error" class="state" role="alert" hidden></p>
+</body>
+</html>

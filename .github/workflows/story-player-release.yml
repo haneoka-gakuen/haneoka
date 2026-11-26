@@ -1,0 +1,47 @@
+name: Publish the offline story player
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-story-player
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - run: corepack enable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: node scripts/external-repositories.mjs checkout
+      - uses: ./.dependencies/vega/.github/actions/setup-wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm dependencies:verify
+      - uses: ./.github/actions/setup-cubism-runtime
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      - run: pnpm build:packages
+      - run: pnpm build:offline-story-player
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --require-hashes -r scripts/requirements-static-storage.txt
+      - run: npm install --global @tauri-apps/cli@2.12.4
+      - name: Sign and publish the independent player
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.STORY_PLAYER_SIGNING_PRIVATE_KEY }}
+        run: python scripts/publish/offline_story_player.py --release "$GITHUB_SHA" --publish --cloudflare-token

@@ -5,7 +5,7 @@
 // Effects/Dependencies: 生成 Lit 模板并连接应用栏／交互；依赖宿主状态和浏览器生命周期。
 import { html, nothing, type TemplateResult } from "lit";
 import { knownImageSize } from "../../lib/image-dimensions";
-import { clearAppBarActions, clearAppBarIdentity, setAppBarActions, setAppBarIdentity } from "../../lib/app-bar";
+import { appBarControls } from "../../lib/app-bar";
 import { icon } from "./icon";
 import { iconButton, rovingKeydown } from "./controls";
 import { tile } from "./tile";
@@ -91,12 +91,6 @@ export interface BrowseHeading {
 const RESULTS_ID = "browse-results";
 /** app-bar.ts owner id for the collection's controls. */
 const BROWSE_OWNER = "browse";
-
-/** Every screen that renders a browse must drop its controls on teardown. */
-export function clearBrowseBar() {
-  clearAppBarActions(BROWSE_OWNER);
-  clearAppBarIdentity(BROWSE_OWNER);
-}
 
 export interface BrowseFilters {
   label: string;
@@ -238,17 +232,8 @@ export function browseBar(options: BrowseOptions): TemplateResult {
 export function renderBrowse(options: BrowseOptions): TemplateResult {
   const { filters, rail, heading } = options;
   const open = Boolean(filters?.open);
-  // The bar lives in the shell's app bar, not in the pane.
-  setAppBarActions(BROWSE_OWNER, browseBar(options));
-  // Applied filters read as a breadcrumb after the title, so applying one
-  // never moves the results.
   const applied = Array.isArray(options.applied) ? options.applied.length > 0 : Boolean(options.applied);
-  if (applied)
-    setAppBarIdentity(
-      BROWSE_OWNER,
-      html`<div class="browse__crumbs">${icon("chevron_right", 20)}${options.applied}</div>`,
-    );
-  else clearAppBarIdentity(BROWSE_OWNER);
+  const identity = applied ? html`<div class="browse__crumbs">${icon("chevron_right", 20)}${options.applied}</div>` : undefined;
   // A rail of one is not a choice, so it is not drawn — unless the section
   // keeps its single destination visible on purpose.
   const railed = Boolean(rail && ((rail.pending && !rail.items.length) || rail.single || rail.items.length > 1));
@@ -256,7 +241,7 @@ export function renderBrowse(options: BrowseOptions): TemplateResult {
     .filter(Boolean)
     .join(" ");
   return html`
-    <section class=${classes} style=${options.style || nothing}>
+    <section class=${classes} style=${options.style || nothing} ${appBarControls(BROWSE_OWNER, browseBar(options), identity)}>
       ${railed && rail ? browseRail(rail) : nothing}
       <div class="browse__main">
         ${

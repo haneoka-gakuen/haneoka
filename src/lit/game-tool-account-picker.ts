@@ -9,7 +9,7 @@ import "@material/web/select/outlined-select.js";
 import "@material/web/select/select-option.js";
 import { clientText } from "../i18n/client";
 import { languageFlags } from "../i18n/language-flags";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { GAME_REGION_NAMES, profileRegion } from "../lib/game-records";
 import { isGameToolAccountId, legacyToolAccount, type GameTool, type GameToolAccount } from "../lib/game-tool-accounts";
 import {
@@ -60,9 +60,10 @@ export function setGameToolAccountAction(
     legacyServers?: PublicReleaseServer[];
     onSelect: (account: GameToolAccount) => void;
   },
-  host: object,
+  host: LitElement,
 ) {
   setAppBarActions(
+    host,
     appBarOwner(options.tool),
     html`
       <game-tool-account-picker
@@ -74,11 +75,9 @@ export function setGameToolAccountAction(
         .onSelect=${options.onSelect}
       ></game-tool-account-picker>
     `,
-    host,
     "leading",
   );
 }
-export const clearGameToolAccountAction = (tool: GameTool) => clearAppBarActions(appBarOwner(tool));
 const regionName = (account: GameToolAccount) => {
   const region = account.uid && profileRegion(account.uid);
   return region ? GAME_REGION_NAMES[region] : account.server === "jp" ? "JP" : "Global";

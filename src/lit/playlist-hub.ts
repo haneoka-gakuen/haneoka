@@ -5,13 +5,15 @@
  * has a shareable URL and Back works:
  *
  *   /community/playlists                 hub (carousels + community grid)
- *   /community/playlists?playlist=<id>   detail
- *   /community/playlists?edit=<id|new>   editor (owner only)
+ *   /community/playlists/<id>/           detail
+ *   /community/playlists/<id>/edit/      editor
+ *   /community/playlists/new/            creation
  *
  * The detail and editor take over the shell's app bar: Back in the leading
  * slot, the playlist's title as the heading once its hero scrolls away, and
  * the view's actions in the trailing row.
  */
+import { normalizeSearchText } from "../lib/search-text";
 import { formatDocumentTitle } from "../lib/document-title";
 import { signedInHint } from "../lib/community-viewer";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
@@ -19,6 +21,7 @@ import { entityDiscussion } from "./ui/entity-discussion";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { PlaylistPageData } from "../lib/playlists/page-data";
+import { parsePlaylistDocument, playlistPath } from "../lib/playlists/static-routing";
 import { repeat } from "lit/directives/repeat.js";
 import { live } from "lit/directives/live.js";
 import "@material/web/textfield/outlined-text-field.js";
@@ -29,8 +32,8 @@ import { icon, iconFilled } from "./ui/icon";
 import { iconButton, segmented, filterChip } from "./ui/controls";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { modal } from "./ui/modal";
-import { setAppBarActions, clearAppBarActions, setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
-import { openDetailLocation, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
+import { appBarElement, setAppBarActions, clearAppBarActions, setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { navigateDetailPage, closeDetailLocation, observeDetailLocation } from "../lib/detail-navigation";
 import { currentReleaseServer, localizedText } from "./shared/catalog";
 import { songTitle, observeSongDisplay } from "../lib/song-display";
 import { uploadCommunityAttachment } from "../lib/community-upload";
@@ -51,7 +54,7 @@ import {
 } from "../lib/playlists/library";
 import "../styles/playlists.css";
 import { snackbar } from "../lib/snackbar";
-import { navigationDocumentUrl } from "../lib/document-url";
+import { navigationDocumentUrl, returnLink } from "../lib/document-url";
 import { formatDate } from "../lib/date-format";
 
 type RecordValue = Record<string, unknown>;
@@ -77,6 +80,8 @@ interface Draft {
 
 const sameRef = (left: TrackRef | null | undefined, right: TrackRef | null | undefined) =>
   Boolean(left && right && refKey(left) === refKey(right));
+
+let pendingDraft: Draft | null = null;
 
 export class PlaylistHub extends LitElement {
   static properties = { locale: { type: String } };
@@ -123,7 +128,6 @@ export class PlaylistHub extends LitElement {
   private movedMenu?: { menu: HTMLElement; leading: HTMLElement; group: HTMLElement };
   private shellHeading = "";
   private releaseSearch?: () => void;
-  private sourcePath = "";
   private preparedServer = "";
 
   createRenderRoot() {
@@ -132,7 +136,6 @@ export class PlaylistHub extends LitElement {
   preparePage(page: PlaylistPageData, locale: Locale, server: string, selected = "") {
     adoptPrerenderedWorkspace(this);
     this.locale = locale;
-    this.sourcePath = `/${locale}/community/playlists/`;
     if (!this.isConnected) this.communityLoading = true;
     const variants = Object.fromEntries(Object.entries(page.variants).map(([source, data]) => [source, adoptSongLibrary(source, data)]));
     if (!variants[server]) return;
@@ -179,8 +182,6 @@ export class PlaylistHub extends LitElement {
     this.heroObserver?.disconnect();
     window.removeEventListener("haneoka-audio-state", this.onAudioState);
     window.removeEventListener("haneoka:session-changed", this.onSession);
-    clearAppBarActions(OWNER);
-    clearAppBarSearch(OWNER);
     this.restoreShell();
   }
 
@@ -233,20 +234,13 @@ export class PlaylistHub extends LitElement {
   /* ---------- Routing ---------- */
 
   private href(params: Record<string, string> = {}) {
-    const url = new URL(this.sourcePath, "https://haneoka.org");
-    url.search = new URLSearchParams(params).toString();
-    url.hash = "";
-    return `${url.pathname}${url.search}`;
+    return returnLink(playlistPath(this.locale, params.edit || params.playlist, Boolean(params.edit)));
   }
 
   private route() {
-    const url = navigationDocumentUrl();
-    const params = url.searchParams;
-    const segments = url.pathname.split("/").filter(Boolean);
-    const at = segments.indexOf("playlists");
-    const pathId = at >= 0 ? decodeURIComponent(segments[at + 1] || "") : "";
-    const edit = params.get("edit");
-    const id = params.get("playlist") || pathId;
+    const page = parsePlaylistDocument(navigationDocumentUrl().pathname);
+    const edit = page?.edit ? page.id : "";
+    const id = page?.id || "";
     this.sequence++;
     this.pickerOpen = false;
     this.addTarget = null;
@@ -273,31 +267,26 @@ export class PlaylistHub extends LitElement {
   }
 
   private go(params: Record<string, string>) {
-    openDetailLocation(this.href(params));
-    this.route();
+    return navigateDetailPage(this.href(params));
   }
 
   private back() {
     if (this.view === "edit" && this.draftDirty() && !confirm(this.t("discardChanges", "Discard unsaved changes?")))
       return;
     const target = this.view === "edit" && this.draft?.id ? this.href({ playlist: this.draft.id }) : this.href();
-    if (this.view === "edit" && this.draft?.id) {
-      history.replaceState(history.state, "", target);
-      this.route();
-      return;
-    }
     closeDetailLocation(target);
-    this.route();
   }
 
   /* ---------- Shell (app bar) ---------- */
 
   private heading() {
-    return document.querySelector<HTMLElement>("[data-top-app-bar] h1");
+    return appBarElement(this)?.querySelector<HTMLElement>("h1");
   }
 
   private syncShell() {
-    const leading = document.querySelector<HTMLElement>("[data-top-app-bar-leading]");
+    const bar = appBarElement(this);
+    if (!bar) return;
+    const leading = bar.querySelector<HTMLElement>("[data-top-app-bar-leading]");
     if (this.view === "hub") {
       this.restoreShell();
       this.syncHubBar();
@@ -305,7 +294,7 @@ export class PlaylistHub extends LitElement {
     }
     this.releaseSearch?.();
     this.releaseSearch = undefined;
-    clearAppBarSearch(OWNER);
+    clearAppBarSearch(this, OWNER);
     if (leading && !this.leadingBack) {
       const back = leading.querySelector<HTMLAnchorElement>("[data-entity-back]") || document.createElement("a");
       back.className = "icon-button";
@@ -322,7 +311,7 @@ export class PlaylistHub extends LitElement {
       leading.prepend(back);
       this.leadingBack = back;
       // Back takes the leading slot; the navigation menu moves to the trailing row.
-      const actions = document.querySelector<HTMLElement>("[data-top-app-bar-actions]");
+      const actions = bar.querySelector<HTMLElement>("[data-top-app-bar-actions]");
       const menu = leading.querySelector<HTMLElement>("[data-nav-toggle]") || actions?.querySelector<HTMLElement>("[data-entity-menu-first]");
       if (menu && actions) {
         const group = menu.closest<HTMLElement>("[data-entity-menu-first-group]") || document.createElement("div");
@@ -337,7 +326,7 @@ export class PlaylistHub extends LitElement {
   }
   private syncHubBar() {
       this.releaseSearch?.();
-      this.releaseSearch = setAppBarSearch(OWNER, {
+      this.releaseSearch = setAppBarSearch(this, OWNER, {
         value: this.query,
         label: this.t("search", "Search playlists"),
         onInput: (value) => {
@@ -350,6 +339,7 @@ export class PlaylistHub extends LitElement {
         },
       });
       setAppBarActions(
+        this,
         OWNER,
         this.signedIn
           ? iconButton({ icon: "add", label: this.t("create", "New playlist"), onClick: () => this.createNew() })
@@ -367,7 +357,7 @@ export class PlaylistHub extends LitElement {
     }
     const heading = this.heading();
     if (heading && this.shellHeading && heading.innerHTML !== this.shellHeading) heading.innerHTML = this.shellHeading;
-    clearAppBarActions(OWNER);
+    clearAppBarActions(this, OWNER);
   }
 
   private syncHeading() {
@@ -386,6 +376,7 @@ export class PlaylistHub extends LitElement {
     if (this.view === "detail") {
       const playlist = this.current;
       setAppBarActions(
+        this,
         OWNER,
         playlist
           ? html`
@@ -404,6 +395,7 @@ export class PlaylistHub extends LitElement {
       );
     } else if (this.view === "edit") {
       setAppBarActions(
+        this,
         OWNER,
         html`
           <button
@@ -673,11 +665,9 @@ export class PlaylistHub extends LitElement {
 
   private createNew(tracks: TrackRef[] = [], title = "") {
     if (!this.requireSignIn()) return;
-    this.pendingDraft = this.emptyDraft(tracks, title);
-    this.go({ edit: "new" });
+    pendingDraft = this.emptyDraft(tracks, title);
+    void this.go({ edit: "new" }).finally(() => { pendingDraft = null; });
   }
-
-  private pendingDraft: Draft | null = null;
 
   private async openEditor(id: string) {
     const sequence = this.sequence;
@@ -685,8 +675,8 @@ export class PlaylistHub extends LitElement {
     this.saving = false;
     this.uploadProgress = -1;
     if (id === "new") {
-      this.draft = this.pendingDraft ?? this.emptyDraft();
-      this.pendingDraft = null;
+      this.draft = pendingDraft ?? this.emptyDraft();
+      pendingDraft = null;
       this.draftBaseline = JSON.stringify(this.emptyDraft());
       this.syncShell();
       this.requestUpdate();
@@ -763,10 +753,8 @@ export class PlaylistHub extends LitElement {
       this.current = saved;
       this.mine = [saved, ...this.mine.filter((entry) => entry.id !== saved.id)];
       this.communityLists = this.communityLists.map((entry) => (entry.id === saved.id ? saved : entry));
-      history.replaceState(history.state, "", this.href({ playlist: saved.id }));
-      this.route();
       this.notify(this.t("savedToast", "Playlist saved"));
-      if (saved.visibility === "public") void this.loadCommunity(false);
+      await navigateDetailPage(this.href({ playlist: saved.id }), "replace");
     } catch (error) {
       this.editorError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -785,9 +773,8 @@ export class PlaylistHub extends LitElement {
       this.mine = this.mine.filter((entry) => entry.id !== draft.id);
       this.communityLists = this.communityLists.filter((entry) => entry.id !== draft.id);
       this.draftBaseline = JSON.stringify(this.draft);
-      history.replaceState(history.state, "", this.href());
-      this.route();
       this.notify(this.t("deleted", "Playlist deleted"));
+      await navigateDetailPage(this.href(), "replace");
     } catch (error) {
       this.editorError = error instanceof Error ? error.message : String(error);
       this.requestUpdate();
@@ -1023,11 +1010,9 @@ export class PlaylistHub extends LitElement {
   }
 
   private listed(playlist: Playlist) {
-    const query = this.query.trim().toLocaleLowerCase();
+    const query = normalizeSearchText(this.query.trim());
     if (!query) return true;
-    return `${this.titleOf(playlist)} ${playlist.owner?.name ?? ""} ${playlist.description ?? ""}`
-      .toLocaleLowerCase()
-      .includes(query);
+    return normalizeSearchText(`${this.titleOf(playlist)} ${playlist.owner?.name ?? ""} ${playlist.description ?? ""}`).includes(query);
   }
 
   /* ---------- Rendering: hub ---------- */
@@ -1787,7 +1772,7 @@ export class PlaylistHub extends LitElement {
       this.pickerOpen = false;
       this.requestUpdate();
     };
-    const query = this.pickerQuery.trim().toLocaleLowerCase();
+    const query = normalizeSearchText(this.pickerQuery.trim());
     const chosen = new Set(draft?.tracks.map(refKey) ?? []);
     const band = library?.bands.find((entry) => entry.key === this.pickerBand);
     const pool = band ? band.songs : (library?.songs ?? []);
@@ -1796,9 +1781,7 @@ export class PlaylistHub extends LitElement {
       .filter(
         (song) =>
           !query ||
-          `${this.songName(song)} ${localizedText(song.title, "ja")} ${this.artistOf(song)}`
-            .toLocaleLowerCase()
-            .includes(query),
+          normalizeSearchText(`${this.songName(song)} ${localizedText(song.title, "ja")} ${this.artistOf(song)}`).includes(query),
       )
       .slice(0, 200);
     return html`
@@ -1809,19 +1792,17 @@ export class PlaylistHub extends LitElement {
               <h2 id="playlist-picker-title">${this.t("addSongs", "Add songs")}</h2>
               ${iconButton({ icon: "close", label: this.t("close", "Close"), onClick: close })}
             </div>
-            <label class="playlist-picker__search">
-              ${icon("search", 20)}
-              <input
+              <md-outlined-text-field
+                class="playlist-picker__search is-search"
                 type="search"
                 .value=${live(this.pickerQuery)}
-                placeholder=${this.t("searchSongs", "Search songs or artists")}
+                label=${this.t("searchSongs", "Search songs or artists")}
                 aria-label=${this.t("searchSongs", "Search songs or artists")}
                 @input=${(event: Event) => {
-                  this.pickerQuery = (event.target as HTMLInputElement).value;
+                  this.pickerQuery = (event.currentTarget as HTMLInputElement).value;
                   this.requestUpdate();
                 }}
-              />
-            </label>
+              ><span slot="leading-icon">${icon("search", 20)}</span></md-outlined-text-field>
             <div class="playlist-picker__bands" role="group" aria-label=${this.t("bands", "Band")}>
               ${filterChip({
                 label: this.t("allBands", "All"),

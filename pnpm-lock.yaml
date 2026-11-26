@@ -351,6 +351,9 @@ importers:
       echarts:
         specifier: 'catalog:'
         version: 6.1.0
+      fast-png:
+        specifier: 'catalog:'
+        version: 8.0.0
       fflate:
         specifier: 'catalog:'
         version: 0.8.3
@@ -1331,6 +1334,15 @@ importers:
       '@haneoka/vega-protocol':
         specifier: workspace:*
         version: link:packages/protocol
+      gifenc:
+        specifier: 1.0.3
+        version: 1.0.3
+      html-to-image:
+        specifier: 1.11.13
+        version: 1.11.13
+      mediabunny:
+        specifier: 1.66.2
+        version: 1.66.2
       popmotion:
         specifier: ^11.0.5
         version: 11.0.5
@@ -2029,6 +2041,9 @@ importers:
 
   packages/embed-vega:
     dependencies:
+      '@esotericsoftware/spine-threejs':
+        specifier: 4.2.119
+        version: 4.2.119(three@0.184.0)
       '@haneoka/api-client':
         specifier: ^0.1.0
         version: link:../api-client
@@ -2047,6 +2062,9 @@ importers:
       '@haneoka/vega-plugin-richtext':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-plugin-richtext
+      '@haneoka/vega-plugin-spine':
+        specifier: ^0.1.0
+        version: link:../../.dependencies/vega-plugin-spine
       '@haneoka/vega-renderer-three':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-renderer-three
@@ -2059,6 +2077,9 @@ importers:
       '@haneoka/vega-ui-portable':
         specifier: ^0.1.0
         version: link:../../.dependencies/vega-ui-portable
+      fflate:
+        specifier: 'catalog:'
+        version: 0.8.3
       howler:
         specifier: '>=2.2.0 <3'
         version: 2.2.4
@@ -4368,6 +4389,12 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/dom-mediacapture-transform@0.1.12':
+    resolution: {integrity: sha512-d7/QsLRwF864A5mgIM/YrfiglHoYn7zgCcAoJgW404r+2DwnNr7EBbLnCWpmOMgH8y0te73L1AV6H1bmauaWFw==}
+
+  '@types/dom-webcodecs@0.1.13':
+    resolution: {integrity: sha512-O5hkiFIcjjszPIYyUSyvScyvrBoV3NOEEZx/pMlsu44TKzWNkLVBBxnxJz42in5n3QIolYOcBYFCPZZ0h8SkwQ==}
+
   '@types/emscripten@1.41.6':
     resolution: {integrity: sha512-uN+9i8bFT5CUcZfyIEYDrSueACEyKGbUs5kC/72DGlZZoinh84sJfVV0i8UOJD1asdzkvLPBRrKs41kZ8MdEXg==}
 
@@ -5512,6 +5539,9 @@ packages:
     resolution: {integrity: sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==}
     engines: {node: '>= 0.4'}
 
+  gifenc@1.0.3:
+    resolution: {integrity: sha512-xdr6AdrfGBcfzncONUOlXMBuc5wJDtOueE3c5rdG0oNgtINLD+f2iFZltrBRZYzACRbKr+mSVU/x98zv2u3jmw==}
+
   gifuct-js@2.1.2:
     resolution: {integrity: sha512-rI2asw77u0mGgwhV3qA+OEgYqaDn5UNqgs+Bx0FGwSpuqfYn+Ir6RQY5ENNQ8SbIiG/m5gVa7CD5RriO4f4Lsg==}
 
@@ -5965,6 +5995,9 @@ packages:
   media-typer@0.3.0:
     resolution: {integrity: sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==}
     engines: {node: '>= 0.6'}
+
+  mediabunny@1.66.2:
+    resolution: {integrity: sha512-NTzRrBhAyRVi8qpJ9AH6XPyxiDVkfugxYY+gu3Z5zi+Nw2R/7nTAnXJEt2Ucy8wTIve1/UYGnCFf50x2LpvMDQ==}
 
   merge-descriptors@1.0.3:
     resolution: {integrity: sha512-gaNvAS7TZ897/rVaZ0nMtAyxNyi/pdbjbAwUpFQpN70GqnVfOiXpeUUMKRBmzXaSQ8DdTX4/0ms62r2K+hE6mQ==}
@@ -9209,6 +9242,12 @@ snapshots:
   '@types/deep-eql@4.0.2':
     optional: true
 
+  '@types/dom-mediacapture-transform@0.1.12':
+    dependencies:
+      '@types/dom-webcodecs': 0.1.13
+
+  '@types/dom-webcodecs@0.1.13': {}
+
   '@types/emscripten@1.41.6': {}
 
   '@types/esrecurse@4.3.1': {}
@@ -10638,6 +10677,8 @@ snapshots:
       dunder-proto: 1.0.1
       es-object-atoms: 1.1.2
 
+  gifenc@1.0.3: {}
+
   gifuct-js@2.1.2:
     dependencies:
       js-binary-schema-parser: 2.0.3
@@ -11176,6 +11217,11 @@ snapshots:
   mdn-data@2.27.1: {}
 
   media-typer@0.3.0: {}
+
+  mediabunny@1.66.2:
+    dependencies:
+      '@types/dom-mediacapture-transform': 0.1.12
+      '@types/dom-webcodecs': 0.1.13
 
   merge-descriptors@1.0.3: {}
 

@@ -257,6 +257,39 @@ function publishedAt(value: unknown): number {
   return 0;
 }
 
+export function sonolusMetadataLine(label: string, value: string): string {
+  return `${label}:#SEPARATOR_COLON:##:${value}`;
+}
+
+export function sonolusPublicationLine(timestamp: number): string[] {
+  return timestamp > 0 ? [`#PUBLISHED:#SEPARATOR_COLON:##TIME_FULL:${timestamp}`] : [];
+}
+
+export function sonolusChartFacts(stats: {
+  noteCount?: unknown;
+  seconds?: unknown;
+  minBpm?: unknown;
+  maxBpm?: unknown;
+}): string[] {
+  const positive = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+  const count = positive(stats.noteCount);
+  const seconds = positive(stats.seconds);
+  const min = positive(stats.minBpm);
+  const max = positive(stats.maxBpm) || min;
+  const lines: string[] = [];
+  if (Number.isSafeInteger(count) && count > 0) lines.push(sonolusMetadataLine("#COMBO", String(count)));
+  if (seconds > 0) {
+    const duration = Math.round(seconds);
+    lines.push(sonolusMetadataLine("#LENGTH", `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`));
+    if (count > 0) lines.push(`##:${(count / seconds).toFixed(2)} NPS`);
+  }
+  if (min > 0) {
+    const format = (value: number) => String(Math.round(value * 100) / 100);
+    lines.push(`##:BPM ${min === max ? format(min) : `${format(min)}–${format(max)}`}`);
+  }
+  return lines;
+}
+
 function bandNames(value: unknown): Map<string, unknown> {
   const result = new Map<string, unknown>();
   for (const [key, band] of recordEntries(value)) {
@@ -353,10 +386,13 @@ function projectedTags(
   const tags = Array.isArray(base)
     ? base.filter((tag) => {
         if (!isObject(tag) || typeof tag.title !== "string") return true;
-        return !DIFFICULTIES.includes(tag.title.toLocaleLowerCase() as (typeof DIFFICULTIES)[number]);
+        return !DIFFICULTIES.includes(tag.title.replace(/^#/u, "").toLowerCase() as (typeof DIFFICULTIES)[number]);
       })
     : [];
-  return [...tags, { title: sonolusDifficultyTitle(difficulty) }, ...categories.map(({ title }) => ({ title }))];
+  const title = DIFFICULTIES.includes(difficulty as (typeof DIFFICULTIES)[number])
+    ? `#${difficulty.toUpperCase()}`
+    : sonolusDifficultyTitle(difficulty);
+  return [...tags, { title }, ...categories.map(({ title }) => ({ title }))];
 }
 
 function projectedSource(value: JsonValue, source: string, previousSource: string | undefined): JsonValue {
@@ -383,6 +419,10 @@ export function projectLevelItem(
     : base;
   const cover = metadata.coverUrl ? { url: metadata.coverUrl } : projectedBase.cover;
   const bgm = metadata.bgmUrl ? { ...(jsonObject(projectedBase.bgm) ?? {}), url: metadata.bgmUrl } : projectedBase.bgm;
+  const tags = projectedTags(metadata.tags ?? projectedBase.tags, metadata.difficulty, metadata.categories ?? []);
+  if (metadata.publishedAt > 0) {
+    tags.push({ title: `##TIME_RELATIVE:${metadata.publishedAt}`, icon: "clock" });
+  }
   const result: SonolusLevelItem = {
     ...projectedBase,
     name: metadata.name,
@@ -392,9 +432,10 @@ export function projectLevelItem(
     author: metadata.author ?? metadata.artists,
     ...(metadata.sonolusBaseUrl ? { source: sonolusSourceRoot(metadata.sonolusBaseUrl) } : {}),
     data: metadata.data,
-    tags: projectedTags(metadata.tags ?? projectedBase.tags, metadata.difficulty, metadata.categories ?? []),
+    tags,
   };
   if (cover !== undefined) result.cover = cover;
+  if (metadata.background) result.useBackground = { useDefault: false, item: metadata.background };
   if (bgm !== undefined) result.bgm = bgm;
   if (metadata.previewUrl) result.preview = { url: metadata.previewUrl };
   return result;
@@ -423,6 +464,9 @@ export function projectCatalogCharts(
     const artistFilters = songArtistFilters(song, names, locales, options.encodeText);
     const categories = songCategories(song, options);
     const description = songDescription(song, locales, options);
+    const songDetails = [description.description, ...sonolusPublicationLine(publishedAt(song.publishedAt))];
+    const coverUrl = absoluteUrl(song.jacketUrl ?? song.jacketThumbUrl, options.mediaBaseUrl);
+    const background = options.songBackground?.(song, songId, title, coverUrl);
     const difficulties = Array.isArray(song.difficulty) ? song.difficulty : [];
     for (const [index, rawDifficulty] of difficulties.entries()) {
       if (!isObject(rawDifficulty)) continue;
@@ -435,20 +479,29 @@ export function projectCatalogCharts(
         invalidChartNames.push(name);
         continue;
       }
-      const coverUrl = absoluteUrl(song.jacketUrl ?? song.jacketThumbUrl, options.mediaBaseUrl);
       const bgmUrl = absoluteUrl(song.musicUrl, options.mediaBaseUrl);
       const previewUrl = absoluteUrl(song.previewUrl, options.mediaBaseUrl);
       const levelDataParameters = options.levelDataParameters?.(song, rawDifficulty);
+      const chartPublishedAt = publishedAt(rawDifficulty.publishedAt ?? song.publishedAt);
+      const chartFacts = sonolusChartFacts({
+        noteCount: rawDifficulty.noteCount,
+        seconds: rawDifficulty.seconds,
+        minBpm: rawDifficulty.minBpm,
+        maxBpm: rawDifficulty.maxBpm,
+      });
       const metadata = {
-        ...description,
+        description: [description.description, ...chartFacts, ...sonolusPublicationLine(chartPublishedAt)].join("\n"),
+        songDescription: songDetails.join("\n"),
+        searchKeywords: description.searchKeywords,
         artists,
         artistFilters,
         categories,
         ...(options.encodeText ? { author } : {}),
+        ...(background ? { background } : {}),
         dataId,
         difficulty,
         name,
-        publishedAt: publishedAt(rawDifficulty.publishedAt ?? song.publishedAt),
+        publishedAt: chartPublishedAt,
         rating: levelRating,
         songId,
         title,

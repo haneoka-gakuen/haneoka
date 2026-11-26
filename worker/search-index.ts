@@ -4,7 +4,7 @@
 // Pos: [Map](L2.md); catalogue search. Community posts stay on the access-aware D1 route.
 // Effects/Dependencies: Reads catalogues; writes only the catalog_search tables, and only when a release changes.
 import { localizedFallbacks } from "../src/lib/localized-text";
-import HAN_FOLD from "./search-han-fold.json";
+import { foldSearchCharacter } from "../src/lib/search-text";
 
 const SEARCH_PATH = "/api/v1/search";
 const SERVERS = ["jp", "intl"] as const;
@@ -16,7 +16,7 @@ const EXCERPT = 120;
 const KIND_TIER = `CASE document.kind
   WHEN 'characters' THEN 0 WHEN 'songs' THEN 0
   WHEN 'member-cards' THEN 1 WHEN 'support-cards' THEN 1 WHEN 'events' THEN 1 WHEN 'gacha' THEN 1
-  WHEN 'real-lives' THEN 2 WHEN 'comics' THEN 2 WHEN 'stories' THEN 2
+  WHEN 'comics' THEN 2 WHEN 'stories' THEN 2
   ELSE 3 END`;
 const TYPO_MINIMUM = 5;
 
@@ -34,17 +34,7 @@ interface SearchDocument {
   texts: string[];
 }
 
-/** Simplified, traditional and shinjitai forms of one character share an index form, as do both kana. */
-const HAN = new Map<string, string>();
-{
-  const pairs = [...(HAN_FOLD as string)];
-  for (let index = 0; index + 1 < pairs.length; index += 2) HAN.set(pairs[index]!, pairs[index + 1]!);
-}
-const foldCharacter = (character: string) => {
-  const code = character.codePointAt(0)!;
-  if (code >= 0x3041 && code <= 0x3096) return String.fromCodePoint(code + 0x60);
-  return HAN.get(character) ?? character.toLowerCase();
-};
+const foldCharacter = (character: string) => foldSearchCharacter(character).toLowerCase();
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 /** FTS5's tokenizer has no CJK segmentation, so each such character becomes its own token. */
 const indexText = (value: string) =>
@@ -83,7 +73,6 @@ export const SOURCES: readonly Source[] = [
   source("characters", "characters", ["characterName"], ["englishName", "nickname", "catchCopy", "description"], ["thumbnailImage", "faceImage"]),
   source("events", "events", ["title"], ["description"], ["logo", "image"]),
   source("gacha", "gacha", ["title"], ["appeal", "description"], ["logo", "image"]),
-  source("real-lives", "real-lives", ["title"], ["description"], ["image"]),
   source("comics", "comics", ["title"], [], ["thumbnail", "image"]),
   source("stamps", "stamps", ["name"], [], ["image"]),
   source("stickers", "stickers", ["name"], [], ["image"]),
@@ -255,7 +244,7 @@ export async function handleSearchRequest(request: Request, db: D1Database | und
   const scope = `FROM catalog_search_fts AS fts
     JOIN catalog_search_documents AS document ON document.rowid = fts.rowid
     JOIN catalog_search_releases AS release ON release.server = document.server AND release.release_id = document.release_id
-    WHERE catalog_search_fts MATCH ? AND document.server = ?${section ? " AND document.section = ?" : ""}${visibleKeys ? ` AND (CASE document.kind WHEN 'member-cards' THEN 'cards' ELSE document.kind END || ':' || json_extract('["' || replace(rtrim(document.path,'/'),'/','","') || '"]', '$[#-1]')) IN (SELECT value FROM json_each(?))` : ""}`;
+    WHERE catalog_search_fts MATCH ? AND document.server = ? AND document.kind <> 'real-lives'${section ? " AND document.section = ?" : ""}${visibleKeys ? ` AND (CASE document.kind WHEN 'member-cards' THEN 'cards' ELSE document.kind END || ':' || json_extract('["' || replace(rtrim(document.path,'/'),'/','","') || '"]', '$[#-1]')) IN (SELECT value FROM json_each(?))` : ""}`;
   const base = [server, ...(section ? [section] : []), ...(visibleKeys ? [JSON.stringify(visibleKeys)] : [])];
   const run = async (expression: string) => {
     const counts = await db.prepare(`SELECT document.kind AS kind, COUNT(*) AS count ${scope} GROUP BY document.kind`)

@@ -2,6 +2,7 @@
 import type { EngineHit, EngineRequest, EngineResponse, SongRef, SongResult } from "./engine/api";
 import { clock, remaining, type RewardCutoff } from "./engine/execution";
 import type { EngineSnapshot } from "./engine/protocol";
+import type { EngineClient } from "./engine/client";
 import { cpExchange } from "./engine/pt-value";
 
 export const PT_VERSION = "native-reward-settlement-v22";
@@ -140,29 +141,93 @@ export function ptChallengeBest(job: PtJob, measure: PtMeasure): EngineHit | nul
     return null;
   return ptSongRanking(job, measure, "challenge")[0] ?? null;
 }
+export function ptChallengeCharts(job: PtJob, measure: PtMeasure): EngineHit[] {
+  const charts = new Map<string, EngineHit>();
+  for (const task of job.tasks) {
+    if (task.route !== "challenge" || task.measure !== measure || !chartComplete(task)) continue;
+    for (const hit of task.result?.hits ?? []) {
+      if (!hit.song || !hit.event || !Number.isFinite(hit.event.mean)) continue;
+      const key = chartKey(hit.song);
+      const previous = charts.get(key);
+      if (!previous || compareHit(hit, previous) < 0) charts.set(key, hit);
+    }
+  }
+  return [...charts.values()].sort(compareHit);
+}
+
+export function ptFollowUpTotals(live: EngineHit, challenge: EngineHit, measure: PtMeasure,
+                                 normalPlays: number, startingCp: number, cost: number) {
+  const normal = live.event!;
+  const next = challenge.event!;
+  const cp = normal.rewardValues?.["challenge-points"];
+  const denominator = Number(cp?.denominator);
+  const numerator = Number(cp?.numerator);
+  const fraction = Number.isSafeInteger(denominator) && denominator > 0 && Number.isSafeInteger(numerator)
+    && Number.isSafeInteger(startingCp * denominator + numerator * normalPlays)
+    && Number.isSafeInteger(cost * denominator);
+  const orders = fraction ? denominator : Math.max(1, normal.orders ?? 1);
+  const earned = fraction ? numerator : Math.round(normal.challengePoints * orders);
+  const budget = startingCp * orders + earned * normalPlays;
+  const consumption = cost * orders;
+  const plays = Math.floor(budget / consumption);
+  const reward = (event: NonNullable<EngineHit["event"]>, metric: PtMeasure) => {
+    const value = event.rewardValues?.[metric]?.value ?? (metric === measure
+      ? event.directMean ?? event.mean - (event.convertedMean ?? 0) : event.otherMean);
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+  const total = (metric: PtMeasure) => {
+    const live = reward(normal, metric);
+    const followUp = reward(next, metric);
+    return live !== null && (plays === 0 || followUp !== null)
+      ? live * normalPlays + (followUp ?? 0) * plays : null;
+  };
+  return {
+    plays,
+    remaining: (budget - plays * consumption) / orders,
+    points: total("points"),
+    items: total("items"),
+  };
+}
+
 export function ptCutoff(job: PtJob, measure: PtMeasure): number | undefined {
   return ptSongRanking(job, measure)[(job.scope === "top-one" ? 1 : 5) - 1]?.key;
 }
+function rewardCutoff(job: PtJob, measure: PtMeasure): RewardCutoff | undefined {
+  if (job.scope === "all") return;
+  const key = ptCutoff(job, measure);
+  if (key === undefined) return;
+  return { key, comparison: "gte", contextKey: job.fingerprint, ranking: "reward-mean-score-v2" };
+}
 export function ptTaskCutoff(job: PtJob, task: PtTask): RewardCutoff | undefined {
-  if (job.scope === "all" || task.route !== "live") return;
-  const last = ptSongRanking(job, task.measure)[(job.scope === "top-one" ? 1 : 5) - 1];
-  if (!last) return;
-  return { key: last.key, comparison: "gte", contextKey: job.fingerprint, ranking: "reward-mean-score-v2" };
+  return task.route === "live" ? rewardCutoff(job, task.measure) : undefined;
+}
+function hasValidExclusion(task: PtTask, cutoff: RewardCutoff | undefined): boolean {
+  const proof = task.result?.exclusion;
+  return !!proof && !!cutoff && task.status === "pruned" && proof.contextKey === cutoff.contextKey && proof.ranking === cutoff.ranking &&
+    (proof.key < cutoff.key || (proof.key === cutoff.key && (proof.comparison === "gte" || cutoff.comparison === "gt")));
+}
+export function chartExcluded(job: PtJob, task: PtTask): boolean {
+  return task.status === "pruned" && hasValidExclusion(task, ptTaskCutoff(job, task));
 }
 const chartComplete = (task: PtTask) =>
   (task.status === "complete" || task.status === "empty") && task.result?.proven === true;
-export function chartExcluded(job: PtJob, task: PtTask): boolean {
-  const proof = task.result?.exclusion;
-  const cutoff = ptTaskCutoff(job, task);
-  return !!proof && !!cutoff && task.status === "pruned" && proof.contextKey === job.fingerprint && proof.ranking === cutoff.ranking &&
-    (proof.key < cutoff.key || (proof.key === cutoff.key && (proof.comparison === "gte" || cutoff.comparison === "gt")));
+function proofStatus(job: PtJob): (task: PtTask) => boolean {
+  const cutoffs = new Map<PtMeasure, RewardCutoff | undefined>();
+  return task => {
+    if (chartComplete(task)) return true;
+    if (task.status !== "pruned" || task.route !== "live") return false;
+    if (!cutoffs.has(task.measure)) cutoffs.set(task.measure, rewardCutoff(job, task.measure));
+    return hasValidExclusion(task, cutoffs.get(task.measure));
+  };
 }
 export const ptAllComplete = (job: PtJob) => job.tasks.length > 0 && job.tasks.every(chartComplete);
-export const ptComplete = (job: PtJob) => job.tasks.length > 0 && job.tasks.every(task => chartComplete(task) || chartExcluded(job, task));
+export const ptComplete = (job: PtJob) => job.tasks.length > 0 && job.tasks.every(proofStatus(job));
 
 export interface PtEngine {
   run(request: EngineRequest, progress?: (done: number, total: number) => void, snapshot?: (value: EngineSnapshot) => void): Promise<EngineResponse>;
   cancel(): void;
+  prefetch?(songs: readonly SongRef[]): void;
+  runBatch?: EngineClient["runBatch"];
 }
 export interface PtJobStore {
   save(job: PtJob): Promise<void>;
@@ -203,8 +268,9 @@ export class PtRunner {
       }
     };
     try {
+      const initiallyComplete = proofStatus(job);
       for (const task of job.tasks)
-        if (!chartComplete(task) && !chartExcluded(job, task)) {
+        if (!initiallyComplete(task)) {
           task.status = "queued";
           task.error = "";
         }
@@ -216,12 +282,59 @@ export class PtRunner {
           a.song.difficulty - b.song.difficulty ||
           Number(a.measure === "items") - Number(b.measure === "items"),
       );
+      const buildRequest = (task: PtTask, challenge: EngineHit | null): EngineRequest => {
+        const { goal, rewardCutoff: _legacyCutoff, ...base } = job.request;
+        if (goal.kind !== "event") throw new Error("pt-mode");
+        return {
+          ...base,
+          goal: {
+            ...goal, songs: [task.song], route: task.route, measure: task.measure,
+            ...(task.route === "challenge" ? { consumption: job.cycle!.consumption, gekiso: undefined } : {}),
+            ...(challenge ? { cpExchange: cpExchange(
+              challenge.event!.rewardSum!, challenge.event!.orders!, job.cycle!.consumption,
+            ) } : {}),
+          },
+          deadline,
+          contextKey: job.fingerprint,
+          seeds: task.result?.hits ?? [],
+        };
+      };
+      const accept = (task: PtTask, response: EngineResponse) => {
+        if (this.stopped) return;
+        const result = response.results.find(r => r.song && chartKey(r.song) === chartKey(task.song));
+        if (!result) return;
+        if (!result.hits.length && !result.proven) result.hits = task.result?.hits ?? [];
+        if (result.exclusion && result.hits.length && result.hits[0]!.key >= result.exclusion.key) {
+          result.proven = true;
+          result.bound = null;
+          delete result.exclusion;
+        }
+        task.result = result;
+        if (response.stopReason === "error") {
+          task.status = "failed"; task.error = response.error ?? "engine-error"; return;
+        }
+        task.status = result.exclusion ? "pruned" : result.proven ? (result.hits.length ? "complete" : "empty") : "partial";
+      };
+      const snapshot = (task: PtTask, value: EngineSnapshot) => {
+        if (this.stopped || value.contextKey !== job.fingerprint) return;
+        const first = !job.tasks.some(entry => entry.result?.hits.length) && value.response.overall.length > 0;
+        accept(task, value.response);
+        void publish(first);
+      };
+      const challengeFor = (task: PtTask) =>
+        job.cycle && task.route === "live" ? ptChallengeBest(job, task.measure) : null;
+      const completed = (task: PtTask) => chartComplete(task) || chartExcluded(job, task);
       /** Runs one task; false once the run was stopped. */
-      const step = async (task: PtTask): Promise<boolean> => {
+      const step = async (task: PtTask, index: number): Promise<boolean> => {
         if (this.stopped || !remaining(deadline)) return false;
-        if (chartComplete(task) || chartExcluded(job, task)) return true;
-        const challenge = job.cycle && task.route === "live" ? ptChallengeBest(job, task.measure) : null;
+        if (completed(task)) return true;
+        const challenge = challengeFor(task);
         if (job.cycle && task.route === "live" && !challenge) return true;
+        // Overlap a small lookahead with the current proof and reuse the
+        // shared chart cache, including during the initial single-chart run.
+        this.engine.prefetch?.(tasks.slice(index, index + 4)
+          .filter(next => next.route === task.route && !chartComplete(next) && next.status !== "pruned")
+          .map(next => next.song));
         task.status = "running";
         await publish();
         if (this.stopped) {
@@ -229,47 +342,9 @@ export class PtRunner {
           return false;
         }
         try {
-          const request = structuredClone(job.request);
-          if (request.goal.kind !== "event") throw new Error("pt-mode");
-          request.goal.songs = [task.song];
-          request.goal.route = task.route;
-          request.goal.measure = task.measure;
-          delete request.rewardCutoff;
-          request.cutoff = ptTaskCutoff(job, task);
-          request.deadline = deadline;
-          request.contextKey = job.fingerprint;
-          request.seeds = task.result?.hits ?? [];
-          if (task.route === "challenge") {
-            request.goal.consumption = job.cycle!.consumption;
-            delete request.goal.gekiso;
-          }
-          if (challenge)
-            request.goal.cpExchange = cpExchange(
-              challenge.event!.rewardSum!,
-              challenge.event!.orders!,
-              job.cycle!.consumption,
-            );
-          const previous = task.result?.hits ?? [];
-          const accept = (response: EngineResponse) => {
-            const result = response.results.find(r => r.song && chartKey(r.song) === chartKey(task.song));
-            if (!result) return;
-            if (!result.hits.length && !result.proven) result.hits = task.result?.hits.length ? task.result.hits : previous;
-            if (result.exclusion && result.hits.length && result.hits[0]!.key >= result.exclusion.key) {
-              result.proven = true;
-              result.bound = null;
-              delete result.exclusion;
-            }
-            task.result = result;
-            if (response.stopReason === "error") { task.status = "failed"; task.error = response.error ?? "engine-error"; return; }
-            task.status = result.exclusion ? "pruned" : result.proven ? (result.hits.length ? "complete" : "empty") : "partial";
-          };
-          const response = await this.engine.run(request, undefined, snapshot => {
-            if (snapshot.contextKey !== job.fingerprint) return;
-            const first = !job.tasks.some(entry => entry.result?.hits.length) && snapshot.response.overall.length > 0;
-            accept(snapshot.response);
-            void publish(first);
-          });
-          accept(response);
+          const request = { ...buildRequest(task, challenge), cutoff: ptTaskCutoff(job, task) };
+          const response = await this.engine.run(request, undefined, value => snapshot(task, value));
+          accept(task, response);
         } catch (error) {
           if (this.stopped) {
             task.status = "queued";
@@ -281,7 +356,37 @@ export class PtRunner {
         await publish();
         return true;
       };
-      for (const task of tasks) if (!(await step(task))) break;
+      let runBatch = this.engine.runBatch?.bind(this.engine);
+      for (const [index, task] of tasks.entries()) {
+        if (!(await step(task, index))) break;
+        // Establish an incumbent first. Then ordinary charts use separate
+        // workers with the latest catalog cutoff when each chart starts.
+        if (!runBatch || deadline !== Infinity || task.route !== "live"
+            || job.request.goal.kind !== "event" || job.request.goal.gekiso || this.stopped) continue;
+        const complete = proofStatus(job);
+        const pending = tasks.slice(index + 1).filter(next => !complete(next) && (!job.cycle || challengeFor(next)));
+        if (pending.length < 2) continue;
+        try {
+          await runBatch(pending.map(next => buildRequest(next, challengeFor(next))), (i, response) => {
+            accept(pending[i]!, response);
+            void publish();
+          }, {
+            prepare: (i, request) => {
+              const next = pending[i]!;
+              next.status = "running";
+              return { ...request, cutoff: ptTaskCutoff(job, next) };
+            },
+            snapshot: (i, value) => snapshot(pending[i]!, value),
+          });
+          break;
+        } catch {
+          if (this.stopped) break;
+          runBatch = undefined;
+          // Retry unresolved charts via the original per-chart path so a
+          // failed Worker or resource does not discard completed results.
+          for (const next of pending) if (next.status === "running") next.status = "queued";
+        }
+      }
     } finally {
       for (const task of job.tasks) if (task.status === "running") task.status = "queued";
       this.running = false;

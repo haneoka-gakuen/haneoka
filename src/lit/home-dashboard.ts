@@ -49,7 +49,7 @@ import {
 import { clientText } from "../i18n/client";
 import { japanDay, openSeasons } from "../lib/themes";
 import { relativeRelease, relativeSpan, relativeTimeWindow, relativeTimestamp } from "../lib/relative-time";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import { variants as githubVariants } from "@thesvg/icons/github";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { sonolusServerLink } from "../config/sonolus";
@@ -398,7 +398,6 @@ export class HomeDashboard extends LitElement {
     if (this.clockTimer) window.clearTimeout(this.clockTimer);
     this.clockTimer = undefined;
     removeEventListener("haneoka:locale-ready", this.localeListener);
-    clearAppBarActions(this.appBarOwner);
     this.lazyImages.disconnect();
     this.catalogRequests.cancel();
     this.liveRequests.cancel();
@@ -692,6 +691,7 @@ export class HomeDashboard extends LitElement {
     const label = this.text("customizeLayout", "Customize layout");
     const docs = this.text("documentation", "API documentation");
     setAppBarActions(
+      this,
       this.appBarOwner,
       html`
         <a
@@ -736,7 +736,6 @@ export class HomeDashboard extends LitElement {
           ${icon("dashboard_customize", 24)}
         </button>
       `,
-      this,
     );
   }
   private mountAction() {

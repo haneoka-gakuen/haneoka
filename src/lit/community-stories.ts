@@ -3,6 +3,9 @@
 // Output: 共用三视图集合、详情、Vega 阅读和作者版本管理。
 // Pos: [Map](L2-2.md)；社区故事的规范集合与实体页面。
 // Effects/Dependencies: 同源社区 API、共享详情／评论／播放器；离开释放请求和应用栏。
+import { normalizeSearchText } from "../lib/search-text";
+import type { OfflineStoryItem } from "../lib/app-bridge";
+import { storyDownload } from "./shared/story-download";
 import { LitElement, html, nothing } from "lit";
 import { clientText, initializeI18nClient } from "../i18n/client";
 import { storyRequest, downloadStoryProject } from "../lib/story-creation/community";
@@ -19,7 +22,7 @@ import {
 } from "../lib/story-creation/types";
 import type { VegaProject } from "@haneoka/vega-protocol";
 import type { StoryReaderInput } from "./story-workspace";
-import { renderBrowse, clearBrowseBar } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { collectionList, collectionTable, viewSwitch, type CollectionView } from "./ui/collection-view";
 import { tile } from "./ui/tile";
 import { facet } from "./ui/facet";
@@ -29,7 +32,7 @@ import { matches, watchMedia } from "./ui/media";
 import { specList } from "./ui/spec";
 import { icon } from "./ui/icon";
 import { loadingState, errorState, emptyState } from "./ui/state";
-import { setAppBarSearch, clearAppBarSearch } from "../lib/app-bar";
+import { setAppBarSearch } from "../lib/app-bar";
 import { appBarTakeover } from "../lib/app-bar-takeover";
 import { LazyImages } from "./ui/lazy-images";
 import { modal } from "./ui/modal";
@@ -111,7 +114,7 @@ export class CommunityStories extends LitElement {
     return this;
   }
   private t = (key: string) => clientText(this.locale, `community.stories.${key}`);
-  private href = (id = "") => communityStoryPath(this.server, this.locale, id);
+  private href = (id = "", revision?: number) => communityStoryPath(this.server, this.locale, id, revision);
   override connectedCallback() {
     super.connectedCallback();
     this.commentsCompact = matches(DETAIL_LAYOUT_STACKED);
@@ -121,13 +124,13 @@ export class CommunityStories extends LitElement {
     this.storyId = route?.id || "";
     if (route) applyCommunityDocumentMetadata(document, route.locale, locale => communityStoryDocumentPath(route, locale), siteOrigin(url));
     this.mine = url.searchParams.get("scope") === "mine";
-    this.revision = Number(url.searchParams.get("revision") || 0);
+    this.revision = route?.revision || 0;
     this.stopLocale = initializeI18nClient().subscribe((c) => {
       this.locale = c.locale;
       this.requestUpdate();
     });
     if (!this.storyId)
-      setAppBarSearch("community-stories", {
+      setAppBarSearch(this, "community-stories", {
         value: this.query,
         label: this.t("search"),
         onInput: (value) => {
@@ -141,8 +144,6 @@ export class CommunityStories extends LitElement {
     this.stopLocale?.();
     this.stopMedia?.();
     this.images.disconnect();
-    clearBrowseBar();
-    clearAppBarSearch("community-stories");
     super.disconnectedCallback();
   }
   protected override updated() {
@@ -217,11 +218,12 @@ export class CommunityStories extends LitElement {
           title: row.title,
         },
         server: this.server,
-        backHref: this.href(row.id) + location.search,
+        backHref: this.href(row.id, this.revision || undefined) + location.search,
+        offlineItem: this.offlineItems(row)[0],
         ...(row.canEdit || row.remix
           ? {
               editorHref:
-                storyCreationPath(this.locale, row.id) + `&revision=${row.revision}${row.canEdit ? "" : "&remix=1"}`,
+                storyCreationPath(this.locale, row.id, row.revision, !row.canEdit),
             }
           : {}),
         comments: { id: row.id, type: "community-stories" },
@@ -321,12 +323,16 @@ export class CommunityStories extends LitElement {
       this.busy = false;
     }
   }
+  private offlineItems(row: CommunityStoryItem): OfflineStoryItem[] {
+    return row.remix && row.publishedRevision && row.revision === row.publishedRevision && !row.compilationError
+      ? [{ server: "community", chapter: row.id, episode: row.id, title: row.title }] : [];
+  }
   private renderDetail(row: CommunityStoryItem) {
     const back = () => location.assign(this.href() + (this.mine ? "?scope=mine" : ""));
     const actions = html`
       <a
         class="icon-button"
-        href=${row.compilationError ? nothing : communityStoryReaderPath(this.server, this.locale, row.id) + location.search}
+        href=${row.compilationError ? nothing : communityStoryReaderPath(this.server, this.locale, row.id, this.revision || undefined) + location.search}
         aria-disabled=${String(!!row.compilationError)}
         title=${this.t("read")}
         aria-label=${this.t("read")}
@@ -343,6 +349,7 @@ export class CommunityStories extends LitElement {
       >
         ${icon("favorite")}
       </button>
+      ${storyDownload(this.locale, this.offlineItems(row))}
       ${
         row.canEdit || row.remix
           ? html`
@@ -364,7 +371,7 @@ export class CommunityStories extends LitElement {
                 class="icon-button"
                 title=${this.t("edit")}
                 aria-label=${this.t("edit")}
-                href=${storyCreationPath(this.locale, row.id) + (this.revision ? `&revision=${row.revision}` : "")}
+                href=${storyCreationPath(this.locale, row.id, this.revision ? row.revision : undefined)}
               >
                 ${icon("edit")}
               </a>
@@ -375,7 +382,7 @@ export class CommunityStories extends LitElement {
                   class="icon-button"
                   title=${this.t("remix")}
                   aria-label=${this.t("remix")}
-                  href=${storyCreationPath(this.locale, row.id) + `&remix=1&revision=${row.revision}`}
+                  href=${storyCreationPath(this.locale, row.id, row.revision, true)}
                 >
                   ${icon("edit_note")}
                 </a>
@@ -453,7 +460,7 @@ export class CommunityStories extends LitElement {
                     )
                   : nothing
               }
-              ${paneSection(this.t("versions"), icon("history"), collectionList(this.versions.map((v) => ({ id: String(v.revision), title: v.title, subtitle: new Intl.DateTimeFormat(this.locale, { dateStyle: "medium", timeStyle: "short" }).format(v.createdAt), media: icon("history"), trailing: v.revision, href: this.href(row.id) + `?revision=${v.revision}${row.canEdit ? "&draft=1" : ""}` }))))}
+              ${paneSection(this.t("versions"), icon("history"), collectionList(this.versions.map((v) => ({ id: String(v.revision), title: v.title, subtitle: new Intl.DateTimeFormat(this.locale, { dateStyle: "medium", timeStyle: "short" }).format(v.createdAt), media: icon("history"), trailing: v.revision, href: this.href(row.id, v.revision) + (row.canEdit ? "?draft=1" : "") }))))}
               ${
                 row.upstreamId
                   ? paneSection(
@@ -464,7 +471,7 @@ export class CommunityStories extends LitElement {
                           ${
                             row.upstream?.available
                               ? html`
-                                  <a href=${this.href(row.upstreamId) + `?revision=${row.upstream.revision}`}>
+                                  <a href=${this.href(row.upstreamId, row.upstream.revision)}>
                                     ${row.upstream.title}
                                   </a>
                                 `
@@ -547,13 +554,10 @@ export class CommunityStories extends LitElement {
   render() {
     if (this.phase === "loading") return loadingState(this.t("loading"));
     if (this.phase === "error") return errorState(this.issue, this.t("retry"), () => void this.load());
+    const query = normalizeSearchText(this.query.trim(), this.locale);
     const rows = this.items.filter(
       (row) =>
-        (!this.query ||
-          `${row.title} ${row.summary} ${row.ownerName}`
-            .normalize("NFKC")
-            .toLocaleLowerCase(this.locale)
-            .includes(this.query.normalize("NFKC").toLocaleLowerCase(this.locale))) &&
+        normalizeSearchText(`${row.title} ${row.summary} ${row.ownerName}`, this.locale).includes(query) &&
         (!this.languages.length || this.languages.some((l) => row.locales.includes(l))),
     );
     return html`
@@ -567,6 +571,7 @@ export class CommunityStories extends LitElement {
                 this.view = view;
               }),
               controls: html`
+                ${storyDownload(this.locale, rows.flatMap(row => this.offlineItems(row)), true)}
                 <a class="button button--tonal" href=${storyCreationPath(this.locale)}>
                   ${icon("add")}${this.t("create")}
                 </a>

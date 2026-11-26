@@ -81,14 +81,21 @@ export class RemoteBucket {
   }
 
   async put(key: string, value: ArrayBuffer | ArrayBufferView | string | Blob | ReadableStream | null,
-    options: { httpMetadata?: HttpMetadata; customMetadata?: Record<string, string>; onlyIf?: { etagMatches?: string } } = {}): Promise<RemoteObject | null> {
+    options: { httpMetadata?: HttpMetadata; customMetadata?: Record<string, string>; onlyIf?: { etagMatches?: string; etagDoesNotMatch?: "*" } } = {}): Promise<RemoteObject | null> {
     const body = value instanceof ReadableStream ? await new Response(value).arrayBuffer() : value;
-    const response = await this.call("put", {
+    const create = options.onlyIf?.etagDoesNotMatch === "*";
+    const init = {
       query: { key },
       method: "PUT",
       headers: { "X-Put-Options": encodeURIComponent(JSON.stringify({ httpMetadata: options.httpMetadata, customMetadata: options.customMetadata, etagMatches: options.onlyIf?.etagMatches })) },
       body: body as BodyInit,
-    });
+    };
+    let response = await this.call(create ? "create" : "put", init);
+    if (create && response.status === 404) {
+      // Older Workers support the previous HEAD then PUT sequence.
+      if (await this.head(key)) return null;
+      response = await this.call("put", init);
+    }
     if (response.status === 412) return null;
     if (!response.ok) throw new Error(`r2_put_${response.status}`);
     return new RemoteObject(await response.json() as ObjectMeta);

@@ -195,7 +195,6 @@
     overflow: auto;
     border-left: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface-container-low);
-    scrollbar-width: thin;
   }
   .viewer-detail__info h2,
   .viewer-detail__info h3 {

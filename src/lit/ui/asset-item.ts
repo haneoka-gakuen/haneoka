@@ -29,22 +29,15 @@ export function assetItem(options: {
   icon: string;
   meta: unknown;
   selected?: boolean;
+  href?: string;
   referrerPolicy?: ReferrerPolicy;
   role?: "tab";
   controls?: string;
   tabIndex?: number;
   onOpen(): void;
 }) {
-  return html`
-    <button
-      class=${`asset-item${options.selected ? " is-selected" : ""}`}
-      title=${options.name}
-      role=${options.role || nothing}
-      aria-selected=${options.role ? String(Boolean(options.selected)) : nothing}
-      aria-controls=${options.controls || nothing}
-      tabindex=${options.tabIndex ?? nothing}
-      @click=${options.onOpen}
-    >
+  const classes = `asset-item${options.selected ? " is-selected" : ""}`;
+  const content = html`
       <span class="asset-item__media">
         ${
           options.image
@@ -62,6 +55,19 @@ export function assetItem(options: {
       </span>
       <span class="asset-item__name md-body-medium">${options.name}</span>
       <span class="asset-item__meta md-body-small">${options.meta}</span>
+  `;
+  if (options.href) return html`
+    <a class=${classes} href=${options.href} title=${options.name} @click=${(event: MouseEvent) => {
+      if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      options.onOpen();
+    }}>${content}</a>
+  `;
+  return html`
+    <button class=${classes} title=${options.name} role=${options.role || nothing}
+      aria-selected=${options.role ? String(Boolean(options.selected)) : nothing}
+      aria-controls=${options.controls || nothing} tabindex=${options.tabIndex ?? nothing} @click=${options.onOpen}>
+      ${content}
     </button>
   `;
 }

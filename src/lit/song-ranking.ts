@@ -3,6 +3,8 @@
 // Output: Shared ranking rows, player search beside rank jumps, match selection, rank jumps and pagination.
 // Pos: [Map](L2-2.md); common leaderboard implementation for songs, events and Arena.
 // Effects/Dependencies: Reads saved ranking APIs; cancels obsolete board/search requests and restores page actions.
+import { searchIncludes } from "../lib/search-text";
+import "@material/web/textfield/outlined-text-field.js";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { hydrateWorkspace } from "./shared/hydrate-workspace";
 import { GameRecordsCardsElement } from "./shared/game-records-cards";
@@ -11,6 +13,7 @@ import { GameRecordsCardsElement } from "./shared/game-records-cards";
 import "@material/web/progress/linear-progress.js";
 import { clientText } from "../i18n/client";
 import { html, nothing, type PropertyValues } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { preferredLocale, fetchJson, JsonResponseError } from "./shared/catalog";
 import type { ReleaseServer } from "../lib/release-server";
 import { RequestScope } from "../lib/request-scope";
@@ -23,7 +26,7 @@ import { readPageData } from "../lib/page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import type { RankingCardCatalog } from "../lib/game-records";
 import { emptyState, errorState, loadingState } from "./ui/state";
-import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { setAppBarActions } from "../lib/app-bar";
 import {
   GAME_RECORDS_REGIONS as REGIONS,
   defaultGameRecordsRegion as defaultRegion,
@@ -45,7 +48,7 @@ type Region = GameRecordsRegion;
 type Phase = "idle" | "loading" | "ready" | "error";
 
 type RankingEntry = SongRankingRowDto;
-interface RankingCache {
+export interface RankingCache {
   data: GameRankingDto;
   rows: RankingEntry[];
   snapshotId?: string;
@@ -70,6 +73,7 @@ export class SongRanking extends GameRecordsCardsElement {
     summary: { type: Boolean },
     rankingTitle: { type: String, attribute: "ranking-title" },
     cardCatalogData: { attribute: false },
+    sharedRankingCache: { attribute: false },
     summaryHeading: { attribute: false },
     summaryActions: { attribute: false },
     analysisEvent: { attribute: false },
@@ -99,6 +103,7 @@ export class SongRanking extends GameRecordsCardsElement {
   declare summaryHeading: unknown;
   declare summaryActions: unknown;
   declare cardCatalogData: Partial<Record<"jp" | "intl", RankingCardCatalog>> | undefined;
+  declare sharedRankingCache?: Map<string, RankingCache>;
   declare analysisEvent: TrackedEventDto | undefined;
   declare analysisChallengeId: string;
   private closeAnalysis?: () => void;
@@ -120,10 +125,13 @@ export class SongRanking extends GameRecordsCardsElement {
   private searchRequests = new RequestScope();
   private rankingRequests = new RequestScope();
   private lifetime?: AbortController;
-  private cache = new Map<string, RankingCache>();
+  private readonly localCache = new Map<string, RankingCache>();
+  private get cache() { return this.sharedRankingCache ?? this.localCache; }
   private rankingFailure: GameRecordsErrorDto["error"] | null = null;
   private retryAt = 0;
   private retryTimer = 0;
+  private rankingInitialized = false;
+  private requestedEndpoint?: string;
   private readonly pageAppBarOwner = `song-ranking-page-${++pageAppBarOwnerSequence}`;
 
   constructor() {
@@ -176,8 +184,8 @@ export class SongRanking extends GameRecordsCardsElement {
       return;
     }
     */
-    this.phase = "loading";
-    void this.loadRanking(this.region, true);
+    this.rankingInitialized = true;
+    this.syncRanking();
   }
 
   connectedCallback() {
@@ -217,11 +225,12 @@ export class SongRanking extends GameRecordsCardsElement {
   disconnectedCallback() {
     this.closeAnalysis?.();
     this.rankingRequests.cancel();
+    this.rankingInitialized = false;
+    this.requestedEndpoint = undefined;
     this.searchRequests.cancel();
     this.lifetime?.abort();
     this.lifetime = undefined;
     window.clearTimeout(this.retryTimer);
-    clearAppBarActions(this.pageAppBarOwner);
     super.disconnectedCallback();
   }
 
@@ -238,13 +247,25 @@ export class SongRanking extends GameRecordsCardsElement {
     return this.rankingEndpoint || `/api/v1/game/records/${region}/songs/${encodeURIComponent(this.songId)}/ranking`;
   }
 
+  protected canLoadRanking() { return Boolean(this.rankingEndpoint || this.songId); }
+
   private currentRanking(signal: AbortSignal, region: Region, endpoint: string) {
     return (
       this.isConnected &&
+      this.active &&
       this.region === region &&
       this.rankingUrl(region) === endpoint &&
       this.rankingRequests.current(signal)
     );
+  }
+
+  private syncRanking() {
+    if (!this.rankingInitialized || !this.active || !this.canLoadRanking()) return;
+    const endpoint = this.rankingUrl(this.region);
+    if (endpoint === this.requestedEndpoint) return;
+    this.requestedEndpoint = endpoint;
+    this.rankingRequests.cancel();
+    void this.loadRanking(this.region);
   }
 
   private async loadRanking(region: Region, force = false) {
@@ -320,17 +341,10 @@ export class SongRanking extends GameRecordsCardsElement {
     url.searchParams.set("region", region);
     url.searchParams.delete("profileId");
     history.replaceState(history.state, "", url);
-    this.expanded = false;
-    this.rankingRequests.cancel();
-    const cached = this.cache.get(this.rankingUrl(region));
-    this.rows = cached?.rows || [];
-    this.stale = cached ? cached.stale : false;
-    this.phase = cached && Date.now() - cached.storedAt < CACHE_TTL ? "ready" : "loading";
-    if (this.phase !== "ready") void this.loadRanking(region, true);
   }
 
   protected refresh() {
-    if (Date.now() < this.retryAt) return;
+    if (!this.active || !this.rankingInitialized || !this.canLoadRanking() || this.phase === "loading" || Date.now() < this.retryAt) return;
     this.rankingRequests.cancel();
     void this.loadRanking(this.region, true);
   }
@@ -459,8 +473,12 @@ export class SongRanking extends GameRecordsCardsElement {
     `;
   }
 
+  protected rowRenderContext(): readonly unknown[] {
+    return [this.locale, this.region, this.cardCatalogs, this.target, this.points, this.summary, Boolean(this.analysisEvent)];
+  }
+
   private renderRanking() {
-    const visible = this.rows.slice(0, this.limit || (this.windowed || this.expanded ? 100 : 20));
+    const count = this.limit || (this.windowed || this.expanded ? 100 : 20);
     const showMore = !this.limit && !this.windowed && this.rows.length > 20 && !this.expanded;
     const failed = this.rankingFailure?.kind;
     const failureText =
@@ -488,13 +506,18 @@ export class SongRanking extends GameRecordsCardsElement {
                     icon: "leaderboard",
                   })
                 : html`
-                    <ol
-                      class="song-ranking__list"
-                      style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
-                      aria-label=${this.boardTitle}
-                    >
-                      ${visible.map((entry) => this.renderRow(entry))}
-                    </ol>
+                    ${guard([this.rows, count, this.limit, this.boardTitle, ...this.rowRenderContext()], () => {
+                      const visible = this.rows.slice(0, count);
+                      return html`
+                        <ol
+                          class="song-ranking__list"
+                          style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
+                          aria-label=${this.boardTitle}
+                        >
+                          ${visible.map((entry) => this.renderRow(entry))}
+                        </ol>
+                      `;
+                    })}
                     ${
                       showMore
                         ? html`
@@ -521,39 +544,43 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   protected willUpdate(changed: PropertyValues) {
+    if (changed.has("cardCatalogData") && this.cardCatalogData) this.cardCatalogs = this.cardCatalogData;
     if (this.identityProperties.some((key) => changed.has(key)) || (changed.has("active") && !this.active)) {
       this.closeAnalysis?.();
       this.closeAnalysis = undefined;
     }
     if (this.identityProperties.some((key) => changed.has(key))) {
       this.start = 1;
+      this.expanded = false;
       this.target = 0;
       this.query = "";
       this.searchMatches = null;
       this.searchRequests.cancel();
       this.searching = false;
     }
-  }
-
-  updated(changed: PropertyValues) {
-    if (changed.has("cardCatalogData") && this.cardCatalogData) this.cardCatalogs = this.cardCatalogData;
-    if (
-      this.identityProperties.some((key) => changed.has(key) && changed.get(key) !== undefined) ||
-      (this.windowed && changed.has("start") && changed.get("start") !== undefined)
-    ) {
-      this.expanded = false;
-      void this.loadRanking(this.region);
+    if (this.active && this.rankingInitialized && this.rankingUrl(this.region) !== this.requestedEndpoint) {
+      const cached = this.cache.get(this.rankingUrl(this.region));
+      const fresh = cached && Date.now() - cached.storedAt < CACHE_TTL;
+      this.rows = cached?.rows || [];
+      this.phase = fresh ? "ready" : "loading";
+      this.stale = fresh ? cached.stale : Boolean(cached);
     }
-    if (!this.active) {
+    if (changed.has("active") && !this.active) {
+      this.rankingRequests.cancel();
+      this.requestedEndpoint = undefined;
       this.searchRequests.cancel();
       this.searching = false;
       this.searchMatches = null;
     }
+  }
+
+  updated() {
+    this.syncRanking();
     this.syncChrome();
   }
 
   private syncChrome() {
-    if (!this.embedded) setAppBarActions(this.pageAppBarOwner, this.renderPageActions(), this);
+    if (!this.embedded) setAppBarActions(this, this.pageAppBarOwner, this.renderPageActions());
   }
 
   private scrollToTarget() {
@@ -607,7 +634,7 @@ export class SongRanking extends GameRecordsCardsElement {
     return {
       searchedTo: this.rows.length,
       matches: this.rows
-        .filter((row) => row.profileId === query || row.name.normalize("NFKC").toLowerCase().includes(normalized))
+        .filter((row) => row.profileId === query || searchIncludes(row.name, normalized))
         .map((row) => ({ rank: row.rank, profileId: row.profileId, name: row.name, point: row.score ?? 0 })),
     };
   }
@@ -646,7 +673,7 @@ export class SongRanking extends GameRecordsCardsElement {
     if (!after) {
       const normalized = query.normalize("NFKC").toLowerCase();
       const local = this.rows
-        .filter((row) => row.profileId === normalized || row.name.normalize("NFKC").toLowerCase().includes(normalized))
+        .filter((row) => row.profileId === normalized || searchIncludes(row.name, normalized))
         .map((row) => ({ rank: row.rank, profileId: row.profileId, name: row.name, point: row.score ?? 0 }));
       const exact = local.find((row) => row.profileId === normalized);
       if (exact) {
@@ -839,8 +866,7 @@ export class SongRanking extends GameRecordsCardsElement {
               if (Number.isSafeInteger(rank) && rank > 0) this.jump(rank);
             }}
           >
-            <label class="field">
-              <input
+              <md-outlined-text-field
                 name="rank"
                 type="number"
                 inputmode="numeric"
@@ -848,10 +874,9 @@ export class SongRanking extends GameRecordsCardsElement {
                 max=${maximum || nothing}
                 step="1"
                 required
-                placeholder=${this.label("rank", "Rank")}
+                label=${this.label("rank", "Rank")}
                 aria-label=${t("jump", "Go to rank")}
-              />
-            </label>
+              ></md-outlined-text-field>
             <button
               class="icon-button icon-button--tonal"
               type="submit"
@@ -869,22 +894,21 @@ export class SongRanking extends GameRecordsCardsElement {
               if (value && !this.searching) void this.search(value);
             }}
           >
-            <label class="field">
-              <input
+              <md-outlined-text-field
                 name="query"
                 type="search"
-                maxlength="100"
                 required
                 .value=${this.query}
-                placeholder=${t("playerSearch", "Player ID or username")}
+                label=${t("playerSearch", "Player ID or username")}
                 aria-label=${t("playerSearch", "Player ID or username")}
                 @input=${(event: InputEvent) => {
-                  this.query = (event.target as HTMLInputElement).value;
+                  const input = event.currentTarget as HTMLInputElement;
+                  this.query = input.value.slice(0, 100);
+                  if (input.value !== this.query) input.value = this.query;
                   this.searchRequests.cancel();
                   this.searching = false;
                 }}
-              />
-            </label>
+              ></md-outlined-text-field>
             <button
               class="button button--tonal"
               type="submit"
@@ -910,6 +934,7 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   render() {
+    if (!this.active) return nothing;
     const loading = this.phase === "loading" || this.searching;
     return html`
       <section class="song-ranking-page" aria-label=${this.boardTitle}>

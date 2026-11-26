@@ -1,3 +1,4 @@
+import { foldSearchGlyphs } from "../lib/search-text";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
@@ -68,7 +69,7 @@ interface SearchApi {
 const KIND_LABELS: Readonly<Record<string, string>> = {
   songs: "navigation.songs", "member-cards": "navigation.memberCards", "support-cards": "navigation.supportCards",
   characters: "navigation.characters", events: "navigation.events", gacha: "navigation.gacha",
-  "real-lives": "navigation.realLives", comics: "navigation.comics", stamps: "navigation.stamps",
+  comics: "navigation.comics", stamps: "navigation.stamps",
   stickers: "navigation.stickers", backgrounds: "navigation.backgrounds", items: "navigation.items",
   "band-items": "navigation.bandItems", stories: "navigation.stories",
 };
@@ -387,13 +388,14 @@ export class GlobalSearch extends LitElement {
         this.total = cached.total; this.catalogMore = this.consumed < this.hits.length;
         return;
       }
-      const [available] = await Promise.all([api.filters(), api.preload(query)]);
+      const folded = foldSearchGlyphs(query);
+      const [available] = await Promise.all([api.filters(), api.preload(folded)]);
       if (!current()) return;
       const filters: Record<string, SearchFilter> = {};
       if (available.server) filters.server = { any: [server, "global"] };
       if (scope !== "all" && available.section) filters.section = scope;
       if (!append) {
-        const found = await api.search(query, { filters });
+        const found = await api.search(folded, { filters });
         if (!current()) return;
         this.hits = found.results;
         this.total = scope === "all" || available.section ? found.results.length : 0;

@@ -115,7 +115,7 @@ export function communityMarkup(source: string, spoiler = "Spoiler", locale = "e
       for (const child of node.content) {
         if (typeof child !== "string" && child.tag === "*") groups.push([...child.content]);
         else if (typeof child !== "string" && child.tag === "li") groups.push(child.content);
-        else if (groups.length) groups[groups.length - 1].push(child);
+        else if (groups.length) groups[groups.length - 1]!.push(child);
         else if (typeof child !== "string" || child.trim()) groups.push([child]);
       }
       const listTag = attribute(node) === "1" ? "ol" : "ul";
@@ -126,6 +126,19 @@ export function communityMarkup(source: string, spoiler = "Spoiler", locale = "e
   return flow(tree(source));
 }
 export const communityExcerpt = (source: string) => literal(tree(source)).replace(/\s+/g, " ").trim();
+
+export function communityPlainText(source: string): string {
+  const text = (nodes: Tree[]): string => nodes.map((node) => {
+    if (typeof node === "string") return node;
+    const tag = node.tag.toLowerCase();
+    if (tag === "spoiler") return "…";
+    if (tag === "sticker") return text(node.content) || "◇";
+    const content = text(node.content);
+    return blockTags.has(tag) ? `\n${content}\n` : content;
+  }).join("");
+  return text(tree(source)).trim() || "…";
+}
+
 /** Bounded built-in sticker preview; code and spoilers never reveal their contents. */
 export function communityStickerPreview(source: string, limit = 1): Array<{ token: string; label: string }> {
   const maximum = Math.min(1, Math.max(0, Math.trunc(limit)));

@@ -22,7 +22,16 @@ import {
   VEGA_SYSTEM_OPCODE,
   VEGA_COMMAND_GROUP_OPCODE,
   VEGA_CORE_PROPERTY_CLIP,
+  VEGA_CORE_ADJUSTMENT,
+  VEGA_CORE_MEDIA_CLIP,
+  VEGA_CORE_COMPOSITION,
+  VEGA_CORE_AUDIO_CLIP,
+  parseVegaBackdropAdjustment,
+  parseStageClipGainAnimation,
   parsePropertyAnimationClip,
+  parseVegaStageAdjustment,
+  parseVegaStageMediaClip,
+  parseVegaStageComposition,
 } from "@haneoka/vega-protocol";
 import { WEBGAL_COMMAND_TYPES } from "@haneoka/vega-plugin-webgal/commands";
 import { unsupportedVegaFullPresetPlugins } from "@haneoka/vega-preset-full/capabilities";
@@ -61,8 +70,11 @@ export async function compileCommunityStory(files: readonly StoryPackageFile[]) 
   const source = registry.compile(workspace);
   const result = compileVegaProjectWithDiagnostics(source, { preserveAuthoringSource: false });
   const supported = new Set<number | string>([
-    "haneoka.vega-core:audioClip@1",
+    VEGA_CORE_AUDIO_CLIP,
     VEGA_CORE_PROPERTY_CLIP,
+    VEGA_CORE_ADJUSTMENT,
+    VEGA_CORE_MEDIA_CLIP,
+    VEGA_CORE_COMPOSITION,
     ...Object.values(VEGA_ADV_OPCODE),
     ...Object.values(VEGA_SYSTEM_OPCODE),
     VEGA_COMMAND_GROUP_OPCODE,
@@ -76,6 +88,13 @@ export async function compileCommunityStory(files: readonly StoryPackageFile[]) 
       unsupported.push({ source: path, reason: "unsupported_command" });
     const fields = (command.fields ?? command) as Record<string, unknown>;
     if (command.command === VEGA_CORE_PROPERTY_CLIP) parsePropertyAnimationClip(fields.clip);
+    if (command.command === VEGA_CORE_AUDIO_CLIP) parseStageClipGainAnimation(fields.gainAnimation);
+    if (command.command === VEGA_CORE_ADJUSTMENT) {
+      if (fields.scope === "below") parseVegaBackdropAdjustment(fields);
+      else parseVegaStageAdjustment(fields);
+    }
+    if (command.command === VEGA_CORE_MEDIA_CLIP) parseVegaStageMediaClip(fields);
+    if (command.command === VEGA_CORE_COMPOSITION) parseVegaStageComposition(fields);
     const group = fields.commandGroup as { actions?: { command: unknown }[] } | undefined;
     group?.actions?.forEach((action, index) => check(action.command, `${path}.actions.${index + 1}`));
     const timeline = fields.timeline as { signals?: { episode: unknown }[] } | undefined;

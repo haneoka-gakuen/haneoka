@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/search-text";
 import { unpublishedState } from "./ui/unpublished-state";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible } from "../lib/content-release";
@@ -8,7 +9,7 @@ import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import { facet as renderFacet } from "./ui/facet";
-import { clearBrowseBar, renderBrowse } from "./ui/browse";
+import { renderBrowse } from "./ui/browse";
 import { inputChip } from "./ui/controls";
 import "./ui/scrollable-tabs";
 import { collectionView, viewSwitch, collectionList, collectionTable, type CollectionView } from "./ui/collection-view";
@@ -243,7 +244,6 @@ export class AnonTokyoWorkspace extends LitElement {
   disconnectedCallback() {
     removeEventListener(SPOILER_CONTENT_EVENT, this.contentAccessChanged);
     this.loadRequest?.abort();
-    clearBrowseBar();
     this.releaseLocation?.();
     this.paneFocus.detach();
     this.lazyImages.disconnect();
@@ -609,7 +609,6 @@ export class AnonTokyoWorkspace extends LitElement {
       this.document.available === false ||
       (this.mode === "outfits" ? !values(this.document.characters).length : !this.collection().length)
     ) {
-      clearBrowseBar();
       return html`
         <section class="page">
           ${noticeState({
@@ -640,14 +639,11 @@ export class AnonTokyoWorkspace extends LitElement {
       const choices = [...new Set(source.flatMap((item) => (item[key] == null ? [] : [String(item[key])])))];
       return choices.length > 1 ? [{ key, choices }] : [];
     });
-    const needle = this.query.trim().normalize("NFKC").toLocaleLowerCase(this.locale);
+    const needle = normalizeSearchText(this.query.trim(), this.locale);
     const filtered = source.filter(
       (item) =>
         (!needle ||
-          `${this.entityTitle(item)} ${this.subtitle(item)} ${item.rawId}`
-            .normalize("NFKC")
-            .toLocaleLowerCase(this.locale)
-            .includes(needle)) &&
+          normalizeSearchText(`${this.entityTitle(item)} ${this.subtitle(item)} ${item.rawId}`, this.locale).includes(needle)) &&
         Object.entries(this.facets).every(([key, values]) => !values.length || values.includes(String(item[key]))),
     );
     const shown = filtered.slice(0, this.visible);
@@ -843,7 +839,6 @@ export class AnonTokyoWorkspace extends LitElement {
     history.replaceState(history.state, "", `${location.pathname}?${params}`);
   }
   private renderOutfits() {
-    clearBrowseBar();
     const characters = values(this.document?.characters).sort((a, b) => Number(a.rawId) - Number(b.rawId));
     const character = this.selectedCharacter ? this.rowForId(characters, this.selectedCharacter) : characters[0];
     const rawId = Number(character?.rawId);

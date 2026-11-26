@@ -62,7 +62,8 @@
     min-height: 0;
     overflow: auto hidden;
     background: #0f131a;
-    scrollbar-color: #68707d #1a2029;
+    --scrollbar-thumb: #68707d;
+    --scrollbar-track: #1a2029;
   }
   .chart-simple-overview canvas {
     position: absolute;
@@ -174,8 +175,8 @@
     gap: 2px;
   }
   .chart-runtime__settings > header .icon-button {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
   }
   .chart-runtime__settings-content {
     display: grid;
@@ -201,7 +202,6 @@
     gap: 2px;
   }
   .chart-runtime__setting--slider > span,
-  .chart-runtime__setting--select,
   .chart-runtime__setting--toggle {
     display: flex;
     align-items: center;
@@ -215,20 +215,11 @@
   .chart-runtime__setting md-slider {
     width: 100%;
   }
-  .chart-runtime__setting select {
-    min-width: 136px;
-    max-width: 52%;
-    height: 40px;
-    padding: 0 10px;
-    color: var(--md-sys-color-on-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-surface-container-lowest);
+  .chart-runtime__setting--select {
+    width: 100%;
   }
-  .chart-runtime__setting--toggle input {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--md-sys-color-primary);
+  .chart-runtime__setting--toggle {
+    min-height: 48px;
   }
   @media (max-width: 420px) {
     .chart-runtime__settings {

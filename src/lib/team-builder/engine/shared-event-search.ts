@@ -43,7 +43,7 @@ export async function proveSharedEvent(
   const floor = seeds.hits[request.k - 1]?.rewardRanking?.[0];
   if (stopped() || !floor) return undefined;
 
-  const proof = await proveSharedEventRosters(data, request, floor, workers, runBatch, stopped);
+  const proof = await proveSharedEventRosters(data, request, floor, seeds.hits, seeds.primaryChartProofs, workers, runBatch, stopped);
   if (stopped() || !proof) return undefined;
   const scored = {
     ...seeds,

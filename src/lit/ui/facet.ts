@@ -1,9 +1,12 @@
+import { normalizeSearchText } from "../../lib/search-text";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { uiText } from "../shared/catalog";
 import { hydrateWorkspace } from "../shared/hydrate-workspace";
 import { orderFacetOptions } from "../../lib/facet-order";
 import { rarityIcon } from "../shared/rarity-icon";
+import { focusedValue } from "./focused-value";
 import "@material/web/checkbox/checkbox.js";
+import "@material/web/textfield/outlined-text-field.js";
 
 export interface FacetOption {
   id?: string | number;
@@ -52,9 +55,9 @@ export class FilterFacet extends LitElement {
     super.update(changed);
   }
   render() {
-    const query = this.query.normalize("NFKC").toLocaleLowerCase(this.locale);
+    const query = normalizeSearchText(this.query, this.locale);
     const options = this.options.filter((option) =>
-      option.label.normalize("NFKC").toLocaleLowerCase(this.locale).includes(query),
+      normalizeSearchText(option.label, this.locale).includes(query),
     );
     return html`
       <details class="filter-facet" ?open=${this.selected.length > 0 || this.options.length <= 8}>
@@ -65,17 +68,17 @@ export class FilterFacet extends LitElement {
         ${
           this.options.length > 8
             ? html`
-                <input
-                  class="filter-facet__search"
+                <md-outlined-text-field
+                  class="filter-facet__search is-search"
                   type="search"
-                  .value=${this.query}
+                  .value=${focusedValue(this.query)}
                   aria-label=${`${uiText(this.locale, "common.actions.search")} / ${this.label}`}
-                  placeholder=${uiText(this.locale, "common.actions.search")}
+                  label=${uiText(this.locale, "common.actions.search")}
                   @input=${(event: Event) => {
-                    this.query = (event.target as HTMLInputElement).value;
+                    this.query = (event.currentTarget as HTMLInputElement).value;
                     this.limit = 40;
                   }}
-                />
+                ></md-outlined-text-field>
               `
             : nothing
         }

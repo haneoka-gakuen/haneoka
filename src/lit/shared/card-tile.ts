@@ -57,3 +57,19 @@ export function cardTile(options: {
     ],
   };
 }
+
+/** The catalogue card identity shared by browse grids and scoped card pickers. */
+export function catalogCardTile(options: {
+  kind: "member" | "support"; title: string; titleLanguage?: string; image: string;
+  relation: { label: string; content: unknown; adornment: unknown };
+  attributeIcon: string; attributeLabel: string; rarityIcon: string; rarityLabel: string;
+}): TileOptions {
+  const { relation, ...card } = options;
+  return {
+    ...cardTile({
+      ...card, subtitle: relation.content, adornment: relation.adornment,
+      label: [card.title, relation.label, card.rarityLabel, card.attributeLabel].filter(Boolean).join(" / "),
+    }),
+    aspectRatio: card.kind === "support" ? "16 / 9" : "3 / 4",
+  };
+}
