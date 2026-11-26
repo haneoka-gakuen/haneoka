@@ -1144,6 +1144,7 @@
         "eventLinks": "이벤트 콘텐츠",
         "eventItem": "이벤트 아이템",
         "eventSong": "이벤트 곡",
+        "buildSongTeam": "이 곡으로 편성",
         "storyEpisode": "스토리 에피소드",
         "goal": "목표"
       },

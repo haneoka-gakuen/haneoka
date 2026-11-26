@@ -1143,6 +1143,7 @@
         "eventLinks": "Veranstaltungsinhalte",
         "eventItem": "Ereigniselement",
         "eventSong": "Ereignislied",
+        "buildSongTeam": "Team bilden",
         "storyEpisode": "Story-Folge",
         "goal": "Ziel"
       },

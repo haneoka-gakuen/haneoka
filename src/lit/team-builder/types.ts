@@ -70,6 +70,7 @@ export interface BuildSettings {
   unknownPolicy: "max" | "min";
   scope: "box" | "theoretical";
   maxAccountBonuses: boolean;
+  manualFullGrowth: boolean;
   leader: number | null;
   /** member card → snap card (null keeps it empty). */
   bindings: [number, number | null][];
@@ -169,6 +170,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   unknownPolicy: "max",
   scope: "box",
   maxAccountBonuses: false,
+  manualFullGrowth: false,
   leader: null,
   bindings: [],
   required: { members: [], snaps: [] },

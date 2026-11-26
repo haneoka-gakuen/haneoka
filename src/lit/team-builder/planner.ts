@@ -436,8 +436,7 @@ export class Planner {
   private replaceReferences(ids: ReadonlyMap<number, number>) {
     const replace = <T>(value: T): T => rewritePlannerReferences(value, ids);
     const { host } = this;
-    const manual = replace(host.manual);
-    if (JSON.stringify(manual) !== JSON.stringify(host.manual)) host.manual = manual;
+    if (this.card) host.restoreFormations();
     for (const kind of BUILD_DRAFTS) {
       const draft = host.buildDrafts[kind], updated = replace(draft);
       if (JSON.stringify(draft) === JSON.stringify(updated)) continue;

@@ -1,12 +1,13 @@
 // L3 — GEB
-// Input: 手动阵容、实际评分输入与完整逐曲评价。
-// Output: 冻结的结果来源、共用详情候选与独立基准快照。
+// Input: 手动阵容、搜索结果的计分和培养条件、完整逐曲评价。
+// Output: 换卡比较的初始条件、共用详情候选与独立基准快照。
 // Pos: [Map](../L2-2.md)；手动评分与自动结果展示之间的适配。
 // Effects/Dependencies: 按评价对象保留页面内结果上下文；不修改 Box 或自动搜索结果。
 import type { EngineHit, EngineRequest, Goal, TeamEvaluation } from "../../lib/team-builder/engine/api";
 import type { ManualTeam, TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
-import { manualResultSource, registerManualResult, resultOrderIndex } from "./score-goal";
+import { manualResultSource, registerManualResult, resultOrderIndex, resultRequest, resultSettings } from "./score-goal";
+import { challengeEventForGoal } from "./workspace-state";
 import { ORDERS } from "../../lib/team-builder/engine/order-equivalence";
 
 const hits = new WeakMap<TeamEvaluation, EngineHit>();
@@ -22,6 +23,51 @@ function orderPreferences(host: TeamBuilder) {
   return value.orders;
 }
 export const clearManualOrders = (host: TeamBuilder) => orderPreferences(host).clear();
+export function manualSettingsFromResult(host: TeamBuilder, hit: EngineHit): Partial<BuildSettings> {
+  const source = resultSettings(host, hit);
+  const input = resultRequest(host, hit);
+  const goal = input?.goal;
+  const challenge = challengeEventForGoal(goal);
+  const conditions: Partial<BuildSettings> = {
+    ...(hit.song ? { songs: [hit.song] } : {}),
+    manualScoreMode: goal?.kind === "gekiso" ? "gekiso" : "score",
+    scope: source.scope,
+    maxAccountBonuses: source.maxAccountBonuses,
+    manualFullGrowth: source.scope === "theoretical" && (!manualResultSource(hit) || source.manualFullGrowth),
+    unknownPolicy: input?.unknownPolicy ?? source.unknownPolicy,
+    playMode: source.playMode,
+    great: source.great,
+    missEvery: source.missEvery,
+    ...(challenge === null ? { songRules: input?.songRules } : { eventId: challenge }),
+  };
+  if (goal?.kind !== "gekiso") {
+    return {
+      ...conditions,
+      manualChallengeRules: challenge !== null,
+      frameRate: source.frameRate,
+      good: source.good,
+      miss: source.miss,
+    };
+  }
+  const placements = goal.opponents
+    ? host.results?.results.find(row => row.song?.songId === hit.song?.songId && row.song?.difficulty === hit.song?.difficulty)?.placements
+    : undefined;
+  return {
+    ...conditions,
+    just: source.just,
+    gekisoRanks: placements ?? goal.ranks ?? [goal.rank, goal.rank, goal.rank],
+    justWindowUnit: source.justWindowUnit,
+    justWindowPercent: source.justWindowPercent,
+    justWindowMs: source.justWindowMs,
+    justWindowMode: source.justWindowMode,
+    justCoveragePercent: source.justCoveragePercent,
+    justDurationSeconds: source.justDurationSeconds,
+    justContinuousSeconds: source.justContinuousSeconds,
+    gekisoSamplingMode: source.gekisoSamplingMode,
+    gekisoSeeds: source.gekisoSeeds,
+  };
+}
+
 export function seedManualOrder(host: TeamBuilder, hit: EngineHit) {
   const index = resultOrderIndex(host, hit);
   clearManualOrders(host);

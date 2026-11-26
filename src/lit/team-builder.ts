@@ -28,7 +28,7 @@ import { renderCardPicker } from "./team-builder/card-picker";
 import { ResultComparison } from "./team-builder/result-comparison";
 import { TeamGrowthComparison } from "./team-builder/team-growth";
 import { usesPtResults } from "./team-builder/score-goal";
-import { seedManualOrder } from "./team-builder/manual-results";
+import { manualSettingsFromResult, seedManualOrder } from "./team-builder/manual-results";
 import "@lit-labs/ssr-client/lit-element-hydrate-support.js";
 import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { hydrateWorkspace as hydrate } from "./shared/hydrate-workspace";
@@ -80,6 +80,7 @@ import {
   challengeEventForGoal,
   farmingConditions,
   farmingSettings,
+  fullManualGrowth,
   parseOpponents,
   justWindowGoal,
   resolveLuckSamples,
@@ -1171,6 +1172,9 @@ export class TeamBuilder extends LitElement {
     if (preserveRequired)
       for (const kind of BUILD_DRAFTS) next[kind].required = this.buildDrafts[kind].required;
     this.buildDrafts = next;
+    this.restoreFormations();
+  }
+  restoreFormations() {
     this.comparisonFormation = readFormation(this.view?.prefs["comparison-team"]);
     this.manualFormation = readFormation(this.view?.prefs["manual-team"]);
   }
@@ -1485,7 +1489,7 @@ export class TeamBuilder extends LitElement {
   manualInputs(team = this.manual, settings = this.settings) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
     const theoretical = settings.scope === "theoretical";
-    const fullGrowth = theoretical && settings.maxAccountBonuses;
+    const fullGrowth = fullManualGrowth(settings);
     const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
       const card = id === null ? undefined : this.master?.members.get(id);
@@ -1549,8 +1553,8 @@ export class TeamBuilder extends LitElement {
   }
   /** Opens a result's formation in the manual editor and pins its evaluation as the baseline. */
   compareTeam(hit: EngineHit) {
+    const settings = manualSettingsFromResult(this, hit);
     seedManualOrder(this, hit);
-    const manualScoreMode = this.resultInputs?.goal.kind === "gekiso" ? "gekiso" : "score";
     this.buildMode = "manual";
     this.setTab("build");
     this.manual = {
@@ -1558,10 +1562,7 @@ export class TeamBuilder extends LitElement {
       snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
       leader: 0,
     };
-    this.updateSettings({
-      ...(hit.song ? { songs: [hit.song] } : {}),
-      manualScoreMode,
-    });
+    this.updateSettings(settings);
     this.manualResults = null;
     this.manualBaseline = null;
     this.manualPin = true;

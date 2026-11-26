@@ -80,6 +80,10 @@ export function challengeEventForGoal(goal: Goal | null | undefined): number | n
 export const BUILD_DRAFTS = ["free", "live", "challenge", "pt"] as const;
 export type BuildDraftKind = (typeof BUILD_DRAFTS)[number];
 
+export function fullManualGrowth(settings: BuildSettings): boolean {
+  return settings.scope === "theoretical" && (settings.maxAccountBonuses || settings.manualFullGrowth);
+}
+
 export function restoreTaskDrafts(prefs: Record<string, unknown>, legacyChallengeType?: number): Record<BuildDraftKind, BuildSettings> {
   const read = (value: unknown) => value && typeof value === "object" ? value as Partial<BuildSettings> : undefined;
   const legacy = read(prefs.build);
@@ -105,6 +109,7 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
   if (stored.targetRank === undefined && stored.scoreTarget === "at-least" && stored.targetScore)
     settings.targetRank = null;
   settings.maxAccountBonuses = stored.maxAccountBonuses === true;
+  settings.manualFullGrowth = stored.manualFullGrowth === true;
   settings.skillRoles = readSkillRoleLimits(stored.skillRoles);
   settings.minMissionMembers = stored.minMissionMembers?.length === 3 ? [...stored.minMissionMembers] : [0, 0, 0];
   settings.justWindowUnit = stored.justWindowUnit ?? ((stored.justWindowMs ?? 0) > 0 ? "ms" : "percent");

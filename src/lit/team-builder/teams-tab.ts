@@ -1,4 +1,4 @@
-import { validJustWindowInput } from "./workspace-state";
+import { fullManualGrowth, validJustWindowInput } from "./workspace-state";
 import { rangeRankControl } from "./gekiso-rank";
 /** Saved teams, a manual formation and its evaluation across songs, with swap suggestions. */
 import { html, nothing, type TemplateResult } from "lit";
@@ -177,7 +177,7 @@ async function suggest(host: TeamBuilder, slot: number) {
     index === slot || id === null ? [] : [{ member: id, snap: snaps[index] ?? null, leader: index === leader }],
   );
   const selected = host.manualInputs();
-  const owned = engineInputs(host.view!, true);
+  const owned = fullManualGrowth(host.settings) ? { members: [], snaps: [] } : engineInputs(host.view!, true);
   const ownedMembers = new Map(owned.members.map((row) => [row.key, row]));
   const ownedSnaps = new Map(owned.snaps.map((row) => [row.key, row]));
   const memberInputs = [
@@ -210,7 +210,7 @@ async function suggest(host: TeamBuilder, slot: number) {
     ...base,
     members: memberInputs,
     snaps: snapInputs,
-    unknownPolicy: host.settings.unknownPolicy,
+    unknownPolicy: selected.unknownPolicy,
     constraints,
     k: 3,
     deadline: base.timeLimitMs === null ? Infinity : clock() + base.timeLimitMs,
@@ -372,7 +372,8 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
         !comparison
           ? html`
               ${cardScopeControl(host, host.settings, patch => host.updateSettings(patch), "manual")}
-              <span class="tb-results__meta">${host.t("manualGrowth", "Owned cards: recorded growth")}</span>
+              ${!fullManualGrowth(host.settings)
+                ? html`<span class="tb-results__meta">${host.t("manualGrowth", "Owned cards: recorded growth")}</span>` : nothing}
             `
           : nothing
       }
