@@ -24,7 +24,7 @@ export function conditionSummary(host: TeamBuilder) {
         : goal?.kind === "potential" || (goal?.kind === "event" && goal.route === "skip")
           ? 0
           : songs.length;
-  if (host.tab === "build") {
+  if (host.tab === "build" && !host.classicLayout) {
     const chart = goal?.kind === "power" ? goal.song : !count ? null : songs[0];
     const chartLabel = chart && host.catalog
       ? `${host.catalog.songTitle(chart.songId)} · ${host.catalog.difficultyLabel(chart.songId, chart.difficulty)}`

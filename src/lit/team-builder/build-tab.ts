@@ -1130,7 +1130,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     `,
     renderBuildRun(host),
     renderResults(host),
-    { mobileAction: host.tab === "build" && host.compactConditions && !host.running ? freeMobileAction(host) : null },
+    { mobileAction: host.tab === "build" && !host.classicLayout && host.compactConditions && !host.running ? freeMobileAction(host) : null },
   );
 }
 

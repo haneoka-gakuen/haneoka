@@ -1318,14 +1318,16 @@ export class TeamBuilder extends LitElement {
     if (focusPanel) this.querySelector<HTMLElement>(".tb-tabpanel")?.focus({ preventScroll: true });
   }
   renderBuildMode() {
+    const current = this.tab === "live" ? "automatic" : this.buildMode;
     return segmented({
       label: this.t("buildMode", "Team building"),
-      value: this.tab === "live" ? "automatic" : this.buildMode,
+      value: current,
       options: [
         { value: "automatic", label: this.t("automaticTeam", "Find a team"), icon: "auto_awesome" },
         { value: "manual", label: this.t("manualTeam", "Build a team by hand"), icon: "edit_square" },
       ],
       onSelect: (mode) => {
+        if (mode === current) return;
         if (this.classicLayout) {
           const next = mode === "manual" ? "build" : this.classicAutoTab;
           if (next !== this.tab) {
