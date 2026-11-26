@@ -126,6 +126,7 @@ type StoryTransportKey =
 export class VegaStoryStage extends LitElement {
   static properties = {
     story: { attribute: false },
+    initialCommand: { attribute: false },
     communityProject: { attribute: false },
     server: { type: String },
     locale: { type: String },
@@ -144,6 +145,7 @@ export class VegaStoryStage extends LitElement {
     completed: { state: true },
   };
   declare story: RecordValue;
+  declare initialCommand?: number;
   declare communityProject: VegaProject | undefined;
   declare server: string;
   declare locale: string;
@@ -511,6 +513,10 @@ export class VegaStoryStage extends LitElement {
           await player.player.seekTo(player.player.resolveSeekRatio(ratio), { resume: false }).catch(console.warn);
           if (!active()) return;
         }
+      } else if (this.initialCommand !== undefined && this.initialCommand > 0 &&
+        player.player.reachableSeekBoundaries().includes(this.initialCommand)) {
+        await player.player.seekTo(this.initialCommand, { resume: false }).catch(console.warn);
+        if (!active()) return;
       }
       this.phase = "ready";
       if (this.offlineProgress) this.dispatchEvent(new Event("vega-offline-ready"));

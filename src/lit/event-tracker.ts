@@ -1,12 +1,13 @@
 // L3 — GEB
 // Input: Selected event and region, catalogue snapshots and the current time.
-// Output: Event navigation and the selected leaderboard.
+// Output: Event navigation and the selected leaderboard, timeline, statistics or pace planner.
 // Pos: [Map](L2-2.md); activity tracking workspace.
-// Effects/Dependencies: Polls tracking metadata and refreshes the active leaderboard.
+// Effects/Dependencies: Polls saved tracking metadata and refreshes the active leaderboard only.
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { LitElement, html, nothing } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
 import type { ChildPart } from "lit/directive.js";
+import { keyed } from "lit/directives/keyed.js";
 import { clientText } from "../i18n/client";
 import { setAppBarActions } from "../lib/app-bar";
 import { RequestScope } from "../lib/request-scope";
@@ -46,12 +47,16 @@ import { emptyState, errorState, loadingState } from "./ui/state";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import "./arena-ranking";
 import type { SongRanking } from "./song-ranking";
+import "./event-pace-planner";
+import type { EventPacePlanner } from "./event-pace-planner";
+import type { EventRankHistory, HistoryBoard } from "./event-rank-history";
+import type { EventRankingStatistics } from "./event-ranking-statistics";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
 import { snackbar } from "../lib/snackbar";
 
 type Region = GameRecordsRegion;
-type RankingView = "total" | "challenge" | "points";
+type RankingView = "total" | "challenge" | "points" | "history" | "stats" | "pace";
 let trackerSequence = 0;
 
 class CountdownText extends AsyncDirective {
@@ -84,6 +89,9 @@ export class EventTracker extends LitElement {
     eventId: { state: true },
     archive: { state: true },
     rankingView: { state: true },
+    historyPrepared: { state: true },
+    statsPrepared: { state: true },
+    catalogLoading: { state: true },
     refreshing: { state: true },
   };
   declare locale: string;
@@ -98,12 +106,18 @@ export class EventTracker extends LitElement {
   declare eventId: string;
   declare archive: TrackedEventDto[];
   declare rankingView: RankingView | "";
+  declare private historyPrepared: boolean;
+  declare private statsPrepared: boolean;
+  declare private catalogLoading: boolean;
+  private historyDefault = "";
   private now = Date.now();
   declare refreshing: boolean;
   private requests = new RequestScope();
   private catalogRequests = new RequestScope();
   private infoFor = "";
+  private paceSeed?: { region: Region; eventId: string; perPlay: string };
   private railEvents: Partial<Record<"jp" | "intl", TrackerRailEvent[]>> = {};
+  private songTitles: NonNullable<TrackerPageData["songTitles"]> = {};
   private lazyImages = new LazyImages({ candidates: (source) => localeTaggedCandidates(source, this.locale) });
   private lifetime?: AbortController;
   private clock = 0;
@@ -131,6 +145,9 @@ export class EventTracker extends LitElement {
     this.eventId = "";
     this.archive = [];
     this.rankingView = "";
+    this.historyPrepared = false;
+    this.statsPrepared = false;
+    this.catalogLoading = false;
     this.refreshing = false;
   }
   createRenderRoot() {
@@ -150,12 +167,14 @@ export class EventTracker extends LitElement {
     this.info = snapshot.info;
     this.songs = snapshot.songs;
     this.infoServer = snapshot.infoServer;
-    this.infoFor = snapshot.info ? snapshot.data?.event?.id ?? "" : "";
+    this.infoFor = snapshot.info && snapshot.data?.event?.challenges.every((row) => snapshot.songs[row.musicId])
+      ? snapshot.data.event.id : "";
     this.syncChallenge();
   }
   private applyPageCatalogs(pageData: TrackerPageData) {
     this.cards = { intl: pageData.intl, jp: pageData.jp };
     this.railEvents = pageData.events ?? {};
+    this.songTitles = pageData.songTitles ?? {};
     this.musicTypeMarks = Object.fromEntries(Object.entries(pageData.musicTypeMarks || {}).map(([source, marks]) => [source, new Map(Object.entries(marks))]));
     for (const [server, source] of Object.entries(pageData.songPerformers ?? {}))
       this.songPerformers.set(server, createPerformerRegistry({ game: "our-notes", server, ...source }));
@@ -186,9 +205,16 @@ export class EventTracker extends LitElement {
     this.infoFor = id;
     this.info = null;
     this.songs = {};
+    this.catalogLoading = true;
     const signal = this.catalogRequests.begin();
-    await this.loadCatalog(id, this.shownEvent()?.challenges ?? [], signal);
-    if (this.catalogRequests.current(signal) && !this.info) this.infoFor = "";
+    try {
+      await this.loadCatalog(id, this.shownEvent()?.challenges ?? [], signal);
+    } finally {
+      if (this.catalogRequests.current(signal)) {
+        this.catalogLoading = false;
+        if (!this.info) this.infoFor = "";
+      }
+    }
   }
   renderStaticChrome() { this.syncAppBar(); }
   private disposeSongDisplay?: () => void;
@@ -206,9 +232,15 @@ export class EventTracker extends LitElement {
       : defaultGameRecordsRegion(this.server, this.locale);
     this.challengeId = params.get("challenge") || "";
     this.eventId = params.get("event") || "";
+    const yieldPerPlay = params.get("perPlay") ?? "";
+    this.paceSeed = /^[1-9][0-9]{0,18}$/u.test(yieldPerPlay) && this.eventId
+      ? { region: this.region, eventId: this.eventId, perPlay: yieldPerPlay }
+      : undefined;
     const board = params.get("board");
-    this.rankingView = board === "total" || board === "challenge" || board === "points"
+    this.rankingView = board === "total" || board === "challenge" || board === "points" || board === "history" || board === "stats" || board === "pace"
       ? board : this.challengeId ? "challenge" : "";
+    if (this.rankingView === "history") void this.prepareHistory();
+    if (this.rankingView === "stats") void this.prepareStatistics();
     addEventListener(
       "haneoka:locale-ready",
       () => {
@@ -328,6 +360,7 @@ export class EventTracker extends LitElement {
     this.info = null;
     this.songs = {};
     this.infoFor = "";
+    this.catalogLoading = false;
     this.challengeId = "";
     this.syncUrl();
     void this.load();
@@ -376,7 +409,60 @@ export class EventTracker extends LitElement {
   }
   private selectRanking(view: RankingView) {
     this.rankingView = view;
+    if (view === "history") void this.prepareHistory();
+    if (view === "stats") void this.prepareStatistics();
     this.syncUrl();
+  }
+  private async prepareHistory() {
+    await import("./event-rank-history");
+    this.historyPrepared = true;
+  }
+  private async prepareStatistics() {
+    await import("./event-ranking-statistics");
+    this.statsPrepared = true;
+  }
+  private async showStatisticsHistory(board: string) {
+    this.historyDefault = board;
+    this.rankingView = "history";
+    this.syncUrl();
+    await this.prepareHistory();
+    await this.updateComplete;
+    this.querySelector<EventRankHistory>("event-rank-history")?.showBoard(board);
+    this.querySelector<HTMLButtonElement>("#event-board-history")?.focus();
+  }
+  private historyBoards(event: TrackedEventDto): HistoryBoard[] {
+    const route = (entry: TrackedEventDto, board: string) => `/api/v2/game/records/${this.region}/events/${entry.id}/${board}/timeline`;
+    const otherEvents = this.archive.filter((entry) => entry.id !== event.id && entry.startAtMs != null);
+    const make = (value: string, label: string, startAtMs: number, otherBoard: (entry: TrackedEventDto) => { value: string; startAtMs?: number | null } | null): HistoryBoard => ({
+      value, label, startAtMs,
+      comparisons: otherEvents.flatMap((entry) => {
+        const target = otherBoard(entry);
+        if (!target) return [];
+        const known = this.railEvents[this.sourceServer()]?.find((item) => item.id === entry.id);
+        return [{
+          value: entry.id,
+          label: resolveLocalizedText(known?.title, this.locale).text || this.label("eventName", "Event #{id}").replace("{id}", entry.id),
+          endpoint: route(entry, target.value),
+          startAtMs: target.startAtMs ?? entry.startAtMs!,
+        }];
+      }),
+    });
+    return [
+      ...(event.totalRankingEnabled
+        ? [make("total", this.label("totalRanking", "Total song ranking"), event.startAtMs ?? 0,
+            (entry) => entry.totalRankingEnabled ? { value: "total" } : null)]
+        : []),
+      ...event.challenges.filter((row) => row.enabled).map((row) => make(
+        `challenges/${row.id}`, this.challengeTitle(row), row.startAtMs ?? event.startAtMs ?? 0, (entry) => {
+          const challenge = entry.challenges.find((target) => target.enabled && target.musicId === row.musicId);
+          return challenge ? { value: `challenges/${challenge.id}`, startAtMs: challenge.startAtMs } : null;
+        },
+      )),
+      ...(event.pointRankingEnabled
+        ? [make("points", this.label("pointRanking", "Event point ranking"), event.startAtMs ?? 0,
+            (entry) => entry.pointRankingEnabled ? { value: "points" } : null)]
+        : []),
+    ];
   }
   private syncUrl() {
     const url = new URL(location.href);
@@ -387,16 +473,20 @@ export class EventTracker extends LitElement {
     else url.searchParams.delete("event");
     if (this.challengeId) url.searchParams.set("challenge", this.challengeId);
     else url.searchParams.delete("challenge");
+    if (this.paceSeed?.eventId !== this.shownId() || this.paceSeed?.region !== this.region)
+      url.searchParams.delete("perPlay");
     history.replaceState(history.state, "", url);
   }
-  private async refresh() {
+  private async refresh(includeStatistics = false) {
     if (this.refreshing) return;
     const region = this.region;
     await this.load();
     await this.updateComplete;
     if (this.isConnected && this.region === region) {
-      for (const board of this.querySelectorAll<SongRanking>("song-ranking, arena-ranking"))
-        if (board.active) board.refreshRanking();
+      const boards = this.querySelectorAll<SongRanking>("song-ranking, arena-ranking");
+      for (const board of boards) if (board.active) board.refreshRanking();
+      if (includeStatistics && this.rankingView === "stats")
+        void this.querySelector<EventRankingStatistics>("event-ranking-statistics")?.refresh();
     }
   }
   private eventTitle() {
@@ -405,11 +495,16 @@ export class EventTracker extends LitElement {
       this.label("eventName", "Event #{id}").replace("{id}", this.shownId())
     );
   }
-  private challengeTitle(challenge: EventChallengeDto) {
+  private challengeSongName(challenge: EventChallengeDto): string {
     const song = this.songs[challenge.musicId];
-    return song
-      ? songTitle(song, this.locale).text
-      : this.label("songName", "Song #{id}").replace("{id}", challenge.musicId);
+    const source = this.sourceServer();
+    const title = song?.musicTitle || song?.title || song?.name
+      || this.songTitles[source]?.[challenge.musicId]
+      || this.songTitles[source === "jp" ? "intl" : "jp"]?.[challenge.musicId];
+    return title ? songTitle({ musicTitle: title }, this.locale).text : "";
+  }
+  private challengeTitle(challenge: EventChallengeDto) {
+    return this.challengeSongName(challenge) || this.label("songName", "Song #{id}").replace("{id}", challenge.musicId);
   }
   private countdown() {
     const event = this.shownEvent();
@@ -474,7 +569,7 @@ export class EventTracker extends LitElement {
       this.owner,
       html`
         ${gameRecordsRegionPicker(this.locale, this.region, (region) => this.selectRegion(region), "event-tracker-region")}
-        ${iconButton({ label: this.label("refresh", "Refresh event rankings"), icon: "refresh", disabled: this.refreshing, onClick: () => void this.refresh() })}
+        ${iconButton({ label: this.label("refresh", "Refresh event rankings"), icon: "refresh", disabled: this.refreshing, onClick: () => void this.refresh(true) })}
       `,
     );
   }
@@ -515,17 +610,29 @@ export class EventTracker extends LitElement {
       event.pointRankingEnabled && !["pending", "missed", "disabled", "unknown"].includes(event.pointRankingStatus);
     const totalReadable = event.totalRankingEnabled &&
       ["collecting", "finalizing", "archived"].includes(event.totalRankingStatus || "");
+    const { startAtMs, endAtMs } = event;
+    const canPlanPace = startAtMs !== null && endAtMs !== null && endAtMs > startAtMs;
+    const hasHistory = event.totalRankingEnabled || event.pointRankingEnabled || event.challenges.some((row) => row.enabled);
     const boards: RankingView[] = [
       ...(event.totalRankingEnabled ? ["total" as const] : []),
       ...(event.challenges.length ? ["challenge" as const] : []),
       ...(event.pointRankingEnabled ? ["points" as const] : []),
+      ...(hasHistory ? ["history" as const] : []),
+      ...(hasHistory ? ["stats" as const] : []),
+      ...(canPlanPace ? ["pace" as const] : []),
     ];
-    if (!boards.length) boards.push("challenge");
+    if (!boards.length || boards[0] === "pace") boards.unshift("challenge");
     const activeBoard = this.rankingView && boards.includes(this.rankingView) ? this.rankingView : boards[0];
+    const statsSongs = activeBoard === "stats" ? event.challenges.filter((row) => row.enabled)
+      .map(row => ({ value: `challenges/${row.id}`, label: this.challengeSongName(row) })) : [];
+    const statsNamesPending = this.catalogLoading && statsSongs.some(({ label }) => !label);
     const boardLabels: Record<RankingView, string> = {
       total: this.label("totalTab", "Total"),
       challenge: this.label("challengeTab", "Songs"),
       points: this.label("pointTab", "Points"),
+      history: this.label("history.tab", "Rank history"),
+      stats: this.label("stats.tab", "Statistics"),
+      pace: this.label("pace.tab", "Pace planner"),
     };
     const marks = this.musicTypeMarks[this.sourceServer()] || new Map<string, string>();
     // A CBT edition has no public event page; its art stays a picture here.
@@ -548,8 +655,7 @@ export class EventTracker extends LitElement {
         : nothing;
     return html`
       <div class="song-ranking-page song-ranking__content">
-        <div class="row row--start">
-          <header class="browse__heading grow">
+        <header class="browse__heading tracker-heading">
             ${
               eventHref
                 ? html`
@@ -565,14 +671,12 @@ export class EventTracker extends LitElement {
             }
             <div class="browse__heading-copy">
               <h2 lang=${resolveLocalizedText(this.info?.title, this.locale).locale}>${this.eventTitle()}</h2>
-              <p>
-                ${this.label("event", "Event")} / #${event.id} /
-                ${gameDateTimeRange(this.locale, event.startAtMs || 0, event.endAtMs || 0)}
-              </p>
-              <p class="tabular" role="timer" aria-live="off">${countdownText(this.countdown(), this.attachCountdown)}</p>
+              <div class="tracker-times tabular">
+                <span>${gameDateTimeRange(this.locale, event.startAtMs || 0, event.endAtMs || 0)}</span>
+                <span role="timer" aria-live="off">${countdownText(this.countdown(), this.attachCountdown)}</span>
+              </div>
             </div>
-          </header>
-        </div>
+        </header>
         ${scrollableTabBar(this.locale, html`
           <nav class="tabs tabs--secondary" role="tablist" aria-label=${this.label("title", "Event tracker")}
             @keydown=${rovingKeydown(boards, activeBoard, (view) => this.selectRanking(view))}>
@@ -733,6 +837,63 @@ export class EventTracker extends LitElement {
                 })
           }
         </section>` : nothing}
+        ${hasHistory && (activeBoard === "history" || this.historyPrepared) ? html`
+          <section class="detail-section" role="tabpanel" id="event-ranking-history" aria-labelledby="event-board-history"
+            ?hidden=${activeBoard !== "history"}>
+            ${keyed(`${this.region}/${event.id}`, html`
+              <event-rank-history
+                .locale=${this.locale}
+                .region=${this.region}
+                .eventId=${event.id}
+                .eventTitle=${this.eventTitle()}
+                .endAtMs=${endAtMs}
+                .initialBoard=${this.historyDefault}
+                .boards=${this.historyBoards(event)}
+                .planEnabled=${canPlanPace && this.now < endAtMs}
+                .onPlan=${async (value: string) => {
+                  this.selectRanking("pace");
+                  await this.updateComplete;
+                  await this.querySelector<EventPacePlanner>("event-pace-planner")?.useRankTarget(value);
+                }}
+              ></event-rank-history>
+            `)}
+          </section>
+        ` : nothing}
+        ${hasHistory && activeBoard === "stats" ? html`
+          <section class="detail-section" role="tabpanel" id="event-ranking-stats" aria-labelledby="event-board-stats">
+            ${this.statsPrepared && !statsNamesPending ? keyed(`${this.region}/${event.id}`, html`
+              <event-ranking-statistics
+                .locale=${this.locale}
+                .region=${this.region}
+                .eventId=${event.id}
+                .cardCatalog=${this.cards[this.sourceServer()]}
+                .endAtMs=${event.endAtMs}
+                .boards=${[
+                  ...statsSongs.map(({ value, label }, index) => ({
+                    value, label: label || this.label("stats.unnamedSong", "Challenge song {index}").replace("{index}", String(index + 1)),
+                  })),
+                  ...(event.totalRankingEnabled ? [{ value: "total", label: this.label("totalRanking", "Total song ranking") }] : []),
+                  ...(event.pointRankingEnabled ? [{ value: "points", label: this.label("pointRanking", "Event point ranking") }] : []),
+                ]}
+                .onHistory=${(board: string) => void this.showStatisticsHistory(board)}
+              ></event-ranking-statistics>
+            `) : loadingState(this.label("stats.loading", "Loading"), { local: true })}
+          </section>
+        ` : nothing}
+        ${canPlanPace ? html`
+          <section class="detail-section" role="tabpanel" id="event-ranking-pace"
+            aria-labelledby="event-board-pace" ?hidden=${activeBoard !== "pace"}>
+            ${keyed(`${this.region}/${event.id}`, html`
+              <event-pace-planner
+                .locale=${this.locale}
+                .startAtMs=${startAtMs}
+                .endAtMs=${endAtMs}
+                .initialPerPlay=${this.paceSeed?.eventId === event.id && this.paceSeed.region === this.region ? this.paceSeed.perPlay : ""}
+                .ended=${this.now >= endAtMs}
+              ></event-pace-planner>
+            `)}
+          </section>
+        ` : nothing}
       </div>
     `;
   }

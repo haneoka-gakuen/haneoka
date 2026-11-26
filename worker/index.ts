@@ -13,6 +13,8 @@ import { contentCacheEpoch, nextContentPublication, contentResourceBoundary,
 } from "./content-resources";
 import { visibilityType } from "../src/lib/content-visibility-policy";
 import { requestContentView, privateContentResponse } from "./content-view";
+import { expandStoryDialogueQuery } from "./story-dialogue-expansion";
+import { isPlayerProfilePagePath, isRemovedCatalogPagePath } from "../src/lib/temporary-public-routing";
 import { contentVisible, filterContentData, type ContentView } from "../src/lib/content-view";
 import { ARENA_PROJECTION } from "../src/lib/arena";
 import { communityPagesEnabled, isCommunityPagePath, isCommunityCommentRequest } from "../src/lib/site-community";
@@ -536,7 +538,6 @@ const DOCUMENT_RESOURCE_NAMES: Readonly<Partial<Record<ResourceKind, string>>> =
   "band-items": "band-items",
   items: "items",
   events: "events",
-  "real-lives": "real-lives",
   gacha: "gacha",
   "login-campaigns": "login-campaigns",
   shop: "shop",
@@ -4754,7 +4755,7 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
     .split("/").map((part) => encodeURIComponent(part)).join("/");
   if (canonicalUrl.pathname !== currentPath)
     return new Response(null, { status: 307, headers: { Location: canonicalUrl.pathname + canonicalUrl.search, "Cache-Control": "no-store" } });
-  if (/^\/(?:(?:(?:jp|intl)\/)?(?:ja|en|ko|zh-CN|zh-TW)\/)?player-profile(?:\/|\.html$|$)/u.test(canonicalUrl.pathname))
+  if (isRemovedCatalogPagePath(canonicalUrl.pathname) || isPlayerProfilePagePath(canonicalUrl.pathname))
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } });
   if (rejectedResourceClient(request)) return new Response("Forbidden", { status: 403, headers: { "Cache-Control": "no-store", Vary: "User-Agent" } });
   const communityUrl = new URL(request.url);
@@ -4862,6 +4863,8 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext, 
 
 async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionContext, preferAssets = false): Promise<Response> {
   const url = new URL(request.url);
+  if (url.pathname === "/api/v1/story-dialogue/expand" && request.method === "POST")
+    return expandStoryDialogueQuery(request, env);
   const officialHost = /^\/api\/internal\/official-host\/(.+)$/u.exec(url.pathname);
   if (officialHost) {
     const path = officialHost[1]!;

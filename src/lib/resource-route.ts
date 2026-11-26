@@ -53,7 +53,6 @@ export const RESOURCE_KINDS = [
   "items",
   "events",
   "arena",
-  "real-lives",
   "gacha",
   "login-campaigns",
   "shop",
@@ -260,7 +259,6 @@ const SELECTION_PARAMS: Readonly<Partial<Record<ResourceKind, string>>> = {
   items: "item",
   events: "entry",
   missions: "entry",
-  "real-lives": "entry",
   gacha: "entry",
   "login-campaigns": "entry",
   shop: "entry",
@@ -383,6 +381,8 @@ export function resourceCollectionHref(route: string, server: ReleaseServer, loc
   const collection = parts[1] || "";
   if (collection === "events" && parts[2] === "tracker" && parts.length === 3)
     return `/${server}/${locale}/events/tracker/${source.search}`;
+  if (collection === "stories" && parts[2] === "search" && parts.length === 3)
+    return `/${server}/${locale}/stories/search/${source.search}`;
   if (parts.length > 2 && !(collection === "stories" || collection === "anon-tokyo")) return undefined;
   if (collection === "skills") {
     return parts.length === 2 ? `/${server}/${locale}/skills/${source.search}` : undefined;
@@ -472,6 +472,7 @@ export function legacyCollectionRedirectTarget(pathname: string, search = ""): s
     return parts.length === 4 && isAnonTokyoMode(parts[3]) ? `${prefix}/anon-tokyo/${parts[3]}/${suffix()}` : undefined;
   }
   if (collection === "stories") {
+    if (parts.length === 4 && parts[3] === "search") return `${prefix}/stories/search/${suffix()}`;
     const mode = parts.length === 4 ? parts[3] : query.get("mode");
     if (mode !== null && !isStoryMode(mode)) return parts.length === 4 ? undefined : `${prefix}/stories/${suffix()}`;
     if (mode) {

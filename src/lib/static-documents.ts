@@ -185,7 +185,7 @@ export function staticDocumentLookupPath(pathname: string): string | undefined {
   if (playlistShell) return coreStaticDocumentPath(playlistShell);
   const editorShell = editorShellPath(pathname);
   if (editorShell) return coreStaticDocumentPath(editorShell);
-  if (/^\/data\/chart-rates\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;
+  if (/^\/data\/(?:chart-rates|story-dialogue)\/(?:jp|intl)\.json$/u.test(pathname)) return pathname;
   if (pathname === "/data/sponsors/v1.json") return pathname;
   if (/^\/(?:provider-static|asset-static|playlist-static)\//u.test(pathname)) {
     const parts = pathname.split("/").filter(Boolean);

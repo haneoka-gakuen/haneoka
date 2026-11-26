@@ -1,13 +1,14 @@
 // L3 — GEB
 // Input: Validated official catalogs, observations and region-scoped read identities.
-// Output: Immediate staged or archived observations, D1 ranking indexes and preserved daily/final archives.
+// Output: Immediate staged or archived observations, D1 ranking indexes, preserved daily/final archives and rank timelines.
 // Pos: [Map](L2.md); official ranking persistence, separate from legacy provider history.
 // Effects/Dependencies: Reads and writes private R2 and D1; profile writes use the collector host’s local observation clock; reads preserve original observation timestamps.
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
 import { rankingSearchRows, saveRankingSearchWindow } from "./ranking-search";
 import { retainRequestRead } from "./request-work";
 import { readStagedOfficialPayload, type CollectorBindings } from "./official-host";
-import type { GameRecordsRegion } from "../src/lib/game-records";
+import { EVENT_HISTORY_MILESTONES, type EventRankMilestoneTimeline, type EventRankTimeline, type GameRecordsRegion } from "../src/lib/game-records";
+import { exactEventScore } from "../src/lib/game-event-history";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
 
 export interface OfficialRankingStoreBindings extends CollectorBindings {
@@ -547,6 +548,93 @@ export async function readOfficialHistory(env: OfficialRankingStoreBindings, reg
     bytes += size;
   }
   return { observations, nextCursor: observations.at(-1)?.cursor ?? after };
+}
+
+/** Rank is a one-based position in the published board, including tied scores. */
+export async function readOfficialRankTimeline(
+  env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  kind: OfficialObservation["kind"], challengeId: string, rank: number, before: number,
+): Promise<EventRankTimeline> {
+  const page = await readOfficialRankSeries(env, region, eventId, kind, challengeId, [rank], before);
+  return { ...page, samples: page.samples.map(({ atMs, scores }) => ({ atMs, score: scores[0] ?? null })) };
+}
+
+export function readOfficialRankMilestones(
+  env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  kind: OfficialObservation["kind"], challengeId: string, before: number,
+): Promise<EventRankMilestoneTimeline> {
+  return readOfficialRankSeries(env, region, eventId, kind, challengeId, EVENT_HISTORY_MILESTONES, before);
+}
+
+async function readOfficialRankSeries(
+  env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  kind: OfficialObservation["kind"], challengeId: string, ranks: readonly number[], before: number,
+): Promise<EventRankMilestoneTimeline> {
+  const { db } = storage(env);
+  const rank = ranks[0]!;
+  const windowStart = Math.floor((rank - 1) / 100) * 100 + 1;
+  const windowKey = `event-window/${eventId}/${windowStart}`;
+  const eventKey = `event/${eventId}/${kind}/${challengeId}`;
+  const archiveKeys = kind === "point" ? [windowKey, rank <= 100 ? eventKey : windowKey] : [eventKey, eventKey];
+  const pageSize = 24;
+  const { results } = await db.prepare(`
+    WITH candidates AS (
+      SELECT observed_at_ms, payload_key, payload_hash, error, 1 AS start_rank, 2 AS priority
+      FROM official_ranking_observations
+      WHERE ?<=100 AND region=? AND event_id=? AND board_kind=? AND challenge_id=? AND observed_at_ms<?
+      UNION ALL
+      SELECT observed_at_ms, payload_key, payload_hash, error, start_rank, 4
+      FROM official_event_window_observations
+      WHERE ?='point' AND region=? AND event_id=? AND start_rank=? AND observed_at_ms<?
+      UNION ALL
+      SELECT observed_at_ms, payload_key, payload_hash, NULL, start_rank, 5
+      FROM official_event_window_metadata
+      WHERE ?='point' AND region=? AND event_id=? AND start_rank=? AND observed_at_ms<?
+      UNION ALL
+      SELECT observed_at_ms, payload_key, payload_hash, NULL, CASE WHEN board_key=? THEN ? ELSE 1 END, 3
+      FROM official_ranking_daily
+      WHERE region=? AND board_key IN (?,?) AND observed_at_ms<?
+      UNION ALL
+      SELECT observed_at_ms, payload_key, payload_hash, NULL, CASE WHEN board_key=? THEN ? ELSE 1 END, 3
+      FROM official_ranking_finals
+      WHERE region=? AND board_key IN (?,?) AND observed_at_ms<? AND snapshot_id IS NOT NULL
+    ), unique_times AS (
+      SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY observed_at_ms ORDER BY error IS NULL DESC, priority DESC, payload_key DESC
+      ) AS position FROM candidates
+    )
+    SELECT observed_at_ms, payload_key, payload_hash, error, start_rank
+    FROM unique_times WHERE position=1 ORDER BY observed_at_ms DESC LIMIT ?
+  `).bind(
+    rank, region, eventId, ...boardKey(kind, challengeId), before,
+    kind, region, eventId, windowStart, before,
+    kind, region, eventId, windowStart, before,
+    windowKey, windowStart, region, ...archiveKeys, before,
+    windowKey, windowStart, region, ...archiveKeys, before,
+    pageSize + 1,
+  ).all<{ observed_at_ms: number; payload_key: string; payload_hash: string; error: string | null; start_rank: number }>();
+  const selected = results.slice(0, pageSize);
+  const batches: PayloadBatchCache = new Map();
+  const samples: EventRankMilestoneTimeline["samples"] = [];
+  for (const row of selected) {
+    const atMs = row.observed_at_ms;
+    if (row.error) {
+      samples.push({ atMs, scores: ranks.map(() => null) });
+      continue;
+    }
+    const observation = await readPayload<OfficialObservation | OfficialEventWindow>(env, row.payload_key, row.payload_hash, batches);
+    if (observation.region !== region || observation.eventId !== eventId ||
+      ("kind" in observation ? observation.kind !== kind || observation.challengeId !== challengeId
+        : kind !== "point" || observation.startRank !== row.start_rank)) {
+      throw new Error("official_observation_identity_mismatch");
+    }
+    const scores = ranks.map((position) => {
+      const player = observation.players?.[position - row.start_rank];
+      return exactEventScore(kind === "point" ? player?.point ?? player?.score : player?.score);
+    });
+    samples.push({ atMs, scores });
+  }
+  return { samples, nextBefore: results.length > pageSize ? selected.at(-1)!.observed_at_ms : null };
 }
 
 export interface OfficialBoardStatus {

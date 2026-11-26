@@ -79,6 +79,7 @@ export const INFORMATION_DESTINATIONS = [
   { route: "/license", icon: "copyright", label: "legal.license.title" },
   { route: "/terms", icon: "description", label: "legal.terms.title" },
   { route: "/privacy", icon: "privacy_tip", label: "legal.privacy.title" },
+  { route: "/changelog", icon: "history", label: "navigation.changelog" },
 ] as const;
 
 export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
@@ -124,7 +125,7 @@ export const PRIMARY_DESTINATIONS: PrimaryDestination[] = [
     route: "/games",
     icon: "sports_esports",
     label: "navigation.games",
-    match: ["/games", "/sonolus", "/song-puzzle", "/song-guess", "/tools/song-puzzle"],
+    match: ["/games", "/sonolus", "/song-puzzle", "/song-guess", "/character-guess", "/tools/song-puzzle"],
   },
   { id: "community", route: "/community", icon: "forum", label: "navigation.community", match: ["/community"] },
   { id: "search", route: "/search", icon: "search", label: "common.actions.search", match: ["/search"] },
@@ -175,17 +176,16 @@ const sections: NavSection[] = [
       { route: "/catalog/chat-customizations", icon: "chat", label: "navigation.chatCustomizations" },
       { route: "/catalog/items", icon: "inventory_2", label: "navigation.items" },
       { route: "/catalog/band-items", icon: "piano", label: "navigation.bandItems" },
-      { route: "/catalog/real-lives", icon: "festival", label: "navigation.realLives" },
     ],
   },
   {
     id: "stories",
     label: "navigation.stories",
-    items: STORY_ROUTES.map((key) => ({
+    items: [...STORY_ROUTES.map((key) => ({
       route: `/catalog/stories/${key}`,
       icon: STORY_ICONS[key],
       label: key === "birthday" ? "story.labels.birthdayStory" : `story.navigation.${key}`,
-    })),
+    })), { route: "/catalog/stories/search", icon: "search", label: "story.dialogueSearch.title" }],
   },
   {
     id: "tools",
@@ -195,7 +195,6 @@ const sections: NavSection[] = [
       { route: "/catalog/spine", icon: "accessibility_new", label: "navigation.spine" },
       { route: "/catalog/assets", icon: "folder_open", label: "navigation.assets" },
       { route: "/catalog/help", icon: "help", label: "navigation.help" },
-      // { route: "/player-profile", icon: "person_search", label: "tools.playerProfile.title" },
       { route: "/team-builder", icon: "groups", label: "tools.teamBuilder.title" },
       { route: "/song-progress", icon: "check_circle", label: "catalog.songProgress.title" },
       { route: "/gacha-history", icon: "history", label: "catalog.gachaHistory.title" },
@@ -211,6 +210,7 @@ const sections: NavSection[] = [
       { route: "/sonolus", icon: "sports_esports", label: "catalog.sonolus.title" },
       { route: "/song-puzzle", icon: "extension", label: "tools.songPuzzle.title" },
       { route: "/song-guess", icon: "help", label: "catalog.songGuess.title" },
+      { route: "/character-guess", icon: "person", label: "catalog.songGuess.characterTitle" },
     ],
   },
   {
@@ -290,10 +290,6 @@ const sections: NavSection[] = [
   },
 ];
 
-// The library list is flat on purpose: collection and game entries are part
-// of the same catalogue, not a separate wing with its own headline. The order
-// is editorial: the archive's spine first (songs, characters, cards), then
-// the dated game systems, then the economies, then collectibles and materials.
 export const NAV_SECTIONS = sections.filter((section) => section.id !== "anon-tokyo");
 
 /** Catalog hub cards: every browsable collection with the catalog resource that counts it. */
@@ -339,7 +335,6 @@ const catalogHub: Array<NavItem & { resource?: string; countKey?: string }> = [
   { route: "/catalog/assets", icon: "folder_open", label: "navigation.assets" },
   { route: "/catalog/help", icon: "help", label: "navigation.help", resource: "help" },
   { route: "/catalog/anon-tokyo/characters", icon: "storefront", label: "navigation.anonTokyo" },
-  { route: "/catalog/real-lives", icon: "festival", label: "navigation.realLives", resource: "real-lives" },
 ];
 
 export const CATALOG_HUB = catalogHub.filter((item) => !isTemporarilyHiddenRoute(item.route));

@@ -18,6 +18,7 @@ import { editorShellPath, legacyEditorRedirectTarget } from "../lib/editor-docum
 import { documentPrefixRedirectTarget, documentPrefixResponse, legacyEntityRedirectTarget, releaseServerFromCookie } from "../lib/resource-route";
 import { negotiateRequestLocale } from "../i18n/negotiation";
 import { sonolusShareRedirectTarget } from "../../worker/sonolus-share";
+import { isRemovedCatalogPagePath } from "../lib/temporary-public-routing";
 
 type Setup = NonNullable<AstroIntegration["hooks"]["astro:server:setup"]>;
 type DevServer = Parameters<Setup>[0]["server"];
@@ -27,6 +28,11 @@ export function installProviderDevRouting(server: DevServer): void {
   server.middlewares.use(async (request, response, next) => {
     try {
       const url = new URL(request.url || "/", "http://localhost");
+      if (isRemovedCatalogPagePath(url.pathname)) {
+        response.writeHead(404, { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+        response.end(request.method === "HEAD" ? undefined : "Not found");
+        return;
+      }
       if (request.method === "GET" || request.method === "HEAD") {
         let savedServer: ReturnType<typeof releaseServerFromCookie>;
         const prefix = documentPrefixRedirectTarget(url.pathname, url.search,

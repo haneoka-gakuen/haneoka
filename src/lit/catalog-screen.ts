@@ -38,7 +38,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { ViewportGrid } from "./ui/viewport-grid";
 import { renderCommentsState } from "./ui/comments-state";
 import { cardRarityName, rarityIcon } from "./shared/rarity-icon";
-import { cardTile } from "./shared/card-tile";
+import { catalogCardTile } from "./shared/card-tile";
 import { announcementLink } from "./shared/announcement";
 import { announcementPath, parseAnnouncementRoute } from "../lib/announcements";
 import { loadCardAcquisitionSources, readCardAcquisitionCatalogue, type CardAcquisitionSource } from "../lib/card-acquisition";
@@ -644,16 +644,6 @@ const profiles: Record<string, Profile> = {
   // status is a facet, with availability/date sorting and per-resource sections in
   // the detail pane (rewards, rates, goods, levels).
   events: {
-    id: ["id"],
-    title: ["title"],
-    image: ["image"],
-    document: "entries",
-    detail: ["kind", "startAt", "endAt"],
-    presentation: "system",
-    defaultSort: "release",
-    defaultOrder: "desc",
-  },
-  "real-lives": {
     id: ["id"],
     title: ["title"],
     image: ["image"],
@@ -1797,7 +1787,6 @@ export class CatalogScreen extends LitElement {
           songs: "song",
           "song-meta": "song",
           events: "entry",
-          "real-lives": "entry",
           gacha: "entry",
           "login-campaigns": "entry",
           shop: "entry",
@@ -5705,13 +5694,11 @@ export class CatalogScreen extends LitElement {
     const attributeLabel = this.fieldValue(item, "cardType");
     const rarityLabel = this.fieldValue(item, "rarity");
     return {
-      ...cardTile({
+      ...catalogCardTile({
         kind,
         title,
         titleLanguage: resolved.locale,
-        subtitle: relation.content,
-        adornment: relation.adornment,
-        label: [title, relation.label, rarityLabel, attributeLabel].filter(Boolean).join(" / "),
+        relation,
         image,
         attributeIcon: attribute,
         attributeLabel,
@@ -5719,7 +5706,6 @@ export class CatalogScreen extends LitElement {
         rarityLabel,
       }),
       imageFallback: image,
-      aspectRatio: kind === "support" ? "16 / 9" : "3 / 4",
       onImageError: this.imageError,
     };
   }
@@ -6832,20 +6818,18 @@ export class CatalogScreen extends LitElement {
     let type = resource === "song-meta" ? "songs" : resource;
     let id: string | null;
     if (fields[resource]) id = decimal(item[fields[resource]]);
-    else if (resource === "passes" || resource === "missions" || resource === "real-lives") {
+    else if (resource === "passes" || resource === "missions") {
       const variants: Record<string, [string, string]> = {
         "season-pass": ["passes-season", "season-"],
         "monthly-pass": ["passes-monthly", "monthly-"],
         "regular-mission": ["missions-regular", "regular-mission-"],
         "limited-mission": ["missions-limited", "limited-mission-"],
-        "real-live": ["real-lives", "real-live-"],
       };
       const variant = variants[String(item.kind || "")];
       if (
         !variant ||
         (resource === "passes" && !variant[0].startsWith("passes-")) ||
-        (resource === "missions" && !variant[0].startsWith("missions-")) ||
-        (resource === "real-lives" && variant[0] !== "real-lives")
+        (resource === "missions" && !variant[0].startsWith("missions-"))
       )
         return null;
       type = variant[0];

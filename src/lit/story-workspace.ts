@@ -752,6 +752,7 @@ export class StoryWorkspace extends LitElement {
     }, 0);
   }
   disconnectedCallback() {
+    this.revealedLine = "";
     this.excerptSelection = undefined;
     if (this.initializationTimer !== undefined) window.clearTimeout(this.initializationTimer);
     this.initializationTimer = undefined;
@@ -775,6 +776,7 @@ export class StoryWorkspace extends LitElement {
     if (!this.isConnected) return;
     if (this.canActivateStoryComments()) void this.ensureStoryComments();
     this.dataset.playerActive = String(Boolean(this.entityId && this.detailEpisode && this.detailMode === "play"));
+    if (this.entityId && this.detailEpisode && this.detailMode === "text") this.revealRequestedLine();
     this.classList.toggle("story-player-host", this.dataset.playerActive === "true");
     if (this.entityId && this.detailEpisode) {
       const title = isReleasedContent(this.detailEpisode) ? this.episodeTitleValue(this.detailEpisode) : {text: uiText(this.locale, "common.states.unpublished"), locale: this.locale};
@@ -2939,6 +2941,7 @@ export class StoryWorkspace extends LitElement {
                     ? html`
                         <vega-story-stage
                           .story=${episode}
+                          .initialCommand=${this.requestedStoryLine()}
                           .communityProject=${this.reader?.project}
                           .providerBase=${this.reader?.offline?.provider ? "/offline" : this.isProvider() ? this.providerBase() : ""}
                           .offlineLive2d=${this.reader?.offline?.live2d}
@@ -3209,6 +3212,22 @@ export class StoryWorkspace extends LitElement {
       this.transcriptCache.set(episode, entries);
     }
     return entries;
+  }
+  private revealedLine = "";
+  private requestedStoryLine(): number | undefined {
+    if (this.reader || this.isProvider()) return undefined;
+    const line = navigationDocumentUrl().searchParams.get("line");
+    return line && /^(?:0|[1-9][0-9]{0,6})$/u.test(line) ? Number(line) : undefined;
+  }
+  private revealRequestedLine() {
+    const line = this.requestedStoryLine();
+    if (line === undefined) return;
+    const identity = `${this.entityId}/${line}`;
+    if (this.revealedLine === identity) return;
+    const target = this.querySelector<HTMLElement>(`[data-command-index="${line}"]`);
+    if (!target) return;
+    this.revealedLine = identity;
+    target.scrollIntoView({ block: "center" });
   }
   private transcriptVisibleText(value: string, lineBreak = " "): string {
     const visibleText = (nodes: readonly AdvRichTextNode[]): string =>

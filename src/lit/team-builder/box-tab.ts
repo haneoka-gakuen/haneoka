@@ -23,6 +23,9 @@ import { chooserGroup } from "../ui/chooser-filters";
 import { actionMenu } from "../ui/action-menu";
 import { cardEditorPreview } from "./card-editor-preview";
 import { selectionPane } from "../ui/selection-pane";
+import { resourcePath } from "../../lib/resource-route";
+import { isPublicReleaseServer } from "../../lib/temporary-public-routing";
+import type { Locale } from "../../i18n/locales";
 
 type Kind = "members" | "snaps";
 interface Row {
@@ -469,6 +472,10 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         @change=${(event: Event) => write(field, (event.target as HTMLInputElement & { selected: boolean }).selected)}></md-switch>
     </label>
   `;
+  const server = host.data?.crossServer?.owners[kind === "members" ? "members" : "snapshots"]?.[String(cardId)] ?? host.data?.identity.server;
+  const details = !host.planner.cardById(cardId) && isPublicReleaseServer(server)
+    ? resourcePath({ server, locale: host.locale as Locale, kind: kind === "members" ? "member-cards" : "support-cards", id: String(cardId) })
+    : "";
   return html`
     <dialog ${modal(close)} class="dialog tb-editor" aria-labelledby="tb-editor-title">
       <header class="tb-editor__header">
@@ -493,8 +500,10 @@ export function renderCardEditor(host: TeamBuilder): TemplateResult | typeof not
         </section>
         <div class="tb-editor__skills">${skills}</div>
         </div>
+        ${preview.materials}
       </div>
       <footer class="tb-editor__actions">
+        ${details ? html`<a class="button button--text" href=${details}>${host.common("common.actions.details", "Details")}</a>` : nothing}
         <button class="button button--text" type="button" @click=${() => host.write(maxChanges(host, { kind, id: cardId, owned }))}>${icon("upgrade", 18)}${host.t("fullGrowth", "Full growth")}</button>
         ${owned && !draft
           ? html`<button class="button button--text button--danger" type="button" @click=${() => {

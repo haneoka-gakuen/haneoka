@@ -30,8 +30,8 @@ function identityRows(value: unknown, field: string) {
 export function eventTrackerPageData(): Promise<TrackerPageData> {
   return (page ||= (async () => {
     const [intl, jp, snapshots, events, musicTypeMarks, songPerformers] = await Promise.all([
-      rankingCardCatalog("intl"),
-      rankingCardCatalog("jp"),
+      rankingCardCatalog("intl", true),
+      rankingCardCatalog("jp", true),
       eventTrackerSnapshots(),
       Promise.all((["intl", "jp"] as const).map(async (source) => [source, await railEvents(source)] as const)).then(
         Object.fromEntries,
@@ -72,8 +72,37 @@ export function eventTrackerPageData(): Promise<TrackerPageData> {
         }),
       ).then(Object.fromEntries),
     ]);
-    return { schema: "haneoka-event-tracker-page-v1", intl, jp, snapshots, events, musicTypeMarks, songPerformers };
+    const songTitles = await trackerSongTitles(snapshots);
+    return { schema: "haneoka-event-tracker-page-v1", intl, jp, snapshots, events, musicTypeMarks, songPerformers, songTitles };
   })());
+}
+
+async function trackerSongTitles(snapshots: Partial<Record<GameRecordsRegion, EventTrackerSnapshot>>) {
+  const entries = Object.values(snapshots).filter((snapshot) => snapshot !== undefined);
+  const ids = [...new Set(entries.flatMap((snapshot) => [
+    ...(snapshot.data?.event ? [snapshot.data.event] : []), ...(snapshot.archive ?? []),
+  ].flatMap((event) => event.challenges.filter((row) => row.enabled).map((row) => row.musicId))))];
+  const titleOf = (song: Record<string, unknown>) => song.musicTitle || song.title || song.name;
+  return Object.fromEntries(await Promise.all((["intl", "jp"] as const).map(async (server) => {
+    const titles: Record<string, unknown> = {};
+    for (const snapshot of entries) {
+      for (const [id, song] of Object.entries(snapshot.songs)) {
+        const title = titleOf(song);
+        if (title && song.catalogSourceServer === server) titles[id] = title;
+      }
+    }
+    const pending = ids.filter((id) => !titles[id]);
+    if (pending.length) {
+      const release = await staticCatalogRelease(server);
+      const songs = await fetchStaticCatalogBatch("songs", pending, server, release)
+        .catch(() => new Map<string, Record<string, unknown>>());
+      for (const [id, song] of songs) {
+        const title = titleOf(song);
+        if (title) titles[id] = title;
+      }
+    }
+    return [server, titles] as const;
+  })));
 }
 
 async function railEvents(server: "intl" | "jp"): Promise<TrackerRailEvent[]> {
