@@ -69,7 +69,7 @@ interface SearchApi {
 const KIND_LABELS: Readonly<Record<string, string>> = {
   songs: "navigation.songs", "member-cards": "navigation.memberCards", "support-cards": "navigation.supportCards",
   characters: "navigation.characters", events: "navigation.events", gacha: "navigation.gacha",
-  "real-lives": "navigation.realLives", comics: "navigation.comics", stamps: "navigation.stamps",
+  comics: "navigation.comics", stamps: "navigation.stamps",
   stickers: "navigation.stickers", backgrounds: "navigation.backgrounds", items: "navigation.items",
   "band-items": "navigation.bandItems", stories: "navigation.stories",
 };

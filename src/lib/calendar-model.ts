@@ -37,7 +37,6 @@ export interface CalendarBirthday {
 export interface CalendarGameWindow {
   readonly startAtMs?: number;
   readonly endAtMs?: number;
-  readonly href: string;
 }
 export interface CalendarActivity {
   readonly id: string;
@@ -51,7 +50,7 @@ export interface CalendarActivity {
   readonly allDay?: boolean;
   readonly endExclusive?: boolean;
   readonly timeZone?: string;
-  readonly href: string;
+  readonly href?: string;
   readonly image?: string;
   readonly venue?: string;
   readonly sourceUrl?: string;

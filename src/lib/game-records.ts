@@ -187,6 +187,30 @@ export interface EventTrackerDto {
   stale: boolean;
 }
 
+export interface EventRankSample {
+  atMs: number;
+  score: string | null;
+}
+
+export interface EventRankTimeline {
+  samples: EventRankSample[];
+  nextBefore: number | null;
+}
+
+export const EVENT_HISTORY_MILESTONES = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+] as const;
+
+export interface EventRankMilestoneSample {
+  atMs: number;
+  scores: (string | null)[];
+}
+
+export interface EventRankMilestoneTimeline {
+  samples: EventRankMilestoneSample[];
+  nextBefore: number | null;
+}
+
 export interface EventRankingDto extends GameRankingDto {
   eventId: string;
   challengeId?: string;
@@ -228,7 +252,15 @@ export interface GameRecordsErrorDto {
   };
 }
 
+export type RankingCardCharacter = {
+  characterName: unknown;
+  englishName?: unknown;
+  faceImage: string;
+};
+
 export interface RankingCardArtwork {
+  characterIds?: number[];
+  cardType?: number;
   server: "jp" | "intl";
   name: unknown;
   image: string;
@@ -243,6 +275,7 @@ export interface RankingCardArtwork {
 }
 
 export interface RankingCardCatalog {
+  characters?: Record<string, RankingCardCharacter>;
   growthIcons: CardGrowthIcons;
   defaultProfileCardImages?: Record<Locale, string>;
   member: Record<string, RankingCardArtwork>;

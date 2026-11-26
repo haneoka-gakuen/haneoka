@@ -403,7 +403,7 @@ export class CalendarPage extends LitElement {
             </span>
             ${primaryHref ? html`<span slot="end">${icon("chevron_right", 24)}</span>` : nothing}
           </md-list-item>
-          ${item.gameWindow ? html`<a class="calendar-source-link" href=${item.gameWindow.href}>${this.t("game-live")} / ${this.gameRange(item)}${icon("chevron_right", 16)}</a>` : nothing}
+          ${item.gameWindow ? html`<span class="calendar-source-link">${this.t("game-live")} / ${this.gameRange(item)}</span>` : nothing}
           ${item.sourceUrl && item.sourceUrl !== item.href ? html`<a class="calendar-source-link" href=${item.sourceUrl} rel="noopener noreferrer">${this.t("source")}${icon("open_in_new", 16)}</a>` : nothing}
         `;
       })}

@@ -52,7 +52,6 @@ const looks: Record<string, HubLook> = {
   "/catalog/stickers": "scatter",
   "/catalog/items": "shelf",
   "/catalog/band-items": "shelf",
-  "/catalog/real-lives": "bleed",
   "/catalog/stories/band": "capsule",
   "/catalog/stories/event": "bleed",
   "/catalog/stories/link": "scene",
@@ -92,7 +91,6 @@ const curated: Record<HubId, HubTile[]> = {
     tile("/catalog/stickers", "stamps", 6, 2, 3),
     tile("/catalog/items", "stamps", 3, 2, 3),
     tile("/catalog/band-items", "stamps", 3, 2, 3),
-    tile("/catalog/real-lives", "landscape", 3, 2),
   ],
   stories: [
     tile("/catalog/stories/band", "banners", 6, 3, 2),

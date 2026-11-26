@@ -42,6 +42,8 @@ import type { Locale } from "../../i18n/locales";
 import { teamPowerNeeded } from "../../lib/chart-rates";
 import { specList } from "../ui/spec";
 import { dataRows } from "../../lib/team-builder/data";
+import { defaultGameRecordsRegion } from "../shared/game-records";
+import { isPublicReleaseServer } from "../../lib/temporary-public-routing";
 import "../runtime/timing-chart-preview";
 
 const RANK_NAMES: Record<string, string> = { "1": "E", "2": "D", "3": "C", "4": "B", "5": "A", "6": "S", "7": "SS" };
@@ -1293,6 +1295,17 @@ export function renderHit(
   const compared = !!reference && host.comparison.items.some((item) => item.id === reference);
   const stale = options.stale ?? host.stale;
   const analysisHref = songMetaHref(host, hit);
+  const goal = resultRequest(host, hit)?.goal;
+  const exactPt = hit.event?.perPlayMin;
+  const paceHref = !stale && goal?.kind === "event" && goal.measure === "points" && !goal.eventEffects
+    && !goal.weights && isPublicReleaseServer(host.server) && !hit.gekiso?.sampled
+    && exactPt !== undefined && exactPt === hit.event?.perPlayMax && Number.isSafeInteger(exactPt) && exactPt > 0
+    && goal.eventId > 0
+    ? resourceCollectionHref(`/catalog/events/tracker?${new URLSearchParams({
+        board: "pace", event: String(goal.eventId), perPlay: String(exactPt),
+        region: defaultGameRecordsRegion(host.server, host.locale),
+      })}`, host.server, host.locale as Locale)
+    : undefined;
   const main = primary(host, hit);
   return html`
     <article
@@ -1351,6 +1364,7 @@ export function renderHit(
       <div class="tb-hit__actions">
         <button class="button button--tonal" type="button" data-tb-save-team ?disabled=${stale}
           @click=${() => saveResultTeam(host, hit)}>${host.t("saveTeam", "Save team")}</button>
+        ${paceHref ? html`<a class="button button--text" href=${paceHref}>${host.t("openPacePlanner", "Plan with these points")}</a>` : nothing}
         ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
         ${(() => {
           const input = resultRequest(host, hit);

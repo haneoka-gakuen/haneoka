@@ -39,7 +39,7 @@ import { tile, tileMedia, type TileMark } from "./ui/tile";
 import { nextImageCandidate } from "./ui/lazy-images";
 import { episodeArtwork, episodeIdentityArtwork } from "../lib/story-artwork";
 import { storyTile } from "./shared/story-tile";
-import { isContentListed } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { clientText } from "../i18n/client";
@@ -950,18 +950,6 @@ function renderPassMissions(c: Controller, tasks: Item[]) {
   );
 }
 
-function renderEventBands(c: Controller, bands: Item[]) {
-  if (!bands.length) return nothing;
-  return html`
-    <section class="detail-section">
-      ${renderDetailSectionHeading(c.label("bands", "Bands"), "details", { count: bands.length })}
-      <ul class="detail-object-list" role="list">
-        ${bands.map((band) => rewardRow(c, { name: band.name, image: band.logo || band.icon } as Item))}
-      </ul>
-    </section>
-  `;
-}
-
 function eventRewardValue(row: Item): Item {
   const nested = row.reward && typeof row.reward === "object" ? (row.reward as Item) : row;
   return nested && typeof nested === "object" ? nested : {};
@@ -1224,18 +1212,19 @@ function renderChallengeLinks(c: Controller, item: Item) {
   const locale = c.settings.locale;
   const label = clientText(locale, "tools.teamBuilder.challenge.title", "Challenge song ranking");
   const buildLabel = clientText(locale, "catalog.events.labels.buildSongTeam", "Build a team");
-  const tracks = item.challengeServer === server ? eventRows(item.challengeTracks).filter(row => isContentListed("songs", row, String(row.musicId))) : [];
+  const tracks = item.challengeServer === server
+    ? eventRows(item.challengeTracks).filter(row => row.musicTitle && isContentVisible("songs", row, String(row.musicId)))
+    : [];
   const event = String(item.id);
   return html`<section class="detail-section">
     ${renderDetailSectionHeading(label, "songs")}
     ${tracks.length ? html`<div class="collection collection--song">
       ${tracks.map(track => {
         const song = c.songTileOptions(track);
-        const title = track.musicTitle ? song.label : `#${track.musicId}`;
         return html`<div class="stack stack--tight">
-          ${tile({ ...song, title, label: title, href: resourcePath({ server, locale, kind: "songs", id: String(track.musicId) }) })}
+          ${tile({ ...song, href: resourcePath({ server, locale, kind: "songs", id: String(track.musicId) }) })}
           <a class="button button--tonal" style="--button-height: var(--md-comp-control-height-touch)"
-            aria-label=${`${buildLabel} · ${title}`}
+            aria-label=${`${buildLabel} · ${song.label}`}
             href=${eventChallengeHref(locale, server, event, { id: Number(track.id), musicId: Number(track.musicId) })}>
             ${buildLabel}
           </a>
@@ -1785,8 +1774,6 @@ export function renderGameSystemDetail(c: Controller, item: Item) {
             ${renderPassLevels(c, (Array.isArray(item.levels) ? item.levels : []) as Item[])}
             ${renderPassMissions(c, (Array.isArray(item.tasks) ? item.tasks : []) as Item[])}
           `;
-    case "real-lives":
-      return renderEventBands(c, (Array.isArray(item.bands) ? item.bands : []) as Item[]);
     default:
       return nothing;
   }

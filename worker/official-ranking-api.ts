@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Saved regional official catalogs/observations, collector availability and public requests.
-// Output: Normalized rankings, every archived event's boards, preferred saved v1 totals and explicit pending availability.
+// Output: Normalized rankings, every archived event's boards, rank timelines and explicit pending availability.
 // Pos: [Map](L2.md); official read adapter alongside legacy PT and SHA history.
 // Effects/Dependencies: Reads D1/private R2; keeps boards read from Moenotes in the event archive; never requests the game or writes observations.
 import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto, TrackedEventDto } from "../src/lib/game-records";
@@ -8,7 +8,7 @@ import { moenotesEventRanking } from "./moenotes-fallback";
 import { officialEventQueryOpen } from "../src/lib/official-ranking";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
-import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
+import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, readOfficialRankMilestones, readOfficialRankTimeline, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
 
 export interface OfficialRankingReadBindings extends OfficialRankingStoreBindings, OfficialCollectorConfigurationBindings {
   OFFICIAL_RANKING_READ_REGIONS?: string;
@@ -246,6 +246,33 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
   const route = /^\/api\/(v1|v2)\/game\/records\/([^/]+)\/events\/(.+)$/u.exec(url.pathname);
   if (!route || !regionValue(route[2])) return null;
   const version = route[1], region = route[2], path = route[3]!;
+  const timeline = /^([1-9][0-9]{0,18})\/(total|points|challenges\/([1-9][0-9]{0,18}))\/timeline$/u.exec(path);
+  if (version === "v2" && timeline) {
+    const rank = url.searchParams.get("rank") ?? "";
+    const milestones = url.searchParams.get("milestones") === "1";
+    const before = url.searchParams.get("before") ?? String(Number.MAX_SAFE_INTEGER);
+    const kind = timeline[2] === "points" ? "point" : timeline[3] ? "challenge" : "total";
+    const validRanks = milestones
+      ? url.searchParams.getAll("milestones").length === 1 && !url.searchParams.has("rank")
+      : !url.searchParams.has("milestones") && url.searchParams.getAll("rank").length === 1
+        && /^[1-9][0-9]{0,8}$/u.test(rank) && (kind === "point" || Number(rank) <= 100);
+    if (!validRanks
+      || !/^[1-9][0-9]*$/u.test(before) || !Number.isSafeInteger(Number(before))
+      || url.searchParams.getAll("before").length > 1
+      || [...url.searchParams.keys()].some((key) => key !== "rank" && key !== "milestones" && key !== "before")) {
+      return failure(request, "invalid_request", 400);
+    }
+    if (!env.DB || !env.OFFICIAL_RANKING_DATA) return pending(request, env, region);
+    try {
+      const result = milestones
+        ? await readOfficialRankMilestones(env, region, timeline[1]!, kind, timeline[3] ?? "", Number(before))
+        : await readOfficialRankTimeline(env, region, timeline[1]!, kind, timeline[3] ?? "", Number(rank), Number(before));
+      return response(request, result, 200, "public, max-age=60");
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "official_rank_timeline_failed", region, error: error instanceof Error ? error.name : "Error" }));
+      return failure(request, "upstream", 503);
+    }
+  }
   const current = path === "current";
   if (path === "archive") {
     if (!officialRankingReadEnabled(env, region) || !env.DB || url.searchParams.size > 0) return null;

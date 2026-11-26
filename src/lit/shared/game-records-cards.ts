@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
 import { localizedText } from "./catalog";
@@ -16,6 +16,60 @@ import { cardGrowth } from "./card-growth";
 import { cardGrowthIcons } from "../../lib/ui-marks";
 import { defaultProfileCardUrl } from "../../lib/profile-card-default";
 type RankingEntry = SongRankingRowDto;
+let deckObserver: IntersectionObserver | undefined;
+
+class RankingDeck extends LitElement {
+  static properties = {
+    slots: { type: Number },
+    renderCards: { attribute: false },
+    visible: { state: true },
+  };
+  declare slots: number;
+  declare renderCards?: () => TemplateResult[];
+  declare private visible: boolean;
+
+  constructor() {
+    super();
+    this.slots = 0;
+    this.visible = false;
+  }
+
+  createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.visible) return;
+    if (typeof IntersectionObserver === "undefined") {
+      this.reveal();
+      return;
+    }
+    deckObserver ??= new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) (entry.target as RankingDeck).reveal();
+    }, { rootMargin: "240px 0px" });
+    deckObserver.observe(this);
+  }
+
+  disconnectedCallback() {
+    deckObserver?.unobserve(this);
+    super.disconnectedCallback();
+  }
+
+  private reveal() {
+    deckObserver?.unobserve(this);
+    this.visible = true;
+  }
+
+  render() {
+    return this.visible ? this.renderCards?.() : Array.from({ length: this.slots }, () => html`
+      <span class="song-ranking__deck-slot" aria-hidden="true">
+        <span class="song-ranking__card-media"></span>
+        <span class="song-ranking__card-media song-ranking__card-media--support"></span>
+      </span>
+    `);
+  }
+}
+if (!customElements.get("ranking-deck")) customElements.define("ranking-deck", RankingDeck);
+
 export interface RankingRowView {
   rank: number;
   name: string;
@@ -37,6 +91,42 @@ export interface RankingRowView {
   target?: boolean;
   scoreAction?: { label: string; onClick: () => void };
 }
+
+type RankingCardMedia = {
+  support?: boolean;
+  image?: string;
+  attributeIcon?: string;
+  rarityIcon?: string;
+  media?: unknown;
+  growth?: unknown;
+  className?: string;
+};
+
+/** Native card crop and corner marks for rankings and card usage. */
+export function rankingCardMedia(options: RankingCardMedia): TemplateResult {
+  const { support, image, attributeIcon, rarityIcon, media, growth, className } = options;
+  return html`
+    <span class=${`song-ranking__card-media card-media card-media--${support ? "support" : "member"}${support ? " song-ranking__card-media--support" : ""}${className ? ` ${className}` : ""}`}>
+      ${media ?? (image ? html`
+        <span class="song-ranking__player-media">
+          <img src=${image} alt="" loading="lazy" decoding="async" />
+        </span>
+      ` : icon("broken_image", 24))}
+      ${attributeIcon ? html`<img class="card-media__attribute" src=${attributeIcon} alt="" />` : nothing}
+      ${rarityIcon ? html`<img class="card-media__rarity" src=${rarityIcon} alt="" />` : nothing}
+      ${growth ?? nothing}
+    </span>
+  `;
+}
+
+export function rankingCardThumbnail(options: RankingCardMedia & { name: string; href?: string }): TemplateResult {
+  const { name, href } = options;
+  const body = rankingCardMedia(options);
+  return href
+    ? html`<a class="song-ranking__card" href=${href} aria-label=${name} title=${name}>${body}</a>`
+    : html`<span class="song-ranking__card" aria-label=${name}>${body}</span>`;
+}
+
 /** Card artwork and native progression shared by rankings and the independent public player view. */
 export abstract class GameRecordsCardsElement extends LitElement {
   declare locale: string;
@@ -141,43 +231,20 @@ export abstract class GameRecordsCardsElement extends LitElement {
     const artwork = this.cardArtwork(id, support);
     const name = artwork ? localizedText(artwork.name, this.locale) : this.label("unavailableCard", "Card unavailable");
     const level = artwork ? this.cardLevel(artwork, card, support) : null;
-    const body = html`
-      <span class=${`song-ranking__card-media card-media card-media--${support ? "support" : "member"}${support ? " song-ranking__card-media--support" : ""}`}>
-        ${artwork?.image ? this.profileMedia(name, artwork.image, false) : icon("broken_image", 24)}
-        ${
-          artwork?.attributeIcon
-            ? html`
-                <img class="card-media__attribute" src=${artwork.attributeIcon} alt="" />
-              `
-            : nothing
-        }
-        ${
-          artwork?.rarityIcon
-            ? html`
-                <img class="card-media__rarity" src=${artwork.rarityIcon} alt="" />
-              `
-            : nothing
-        }
-        ${artwork ? this.renderCardProgress(artwork, {
-          level, training: support ? undefined : card.memberAwakeCount,
-          rank: support ? card.supportRank : card.memberRank,
-        }, support) : nothing}
-      </span>
-    `;
-    return artwork
-      ? html`
-          <a
-            class="song-ranking__card"
-            href=${resourcePath({ server: artwork.server, locale: this.locale as Locale, kind: support ? "support-cards" : "member-cards", id: String(id) })}
-            aria-label=${name}
-            title=${name}
-          >
-            ${body}
-          </a>
-        `
-      : html`
-          <span class="song-ranking__card" aria-label=${name}>${body}</span>
-        `;
+    return rankingCardThumbnail({
+      name, support,
+      href: artwork ? resourcePath({
+        server: artwork.server, locale: this.locale as Locale,
+        kind: support ? "support-cards" : "member-cards", id: String(id),
+      }) : undefined,
+      media: artwork?.image ? this.profileMedia(name, artwork.image, false) : undefined,
+      attributeIcon: artwork?.attributeIcon,
+      rarityIcon: artwork?.rarityIcon,
+      growth: artwork ? this.renderCardProgress(artwork, {
+        level, training: support ? undefined : card.memberAwakeCount,
+        rank: support ? card.supportRank : card.memberRank,
+      }, support) : undefined,
+    });
   }
 
   /** One leaderboard row: every ranking draws this same template on the same grid. */
@@ -212,7 +279,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
               : image
                 ? html`
                     <a class="song-ranking__namecard" href=${image} target="_blank" rel="noopener" title=${cardTitle} aria-label=${cardTitle || this.label("profileCard", "Profile card")}>
-                      ${this.profileMedia(name, image)}
+                      ${this.profileMedia(name, image, false)}
                     </a>
                   `
                 : html`
@@ -238,8 +305,9 @@ export abstract class GameRecordsCardsElement extends LitElement {
           ${
             row.cards
               ? html`
-                  <span class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}>
-                    ${row.cards.map(
+                  <ranking-deck class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}
+                    .slots=${row.cards.length}
+                    .renderCards=${() => row.cards!.map(
                       (card) => html`
                         <span class="song-ranking__deck-slot">
                           ${this.renderCard(card)}${
@@ -250,7 +318,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
                         </span>
                       `,
                     )}
-                  </span>
+                  ></ranking-deck>
                 `
               : nothing
           }

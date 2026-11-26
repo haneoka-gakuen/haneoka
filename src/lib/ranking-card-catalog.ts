@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Fixed resource release, card indexes, growth tables and UI marks.
-// Output: Complete ranking card artwork, level limits and localized default profile images.
+// Output: Complete ranking card artwork and source-qualified character identities, level limits and localized default profile images.
 // Pos: [Map](L2-2.md); compact build-time catalogue shared by ranking pages.
 // Effects/Dependencies: Reads only the immutable tables this catalogue renders; no full entity graph.
 import { asRecord, fetchStaticCatalog, staticCatalogRelease } from "./static-catalog-source";
@@ -12,10 +12,10 @@ import { cardGrowthIcons, projectUiMarks } from "./ui-marks";
 import { cardRarityName } from "./card-rarity";
 
 /** Compact card art and progression tables shared by the song-ranking documents. */
-export async function rankingCardCatalog(server: ReleaseServer): Promise<RankingCardCatalog> {
+export async function rankingCardCatalog(server: ReleaseServer, includeCardIdentities = false): Promise<RankingCardCatalog> {
   const source = server === "jp" || server === "jp-cbt" ? "jp" : "intl";
   const release = await staticCatalogRelease(source);
-  const [members, supports, markData, progressionData, memberLevels, supportLevels] = await Promise.all(
+  const [members, supports, markData, progressionData, memberLevels, supportLevels, characters] = await Promise.all(
     [
       "cards",
       "support-cards",
@@ -23,6 +23,7 @@ export async function rankingCardCatalog(server: ReleaseServer): Promise<Ranking
       "progression",
       "progression/views/member-card-levels",
       "progression/views/support-card-levels",
+      ...(includeCardIdentities ? ["characters"] : []),
     ].map((resource) => fetchStaticCatalog(resource, source, release)),
   );
   const progression = asRecord(progressionData) || {};
@@ -56,6 +57,11 @@ export async function rankingCardCatalog(server: ReleaseServer): Promise<Ranking
             name: card.prefix || card.cardName,
             image: String(asRecord(card.images)?.thumbnail || ""),
             rarity: Number(card.rarity),
+            ...(includeCardIdentities ? {
+              cardType: Number(card.cardType),
+              characterIds: [...new Set((Array.isArray(card.characterIds) ? card.characterIds
+                : Array.isArray(card.characters) ? card.characters : [card.characterId]).map(Number).filter(Boolean))],
+            } : {}),
             avatar: String(asRecord(card.images)?.thumbnail || ""),
             attributeIcon: mark(`CardType-${attributeColors[Number(card.cardType)]}.png`),
             rarityIcon: mark(`RarityIconCenter_${cardRarityName(card.rarity)}.png`),
@@ -81,6 +87,12 @@ export async function rankingCardCatalog(server: ReleaseServer): Promise<Ranking
     return groups;
   };
   return {
+    ...(includeCardIdentities ? {
+      characters: Object.fromEntries(entries(characters).map(([id, character]) => [id, {
+        characterName: character.characterName, englishName: character.englishName,
+        faceImage: String(character.faceImage || character.thumbnailImage || ""),
+      }])),
+    } : {}),
     growthIcons: cardGrowthIcons(mark),
     defaultProfileCardImages: Object.fromEntries(
       LOCALES.map((locale) => [locale, defaultProfileCardUrl(locale, intlRelease.releaseId)]),

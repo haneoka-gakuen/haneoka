@@ -14,6 +14,7 @@ import {
   type EventSongReleases,
 } from "../lib/event-song-release";
 import type { EntityPayload } from "../lib/entity-graph";
+import { publicationFields } from "../lib/content-publication";
 import type { CatalogCollectionPayload } from "./catalog-collection";
 
 type ChallengeTrack = { id: number; eventId: number; musicId: number };
@@ -79,10 +80,12 @@ export async function eventSongPayload(payload: EntityPayload): Promise<EntityPa
     const challengeTracks = await Promise.all(tracks.map(async track => {
       const song = await fetchOptionalStaticCatalog(`songs/${track.musicId}`, identity.server, identity);
       const row = asRecord(song.value);
-      return { ...track, musicTitle: row?.musicTitle, publishedAt: row?.publishedAt,
-        eventPublishedAt: music.releases[String(track.musicId)], jacketThumbUrl: row?.jacketThumbUrl };
+      const title = row?.musicTitle || row?.title || row?.name;
+      if (!row || !title) return null;
+      return { ...publicationFields(withEventSongRelease({ ...row, musicId: track.musicId }, music.releases)),
+        ...track, musicTitle: title, jacketThumbUrl: row.jacketThumbUrl };
     }));
-    payload = { ...payload, item: { ...payload.item, challengeTracks, challengeServer: payload.server } };
+    payload = { ...payload, item: { ...payload.item, challengeTracks: challengeTracks.filter(Boolean), challengeServer: payload.server } };
   }
   const songs = payload.aux?.songs as Record<string, Record<string, unknown>> | undefined;
   // Primary publication metadata remains stable after the song's own release time.

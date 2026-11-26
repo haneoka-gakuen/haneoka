@@ -28,4 +28,5 @@ export type TrackerPageData = Partial<Record<"jp" | "intl", RankingCardCatalog>>
   >;
   snapshots?: Partial<Record<GameRecordsRegion, EventTrackerSnapshot>>;
   events?: Partial<Record<"jp" | "intl", TrackerRailEvent[]>>;
+  songTitles?: Partial<Record<"jp" | "intl", Record<string, unknown>>>;
 };

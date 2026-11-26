@@ -71,6 +71,8 @@ export class ArenaRanking extends SongRanking {
     return `${board}/ranking?start=${this.start}`;
   }
 
+  protected canLoadRanking() { return this.eventId > 0 || (this.seasonId > 0 && this.bandId > 0); }
+
   protected rankingLoaded(value: GameRankingDto | null) {
     this.observedAt = value?.observedAtMs ?? Date.now();
     this.dispatchEvent(
@@ -84,6 +86,10 @@ export class ArenaRanking extends SongRanking {
 
   protected get skeletonDecks() {
     return !this.eventId && !this.limit;
+  }
+
+  protected rowRenderContext(): readonly unknown[] {
+    return [...super.rowRenderContext(), this.eventId, this.ranks, this.rankIcons, this.rankName, this.observedAt];
   }
 
   protected renderRow(entry: SongRankingRowDto) {

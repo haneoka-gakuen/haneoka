@@ -333,7 +333,7 @@ export async function loadCalendarData(
           startAtMs,
           endAtMs,
           endExclusive: false,
-          href: resourcePath({ server, locale, kind: resource, id }),
+          href: resource === "real-lives" ? undefined : resourcePath({ server, locale, kind: resource, id }),
           image: typeof row.image === "string" ? row.image : undefined,
         });
       }
@@ -380,7 +380,7 @@ export async function loadCalendarData(
             allDay: live.allDay,
             endExclusive: live.endExclusive,
             href: live.sourceUrl,
-            gameWindow: { startAtMs: entry.startAtMs, endAtMs: entry.endAtMs, href: entry.href },
+            gameWindow: { startAtMs: entry.startAtMs, endAtMs: entry.endAtMs },
             liveStartLocal: live.startLocal,
             timeZone: live.timeZone,
             image: live.image,

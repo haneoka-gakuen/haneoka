@@ -2,7 +2,7 @@ import type { Locale } from "../i18n/locales";
 import { group, t } from "../i18n/messages";
 
 export type PageKind =
-  "hub" | "arena" | "download" | "home" | "index" | "catalog" | "tgw-card" | "studio" | "level-exp" | "band-rating" | "high-score-rating" | "missions" | "event-tracker" | "song-puzzle" | "stamp-maker" | "legal" | "notice";
+  "hub" | "arena" | "download" | "home" | "index" | "catalog" | "tgw-card" | "studio" | "level-exp" | "band-rating" | "high-score-rating" | "missions" | "event-tracker" | "song-puzzle" | "stamp-maker" | "changelog" | "legal" | "notice";
 export interface RouteDefinition {
   route: string;
   kind: PageKind;
@@ -33,7 +33,6 @@ const catalogs: Array<[string, string, string?]> = [
   // The rotating game systems are ordinary catalogue collections: same list,
   // filter, view-switch and detail contract as every other resource.
   ["events", "navigation.events"],
-  ["real-lives", "navigation.realLives"],
   ["gacha", "navigation.gacha"],
   ["login-campaigns", "navigation.loginCampaigns"],
   ["shop", "navigation.shop"],
@@ -78,6 +77,7 @@ const appPages: Array<[string, string]> = [
 ];
 
 export const ROUTES: RouteDefinition[] = [
+  { route: "/changelog", kind: "changelog", key: "changelog", titleKey: "navigation.changelog" },
   { route: "/catalog/arena", kind: "arena", key: "arena", titleKey: "navigation.arena" },
   { route: "/download", kind: "download", key: "download", titleKey: "download.title" },
   { route: "/", kind: "home", key: "home", titleKey: "home.dashboard.overview" },

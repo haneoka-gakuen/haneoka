@@ -49,7 +49,7 @@ export class ChallengeController {
   tracks(eventId: number | null) {
     const { catalog } = this.host;
     return eventId === null || !catalog ? [] : catalog.challengeSongs(eventId)
-      .filter(track => catalog.songVisible(track.liveMusicId));
+      .filter(track => catalog.songVisible(track.liveMusicId) && catalog.difficultyRows(track.liveMusicId).length);
   }
 
   private chart(songId: number, requested: number | null) {
@@ -168,7 +168,7 @@ export function renderChallengeTab(host: TeamBuilder) {
       <div id="tb-songs" class="stack" data-tb-field tabindex="-1">
         ${choiceField({ type: "select", label: host.t("planChallengeSongs", "Challenge songs"), value: String(track?.id ?? ""),
           options: [...(track ? [] : [{ value: "", label: (!tracks.length || challenge.wantedChart) ? unavailable : host.t("addSongs", "Choose songs"), disabled: true }]),
-            ...tracks.map(row => ({ value: String(row.id), label: catalog!.songTitle(row.liveMusicId) || `#${row.liveMusicId}` }))],
+            ...tracks.map(row => ({ value: String(row.id), label: catalog!.songTitle(row.liveMusicId) }))],
           onSelect: value => challenge.select(event!.id, Number(value)),
         })}
         ${track ? choiceField({ type: "buttons", label: host.t("difficulty", "Difficulty"), value: String(song?.difficulty),

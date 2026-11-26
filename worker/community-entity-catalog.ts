@@ -119,13 +119,6 @@ const RULES: Record<string, Rule> = {
   stickers: { resource: "stickers", routeKind: "stickers", field: "stickerId" },
   backgrounds: { resource: "backgrounds", routeKind: "backgrounds", field: "backgroundId" },
   events: { resource: "events", routeKind: "events", field: "id", kind: "game-event", sourceTable: "MasterEvent" },
-  "real-lives": {
-    resource: "real-lives",
-    routeKind: "real-lives",
-    field: "id",
-    kind: "real-live",
-    prefix: "real-live-",
-  },
   gacha: { resource: "gacha", routeKind: "gacha", field: "id", kind: "gacha" },
   "login-campaigns": { resource: "login-campaigns", routeKind: "login-campaigns", field: "id", kind: "login" },
   exchange: { resource: "exchange", routeKind: "exchange", field: "id", kind: "exchange" },

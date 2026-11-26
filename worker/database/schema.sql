@@ -3638,3 +3638,5 @@ WHEN NEW.published_revision IS NULL OR NEW.deleted_at IS NOT NULL
 BEGIN
   DELETE FROM community_chart_publication WHERE chart_id = NEW.id;
 END;
+CREATE INDEX IF NOT EXISTS official_event_window_rank_timeline
+  ON official_event_window_observations (region, event_id, start_rank, observed_at_ms);

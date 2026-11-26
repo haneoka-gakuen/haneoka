@@ -1,12 +1,17 @@
 // L3 — GEB
 // Input: Current Box growth, the editor's opening values and release-bound skill descriptions.
-// Output: Live card stats, growth deltas and skill effects beside the existing editing controls.
+// Output: Live card stats, skill effects, next-stage material costs and saved inventory deficits.
 // Pos: [Map](../L2-2.md); detail preview for member and Snapshot editors.
 // Effects/Dependencies: Loads the shared growth catalogue on demand; comparison state stays in the dialog session.
 import { html, nothing, type TemplateResult } from "lit";
 import { memberStat, snapshotPercent } from "../../lib/card-growth";
-import type { GrowthPageData } from "../../lib/growth-catalog";
-import type { GrowthState } from "../../lib/growth-comparison";
+import { growthActions, type GrowthPageData } from "../../lib/growth-catalog";
+import { compareGrowth, type GrowthState } from "../../lib/growth-comparison";
+import { appCall, appSupports } from "../../lib/app-bridge";
+import { parseSnapshot, saveRecords, type SaveSnapshot } from "../../lib/save-workspace/snapshot";
+import { trainingStock } from "../../lib/team-builder/training-plan";
+import type { CatalogCost } from "../../lib/catalog-cost-summary";
+import { formatDate } from "../../lib/date-format";
 import type { OwnedMember, OwnedSnap } from "../../lib/team-builder/sync/box-view";
 import { accordion } from "../ui/accordion";
 import type { TeamBuilder } from "../team-builder";
@@ -23,11 +28,27 @@ interface Session {
   editing: NonNullable<TeamBuilder["editing"]>;
   catalog: Catalog;
   owner: string | null | undefined;
+  accountId?: string;
   before: GrowthState;
   expanded: Set<string>;
+  stockRequest?: Promise<SaveSnapshot | undefined>;
+  stock?: SaveSnapshot;
 }
 const sessions = new WeakMap<TeamBuilder, Session>();
 const resources = new WeakMap<Catalog, Map<string, Resource>>();
+
+async function cardMaterialSave(host: TeamBuilder): Promise<SaveSnapshot | undefined> {
+  const account = host.gameAccount;
+  if (!account?.uid) return;
+  if (appSupports("saveSnapshotV1")) {
+    const accounts = await appCall("gameAccounts", {});
+    const saved = accounts.find((entry) => entry.server === account.server && entry.profileId === account.uid);
+    return saved ? parseSnapshot((await appCall("saveSnapshot", { key: saved.key })).text) : undefined;
+  }
+  const candidates = (await saveRecords("list")).filter(({ snapshot }) =>
+    snapshot.server === account.server && String(snapshot.player._profileId) === account.uid);
+  return candidates.sort((a, b) => (b.snapshot.savedAt ?? b.importedAt).localeCompare(a.snapshot.savedAt ?? a.importedAt))[0]?.snapshot;
+}
 const growth = (kind: "members" | "snaps", row: OwnedMember | OwnedSnap | undefined): GrowthState =>
   kind === "members"
     ? {
@@ -89,9 +110,10 @@ export function cardEditorPreview(host: TeamBuilder) {
     !session ||
     session.editing !== editing ||
     session.catalog !== catalog ||
-    session.owner !== host.snapshot?.owner
+    session.owner !== host.snapshot?.owner ||
+    session.accountId !== host.gameAccount?.id
   ) {
-    session = { editing, catalog, owner: host.snapshot?.owner, before: current, expanded: new Set() };
+    session = { editing, catalog, owner: host.snapshot?.owner, accountId: host.gameAccount?.id, before: current, expanded: new Set() };
     sessions.set(host, session);
   }
   const before = session.before;
@@ -101,6 +123,53 @@ export function cardEditorPreview(host: TeamBuilder) {
   const detail = resource.data?.cards.find(
     (card) => card.id === cardId && card.kind === (kind === "members" ? "member" : "support"),
   );
+  const nextCosts = new Map<string, CatalogCost>();
+  if (detail) {
+    for (const action of growthActions(detail.kind)) {
+      if (action === "level") continue;
+      const comparison = compareGrowth(detail, current, action);
+      if (comparison.status !== "ready" || !comparison.costs.complete) continue;
+      for (const item of comparison.costs.items) {
+        const previous = nextCosts.get(item.identity);
+        nextCosts.set(item.identity, { ...item, count: item.count + (previous?.count ?? 0) });
+      }
+    }
+  }
+  const stock = state.stock?.server === resource.data?.identity.server ? state.stock : undefined;
+  const quantities = stock ? trainingStock(stock) : null;
+  const materials = nextCosts.size ? accordion({
+    id: "tb-card-next-materials",
+    label: host.t("editorPreview.nextMaterials", "Next-stage materials"),
+    expanded: state.expanded.has("materials"),
+    onExpandedChange: (open) => {
+      if (open) {
+        state.expanded.add("materials");
+        state.stockRequest ??= cardMaterialSave(host).catch(() => undefined);
+        void state.stockRequest.then((save) => {
+          if (sessions.get(host) !== state || host.editing !== editing) return;
+          state.stock = save;
+          host.requestUpdate();
+        });
+      } else state.expanded.delete("materials");
+      host.requestUpdate();
+    },
+    content: html`
+      ${stock?.savedAt ? html`<time datetime=${stock.savedAt}>${formatDate(host.locale, stock.savedAt)}</time>` : nothing}
+      <ul class="detail-object-list">
+        ${[...nextCosts.values()].map((item) => {
+          const source = item.identity.startsWith("items:") ? stock?.player._items
+            : item.identity.startsWith("support-cards:") ? stock?.player._supportCards : undefined;
+          const quantity = quantities?.get(item.identity) ?? (Array.isArray(source) ? 0 : undefined);
+          return html`<li class="detail-object row row--between">
+            ${item.href ? html`<a href=${item.href}>${item.name}</a>` : html`<span>${item.name}</span>`}
+            <span class="tabular">
+              ${item.count.toLocaleString(host.locale)}
+              ${quantity === undefined ? nothing : html`<small>${host.t("editorPreview.missingMaterial", "{count} missing", { count: Math.max(0, item.count - quantity) })}</small>`}
+            </span>
+          </li>`;
+        })}
+      </ul>`,
+  }) : nothing;
   const fmt = (value: number, percent = false) =>
     `${new Intl.NumberFormat(host.locale, { maximumFractionDigits: percent ? 2 : 0 }).format(percent ? value / 100 : value)}${percent ? "%" : ""}`;
   const stats = (value: GrowthState): number[] | null => {
@@ -332,5 +401,5 @@ export function cardEditorPreview(host: TeamBuilder) {
         </span>
       `
     : nothing;
-  return { statistics, skill, bonuses };
+  return { statistics, skill, bonuses, materials };
 }

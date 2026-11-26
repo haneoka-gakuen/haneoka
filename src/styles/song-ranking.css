@@ -1,4 +1,178 @@
 @layer pages {
+  .event-statistics-cards .stats-selects md-outlined-select {
+    flex: 1 1 9rem;
+    min-inline-size: 0;
+  }
+  .event-statistics-cards .stats-faces {
+    align-items: start;
+    gap: 4px;
+  }
+  .event-statistics-cards .song-ranking__card {
+    display: grid;
+    align-content: center;
+    flex: 0 0 auto;
+    inline-size: 48px;
+    min-block-size: 48px;
+  }
+  .event-statistics-cards .song-ranking__card:has(> .song-ranking__card-media--support) {
+    inline-size: 64px;
+  }
+  .event-statistics-cards .data-table .detail-object {
+    min-inline-size: 8rem;
+  }
+  .event-statistics-cards .data-table :is(th, td) {
+    padding-inline: 8px;
+  }
+  .ranking-statistics .statistics-cutoff-heading .statistics-score {
+    inline-size: min(50%, 12rem);
+    flex-shrink: 0;
+  }
+  .ranking-statistics .statistics-overview {
+    --grid-min: 22rem;
+    --grid-gap: 12px;
+    align-items: start;
+  }
+  .ranking-statistics md-outlined-select {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+  .ranking-statistics .statistics-controls md-outlined-select {
+    inline-size: min(100%, 18rem);
+  }
+  .ranking-statistics .statistics-overview .data-table :is(th, td) {
+    padding-inline: 8px;
+  }
+  .ranking-statistics .statistics-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+  .ranking-statistics .statistics-metrics dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font: var(--md-sys-typescale-title-medium-weight) var(--md-sys-typescale-title-medium-size) /
+      var(--md-sys-typescale-title-medium-line-height) var(--app-font);
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-statistics :is(.statistics-caption, .statistics-axis, .statistics-bin span, .statistics-metrics dt) {
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+      var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  }
+  .ranking-statistics .statistics-plot {
+    display: flex;
+    gap: 4px;
+    align-items: end;
+    border-block-end: 1px solid var(--md-sys-color-outline-variant);
+  }
+  .ranking-statistics .statistics-bin {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    align-content: end;
+    gap: 2px;
+    text-align: center;
+  }
+  .ranking-statistics .statistics-bin i {
+    display: block;
+    border-radius: var(--md-sys-shape-corner-extra-small) var(--md-sys-shape-corner-extra-small) 0 0;
+    background: var(--md-sys-color-primary);
+  }
+  event-tracker .browse__main > .song-ranking__content {
+    padding-block-start: 0;
+  }
+  event-tracker .tracker-heading {
+    padding-block: 4px;
+    gap: 8px;
+  }
+  event-tracker .tracker-heading .browse__heading-art-link {
+    inline-size: clamp(72px, 12vw, 96px);
+    min-block-size: 48px;
+  }
+  event-tracker .tracker-times {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-body-small-weight) var(--md-sys-typescale-body-small-size) /
+      var(--md-sys-typescale-body-small-line-height) var(--app-font);
+  }
+  @media (max-width: 1199px) {
+    event-tracker .browse__rail {
+      padding-block: 4px;
+    }
+    event-tracker .collection--rail > .tile--rail {
+      --rail-media-height: 32px;
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      align-items: center;
+      min-block-size: 52px;
+    }
+    event-tracker .tile--rail > .tile__identity {
+      padding: 4px;
+    }
+    event-tracker .tile--rail .tile__media > img {
+      max-inline-size: 100%;
+    }
+  }
+
+  event-rank-history .history-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    inline-size: min(100%, 35rem);
+  }
+  event-rank-history .history-controls > md-outlined-select {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  rank-history-chart {
+    display: block;
+    min-inline-size: 0;
+  }
+  rank-history-chart .history-selection {
+    fill: var(--md-sys-color-primary);
+    fill-opacity: 0.23;
+    pointer-events: none;
+  }
+  @media (pointer: fine) {
+    rank-history-chart .history-chart {
+      cursor: crosshair;
+      user-select: none;
+    }
+  }
+  :is(event-rank-history, .ranking-statistics) .history-chart {
+    display: block;
+    width: 100%;
+    max-height: 24rem;
+    fill: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-label-large-size);
+  }
+  :is(event-rank-history, .ranking-statistics) .history-grid {
+    fill: none;
+    stroke: var(--md-sys-color-outline-variant);
+  }
+  :is(event-rank-history, .ranking-statistics) .history-line {
+    fill: none;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+  }
+  :is(event-rank-history, .ranking-statistics) :is(.history-key, .history-event-key) {
+    gap: 2px 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    font: var(--md-sys-typescale-label-small-weight) var(--md-sys-typescale-label-small-size) /
+      var(--md-sys-typescale-label-small-line-height) var(--app-font);
+  }
+  :is(event-rank-history, .ranking-statistics) .history-key span,
+  :is(event-rank-history, .ranking-statistics) .history-event-key span,
+  event-rank-history .history-rank-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  :is(event-rank-history, .ranking-statistics) .history-key span {
+    min-inline-size: 2.5rem;
+    white-space: nowrap;
+  }
   song-ranking,
   arena-ranking,
   event-tracker {

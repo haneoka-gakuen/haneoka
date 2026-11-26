@@ -93,6 +93,7 @@
   }
   .destination-hub .destination-hub__art {
     position: relative;
+    z-index: 0;
     flex: 1;
     display: flex;
     min-width: 0;

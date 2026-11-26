@@ -70,7 +70,6 @@ const knownTypes = new Set([
   "comics",
   "backgrounds",
   "events",
-  "real-lives",
   "gacha",
   "login-campaigns",
   "shop",
