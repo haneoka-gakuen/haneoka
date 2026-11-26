@@ -149,6 +149,14 @@ const SYNC_OWNER = "team-builder-sync";
 const SEARCH_OWNER = "team-builder-search";
 export type ManualTeam = Formation;
 
+interface InputIssue {
+  field: string;
+  fields?: string[];
+  validation?: boolean;
+  message: string;
+  rosterFix?: "add" | "include" | "limits";
+}
+
 export class TeamBuilder extends LitElement {
   static properties = {
     locale: { type: String },
@@ -1326,6 +1334,24 @@ export class TeamBuilder extends LitElement {
     void this.restoreScroll(focusPanel);
   }
 
+  characterCount(members: Iterable<{ cardId: number }>) {
+    const ids = new Set<number>();
+    for (const { cardId } of members) {
+      const card = this.master?.members.get(cardId);
+      if (card && plannerMetadata(this.data!.members[String(cardId)]!).active !== false) ids.add(card.characterId);
+    }
+    return ids.size;
+  }
+
+  openRoster(quick: boolean) {
+    this.setTab("box");
+    this.filters = { kind: "members", query: "", show: "owned", bands: [], characters: [], attributes: [], rarities: [], facets: {} };
+    this.filtersOpen = false;
+    this.boxQuickEntry = quick;
+    this.editing = null;
+    this.requestUpdate();
+  }
+
   /** Cards taking part in a search, after the candidate filters. */
   engineCards() {
     if (!this.master || !this.view) return { members: [], snaps: [] };
@@ -1677,10 +1703,7 @@ export class TeamBuilder extends LitElement {
     super.requestUpdate(...args);
   }
   private issuesUpdate: Promise<boolean> | null = null;
-  private readonly issuesCache = new Map<
-    boolean,
-    { field: string; fields?: string[]; validation?: boolean; message: string }[]
-  >();
+  private readonly issuesCache = new Map<boolean, InputIssue[]>();
   private limitsUpdate: Promise<boolean> | null = null;
   private limitsValue: TeamConstraintLimits | null = null;
   private limitsCharts: { engine: EngineClient; key: string; mode: string; rows: EngineChart[] } | null = null;
@@ -1753,7 +1776,7 @@ export class TeamBuilder extends LitElement {
     return (this.limitsValue =
       songs.length && !charts.length ? { ...this.limitsCache.value, justMs: null } : this.limitsCache.value);
   }
-  inputIssues(recommendation = false): { field: string; fields?: string[]; validation?: boolean; message: string }[] {
+  inputIssues(recommendation = false): InputIssue[] {
     const update = this.updateComplete;
     if (this.issuesUpdate !== update) {
       this.issuesUpdate = update;
@@ -1762,7 +1785,7 @@ export class TeamBuilder extends LitElement {
     const cached = this.issuesCache.get(recommendation);
     if (cached) return cached;
     const s = this.searchSettings,
-      issues: { field: string; fields?: string[]; validation?: boolean; message: string }[] = [];
+      issues: InputIssue[] = [];
     const add = (field: string, key: string, fallback: string, validation = false) =>
       issues.push({ field, message: this.t(key, fallback), validation });
     const countIssue = (field: string, min: number) =>
@@ -1773,11 +1796,17 @@ export class TeamBuilder extends LitElement {
       });
     if (this.tab === "arena") issues.push(...this.arena.issues());
     const candidateCards = this.engineCards();
-    if (!candidateCards.members.length) add("tb-cards", "needCardsShort", "Choose cards");
-    else if (
-      new Set(candidateCards.members.flatMap((row) => this.master!.members.get(row.cardId)?.characterId ?? [])).size < 5
-    )
-      add("tb-cards", "fiveCharactersRequired", "Add cards for at least five different characters.");
+    const count = this.characterCount(candidateCards.members);
+    if (count < 5) {
+      let rosterFix: InputIssue["rosterFix"] = "limits";
+      if (s.scope === "box" && this.tab !== "arena") {
+        const owned = [...(this.view?.members.values() ?? [])];
+        if (this.characterCount(owned) < 5) rosterFix = "add";
+        else if (this.characterCount(owned.filter(member => member.use)) < 5) rosterFix = "include";
+      }
+      const message = this.t("eligibleCharacters", "{count}/5 eligible characters", { count });
+      issues.push({ field: "tb-cards", message, rosterFix });
+    }
     if (s.goal === "event" && s.manualEventEnabled && this.master) {
       const issue = resolveManualEvent(this.master, s.manualEvent).issue;
       if (issue) add("tb-manual-" + issue, "manualEvent.need." + issue, "Complete the manual event conditions");
@@ -2032,7 +2061,7 @@ export class TeamBuilder extends LitElement {
     return issues;
   }
   async focusInput(field: string) {
-    if (field === "tb-min-bonus") {
+    if (field === "tb-min-bonus" || field === "tb-candidates-trigger") {
       this.expanded.add("candidates");
       this.requestUpdate();
       await this.updateComplete;

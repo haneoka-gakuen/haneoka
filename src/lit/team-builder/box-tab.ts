@@ -239,6 +239,11 @@ export function renderBoxTab(host: TeamBuilder): TemplateResult {
         <span class="tb-results__meta">${host.boxQuickEntry
           ? host.t("quickEntrySummary", "{owned} owned / {shown} shown", { owned: ownedCount, shown: rows.length })
           : host.t("boxSummary", "{owned} owned / {used} in search / {shown} shown", { owned: ownedCount, used: usedCount, shown: rows.length })}</span>
+        ${host.boxQuickEntry && f.kind === "members" && host.lastTaskTab === "build" && host.settings.scope === "box"
+          ? html`<span class="tb-results__meta" role="status">${host.t("eligibleCharacters", "{count}/5 eligible characters", {
+              count: Math.min(5, host.characterCount(host.engineCards().members)),
+            })}</span>`
+          : nothing}
         <span class="row__spacer"></span>
         ${host.boxQuickEntry
           ? html`<button class="button button--text" type="button" ?disabled=${!rows.length}

@@ -9,6 +9,7 @@ import { iconButton } from "../ui/controls";
 import { icon } from "../ui/icon";
 import type { TeamBuilder } from "../team-builder";
 import { cardScopeLabel } from "./card-input-controls";
+import { SCORE_GOALS, scoreGoal, scoreRankName, scoreText } from "./score-goal";
 
 export function conditionSummary(host: TeamBuilder) {
   const s = host.searchSettings;
@@ -23,6 +24,19 @@ export function conditionSummary(host: TeamBuilder) {
         : goal?.kind === "potential" || (goal?.kind === "event" && goal.route === "skip")
           ? 0
           : songs.length;
+  if (host.tab === "build") {
+    const chart = goal?.kind === "power" ? goal.song : !count ? null : songs[0];
+    const chartLabel = chart && host.catalog
+      ? `${host.catalog.songTitle(chart.songId)} · ${host.catalog.difficultyLabel(chart.songId, chart.difficulty)}`
+      : null;
+    const target = s.scoreTarget === "at-least" && s.targetRank
+      ? scoreRankName(s.targetRank) : s.scoreTarget !== "none" && s.targetScore ? String(s.targetScore) : null;
+    const goalLabel = manual ? scoreText(host, SCORE_GOALS.mean.label)
+      : s.goal === "potential" ? host.t("goalPotential", "Songless potential")
+      : s.goal === "power" ? host.t("goalPower", "Highest power")
+      : [scoreText(host, SCORE_GOALS[scoreGoal(s)].label), target].filter(Boolean).join(" ");
+    return [chartLabel, chartLabel && count > 1 ? `+${count - 1}` : null, goalLabel].filter(Boolean).join(" / ");
+  }
   const gekiso = host.tab === "song-comparison" || s.goal === "gekiso" || (s.goal === "event" && s.ptMode === "gekiso");
   const requirements = host.tab !== "song-comparison" && !manual ? [
     ...(s.goal === "gekiso" ? ([[0, "COMBO"], [2, "JUST"], [1, "LUCK"]] as const)
@@ -54,26 +68,54 @@ export function conditionSummary(host: TeamBuilder) {
       : []),
   ].join(" / ");
 }
-/** What is left before a first calculation: cards, then each missing condition, each with the control that fixes it. */
+type InputIssue = ReturnType<TeamBuilder["inputIssues"]>[number];
+interface StepAction {
+  label: string;
+  run: () => void;
+  disabled?: boolean;
+}
+
+function fixAction(host: TeamBuilder, issue: InputIssue): StepAction {
+  if (issue.rosterFix === "add")
+    return { label: host.t("quickEntry", "Quick add"), run: () => host.openRoster(true) };
+  if (issue.rosterFix === "include")
+    return { label: host.t("includeOwned", "Include owned cards"), run: () => host.openRoster(false) };
+  if (issue.field === "tb-cards")
+    return { label: host.t("adjustCardRange", "Adjust card range"), run: () => void host.focusInput("tb-candidates-trigger") };
+  const songs = issue.field === "tb-songs" || issue.field === "tb-challenge-songs";
+  return {
+    label: songs ? host.t("chooseSongs", "Choose songs") : host.t("pt.fixInput", "Edit"),
+    run: async () => {
+      await host.focusInput(issue.field);
+      if (songs) host.querySelector<HTMLButtonElement>(`#${issue.field} .tb-songs__add`)?.click();
+    },
+  };
+}
+
+/** Each prerequisite links to the control that can satisfy it. */
 export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
   if (!host.submitted) issues = issues.filter(issue => !issue.validation);
-  const pool = host.view ? host.engineCards() : { members: [], snaps: [] };
-  const cards = pool.members.length + pool.snaps.length;
-  const cardIssue = issues.find((issue) => issue.field === "tb-cards");
-  const emptyBox = !!cardIssue && host.searchSettings.scope === "box" && !cards;
-  const rest = issues.filter((issue) => issue.field !== "tb-cards");
-  const row = (done: boolean, index: number, title: string, supporting: string, action?: { label: string; run: () => void; primary?: boolean }) => html`
+  const cardIssue = issues.find(issue => issue.field === "tb-cards");
+  const rest = issues.filter(issue => issue !== cardIssue);
+  const row = (done: boolean, index: number, title: string, supporting: string, actions: StepAction[] = [], primary = false) => html`
     <li class=${`list-item list-item--two-line tb-check-row${done ? " is-done" : ""}`}>
       <span class="list-item__leading tb-check-row__mark" aria-hidden="true">${done ? icon("check", 20) : index}</span>
       <span class="list-item__body">
         <strong class="list-item__headline">${title}</strong>
         ${supporting ? html`<span class="list-item__supporting">${supporting}</span>` : nothing}
+        ${actions.length ? html`<span class="cluster tb-check-actions">${actions.map((action, i) => html`
+          <button class=${`button ${primary && i === 0 ? "button--tonal" : "button--text"}`} type="button"
+            ?disabled=${action.disabled} @click=${action.run}>${action.label}</button>`)}
+        </span>` : nothing}
       </span>
-      ${action
-        ? html`<span class="list-item__trailing"><button class=${`button ${action.primary ? "button--tonal" : "button--text"}`} type="button" @click=${action.run}>${action.label}</button></span>`
-        : nothing}
     </li>
   `;
+  const cardActions = cardIssue ? [fixAction(host, cardIssue)]
+    : [{ label: host.t("manageCards", "Manage"), run: () => host.setTab("box") }];
+  if (cardIssue?.rosterFix === "add") cardActions.push(
+    { label: host.t("boxImport.groupSave", "Game save"), run: () => host.imports.openBox() },
+    { label: host.t("boxImport.screenshots", "Screenshots or screen recording"), run: () => host.imports.openScreenshots() },
+  );
   return html`
     <section class="surface tb-results tb-checklist" role=${host.submitted && issues.length ? "alert" : nothing}>
       <h2 class="detail-section-title detail-section-title--h2">
@@ -85,25 +127,19 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
           !cardIssue,
           1,
           cardScopeLabel(host, host.searchSettings),
-          cardIssue ? (emptyBox ? host.t("emptyBoxTitle", "No cards imported yet") : cardIssue.message) : host.t("stepCardsDone", "{count} cards", { count: cards }),
-          emptyBox
-            ? { label: host.t("importMyCards", "Import my cards"), run: () => host.imports.openBox(), primary: true }
-            : cardIssue
-              ? { label: host.t("adjustCardRange", "Adjust card range"), run: () => void host.focusInput("tb-cards") }
-              : { label: host.t("manageCards", "Manage"), run: () => host.setTab("box") },
+          cardIssue?.message ?? host.t("eligibleCharacters", "{count}/5 eligible characters", { count: 5 }),
+          cardActions,
+          !!cardIssue,
         )}
         ${rest.length
-          ? rest.map((issue, index) =>
-              row(false, index + 2, issue.message, issue.validation ? "" : host.t("stepRequired", "Required"), {
-                label: host.t("pt.fixInput", "Edit"),
-                run: async () => {
-                  await host.focusInput(issue.field);
-                  if (issue.field === "tb-songs" || issue.field === "tb-challenge-songs")
-                    host.querySelector<HTMLButtonElement>(`#${issue.field} .tb-songs__add`)?.click();
-                },
-                primary: !cardIssue && index === 0,
-              }),
-            )
+          ? rest.map((issue, index) => {
+              const actions = [fixAction(host, issue)];
+              if (host.tab === "arena" && issue.field === "tb-songs") actions.unshift({
+                label: host.t("arena.usePool", "Use league songs"), run: () => host.arena.selectPool(),
+                disabled: !host.arena.allowedCharts.length || !host.songPoolDifficulties.length,
+              });
+              return row(false, index + 2, issue.message, issue.validation ? "" : host.t("stepRequired", "Required"), actions, !cardIssue && index === 0);
+            })
           : row(true, 2, host.t("conditionsTitle", "Conditions"), conditionSummary(host))}
         ${row(false, rest.length + 2, issues.length ? host.t("fixConditions", "Adjust {count} conditions", { count: issues.length }) : host.t("readyToCalculate", "Ready to calculate"), issues.length ? "" : host.t("stepRun", "Start from the settings"))}
       </ol>
@@ -111,14 +147,21 @@ export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) 
   `;
 }
 
-export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown, options?: { summary?: string; validate?: boolean }) {
+export function mobilePrerequisite(host: TeamBuilder) {
+  const issue = host.inputIssues().find(item => !item.validation);
+  if (!issue) return null;
+  const action = fixAction(host, issue);
+  return html`<button class="button button--full" type="button" @click=${action.run}>${action.label}</button>`;
+}
+
+export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown, options?: { summary?: string; validate?: boolean; mobileAction?: unknown }) {
   const settings = () => typeof body === "function" ? body() : body;
   const summary = options?.summary ?? conditionSummary(host);
-  const issues = options?.validate !== false && host.submitted && (host.tab === "arena" || host.tab === "pt" || host.tab === "build" && host.buildMode !== "manual")
+  const issues = options?.validate !== false && host.submitted && (["arena", "pt", "live", "challenge"].includes(host.tab) || host.tab === "build" && host.buildMode !== "manual")
     ? host.inputIssues(host.tab === "pt" && host.searchSettings.rewardMode === "recommendation") : [];
   const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
-  const footer = html`
-    <div class="tb-operation">${actions}${host.renderCompareTray()}</div>
+  const footer = (mobile = false) => html`
+    <div class="tb-operation">${mobile && options?.mobileAction ? options.mobileAction : actions}${host.renderCompareTray()}</div>
   `;
   return html`
     <div class=${`tb-tool${host.compactConditions ? " tb-tool--compact" : " tb-tool--desktop"}`}>
@@ -150,7 +193,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
                           <h2 id="tb-conditions-title">${host.t("conditionsTitle", "Conditions")}</h2>
                         </header>
                         <div class="tb-config-body stack">${settings()}</div>
-                        ${footer}
+                        ${footer()}
                       </dialog>
                     `
                   : nothing
@@ -159,7 +202,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
           : html`
               <aside class="tb-config" aria-label=${host.t("conditionsTitle", "Conditions")}>
                 <div class="tb-config-body stack">${mode}${settings()}</div>
-                ${footer}
+                ${footer()}
               </aside>
             `
       }
@@ -167,7 +210,7 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
       ${
         host.compactConditions && !host.conditionsOpen
           ? html`
-              <div class="tb-mobile-operation">${footer}</div>
+              <div class="tb-mobile-operation">${footer(true)}</div>
             `
           : nothing
       }

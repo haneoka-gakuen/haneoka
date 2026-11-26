@@ -3,7 +3,7 @@ import { gekisoHelpButton } from "./gekiso-help";
 import { rangeRankControl } from "./gekiso-rank";
 import { farmingMode, justBaseWindow } from "./workspace-state";
 import { enableManualEvent, renderManualEvent } from "./manual-event";
-import { toolLayout } from "./tool-layout";
+import { mobilePrerequisite, toolLayout } from "./tool-layout";
 import { songMissions } from "../../lib/catalog-filters";
 import { multiSongControl, songRulesControl } from "./song-rules";
 import { arenaSongView } from "../../lib/team-builder/arena";
@@ -23,7 +23,7 @@ import { accordion } from "../ui/accordion";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { choiceField, sectionHeading } from "./catalog";
-import { renderResults } from "./results";
+import { renderResults, resultSelection, saveResultTeam } from "./results";
 import { rankTargetControl, renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
@@ -1119,7 +1119,24 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     `,
     renderBuildRun(host),
     renderResults(host),
+    { mobileAction: host.tab === "build" && host.compactConditions && !host.running ? freeMobileAction(host) : null },
   );
+}
+
+function freeMobileAction(host: TeamBuilder) {
+  const prerequisite = mobilePrerequisite(host);
+  if (prerequisite || !host.results || host.stale) return prerequisite;
+  const { shown } = resultSelection(host, host.results);
+  if (!shown.length) return null;
+  const hit = shown.length === 1 ? shown[0] : null;
+  return html`<button class="button button--full" type="button" @click=${() => {
+    if (hit) saveResultTeam(host, hit);
+    else {
+      const save = host.querySelector<HTMLButtonElement>(".tb-results-column [data-tb-save-team]");
+      save?.scrollIntoView({ block: "center" });
+      save?.focus({ preventScroll: true });
+    }
+  }}>${hit ? host.t("saveTeam", "Save team") : host.t("chooseTeamToSave", "Choose a team to save")}</button>`;
 }
 
 export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): TemplateResult {
