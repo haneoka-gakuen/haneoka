@@ -2169,6 +2169,17 @@
   },
   "tools": {
     "teamBuilder": {
+      "search": {
+        "extend": "さらに{count}秒探索",
+        "verify": "最適性を確認するまで続ける",
+        "optimal": "選択範囲内で最適と確認済み",
+        "timedCandidate": "制限時間終了・候補編成あり",
+        "timedEmpty": "制限時間終了・候補編成はまだありません",
+        "stoppedCandidate": "停止・候補編成を保持",
+        "stoppedEmpty": "停止・候補編成はまだありません",
+        "failed": "エラーのため探索中断",
+        "candidate": "候補編成あり"
+      },
       "rewardSearch": "報酬編成",
       "improvementBound": "改善上限 {percent}%",
       "recommendation": "おすすめ",

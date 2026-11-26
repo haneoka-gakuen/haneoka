@@ -2169,6 +2169,17 @@
   },
   "tools": {
     "teamBuilder": {
+      "search": {
+        "extend": "再算 {count} 秒",
+        "verify": "繼續至驗證最佳結果",
+        "optimal": "已驗證為所選範圍內最佳",
+        "timedCandidate": "已達時限 · 已找到候選隊伍",
+        "timedEmpty": "已達時限 · 尚未找到候選隊伍",
+        "stoppedCandidate": "已停止 · 已保留候選隊伍",
+        "stoppedEmpty": "已停止 · 尚未找到候選隊伍",
+        "failed": "搜尋發生錯誤，已中斷",
+        "candidate": "已找到候選隊伍"
+      },
       "rewardSearch": "報酬配隊",
       "improvementBound": "可提升上限 {percent}%",
       "recommendation": "推薦",

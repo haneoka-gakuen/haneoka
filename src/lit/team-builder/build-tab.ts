@@ -1154,10 +1154,14 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
   const s = host.searchSettings,
     progress = host.progress;
   const total = host.tab === "challenge" && host.challenge.total.selected ? host.challenge.total : null;
-  const resumable = total ? total.resumable : !host.stale && !!host.results && host.results.results.some((result) => !result.proven);
+  const resumable = total ? total.resumable : host.resumable;
+  const budget = total ? total.budgetSeconds : host.searchBudgetSeconds;
+  const resumeAction = !resumable ? "start" : s.timeLimit === null ? "verify" : budget === s.timeLimit ? "extend" : "start";
   const proof = progress?.proof;
+  const totalProgress = total?.runningProgress;
   let status = host.computationStatus();
-  if (proof && progress && (progress.done > 0 || proof.checkedTeams !== undefined)) {
+  if (totalProgress) status = host.t("provenChartProgress", "Charts proven {done}/{total}", totalProgress);
+  else if (proof && progress) {
     const counts = { done: progress.done, total: progress.total };
     if (proof.unit === "charts")
       status = host.t("provenChartProgress", "Charts proven {done}/{total}", counts);
@@ -1201,14 +1205,15 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
               <button
                 class="button button--tonal button--full tb-run__button"
                 type="button"
+                data-search-action="cancel"
                 @click=${() => host.cancel()}
               >
                 ${icon("stop", 18)}${host.common("common.actions.cancel", "Cancel")}
               </button>
               <span role="status">${status}</span>
               <md-linear-progress
-                .value=${progress && progress.total ? progress.done / progress.total : 0}
-                ?indeterminate=${!progress || progress.total <= 1 || !!proof && progress.done === 0}
+                .value=${totalProgress?.total ? totalProgress.done / totalProgress.total : progress?.total ? progress.done / progress.total : 0}
+                ?indeterminate=${!totalProgress && !proof && !progress?.done}
                 aria-label=${host.t("searching", "Searching teams")}
               ></md-linear-progress>
             `
@@ -1216,16 +1221,19 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
               <button
                 class="button button--full tb-run__button"
                 type="button"
+                data-search-action=${resumeAction}
                 ?disabled=${host.running}
-                @click=${() => void host.run(resumable)}
+                @click=${() => void host.run(resumeAction === "extend" ? "extend" : resumeAction === "verify")}
               >
                 ${
                   host.running
                     ? host.t("sc.busy", "Another calculation is running")
                     : host.submitted && host.inputIssues().length
                       ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues().length })
-                    : resumable
-                      ? host.t("continueOptimal", "Continue verifying optimality")
+                    : resumable && s.timeLimit !== null
+                      ? host.t("search.extend", "Search another {count} s", { count: s.timeLimit })
+                    : resumeAction === "verify"
+                      ? host.t("search.verify", "Continue until optimal")
                       : (total ? total.stale : host.stale)
                         ? host.t("rerun", "Search again")
                         : html`
@@ -1233,6 +1241,9 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
                           `
                 }
               </button>
+              ${resumable && resumeAction !== "verify" && !(host.submitted && host.inputIssues().length)
+                ? html`<button type="button" class="button button--text" data-search-action="verify"
+                    ?disabled=${host.running} @click=${() => void host.run(true)}>${host.t("search.verify", "Continue until optimal")}</button>` : nothing}
             `
       }
     </div>

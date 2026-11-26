@@ -2169,6 +2169,17 @@
   },
   "tools": {
     "teamBuilder": {
+      "search": {
+        "extend": "{count}초 더 탐색",
+        "verify": "최적 조합을 검증할 때까지 계속",
+        "optimal": "선택 범위 내 최적 조합 검증 완료",
+        "timedCandidate": "시간 종료 · 후보 팀 찾음",
+        "timedEmpty": "시간 종료 · 아직 후보 팀 없음",
+        "stoppedCandidate": "중지됨 · 후보 팀 유지",
+        "stoppedEmpty": "중지됨 · 아직 후보 팀 없음",
+        "failed": "오류로 탐색이 중단됨",
+        "candidate": "후보 팀 찾음"
+      },
       "rewardSearch": "보상 팀 편성",
       "improvementBound": "최대 {percent}% 향상",
       "recommendation": "추천",

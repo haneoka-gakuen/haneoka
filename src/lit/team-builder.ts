@@ -49,7 +49,7 @@ import { visibleContentServers } from "../lib/content-sources";
 import type { TeamBuilderData } from "../lib/team-builder/data";
 import { compileFromTeamData, type EngineMaster } from "../lib/team-builder/engine/master";
 import { maxAccountPlayer, maxMemberGrowth, maxSnapGrowth } from "../lib/team-builder/engine/box";
-import { clock, singleSongRequest } from "../lib/team-builder/engine/execution";
+import { clock, completeResponse, emptyResponse, singleSongRequest } from "../lib/team-builder/engine/execution";
 import { ENGINE_MODEL_VERSION, EngineClient, type ProofProgress } from "../lib/team-builder/engine/client";
 import type { EngineChart } from "../lib/team-builder/engine/protocol";
 import type {
@@ -239,6 +239,7 @@ export class TeamBuilder extends LitElement {
   }
   private confirmReset = false;
   private resetTasks() {
+    this.activeSearch = null;
     this.catalog?.dispose();
     this.skillRoleEditor = null;
     this.analysis.close();
@@ -258,8 +259,6 @@ export class TeamBuilder extends LitElement {
     this.manualSuggestions = null;
     this.manualSuggesting = -1;
     this.activeManualContext = "";
-    this.activeContext = "";
-    ++this.runGeneration;
     this.submitted = false;
     this.taskResults.clear();
     this.participation.clear();
@@ -338,6 +337,7 @@ export class TeamBuilder extends LitElement {
   get buildMode() { return this.freeMode; }
   set buildMode(mode: "automatic" | "manual") {
     if (this.freeMode === mode) return;
+    if (this.tab === "build") this.activeSearch?.stop();
     this.freeMode = mode;
     if (this.isConnected && this.tab === "build") {
       if (mode === "automatic") this.classicAutoTab = "build";
@@ -844,8 +844,7 @@ export class TeamBuilder extends LitElement {
     }
     if (!this.isConnected) return;
     this.challenge.total.sync();
-    if (this.task?.kind === "build" && this.activeContext && this.activeContext !== this.calculationContext())
-      this.engine?.cancel();
+    this.stopChangedSearch();
     if (
       (this.manualPin || this.manualBaseline) &&
       this.tab === "build" &&
@@ -1181,7 +1180,8 @@ export class TeamBuilder extends LitElement {
   }
   applyPlanningData() {
     if (!this.publicData) return;
-    this.engine?.cancel();
+    if (this.activeSearch) this.activeSearch.stop();
+    else this.engine?.cancel();
     const visuals = this.catalog?.visuals;
     const data = projectPlannerData(
       this.publicData,
@@ -1289,6 +1289,7 @@ export class TeamBuilder extends LitElement {
       (patch.rewardMode === "plan") !== (this.settings.rewardMode === "plan");
     if (scopeChanged) this.saveScroll();
     this.settings = { ...this.settings, ...patch };
+    this.stopChangedSearch();
     this.engine?.prefetch(this.searchSettings.songs);
     if (Object.keys(patch).some((key) => key !== "required")) this.persistBuildDraft(this.draftKind);
     this.requestUpdate();
@@ -2471,8 +2472,16 @@ export class TeamBuilder extends LitElement {
       timeLimitMs: s.timeLimit ? s.timeLimit * 1000 : null,
     });
   }
-  private activeContext = "";
-  private runGeneration = 0;
+  private activeSearch: { current: () => boolean; stop: () => void } | null = null;
+  private stopChangedSearch() {
+    if (this.activeSearch && !this.activeSearch.current()) this.activeSearch.stop();
+  }
+  get resumable() {
+    return !!this.results && !!this.resultInputs && !this.stale && !completeResponse(this.results);
+  }
+  get searchBudgetSeconds() {
+    return this.resultSettings ? this.resultSettings.timeLimit : this.searchSettings.timeLimit;
+  }
   calculationContext() {
     const request = this.request();
     if (request) request.timeLimitMs = null;
@@ -2485,7 +2494,7 @@ export class TeamBuilder extends LitElement {
       request,
     ]);
   }
-  async run(verify = false) {
+  async run(mode: boolean | "extend" = false) {
     if (this.tab === "pt" && this.settings.rewardMode === "recommendation") {
       await this.pt.start(false);
       return;
@@ -2509,68 +2518,78 @@ export class TeamBuilder extends LitElement {
       }
     }
     if (this.tab === "challenge" && this.challenge.total.selected) {
-      await this.challenge.total.run();
+      await this.challenge.total.run(mode);
       return;
     }
     const started = clock();
-    const request = this.request();
-    if (!request || !this.engine || this.running) return;
+    const draft = this.request(), engine = this.engine;
+    if (!draft || !engine || this.running) return;
     const task = this.acquireTask("build");
     if (!task) return;
     const contextKey = this.calculationContext();
-    const generation = ++this.runGeneration;
-    const continuing = verify && !this.stale;
-    let accepted = false;
-    const session = continuing ? this.resultSession : crypto.randomUUID();
-    const settings = structuredClone({ ...this.searchSettings, unknownPolicy: request.unknownPolicy });
-    const inputs = structuredClone(request);
-    request.contextKey = contextKey;
-    if (verify) {
-      request.timeLimitMs = null;
-      if (!this.stale) {
-        request.seeds = this.results?.results.flatMap((result) => result.hits);
-        if (request.goal.kind !== "plan") request.completed = this.results?.results.filter((result) => result.proven);
-      }
+    const slot = this.taskResult;
+    const continuing = this.resumable;
+    const settings = structuredClone(continuing ? slot.settings! : { ...this.searchSettings, unknownPolicy: draft.unknownPolicy });
+    if (mode === false) settings.timeLimit = this.searchSettings.timeLimit;
+    const inputs = structuredClone(continuing ? slot.inputs! : draft);
+    inputs.timeLimitMs = mode === true || settings.timeLimit === null ? null : settings.timeLimit * 1000;
+    const request = { ...inputs, contextKey, deadline: inputs.timeLimitMs === null ? Infinity : started + inputs.timeLimitMs };
+    if (continuing) {
+      request.seeds = slot.results!.results.flatMap(result => result.hits);
+      if (request.goal.kind !== "plan") request.completed = slot.results!.results.filter(result => result.proven);
+      slot.results = { ...slot.results!, stopReason: undefined, error: undefined };
+    } else {
+      slot.session = crypto.randomUUID();
+      slot.results = emptyResponse(inputs);
     }
-    request.deadline = request.timeLimitMs === null ? Infinity : started + request.timeLimitMs;
-    this.activeContext = contextKey;
-    this.running = true;
+    slot.inputs = inputs;
+    slot.settings = settings;
+    slot.context = contextKey;
+    const current = (): boolean => this.activeSearch?.current === current && this.ownsTask(task) && this.engine === engine && this.taskResult === slot &&
+      settings.scope === this.searchSettings.scope && contextKey === this.calculationContext();
+    const finish = () => {
+      if (!this.ownsTask(task)) return;
+      this.activeSearch = null;
+      this.progress = null;
+      this.releaseTask(task);
+    };
+    let stopping = false;
+    this.activeSearch = { current, stop: () => {
+      stopping = true;
+      // The client publishes its buffered cancellation checkpoint synchronously.
+      engine.cancel();
+      if (slot.results && !completeResponse(slot.results)) slot.results = { ...slot.results, stopReason: "cancelled" };
+      finish();
+    } };
     this.calculationSubmitted();
     this.error = "";
     this.progress = { done: 0, total: 1, started: performance.now() };
     this.expanded = new Set();
     this.requestUpdate();
     const accept = (response: EngineResponse) => {
-      if (generation !== this.runGeneration || contextKey !== this.calculationContext()) return;
+      if (!current() || (stopping && response.stopReason !== "cancelled")) return;
       if (response.stopReason === "error")
         this.error = this.t("searchFailed", "The search failed: {reason}", {
           reason: this.errorReason(response.error ?? "engine-error"),
         });
-      if (!accepted) {
-        this.resultSession = session;
-        accepted = true;
-      }
-      this.results = response;
-      this.resultsFor = contextKey;
-      this.resultSettings = settings;
-      this.resultInputs = inputs;
+      slot.results = response;
       if (settings.goal === "event" && this.tab === "pt") this.farmResultMode = "event";
       if (
-        this.resultTab !== "overall" &&
+        slot.tab !== "overall" &&
         !response.results.some(
-          (result) => result.song && `${result.song.songId}:${result.song.difficulty}` === this.resultTab,
+          (result) => result.song && `${result.song.songId}:${result.song.difficulty}` === slot.tab,
         )
       )
-        this.resultTab = "overall";
+        slot.tab = "overall";
       this.requestUpdate();
     };
     const loading = beginLoading(this.t("searching", "Searching teams"));
     try {
       accept(
-        await this.engine.run(
+        await engine.run(
           request,
           (done, total, proof) => {
-            if (generation !== this.runGeneration || contextKey !== this.calculationContext()) return;
+            if (stopping || !current()) return;
             this.progress = { ...this.progress!, done, total, proof };
             this.requestUpdate();
           },
@@ -2579,24 +2598,20 @@ export class TeamBuilder extends LitElement {
           },
         ),
       );
-      if (accepted && this.tab === "pt" && settings.goal === "event") await this.pt.rememberResult();
+      if (current() && this.tab === "pt" && settings.goal === "event") await this.pt.rememberResult();
     } catch (error) {
       if (
-        generation === this.runGeneration &&
-        contextKey === this.calculationContext() &&
+        current() &&
         !(error instanceof DOMException && error.name === "AbortError")
-      )
+      ) {
+        if (slot.results) slot.results = { ...slot.results, stopReason: "error" };
         this.error = this.t("searchFailed", "The search failed: {reason}", {
           reason: this.errorReason(error),
         });
+      }
     } finally {
       loading.finish();
-      if (generation === this.runGeneration) {
-        this.activeContext = "";
-        this.releaseTask(task);
-        this.progress = null;
-        this.requestUpdate();
-      }
+      finish();
     }
   }
 
@@ -2628,6 +2643,7 @@ export class TeamBuilder extends LitElement {
   }
 
   cancel() {
+    if (this.activeSearch) { this.activeSearch.stop(); return; }
     if (this.taskKind === "challenge-total") { this.challenge.total.stop(); return; }
     if (this.taskKind === "team-growth") {
       this.teamGrowth.stop();
@@ -2644,6 +2660,7 @@ export class TeamBuilder extends LitElement {
     return (
       !!this.results &&
       ((this.tab === "pt" && this.settings.rewardMode === "recommendation") ||
+        this.resultSettings?.scope !== this.searchSettings.scope ||
         this.resultsFor !== this.calculationContext())
     );
   }

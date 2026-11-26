@@ -2169,6 +2169,17 @@
   },
   "tools": {
     "teamBuilder": {
+      "search": {
+        "extend": "Search another {count} s",
+        "verify": "Continue until optimal",
+        "optimal": "Optimal within the selected search",
+        "timedCandidate": "Time limit reached · candidate found",
+        "timedEmpty": "Time limit reached · no candidate yet",
+        "stoppedCandidate": "Stopped · candidate retained",
+        "stoppedEmpty": "Stopped · no candidate yet",
+        "failed": "Search interrupted by an error",
+        "candidate": "Candidate found"
+      },
       "rewardSearch": "Reward team search",
       "improvementBound": "Up to {percent}% improvement",
       "recommendation": "Recommendation",

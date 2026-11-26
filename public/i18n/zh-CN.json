@@ -2169,6 +2169,17 @@
   },
   "tools": {
     "teamBuilder": {
+      "search": {
+        "extend": "再算 {count} 秒",
+        "verify": "继续至验证最优",
+        "optimal": "已验证所选范围内最优",
+        "timedCandidate": "已到时限 · 已找到候选队",
+        "timedEmpty": "已到时限 · 尚未找到候选队",
+        "stoppedCandidate": "已停止 · 已保留候选队",
+        "stoppedEmpty": "已停止 · 尚未找到候选队",
+        "failed": "搜索出错，已中断",
+        "candidate": "已找到候选队"
+      },
       "rewardSearch": "奖励配队",
       "improvementBound": "可提升上限 {percent}%",
       "recommendation": "推荐",

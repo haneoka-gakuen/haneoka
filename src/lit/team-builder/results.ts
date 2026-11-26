@@ -1586,7 +1586,7 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
       <div class="row row--wrap row--between tb-results__summary">
         ${resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filters() : nothing}
         <span class=${`tb-proof${proven && !stale ? " is-proven" : ""}`} role="status">
-          ${stale ? host.t("recomputeNeeded", "Recalculation needed") : html`${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)))}`}
+          ${stale ? host.t("recomputeNeeded", "Recalculation needed") : html`${icon(proven ? "verified" : "hourglass_bottom", 18)}${scoreProof(host, proven, groups.some(group => group.hits.some(hit => hit.gekiso?.sampled)), hadCandidates)}`}
         </span>
         ${goal?.kind === "score" ? html`
           <span class="tb-results__meta">${host.t("calculationChartCount", "{count} charts in this search", { count: goal.songs.length })}</span>
