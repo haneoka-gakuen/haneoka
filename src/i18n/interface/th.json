@@ -2907,6 +2907,8 @@
       "saveRejected": "หมายความว่าค่านี้ไม่สามารถบันทึกได้",
       "searchFailed": "ค้นหาล้มเหลว: {reason}",
       "nav": {
+        "switchClassic": "สลับไปใช้หน้าจอแบบเดิม",
+        "switchModern": "สลับไปใช้หน้าจอแบบใหม่",
         "free": "จัดทีมอิสระ",
         "gekiso": "GEKISO",
         "event": "อีเวนต์",

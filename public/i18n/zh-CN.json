@@ -2918,6 +2918,8 @@
       "saveRejected": "该数值无法保存。",
       "searchFailed": "搜索失败：{reason}",
       "nav": {
+        "switchClassic": "切回旧版界面",
+        "switchModern": "切换到新版界面",
         "free": "自由配队",
         "gekiso": "激奏",
         "event": "活动",

@@ -2918,6 +2918,8 @@
       "saveRejected": "이 값은 저장할 수 없습니다.",
       "searchFailed": "검색 실패: {reason}",
       "nav": {
+        "switchClassic": "이전 화면으로 전환",
+        "switchModern": "새 화면으로 전환",
         "free": "자유 편성",
         "gekiso": "격주",
         "event": "이벤트",

@@ -159,7 +159,8 @@ export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, r
   const summary = options?.summary ?? conditionSummary(host);
   const issues = options?.validate !== false && host.submitted && (["arena", "pt", "live", "challenge"].includes(host.tab) || host.tab === "build" && host.buildMode !== "manual")
     ? host.inputIssues(host.tab === "pt" && host.searchSettings.rewardMode === "recommendation") : [];
-  const mode = host.tab === "build" ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
+  const mode = host.tab === "build" || (host.classicLayout && host.tab === "live")
+    ? html`<div class="tb-mode">${host.renderBuildMode()}</div>` : nothing;
   const footer = (mobile = false) => html`
     <div class="tb-operation">${mobile && options?.mobileAction ? options.mobileAction : actions}${host.renderCompareTray()}</div>
   `;

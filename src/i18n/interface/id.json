@@ -2907,6 +2907,8 @@
       "saveRejected": "Nilai tersebut tidak dapat diselamatkan.",
       "searchFailed": "Pencarian gagal: {reason}",
       "nav": {
+        "switchClassic": "Beralih ke tampilan lama",
+        "switchModern": "Beralih ke tampilan baru",
         "free": "Bentuk tim bebas",
         "gekiso": "GEKISO",
         "event": "Acara",

@@ -33,9 +33,11 @@ import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/const
 
 const GOALS = [
   { id: "score", icon: "music_note" },
+  { id: "gekiso", icon: "local_fire_department" },
   { id: "power", icon: "bolt" },
   { id: "potential", icon: "auto_awesome" },
 ] as const;
+const FREE_GOALS = GOALS.filter(goal => goal.id !== "gekiso");
 
 export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewards" = "score"): TemplateResult {
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
@@ -924,6 +926,15 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
 
 export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): TemplateResult {
   const s = host.searchSettings;
+  const goals = host.classicLayout ? GOALS : FREE_GOALS;
+  const selectGoal = (goal: GoalKind) => {
+    const tab = goal === "gekiso" ? "live" : "build";
+    if (tab !== host.tab) {
+      host.buildMode = "automatic";
+      host.setTab(tab, { keepPanel: true });
+    }
+    if (goal !== "gekiso") host.updateSettings({ goal });
+  };
   const challengeSongs =
     s.eventId === null ? [] : host.catalog!.challengeSongs(s.eventId).map((row) => row.liveMusicId);
   const challenge =
@@ -949,17 +960,17 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
           ? html`
               <section class="surface stack">
                 ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
-                ${host.tab === "build" ? html`<div
+                ${host.tab === "build" || host.classicLayout ? html`<div
                   class="cluster tb-goals"
                   role="radiogroup"
                   aria-label=${host.t("goal", "Goal")}
                   @keydown=${rovingKeydown(
-                    GOALS.map(({ id }) => id as GoalKind),
+                    goals.map(({ id }) => id as GoalKind),
                     s.goal,
-                    (goal) => set({ goal }),
+                    selectGoal,
                   )}
                 >
-                  ${GOALS.map(
+                  ${goals.map(
                     ({ id, icon: name }) => html`
                       <button
                         class="chip"
@@ -967,7 +978,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                         role="radio"
                         aria-checked=${String(s.goal === id)}
                         tabindex=${s.goal === id ? "0" : "-1"}
-                        @click=${() => set({ goal: id })}
+                        @click=${() => selectGoal(id)}
                       >
                         ${icon(s.goal === id ? "check" : name, 18)}<span class="chip__label">${goalText(host, id)}</span>
                       </button>

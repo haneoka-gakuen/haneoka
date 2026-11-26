@@ -2907,6 +2907,8 @@
       "saveRejected": "Esse valor não pode ser salvo.",
       "searchFailed": "A busca falhou: {reason}",
       "nav": {
+        "switchClassic": "Usar a interface clássica",
+        "switchModern": "Usar a nova interface",
         "free": "Formação livre",
         "gekiso": "GEKISO",
         "event": "Evento",

@@ -2918,6 +2918,8 @@
       "saveRejected": "この値は保存できません。",
       "searchFailed": "検索に失敗しました：{reason}",
       "nav": {
+        "switchClassic": "旧表示に切り替え",
+        "switchModern": "新表示に切り替え",
         "free": "自由編成",
         "gekiso": "激奏",
         "event": "イベント",

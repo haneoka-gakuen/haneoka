@@ -2907,6 +2907,8 @@
       "saveRejected": "Questo valore non può essere salvato.",
       "searchFailed": "La ricerca non è riuscita: {reason}",
       "nav": {
+        "switchClassic": "Passa alla vista classica",
+        "switchModern": "Passa alla nuova vista",
         "free": "Formazione libera",
         "gekiso": "GEKISO",
         "event": "Evento",

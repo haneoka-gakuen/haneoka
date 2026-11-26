@@ -149,6 +149,7 @@ const uiLabelPaths: Readonly<Record<string, string>> = {
 const BUILD_PREFERENCES = ["pref.build", ...BUILD_DRAFTS.map(key => `pref.${key}`), "pref.arena", "pref.song-comparison", "pref.song-picker"] as const;
 const SYNC_OWNER = "team-builder-sync";
 const SEARCH_OWNER = "team-builder-search";
+const LAYOUT_KEY = "haneoka.team-builder.layout";
 export type ManualTeam = Formation;
 
 interface InputIssue {
@@ -329,6 +330,7 @@ export class TeamBuilder extends LitElement {
     if (this.freeMode === mode) return;
     this.freeMode = mode;
     if (this.isConnected && this.tab === "build") {
+      if (mode === "automatic") this.classicAutoTab = "build";
       const url = navigationDocumentUrl();
       if (mode === "manual") url.searchParams.set("mode", mode);
       else url.searchParams.delete("mode");
@@ -557,6 +559,9 @@ export class TeamBuilder extends LitElement {
   private disposeVisibility?: () => void;
   private disposeNavigation?: () => void;
   private sectionTabs = new Map<Tab, Tab>();
+  classicLayout = false;
+  private classicBuildTab: "build" | "live" = "build";
+  private classicAutoTab: "build" | "live" = "build";
   private roomTab: Tab = "live";
   private profileReturn?: Tab;
 
@@ -608,7 +613,11 @@ export class TeamBuilder extends LitElement {
     window.addEventListener(GAME_TOOL_ACCOUNTS_CHANGED, this.gameAccountsChanged);
     void this.loadToolEntry(server, params);
     void this.updateComplete.then(() => {
-      if (this.isConnected) this.restoreRoute(params);
+      if (!this.isConnected) return;
+      try {
+        this.classicLayout = localStorage.getItem(LAYOUT_KEY) === "classic";
+      } catch { /* Keep the in-page choice when device storage is unavailable. */ }
+      this.restoreRoute(params);
     });
     this.disposeNavigation = observeDetailLocation(() => {
       const route = new URL(location.href).searchParams;
@@ -880,7 +889,7 @@ export class TeamBuilder extends LitElement {
     this.songComparison.markFields();
     this.images.observe(this);
     const tool = this.querySelector<HTMLElement>(".tb-tool");
-    const layout = `${this.tab}:${this.buildMode}:${this.compactConditions}`;
+    const layout = `${this.tab}:${this.buildMode}:${this.compactConditions}:${this.classicLayout}`;
     if (tool !== this.workspaceTool || layout !== this.workspaceLayout) {
       this.workspaceTool = tool ?? undefined;
       this.workspaceLayout = layout;
@@ -1311,12 +1320,20 @@ export class TeamBuilder extends LitElement {
   renderBuildMode() {
     return segmented({
       label: this.t("buildMode", "Team building"),
-      value: this.buildMode,
+      value: this.tab === "live" ? "automatic" : this.buildMode,
       options: [
         { value: "automatic", label: this.t("automaticTeam", "Find a team"), icon: "auto_awesome" },
         { value: "manual", label: this.t("manualTeam", "Build a team by hand"), icon: "edit_square" },
       ],
       onSelect: (mode) => {
+        if (this.classicLayout) {
+          const next = mode === "manual" ? "build" : this.classicAutoTab;
+          if (next !== this.tab) {
+            if (next === "build") this.buildMode = mode;
+            this.setTab(next);
+            return;
+          }
+        }
         this.saveScroll();
         this.buildMode = mode;
         this.submitted = false;
@@ -1325,12 +1342,12 @@ export class TeamBuilder extends LitElement {
       },
     });
   }
-  setTab(tab: Tab, { focusPanel = true, writeHistory = true } = {}) {
+  setTab(tab: Tab, { focusPanel = true, writeHistory = true, keepPanel = false } = {}) {
     if (this.tab === tab) return;
     this.songPicker?.recommendationRequest?.abort();
     this.songPicker = null;
     if (this.running) this.cancel();
-    this.conditionsOpen = false;
+    if (!keepPanel) this.conditionsOpen = false;
     this.slotPicker = null;
     this.saveScroll();
     this.boxQuickEntry = false;
@@ -1341,6 +1358,10 @@ export class TeamBuilder extends LitElement {
       else if (sectionFor[previous] !== "box") this.profileReturn = previous;
     }
     this.sectionTabs.set(sectionFor[tab], tab);
+    if (tab === "build" || tab === "live") {
+      this.classicBuildTab = tab;
+      if (tab === "live" || this.buildMode === "automatic") this.classicAutoTab = tab;
+    }
     if (tab === "live" || tab === "song-comparison") this.roomTab = tab;
     this.tab = tab;
     this.submitted = false;
@@ -1363,7 +1384,7 @@ export class TeamBuilder extends LitElement {
       }
     }
     this.requestUpdate();
-    void this.restoreScroll(focusPanel);
+    if (!keepPanel) void this.restoreScroll(focusPanel);
   }
 
   characterCount(members: Iterable<{ cardId: number }>) {
@@ -2585,32 +2606,50 @@ export class TeamBuilder extends LitElement {
       ["challenge", this.t("nav.event", "Event")], ["box", this.t("nav.profile", "My profile")],
     ] as const;
     const label = groups.find(([id]) => id === section)![1];
-    const row = (items: readonly (readonly [Tab, string])[], current: Tab, title: string, main = false) => {
-      const choose = (id: Tab, focusPanel = false) =>
-        this.setTab(main ? this.sectionTabs.get(id) ?? id : id, { focusPanel });
+    const row = (items: readonly (readonly [Tab, string, TemplateResult?, number?])[], current: Tab, title: string,
+      destination = (id: Tab) => id, main = false) => {
+      const choose = (id: Tab, focusPanel = false) => this.setTab(destination(id), { focusPanel });
       return scrollableTabBar(this.locale, html`
         <nav class=${`tabs tb-tabs ${main ? "tb-sections" : "tabs--secondary"}`} role="tablist" aria-label=${title}
           @keydown=${rovingKeydown(items.map(([id]) => id), current, (id) => choose(id), { preventScroll: true })}>
-          ${items.map(([id, name]) => html`<button class="tab" type="button" role="tab"
+          ${items.map(([id, name, glyph, count]) => html`<button class="tab" type="button" role="tab"
             data-tb-tab=${id} aria-selected=${String(current === id)} tabindex=${current === id ? "0" : "-1"}
             aria-controls="tb-panel" @click=${() => choose(id, true)}>
-            <span>${name}</span><span class="tab__indicator"></span>
+            ${glyph ?? nothing}<span>${name}</span>
+            ${count ? html`<span class="tab__count">${count}</span>` : nothing}<span class="tab__indicator"></span>
           </button>`)}
         </nav>`);
     };
+    const eventTabs = () => row([["challenge", this.t("nav.challenge", "Challenge song ranking")],
+      ["pt", this.t("nav.rewards", "Farming recommendations")]], this.tab, this.t("nav.event", "Event"));
+    const returnToTask = section === "box" && this.profileReturn ? html`<button type="button" class="button button--text"
+      @click=${() => this.setTab(this.profileReturn!)}>${icon("arrow_back", 20)}${this.t("nav.resume", "Return to task")}</button>` : nothing;
+    if (this.classicLayout) {
+      const current = this.tab === "live" ? "build" : this.tab === "challenge" ? "pt" : this.tab;
+      const classic = [
+        ["build", this.t("tabBuild", "Build"), icon("groups", 20)],
+        ["arena", this.t("arena.tab", "GEKISO Arena"), icon("swords", 20)],
+        ["song-comparison", this.t("sc.tab", "GEKISO songs"), icon("music_note", 20)],
+        ["pt", this.t("pt.tab", "Event rewards"), icon("emoji_events", 20)],
+        ["box", this.t("tabBox", "My cards"), icon("style", 20), this.view!.members.size + this.view!.snaps.size],
+        ["account", this.t("tabAccount", "Account bonuses"), icon("trending_up", 20)],
+        ["teams", this.t("tabTeams", "Teams"), icon("bookmarks", 20), this.view!.teams.length],
+      ] as const;
+      return html`${row(classic, current, this.t("title", "Team builder"),
+        id => id === current ? this.tab : id === "build" ? this.classicBuildTab : id)}
+        ${current === "pt" ? eventTabs() : nothing}${returnToTask}`;
+    }
     const room = this.t("nav.live", "GEKISO Live");
     return html`
-      ${row(groups, section, this.t("title", "Team builder"), true)}
+      ${row(groups, section, this.t("title", "Team builder"), id => this.sectionTabs.get(id) ?? id, true)}
       ${section === "live" ? row([[this.roomTab, room], ["arena", this.t("arena.tab", "GEKISO Arena")]],
         this.tab === "arena" ? "arena" : this.roomTab, label) : nothing}
       ${section === "live" && this.tab !== "arena" ? row([["live", this.t("automaticTeam", "Find a team")],
         ["song-comparison", this.t("nav.pickSong", "Choose songs for a team")]], this.tab, room) : nothing}
-      ${section === "challenge" ? row([["challenge", this.t("nav.challenge", "Challenge song ranking")],
-        ["pt", this.t("nav.rewards", "Farming recommendations")]], this.tab, label) : nothing}
+      ${section === "challenge" ? eventTabs() : nothing}
       ${section === "box" ? row([["box", this.t("tabBox", "My cards")],
         ["account", this.t("tabAccount", "Account bonuses")], ["teams", this.t("nav.teams", "Saved teams")]], this.tab, label) : nothing}
-      ${section === "box" && this.profileReturn ? html`<button type="button" class="button button--text"
-        @click=${() => this.setTab(this.profileReturn!)}>${icon("arrow_back", 20)}${this.t("nav.resume", "Return to task")}</button>` : nothing}
+      ${returnToTask}
     `;
   }
   /** Register the team builder actions and card search with the shared app bar. */
@@ -2676,6 +2715,13 @@ export class TeamBuilder extends LitElement {
       this,
       SYNC_OWNER,
       html`
+        <button class="button button--text" type="button" data-tb-layout-switch @click=${() => {
+          this.classicLayout = !this.classicLayout;
+          try {
+            localStorage.setItem(LAYOUT_KEY, this.classicLayout ? "classic" : "modern");
+          } catch { /* The switch still applies to this visit. */ }
+          this.requestUpdate();
+        }}>${this.classicLayout ? this.t("nav.switchModern", "Switch to new layout") : this.t("nav.switchClassic", "Switch to classic layout")}</button>
         ${iconButton({
           icon: "restart_alt",
           label: this.t("resetOptions", "Restore default settings"),

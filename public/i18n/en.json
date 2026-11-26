@@ -2918,6 +2918,8 @@
       "saveRejected": "That value cannot be saved.",
       "searchFailed": "The search failed: {reason}",
       "nav": {
+        "switchClassic": "Switch to classic layout",
+        "switchModern": "Switch to new layout",
         "free": "Free build",
         "gekiso": "GEKISO",
         "event": "Event",
