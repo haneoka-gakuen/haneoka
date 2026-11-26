@@ -40,6 +40,7 @@ import { LazyImages } from "./ui/lazy-images";
 import { icon } from "./ui/icon";
 import { filterChip, iconButton, rovingKeydown, segmented } from "./ui/controls";
 import "./arena-ranking";
+import type { RankingCache } from "./song-ranking";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
 import "../styles/settings.css";
 import "../styles/arena.css";
@@ -85,6 +86,8 @@ export class ArenaWorkspace extends LitElement {
   private catalog?: ArenaCatalog;
   private marks: Record<string, string> = {};
   private cards: CatalogSystemPayload["rankingCards"] = {};
+  private readonly rankingCache = new Map<string, RankingCache>();
+  private readonly rankingTierName = (rank: ArenaRank) => this.name(rank.name);
   /** The page's release server; the URL keeps it whatever region is shown. */
   private server = "jp";
   /** The release whose Arena data the selected region reads. */
@@ -876,7 +879,8 @@ export class ArenaWorkspace extends LitElement {
         .bandId=${league.bandId}
         .ranks=${league.ranks}
         .rankIcons=${this.catalog?.images?.ranks ?? {}}
-        .rankName=${(rank: ArenaRank) => this.name(rank.name)}
+        .rankName=${this.rankingTierName}
+        .sharedRankingCache=${this.rankingCache}
         .limit=${limit}
         .summaryHeading=${limit ? heading(this.t("top10"),"rewards") : nothing}
         .summaryActions=${limit ? html`<button class="icon-button" type="button" aria-label=${this.t("tabs.ranking")} title=${this.t("tabs.ranking")} @click=${() => this.select({tab:"ranking"})}>${icon("chevron_right",24)}</button>` : nothing}

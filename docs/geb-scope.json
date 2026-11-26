@@ -97,6 +97,7 @@
     "worker/arena-ranking.ts",
     "worker/ranking-search.ts",
     "src/lit/song-ranking.ts",
+    "src/lit/event-tracker.ts",
     "worker/event-point-ranking.ts",
     "worker/moenotes-fallback.ts",
     "worker/retired-game-files.ts",

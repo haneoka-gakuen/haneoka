@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from "lit";
+import { LitElement, html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
 import { clientText } from "../../i18n/client";
 import { localizedText } from "./catalog";
@@ -16,6 +16,60 @@ import { cardGrowth } from "./card-growth";
 import { cardGrowthIcons } from "../../lib/ui-marks";
 import { defaultProfileCardUrl } from "../../lib/profile-card-default";
 type RankingEntry = SongRankingRowDto;
+let deckObserver: IntersectionObserver | undefined;
+
+class RankingDeck extends LitElement {
+  static properties = {
+    slots: { type: Number },
+    renderCards: { attribute: false },
+    visible: { state: true },
+  };
+  declare slots: number;
+  declare renderCards?: () => TemplateResult[];
+  declare private visible: boolean;
+
+  constructor() {
+    super();
+    this.slots = 0;
+    this.visible = false;
+  }
+
+  createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.visible) return;
+    if (typeof IntersectionObserver === "undefined") {
+      this.reveal();
+      return;
+    }
+    deckObserver ??= new IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) (entry.target as RankingDeck).reveal();
+    }, { rootMargin: "240px 0px" });
+    deckObserver.observe(this);
+  }
+
+  disconnectedCallback() {
+    deckObserver?.unobserve(this);
+    super.disconnectedCallback();
+  }
+
+  private reveal() {
+    deckObserver?.unobserve(this);
+    this.visible = true;
+  }
+
+  render() {
+    return this.visible ? this.renderCards?.() : Array.from({ length: this.slots }, () => html`
+      <span class="song-ranking__deck-slot" aria-hidden="true">
+        <span class="song-ranking__card-media"></span>
+        <span class="song-ranking__card-media song-ranking__card-media--support"></span>
+      </span>
+    `);
+  }
+}
+if (!customElements.get("ranking-deck")) customElements.define("ranking-deck", RankingDeck);
+
 export interface RankingRowView {
   rank: number;
   name: string;
@@ -212,7 +266,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
               : image
                 ? html`
                     <a class="song-ranking__namecard" href=${image} target="_blank" rel="noopener" title=${cardTitle} aria-label=${cardTitle || this.label("profileCard", "Profile card")}>
-                      ${this.profileMedia(name, image)}
+                      ${this.profileMedia(name, image, false)}
                     </a>
                   `
                 : html`
@@ -238,8 +292,9 @@ export abstract class GameRecordsCardsElement extends LitElement {
           ${
             row.cards
               ? html`
-                  <span class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}>
-                    ${row.cards.map(
+                  <ranking-deck class="song-ranking__deck-preview" aria-label=${this.label("cards", "Cards")}
+                    .slots=${row.cards.length}
+                    .renderCards=${() => row.cards!.map(
                       (card) => html`
                         <span class="song-ranking__deck-slot">
                           ${this.renderCard(card)}${
@@ -250,7 +305,7 @@ export abstract class GameRecordsCardsElement extends LitElement {
                         </span>
                       `,
                     )}
-                  </span>
+                  ></ranking-deck>
                 `
               : nothing
           }

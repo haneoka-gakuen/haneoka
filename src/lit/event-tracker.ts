@@ -1,5 +1,12 @@
+// L3 — GEB
+// Input: Selected event and region, catalogue snapshots and the current time.
+// Output: Event navigation and the selected leaderboard.
+// Pos: [Map](L2-2.md); activity tracking workspace.
+// Effects/Dependencies: Polls tracking metadata and refreshes the active leaderboard.
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { LitElement, html, nothing } from "lit";
+import { AsyncDirective, directive } from "lit/async-directive.js";
+import type { ChildPart } from "lit/directive.js";
 import { clientText } from "../i18n/client";
 import { setAppBarActions } from "../lib/app-bar";
 import { RequestScope } from "../lib/request-scope";
@@ -37,8 +44,8 @@ import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
 import { emptyState, errorState, loadingState } from "./ui/state";
 import { observeSongDisplay, songTitle } from "../lib/song-display";
-import { SongRanking } from "./song-ranking";
-import { ArenaRanking } from "./arena-ranking";
+import "./arena-ranking";
+import type { SongRanking } from "./song-ranking";
 import "../styles/settings.css";
 import "../styles/song-ranking.css";
 import { snackbar } from "../lib/snackbar";
@@ -46,6 +53,23 @@ import { snackbar } from "../lib/snackbar";
 type Region = GameRecordsRegion;
 type RankingView = "total" | "challenge" | "points";
 let trackerSequence = 0;
+
+class CountdownText extends AsyncDirective {
+  render(value: string, _attach: (update: (text: string) => void) => void) {
+    return value;
+  }
+
+  update(_part: ChildPart, [value, attach]: Parameters<CountdownText["render"]>) {
+    attach(this.setText);
+    return value;
+  }
+
+  private readonly setText = (value: string) => {
+    if (this.isConnected) this.setValue(value);
+  };
+}
+
+const countdownText = directive(CountdownText);
 
 export class EventTracker extends LitElement {
   static properties = {
@@ -60,7 +84,6 @@ export class EventTracker extends LitElement {
     eventId: { state: true },
     archive: { state: true },
     rankingView: { state: true },
-    now: { state: true },
     refreshing: { state: true },
   };
   declare locale: string;
@@ -75,7 +98,7 @@ export class EventTracker extends LitElement {
   declare eventId: string;
   declare archive: TrackedEventDto[];
   declare rankingView: RankingView | "";
-  declare now: number;
+  private now = Date.now();
   declare refreshing: boolean;
   private requests = new RequestScope();
   private catalogRequests = new RequestScope();
@@ -84,6 +107,9 @@ export class EventTracker extends LitElement {
   private lazyImages = new LazyImages({ candidates: (source) => localeTaggedCandidates(source, this.locale) });
   private lifetime?: AbortController;
   private clock = 0;
+  private nextBoundary = Infinity;
+  private updateCountdown?: (text: string) => void;
+  private readonly attachCountdown = (update: (text: string) => void) => { this.updateCountdown = update; };
   private poll = 0;
   private infoServer: ReleaseServer = "intl";
   private cards: Partial<Record<"jp" | "intl", RankingCardCatalog>> = {};
@@ -105,7 +131,6 @@ export class EventTracker extends LitElement {
     this.eventId = "";
     this.archive = [];
     this.rankingView = "";
-    this.now = Date.now();
     this.refreshing = false;
   }
   createRenderRoot() {
@@ -191,9 +216,9 @@ export class EventTracker extends LitElement {
       },
       { signal: this.lifetime.signal },
     );
-    this.clock = window.setInterval(() => {
-      if (document.visibilityState === "visible") this.now = Date.now();
-    }, 1000);
+    this.now = Date.now();
+    this.clock = window.setInterval(this.tickClock, 1000);
+    document.addEventListener("visibilitychange", this.tickClock, { signal: this.lifetime.signal });
     addEventListener("online", () => { if (document.visibilityState === "visible") void this.refresh(); }, { signal: this.lifetime.signal });
     void this.load();
   }
@@ -204,6 +229,7 @@ export class EventTracker extends LitElement {
     this.lazyImages.disconnect();
     this.lifetime?.abort();
     window.clearInterval(this.clock);
+    this.updateCountdown = undefined;
     window.clearTimeout(this.poll);
     super.disconnectedCallback();
   }
@@ -324,11 +350,12 @@ export class EventTracker extends LitElement {
   }
   private railItems(): BrowseRailItem[] {
     const listed = this.railEvents[this.sourceServer()] ?? [];
+    const listedById = new Map(listed.map((entry) => [entry.id, entry]));
     const tracked = new Map([...this.archive, ...(this.data?.event ? [this.data.event] : [])].map((event) => [event.id, event]));
     const ids = new Set([...listed.filter((entry) => entry.startAtMs && entry.startAtMs <= this.now).map((entry) => entry.id), ...tracked.keys()]);
     return [...ids]
       .map((id) => {
-        const entry = listed.find((item) => item.id === id);
+        const entry = listedById.get(id);
         const event = tracked.get(id);
         const start = event?.startAtMs || entry?.startAtMs || 0;
         const end = event?.endAtMs || entry?.endAtMs || 0;
@@ -368,8 +395,8 @@ export class EventTracker extends LitElement {
     await this.load();
     await this.updateComplete;
     if (this.isConnected && this.region === region) {
-      this.querySelectorAll<SongRanking>("song-ranking").forEach((ranking) => ranking.refreshRanking());
-      this.querySelectorAll<ArenaRanking>("arena-ranking").forEach((ranking) => ranking.refresh());
+      for (const board of this.querySelectorAll<SongRanking>("song-ranking, arena-ranking"))
+        if (board.active) board.refreshRanking();
     }
   }
   private eventTitle() {
@@ -405,8 +432,24 @@ export class EventTracker extends LitElement {
       duration,
     );
   }
+  private readonly tickClock = () => {
+    if (document.visibilityState !== "visible") return;
+    this.now = Date.now();
+    if (this.now >= this.nextBoundary) this.requestUpdate();
+    this.updateCountdown?.(this.countdown());
+  };
+
   private cachedShown = false;
   updated() {
+    const event = this.shownEvent();
+    if (!event || !this.data) this.updateCountdown = undefined;
+    this.nextBoundary = Infinity;
+    for (const at of [
+      event?.startAtMs, event?.endAtMs,
+      ...(this.railEvents[this.sourceServer()] ?? []).map((entry) => entry.startAtMs),
+    ]) {
+      if (at && at > this.now && at < this.nextBoundary) this.nextBoundary = at;
+    }
     if ((this.phase === "error") !== this.cachedShown) {
       this.cachedShown = this.phase === "error";
       if (this.cachedShown) snackbar(this.label("cached", "Showing the last available event information."));
@@ -526,7 +569,7 @@ export class EventTracker extends LitElement {
                 ${this.label("event", "Event")} / #${event.id} /
                 ${gameDateTimeRange(this.locale, event.startAtMs || 0, event.endAtMs || 0)}
               </p>
-              <p class="tabular" role="timer" aria-live="off">${this.countdown()}</p>
+              <p class="tabular" role="timer" aria-live="off">${countdownText(this.countdown(), this.attachCountdown)}</p>
             </div>
           </header>
         </div>

@@ -13,6 +13,7 @@ import { GameRecordsCardsElement } from "./shared/game-records-cards";
 import "@material/web/progress/linear-progress.js";
 import { clientText } from "../i18n/client";
 import { html, nothing, type PropertyValues } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { preferredLocale, fetchJson, JsonResponseError } from "./shared/catalog";
 import type { ReleaseServer } from "../lib/release-server";
 import { RequestScope } from "../lib/request-scope";
@@ -47,7 +48,7 @@ type Region = GameRecordsRegion;
 type Phase = "idle" | "loading" | "ready" | "error";
 
 type RankingEntry = SongRankingRowDto;
-interface RankingCache {
+export interface RankingCache {
   data: GameRankingDto;
   rows: RankingEntry[];
   snapshotId?: string;
@@ -72,6 +73,7 @@ export class SongRanking extends GameRecordsCardsElement {
     summary: { type: Boolean },
     rankingTitle: { type: String, attribute: "ranking-title" },
     cardCatalogData: { attribute: false },
+    sharedRankingCache: { attribute: false },
     summaryHeading: { attribute: false },
     summaryActions: { attribute: false },
     analysisEvent: { attribute: false },
@@ -101,6 +103,7 @@ export class SongRanking extends GameRecordsCardsElement {
   declare summaryHeading: unknown;
   declare summaryActions: unknown;
   declare cardCatalogData: Partial<Record<"jp" | "intl", RankingCardCatalog>> | undefined;
+  declare sharedRankingCache?: Map<string, RankingCache>;
   declare analysisEvent: TrackedEventDto | undefined;
   declare analysisChallengeId: string;
   private closeAnalysis?: () => void;
@@ -122,10 +125,13 @@ export class SongRanking extends GameRecordsCardsElement {
   private searchRequests = new RequestScope();
   private rankingRequests = new RequestScope();
   private lifetime?: AbortController;
-  private cache = new Map<string, RankingCache>();
+  private readonly localCache = new Map<string, RankingCache>();
+  private get cache() { return this.sharedRankingCache ?? this.localCache; }
   private rankingFailure: GameRecordsErrorDto["error"] | null = null;
   private retryAt = 0;
   private retryTimer = 0;
+  private rankingInitialized = false;
+  private requestedEndpoint?: string;
   private readonly pageAppBarOwner = `song-ranking-page-${++pageAppBarOwnerSequence}`;
 
   constructor() {
@@ -178,8 +184,8 @@ export class SongRanking extends GameRecordsCardsElement {
       return;
     }
     */
-    this.phase = "loading";
-    void this.loadRanking(this.region, true);
+    this.rankingInitialized = true;
+    this.syncRanking();
   }
 
   connectedCallback() {
@@ -219,6 +225,8 @@ export class SongRanking extends GameRecordsCardsElement {
   disconnectedCallback() {
     this.closeAnalysis?.();
     this.rankingRequests.cancel();
+    this.rankingInitialized = false;
+    this.requestedEndpoint = undefined;
     this.searchRequests.cancel();
     this.lifetime?.abort();
     this.lifetime = undefined;
@@ -239,13 +247,25 @@ export class SongRanking extends GameRecordsCardsElement {
     return this.rankingEndpoint || `/api/v1/game/records/${region}/songs/${encodeURIComponent(this.songId)}/ranking`;
   }
 
+  protected canLoadRanking() { return Boolean(this.rankingEndpoint || this.songId); }
+
   private currentRanking(signal: AbortSignal, region: Region, endpoint: string) {
     return (
       this.isConnected &&
+      this.active &&
       this.region === region &&
       this.rankingUrl(region) === endpoint &&
       this.rankingRequests.current(signal)
     );
+  }
+
+  private syncRanking() {
+    if (!this.rankingInitialized || !this.active || !this.canLoadRanking()) return;
+    const endpoint = this.rankingUrl(this.region);
+    if (endpoint === this.requestedEndpoint) return;
+    this.requestedEndpoint = endpoint;
+    this.rankingRequests.cancel();
+    void this.loadRanking(this.region);
   }
 
   private async loadRanking(region: Region, force = false) {
@@ -321,17 +341,10 @@ export class SongRanking extends GameRecordsCardsElement {
     url.searchParams.set("region", region);
     url.searchParams.delete("profileId");
     history.replaceState(history.state, "", url);
-    this.expanded = false;
-    this.rankingRequests.cancel();
-    const cached = this.cache.get(this.rankingUrl(region));
-    this.rows = cached?.rows || [];
-    this.stale = cached ? cached.stale : false;
-    this.phase = cached && Date.now() - cached.storedAt < CACHE_TTL ? "ready" : "loading";
-    if (this.phase !== "ready") void this.loadRanking(region, true);
   }
 
   protected refresh() {
-    if (Date.now() < this.retryAt) return;
+    if (!this.active || !this.rankingInitialized || !this.canLoadRanking() || this.phase === "loading" || Date.now() < this.retryAt) return;
     this.rankingRequests.cancel();
     void this.loadRanking(this.region, true);
   }
@@ -460,8 +473,12 @@ export class SongRanking extends GameRecordsCardsElement {
     `;
   }
 
+  protected rowRenderContext(): readonly unknown[] {
+    return [this.locale, this.region, this.cardCatalogs, this.target, this.points, this.summary, Boolean(this.analysisEvent)];
+  }
+
   private renderRanking() {
-    const visible = this.rows.slice(0, this.limit || (this.windowed || this.expanded ? 100 : 20));
+    const count = this.limit || (this.windowed || this.expanded ? 100 : 20);
     const showMore = !this.limit && !this.windowed && this.rows.length > 20 && !this.expanded;
     const failed = this.rankingFailure?.kind;
     const failureText =
@@ -489,13 +506,18 @@ export class SongRanking extends GameRecordsCardsElement {
                     icon: "leaderboard",
                   })
                 : html`
-                    <ol
-                      class="song-ranking__list"
-                      style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
-                      aria-label=${this.boardTitle}
-                    >
-                      ${visible.map((entry) => this.renderRow(entry))}
-                    </ol>
+                    ${guard([this.rows, count, this.limit, this.boardTitle, ...this.rowRenderContext()], () => {
+                      const visible = this.rows.slice(0, count);
+                      return html`
+                        <ol
+                          class="song-ranking__list"
+                          style=${`--rank-digits: ${String(Math.max(0, ...visible.map((entry) => Number(entry.rank) || 0))).length}`}
+                          aria-label=${this.boardTitle}
+                        >
+                          ${visible.map((entry) => this.renderRow(entry))}
+                        </ol>
+                      `;
+                    })}
                     ${
                       showMore
                         ? html`
@@ -522,34 +544,38 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   protected willUpdate(changed: PropertyValues) {
+    if (changed.has("cardCatalogData") && this.cardCatalogData) this.cardCatalogs = this.cardCatalogData;
     if (this.identityProperties.some((key) => changed.has(key)) || (changed.has("active") && !this.active)) {
       this.closeAnalysis?.();
       this.closeAnalysis = undefined;
     }
     if (this.identityProperties.some((key) => changed.has(key))) {
       this.start = 1;
+      this.expanded = false;
       this.target = 0;
       this.query = "";
       this.searchMatches = null;
       this.searchRequests.cancel();
       this.searching = false;
     }
-  }
-
-  updated(changed: PropertyValues) {
-    if (changed.has("cardCatalogData") && this.cardCatalogData) this.cardCatalogs = this.cardCatalogData;
-    if (
-      this.identityProperties.some((key) => changed.has(key) && changed.get(key) !== undefined) ||
-      (this.windowed && changed.has("start") && changed.get("start") !== undefined)
-    ) {
-      this.expanded = false;
-      void this.loadRanking(this.region);
+    if (this.active && this.rankingInitialized && this.rankingUrl(this.region) !== this.requestedEndpoint) {
+      const cached = this.cache.get(this.rankingUrl(this.region));
+      const fresh = cached && Date.now() - cached.storedAt < CACHE_TTL;
+      this.rows = cached?.rows || [];
+      this.phase = fresh ? "ready" : "loading";
+      this.stale = fresh ? cached.stale : Boolean(cached);
     }
-    if (!this.active) {
+    if (changed.has("active") && !this.active) {
+      this.rankingRequests.cancel();
+      this.requestedEndpoint = undefined;
       this.searchRequests.cancel();
       this.searching = false;
       this.searchMatches = null;
     }
+  }
+
+  updated() {
+    this.syncRanking();
     this.syncChrome();
   }
 
@@ -908,6 +934,7 @@ export class SongRanking extends GameRecordsCardsElement {
   }
 
   render() {
+    if (!this.active) return nothing;
     const loading = this.phase === "loading" || this.searching;
     return html`
       <section class="song-ranking-page" aria-label=${this.boardTitle}>
