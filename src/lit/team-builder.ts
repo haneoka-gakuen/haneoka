@@ -611,12 +611,16 @@ export class TeamBuilder extends LitElement {
     });
     this.disposeNavigation = observeDetailLocation(() => {
       const route = new URL(location.href).searchParams;
-      this.restoreRoute(route);
       const server = route.get("server");
-      void this.loadToolEntry(isPublicReleaseServer(server) ? server : readReleaseServer(), route, true);
+      const account = route.get("gameAccount");
+      if ((isPublicReleaseServer(server) && server !== this.server) || (account && account !== this.gameAccount?.id)) {
+        location.reload();
+        return;
+      }
+      this.restoreRoute(route);
     }, this);
   }
-  private async loadToolEntry(server: string, params: URLSearchParams, restore = false) {
+  private async loadToolEntry(server: string, params: URLSearchParams) {
     const requested = params.get("gameAccount");
     if (requested && !getGameToolAccount(requested, "team")) await refreshGameToolAccounts();
     const fallback = selectedGameToolAccount("team", server, requested);
@@ -638,7 +642,7 @@ export class TeamBuilder extends LitElement {
       selectGameToolAccount(target);
       this.requestUpdate();
       await this.load(target.server, target);
-    } else if (!this.loadedServer || restore) {
+    } else if (!this.loadedServer) {
       const target =
         !requested &&
         (isPublicReleaseServer(params.get("server")) || params.has("saveImport")) &&
