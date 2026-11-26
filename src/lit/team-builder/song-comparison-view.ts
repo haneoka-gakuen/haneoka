@@ -242,6 +242,13 @@ function conditions(host: TeamBuilder) {
   `;
 }
 
+function openRewards(host: TeamBuilder, event?: { id: number; challenge: boolean }) {
+  const { effectiveSettings, settings } = host.songComparison;
+  host.pt.openRewards(host.comparisonFormation, effectiveSettings.songs, {
+    event, just: effectiveSettings.just, players: settings.players, songRules: settings.songRules,
+  });
+}
+
 function eventBonus(host: TeamBuilder) {
   const c = host.songComparison,
     team = c.team(),
@@ -283,10 +290,7 @@ function eventBonus(host: TeamBuilder) {
       ${!origin?.challenge && (c.settings.mode === "custom" || c.settings.ranks.some(rank => rank !== null && rank !== 1))
         ? html`<span class="tb-results__meta">${host.t("farm.rewardConditions", "Event rewards: All Perfect / 1st in each section")}</span>` : nothing}
       <button type="button" class="button button--tonal" ?disabled=${!c.effectiveSettings.songs.length || team.issues.length > 0 || host.running}
-        @click=${() => host.pt.openRewards(host.comparisonFormation, c.effectiveSettings.songs, {
-          event: origin ?? (current.length === 1 ? { id: current[0]!.id, challenge: false } : undefined),
-          just: c.effectiveSettings.just, players: c.settings.players, songRules: c.settings.songRules,
-        })}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>
+        @click=${() => openRewards(host, origin ?? (current.length === 1 ? { id: current[0]!.id, challenge: false } : undefined))}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>
     </section>
   `;
 }
@@ -429,6 +433,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     <th>${t("remaining")}</th>
   `;
   const done = rows.filter((row) => row.status === "complete").length;
+  const origin = s.farmingEvent;
   return toolLayout(
     host,
     html`
@@ -716,6 +721,10 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         </section>
       </div>
     `,
-    { mobileAction: rows.length && done === rows.length && !c.stale ? mobileSaveAction(host, 1) : null },
+    { mobileAction: !host.classicLayout && !host.running && rows.length && done === rows.length && !c.stale
+      ? origin ? html`<button type="button" class="button button--full tb-run__button"
+          @click=${() => openRewards(host, origin)}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>`
+        : mobileSaveAction(host, 1)
+      : null },
   );
 }

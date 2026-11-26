@@ -663,9 +663,6 @@
     flex: 1 1 auto;
     padding-block-start: 0;
   }
-  .tb-conditions .tb-compare-tray {
-    display: none;
-  }
   @media (max-width: 639px) {
     .tb-conditions {
       width: 100vw;

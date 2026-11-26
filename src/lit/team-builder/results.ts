@@ -1407,9 +1407,12 @@ export function renderHit(
           @click=${action.run}>${action.label}</button>`)}
         ${actionMenu({
           id: `tb-result-actions-${index}`,
-          label: host.common("common.actions.moreActions", "More"),
+          label: host.compactConditions && !host.classicLayout
+            ? html`${icon("more_horiz", 20)}<span class="sr-only">${host.common("common.actions.moreActions", "More")}</span>`
+            : host.common("common.actions.moreActions", "More"),
           items: [
             ...actions.filter(action => !onCard.includes(action)),
+            ...(host.compactConditions && host.comparison.items.length >= 2 ? [host.comparison.compareAction(host)] : []),
             { label: host.t("copyTeam", "Copy as text"), icon: "content_copy", run: () => copyText(host, hit) },
             { label: host.t("saveImage", "Save image"), icon: "image", run: () => void exportImage(host, key, hit) },
             ...(() => {
