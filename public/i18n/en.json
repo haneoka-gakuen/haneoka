@@ -3849,6 +3849,9 @@
       "stepCards": "Import cards",
       "eligibleCharacters": "{count}/5 eligible characters",
       "includeOwned": "Include owned cards",
+      "resultActions": {
+        "multiSong": "Multi-song settings"
+      },
       "chooseTeamToSave": "Choose a team to save",
       "stepCardsDone": "{count} cards",
       "stepSongs": "Choose songs",

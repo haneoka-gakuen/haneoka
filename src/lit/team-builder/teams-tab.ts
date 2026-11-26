@@ -17,7 +17,7 @@ import { accordion } from "../ui/accordion";
 import { attachManualResults, clearManualOrders, manualOrderScore, manualResultHit, manualResultRequest, manualResultSettings, snapshotManualResults } from "./manual-results";
 import { resultRequest, resultSettings } from "./score-goal";
 import { renderSongComparison } from "./song-comparison-view";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { eventSection, eventSectionHeading, gekisoSamplingAdvanced, justWindowControl, playConditions, songList, useChallengeSongsButton } from "./build-tab";
 import { segmented } from "../ui/controls";
 import { cardScopeControl, unknownGrowthControl } from "./card-input-controls";
@@ -321,6 +321,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
           <button
             class="button button--text button--small"
             type="button"
+            data-tb-save-team
             ?disabled=${!manualReady(host)}
             @click=${() => saveTeam(host, [host.manual.members[host.manual.leader]!, ...(host.manual.members.filter((_, index) => index !== host.manual.leader) as number[])], [host.manual.snaps[host.manual.leader] ?? null, ...host.manual.snaps.filter((_, index) => index !== host.manual.leader)], (comparison ? host.songComparison.settings.songs[0] : host.settings.songs[0]) ?? null)}
           >
@@ -664,6 +665,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               </section>
             </div>
           `,
+          { mobileAction: firstResult && !stale && manualReady(host) ? mobileSaveAction(host, 1) : null },
         )}
 
       </div>

@@ -1,7 +1,7 @@
 import type { ComparisonSettings, Formation } from "../../lib/team-builder/song-comparison";
 import { skillRoleControls } from "./skill-role-controls";
 import { farmingRewardPlan, renderRewardPlan } from "./reward-plan-view";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { renderParking } from "./parking-view";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -29,7 +29,7 @@ import {
 } from "../../lib/team-builder/pt-recommendation";
 import { clock, completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
 import { PtCheckpoint } from "../../lib/team-builder/pt-checkpoint";
-import { teamFormation, renderHit, renderResults } from "./results";
+import { teamFormation, renderHit, renderResults, searchMobileAction } from "./results";
 import {
   renderBuildTab,
   renderBuildRun,
@@ -915,15 +915,21 @@ function renderFollowUp(host: TeamBuilder, key: string | EngineRequest, measure:
   `;
 }
 
-function renderRanking(host: TeamBuilder): TemplateResult {
+function rankingSelection(host: TeamBuilder, job: PtJob) {
   const pt = host.pt;
-  const t = (key: string, fallback: string, params?: Record<string, string | number>) =>
-    host.t(`pt.${key}`, fallback, params);
-  const job = pt.job;
-  if (!job) return renderChecklist(host, host.inputIssues(true));
-  const measure = job.request.goal.kind === "event" && job.request.goal.measure === "items" ? "items" : "points";
+  const measure: PtMeasure = job.request.goal.kind === "event" && job.request.goal.measure === "items" ? "items" : "points";
   const ranking = ptSongRanking(job, measure);
-  const challenge = ptChallengeBest(job, measure);
+  const filtered = host.analysis.filter(ranking);
+  const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
+  return { measure, ranking, filtered, shown, challenge: ptChallengeBest(job, measure) };
+}
+
+function renderRanking(host: TeamBuilder, selection: ReturnType<typeof rankingSelection> | null): TemplateResult {
+  const pt = host.pt;
+  const t = (key: string, fallback: string, params?: Record<string, string | number>) => host.t(`pt.${key}`, fallback, params);
+  const job = pt.job;
+  if (!job || !selection) return renderChecklist(host, host.inputIssues(true));
+  const { measure, ranking, challenge, filtered, shown } = selection;
   const gap = ptComplete(job)
     ? null
     : improvementPercent(
@@ -931,9 +937,7 @@ function renderRanking(host: TeamBuilder): TemplateResult {
           .filter((task) => task.measure === measure && task.route === "live")
           .map((task) => task.result ?? pendingSong(task.song)),
       );
-  const filtered = host.analysis.filter(ranking);
   const followUpCharts = job.cycle ? ptChallengeCharts(job, measure) : [];
-  const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
   const number = (n: number) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: 1 }).format(n);
   const settled = job.tasks.filter(
     (task) => task.status === "complete" || task.status === "empty" || task.status === "pruned",
@@ -1082,12 +1086,18 @@ export function renderPtTab(host: TeamBuilder): TemplateResult {
   `;
   if (host.pt.parking) return renderParking(host, modes);
   if (mode === "plan") return renderBuildTab(host, modes);
+  const recommendation = usesPtResults(host);
+  const job = host.pt.job;
+  const selection = recommendation && job ? rankingSelection(host, job) : null;
   return toolLayout(
     host,
     html`
       ${modes}${renderSetup(host)} ${host.pt.showIssues && host.pt.issues.length ? renderIssues(host) : nothing}
     `,
     mode === "recommendation" ? renderRun(host) : renderBuildRun(host, false),
-    usesPtResults(host) ? renderRanking(host) : renderResults(host, rewardFollowUp(host)),
+    recommendation ? renderRanking(host, selection) : renderResults(host, rewardFollowUp(host)),
+    { mobileAction: recommendation
+      ? selection && job && ptComplete(job) && !host.pt.stale && mobileSaveAction(host, selection.shown.length + Number(!!selection.challenge))
+      : searchMobileAction(host) },
   );
 }

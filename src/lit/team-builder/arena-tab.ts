@@ -19,7 +19,7 @@ import type { BoxValue } from "../../lib/team-builder/sync/box-doc";
 import type { BuildSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { restoreBuildSettings } from "./workspace-state";
-import { songRuleFields, songRuleSummary } from "./song-rules";
+import { multiSongSettings, songRuleFields, songRuleSummary } from "./song-rules";
 import { toolLayout } from "./tool-layout";
 import { choiceField, sectionHeading } from "./catalog";
 import {
@@ -33,7 +33,7 @@ import {
   renderCandidates,
   songList,
 } from "./build-tab";
-import { renderResults } from "./results";
+import { renderResults, searchMobileAction } from "./results";
 import { segmented } from "../ui/controls";
 import { SCORE_GOALS, scoreText } from "./score-goal";
 import { formatDate } from "../../lib/date-format";
@@ -335,7 +335,7 @@ export function renderArenaTab(host: TeamBuilder) {
       </section>
       <section class="surface stack">
         ${sectionHeading({ icon: "groups", label: host.t("arena.objective", "Team objective") })}
-        ${segmented({
+        ${multiSongSettings(host, segmented({
           label: host.t("arena.objective", "Team objective"),
           value: draft.mode,
           options: [
@@ -343,7 +343,7 @@ export function renderArenaTab(host: TeamBuilder) {
             { value: "individual", label: host.t("arena.individual", "A team for each song") },
           ],
           onSelect: (mode) => arena.update({ mode }),
-        })}
+        }))}
         ${sectionControls(host)}
         ${
           draft.mode === "individual" && draft.objective === "score"
@@ -385,5 +385,6 @@ export function renderArenaTab(host: TeamBuilder) {
     `,
     renderBuildRun(host),
     renderResults(host),
+    { mobileAction: searchMobileAction(host) },
   );
 }

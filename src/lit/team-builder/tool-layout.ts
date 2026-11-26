@@ -156,6 +156,18 @@ export function mobilePrerequisite(host: TeamBuilder) {
   return html`<button class="button button--full" type="button" @click=${action.run}>${action.label}</button>`;
 }
 
+export function mobileSaveAction(host: TeamBuilder, count: number) {
+  if (!host.compactConditions || host.classicLayout || host.running || !count) return null;
+  return html`<button class="button button--full tb-run__button" type="button" @click=${() => {
+    const save = host.querySelector<HTMLButtonElement>(".tb-results-column [data-tb-save-team]:enabled");
+    if (count === 1) save?.click();
+    else {
+      save?.scrollIntoView({ block: "center" });
+      save?.focus({ preventScroll: true });
+    }
+  }}>${count === 1 ? host.t("saveTeam", "Save team") : host.t("chooseTeamToSave", "Choose a team to save")}</button>`;
+}
+
 export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown, options?: { summary?: string; validate?: boolean; mobileAction?: unknown }) {
   const settings = () => typeof body === "function" ? body() : body;
   const summary = options?.summary ?? conditionSummary(host);

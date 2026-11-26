@@ -3,7 +3,7 @@
 // Output: Read-only current-rule summary, attribute/three-range overrides and multi-song objective controls.
 // Pos: [Map](../L2-2.md); common controls used by Arena, automatic and manual builders.
 // Effects/Dependencies: Saves through the owning controller; uses shared segmented controls and accordion.
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type { TeamBuilder } from "../team-builder";
 import { ORIGINAL_SONG_RULES, type SongRules } from "../../lib/team-builder/arena";
 import { segmented } from "../ui/controls";
@@ -105,10 +105,26 @@ export function songRulesControl(
   });
 }
 
+export function multiSongSettings(host: TeamBuilder, content: TemplateResult) {
+  const songs = host.searchSettings.songs;
+  if (host.classicLayout || songs.some(song => song.songId !== songs[0]?.songId)) return content;
+  const key = `multi-song-${host.tab}`;
+  return accordion({
+    id: `tb-${key}`, label: host.t("resultActions.multiSong", "Multi-song settings"),
+    expanded: host.expanded.has(key),
+    onExpandedChange: open => {
+      if (open) host.expanded.add(key);
+      else host.expanded.delete(key);
+      host.requestUpdate();
+    },
+    content,
+  });
+}
+
 export function multiSongControl(host: TeamBuilder) {
   const s = host.searchSettings;
   if (!["score", "gekiso", "event"].includes(s.goal) || (s.goal === "event" && s.route === "skip")) return nothing;
-  return segmented({
+  return multiSongSettings(host, segmented({
     label: host.t("arena.objective", "Team objective"),
     value: s.aggregation,
     options: [
@@ -118,5 +134,5 @@ export function multiSongControl(host: TeamBuilder) {
     onSelect: value => host.tab === "pt"
       ? host.updateFarming({ aggregation: value as "individual" | "mean" })
       : host.updateSettings({ aggregation: value as "individual" | "mean" }),
-  });
+  }));
 }

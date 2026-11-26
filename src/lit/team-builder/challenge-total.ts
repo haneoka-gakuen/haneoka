@@ -16,7 +16,7 @@ import { countChart, countChallengeSongs, loadChallengeTotal, saveChallengeTotal
   type ChallengeTotalResult } from "../../lib/team-builder/challenge-total";
 import { choiceField, sectionHeading } from "./catalog";
 import { cardScopeLabel } from "./card-input-controls";
-import { teamFormation } from "./results";
+import { saveTeam, teamFormation } from "./results";
 import { cardIdOf } from "../../lib/team-builder/sync/box-view";
 
 const difficultyNames = ["EASY", "NORMAL", "HARD", "EXPERT", "SPECIAL"];
@@ -324,6 +324,10 @@ export function totalResults(host: TeamBuilder) {
           return { member: cardIdOf(member), memberGrowth: growth("members", member),
             snap: snap ? cardIdOf(snap) : null, snapGrowth: snap ? growth("snaps", snap) : null };
         }), 0, false) : nothing}
+        ${best && value ? html`<div class="cluster"><button type="button" class="button button--tonal" data-tb-save-team
+          ?disabled=${total.stale} @click=${() => saveTeam(host, value.members.map(cardIdOf),
+            value.snaps.map(snap => snap ? cardIdOf(snap) : null), { songId: best.songId, difficulty: best.difficulty })}>
+          ${host.t("saveTeam", "Save team")}</button></div>` : nothing}
       </section>`;
     })}
     ${total.storageError ? html`<span role="status">${host.t("pt.storageError","Progress could not be saved on this device")}</span>` : nothing}

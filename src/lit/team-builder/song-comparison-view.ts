@@ -5,7 +5,7 @@
 // Effects/Dependencies: Lit light DOM；事件回调交由控制器处理。
 import { rangeRankControl } from "./gekiso-rank";
 import { songRulesControl } from "./song-rules";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -716,5 +716,6 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         </section>
       </div>
     `,
+    { mobileAction: rows.length && done === rows.length && !c.stale ? mobileSaveAction(host, 1) : null },
   );
 }

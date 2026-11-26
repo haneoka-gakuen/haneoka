@@ -3849,6 +3849,9 @@
       "stepCards": "カードをインポート",
       "eligibleCharacters": "編成できるキャラクター {count}/5人",
       "includeOwned": "所持メンバーを編成対象に追加",
+      "resultActions": {
+        "multiSong": "複数曲の設定"
+      },
       "chooseTeamToSave": "保存する編成を選ぶ",
       "stepCardsDone": "{count} 枚",
       "stepSongs": "楽曲を選ぶ",

@@ -3849,6 +3849,9 @@
       "stepCards": "导入卡牌",
       "eligibleCharacters": "可参与配队的角色 {count}/5 位",
       "includeOwned": "调整卡牌参与状态",
+      "resultActions": {
+        "multiSong": "多曲设置"
+      },
       "chooseTeamToSave": "选择要保存的队伍",
       "stepCardsDone": "{count} 张卡牌",
       "stepSongs": "选择乐曲",

@@ -8,9 +8,10 @@ import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { playConditions, renderBuildRun, renderCandidates } from "./build-tab";
 import { choiceField, sectionHeading } from "./catalog";
-import { renderResults } from "./results";
+import { renderResults, searchMobileAction } from "./results";
+import { countChallengeSongs } from "../../lib/team-builder/challenge-total";
 import { ChallengeTotal, totalControls, totalResults } from "./challenge-total";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 
 function queryInteger(params: URLSearchParams, name: string, minimum = 1) {
   const raw = params.get(name);
@@ -174,6 +175,8 @@ export function renderChallengeTab(host: TeamBuilder) {
   const summary = total ? [event?.name, host.t("challenge.all", "All challenge songs"), host.t(challenge.total.shared ? "challenge.shared" : "challenge.individual", max)].join(" / ") : [event?.name, track && catalog!.songTitle(track.liveMusicId),
     song && catalog!.difficultyLabel(song.songId, song.difficulty), max].filter(Boolean).join(" / ");
   const back = challenge.returnHref;
+  const completed = total && challenge.total.result && !challenge.total.stale && !challenge.total.resumable
+    ? countChallengeSongs(challenge.total.result) : null;
   return toolLayout(host, () => html`
     <section class="surface stack">
       ${sectionHeading({ icon: "emoji_events", label: title })}
@@ -209,5 +212,5 @@ export function renderChallengeTab(host: TeamBuilder) {
       ${back ? html`<a class="button button--text" href=${back}>${host.t(challenge.sourceIsTotal ? "challenge.backTotal" : challenge.region ? "challenge.backRanking" : "challenge.backEvent",
         challenge.region ? "Return to ranking" : "Return to event")}</a>` : nothing}
       ${total ? html`${totalResults(host)}
-        ${!challenge.sourceIsTotal ? html`<a class="button button--text" href=${`/${host.server}/${host.locale}/events/tracker/?event=${s.eventId}&region=${challenge.total.region}&board=total`}>${host.t("challenge.regional","Regional leaderboard")}</a>` : nothing}` : renderResults(host)}`, { summary });
+        ${!challenge.sourceIsTotal ? html`<a class="button button--text" href=${`/${host.server}/${host.locale}/events/tracker/?event=${s.eventId}&region=${challenge.total.region}&board=total`}>${host.t("challenge.regional","Regional leaderboard")}</a>` : nothing}` : renderResults(host)}`, { summary, mobileAction: total ? mobileSaveAction(host, completed?.covered ?? 0) : searchMobileAction(host) });
 }

@@ -3849,6 +3849,9 @@
       "stepCards": "카드 가져오기",
       "eligibleCharacters": "편성 가능한 캐릭터 {count}/5명",
       "includeOwned": "보유 멤버를 편성 대상에 추가",
+      "resultActions": {
+        "multiSong": "여러 곡 설정"
+      },
       "chooseTeamToSave": "저장할 팀 선택",
       "stepCardsDone": "{count}장",
       "stepSongs": "곡 고르기",
