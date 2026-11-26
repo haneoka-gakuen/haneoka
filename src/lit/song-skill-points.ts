@@ -215,16 +215,21 @@ export class SongSkillPoints extends LitElement {
   private stages() {
     const icons = (this.gekisou.icons ?? {}) as Record<string, string>;
     const segments = (this.gekisou.segments ?? []) as Row[];
+    const justEndings = (this.computed ?? this.rates?.gekisou)?.justEndings;
     return html`<ol class="song-gekisou-stages">${this.selected.map((type, index) => {
       const mission = gekisouMission(type);
       if (!mission) return nothing;
       const name = this.text(`catalog.songs.gekisou.${mission.key}`, mission.fallback);
+      const justEnding = justEndings?.[index];
+      const timing = mission.icon === "combo"
+        ? this.timings?.[index] ?? segments[index]?.timing as GekisoTimingSegment | undefined
+        : mission.icon === "just" && justEnding ? { ending: justEnding } : undefined;
       return html`<li>
         ${iconButton({ icon: "swap_horiz", variant: "tonal", ...(icons[mission.icon] ? { content: gameGlyph(icons[mission.icon]!) } : {}),
           label: this.text("catalog.songs.analysis.cycleStage", "Change section {stage}: {mission}").replace("{stage}", String(index + 1)).replace("{mission}", name),
           onClick: () => this.cycle(index) })}
         <span><small><span aria-hidden="true">${index + 1}</span><span class="sr-only">${this.label("gekisouSegment", "GEKISO stage")} ${index + 1}</span></small><strong>${name}</strong>
-          ${mission.icon === "combo" ? gekisoTimingView(this.timings?.[index] ?? segments[index]?.timing as GekisoTimingSegment | undefined, this.locale, this.label) : nothing}
+          ${gekisoTimingView(timing, this.locale, this.label)}
         </span>
       </li>`;
     })}</ol>`;
@@ -237,7 +242,7 @@ export class SongSkillPoints extends LitElement {
       this.text("catalog.songs.analysis.maxJust", "Max Just"), this.text("catalog.songs.analysis.startCombo", "Starting combo"),
       this.text("catalog.songs.analysis.seconds", "Length"),
     ], chart.feverMs.map(([start, end], index) => [index + 1,
-      (rates?.notes[index] ?? notes.filter(note => note.timeMs >= start && note.timeMs < end).length).toLocaleString(this.locale),
+      (rates?.notes[index] ?? notes.filter(note => note.timeMs >= start && note.timeMs <= end).length).toLocaleString(this.locale),
       rates ? rates.just[index]?.toLocaleString(this.locale) ?? "—" : "—",
       notes.filter(note => note.timeMs < start).length.toLocaleString(this.locale),
       `${((end - start) / 1000).toLocaleString(this.locale, { maximumFractionDigits: 1 })}s`,

@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: The pinned team source and public chart files.
-// Output: Static chart rates and ordinary Live scoring timelines.
+// Output: Static chart rates, Gekisou section counts and ordinary Live scoring timelines.
 // Pos: [Map](L2-2.md); shared chart-rate artifact for song analysis and the team picker.
 // Effects/Dependencies: Reuses fixed-release files and native WASM rates at build time.
 import { execFileSync } from "node:child_process";
@@ -17,12 +17,10 @@ import type { ReleaseServer } from "../lib/release-server";
 import { fetchStaticReleaseBytes, staticCatalogRelease } from "../lib/static-catalog-source";
 import { staticBuildJson } from "./static-input-store";
 import {
-  CHART_RATE_SCHEMA, isPackedChartScoreTimelines, SKILL_WINDOWS, type ChartRateTable,
-  type LegacyChartScoreTimeline, type PackedChartScoreTimelines,
+  CHART_RATE_SCHEMA, isPackedChartScoreTimelines, SKILL_WINDOWS, type ChartRateTable, type PackedChartScoreTimelines,
 } from "../lib/chart-rates";
 
 const ENGINE = path.resolve("src/lib/team-builder/engine/generated/team-engine.wasm");
-const LEGACY_SCHEMA = "haneoka-chart-rates-v10";
 
 interface Exports {
   memory: WebAssembly.Memory;
@@ -35,10 +33,6 @@ type Doc = Record<string, unknown>;
 type PublishedRateFields = ChartRateTable & {
   sourceId: string;
   engineCommit: string;
-};
-type LegacyPublishedRates = PublishedRateFields & {
-  schema: typeof LEGACY_SCHEMA;
-  scoreTimelines: Record<string, LegacyChartScoreTimeline>;
 };
 type ReusableRates = PublishedRateFields & {
   schema: typeof CHART_RATE_SCHEMA;
@@ -57,9 +51,9 @@ async function publishedRates(server: ReleaseServer, engineCommit: string): Prom
       },
     });
     if (!response.ok) return undefined;
-    const value = (await response.json()) as ReusableRates | LegacyPublishedRates;
+    const value = (await response.json()) as ReusableRates;
     if (
-      (value.schema !== CHART_RATE_SCHEMA && value.schema !== LEGACY_SCHEMA) ||
+      value.schema !== CHART_RATE_SCHEMA ||
       value.releaseId !== release.releaseId ||
       value.sourceId !== release.sourceId ||
       value.engineCommit !== engineCommit
@@ -76,18 +70,6 @@ async function publishedRates(server: ReleaseServer, engineCommit: string): Prom
       expected.some((key) => value.charts[key]?.windows.length !== SKILL_WINDOWS.length)
     )
       return undefined;
-    if (value.schema === LEGACY_SCHEMA) {
-      const timelines: BuildScoreTimeline[] = [];
-      for (const key of expected) {
-        const timeline = value.scoreTimelines?.[key];
-        if (!timeline || !Array.isArray(timeline.skillTimes)) return undefined;
-        const bytes = Buffer.from(timeline.notes, "base64");
-        if (bytes.length !== value.charts[key]!.notes * 4) return undefined;
-        timelines.push({ key, skillTimes: timeline.skillTimes, notes: legacyTimelineNotes(bytes) });
-      }
-      console.log(`repacked verified chart rates ${server}: ${expected.length} charts`);
-      return { ...value, schema: CHART_RATE_SCHEMA, scoreTimelines: packChartScoreTimelines(timelines) };
-    }
     const packed = value.scoreTimelines;
     if (!packed || !isPackedChartScoreTimelines(packed) || packed.index.length !== expected.length) return undefined;
     const timelineKeys = new Set(packed.index.map(([key]) => key));
@@ -143,14 +125,6 @@ interface BuildScoreTimeline {
   key: string;
   skillTimes: number[];
   notes: Iterable<Pick<ChartSource["notes"][number], "timeMs" | "operateType" | "judgementType">>;
-}
-
-function* legacyTimelineNotes(bytes: Buffer) {
-  let timeMs = 0;
-  for (let i = 0; i < bytes.length; i += 4) {
-    timeMs += bytes.readUInt16LE(i);
-    yield { timeMs, operateType: bytes[i + 2]!, judgementType: bytes[i + 3]! };
-  }
 }
 
 function packChartScoreTimelines(timelines: readonly BuildScoreTimeline[]): PackedChartScoreTimelines {

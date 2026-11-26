@@ -556,6 +556,24 @@ const PLAIN: SlotSkill = {
  * each skill event. */
 export function chartGekisoRates(master: EngineMaster, source: Parameters<typeof gekisoChart>[1], level: number, missions: readonly number[]): GekisouRates | undefined {
   if (source.feverMs.length < 3 || missions.length < 3 || missions.some((mission) => !mission)) return undefined;
+  const judged = source.notes.filter((note) => note.judged);
+  // The game's target list includes both endpoints at the original chart times.
+  const sections = source.feverMs.slice(0, 3).map(([start, end]) => {
+    const notes = judged.filter((note) => start <= note.timeMs && note.timeMs <= end);
+    const just = notes.filter((note) => master.live.justTypes.has(note.judgementType));
+    // The game closes the JUST window before processing input on the end frame.
+    const endingWindows = just
+      .filter((note) => note.timeMs === end)
+      .map((note) => master.live.justBeforeMs.get(note.judgementType) ?? 0)
+      .filter((before) => before > 0);
+    return {
+      notes: notes.length,
+      just: just.length,
+      justEnding: endingWindows.length && end > start
+        ? { timeMs: end, notes: endingWindows.length, earlyMs: Math.min(end - start, ...endingWindows) }
+        : null,
+    };
+  });
   const deck = Array(5).fill(BLANK);
   const runs = [0, 1].map((just) => {
     const chart = gekisoChart(master, source, level, missions, { great: 0, just }, 1);
@@ -573,14 +591,9 @@ export function chartGekisoRates(master: EngineMaster, source: Parameters<typeof
       const order = ORDERS.findIndex((row) => row[event] === 0);
       return skilled[order]!.map((value, part) => (value - base[part]!) / PROBE_POWER);
     });
-    const ranges = [0, 1, 2];
     return {
       base: base.map((value) => value / PROBE_POWER),
       events,
-      notes: ranges.map((range) => chart.rangeOf.filter((value) => value === range).length),
-      just: ranges.map((range) =>
-        chart.rangeOf.filter((value, note) => value === range && master.live.justTypes.has(chart.notes[note]!.judgementType)).length,
-      ),
     };
   });
   return {
@@ -588,7 +601,8 @@ export function chartGekisoRates(master: EngineMaster, source: Parameters<typeof
     percents: rankingFactors(master.live.gekiso, missionPattern(missions[0]!, missions[1]!, missions[2]!)),
     base: [roundedChartRates(runs[0]!.base), roundedChartRates(runs[1]!.base)],
     events: [runs[0]!.events.map(roundedChartRates), runs[1]!.events.map(roundedChartRates)],
-    notes: runs[1]!.notes,
-    just: runs[1]!.just,
+    notes: sections.map((section) => section.notes),
+    just: sections.map((section) => section.just),
+    justEndings: sections.map((section) => section.justEnding),
   };
 }

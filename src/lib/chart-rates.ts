@@ -1,3 +1,5 @@
+import type { GekisoTimingSegment } from "./team-builder/gekiso-timing";
+
 /** Score targets from per-power chart rates. A Live of power P with member skills s scores, up to each note's
  * truncation, P × (base + Σ over skill events of s.score·W(event, window) + s.perfect·W(event, window)), where the
  * window is five seconds plus the member's snap extension. */
@@ -55,10 +57,12 @@ export interface GekisouRates {
   base: [number[], number[]];
   /** [no Just, all Just] → [skill event] → parts a +100 % five-second score skill adds. */
   events: [number[][], number[][]];
-  /** Judged notes in each range. */
+  /** Judged notes at nominal chart times within each range, including both boundaries. */
   notes: number[];
-  /** Just-eligible inputs in each range, including its end boundary, independent of the original mission. */
+  /** Theoretical JUST count from eligible judged notes, independent of mission and skills. */
   just: number[];
+  /** Early-input windows for eligible notes exactly at the JUST section end. */
+  justEndings?: (NonNullable<GekisoTimingSegment["ending"]> | null)[];
 }
 /** Per-power Gekisou score at a rank in each range, a Just share, a general score factor (Great share) and the
  * five skills in percent. */
@@ -88,7 +92,7 @@ export interface PackedChartScoreTimelines {
   data: string;
 }
 export type ChartScoreTimelines = Record<string, LegacyChartScoreTimeline> | PackedChartScoreTimelines;
-export const CHART_RATE_SCHEMA = "haneoka-chart-rates-v11";
+export const CHART_RATE_SCHEMA = "haneoka-chart-rates-v12";
 export function isPackedChartScoreTimelines(timelines: ChartScoreTimelines): timelines is PackedChartScoreTimelines {
   return timelines.format === "gzip-delta-v1";
 }
