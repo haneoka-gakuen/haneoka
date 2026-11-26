@@ -175,17 +175,20 @@ export function ptFollowUpTotals(live: EngineHit, challenge: EngineHit, measure:
       ? event.directMean ?? event.mean - (event.convertedMean ?? 0) : event.otherMean);
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   };
-  const total = (metric: PtMeasure) => {
-    const live = reward(normal, metric);
-    const followUp = reward(next, metric);
-    return live !== null && (plays === 0 || followUp !== null)
-      ? live * normalPlays + (followUp ?? 0) * plays : null;
+  const settlement = (metric: PtMeasure) => {
+    const perPlay = reward(normal, metric);
+    const perChallenge = reward(next, metric);
+    const followUp = plays === 0 ? 0 : perChallenge === null ? null : perChallenge * plays;
+    return { perPlay, followUp, total: perPlay === null || followUp === null ? null : perPlay * normalPlays + followUp };
   };
+  const points = settlement("points"), items = settlement("items");
   return {
     plays,
     remaining: (budget - plays * consumption) / orders,
-    points: total("points"),
-    items: total("items"),
+    perPlay: { points: points.perPlay, items: items.perPlay },
+    followUp: { points: points.followUp, items: items.followUp },
+    points: points.total,
+    items: items.total,
   };
 }
 

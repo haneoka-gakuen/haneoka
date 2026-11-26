@@ -1294,6 +1294,12 @@ export function renderHit(
   const stale = options.stale ?? host.stale;
   const analysisHref = songMetaHref(host, hit);
   const main = primary(host, hit);
+  const source = resultRequest(host, hit);
+  const settings = resultSettings(host, hit);
+  const songs = hit.aggregate?.songs.flatMap(part => part.song ? [part.song] : []) ?? (hit.song ? [hit.song] : []);
+  const team = { members: hit.members.map(cardIdOf), snaps: hit.snaps.map(key => key ? cardIdOf(key) : null), leader: 0 };
+  const fromEvent = host.tab === "pt" && source?.goal.kind === "event" && !source.goal.eventEffects && settings.route !== "skip";
+  const fromLive = host.tab === "live" && source?.goal.kind === "gekiso" && settings.scope !== "theoretical";
   return html`
     <article
       data-result-key=${key}
@@ -1373,17 +1379,23 @@ export function renderHit(
                   type="button"
                   ?disabled=${stale}
                   @click=${() => {
-                    host.openSongComparison({
-                      members: hit.members.map(cardIdOf),
-                      snaps: hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
-                      leader: 0,
-                    }, resultInputs(host, hit));
+                    const fixed = fromEvent ? host.pt.fixedTeam : null;
+                    host.openSongComparison(fixed ?? team, source, fromEvent && source.goal.kind === "event" ? {
+                      farmingEvent: { id: source.goal.eventId, challenge: settings.route === "challenge" },
+                      songs, mode: "ap", just: settings.ptJust, ranks: [1, 1, 1],
+                      players: source.goal.rewardRoom?.mode === "battle" ? Math.max(2, source.goal.rewardRoom.players) : 5,
+                      songRules: settings.route === "challenge" ? undefined : source.songRules,
+                    } : undefined);
                   }}
                 >
-                  ${host.t("sc.useTeam", "Compare songs with this team")}
+                  ${fromEvent ? host.t("farm.tuneTeam", "Adjust this team in GEKISO") : host.t("sc.useTeam", "Compare songs with this team")}
                 </button>
               `
         }
+        ${fromLive && source.goal.kind === "gekiso" && songs.length ? html`<button
+          class="button button--text" type="button" ?disabled=${stale || host.running}
+          @click=${() => host.pt.openRewards(team, songs, { just: source.goal.kind === "gekiso" ? source.goal.accuracy.just * 100 : null, songRules: source.songRules })}>
+          ${host.t("farm.teamRewards", "Check event rewards with this team")}</button>` : nothing}
         ${
           resultSettings(host).arena || !hit.song || hit.aggregate || (usesPtResults(host) && !host.pt.job?.presentation)
             ? nothing
@@ -1547,7 +1559,7 @@ export function resultSelection(host: TeamBuilder, results: NonNullable<TeamBuil
   const shown = settings.goal === "event" && settings.route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
   const groups =
     selectedChart ? [selectedChart] : results.results;
-  return { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups };
+  return { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups, hadCandidates: unfiltered.length > 0 };
 }
 
 export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
@@ -1561,7 +1573,7 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
   }
   const catalog = host.catalog!;
   const stale = host.stale;
-  const { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups } = resultSelection(host, results);
+  const { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups, hadCandidates } = resultSelection(host, results);
   const proven = groups.length > 0 && groups.every((result) => result.proven);
   const gap = proven ? null : improvementPercent(groups);
   const goal = resultRequest(host)?.goal;
@@ -1700,7 +1712,7 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
           : html`
               <div class="state">
                 <p class="state__title">
-                  ${proven ? host.t("noTeams", "No team meets these conditions") : host.t("noCandidate", "No recommendation yet")}
+                  ${host.analysis.emptyRewards(hadCandidates, proven, host.running)}
                 </p>
               </div>
             `

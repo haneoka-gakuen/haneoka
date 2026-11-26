@@ -1,3 +1,4 @@
+import type { ComparisonSettings, Formation } from "../../lib/team-builder/song-comparison";
 import { skillRoleControls } from "./skill-role-controls";
 import { farmingRewardPlan, renderRewardPlan } from "./reward-plan-view";
 import { toolLayout } from "./tool-layout";
@@ -28,7 +29,7 @@ import {
 } from "../../lib/team-builder/pt-recommendation";
 import { completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
 import { PtCheckpoint } from "../../lib/team-builder/pt-checkpoint";
-import { renderHit, renderResults } from "./results";
+import { teamFormation, renderHit, renderResults } from "./results";
 import {
   renderBuildTab,
   renderBuildRun,
@@ -52,7 +53,7 @@ import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
 import { chartKey, farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
 import { usesPtResults } from "./score-goal";
-import { changeRewardMode } from "../../lib/team-builder/reward-plan";
+import { changeRewardMode, legacyRewardPlan } from "../../lib/team-builder/reward-plan";
 
 export class PtController {
   parking = false;
@@ -128,6 +129,28 @@ export class PtController {
   private runner: PtRunner | null = null;
   private readonly store = new PtCheckpoint();
   constructor(private readonly host: TeamBuilder) {}
+  get fixedTeam() {
+    const host = this.host;
+    return host.tab === "pt" && host.settings.rewardMode !== "plan" && !this.parking ? host.settings.farming.fixedTeam : null;
+  }
+  openRewards(team: Formation, songs: SongRef[], conditions: {
+    event?: ComparisonSettings["farmingEvent"]; just?: number | null; players?: number; songRules?: BuildSettings["songRules"];
+  }) {
+    const host = this.host;
+    host.setTab("pt");
+    this.parking = false;
+    const farming: FarmingSettings = { ...host.settings.farming, fixedTeam: structuredClone(team),
+      play: conditions.event?.challenge ? "challenge" : "gekiso",
+      ...(conditions.players ? { rewardPlayers: conditions.players } : {}),
+    };
+    if (farming.ptCycle && farming.play === "gekiso" && !farming.rewardPlan && farmingMode(farming) === "event")
+      farming.rewardPlan = legacyRewardPlan(farmingConditions(farming));
+    host.updateSettings({
+      farming, rewardMode: farmingMode(farming), songs: structuredClone(songs), songRules: conditions.songRules,
+      ...(conditions.event ? { eventId: conditions.event.id } : {}),
+      manualEventEnabled: false, ptJust: conditions.just ?? host.settings.ptJust,
+    });
+  }
   private get owner() {
     return this.host.snapshot?.owner ?? "local";
   }
@@ -376,7 +399,7 @@ export class PtController {
           },
           cycle,
         );
-        job.presentation = { scope: host.settings.scope, maxAccountBonuses: host.settings.maxAccountBonuses };
+        job.presentation = { scope: host.searchSettings.scope, maxAccountBonuses: host.searchSettings.maxAccountBonuses };
       }
       if (generation !== this.generation || signature !== this.inputSignature()) return;
       this.job = job;
@@ -461,6 +484,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
     f = farmingConditions(s.farming),
     catalog = host.catalog!;
   const set = (patch: Partial<FarmingSettings>) => host.updateFarming(patch);
+  const fixedTeam = host.pt.fixedTeam;
   const event = s.eventId === null ? undefined : host.master!.events.get(s.eventId);
   const challengeSongs = catalog.challengeSongs(s.eventId).map((row) => row.liveMusicId);
   const normal = !event || !!event.livePoints.size || !!event.liveRewards.length;
@@ -608,7 +632,14 @@ function renderSetup(host: TeamBuilder): TemplateResult {
           `
         : nothing
     }
-    ${renderCandidates(host)}
+    ${fixedTeam ? html`<section class="surface stack" id="tb-cards">
+      ${sectionHeading({ icon: "groups", label: host.t("farm.fixedTeam", "Fixed team") })}
+      ${teamFormation(host, fixedTeam.members.flatMap((member, i) => member === null ? [] :
+        [{ member, snap: fixedTeam.snaps[i] ?? null }]), fixedTeam.leader, false)}
+      <button type="button" class="button button--text" @click=${() => set({ fixedTeam: null })}>
+        ${host.t("farm.releaseTeam", "Choose from my cards")}
+      </button>
+    </section>` : renderCandidates(host)}
       ${host.searchSettings.ptMode === "gekiso" ? skillRoleControls(host) : nothing}
     <section class="surface stack">
       ${sectionHeading({ icon: "piano", label: host.t("farm.conditions", "Play and account conditions") })}
@@ -854,10 +885,14 @@ function renderFollowUp(host: TeamBuilder, key: string | EngineRequest, measure:
         ${field(t("startingCp", "Starting CP"), cp, 0, value => update({ cp: value }))}
       </div>
       <dl class="spec-list tabular">
+        <div><dt>${host.t("pointsPerPlay", "Event points per play")}</dt><dd>${number(counts.perPlay.points)}</dd></div>
+        <div><dt>${host.t("rewardPlan.itemsPerPlay", "Badges per play")}</dt><dd>${number(counts.perPlay.items)}</dd></div>
         <div><dt>${t("challengeRunCount", "Challenge Live plays")}</dt><dd>${number(counts.plays)}</dd></div>
         <div><dt>${t("remainingCp", "Remaining CP")}</dt><dd>${number(counts.remaining)}</dd></div>
-        <div><dt>${t("points", "Event points")}</dt><dd>${total(counts.points, baseline?.points)}</dd></div>
-        <div><dt>${t("items", "Shop medals")}</dt><dd>${total(counts.items, baseline?.items)}</dd></div>
+        <div><dt>${t("challengePt", "PT from challenge plays")}</dt><dd>${number(counts.followUp.points)}</dd></div>
+        <div><dt>${t("challengeItems", "Medals from challenge plays")}</dt><dd>${number(counts.followUp.items)}</dd></div>
+        <div><dt>${t("totalPt", "Total PT")}</dt><dd>${total(counts.points, baseline?.points)}</dd></div>
+        <div><dt>${t("totalItems", "Total medals")}</dt><dd>${total(counts.items, baseline?.items)}</dd></div>
       </dl>
     </section>
     ${renderHit(host, challenge, -1, { rank: icon("swords", 18), subtitle: t("challengeBest", "Challenge team"), stale })}
@@ -922,9 +957,9 @@ function renderRanking(host: TeamBuilder): TemplateResult {
             : nothing
       }
       ${
-        !ranking.length && !pt.running
+        !filtered.length
           ? html`
-              <div class="state"><p class="state__title">${host.t("noCandidate", "No recommendation yet")}</p></div>
+              <div class="state"><p class="state__title">${host.analysis.emptyRewards(ranking.length > 0, pt.noFeasibleTeams, pt.running)}</p></div>
             `
           : nothing
       }

@@ -257,12 +257,13 @@ function eventBonus(host: TeamBuilder) {
         now < event.endAt &&
         event.livePoints.size,
     );
-  if (!current.length) return nothing;
+  const origin = c.settings.farmingEvent;
+  const events = origin ? host.catalog!.events().filter(row => row.id === origin.id) : current;
   const t = (key: keyof typeof COMPARISON_TEXT) => scText(host, key);
   return html`
     <section class="surface stack">
       ${sectionHeading({ icon: "emoji_events", label: t("event") })}
-      ${current.map(({ event, name }) => {
+      ${events.map(({ event, name }) => {
         const bonus = (type: number) =>
           Math.floor(
             (team.box.members.reduce((sum, member) => sum + memberEventPercent(event.effects, member, type), 0) +
@@ -279,6 +280,13 @@ function eventBonus(host: TeamBuilder) {
           </dl>
         `;
       })}
+      ${!origin?.challenge && (c.settings.mode === "custom" || c.settings.ranks.some(rank => rank !== null && rank !== 1))
+        ? html`<span class="tb-results__meta">${host.t("farm.rewardConditions", "Event rewards: All Perfect / 1st in each section")}</span>` : nothing}
+      <button type="button" class="button button--tonal" ?disabled=${!c.effectiveSettings.songs.length || team.issues.length > 0 || host.running}
+        @click=${() => host.pt.openRewards(host.comparisonFormation, c.effectiveSettings.songs, {
+          event: origin ?? (current.length === 1 ? { id: current[0]!.id, challenge: false } : undefined),
+          just: c.effectiveSettings.just, players: c.settings.players, songRules: c.settings.songRules,
+        })}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>
     </section>
   `;
 }

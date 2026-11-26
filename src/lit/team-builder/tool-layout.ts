@@ -94,6 +94,8 @@ function fixAction(host: TeamBuilder, issue: InputIssue): StepAction {
 
 /** Each prerequisite links to the control that can satisfy it. */
 export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
+  if (host.tab === "pt" && host.running && !issues.length)
+    return html`<div class="state" role="status"><p class="state__title">${host.t("searching", "Finding candidates")}</p></div>`;
   if (!host.submitted) issues = issues.filter(issue => !issue.validation);
   const cardIssue = issues.find(issue => issue.field === "tb-cards");
   const rest = issues.filter(issue => issue !== cardIssue);

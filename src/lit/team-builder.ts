@@ -110,7 +110,7 @@ import { PtController, renderPtTab } from "./team-builder/pt-tab";
 import { SongComparison } from "./team-builder/song-comparison";
 import { ArenaController, renderArenaTab } from "./team-builder/arena-tab";
 import { ChallengeController, renderChallengeTab } from "./team-builder/challenge-tab";
-import { availableOnServer, readFormation, type Formation } from "../lib/team-builder/song-comparison";
+import { availableOnServer, readFormation, type ComparisonSettings, type Formation } from "../lib/team-builder/song-comparison";
 import { activeSongRules, ORIGINAL_SONG_RULES } from "../lib/team-builder/arena";
 import { arenaReleased } from "../lib/team-builder/arena";
 import { appCall, inApp, type AppBoxImport } from "../lib/app-bridge";
@@ -1281,13 +1281,15 @@ export class TeamBuilder extends LitElement {
     }
     this.updateSettings({ farming, rewardMode });
   }
-  openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null) {
+  openSongComparison(formation?: typeof this.manual, source?: Pick<EngineRequest, "goal" | "songRules"> | null,
+    conditions?: Partial<ComparisonSettings>) {
     const team = formation ?? this.manual;
     this.setTab("song-comparison");
     this.slotPicker = null;
     this.manual = structuredClone(team);
-    if (source && challengeEventForGoal(source.goal) === null)
-      this.songComparison.update({ songRules: source.songRules });
+    this.songComparison.update({ farmingEvent: null,
+      ...(source && challengeEventForGoal(source.goal) === null ? { songRules: source.songRules } : {}), ...conditions,
+    });
     this.requestUpdate();
   }
   private scrollPositions = new Map<string, { main: number; config: number }>();
@@ -1419,6 +1421,10 @@ export class TeamBuilder extends LitElement {
   /** Cards taking part in a search, after the candidate filters. */
   engineCards() {
     if (!this.master || !this.view) return { members: [], snaps: [] };
+    if (this.pt.fixedTeam) {
+      const { members, snaps } = this.manualInputs(this.pt.fixedTeam, this.searchSettings);
+      return { members, snaps };
+    }
     const s = this.tab === "arena" ? this.searchSettings : this.settings;
     const base =
       s.scope === "theoretical"
@@ -1854,6 +1860,8 @@ export class TeamBuilder extends LitElement {
         message: this.t("invalidIntegerRange", "Enter an integer from {min} to {max}", { min, max: MAX_GEKISO_COUNT }),
       });
     if (this.tab === "arena") issues.push(...this.arena.issues());
+    if (this.pt.fixedTeam && s.route !== "skip" && this.settings.songs.length !== s.songs.length)
+      add("tb-songs", "farm.replaceCharts", "Choose charts eligible for this event");
     const candidateCards = this.engineCards();
     const count = this.characterCount(candidateCards.members);
     if (count < 5) {
@@ -2004,7 +2012,7 @@ export class TeamBuilder extends LitElement {
     }
     const fixed = new Set([
       ...s.required.members,
-      ...(s.scope === "box"
+      ...(s.scope === "box" && !this.pt.fixedTeam
         ? [...(this.view?.members.values() ?? [])].filter((row) => row.use && row.lock).map((row) => row.cardId)
         : []),
       ...s.bindings.map(([member]) => member),
@@ -2018,7 +2026,7 @@ export class TeamBuilder extends LitElement {
       add("tb-cards", "fixedConflict", "Fixed members must be at most five different characters");
     const fixedSnaps = new Set([
       ...s.required.snaps,
-      ...(s.scope === "box"
+      ...(s.scope === "box" && !this.pt.fixedTeam
         ? [...(this.view?.snaps.values() ?? [])].filter((row) => row.use && row.lock).map((row) => row.cardId)
         : []),
       ...s.bindings.flatMap(([, snap]) => (snap === null ? [] : [snap])),
@@ -2113,7 +2121,8 @@ export class TeamBuilder extends LitElement {
         field: fields[0]!,
         fields,
         validation: true,
-        message: this.t("conditionsUnreachable", "These conditions cannot be met together"),
+        message: this.tab === "pt" ? this.t("noTeams", "No team meets these conditions")
+          : this.t("conditionsUnreachable", "These conditions cannot be met together"),
       });
     }
     this.issuesCache.set(recommendation, issues);
@@ -2373,7 +2382,7 @@ export class TeamBuilder extends LitElement {
     const player = this.playerInput(s);
     const locked = (kind: "m" | "s") => [
       ...new Set([
-        ...(theoretical
+        ...(theoretical || this.pt.fixedTeam
           ? []
           : [...(kind === "m" ? this.view!.members : this.view!.snaps).values()]
               .filter((row) => row.lock && row.use)

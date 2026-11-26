@@ -109,6 +109,7 @@ export interface BuildSettings {
 export interface FarmingSettings extends Pick<BuildSettings,
   "aggregation" | "playMode" | "great" | "good" | "miss" | "missEvery" | "measure" | "weighted" |
   "weightPoints" | "weightItems" | "weightCp" | "rewardPlan" | "rewardRoomMode" | "rewardPlayers" | "rewardOtherScore" | "unknownPolicy" | "fullRanking" | "k" | "timeLimit" | "ptCycle"> {
+  fixedTeam?: import("../../lib/team-builder/song-comparison").Formation | null;
   play: "solo" | "gekiso" | "challenge" | "skip";
   requireGrowth: boolean;
   includeMemory: boolean;

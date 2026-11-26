@@ -3,6 +3,7 @@
 // Output: Migrated drafts, resolved LUCK counts and JUST windows, effective reward conditions and selection transactions.
 // Pos: [Map](../L2-2.md); team workspace input projection.
 // Effects/Dependencies: Pure transformations; no persistence or engine calls.
+import { readFormation } from "../../lib/team-builder/song-comparison";
 import { readSkillRoleLimits } from "../../lib/team-builder/skill-roles";
 import { dataRows, type TeamBuilderData } from "../../lib/team-builder/data";
 import { MAX_GEKISO_COUNT } from "../../lib/team-builder/constraint-feasibility";
@@ -143,6 +144,7 @@ export function restoreBuildSettings(stored: Partial<BuildSettings> = {}, legacy
     };
   }
   settings.farming = { ...structuredClone(DEFAULT_FARMING), ...settings.farming, ...(CUSTOM_ACCURACY ? {} : { playMode: "ap" as const }) };
+  if (settings.farming.fixedTeam) settings.farming.fixedTeam = readFormation(settings.farming.fixedTeam);
   if (settings.farming.weighted && !settings.farming.rewardPlan) settings.farming.rewardPlan = legacyRewardPlan(settings.farming);
   settings.rewardMode = mode === "plan" && !settings.manualEventEnabled ? "plan" : farmingSettings(settings).rewardMode;
   return settings;
@@ -171,6 +173,12 @@ export function farmingSettings(settings: BuildSettings): BuildSettings {
         "challenge-points": { ...selectedPlan.options["challenge-points"], auto: false } } }
     : selectedPlan;
   return { ...settings, ...s, rewardPlan, rewardMode: mode, goal: "event",
+    ...(draft.fixedTeam ? {
+      scope: "box" as const, noSnaps: false, leader: draft.fixedTeam.members[draft.fixedTeam.leader] ?? null,
+      bindings: draft.fixedTeam.members.flatMap((id, slot): [number, number | null][] =>
+        id === null ? [] : [[id, draft.fixedTeam!.snaps[slot] ?? null]]),
+      required: { members: [], snaps: [] },
+    } : {}),
     farming: draft,
     eventId: settings.manualEventEnabled ? settings.manualEvent.templateId : settings.eventId,
     route: s.play === "solo" || s.play === "gekiso" ? "live" : s.play,
