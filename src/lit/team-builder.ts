@@ -912,6 +912,7 @@ export class TeamBuilder extends LitElement {
     const scopeOwner = gameToolOwner();
     if (this.loadedServer === server && this.gameAccount?.id === account.id && this.gameAccountOwner === scopeOwner)
       return;
+    if (this.loadedServer) this.challenge.clearOwnerRoute();
     const retained = this.publicData?.identity.server === server ? this.publicData : null;
     const reuseEngine = !!retained && this.data === retained && !!this.engine;
     this.gameAccount = account;
@@ -1045,6 +1046,7 @@ export class TeamBuilder extends LitElement {
   private adopt(snapshot: BoxSnapshot) {
     const ownerChanged = !this.snapshot || this.snapshot.owner !== snapshot.owner;
     if (ownerChanged) {
+      if (this.snapshot?.owner !== undefined) this.challenge.clearOwnerRoute();
       this.resetTasks();
       this.temporary.clear();
       this.temporaryDraft = null;

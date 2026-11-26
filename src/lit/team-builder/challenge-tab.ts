@@ -28,6 +28,13 @@ export class ChallengeController {
     this.route = new URLSearchParams(params);
     this.unavailable = null;
   }
+  clearOwnerRoute() {
+    this.readRoute(new URLSearchParams());
+    const url = new URL(location.href);
+    for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge"])
+      url.searchParams.delete(key);
+    if (url.href !== location.href) history.replaceState(history.state, "", url);
+  }
   get settings(): BuildSettings {
     return this.unavailable ? { ...this.host.settings, ...this.unavailable } : this.host.settings;
   }
@@ -80,7 +87,7 @@ export class ChallengeController {
           challengeBoard?.region !== current.challengeBoard?.region || challengeBoard?.eventId !== current.challengeBoard?.eventId ||
           challengeBoard?.challengeId !== current.challengeBoard?.challengeId) {
         const patch = { ...selection, challengeBoard };
-        if (requestedEvent !== null && host.snapshot) host.updateSettings(patch);
+        if (requestedEvent !== null && host.snapshot?.owner !== undefined) host.updateSettings(patch);
         else host.settings = { ...current, ...patch };
       }
     }
