@@ -32,6 +32,10 @@ outside stable maps. Do not move or split source just to fit a map.
 - Verify before pushing: type-check and lint the files you touched, and
   look at every visible change in a local browser at desktop width (1280px) and
   phone width (360–412px), in light and dark themes.
+- Before merging a PR, verify the PR's own commits through its checks and local
+  validation. Never create or push a separate verification branch, including
+  one prefixed with `codex/`. Put fixes on the existing PR branch and merge
+  through the original PR using squash or rebase.
 - Do not add manual production verification unless the user requests it;
   retain the deployment workflow's built-in checks.
 - D1 migrations in `worker/database/migrations/` are applied by the deploy
