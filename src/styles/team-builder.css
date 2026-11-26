@@ -613,12 +613,10 @@
       var(--md-sys-typescale-title-small-line-height) var(--app-font);
   }
   .tb-condition-summary__text span {
-    overflow: hidden;
+    overflow-wrap: anywhere;
     color: var(--md-sys-color-on-surface-variant);
     font: var(--md-sys-typescale-body-medium-weight) var(--md-sys-typescale-body-medium-size) /
       var(--md-sys-typescale-body-medium-line-height) var(--app-font);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .tb-mobile-operation {
     align-self: end;
@@ -817,6 +815,9 @@
   .tb-check-row {
     min-height: 72px;
     border-radius: var(--md-sys-shape-corner-medium);
+  }
+  .tb-check-actions {
+    margin-block-start: var(--md-sys-spacing-2);
   }
   .tb-check-row + .tb-check-row {
     border-block-start: 1px solid var(--md-sys-color-outline-variant);

@@ -72,6 +72,10 @@ function conditionLines(host: TeamBuilder, hit: EngineHit): string[] {
     `${host.t("unknownPolicy", "Growth")}: ${growthPolicyLabel(host, s)}`,
     `${host.t("scope", "Cards")}: ${cardScopeLabel(host, s)}`,
     `${host.t("goal", "Goal")}: ${primary(host, hit).label}`,
+    ...(input?.goal.kind === "score" && input.goal.challengeEventId !== null
+      ? [host.t("challengeRules", "Challenge live rules (event parameter bonus)") + " / " +
+          (host.catalog!.events().find(event => event.id === s.eventId)?.name ?? `#${input.goal.challengeEventId}`)]
+      : []),
     ...(s.goal === "event" || s.goal === "plan"
       ? [
           `${host.t("farm.memory", "Character / song memory bonuses")}: ${s.goal === "plan" || (s.farming.includeMemory && s.rewardMode !== "recommendation") ? host.t("farm.included", "Included") : host.t("farm.excluded", "Excluded")}`,
@@ -1228,6 +1232,10 @@ export function saveTeam(
   host.requestUpdate();
 }
 
+export function saveResultTeam(host: TeamBuilder, hit: EngineHit) {
+  saveTeam(host, hit.members.map(cardIdOf), hit.snaps.map(snap => snap ? cardIdOf(snap) : null), hit.song);
+}
+
 /** Song analysis for this team: its power and each member's score and Perfect score skills with their snap extension. */
 function songMetaHref(host: TeamBuilder, hit: EngineHit): string | null {
   const inputs = resultInputs(host, hit);
@@ -1354,6 +1362,8 @@ export function renderHit(
           : nothing
       }
       <div class="tb-hit__actions">
+        <button class="button button--tonal" type="button" data-tb-save-team ?disabled=${stale}
+          @click=${() => saveResultTeam(host, hit)}>${host.t("saveTeam", "Save team")}</button>
         ${paceHref ? html`<a class="button button--text" href=${paceHref}>${host.t("openPacePlanner", "Plan with these points")}</a>` : nothing}
         ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
         ${(() => {
@@ -1367,19 +1377,6 @@ export function renderHit(
         ${resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
           <button class="button button--tonal" type="button" ?disabled=${host.running}
             @click=${() => host.teamGrowth.openResult(hit)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
-        <button
-          class="button button--tonal"
-          ?disabled=${stale}
-          @click=${() =>
-            saveTeam(
-              host,
-              hit.members.map(cardIdOf),
-              hit.snaps.map((snap) => (snap ? cardIdOf(snap) : null)),
-              hit.song,
-            )}
-        >
-          ${host.t("saveTeam", "Save team")}
-        </button>
         ${
           resultSettings(host).arena ||
           resultSettings(host).scope === "theoretical" || (usesPtResults(host) && !host.pt.job?.presentation)
@@ -1544,17 +1541,7 @@ function bestResultsBySong(results: SongResult[], criterion: BuildSettings["crit
   return best;
 }
 
-export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
-  const results = host.results;
-  if (
-    !results ||
-    ["event", "plan"].includes(host.resultSettings?.goal ?? "score") !== (host.tab === "pt") ||
-    (host.tab === "pt" && (host.resultSettings?.goal === "plan") !== (host.settings.rewardMode === "plan"))
-  ) {
-    return renderChecklist(host);
-  }
-  const catalog = host.catalog!;
-  const stale = host.stale;
+export function resultSelection(host: TeamBuilder, results: NonNullable<TeamBuilder["results"]>) {
   const settings = resultSettings(host);
   const multi = results.results.length > 1 && settings.goal !== "plan";
   const chartResults = multi ? results.results.filter((result) => result.song) : [];
@@ -1571,9 +1558,24 @@ export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): T
         ? results.overall
         : (results.results[0]?.hits ?? [])
       : (selectedChart?.hits ?? []);
-  const shown = resultSettings(host).goal === "event" && resultSettings(host).route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
+  const shown = settings.goal === "event" && settings.route !== "skip" ? host.analysis.filter(unfiltered) : unfiltered;
   const groups =
     selectedChart ? [selectedChart] : results.results;
+  return { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups };
+}
+
+export function renderResults(host: TeamBuilder, cpFollowUp?: TemplateResult): TemplateResult {
+  const results = host.results;
+  if (
+    !results ||
+    ["event", "plan"].includes(host.resultSettings?.goal ?? "score") !== (host.tab === "pt") ||
+    (host.tab === "pt" && (host.resultSettings?.goal === "plan") !== (host.settings.rewardMode === "plan"))
+  ) {
+    return renderChecklist(host);
+  }
+  const catalog = host.catalog!;
+  const stale = host.stale;
+  const { multi, hasMultipleDifficulties, visibleCharts, tab, shown, groups } = resultSelection(host, results);
   const proven = groups.length > 0 && groups.every((result) => result.proven);
   const gap = proven ? null : improvementPercent(groups);
   const goal = resultRequest(host)?.goal;

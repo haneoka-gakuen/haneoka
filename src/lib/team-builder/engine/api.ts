@@ -327,7 +327,7 @@ export interface SongResult {
   bound: number | null;
   stats: SearchOutput<unknown>["stats"];
   /** Gekisou with opponents: the placement in each range that the recommended team's range scores earn. */
-  placements?: number[];
+  placements?: [number, number, number];
   /** Aspiration floor of a sharded search: the merged result is exact only if it holds k hits at or above it. */
   floor?: number;
   /** Exhaustive proof that no team in this scope reaches this key. Not a completed single-song optimum. */

@@ -48,7 +48,7 @@ export async function downloadChart(
       // A truncated body (interrupted cache write, dropped connection) parses
       // as broken JSON. Refetch past every cache once before giving up.
       if (signal) throwIfAborted(signal);
-      const bypass = new URL(target);
+      const bypass = new URL(target, globalThis.location?.href);
       bypass.searchParams.set("__reload", "1");
       const revalidated = await fetch(bypass, { credentials: "omit", cache: "reload" }).catch(() => null);
       if (!revalidated || !revalidated.ok) throw new Error("chart-corrupt");

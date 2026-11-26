@@ -1145,6 +1145,7 @@
         "eventLinks": "イベント内容",
         "eventItem": "イベントアイテム",
         "eventSong": "イベント楽曲",
+        "buildSongTeam": "この曲で編成",
         "storyEpisode": "ストーリー",
         "goal": "目標"
       },
@@ -2940,6 +2941,20 @@
       "loadFailed": "カードデータを読み込めませんでした。",
       "saveRejected": "この値は保存できません。",
       "searchFailed": "検索に失敗しました：{reason}",
+      "nav": {
+        "switchClassic": "旧表示に切り替え",
+        "switchModern": "新表示に切り替え",
+        "free": "自由編成",
+        "gekiso": "激奏",
+        "event": "イベント",
+        "profile": "マイデータ",
+        "live": "激奏ライブ",
+        "pickSong": "この編成で選曲",
+        "challenge": "チャレンジ楽曲ランキング",
+        "rewards": "周回おすすめ",
+        "teams": "保存した編成",
+        "resume": "元の作業に戻る"
+      },
       "tabBuild": "編成",
       "tabBox": "所持カード",
       "tabAccount": "アカウントボーナス",
@@ -3299,6 +3314,11 @@
         "photoBindings": "スナップが重複しています",
         "correctionHelp": "イベント報酬の入力を編集中",
         "back": "戻る"
+      },
+      "challenge": {
+        "title": "チャレンジ楽曲でハイスコアを狙う",
+        "backEvent": "イベント詳細に戻る",
+        "backRanking": "楽曲ランキングに戻る"
       },
       "criterionMax": "最高スコア（ランキング）",
       "criterionMaxBestTiming": "最高スコア・最良タイミング",
@@ -3803,6 +3823,9 @@
       "clearAllCharts": "すべての選択をクリア",
       "stepsLabel": "手順",
       "stepCards": "カードをインポート",
+      "eligibleCharacters": "編成できるキャラクター {count}/5人",
+      "includeOwned": "所持メンバーを編成対象に追加",
+      "chooseTeamToSave": "保存する編成を選ぶ",
       "stepCardsDone": "{count} 枚",
       "stepSongs": "楽曲を選ぶ",
       "editCompare": "編集して比較",

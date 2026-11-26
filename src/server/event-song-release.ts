@@ -1,4 +1,6 @@
 import {
+  asRecord,
+  fetchOptionalStaticCatalog,
   fetchStaticApplicationJson,
   fetchStaticReleaseJson,
   hasLocalStaticCatalog,
@@ -12,10 +14,24 @@ import {
   type EventSongReleases,
 } from "../lib/event-song-release";
 import type { EntityPayload } from "../lib/entity-graph";
+import { publicationFields } from "../lib/content-publication";
 import type { CatalogCollectionPayload } from "./catalog-collection";
 
-const releases = new Map<string, Promise<EventSongReleases>>();
-export async function staticEventSongReleases(identity: StaticCatalogRelease): Promise<EventSongReleases> {
+type ChallengeTrack = { id: number; eventId: number; musicId: number };
+function eventTracks(value: unknown): ChallengeTrack[] {
+  const rows = Array.isArray(value) ? value : asRecord(value)?._allData;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap(value => {
+    const row = asRecord(value);
+    if (!row) return [];
+    const id = Number(row.id ?? row._id), eventId = Number(row.eventId ?? row._eventId);
+    const musicId = Number(row.liveMusicId ?? row._liveMusicId);
+    return [id, eventId, musicId].every(value => Number.isSafeInteger(value) && value > 0) ? [{ id, eventId, musicId }] : [];
+  });
+}
+
+const releases = new Map<string, Promise<{ releases: EventSongReleases; tracks: ChallengeTrack[] }>>();
+async function staticEventMusic(identity: StaticCatalogRelease) {
   const key = JSON.stringify(identity);
   let pending = releases.get(key);
   if (!pending) {
@@ -26,19 +42,25 @@ export async function staticEventSongReleases(identity: StaticCatalogRelease): P
             fetchStaticReleaseJson(`objects/master/${table}.json`, identity.server, identity),
           ),
         );
-        return eventSongReleases(events, challenges);
+        return { releases: eventSongReleases(events, challenges), tracks: eventTracks(challenges) };
       }
       const data = (await fetchStaticApplicationJson(`/api/v1/team-builder/${identity.server}?v=4`, identity)) as {
         identity: StaticCatalogRelease;
         events: unknown;
         challengeMusicTable?: { rows: unknown[] };
       };
-      if (data.identity.releaseId !== identity.releaseId || data.identity.sourceId !== identity.sourceId) return {};
-      return eventSongReleases(data.events, data.challengeMusicTable?.rows);
-    })().catch(() => ({}));
+      if (data.identity.releaseId !== identity.releaseId || data.identity.sourceId !== identity.sourceId)
+        throw new Error("Event music release mismatch");
+      const rows = data.challengeMusicTable?.rows;
+      return { releases: eventSongReleases(data.events, rows), tracks: eventTracks(rows) };
+    })().catch(() => ({ releases: {}, tracks: [] }));
     releases.set(key, pending);
   }
   return pending;
+}
+
+export async function staticEventSongReleases(identity: StaticCatalogRelease): Promise<EventSongReleases> {
+  return (await staticEventMusic(identity)).releases;
 }
 
 export async function staticEventSongs<T extends Record<string, unknown>>(
@@ -51,6 +73,20 @@ export async function staticEventSongs<T extends Record<string, unknown>>(
 
 export async function eventSongPayload(payload: EntityPayload): Promise<EntityPayload> {
   if (!payload.sourceId) return payload;
+  const identity = { server: payload.server, releaseId: payload.releaseId, sourceId: payload.sourceId };
+  if (payload.resource === "events" && payload.item.kind === "game-event" && !payload.item.challengeTracks) {
+    const music = await staticEventMusic(identity);
+    const tracks = music.tracks.filter(row => row.eventId === Number(payload.id));
+    const challengeTracks = await Promise.all(tracks.map(async track => {
+      const song = await fetchOptionalStaticCatalog(`songs/${track.musicId}`, identity.server, identity);
+      const row = asRecord(song.value);
+      const title = row?.musicTitle || row?.title || row?.name;
+      if (!row || !title) return null;
+      return { ...publicationFields(withEventSongRelease({ ...row, musicId: track.musicId }, music.releases)),
+        ...track, musicTitle: title, jacketThumbUrl: row.jacketThumbUrl };
+    }));
+    payload = { ...payload, item: { ...payload.item, challengeTracks: challengeTracks.filter(Boolean), challengeServer: payload.server } };
+  }
   const songs = payload.aux?.songs as Record<string, Record<string, unknown>> | undefined;
   // Primary publication metadata remains stable after the song's own release time.
   if (
@@ -58,11 +94,7 @@ export async function eventSongPayload(payload: EntityPayload): Promise<EntityPa
     !Object.values(songs || {}).some(needsEventSongRelease)
   )
     return payload;
-  const releases = await staticEventSongReleases({
-    server: payload.server,
-    releaseId: payload.releaseId,
-    sourceId: payload.sourceId,
-  });
+  const releases = await staticEventSongReleases(identity);
   return {
     ...payload,
     item: payload.resource === "songs" ? withEventSongRelease(payload.item, releases) : payload.item,

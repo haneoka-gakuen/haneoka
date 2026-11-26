@@ -1145,6 +1145,7 @@
         "eventLinks": "Event content",
         "eventItem": "Event item",
         "eventSong": "Event song",
+        "buildSongTeam": "Build a team",
         "storyEpisode": "Story episode",
         "goal": "Goal"
       },
@@ -2940,6 +2941,20 @@
       "loadFailed": "Card data could not be loaded.",
       "saveRejected": "That value cannot be saved.",
       "searchFailed": "The search failed: {reason}",
+      "nav": {
+        "switchClassic": "Switch to classic layout",
+        "switchModern": "Switch to new layout",
+        "free": "Free build",
+        "gekiso": "GEKISO",
+        "event": "Event",
+        "profile": "My profile",
+        "live": "GEKISO Live",
+        "pickSong": "Choose songs for this team",
+        "challenge": "Challenge song ranking",
+        "rewards": "Farming recommendations",
+        "teams": "Saved teams",
+        "resume": "Return to task"
+      },
       "tabBuild": "Build",
       "tabBox": "My cards",
       "tabAccount": "Account bonuses",
@@ -3299,6 +3314,11 @@
         "photoBindings": "A snapshot is bound twice",
         "correctionHelp": "Editing an input for event rewards",
         "back": "Back"
+      },
+      "challenge": {
+        "title": "Challenge song ranking",
+        "backEvent": "Return to event",
+        "backRanking": "Return to song ranking"
       },
       "criterionMax": "Single-run maximum (ranking)",
       "criterionMaxBestTiming": "Maximum score · best timing",
@@ -3803,6 +3823,9 @@
       "clearAllCharts": "Clear all selections",
       "stepsLabel": "Steps",
       "stepCards": "Import cards",
+      "eligibleCharacters": "{count}/5 eligible characters",
+      "includeOwned": "Include owned cards",
+      "chooseTeamToSave": "Choose a team to save",
       "stepCardsDone": "{count} cards",
       "stepSongs": "Choose songs",
       "editCompare": "Edit and compare",

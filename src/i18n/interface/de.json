@@ -1143,6 +1143,7 @@
         "eventLinks": "Veranstaltungsinhalte",
         "eventItem": "Ereigniselement",
         "eventSong": "Ereignislied",
+        "buildSongTeam": "Team bilden",
         "storyEpisode": "Story-Folge",
         "goal": "Ziel"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Die Daten der Karte können nicht geladen werden.",
       "saveRejected": "Diese Wert ist nicht gerettet.",
       "searchFailed": "Die Suche versagt: {reason}",
+      "nav": {
+        "switchClassic": "Zur klassischen Ansicht wechseln",
+        "switchModern": "Zur neuen Ansicht wechseln",
+        "free": "Freie Teambildung",
+        "gekiso": "GEKISO",
+        "event": "Event",
+        "profile": "Mein Profil",
+        "live": "GEKISO-Live",
+        "pickSong": "Songs für dieses Team wählen",
+        "challenge": "Highscore für den Challenge-Song",
+        "rewards": "Empfehlungen zum Farmen",
+        "teams": "Gespeicherte Teams",
+        "resume": "Zurück zur Aufgabe"
+      },
+      "eligibleCharacters": "{count}/5 einsetzbare Charaktere",
+      "includeOwned": "Eigene Karten einbeziehen",
+      "chooseTeamToSave": "Team zum Speichern wählen",
       "tabBuild": "bauen",
       "tabBox": "Meine Karten",
       "tabAccount": "Konto Bonus",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Ein Snapshot wird zweimal gebunden",
         "correctionHelp": "Ein Beitrag für Veranstaltungspreise zu veröffentlichen",
         "back": "Zurück"
+      },
+      "challenge": {
+        "title": "Highscore für den Challenge-Song",
+        "backEvent": "Zurück zum Event",
+        "backRanking": "Zurück zur Songrangliste"
       },
       "criterionMax": "Einfache Fahrt maximal (Ranking)",
       "criterionMaxBestTiming": "Maximale Score · Beste Timing",

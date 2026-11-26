@@ -53,6 +53,13 @@ const percent = (value: unknown): value is number =>
 const integer = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 
+export function readFormation(value?: unknown): Formation {
+  const saved = value && typeof value === "object" ? value as Partial<Formation> : {};
+  const slots = (ids: unknown) => Array.from({ length: 5 }, (_, slot): number | null =>
+    Array.isArray(ids) && integer(ids[slot], 1, Number.MAX_SAFE_INTEGER) ? ids[slot] : null);
+  return { members: slots(saved.members), snaps: slots(saved.snaps), leader: integer(saved.leader, 0, 4) ? saved.leader : 2 };
+}
+
 /** Preferences cross the persisted-document boundary; incomplete fields remain visibly unselected. */
 export function readComparisonSettings(value: unknown): ComparisonSettings {
   const defaults = comparisonDefaults();

@@ -3,7 +3,7 @@ import { gekisoHelpButton } from "./gekiso-help";
 import { rangeRankControl } from "./gekiso-rank";
 import { farmingMode, justBaseWindow } from "./workspace-state";
 import { enableManualEvent, renderManualEvent } from "./manual-event";
-import { toolLayout } from "./tool-layout";
+import { mobilePrerequisite, toolLayout } from "./tool-layout";
 import { songMissions } from "../../lib/catalog-filters";
 import { multiSongControl, songRulesControl } from "./song-rules";
 import { arenaSongView } from "../../lib/team-builder/arena";
@@ -23,7 +23,7 @@ import { accordion } from "../ui/accordion";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { choiceField, sectionHeading } from "./catalog";
-import { renderResults } from "./results";
+import { renderResults, resultSelection, saveResultTeam } from "./results";
 import { rankTargetControl, renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
@@ -37,6 +37,7 @@ const GOALS = [
   { id: "power", icon: "bolt" },
   { id: "potential", icon: "auto_awesome" },
 ] as const;
+const FREE_GOALS = GOALS.filter(goal => goal.id !== "gekiso");
 
 export function gekisoSamplesControl(host: TeamBuilder, context: "score" | "rewards" = "score"): TemplateResult {
   const draft = host.tab === "arena" ? host.arena.draft.build : host.settings;
@@ -925,6 +926,15 @@ function requiredPicker(host: TeamBuilder): TemplateResult | typeof nothing {
 
 export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): TemplateResult {
   const s = host.searchSettings;
+  const goals = host.classicLayout ? GOALS : FREE_GOALS;
+  const selectGoal = (goal: GoalKind) => {
+    const tab = goal === "gekiso" ? "live" : "build";
+    if (tab !== host.tab) {
+      host.buildMode = "automatic";
+      host.setTab(tab, { keepPanel: true });
+    }
+    if (goal !== "gekiso") host.updateSettings({ goal });
+  };
   const challengeSongs =
     s.eventId === null ? [] : host.catalog!.challengeSongs(s.eventId).map((row) => row.liveMusicId);
   const challenge =
@@ -946,21 +956,21 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     () => html`
       ${leading ?? nothing}
       ${
-        host.tab === "build"
+        host.tab === "build" || host.tab === "live"
           ? html`
               <section class="surface stack">
                 ${sectionHeading({ icon: "flag", label: host.t("goal", "Goal") })}
-                <div
+                ${host.tab === "build" || host.classicLayout ? html`<div
                   class="cluster tb-goals"
                   role="radiogroup"
                   aria-label=${host.t("goal", "Goal")}
                   @keydown=${rovingKeydown(
-                    GOALS.map(({ id }) => id as GoalKind),
+                    goals.map(({ id }) => id as GoalKind),
                     s.goal,
-                    (goal) => set({ goal }),
+                    selectGoal,
                   )}
                 >
-                  ${GOALS.map(
+                  ${goals.map(
                     ({ id, icon: name }) => html`
                       <button
                         class="chip"
@@ -968,13 +978,13 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                         role="radio"
                         aria-checked=${String(s.goal === id)}
                         tabindex=${s.goal === id ? "0" : "-1"}
-                        @click=${() => set({ goal: id })}
+                        @click=${() => selectGoal(id)}
                       >
                         ${icon(s.goal === id ? "check" : name, 18)}<span class="chip__label">${goalText(host, id)}</span>
                       </button>
                     `,
                   )}
-                </div>
+                </div>` : nothing}
                 ${
                   s.goal === "score" || s.goal === "gekiso"
                     ? html`
@@ -1120,7 +1130,24 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     `,
     renderBuildRun(host),
     renderResults(host),
+    { mobileAction: host.tab === "build" && !host.classicLayout && host.compactConditions && !host.running ? freeMobileAction(host) : null },
   );
+}
+
+function freeMobileAction(host: TeamBuilder) {
+  const prerequisite = mobilePrerequisite(host);
+  if (prerequisite || !host.results || host.stale) return prerequisite;
+  const { shown } = resultSelection(host, host.results);
+  if (!shown.length) return null;
+  const hit = shown.length === 1 ? shown[0] : null;
+  return html`<button class="button button--full" type="button" @click=${() => {
+    if (hit) saveResultTeam(host, hit);
+    else {
+      const save = host.querySelector<HTMLButtonElement>(".tb-results-column [data-tb-save-team]");
+      save?.scrollIntoView({ block: "center" });
+      save?.focus({ preventScroll: true });
+    }
+  }}>${hit ? host.t("saveTeam", "Save team") : host.t("chooseTeamToSave", "Choose a team to save")}</button>`;
 }
 
 export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): TemplateResult {

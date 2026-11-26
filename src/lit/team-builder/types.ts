@@ -6,10 +6,11 @@ import type { FrameRate } from "../../lib/team-builder/engine/live";
 import type { RewardPlan } from "../../lib/team-builder/reward-plan";
 import { emptyManualEvent, type ManualEventDraft } from "../../lib/team-builder/manual-event";
 
-export type Tab = "build" | "arena" | "box" | "account" | "teams" | "pt" | "song-comparison";
+export type Tab = "build" | "live" | "challenge" | "arena" | "box" | "account" | "teams" | "pt" | "song-comparison";
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
 export type LuckSamplingMode = "auto" | "manual";
 export interface BuildSettings {
+  challengeBoard?: { eventId: number; challengeId: number; region: import("../../lib/game-records").GameRecordsRegion } | null;
   aggregation: "individual" | "mean";
   songRules?: import("../../lib/team-builder/arena").SongRules;
   scopedSongAttribute?: true;
@@ -69,6 +70,7 @@ export interface BuildSettings {
   unknownPolicy: "max" | "min";
   scope: "box" | "theoretical";
   maxAccountBonuses: boolean;
+  manualFullGrowth: boolean;
   leader: number | null;
   /** member card → snap card (null keeps it empty). */
   bindings: [number, number | null][];
@@ -168,6 +170,7 @@ export const DEFAULT_SETTINGS: BuildSettings = {
   unknownPolicy: "max",
   scope: "box",
   maxAccountBonuses: false,
+  manualFullGrowth: false,
   leader: null,
   bindings: [],
   required: { members: [], snaps: [] },

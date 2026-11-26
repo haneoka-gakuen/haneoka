@@ -16,6 +16,7 @@ import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { TrackerPageData, TrackerRailEvent } from "../lib/event-tracker-page-data";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { resourcePath } from "../lib/resource-route";
+import { eventChallengeHref } from "../lib/event-challenge-route";
 import { resolveLocalizedText, resolveRelationshipText } from "../lib/localized-text";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../lib/song-performer";
 import { loadPlaylistCatalogSource } from "../lib/playlist-tracks";
@@ -757,6 +758,9 @@ export class EventTracker extends LitElement {
                     role="tabpanel"
                     aria-labelledby=${`event-challenge-${this.challengeId}`}
                   >
+                    ${challenge ? html`<a class="button button--tonal" href=${eventChallengeHref(this.locale, this.sourceServer(), event.id, challenge, this.region)}>
+                      ${clientText(this.locale, "tools.teamBuilder.challenge.title", "Challenge song ranking")}
+                    </a>` : nothing}
                     ${
                       readable
                         ? html`

@@ -1145,6 +1145,7 @@
         "eventLinks": "活动内容",
         "eventItem": "活动道具",
         "eventSong": "活动乐曲",
+        "buildSongTeam": "为此曲配队",
         "storyEpisode": "剧情章节",
         "goal": "目标"
       },
@@ -2940,6 +2941,20 @@
       "loadFailed": "无法加载卡牌数据。",
       "saveRejected": "该数值无法保存。",
       "searchFailed": "搜索失败：{reason}",
+      "nav": {
+        "switchClassic": "切回旧版界面",
+        "switchModern": "切换到新版界面",
+        "free": "自由配队",
+        "gekiso": "激奏",
+        "event": "活动",
+        "profile": "我的资料",
+        "live": "激奏演出",
+        "pickSong": "用这支队伍选曲",
+        "challenge": "挑战曲冲榜",
+        "rewards": "刷取推荐",
+        "teams": "已保存队伍",
+        "resume": "回到刚才的任务"
+      },
       "tabBuild": "配队",
       "tabBox": "我的卡牌",
       "tabAccount": "账号加成",
@@ -3299,6 +3314,11 @@
         "photoBindings": "留影重复绑定",
         "correctionHelp": "正在修改活动收益所需的输入",
         "back": "返回"
+      },
+      "challenge": {
+        "title": "挑战曲冲榜",
+        "backEvent": "返回活动详情",
+        "backRanking": "返回单曲榜"
       },
       "criterionMax": "单次最高分（冲榜）",
       "criterionMaxBestTiming": "最高分最佳时序",
@@ -3803,6 +3823,9 @@
       "clearAllCharts": "清空全部选择",
       "stepsLabel": "步骤",
       "stepCards": "导入卡牌",
+      "eligibleCharacters": "可参与配队的角色 {count}/5 位",
+      "includeOwned": "调整卡牌参与状态",
+      "chooseTeamToSave": "选择要保存的队伍",
       "stepCardsDone": "{count} 张卡牌",
       "stepSongs": "选择乐曲",
       "editCompare": "换卡对比",

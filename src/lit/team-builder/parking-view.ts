@@ -85,13 +85,13 @@ function inputKey(host: TeamBuilder, d: ParkingDraft, withTarget = true) {
 }
 export function openParking(host: TeamBuilder, input: { team?: ManualTeam; eventId?: number; song?: SongRef; challenge?: boolean; consumption?: number } = {}) {
   host.cancel();
-  if (input.team) host.manual = structuredClone(input.team);
   const d = draftFor(host);
   d.includeManual = true; d.teamIds.clear(); d.result = null; d.rows = []; d.submitted = false;
   if (input.song) { d.songId = input.song.songId; d.difficulty = input.song.difficulty; }
   if (input.challenge !== undefined) d.challenge = input.challenge;
   if (input.consumption !== undefined) d.consumption = input.consumption;
   host.setTab("pt"); host.pt.parking = true;
+  if (input.team) host.manual = structuredClone(input.team);
   if (input.eventId !== undefined) host.updateSettings({ eventId: input.eventId });
   host.openConditions(); host.requestUpdate();
 }

@@ -1143,6 +1143,7 @@
         "eventLinks": "Konten acara",
         "eventItem": "Barang acara",
         "eventSong": "Lagu acara",
+        "buildSongTeam": "Susun tim",
         "storyEpisode": "Episode cerita",
         "goal": "Sasaran"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Data kartu tidak dapat diisi.",
       "saveRejected": "Nilai tersebut tidak dapat diselamatkan.",
       "searchFailed": "Pencarian gagal: {reason}",
+      "nav": {
+        "switchClassic": "Beralih ke tampilan lama",
+        "switchModern": "Beralih ke tampilan baru",
+        "free": "Bentuk tim bebas",
+        "gekiso": "GEKISO",
+        "event": "Acara",
+        "profile": "Profil saya",
+        "live": "Live GEKISO",
+        "pickSong": "Pilih lagu untuk tim ini",
+        "challenge": "Kejar skor tertinggi lagu tantangan",
+        "rewards": "Rekomendasi farming",
+        "teams": "Tim yang disimpan",
+        "resume": "Kembali ke tugas"
+      },
+      "eligibleCharacters": "{count}/5 karakter yang dapat digunakan",
+      "includeOwned": "Sertakan kartu yang dimiliki",
+      "chooseTeamToSave": "Pilih tim untuk disimpan",
       "tabBuild": "Bangun",
       "tabBox": "Kartu saya",
       "tabAccount": "Akun Bonus",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Snapshot yang terikat dua kali",
         "correctionHelp": "Mengedit input untuk hadiah acara",
         "back": "Kembali"
+      },
+      "challenge": {
+        "title": "Kejar skor tertinggi lagu tantangan",
+        "backEvent": "Kembali ke acara",
+        "backRanking": "Kembali ke peringkat lagu"
       },
       "criterionMax": "Satu-satu yang maksimal (Ranking)",
       "criterionMaxBestTiming": "Titik maksimum · Waktu terbaik",

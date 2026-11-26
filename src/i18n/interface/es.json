@@ -1143,6 +1143,7 @@
         "eventLinks": "Contenido del evento",
         "eventItem": "Elemento de evento",
         "eventSong": "Canción del evento",
+        "buildSongTeam": "Formar equipo",
         "storyEpisode": "episodio de la historia",
         "goal": "Meta"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Los datos de la tarjeta no se pueden cargar.",
       "saveRejected": "Este valor no puede ser salvado.",
       "searchFailed": "La búsqueda falleció: {reason}",
+      "nav": {
+        "switchClassic": "Usar la vista clásica",
+        "switchModern": "Usar la vista nueva",
+        "free": "Formación libre",
+        "gekiso": "GEKISO",
+        "event": "Evento",
+        "profile": "Mi perfil",
+        "live": "Concierto GEKISO",
+        "pickSong": "Elegir canciones para este equipo",
+        "challenge": "Récord de la canción de desafío",
+        "rewards": "Recomendaciones de farmeo",
+        "teams": "Equipos guardados",
+        "resume": "Volver a la tarea"
+      },
+      "eligibleCharacters": "{count}/5 personajes disponibles",
+      "includeOwned": "Incluir mis cartas",
+      "chooseTeamToSave": "Elige un equipo para guardar",
       "tabBuild": "Construido",
       "tabBox": "Mi tarjeta",
       "tabAccount": "Bonos de cuenta",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Una snapshot se vincula dos veces",
         "correctionHelp": "Editar una entrada para los premios de eventos",
         "back": "Atrás"
+      },
+      "challenge": {
+        "title": "Récord de la canción de desafío",
+        "backEvent": "Volver al evento",
+        "backRanking": "Volver a la clasificación de la canción"
       },
       "criterionMax": "Máxima de un solo relojo (Ranking)",
       "criterionMaxBestTiming": "Punto máximo · Mejor tiempo",

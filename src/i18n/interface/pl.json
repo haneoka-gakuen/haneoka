@@ -1143,6 +1143,7 @@
         "eventLinks": "Wydarzenia zawarte",
         "eventItem": "Wydarzenia elementy",
         "eventSong": "Piosenka wydarzeń",
+        "buildSongTeam": "Ułóż drużynę",
         "storyEpisode": "Historia epizod",
         "goal": "Cel"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Dane karty nie można pobrać.",
       "saveRejected": "Ta wartość nie może być zachowana.",
       "searchFailed": "Nie udało się wyszukać: {reason}",
+      "nav": {
+        "switchClassic": "Przełącz na klasyczny widok",
+        "switchModern": "Przełącz na nowy widok",
+        "free": "Dowolny skład",
+        "gekiso": "GEKISO",
+        "event": "Wydarzenie",
+        "profile": "Mój profil",
+        "live": "Koncert GEKISO",
+        "pickSong": "Wybierz utwory dla tego zespołu",
+        "challenge": "Rekord w utworze wyzwania",
+        "rewards": "Polecane sposoby zdobywania nagród",
+        "teams": "Zbawione zespoły",
+        "resume": "Wróć do zadania"
+      },
+      "eligibleCharacters": "Dostępne postacie: {count}/5",
+      "includeOwned": "Uwzględnij posiadane karty",
+      "chooseTeamToSave": "Wybierz zespół do zapisania",
       "tabBuild": "budowa",
       "tabBox": "Moje karty",
       "tabAccount": "Konto bonusowe",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Snapshot jest podłączony dwukrotnie",
         "correctionHelp": "Wydawanie wpisów na nagrody wydarzeń",
         "back": "Wstecz"
+      },
+      "challenge": {
+        "title": "Rekord w utworze wyzwania",
+        "backEvent": "Wróć do wydarzenia",
+        "backRanking": "Wróć do rankingu utworu"
       },
       "criterionMax": "Maksymalny pojedynczy przejazd (ranking)",
       "criterionMaxBestTiming": "Maksymalny wynik · najlepszy czas",

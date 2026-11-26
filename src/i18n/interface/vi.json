@@ -1143,6 +1143,7 @@
         "eventLinks": "Nội dung sự kiện",
         "eventItem": "Mục sự kiện",
         "eventSong": "Bài hát sự kiện",
+        "buildSongTeam": "Xếp đội",
         "storyEpisode": "Tập truyện",
         "goal": "Mục tiêu"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Dữ liệu thẻ không thể được tải lên.",
       "saveRejected": "Giá trị đó không thể được tiết kiệm.",
       "searchFailed": "Tìm kiếm thất bại: {reason}",
+      "nav": {
+        "switchClassic": "Dùng giao diện cũ",
+        "switchModern": "Dùng giao diện mới",
+        "free": "Lập đội tự do",
+        "gekiso": "GEKISO",
+        "event": "Sự kiện",
+        "profile": "Hồ sơ của tôi",
+        "live": "Biểu diễn GEKISO",
+        "pickSong": "Chọn bài cho đội này",
+        "challenge": "Chinh phục điểm cao bài thử thách",
+        "rewards": "Gợi ý cày sự kiện",
+        "teams": "Các đội đã lưu",
+        "resume": "Quay lại tác vụ"
+      },
+      "eligibleCharacters": "{count}/5 nhân vật đủ điều kiện",
+      "includeOwned": "Dùng cả thẻ đang sở hữu",
+      "chooseTeamToSave": "Chọn đội để lưu",
       "tabBuild": "xây dựng",
       "tabBox": "thẻ của tôi",
       "tabAccount": "Tài khoản Bonus",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Một snapshot được gắn kết hai lần",
         "correctionHelp": "Tạo một bản ghi cho sự kiện phần thưởng",
         "back": "Mặt sau"
+      },
+      "challenge": {
+        "title": "Chinh phục điểm cao bài thử thách",
+        "backEvent": "Quay lại sự kiện",
+        "backRanking": "Quay lại bảng xếp hạng bài hát"
       },
       "criterionMax": "Độ bền tối đa (Ranking)",
       "criterionMaxBestTiming": "Tỷ lệ tối đa · Best timing",

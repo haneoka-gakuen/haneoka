@@ -1145,6 +1145,7 @@
         "eventLinks": "活動內容",
         "eventItem": "活動道具",
         "eventSong": "活動樂曲",
+        "buildSongTeam": "為這首歌組隊",
         "storyEpisode": "劇情章節",
         "goal": "目標"
       },
@@ -2940,6 +2941,20 @@
       "loadFailed": "無法載入卡牌資料。",
       "saveRejected": "該數值無法儲存。",
       "searchFailed": "搜尋失敗：{reason}",
+      "nav": {
+        "switchClassic": "切回舊版介面",
+        "switchModern": "切換至新版介面",
+        "free": "自由配隊",
+        "gekiso": "激奏",
+        "event": "活動",
+        "profile": "我的資料",
+        "live": "激奏演出",
+        "pickSong": "用這支隊伍選曲",
+        "challenge": "挑戰曲衝榜",
+        "rewards": "刷取推薦",
+        "teams": "已儲存隊伍",
+        "resume": "回到剛才的任務"
+      },
       "tabBuild": "組隊",
       "tabBox": "我的卡牌",
       "tabAccount": "帳號加成",
@@ -3299,6 +3314,11 @@
         "photoBindings": "快照重複綁定",
         "correctionHelp": "正在修改活動收益所需的輸入",
         "back": "返回"
+      },
+      "challenge": {
+        "title": "挑戰曲拚榜",
+        "backEvent": "返回活動詳情",
+        "backRanking": "返回單曲排行榜"
       },
       "criterionMax": "單次最高分（衝榜）",
       "criterionMaxBestTiming": "最高分最佳時序",
@@ -3803,6 +3823,9 @@
       "clearAllCharts": "清空全部選擇",
       "stepsLabel": "步驟",
       "stepCards": "匯入卡牌",
+      "eligibleCharacters": "可參與組隊的角色 {count}/5 位",
+      "includeOwned": "調整卡牌參與狀態",
+      "chooseTeamToSave": "選擇要儲存的隊伍",
       "stepCardsDone": "{count} 張卡牌",
       "stepSongs": "選擇樂曲",
       "editCompare": "換卡比較",

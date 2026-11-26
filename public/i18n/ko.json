@@ -1145,6 +1145,7 @@
         "eventLinks": "이벤트 콘텐츠",
         "eventItem": "이벤트 아이템",
         "eventSong": "이벤트 곡",
+        "buildSongTeam": "이 곡으로 편성",
         "storyEpisode": "스토리 에피소드",
         "goal": "목표"
       },
@@ -2940,6 +2941,20 @@
       "loadFailed": "카드 데이터를 불러오지 못했습니다.",
       "saveRejected": "이 값은 저장할 수 없습니다.",
       "searchFailed": "검색 실패: {reason}",
+      "nav": {
+        "switchClassic": "이전 화면으로 전환",
+        "switchModern": "새 화면으로 전환",
+        "free": "자유 편성",
+        "gekiso": "격주",
+        "event": "이벤트",
+        "profile": "내 자료",
+        "live": "격주 라이브",
+        "pickSong": "이 팀으로 선곡",
+        "challenge": "챌린지 곡 랭킹",
+        "rewards": "이벤트 파밍 추천",
+        "teams": "저장한 팀",
+        "resume": "이전 작업으로 돌아가기"
+      },
       "tabBuild": "편성",
       "tabBox": "보유 카드",
       "tabAccount": "계정 보너스",
@@ -3299,6 +3314,11 @@
         "photoBindings": "스냅이 중복 장착되었습니다",
         "correctionHelp": "이벤트 보상 입력 수정 중",
         "back": "뒤로"
+      },
+      "challenge": {
+        "title": "챌린지 곡 최고 점수 도전",
+        "backEvent": "이벤트 상세로 돌아가기",
+        "backRanking": "곡 랭킹으로 돌아가기"
       },
       "criterionMax": "최고 점수 (랭킹)",
       "criterionMaxBestTiming": "최고 점수 · 최선 타이밍",
@@ -3803,6 +3823,9 @@
       "clearAllCharts": "모든 선택 지우기",
       "stepsLabel": "단계",
       "stepCards": "카드 가져오기",
+      "eligibleCharacters": "편성 가능한 캐릭터 {count}/5명",
+      "includeOwned": "보유 멤버를 편성 대상에 추가",
+      "chooseTeamToSave": "저장할 팀 선택",
       "stepCardsDone": "{count}장",
       "stepSongs": "곡 고르기",
       "editCompare": "편집해서 비교",

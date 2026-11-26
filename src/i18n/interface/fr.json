@@ -1143,6 +1143,7 @@
         "eventLinks": "Contenu de l'événement",
         "eventItem": "Élément d'événement",
         "eventSong": "Chanson d'événement",
+        "buildSongTeam": "Former une équipe",
         "storyEpisode": "Épisode d'histoire",
         "goal": "But"
       },
@@ -2905,6 +2906,23 @@
       "loadFailed": "Les données de la carte ne peuvent pas être chargées.",
       "saveRejected": "Cette valeur ne peut être sauvée.",
       "searchFailed": "La recherche échoue : {reason}",
+      "nav": {
+        "switchClassic": "Passer à l’ancienne interface",
+        "switchModern": "Passer à la nouvelle interface",
+        "free": "Formation libre",
+        "gekiso": "GEKISO",
+        "event": "Événement",
+        "profile": "Mon profil",
+        "live": "Concert GEKISO",
+        "pickSong": "Choisir des chansons pour cette équipe",
+        "challenge": "Record du morceau défi",
+        "rewards": "Recommandations de farming",
+        "teams": "Équipes enregistrées",
+        "resume": "Revenir à la tâche"
+      },
+      "eligibleCharacters": "{count}/5 personnages disponibles",
+      "includeOwned": "Inclure les cartes possédées",
+      "chooseTeamToSave": "Choisir une équipe à enregistrer",
       "tabBuild": "Construire",
       "tabBox": "Mes cartes",
       "tabAccount": "Bonuses de compte",
@@ -3256,6 +3274,11 @@
         "photoBindings": "Un snapshot est lié deux fois",
         "correctionHelp": "Rédaction d'une entrée pour les récompenses d'événement",
         "back": "Dos"
+      },
+      "challenge": {
+        "title": "Record du morceau défi",
+        "backEvent": "Revenir à l’événement",
+        "backRanking": "Revenir au classement du morceau"
       },
       "criterionMax": "Le maximum de la course (Ranking)",
       "criterionMaxBestTiming": "Le meilleur score, le meilleur timing",
