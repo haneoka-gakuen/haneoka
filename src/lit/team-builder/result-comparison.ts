@@ -14,7 +14,7 @@ import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { isCpChallenge, resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
 import { manualResultHit } from "./manual-results";
-import { resultMetric, type ResultMetric } from "./result-metric";
+import { resultMetric, sampledLuck, type ResultMetric } from "./result-metric";
 import { cardScopeLabel } from "./card-input-controls";
 
 export interface ComparisonEntry {
@@ -27,6 +27,7 @@ export interface ComparisonEntry {
   metric: ResultMetric;
   listed: boolean;
   proven: boolean;
+  sampled: boolean;
   placements?: number[];
   selectedOrder?: number;
 }
@@ -111,6 +112,7 @@ function entry(
     metric: resultMetric(host, hit, settings),
     listed: true,
     proven: result.proven,
+    sampled: sampledLuck(host, hit),
     placements: result.placements?.slice(),
     selectedOrder,
   };
@@ -405,7 +407,7 @@ export class ResultComparison {
                   <span>${item.metric.label}</span>
                   <small>
                     ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
-                      : item.proven && item.hit.gekiso?.sampled ? host.t("sampledProven", "Optimal within samples") : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
+                      : item.proven && item.sampled ? host.t("sampledProven", "Optimal within samples") : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
                   </small>
                 `,
               )}
