@@ -2916,6 +2916,18 @@
       "loadFailed": "カードデータを読み込めませんでした。",
       "saveRejected": "この値は保存できません。",
       "searchFailed": "検索に失敗しました：{reason}",
+      "nav": {
+        "free": "自由編成",
+        "gekiso": "激奏",
+        "event": "イベント",
+        "profile": "マイデータ",
+        "live": "激奏ライブ",
+        "pickSong": "この編成で選曲",
+        "challenge": "チャレンジ楽曲ランキング",
+        "rewards": "周回おすすめ",
+        "teams": "保存した編成",
+        "resume": "元の作業に戻る"
+      },
       "tabBuild": "編成",
       "tabBox": "所持カード",
       "tabAccount": "アカウントボーナス",

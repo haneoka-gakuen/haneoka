@@ -2916,6 +2916,18 @@
       "loadFailed": "无法加载卡牌数据。",
       "saveRejected": "该数值无法保存。",
       "searchFailed": "搜索失败：{reason}",
+      "nav": {
+        "free": "自由配队",
+        "gekiso": "激奏",
+        "event": "活动",
+        "profile": "我的资料",
+        "live": "激奏演出",
+        "pickSong": "用这支队伍选曲",
+        "challenge": "挑战曲冲榜",
+        "rewards": "刷取推荐",
+        "teams": "已保存队伍",
+        "resume": "回到刚才的任务"
+      },
       "tabBuild": "配队",
       "tabBox": "我的卡牌",
       "tabAccount": "账号加成",

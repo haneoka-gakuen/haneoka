@@ -2916,6 +2916,18 @@
       "loadFailed": "無法載入卡牌資料。",
       "saveRejected": "該數值無法儲存。",
       "searchFailed": "搜尋失敗：{reason}",
+      "nav": {
+        "free": "自由配隊",
+        "gekiso": "激奏",
+        "event": "活動",
+        "profile": "我的資料",
+        "live": "激奏演出",
+        "pickSong": "用這支隊伍選曲",
+        "challenge": "挑戰曲衝榜",
+        "rewards": "刷取推薦",
+        "teams": "已儲存隊伍",
+        "resume": "回到剛才的任務"
+      },
       "tabBuild": "組隊",
       "tabBox": "我的卡牌",
       "tabAccount": "帳號加成",

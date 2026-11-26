@@ -2916,6 +2916,18 @@
       "loadFailed": "Card data could not be loaded.",
       "saveRejected": "That value cannot be saved.",
       "searchFailed": "The search failed: {reason}",
+      "nav": {
+        "free": "Free build",
+        "gekiso": "GEKISO",
+        "event": "Event",
+        "profile": "My profile",
+        "live": "GEKISO Live",
+        "pickSong": "Choose songs for this team",
+        "challenge": "Challenge song ranking",
+        "rewards": "Farming recommendations",
+        "teams": "Saved teams",
+        "resume": "Return to task"
+      },
       "tabBuild": "Build",
       "tabBox": "My cards",
       "tabAccount": "Account bonuses",

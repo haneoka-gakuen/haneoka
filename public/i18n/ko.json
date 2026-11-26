@@ -2916,6 +2916,18 @@
       "loadFailed": "카드 데이터를 불러오지 못했습니다.",
       "saveRejected": "이 값은 저장할 수 없습니다.",
       "searchFailed": "검색 실패: {reason}",
+      "nav": {
+        "free": "자유 편성",
+        "gekiso": "격주",
+        "event": "이벤트",
+        "profile": "내 자료",
+        "live": "격주 라이브",
+        "pickSong": "이 팀으로 선곡",
+        "challenge": "챌린지 곡 랭킹",
+        "rewards": "이벤트 파밍 추천",
+        "teams": "저장한 팀",
+        "resume": "이전 작업으로 돌아가기"
+      },
       "tabBuild": "편성",
       "tabBox": "보유 카드",
       "tabAccount": "계정 보너스",

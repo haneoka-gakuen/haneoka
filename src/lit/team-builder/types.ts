@@ -6,7 +6,7 @@ import type { FrameRate } from "../../lib/team-builder/engine/live";
 import type { RewardPlan } from "../../lib/team-builder/reward-plan";
 import { emptyManualEvent, type ManualEventDraft } from "../../lib/team-builder/manual-event";
 
-export type Tab = "build" | "arena" | "box" | "account" | "teams" | "pt" | "song-comparison";
+export type Tab = "build" | "live" | "challenge" | "arena" | "box" | "account" | "teams" | "pt" | "song-comparison";
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
 export type LuckSamplingMode = "auto" | "manual";
 export interface BuildSettings {
