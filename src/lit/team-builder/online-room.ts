@@ -7,14 +7,15 @@ import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { teamFormation } from "./results";
 import { LazyImages } from "../ui/lazy-images";
 import { modal } from "../ui/modal";
-import { live } from "lit/directives/live.js";
 import { navigationDocumentUrl } from "../../lib/document-url";
 import { isReleasedContent } from "../../lib/content-release";
+import { snackbar } from "../../lib/snackbar";
 import { availableOnServer } from "../../lib/team-builder/song-comparison";
 import type { BoxView } from "../../lib/team-builder/sync/box-view";
 import type { RoomSettings } from "../../lib/team-builder/cooperative-room";
 import type { TeamBuilder } from "../team-builder";
 import { RoomConnection, RoomRequestError, lastRoomId, roomIdValid, type RoomView } from "./room-connection";
+import { toolLayout } from "./tool-layout";
 
 type SeatDraft = { difficulty: number | null; just: number; great: number; missEvery: number; team: string };
 const freshDraft = (h: TeamBuilder): SeatDraft => {
@@ -32,11 +33,22 @@ const valueOf = (event: Event) => (event.currentTarget as HTMLInputElement).valu
 
 class OnlineRoom extends LitElement {
   private readonly images = new LazyImages();
-  static properties = { builder: { attribute: false }, box: { attribute: false }, route: {}, server: {} };
+  static properties = {
+    builder: { attribute: false },
+    box: { attribute: false },
+    route: {},
+    server: {},
+    compactConditions: { attribute: false },
+    conditionsOpen: { attribute: false },
+    locale: { attribute: false },
+  };
   declare builder: TeamBuilder;
   declare box: BoxView;
   declare route: string;
   declare server: string;
+  declare compactConditions: boolean;
+  declare conditionsOpen: boolean;
+  declare locale: TeamBuilder["locale"];
   private readonly room = new RoomConnection(() => {
     const run = this.room.view?.run;
     if (this.search && (run?.id !== this.search.id || run.revision !== this.search.revision || run.complete))
@@ -51,7 +63,8 @@ class OnlineRoom extends LitElement {
   private busy = false;
   private copied = false;
   private confirmLeave = false;
-  private error = "";
+  private submissionError = "";
+  private workspace?: HTMLElement;
   private search?: { id: string; revision: number; controller: AbortController };
   private songs?: { owner: TeamBuilder["publicData"]; locale: string; choices: [number, string][] };
 
@@ -70,17 +83,23 @@ class OnlineRoom extends LitElement {
   }
   protected updated() {
     this.images.observe(this);
+    const workspace = this.querySelector<HTMLElement>(".tb-tool") ?? undefined;
+    if (workspace !== this.workspace) {
+      this.workspace = workspace;
+      this.builder.requestUpdate();
+    }
   }
   protected willUpdate(changes: PropertyValues) {
     if (!this.builder) return;
+    if (changes.has("conditionsOpen") && !this.conditionsOpen) this.submissionError = "";
     if (changes.has("route") || changes.has("server")) {
       if (this.room.id === this.route && this.room.id && !changes.has("server")) return;
       this.search?.controller.abort();
       this.search = undefined;
       this.busy = false;
-      this.error = "";
       this.copied = false;
       this.confirmLeave = false;
+      this.submissionError = "";
       this.draft = freshDraft(this.builder);
       this.room.open(this.route || "", this.server);
       if (this.route && this.room.hasSeat) {
@@ -116,17 +135,16 @@ class OnlineRoom extends LitElement {
   private t(key: string, fallback: string, params?: Record<string, number | string>) {
     return this.builder.t("onlineRoom." + key, fallback, params);
   }
-  private async action(fn: (signal: AbortSignal) => Promise<void>) {
+  private async action(fn: (signal: AbortSignal) => Promise<void>, onError?: (message: string) => void) {
     if (this.busy) return;
     const signal = this.room.signal;
     this.busy = true;
-    this.error = "";
     this.requestUpdate();
     try {
       await fn(signal);
     } catch (e) {
       if (!signal.aborted) {
-        this.error =
+        const error =
           e instanceof RoomRequestError
             ? this.failure(e.code)
             : e instanceof Error &&
@@ -140,6 +158,8 @@ class OnlineRoom extends LitElement {
               : e instanceof TypeError && /fetch|network/i.test(e.message)
                 ? this.t("retry", "Connection interrupted. Try again when you are online.")
                 : String(e instanceof Error ? e.message : e);
+        if (onError) onError(error);
+        else snackbar(error, { error: true });
         void this.room.sync();
       }
     } finally {
@@ -169,7 +189,7 @@ class OnlineRoom extends LitElement {
       room_expired: ["gone", "This room has closed or expired."],
       invalid_seat: ["seatLost", "Your saved seat is no longer available."],
       room_full: ["full", "All five seats are taken."],
-      reconnecting: ["retrying", "Connection interrupted. Reconnecting…"],
+      reconnecting: ["retrying", "Reconnecting…"],
       stale_run: ["changed", "Room inputs changed. Check the current room and continue."],
       stale_seat: ["changed", "Room inputs changed. Check the current room and continue."],
       seats_not_ready: ["needPlayers", "At least two players must join and everyone must submit their cards."],
@@ -225,6 +245,7 @@ class OnlineRoom extends LitElement {
     if (this.route === id && this.isConnected) await this.action(() => this.room.enter(settings));
   }
   private async submit(view: RoomView) {
+    this.submissionError = "";
     await this.action(async (signal) => {
       const { exportRoomPlayer, assertRoomRelease } = await import("../../lib/team-builder/cooperative-room");
       const h = this.builder,
@@ -259,6 +280,9 @@ class OnlineRoom extends LitElement {
       const seat = view.seats.find((row) => row.id === view.seatId)!;
       await this.room.mutate("/seat", "PUT", { version: seat.version, player }, signal);
       if (!signal.aborted) localStorage.setItem(draftKey(view.roomId), JSON.stringify(this.draft));
+    }, (error) => {
+      if (this.conditionsOpen) this.submissionError = error;
+      else snackbar(error, { error: true });
     });
   }
   private async run(view: RoomView) {
@@ -380,7 +404,7 @@ class OnlineRoom extends LitElement {
           <input
             type="number"
             name=${name}
-            .value=${live(String(value))}
+            value=${String(value)}
             required
             min=${min}
             max=${max}
@@ -405,7 +429,7 @@ class OnlineRoom extends LitElement {
       return html`
         <section class="surface stack">
           <h2 class="detail-section-title">${this.t("invitation", "Room invitation")}</h2>
-          <p>${this.t("inviteDetail", "Join to claim a seat. You can choose which cards to submit after joining.")}</p>
+          ${this.room.failure ? html`<p role="status">${this.failure(this.room.failure)}</p>` : nothing}
           <div class="cluster">
             ${!this.room.failure && !this.room.hasSeat ? this.button("join", this.t("join", "Join room"), () => this.action(() => this.room.enter()), this.busy, true) : nothing}
             ${
@@ -432,9 +456,6 @@ class OnlineRoom extends LitElement {
     return html`
       <form class="surface stack" @submit=${this.form(() => this.create())}>
         <h2 class="detail-section-title">${this.t("title", "Co-op room")}</h2>
-        <p>
-          ${this.t("setup", "Choose a song, then invite 1–4 other players. Each player can use their own difficulty.")}
-        </p>
         ${this.choice("room-song", this.builder.t("song", "Song"), choices, this.songId, (v) => {
           this.songId = Number(v);
         })}
@@ -458,9 +479,6 @@ class OnlineRoom extends LitElement {
             this.seed = n;
           })}
         </div>
-        <p class="muted">
-          ${this.t("samplesHint", "Each sample draws LUCK and skill order. The same seed repeats the same draws.")}
-        </p>
         <div class="cluster">
           <button
             class="button button--filled"
@@ -482,6 +500,23 @@ class OnlineRoom extends LitElement {
     );
   }
 
+  private connectionStatus(inSettings = false) {
+    const reconnecting = !!this.room.failure;
+    return html`
+      <span
+        class="tb-room-connection muted"
+        role="status"
+        ?data-room-connection-status=${!inSettings}
+        ?data-seat-connection-status=${inSettings}
+        ?data-reconnecting=${reconnecting}
+        aria-hidden=${!inSettings && this.conditionsOpen ? "true" : nothing}
+      >
+        <span aria-hidden=${String(reconnecting)}>${this.t("connected", "Connected")}</span>
+        <span aria-hidden=${String(!reconnecting)}>${this.t("retrying", "Reconnecting…")}</span>
+      </span>
+    `;
+  }
+
   private seatForm(view: RoomView) {
     const { song } = view.settings,
       h = this.builder,
@@ -493,9 +528,14 @@ class OnlineRoom extends LitElement {
     const count = this.eligibleCharacters();
     return html`
       <form class="surface stack" @submit=${this.form(() => this.submit(view))}>
-        <h3 class="detail-section-title">${this.t("mySeat", "My seat · {id}", { id: view.seatId })}</h3>
+        <div class="row row--between row--wrap">
+          <h3 class="detail-section-title">${this.t("mySeat", "My seat · {id}", { id: view.seatId })}</h3>
+          ${this.compactConditions ? this.connectionStatus(true) : nothing}
+        </div>
         <div class="row row--between">
-          <span>${this.t("owned", "{members} available member cards · {snaps} snapshots", { members, snaps })}</span>
+          <span role="status">${count < 5
+            ? h.t("eligibleCharacters", "{count}/5 eligible characters", { count })
+            : this.t("owned", "{members} available member cards · {snaps} snapshots", { members, snaps })}</span>
           ${this.button("cards", h.t("tabBox", "My cards"), () => h.setTab("box"))}
         </div>
         ${this.choice(
@@ -538,92 +578,90 @@ class OnlineRoom extends LitElement {
           )}
         </div>
         <p class="muted">
-          ${this.t("consent", "The host receives your owned member cards and snapshots, including disabled cards, along with their growth, account bonuses and play conditions. Disabled cards are excluded from teams. Everyone in the room can see the resulting teams.")}
+          ${this.t("consent", "The host receives your owned cards (including excluded cards), growth, account bonuses and play settings. Room members see the teams and scores.")}
         </p>
         <div>
           <button
             data-room-action="submit"
             class="button button--filled"
             type="submit"
-            ?disabled=${this.busy || !choices.length || count < 5}
+            ?disabled=${this.busy || !!this.room.failure || !choices.length || count < 5}
           >
             ${seat.ready ? this.t("update", "Update my submission") : this.t("submit", "Submit my cards")}
           </button>
         </div>
-        ${
-          count < 5
-            ? html`
-                <p role="status">${h.t("eligibleCharacters", "{count}/5 eligible characters", { count })}</p>
-              `
-            : nothing
-        }
+        ${this.submissionError ? html`
+          <div class="snackbar" role="alert">
+            <span class="snackbar__text">${this.submissionError}</span>
+            <button class="button button--text" type="button" @click=${() => {
+              this.submissionError = "";
+              this.requestUpdate();
+            }}>${h.common("common.actions.close", "Close")}</button>
+          </div>
+        ` : nothing}
       </form>
     `;
   }
-  private result(view: RoomView) {
+  private result(view: RoomView, ready: boolean) {
     const run = view.run,
       result = run?.result;
-    if (!run) return nothing;
+    const title = this.t("results", "Room results");
+    if (!run)
+      return html`
+        <section class="surface stack" data-room-result>
+          <h3 class="detail-section-title">${title}</h3>
+          <p role="status">${ready
+            ? this.t("readyToSearch", "Ready to search")
+            : this.t("needPlayers", "At least two players must join and everyone must submit their cards.")}</p>
+        </section>
+      `;
     const phase =
       result?.phase === "inventory"
         ? this.t("phaseInventory", "Preparing each player’s teams")
         : result?.phase === "bounds"
           ? this.t("phaseBounds", "Checking possible room scores")
           : this.t("phaseSearch", "Comparing room combinations");
-    const format = (n: number) => new Intl.NumberFormat(this.builder.locale, { maximumFractionDigits: 1 }).format(n);
+    const format = new Intl.NumberFormat(this.locale, { maximumFractionDigits: 2 }).format;
+    const percent = new Intl.NumberFormat(this.locale, { style: "percent", maximumFractionDigits: 2 }).format;
     return html`
       <section class="surface stack" data-room-result>
-        <h3 class="detail-section-title">${this.t("results", "Room results")}</h3>
+        <h3 class="detail-section-title">${title}</h3>
         <p role="status">
           ${
             run.complete
-              ? this.t("complete", "Search complete for the selected samples.")
-              : this.t("partial", "Search in progress. The teams shown are the best found so far.")
+              ? this.t("complete", "Search complete")
+              : this.t("partial", "Search incomplete")
           }
           ${
             result && !run.complete
               ? html`
                   <span>
-                    ${phase} · ${this.t("workDone", "{count} work units saved", { count: format(run.work) })}.
+                    · ${phase} · ${this.t("workDone", "{count} work units saved", { count: format(run.work) })}
                   </span>
                 `
               : nothing
           }
-          ${result ? this.t("evaluated", "{count} combinations evaluated.", { count: typeof result.evaluated === "string" ? result.evaluated : format(result.evaluated) }) : nothing}
+          ${result ? html`· ${this.t("evaluated", "{count} combinations evaluated", {
+            count: typeof result.evaluated === "string" ? result.evaluated : format(result.evaluated),
+          })}` : nothing}
         </p>
         ${
           result?.teams && result.meanTotal !== null
             ? html`
-                <div class="cluster">
-                  <strong>${this.t("mean", "Mean room score")} · ${format(result.meanTotal)}</strong>
-                  ${
-                  result.ssRate !== null
-                    ? html`
-                        <strong>
-                          ${this.t("rate", "Room SS rate")} · ${format(result.ssRate * 100)}%
-                          (${result.ssHits}/${result.sampleCount})
-                        </strong>
-                      `
-                    : nothing
-                }
-                </div>
-                ${
-                result.ssThreshold !== null
-                  ? html`
-                      <p>${this.t("threshold", "Room SS threshold")} · ${format(result.ssThreshold)}</p>
-                    `
-                  : nothing
-              }
-                <p class="muted">
-                  ${
-                  result.ssThreshold === null
-                    ? this.t("noThreshold", "The room SS threshold is unavailable for this song.")
-                    : this.t(
-                        "estimate",
-                        "The SS rate is the share of these samples that reached SS. Actual play can differ.",
-                      )
-                }
-                </p>
+                <dl class="spec-list spec-list--numeric" data-room-metrics>
+                  <dt>${this.t("mean", "Mean room score")}</dt>
+                  <dd data-room-metric="mean">${format(result.meanTotal)}</dd>
+                  <dt>${this.t("samples", "Samples")}</dt>
+                  <dd data-room-metric="samples">${format(result.sampleCount)}</dd>
+                  <dt>${this.t("ssHits", "SS hits")}</dt>
+                  <dd data-room-metric="ss-hits">${result.ssHits === null ? "—" : format(result.ssHits)}</dd>
+                  <dt>${this.t("rate", "Room sample SS rate")}</dt>
+                  <dd data-room-metric="ss-rate">${result.ssRate === null ? "—" : percent(result.ssRate)}</dd>
+                  <dt>${this.t("threshold", "Room SS threshold")}</dt>
+                  <dd data-room-metric="ss-threshold">${result.ssThreshold === null
+                    ? this.t("noThreshold", "Unavailable")
+                    : format(result.ssThreshold)}</dd>
+                </dl>
                 ${result.teams.map(
                 (team, index) => html`
                   <section class="stack stack--tight" data-room-team=${view.seats[index]?.id}>
@@ -678,25 +716,26 @@ class OnlineRoom extends LitElement {
       await navigator.clipboard.writeText(href);
       if (!signal.aborted) this.copied = true;
     } catch {
-      if (!signal.aborted) this.error = this.t("copyHelp", "Select the invitation link above and copy it.");
+      if (!signal.aborted) snackbar(this.t("copyHelp", "Select the invitation link and copy it."), { error: true });
     }
     if (!signal.aborted) this.requestUpdate();
   }
-  private active(view: RoomView) {
-    const { settings, seats } = view,
-      ready = seats.every((s) => s.ready) && seats.length >= 2;
+  private roomOverview(view: RoomView) {
+    const { settings, seats } = view;
     const href = this.url(view.roomId).href;
     return html`
       <section class="surface stack">
-        <div class="row row--between">
+        <div class="row row--between row--wrap">
           <h2 class="detail-section-title">${this.t("title", "Co-op room")}</h2>
+          ${this.connectionStatus()}
+        </div>
+        <div class="row row--between row--wrap">
+          <p>
+            <strong>${this.builder.catalog!.songTitle(settings.song.songId)}</strong>
+            · ${settings.objective === "ssRate" ? this.t("rate", "Room sample SS rate") : this.t("mean", "Mean room score")}
+          </p>
           <span>${this.t("players", "{count}/5 players", { count: seats.length })}</span>
         </div>
-        <p>
-          <strong>${this.builder.catalog!.songTitle(settings.song.songId)}</strong>
-          · ${settings.objective === "ssRate" ? this.t("rate", "Room SS rate") : this.t("mean", "Mean room score")} ·
-          ${this.t("sampleCount", "{count} samples", { count: settings.sampling?.count ?? 1 })}
-        </p>
         <label class="field-stack">
           <span class="tb-field__label">${this.t("invite", "Invitation link")}</span>
           <span class="field">
@@ -743,45 +782,37 @@ class OnlineRoom extends LitElement {
           )}
         </ul>
       </section>
-      ${this.seatForm(view)}
-      <section class="surface stack">
-        <h3 class="detail-section-title">${this.t("search", "Joint team search")}</h3>
-        ${
-          view.host
-            ? html`
-                <p>
-                  ${
-                  ready
-                    ? this.t(
-                        "hostHint",
-                        "Keep this page open while calculating. You can resume from the last shared checkpoint.",
-                      )
-                    : this.t("needPlayers", "At least two players must join and everyone must submit their cards.")
-                }
-                </p>
-                <div class="cluster">
-                  ${
-                  this.search
-                    ? this.button("pause", this.t("pause", "Pause search"), () => this.search?.controller.abort())
-                    : !view.run?.complete
-                      ? this.button(
-                          view.run ? "continue" : "start",
-                          view.run ? this.t("continue", "Continue search") : this.t("start", "Start search"),
-                          () => this.run(view),
-                          this.busy || !ready || this.room.offline,
-                          true,
-                        )
-                      : nothing
-                }
-                </div>
-              `
-            : html`
-                <p>${this.t("guestHint", "The host runs the search. Its progress and results appear here.")}</p>
-              `
-        }
-      </section>
-      ${this.result(view)}
     `;
+  }
+  private searchAction(view: RoomView, ready: boolean) {
+    if (!view.host || view.run?.complete) return nothing;
+    const searching = !!this.search;
+    return html`
+      <button
+        class=${`button ${searching ? "button--tonal" : "button--filled"} button--full tb-run__button`}
+        type="button"
+        data-room-action=${searching ? "pause" : view.run ? "continue" : "start"}
+        ?disabled=${!searching && (this.busy || !ready || !!this.room.failure)}
+        @click=${() => {
+          if (searching) this.search?.controller.abort();
+          else void this.run(view);
+        }}
+      >
+        ${searching
+          ? this.t("pause", "Pause search")
+          : view.run ? this.t("continue", "Continue search") : this.t("start", "Start search")}
+      </button>
+    `;
+  }
+  private active(view: RoomView) {
+    const ready = view.seats.length >= 2 && view.seats.every((seat) => seat.ready);
+    const summary = this.t("mySeat", "My seat · {id}", { id: view.seatId });
+    return toolLayout(this.builder, this.seatForm(view), this.searchAction(view, ready), html`
+      <div class="stack">
+        ${this.roomOverview(view)}
+        ${this.result(view, ready)}
+      </div>
+    `, { summary, validate: false });
   }
   protected render() {
     if (!this.builder?.publicData || !this.box || !this.draft) return nothing;
@@ -791,20 +822,8 @@ class OnlineRoom extends LitElement {
           ${this.t("unsupportedServer", "Choose the Japanese or international server to use co-op rooms.")}
         </p>
       `;
-    const failure = this.error || (this.room.failure && this.failure(this.room.failure));
-    return html`
-      <div class="stack">
-        ${
-          failure
-            ? html`
-                <p class="surface" role="alert">${failure}</p>
-              `
-            : nothing
-        }
-        ${this.room.view ? this.active(this.room.view) : this.lobby()}
-        ${this.room.view ? this.leaveDialog(this.room.view) : nothing}
-      </div>
-    `;
+    const view = this.room.view;
+    return view ? html`${this.active(view)}${this.leaveDialog(view)}` : this.lobby();
   }
 }
 if (!customElements.get("gekiso-online-room")) customElements.define("gekiso-online-room", OnlineRoom);

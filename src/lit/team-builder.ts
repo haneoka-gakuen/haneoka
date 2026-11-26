@@ -1151,19 +1151,25 @@ export class TeamBuilder extends LitElement {
     for (const { id, use } of choices) overrides[kind].set(id, use);
     this.refreshTemporaryView();
   }
+  private withParticipation(box: BoxView, task: Tab): BoxView {
+    const overrides = this.participation.get(task);
+    if (!overrides) return box;
+    const apply = <Card extends { use: boolean }>(cards: Map<number, Card>, choices: Map<number, boolean>) => {
+      let updated: Map<number, Card> | undefined;
+      for (const [id, use] of choices) {
+        const card = cards.get(id);
+        if (card && card.use !== use) (updated ??= new Map(cards)).set(id, { ...card, use });
+      }
+      return updated ?? cards;
+    };
+    const members = apply(box.members, overrides.members);
+    const snaps = apply(box.snaps, overrides.snaps);
+    return members === box.members && snaps === box.snaps ? box : { ...box, members, snaps };
+  }
   refreshTemporaryView() {
     if (!this.snapshot) return;
     const view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
-    const overrides = this.participation.get(this.lastTaskTab);
-    if (overrides) {
-      for (const kind of ["members", "snaps"] as const) {
-        for (const [id, use] of overrides[kind]) {
-          const row = view[kind].get(id);
-          if (row) row.use = use;
-        }
-      }
-    }
-    this.view = view;
+    this.view = this.withParticipation(view, this.lastTaskTab);
     this.requestUpdate();
   }
   removeTemporary(kind: TemporaryCardKind, id: number) {
@@ -2886,7 +2892,15 @@ export class TeamBuilder extends LitElement {
     this.comparison.sync(this);
     const buildPanel = () => (this.buildMode === "manual" ? renderManualTeamTab(this) : renderBuildTab(this));
     const panel =
-      this.tab === "room" ? html`<gekiso-online-room .builder=${this} .box=${this.persistentView} .route=${navigationDocumentUrl().searchParams.get("room") ?? ""} .server=${this.server}></gekiso-online-room>`
+      this.tab === "room" ? html`<gekiso-online-room
+        .builder=${this}
+        .box=${this.persistentBoxView && this.withParticipation(this.persistentBoxView, "room")}
+        .route=${navigationDocumentUrl().searchParams.get("room") ?? ""}
+        .server=${this.server}
+        .locale=${this.locale}
+        .compactConditions=${this.compactConditions}
+        .conditionsOpen=${this.conditionsOpen}
+      ></gekiso-online-room>`
       : this.tab === "challenge" ? renderChallengeTab(this)
       : this.tab === "live" ? renderBuildTab(this)
       : this.tab === "pt"
