@@ -170,7 +170,7 @@ export async function handlePublicStaticViewRequest(
     return new Response(null, { status: request.headers.get("If-None-Match") === etag ? 304 : 204, headers: metadata });
   }
   const { publicationId, webBuildId } = await staticPublicationContext(request, env);
-  if (projection === "data") {
+  if (projection === "data" && (!types.length || unrestricted(view, kinds))) {
     const build = url.searchParams.get("build");
     const entry = await readPrivatePageData(request, env, path, publicationId);
     const grant =

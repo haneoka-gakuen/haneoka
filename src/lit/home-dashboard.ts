@@ -1,5 +1,5 @@
 import { returnLink, rememberReturnLink } from "../lib/document-url";
-import { decodePageData, pageDataViewCurrent } from "../lib/page-data";
+import { decodePageData, pageDataViewCurrent, readPageData, waitForPageData } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
 import { isContentListed, isContentVisible, isReleasedContent } from "../lib/content-release";
@@ -359,13 +359,16 @@ export class HomeDashboard extends LitElement {
   }
   private disposeSongDisplay?: () => void;
   connectedCallback() {
+    if (waitForPageData(this, () => this.connectedCallback())) return;
     if (this.communityLifetime.signal.aborted) this.communityLifetime = new AbortController();
-    const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
-    if (seed && pageDataViewCurrent(this)) {
-      try {
-        this.prepareHome(decodePageData(JSON.parse(seed.textContent || "null")) as HomeSeed, this.locale);
-      } catch {
-        /* Keep the independent catalog fallback. */
+    if (pageDataViewCurrent(this) && !this.adoptPageData()) {
+      const seed = this.querySelector<HTMLScriptElement>("script[data-home-seed]");
+      if (seed) {
+        try {
+          this.prepareHome(decodePageData(JSON.parse(seed.textContent || "null")) as HomeSeed, this.locale);
+        } catch {
+          /* Keep the independent catalog fallback. */
+        }
       }
     }
     super.connectedCallback();
@@ -386,6 +389,13 @@ export class HomeDashboard extends LitElement {
     queueMicrotask(() => this.mountAction());
     this.fitObserver = new ResizeObserver(() => this.queueFit());
     void document.fonts?.ready.then(() => this.queueFit());
+  }
+  adoptPageData(): boolean {
+    const seed = readPageData<HomeSeed>(this);
+    if (!seed) return false;
+    this.prepareHome(seed, this.locale);
+    this.requestUpdate();
+    return true;
   }
   disconnectedCallback() {
     this.communityLifetime.abort();

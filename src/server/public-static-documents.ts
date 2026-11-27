@@ -56,6 +56,7 @@ export interface PublicStaticDescriptor {
   /** An encrypted copy of the complete page data exists for viewers who may see every omitted type. */
   private?: true;
   functional?: true;
+  preview?: true;
 }
 /** Where a rewritten URL sits: an element attribute or a string value inside inline page data. */
 export type PublicUrlSite = { element: string; attribute: string } | { script: string; key: string };
@@ -517,6 +518,7 @@ export function materializePublicStaticDocument(
   let unreleased = false;
   let data = false;
   let differs = false;
+  let preview = false;
   let emptied = false;
   let pendingFull: string | undefined;
   let headEnd = -1;
@@ -583,6 +585,7 @@ export function materializePublicStaticDocument(
     const contentView = attr(node, "data-content-view");
     if (contentView === "preview") {
       differs = true;
+      preview = true;
       remove(node);
       return;
     }
@@ -693,6 +696,7 @@ export function materializePublicStaticDocument(
     ...(Number.isFinite(next) ? { next } : {}),
     ...(privateData ? { private: true as const } : {}),
     ...(functional ? { functional: true as const } : {}),
+    ...(preview ? { preview: true as const } : {}),
   };
   const settings = (unreleased || functional) && options.settings;
   const visibility = settings

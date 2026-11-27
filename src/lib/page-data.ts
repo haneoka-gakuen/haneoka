@@ -34,8 +34,8 @@ function privatePreparation(document: Document): Promise<unknown> {
   const content = document.head?.querySelector('meta[name="haneoka-public-static"]')?.getAttribute("content");
   try {
     if (!content) return Promise.resolve();
-    const descriptor = JSON.parse(content) as { private?: unknown; functional?: unknown };
-    if (descriptor.private !== true && descriptor.functional !== true) return Promise.resolve();
+    const descriptor = JSON.parse(content) as { private?: unknown; functional?: unknown; preview?: unknown };
+    if (descriptor.private !== true && descriptor.functional !== true && descriptor.preview !== true) return Promise.resolve();
   } catch {
     return Promise.resolve();
   }

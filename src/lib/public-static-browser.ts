@@ -2,7 +2,7 @@
 // Input: Public static descriptors, display preferences and authenticated view grants.
 // Output: Authorized seeds before initialization, cached navigation views and explicit display changes.
 // Pos: [Map](L2-2.md); browser-side adoption of build-produced public and complete page variants.
-// Effects/Dependencies: Requests existing view grants, opens immutable encrypted payloads and preserves page state; no focus-triggered revalidation.
+// Effects/Dependencies: Opens granted payloads on navigation or explicit display changes and preserves page state.
 import { maySeeUnpublishedType } from "./content-view";
 import { navigate } from "astro:transitions/client";
 import type { TransitionBeforePreparationEvent, TransitionBeforeSwapEvent } from "astro:transitions/client";
@@ -34,6 +34,7 @@ interface Descriptor {
   /** The endpoint can grant an encrypted static copy of the complete page data. */
   private?: true;
   functional?: true;
+  preview?: true;
 }
 interface GrantScript {
   id: string;
@@ -67,6 +68,7 @@ interface FullView {
 type Reason = "load" | "interaction" | "refresh";
 
 const METADATA_TTL = 6 * 60 * 60 * 1000;
+const VIEW_REUSE_MS = 30_000;
 const SWAP = "haneoka:public-static-swap";
 const HOLD_LIMIT = 1500;
 const HYDRATION_LIMIT = 3000;
@@ -80,13 +82,13 @@ const views = new Map<string, FullView>();
 /** Public documents as first served, for turning private content off without the network. */
 const publicDocuments = new Map<string, string>();
 const checkedBodies = new WeakSet<HTMLElement>();
+const deniedBodies = new WeakMap<HTMLElement, { key: string; at: number }>();
 let pending: { document: Document | undefined; fragment: string } | undefined;
 let swapping = false;
 let scroll: [number, number] | undefined;
 let controller: AbortController | undefined;
 let deferred: AbortController | undefined;
 let refreshTimer: number | undefined;
-let publicationTimer: number | undefined;
 let sessionGeneration = 0;
 let evaluatedBody: HTMLElement | undefined;
 /** Set once a granted payload cannot be opened; the document endpoint serves from then on. */
@@ -165,7 +167,7 @@ function endpoint(descriptor: Descriptor, grant = false): string {
 }
 
 const maxAge = (response: Response): number =>
-  Number(/max-age=(\d+)/u.exec(response.headers.get("Cache-Control") || "")?.[1] ?? 0) * 1000;
+  Math.min(VIEW_REUSE_MS, Number(/max-age=(\d+)/u.exec(response.headers.get("Cache-Control") || "")?.[1] ?? 0) * 1000);
 const isGrant = (response: Response): boolean =>
   response.headers.get("Content-Type")?.startsWith("application/json") === true;
 const payloadOf = (grant: Grant): string => grant.scripts.map((script) => script.url).join(",");
@@ -585,7 +587,6 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
   if (reason !== "refresh" && (reason !== "load" || checkedBodies.has(document.body)) &&
     known?.local === local && known.until > Date.now() && (shown || known.html)) {
     if (shown) return release(true);
-    if (!shownPath) await retainPublic(descriptor.path);
     if (current !== controller) return;
     const next = parse(known.html, descriptor.path);
     if (!next) return release(true);
@@ -599,14 +600,12 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
   let granted = false;
   let retry = false;
   try {
-    const [response] = await Promise.all([
-      fetch(endpoint(descriptor, !documentOnly && wantsGrant(descriptor)), {
-        credentials: "same-origin",
-        cache: "no-cache",
-        signal: current.signal,
-      }),
-      shownPath ? undefined : retainPublic(descriptor.path),
-    ]);
+    const response = await fetch(endpoint(descriptor, !documentOnly && wantsGrant(descriptor)), {
+      credentials: "same-origin",
+      cache: "no-cache",
+      headers: shown && known?.local === local && known.etag ? { "If-None-Match": known.etag } : undefined,
+      signal: current.signal,
+    });
     if (current !== controller) {
       void response.body?.cancel();
       return;
@@ -614,17 +613,23 @@ async function upgrade(descriptor: Descriptor, reason: Reason, documentOnly = fa
     storeMetadata(response.headers);
     if (response.headers.has("X-Haneoka-Content-Group")) checkedBodies.add(document.body);
     if (response.status === 204) {
+      deniedBodies.set(document.body, { key: localKey(), at: Date.now() });
       views.delete(descriptor.path);
       window.clearTimeout(deadline);
       release(true);
       return downgrade();
     }
     const etag = response.headers.get("ETag") || "";
-    if (!response.ok || (shown && known && etag && known.etag === etag && known.local === local)) {
+    const until = Date.now() + maxAge(response);
+    if (shown && known?.local === local && (response.status === 304 || (etag && known.etag === etag))) {
+      remember({ ...known, until });
       void response.body?.cancel();
       return;
     }
-    const until = Date.now() + maxAge(response);
+    if (!response.ok) {
+      void response.body?.cancel();
+      return;
+    }
     if (isGrant(response)) {
       const grant = (await response.json()) as Grant;
       if (current !== controller) return;
@@ -689,7 +694,7 @@ export function preparePageData(): Promise<boolean> {
   }
   const eligible =
     descriptor?.unreleased &&
-    wantsGrant(descriptor) &&
+    (descriptor.preview || wantsGrant(descriptor)) &&
     !INDEXER.test(navigator.userAgent) &&
     !document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
   const current = { body, promise: Promise.resolve(false), settled: !eligible };
@@ -712,14 +717,14 @@ async function prepare(descriptor: Descriptor, body: HTMLElement): Promise<boole
       return true;
     }
   }
-  void retainPublic(descriptor.path);
-  const response = await fetch(endpoint(descriptor, true), { credentials: "same-origin", cache: "no-cache", signal: current.signal });
+  const response = await fetch(endpoint(descriptor, wantsGrant(descriptor)), { credentials: "same-origin", cache: "no-cache", signal: current.signal });
   if (current !== controller || document.body !== body) {
     void response.body?.cancel();
     return false;
   }
   storeMetadata(response.headers);
   if (response.headers.has("X-Haneoka-Content-Group")) checkedBodies.add(body);
+  if (response.status === 204) deniedBodies.set(body, { key: localKey(), at: Date.now() });
   if (!response.ok || response.status === 204) {
     void response.body?.cancel();
     return false;
@@ -776,7 +781,6 @@ function deferUntilInteraction(descriptor: Descriptor): void {
 }
 
 function evaluate(reason: Reason): void {
-  schedulePublication();
   // The first decision for a document waits for its preparation; later ones are direct.
   if (reason === "load" && !(preparation?.body === document.body && preparation.settled)) {
     const body = document.body;
@@ -800,6 +804,8 @@ function decide(reason: Reason): void {
   }
   if (!descriptor?.unreleased || INDEXER.test(navigator.userAgent)) return;
   const fresh = published(descriptor);
+  const denied = deniedBodies.get(document.body);
+  if (!fresh && reason === "load" && denied?.key === localKey() && Date.now() - denied.at < VIEW_REUSE_MS) return;
   const path = document.documentElement.getAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
   const metadata = readMetadata();
   if (!spoilerContentEnabled() && !overridden() && path && views.get(path)?.local !== localKey()) {
@@ -832,19 +838,6 @@ function decide(reason: Reason): void {
   void upgrade(descriptor, reason);
 }
 
-function schedulePublication(): void {
-  window.clearTimeout(publicationTimer);
-  publicationTimer = undefined;
-  const descriptor = currentDescriptor();
-  if (!descriptor?.next || published(descriptor) || document.hidden || INDEXER.test(navigator.userAgent)) return;
-  publicationTimer = window.setTimeout(() => {
-    publicationTimer = undefined;
-    if (currentDescriptor()?.path !== descriptor.path || document.hidden) return;
-    if (published(descriptor)) refreshPublicStaticView();
-    else schedulePublication();
-  }, Math.min(2_147_483_647, Math.max(1, descriptor.next - Date.now())));
-}
-
 let installed = false;
 let lastLocal = "";
 /** Installed once; pages without the descriptor are left to the Worker document path. */
@@ -867,7 +860,6 @@ export function installPublicStaticView(): void {
     }
     controller?.abort();
     deferred?.abort();
-    window.clearTimeout(publicationTimer);
     swapping = false;
     release(false);
     const path = preparation.to.pathname;
@@ -903,8 +895,11 @@ export function installPublicStaticView(): void {
     swapping = false;
     if (current) void finish(current);
     if (internal) checkedBodies.add(document.body);
-    if (document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE)) {
-      if (!internal && document.body !== evaluatedBody) refreshPublicStaticView();
+    const path = document.documentElement.getAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE);
+    if (path) {
+      const known = views.get(path);
+      if (!internal && document.body !== evaluatedBody && (!known || known.until <= Date.now()))
+        refreshPublicStaticView();
       evaluatedBody = document.body;
       return;
     }
@@ -919,7 +914,6 @@ export function installPublicStaticView(): void {
     evaluate(document.documentElement.hasAttribute(PUBLIC_STATIC_VIEW_ATTRIBUTE) ? "interaction" : "load");
   });
   evaluatedBody = document.body;
-  document.addEventListener("visibilitychange", () => { if (document.hidden) window.clearTimeout(publicationTimer); });
   evaluate("load");
 }
 

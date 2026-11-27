@@ -10,8 +10,8 @@ const { locale, server = "intl" } = Astro.props as { locale: Locale; server?: Re
 const home = await renderHome(server, locale);
 ---
 
-<home-dashboard locale={locale} server={server} data-prerendered>
-  {home.seed && <script type="application/json" data-home-seed set:html={home.seed} />}
+{home.seed && <script type="application/json" id="home-page-seed" set:html={home.seed} />}
+<home-dashboard locale={locale} server={server} data-page-data={home.seed ? "home-page-seed" : undefined} data-prerendered>
   <Fragment set:html={home.html} />
 </home-dashboard>
 <script is:inline>
