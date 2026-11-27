@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: Authenticated bounded jobs from the regional Durable Object.
-# Output: Durable collection callbacks or private SDK/game/guest-phase results for the owning DO.
+# Output: Collection callbacks, private account results and anonymous client-version checks.
 # Pos: [Map](../L2.md); collector HTTP entry point in a Cloudflare Container or on a self-hosted Docker host.
 # Effects/Dependencies: Binds port 8080; per-region exclusive jobs, asynchronous collection with service-failure callbacks, deadline-protected replay state; SIGTERM closes the entry listener.
 import hmac
@@ -12,13 +12,18 @@ from pathlib import Path
 import re
 import signal
 import sys
+import tempfile
 import threading
 import time
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent/'core'))
 from cloud_job import CallbackError, Updates, callback_url, failure_info, report_failure, run_job, validate_job
 from account_job import run_account_job, validate_account_job
 from guest_job import run_guest_job, validate_guest_job
+from lifecycle import egress_proxy
+from regions import region_config
+from transport import Sampler, VersionError
 
 
 def serve():
@@ -85,6 +90,24 @@ def serve():
             return True
 
         def do_GET(self):
+            probe = re.fullmatch(r'/client-version/(jp|tw|en|kr)/([0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6})', self.path)
+            if probe:
+                if not self.authorized():
+                    return
+                region, version = probe.groups()
+                accepted = False
+                try:
+                    with tempfile.TemporaryDirectory(prefix='official-version-') as temporary:
+                        sampler = Sampler(SimpleNamespace(region=region,
+                            descriptors=Path(__file__).resolve().parent/'core'/region_config(region).descriptor,
+                            output=Path(temporary), client_version=version,
+                            proxy=egress_proxy() if region == 'jp' else '', stop_file=None, deadline=time.time()+15))
+                        sampler.version()
+                        accepted = True
+                except (VersionError, OSError, TimeoutError):
+                    pass
+                self.reply(200, {'accepted': accepted})
+                return
             if self.path.startswith('/guest-result/'):
                 if not self.authorized():
                     return

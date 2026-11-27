@@ -105,6 +105,7 @@ jobs:
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+      collector_client_version_token: ${{ secrets.COLLECTOR_CLIENT_VERSION_TOKEN }}
       secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
       jp_version_subscription: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
 
@@ -130,6 +131,7 @@ jobs:
       r2_access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
       r2_secret_access_key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       resource_cdn_authorization: ${{ secrets.RESOURCE_CDN_AUTHORIZATION }}
+      collector_client_version_token: ${{ secrets.COLLECTOR_CLIENT_VERSION_TOKEN }}
       secret_writer_gh_token: ${{ secrets.SECRET_WRITER_GH_TOKEN }}
       jp_version_subscription: ${{ secrets.JP_VERSION_SUBSCRIPTION }}
 

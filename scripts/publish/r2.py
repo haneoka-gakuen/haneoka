@@ -1,6 +1,6 @@
 # L3 — GEB
 # Input: 已验证 source／release、存储配置和保留选项。
-# Output: 远端对象／索引／含客户端版本的 current、恢复结果及清理报告。
+# Output: 远端对象／索引／current、恢复结果及清理报告。
 # Pos: [Map](L2-2.md)；R2 发布、恢复与存储维护。
 # Effects/Dependencies: S3 API 网络、文件读写和远端指针更新；prune／GC 可删除对象，需对应授权。
 from __future__ import annotations
@@ -998,13 +998,6 @@ def publish_release(
         check_hashes=check_hashes,
         base_manifest=previous_manifest,
     )
-    client_version = None
-    if config.id in {"jp", "intl"}:
-        source = read_json(source_layout(config.id, manifest["sourceId"]).manifest)
-        version = source["package"].get("versionName")
-        if isinstance(version, str) and re.fullmatch(r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}", version):
-            client_version = version
-    client_metadata = {"clientVersion": client_version} if client_version is not None else {}
     manifest_key = prefix + "release.json"
     identity_key = prefix + RELEASE_IDENTITY_FILENAME
     identity = release_identity_descriptor(config.id, release_id, manifest)
@@ -1025,12 +1018,11 @@ def publish_release(
             raise ValueError(f"remote release manifest mismatch: {manifest_key}")
         identity_published = _publish_release_identity(store, identity_key, identity)
         fingerprint = producer.get("pipelineFingerprint", current.get("pipelineFingerprint", ""))
-        updated_pointer = {**current, "pipelineFingerprint": fingerprint, **client_metadata}
-        identity_refreshed = updated_pointer != current
+        identity_refreshed = current.get("pipelineFingerprint") != fingerprint
         if identity_refreshed:
             if store.get_json(pointer_key) != current:
                 raise ValueError("current release changed during publication; refusing stale identity refresh")
-            current = updated_pointer
+            current = {**current, "pipelineFingerprint": fingerprint}
             store.put_json(pointer_key, current, POINTER_CACHE, expected_etag=pointer_etag)
         return {
             **current,
@@ -1109,7 +1101,6 @@ def publish_release(
         "schema": POINTER_SCHEMA,
         "server": config.id,
         "sourceId": manifest["sourceId"],
-        **client_metadata,
         "pipelineFingerprint": producer.get("pipelineFingerprint", ""),
         "releaseId": release_id,
         "releaseManifest": manifest_key,

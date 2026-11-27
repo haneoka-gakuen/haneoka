@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: Collector callbacks on loopback, the Worker's authenticated calls and published client versions, and local data.
+// Input: Collector callbacks on loopback, authenticated calls and publisher version notices, and local data.
 // Output: Regional collectors, authenticated staged observations, and rows for the site's D1 projection.
 // Pos: [Map](../../L2.md); entry point of the collector host.
 // Effects/Dependencies: Listens on HOST_PORT; reads and writes DATA_DIR; calls the site's internal endpoints and the local collector.
@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { OfficialRankingCollector } from "../../../worker/official-ranking-collector";
 import { maintainOfficialStorage } from "../../../worker/official-ranking-maintenance";
 import { newerOfficialClientVersion, officialClientVersionPattern } from "../../../src/lib/official-ranking";
@@ -31,21 +31,30 @@ const dataDir = process.env.DATA_DIR ?? "/data";
 const port = Number(process.env.HOST_PORT ?? 8090);
 const siteOrigin = required("SITE_ORIGIN");
 const hostToken = required("HOST_TOKEN");
+const collectorToken = required("COLLECTOR_TOKEN");
+const collectorOrigin = process.env.COLLECTOR_ORIGIN ?? "http://127.0.0.1:8080";
+const clientVersionToken = createHmac("sha256", hostToken).update("official-collector-client-version/1").digest("hex");
 mkdirSync(join(dataDir, "objects"), { recursive: true });
 
 const d1 = new LocalD1(join(dataDir, "official.sqlite"));
 d1.handle.exec("CREATE TABLE IF NOT EXISTS _collector_client_versions (resource TEXT PRIMARY KEY, client_version TEXT NOT NULL)");
+d1.handle.exec(`CREATE TABLE IF NOT EXISTS _collector_client_candidates (
+  region TEXT PRIMARY KEY, client_version TEXT NOT NULL, expires_at INTEGER NOT NULL)`);
 const readClientVersion = d1.handle.prepare("SELECT client_version AS version FROM _collector_client_versions WHERE resource=?");
 const writeClientVersion = d1.handle.prepare(`INSERT INTO _collector_client_versions(resource,client_version) VALUES(?,?)
   ON CONFLICT(resource) DO UPDATE SET client_version=excluded.client_version`);
 const resourceServers = { jp: ["jp"], intl: ["tw", "en", "kr"] } as const;
+const readClientCandidates = d1.handle.prepare("SELECT region, client_version AS version, expires_at AS expiresAt FROM _collector_client_candidates");
+const writeClientCandidate = d1.handle.prepare(`INSERT INTO _collector_client_candidates(region,client_version,expires_at) VALUES(?,?,?)
+  ON CONFLICT(region) DO UPDATE SET client_version=excluded.client_version, expires_at=excluded.expires_at`);
+const clearClientCandidate = d1.handle.prepare("DELETE FROM _collector_client_candidates WHERE region=? AND client_version=?");
 const clientVersions: Partial<Record<Region, string>> = {};
 const clientVersionFloor = process.env.OFFICIAL_RANKING_CLIENT_VERSION ?? "";
 if (clientVersionFloor && !officialClientVersionPattern.test(clientVersionFloor)) throw new Error("invalid_collector_client_version");
-for (const [resource, regions] of Object.entries(resourceServers)) {
-  const stored = readClientVersion.get(resource) as { version: string } | undefined;
+for (const region of REGIONS) {
+  const stored = (readClientVersion.get(region) ?? readClientVersion.get(region === "jp" ? "jp" : "intl")) as { version: string } | undefined;
   const version = newerOfficialClientVersion(clientVersionFloor, stored?.version);
-  if (version) for (const region of regions) clientVersions[region] = version;
+  if (version) clientVersions[region] = version;
 }
 // The site writes its search backfill leases itself; everything else official is this host's.
 const replicated = new Map<string, ReplicatedTable>(installOutbox(d1.handle,
@@ -54,8 +63,8 @@ const replicated = new Map<string, ReplicatedTable>(installOutbox(d1.handle,
 const env: Record<string, unknown> = {
   DB: d1,
   OFFICIAL_RANKING_DATA: new RemoteBucket(siteOrigin, hostToken),
-  OFFICIAL_COLLECTOR_REMOTE_ORIGIN: process.env.COLLECTOR_ORIGIN ?? "http://127.0.0.1:8080",
-  OFFICIAL_COLLECTOR_REMOTE_TOKEN: required("COLLECTOR_TOKEN"),
+  OFFICIAL_COLLECTOR_REMOTE_ORIGIN: collectorOrigin,
+  OFFICIAL_COLLECTOR_REMOTE_TOKEN: collectorToken,
   OFFICIAL_RANKING_CLIENT_VERSIONS: clientVersions,
   OFFICIAL_CALLBACK_ORIGIN: `http://127.0.0.1:${port}`,
 };
@@ -127,18 +136,18 @@ const MODULES: Record<string, Record<string, unknown>> = {
   guests: Object.fromEntries(["removeGuestAccount", "listGuestAccounts"].map((name) => [name, (guests as Record<string, unknown>)[name]])),
 };
 
-const authorized = (request: IncomingMessage) => {
+const authorized = (request: IncomingMessage, token = hostToken) => {
   const given = Buffer.from(String(request.headers.authorization ?? ""));
-  const expected = Buffer.from(`Bearer ${hostToken}`);
+  const expected = Buffer.from(`Bearer ${token}`);
   return given.length === expected.length && timingSafeEqual(given, expected);
 };
 
-const readBody = async (request: IncomingMessage): Promise<Buffer> => {
+const readBody = async (request: IncomingMessage, limit = 64 * 1024 * 1024): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     size += (chunk as Buffer).length;
-    if (size > 64 * 1024 * 1024) throw new Error("body_too_large");
+    if (size > limit) throw new Error("body_too_large");
     chunks.push(chunk as Buffer);
   }
   return Buffer.concat(chunks);
@@ -164,6 +173,23 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://host");
   try {
     if (url.pathname === "/health") return send(response, 200, { ok: true, outbox: outboxSize(), replicatedAt: lastReplication, clientVersions });
+    if (url.pathname === "/client-version" && request.method === "POST") {
+      if (!authorized(request, clientVersionToken)) return send(response, 401, { error: "unauthorized" });
+      const notice = JSON.parse((await readBody(request, 1024)).toString()) as { resource?: unknown; version?: unknown } | null;
+      if ((notice?.resource !== "jp" && notice?.resource !== "intl")
+        || typeof notice.version !== "string" || !officialClientVersionPattern.test(notice.version))
+        return send(response, 400, { error: "invalid_client_version" });
+      const now = Date.now();
+      const candidates = new Map(clientCandidates().filter((candidate) => candidate.expiresAt > now)
+        .map((candidate) => [candidate.region, candidate.version]));
+      for (const region of resourceServers[notice.resource]) {
+        const known = newerOfficialClientVersion(clientVersions[region] ?? "", candidates.get(region));
+        if (newerOfficialClientVersion(known, notice.version) !== known)
+          writeClientCandidate.run(region, notice.version, now + 24 * 60 * 60_000);
+      }
+      verifyClientCandidates();
+      return send(response, 202, { accepted: true });
+    }
     if (url.pathname === "/staged-observation" && request.method === "GET") {
       if (!authorized(request)) return send(response, 401, { error: "unauthorized" });
       const key = url.searchParams.get("key"), hash = url.searchParams.get("hash");
@@ -238,24 +264,35 @@ async function replicationLoop(): Promise<void> {
 
 // ---------- schedules and the Worker's former cron ----------
 
-async function refreshClientVersions(): Promise<void> {
-  try {
-    const response = await fetch(new URL("/api/internal/official-host/client-versions", siteOrigin), {
-      headers: { Authorization: `Bearer ${hostToken}` }, redirect: "error", signal: AbortSignal.timeout(10_000),
-    });
-    if (!response.ok) throw new Error(`client_versions_${response.status}`);
-    const versions = await response.json() as Record<string, unknown>;
-    for (const [resource, regions] of Object.entries(resourceServers)) {
-      const version = versions[resource];
-      if (typeof version !== "string" || !officialClientVersionPattern.test(version)) continue;
-      const current = clientVersions[regions[0]] ?? "";
-      if (newerOfficialClientVersion(current, version) === current) continue;
-      writeClientVersion.run(resource, version);
-      for (const region of regions) clientVersions[region] = version;
-      log("client_version_updated", { resource, version });
+type ClientCandidate = { region: Region; version: string; expiresAt: number };
+const clientCandidates = () => readClientCandidates.all() as ClientCandidate[];
+const probingVersions = new Set<Region>();
+function verifyClientCandidates(): void {
+  for (const { region, version, expiresAt } of clientCandidates()) {
+    if (expiresAt <= Date.now() || newerOfficialClientVersion(clientVersions[region] ?? "", version) !== version
+      || clientVersions[region] === version) {
+      clearClientCandidate.run(region, version);
+      continue;
     }
-  } catch (error) {
-    log("client_version_refresh_failed", { error: message(error) });
+    if (probingVersions.has(region)) continue;
+    probingVersions.add(region);
+    void (async () => {
+      try {
+        const response = await fetch(new URL(`/client-version/${region}/${version}`, collectorOrigin), {
+          headers: { Authorization: `Bearer ${collectorToken}` }, redirect: "error", signal: AbortSignal.timeout(18_000),
+        });
+        const accepted = response.ok && (await response.json() as { accepted?: boolean }).accepted;
+        if (!accepted || !clientCandidates().some((candidate) => candidate.region === region && candidate.version === version)) return;
+        writeClientVersion.run(region, version);
+        clientVersions[region] = version;
+        clearClientCandidate.run(region, version);
+        log("client_version_updated", { region, version });
+      } catch (error) {
+        log("client_version_probe_failed", { region, error: message(error) });
+      } finally {
+        probingVersions.delete(region);
+      }
+    })();
   }
 }
 
@@ -295,5 +332,5 @@ scheduleLoop();
 void replicationLoop();
 setInterval(() => void maintenance(), 120_000);
 void maintenance();
-setInterval(() => void refreshClientVersions(), 300_000);
-void refreshClientVersions();
+setInterval(verifyClientCandidates, 60_000);
+verifyClientCandidates();

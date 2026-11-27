@@ -70,6 +70,8 @@ on:
         required: true
       resource_cdn_authorization:
         required: false
+      collector_client_version_token:
+        required: false
       secret_writer_gh_token:
         required: false
       jp_version_subscription:
@@ -151,6 +153,23 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
       - uses: ./.github/actions/setup-resource-pipeline
+      - name: Notify collector of the detected publisher version
+        if: inputs.audience == 'production' && inputs.source_repository == '' && inputs.source_ref == '' && inputs.source_id == '' && inputs.package_r2_key == '' && inputs.package_source_server == '' && (inputs.server == 'jp' || inputs.server == 'intl')
+        env:
+          COLLECTOR_CLIENT_VERSION_TOKEN: ${{ secrets.collector_client_version_token }}
+        run: |
+          probe="$RUNNER_TEMP/publisher-package-probe.json"
+          if ! timeout 30s python scripts/acquire_package.py --server "$RESOURCE_SERVER" --probe > "$probe"; then
+            rm -f "$probe"
+            exit 0
+          fi
+          version="$(jq -r '.versionName // empty' "$probe")"
+          if [[ -n "$COLLECTOR_CLIENT_VERSION_TOKEN" && "$version" =~ ^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$ ]]; then
+            payload="$(jq -cn --arg resource "$RESOURCE_SERVER" --arg version "$version" '{resource:$resource,version:$version}')"
+            if ! curl --fail --silent --show-error --max-time 10 --retry 2 --retry-max-time 25 +              --config <(printf 'header = "Authorization: Bearer %s"\n' "$COLLECTOR_CLIENT_VERSION_TOKEN") +              --header 'Content-Type: application/json' --data-binary "$payload" +              --output /dev/null https://collector.haneoka.org/client-version; then
+              echo "::warning title=Collector version notification failed::$RESOURCE_SERVER $version"
+            fi
+          fi
       - name: Start resource API egress proxy
         if: (inputs.api_egress || startsWith(inputs.server, 'jp')) && (env.RESOURCE_API_EGRESS_SUBSCRIPTION != '' || env.JP_VERSION_SUBSCRIPTION != '')
         uses: ./.github/actions/setup-jp-api-egress
@@ -219,7 +238,11 @@ jobs:
               # Reuse the stored package when the publisher fingerprint is
               # unchanged; only a real update pays the publisher download.
               current_json="$(python scripts/pipeline.py --server "$RESOURCE_SERVER" current-package || true)"
-              probe_json="$(python scripts/acquire_package.py --server "$RESOURCE_SERVER" --probe || true)"
+              if [[ -f "$RUNNER_TEMP/publisher-package-probe.json" ]]; then
+                probe_json="$(cat "$RUNNER_TEMP/publisher-package-probe.json")"
+              else
+                probe_json="$(python scripts/acquire_package.py --server "$RESOURCE_SERVER" --probe || true)"
+              fi
               probe_fp="{}"
               if [[ -n "$probe_json" ]]; then
                 probe_fp="$(printf '%s' "$probe_json" | jq -c 'with_entries(select(.value | type == "string")) | del(.server, .provenance)')"
