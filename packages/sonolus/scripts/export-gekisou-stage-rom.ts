@@ -275,15 +275,7 @@ const hudSources = {
   superLuck: "gekisou_luck_s_lucky_text", luckRush: "gekisou_luck_luckyrush_text",
   modeAssist: "../LiveAtlas.spriteatlasv2/SP_AssistMode--Sprite--4011404251611919236.png",
 } satisfies Partial<Record<keyof typeof soloHudSpriteNames, number | string>>;
-const hudTiles = (Object.keys(hudSources) as (keyof typeof hudSources)[]).map(key => {
-  const source = hudSources[key];
-  const path = typeof source === "number" ? resolvePath(release, hudPath(source)) :
-    source.startsWith("../") ? resolvePath(atlasDir, source) : atlasSprites.get(source);
-  if (!path) throw new Error(`Missing authored GEKISO HUD sprite: ${source}`);
-  const image = decodeRgba8Png(readFileSync(path), path);
-  const scale = Math.min(1, atlasTileLimit / Math.max(image.width, image.height));
-  const w = Math.max(1, Math.round(image.width * scale));
-  const h = Math.max(1, Math.round(image.height * scale));
+function sampleHudTexture(image: ReturnType<typeof decodeRgba8Png>, w: number, h: number) {
   const pixels = Buffer.alloc(w * h * 4);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const x0 = Math.floor(x * image.width / w), x1 = Math.ceil((x + 1) * image.width / w);
@@ -304,8 +296,59 @@ const hudTiles = (Object.keys(hudSources) as (keyof typeof hudSources)[]).map(ke
     pixels[offset + 2] = Math.round(blue / alpha);
     pixels[offset + 3] = Math.round(alpha / ((x1 - x0) * (y1 - y0)));
   }
-  return { name: soloHudSpriteNames[key], w, h, pixels };
-});
+  return pixels;
+}
+
+const readHudSource = (source: number | string) => {
+  const path = typeof source === "number" ? hudPath(source) :
+    source.startsWith("../") ? resolvePath(atlasDir, source) : atlasSprites.get(source);
+  if (!path) throw new Error(`Missing authored HUD sprite: ${source}`);
+  const file = resolvePath(release, path);
+  return decodeRgba8Png(readFileSync(file), file);
+};
+
+const hudTiles: { name: string; w: number; h: number; pixels: Buffer }[] =
+  (Object.keys(hudSources) as (keyof typeof hudSources)[]).map(key => {
+    const image = readHudSource(hudSources[key]);
+    const scale = Math.min(1, atlasTileLimit / Math.max(image.width, image.height));
+    const w = Math.max(1, Math.round(image.width * scale));
+    const h = Math.max(1, Math.round(image.height * scale));
+    return { name: soloHudSpriteNames[key], w, h, pixels: sampleHudTexture(image, w, h) };
+  });
+
+const assistTitle = readHudSource(hudSources.modeAssist);
+const assistWidth = atlasTileLimit * 2;
+const assistHeight = Math.round(assistWidth * assistTitle.height / assistTitle.width);
+const assistPixels = sampleHudTexture(assistTitle, assistWidth, assistHeight);
+for (const [index, key] of (["assistTitleLeft", "assistTitleRight"] as const).entries()) {
+  const pixels = Buffer.alloc(atlasTileLimit * assistHeight * 4);
+  const stride = atlasTileLimit * 4;
+  for (let y = 0; y < assistHeight; y++) {
+    const start = y * stride * 2 + index * stride;
+    assistPixels.copy(pixels, y * stride, start, start + stride);
+  }
+  hudTiles.push({ name: soloHudSpriteNames[key], w: atlasTileLimit, h: assistHeight, pixels });
+}
+
+const assistDigits = ["assistLevel0", "assistLevel1", "assistLevel2", "assistLevel3", "assistLevel4", "assistLevel5"] as const;
+for (const [digit, key] of assistDigits.entries()) {
+  const path = resolvePath(release, "assets/Assets/AddressableResources/Live/UiSpriteAssets/AtlasSources/LiveComboNAtlas",
+    `SP_combo_n_${digit}_fill.png`);
+  const glyph = decodeRgba8Png(readFileSync(path), path);
+  const w = 30, h = 44;
+  const scale = Math.min(w / glyph.width, h / glyph.height);
+  const gw = Math.round(glyph.width * scale), gh = Math.round(glyph.height * scale);
+  const fill = sampleHudTexture(glyph, gw, gh);
+  const pixels = Buffer.alloc(w * h * 4);
+  const offset = Math.floor((w - gw) / 2) + w * Math.floor((h - gh) / 2);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const dst = (offset + y * w + x) * 4;
+    pixels.fill(255, dst, dst + 3);
+    // SP_AssistMode's principal lettering is white with 20% opacity.
+    pixels[dst + 3] = Math.round(fill[(y * gw + x) * 4 + 3]! / 5);
+  }
+  hudTiles.push({ name: soloHudSpriteNames[key], w, h, pixels });
+}
 const hudKeys = Object.keys(soloHudSpriteNames);
 const firstCountdownSprite = hudKeys.indexOf("countdown1");
 const textureSlots = new Map([
