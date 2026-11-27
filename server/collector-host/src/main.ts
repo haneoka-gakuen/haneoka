@@ -19,7 +19,6 @@ import { LocalStorage } from "./storage";
 import { LocalD1, clearOutbox, installOutbox, takeOutbox, type ReplicatedTable } from "./d1";
 import { RemoteBucket } from "./r2";
 import { EventRankBuffer } from "./event-rank-buffer";
-import { EventParticipationBuffer } from "./event-participation";
 import type { HostContext } from "./containers";
 
 const REGIONS = ["jp", "tw", "en", "kr"] as const;
@@ -42,7 +41,6 @@ mkdirSync(join(dataDir, "objects"), { recursive: true });
 
 const d1 = new LocalD1(join(dataDir, "official.sqlite"));
 const rankBuffer = new EventRankBuffer(join(dataDir, "event-rank-buffer.sqlite"));
-const participation = new EventParticipationBuffer(join(dataDir, "event-participation.sqlite"));
 const bucket = new RemoteBucket(siteOrigin, hostToken);
 d1.handle.exec("CREATE TABLE IF NOT EXISTS _collector_client_versions (resource TEXT PRIMARY KEY, client_version TEXT NOT NULL)");
 d1.handle.exec(`CREATE TABLE IF NOT EXISTS _collector_client_candidates (
@@ -71,7 +69,6 @@ const env: Record<string, unknown> = {
   DB: d1,
   OFFICIAL_RANKING_DATA: bucket,
   OFFICIAL_EVENT_RANK_BUFFER: rankBuffer,
-  OFFICIAL_EVENT_PARTICIPATION: participation,
   OFFICIAL_COLLECTOR_REMOTE_ORIGIN: collectorOrigin,
   OFFICIAL_COLLECTOR_REMOTE_TOKEN: collectorToken,
   OFFICIAL_RANKING_CLIENT_VERSIONS: clientVersions,
@@ -335,8 +332,6 @@ async function maintenance(): Promise<void> {
       catch (error) { log("watchdog_failed", { region, error: message(error) }); }
     }
   }
-  try { await participation.flush(bucket as never); }
-  catch (error) { log("event_participation_archive_failed", { error: message(error) }); }
   try { await rankBuffer.flush(bucket as never); }
   catch (error) { log("event_rank_archive_failed", { error: message(error) }); }
 }

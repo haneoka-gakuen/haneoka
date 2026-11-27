@@ -18,9 +18,6 @@ export interface OfficialRankingStoreBindings extends CollectorBindings {
   OFFICIAL_EVENT_RANK_BUFFER?: {
     record(identity: EventRankIdentity, point: EventRankPoint, endAt?: number, finalAt?: number): void;
   };
-  OFFICIAL_EVENT_PARTICIPATION?: {
-    record(region: GameRecordsRegion, event: string, profiles: string[], at: number, expires: number): void;
-  };
 }
 
 export interface StoredOfficialObservation extends OfficialObservation {
@@ -527,21 +524,14 @@ const boardKey = (kind: OfficialObservation["kind"], challengeId: string): [stri
 
 export function recordOfficialEventRank(env: OfficialRankingStoreBindings,
   observation: OfficialObservation | OfficialEventWindow, event?: OfficialCatalog["event"] | null): void {
-  if (observation.error || !observation.players?.length
-    || !env.OFFICIAL_EVENT_RANK_BUFFER && !env.OFFICIAL_EVENT_PARTICIPATION) return;
+  if (!env.OFFICIAL_EVENT_RANK_BUFFER || observation.error || !observation.players?.length) return;
   const kind = "kind" in observation ? observation.kind : "point";
   const challenge = "challengeId" in observation ? observation.challengeId : "";
   const start = "startRank" in observation ? observation.startRank : 1;
   const end = kind === "challenge" ? event?.challenges.find((row) => row.id === challenge)?.endAtMs : event?.endAtMs;
   const scores = observation.players.map((row) => exactEventScore(kind === "point" ? row.point ?? row.score : row.score));
-  env.OFFICIAL_EVENT_RANK_BUFFER?.record([observation.region, observation.eventId, kind, challenge, start],
+  env.OFFICIAL_EVENT_RANK_BUFFER.record([observation.region, observation.eventId, kind, challenge, start],
     [observation.observedAtMs, scores], end, end && event ? end + event.aggregationSeconds * 1000 : undefined);
-  if (event && env.OFFICIAL_EVENT_PARTICIPATION) {
-    const profiles = rankingSearchRows(observation.players, start).flatMap(({ profileId }) =>
-      profileId && /^[1-9][0-9]{0,19}$/u.test(profileId) ? [profileId] : []);
-    env.OFFICIAL_EVENT_PARTICIPATION.record(observation.region, observation.eventId, profiles, observation.observedAtMs,
-      event.endAtMs + OFFICIAL_EVENT_QUERY_GRACE_MS);
-  }
 }
 
 async function observationPayload(env: OfficialRankingStoreBindings, row: ObservationRow, region: GameRecordsRegion, eventId: string,

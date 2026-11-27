@@ -5229,11 +5229,6 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
     return edgeCached(request, ctx, 30, async () =>
       (await handleOfficialRankingApi(request, url, env)) ?? new Response(null, { status: 404 }), "public, max-age=30");
   }
-  if (/^\/api\/v2\/game\/records\/(?:jp|tw|en|kr)\/events\/[1-9][0-9]{0,18}\/participation$/u.test(url.pathname)
-    && (request.method === "GET" || request.method === "HEAD")) {
-    return edgeCached(request, ctx, 300, async () =>
-      (await handleOfficialRankingApi(request, url, env)) ?? new Response(null, { status: 404 }), "public, max-age=300");
-  }
   const officialRecords = await handleOfficialRankingApi(request, url, env);
   if (officialRecords) return officialRecords;
   const officialPlayer = await handleOfficialPlayerApi(request, ctx, url, env);
