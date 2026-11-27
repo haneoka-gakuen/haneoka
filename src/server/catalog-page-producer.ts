@@ -16,6 +16,7 @@ import { fetchStaticCatalog, staticCatalogRelease } from "../lib/static-catalog-
 import { buildCoreEntityPayloads, type EntityPayload } from "../lib/entity-graph";
 import { catalogCollectionData } from "./catalog-collection";
 import { catalogPageData } from "./catalog-page-projector";
+import { eventSongPayload } from "./event-song-release";
 import { buildPageSnapshot, type PageObjectStore } from "./catalog-page-snapshot";
 
 export async function produceCatalogPages(store: PageObjectStore, producer: PageProducer) {
@@ -65,17 +66,17 @@ export async function produceCatalogPages(store: PageObjectStore, producer: Page
       }
       return pinMedia(payload);
     },
-    entity: async (selector) =>
-      pinMedia(
-        await catalogPageData(
-          selector.server,
-          selector.resource as PageKind,
-          selector.id,
-          selector.locale,
-          "core",
-          bases.get(`${selector.server}/${selector.resource}`)?.get(selector.id),
-        ),
-      ),
+    entity: async (selector) => {
+      const payload = await catalogPageData(
+        selector.server,
+        selector.resource as PageKind,
+        selector.id,
+        selector.locale,
+        "core",
+        bases.get(`${selector.server}/${selector.resource}`)?.get(selector.id),
+      );
+      return pinMedia(selector.resource === "events" ? await eventSongPayload(payload) : payload);
+    },
   });
   return { ready, context };
 }

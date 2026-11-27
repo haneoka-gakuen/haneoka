@@ -14,7 +14,7 @@ import { isContentListed, isContentVisible, showUnreleasedContent } from "../lib
 import { prerenderViewKey } from "../lib/content-prerender";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { needsEventSongRelease, withEventSongRelease, withEventSongReleases } from "../lib/event-song-release";
-import { visibilityPolicyKey } from "../lib/content-policy-browser";
+import { ensureContentVisibility, visibilityPolicyKey } from "../lib/content-policy-browser";
 import { withEventStoryVisibility } from "../lib/content-publication";
 import { withUiMarksProjection } from "../lib/ui-marks";
 import catalogPageRollout from "../../config/catalog-page-rollout.json";
@@ -2727,6 +2727,13 @@ export class CatalogScreen extends LitElement {
     const signal = this.catalogRequests.begin();
     this.phase = "loading";
     this.setEntityReady(false);
+    if (this.settings.entityContext && this.settings.resource === "events" &&
+        document.getElementById(this.getAttribute("data-page-data") || "") &&
+        !document.documentElement.dataset.contentVisibilityPolicy) {
+      // Read the inline song and performer data under the initial visibility policy.
+      await ensureContentVisibility();
+      if (!this.isConnected || !this.catalogRequests.current(signal)) return;
+    }
     const inline = readPageData<EntityPayload | CatalogCollectionPayload | ProviderCollectionPayload | ProviderEntityPayload>(this);
     if (inline?.schema === "haneoka-provider-entity-v1" && "detail" in inline &&
         inline.provider === this.settings.origin && inline.id === this.selectedId) {

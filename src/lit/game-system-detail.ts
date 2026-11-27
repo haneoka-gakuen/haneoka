@@ -1194,12 +1194,15 @@ function renderRotatingOverview(c: Controller, item: Item) {
 
 function renderEventSong(c: Controller, item: Item) {
   if (!item.song || typeof item.song !== "object") return nothing;
-  const song = item.song as Item;
+  const reference = item.song as Item;
+  const id = String(reference.musicId);
+  const song = (c.detailAux?.songs?.[id] ?? reference) as Item;
+  if (!isContentVisible("songs", song, id)) return nothing;
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(eventText(c, "eventSong", "Event song"), "songs")}
       <div class="collection collection--song">
-        ${tile({ ...c.songTileOptions(song), href: canonicalHref(c, String(song.href || "")) || undefined })}
+        ${tile({ ...c.songTileOptions(song), href: canonicalHref(c, String(reference.href || "")) || undefined })}
       </div>
     </section>
   `;
@@ -1212,19 +1215,21 @@ function renderChallengeLinks(c: Controller, item: Item) {
   const locale = c.settings.locale;
   const label = clientText(locale, "tools.teamBuilder.challenge.title", "Challenge song ranking");
   const buildLabel = clientText(locale, "catalog.events.labels.buildSongTeam", "Build a team");
-  const tracks = item.challengeServer === server
-    ? eventRows(item.challengeTracks).filter(row => row.musicTitle && isContentVisible("songs", row, String(row.musicId)))
-    : [];
+  const tracks = item.challengeServer === server ? eventRows(item.challengeTracks).flatMap(track => {
+    const id = String(track.musicId);
+    const song = (c.detailAux?.songs?.[id] ?? track) as Item;
+    return (song.musicTitle || song.title || song.name) && isContentVisible("songs", song, id) ? [{ track, song, id }] : [];
+  }) : [];
   const event = String(item.id);
   return html`<section class="detail-section">
     ${renderDetailSectionHeading(label, "songs")}
     ${tracks.length ? html`<div class="collection collection--song">
-      ${tracks.map(track => {
-        const song = c.songTileOptions(track);
+      ${tracks.map(({ track, song, id }) => {
+        const options = c.songTileOptions(song);
         return html`<div class="stack stack--tight">
-          ${tile({ ...song, href: resourcePath({ server, locale, kind: "songs", id: String(track.musicId) }) })}
+          ${tile({ ...options, href: resourcePath({ server, locale, kind: "songs", id }) })}
           <a class="button button--tonal" style="--button-height: var(--md-comp-control-height-touch)"
-            aria-label=${`${buildLabel} · ${song.label}`}
+            aria-label=${`${buildLabel} · ${options.label}`}
             href=${eventChallengeHref(locale, server, event, { id: Number(track.id), musicId: Number(track.musicId) })}>
             ${buildLabel}
           </a>
