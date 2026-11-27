@@ -6,7 +6,7 @@
 import { observeDetailLocation, openDetailLocation } from "../lib/detail-navigation";
 import { scrollableTabBar } from "./ui/scrollable-tabs";
 import { observeSongDisplay } from "../lib/song-display";
-import { isContentVisible } from "../lib/content-release";
+import { visibleTeamBuilderData, visibleTeamBox } from "../lib/team-builder/visibility";
 import { observeSpoilerContent } from "../lib/spoiler-content";
 import { TemporaryCards, type TemporaryCardKind } from "./team-builder/temporary-cards";
 import { Planner } from "./team-builder/planner";
@@ -170,6 +170,7 @@ export class TeamBuilder extends LitElement {
 
   data: TeamBuilderData | null = null;
   publicData: TeamBuilderData | null = null;
+  private sourceData: TeamBuilderData | null = null;
   master: EngineMaster | null = null;
   catalog: Catalog | null = null;
   snapshot: BoxSnapshot | null = null;
@@ -343,7 +344,7 @@ export class TeamBuilder extends LitElement {
     return this.tab === "challenge" || this.tab === "live" || this.tab === "pt" ? this.tab : "free";
   }
   get settings(): BuildSettings {
-    return this.buildDrafts[this.draftKind];
+    return this.visibleSettings(this.buildDrafts[this.draftKind]);
   }
   set settings(settings: BuildSettings) {
     this.buildDrafts[this.draftKind] = settings;
@@ -590,7 +591,7 @@ export class TeamBuilder extends LitElement {
     if (payload?.schema === "haneoka-team-builder-page-v1") this.preparePage(payload);
     super.connectedCallback();
     this.disposeSongDisplay = observeSongDisplay(() => this.requestUpdate());
-    this.disposeVisibility = observeSpoilerContent(() => this.requestUpdate());
+    this.disposeVisibility = observeSpoilerContent(() => this.refreshVisibleData());
     this.layoutObserver = new ResizeObserver(() => {
       const surface = this.querySelector<HTMLElement>(".team-builder");
       const style = surface ? getComputedStyle(surface) : null;
@@ -674,16 +675,12 @@ export class TeamBuilder extends LitElement {
     const sources = [...payload.sources].filter((source) => visible.includes(source.identity.server));
     sources.sort((a, b) => Number(b.identity.server === server) - Number(a.identity.server === server));
     if (sources[0]?.identity.server !== server) throw new Error("Static team source unavailable");
-    this.data = mergeTeamBuilderData(sources, payload.unavailableServers);
-    this.publicData = this.data;
-    if (this.planner.hasDefinitions && this.snapshot)
-      this.data = projectPlannerData(
-        this.publicData,
-        this.planner.document,
-        (id) => this.catalog?.characterFace(id) ?? "",
-      );
+    const source = mergeTeamBuilderData(sources, payload.unavailableServers);
+    this.sourceData = source;
+    this.publicData = visibleTeamBuilderData(source);
+    this.data = this.planner.hasDefinitions && this.snapshot ? this.visiblePlanningData(source) : this.publicData;
     this.master = compileFromTeamData(this.data);
-    this.catalog = new Catalog(this, this.data, this.master);
+    this.catalog = new Catalog(this, this.data, this.master, source);
     const visuals = payload.visuals[server]!;
     this.catalog.setVisuals({ ...visuals, marks: new Map(visuals.marks) });
     this.view = readBox({});
@@ -710,7 +707,10 @@ export class TeamBuilder extends LitElement {
     const view = this.view;
     this.catalog?.dispose();
     this.preparePage(payload, this.server);
-    this.view = view;
+    this.view = this.snapshot ? this.readVisibleBox(this.temporary.merge(this.planner.merge(this.snapshot.entries))) : view;
+    if (this.snapshot) this.persistentBoxView = this.readVisibleBox(this.snapshot.entries);
+    this.manualFormation = this.visibleFormation(this.manualFormation);
+    this.comparisonFormation = this.visibleFormation(this.comparisonFormation);
     this.engine?.dispose();
     this.engine = new EngineClient(this.data!, () => this.requestUpdate());
     this.engine.prefetch(this.searchSettings.songs);
@@ -719,8 +719,9 @@ export class TeamBuilder extends LitElement {
   }
   protected override update(changed: import("lit").PropertyValues) {
     if (this.hasAttribute("data-prerendered")) {
-      hydrate(this.render(), this, this.renderOptions);
       this.removeAttribute("data-prerendered");
+      if (this.data === this.sourceData) hydrate(this.render(), this, this.renderOptions);
+      else this.replaceChildren();
     }
     super.update(changed);
   }
@@ -927,7 +928,7 @@ export class TeamBuilder extends LitElement {
     if (this.loadedServer === server && this.gameAccount?.id === account.id && this.gameAccountOwner === scopeOwner)
       return;
     if (this.loadedServer) this.challenge.clearOwnerRoute();
-    const retained = this.publicData?.identity.server === server ? this.publicData : null;
+    const retained = this.sourceData?.identity.server === server ? this.publicData : null;
     const reuseEngine = !!retained && this.data === retained && !!this.engine;
     this.gameAccount = account;
     this.gameAccountOwner = scopeOwner;
@@ -981,11 +982,12 @@ export class TeamBuilder extends LitElement {
         (this.data?.identity.server === server &&
           this.pageData?.sources.every((source) => source.arena !== undefined) &&
           this.catalog?.visuals);
-      const data = seeded ? this.publicData! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
-      const working = seeded ? this.data! : data;
+      const data = seeded ? this.sourceData! : await fetchCrossServerTeamBuilderData(server, loadController.signal);
       if (loadController.signal.aborted) return;
+      this.sourceData = data;
+      this.publicData = seeded ? this.publicData! : visibleTeamBuilderData(data);
+      const working = seeded ? this.data! : this.publicData;
       this.data = working;
-      this.publicData = data;
       if (!seeded) {
         const matches = (identity: TeamBuilderData["identity"]) =>
           identity.server === data.identity.server &&
@@ -995,8 +997,8 @@ export class TeamBuilder extends LitElement {
         const embedded = this.pageData?.sources.some((source) => matches(source.identity))
           ? this.pageData.visuals[server]
           : undefined;
-        this.master = compileFromTeamData(data);
-        this.catalog = new Catalog(this, data, this.master);
+        this.master = compileFromTeamData(working);
+        this.catalog = new Catalog(this, working, this.master, data);
         if (previous) this.catalog.setVisuals(previous);
         else if (embedded) this.catalog.setVisuals({ ...embedded, marks: new Map(embedded.marks) });
       }
@@ -1072,8 +1074,8 @@ export class TeamBuilder extends LitElement {
     if (ownerChanged) this.planner.restore(snapshot.owner);
     if (this.planner.cards.some((card) => !this.temporary.has(card.kind, card.id))) this.planner.restoreCards();
     if (versionChanged || ownerChanged) {
-      this.persistentBoxView = readBox(snapshot.entries);
-      this.view = readBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
+      this.persistentBoxView = this.readVisibleBox(snapshot.entries);
+      this.view = this.readVisibleBox(this.temporary.merge(this.planner.merge(snapshot.entries)));
       this.restoreBuildPreferences(!ownerChanged);
       this.songComparison.restore();
       this.arena.restore(ownerChanged ? undefined : this.arena.draft.build.required);
@@ -1131,8 +1133,12 @@ export class TeamBuilder extends LitElement {
       return false;
     }
   }
+  private readVisibleBox(entries: Parameters<typeof readBox>[0]): BoxView {
+    const box = readBox(entries);
+    return this.data ? visibleTeamBox(box, this.data) : box;
+  }
   refreshTemporaryView() {
-    if (this.snapshot) this.view = readBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
+    if (this.snapshot) this.view = this.readVisibleBox(this.temporary.merge(this.planner.merge(this.snapshot.entries)));
     this.requestUpdate();
   }
   removeTemporary(kind: TemporaryCardKind, id: number) {
@@ -1149,25 +1155,44 @@ export class TeamBuilder extends LitElement {
     this.notice = this.t("temporarySaved", "Saved to My cards");
     return true;
   }
-  applyPlanningData() {
-    if (!this.publicData) return;
-    this.engine?.cancel();
+  private visiblePlanningData(source: TeamBuilderData): TeamBuilderData {
+    const projected = projectPlannerData(source, this.planner.document, (id) => this.catalog?.characterFace(id) ?? "");
+    return projected === source ? this.publicData! : visibleTeamBuilderData(projected);
+  }
+  private useWorkingData(data: TeamBuilderData) {
     const visuals = this.catalog?.visuals;
-    const data = projectPlannerData(
-      this.publicData,
-      this.planner.document,
-      (id) => this.catalog?.characterFace(id) ?? "",
-    );
-    if (data === this.data) return;
     this.catalog?.dispose();
     this.data = data;
     this.master = compileFromTeamData(data);
-    this.catalog = new Catalog(this, data, this.master);
+    this.catalog = new Catalog(this, data, this.master, this.sourceData!);
     if (visuals) this.catalog.setVisuals(visuals);
     this.engine?.dispose();
     this.engine = new EngineClient(data, () => this.requestUpdate());
     this.engine.prefetch(this.searchSettings.songs);
-    this.requestUpdate();
+  }
+  applyPlanningData() {
+    if (!this.sourceData || this.sourceData.identity.server !== this.server) return;
+    const data = this.visiblePlanningData(this.sourceData);
+    if (data !== this.data) this.useWorkingData(data);
+    this.refreshTemporaryView();
+  }
+  private refreshVisibleData() {
+    const source = this.sourceData;
+    if (!source || !this.data || source.identity.server !== this.server) {
+      this.requestUpdate();
+      return;
+    }
+    this.resetTasks();
+    this.editing = null;
+    this.temporaryPicker = null;
+    this.manualBaseline = null;
+    this.publicData = visibleTeamBuilderData(source);
+    this.useWorkingData(this.snapshot ? this.visiblePlanningData(source) : this.publicData);
+    if (this.snapshot) this.persistentBoxView = this.readVisibleBox(this.snapshot.entries);
+    this.manualFormation = this.visibleFormation(this.manualFormation);
+    this.comparisonFormation = this.visibleFormation(this.comparisonFormation);
+    this.refreshTemporaryView();
+    void this.pt.restore();
   }
   private restoreBuildPreferences(preserveRequired = false) {
     const value = this.view?.prefs.build;
@@ -1183,9 +1208,15 @@ export class TeamBuilder extends LitElement {
     this.buildDrafts = next;
     this.restoreFormations();
   }
+  visibleFormation(team: Formation): Formation {
+    if (!this.master) return team;
+    const members = team.members.map((id) => id !== null && this.master!.members.has(id) ? id : null);
+    const snaps = team.snaps.map((id) => id !== null && this.master!.snaps.has(id) ? id : null);
+    return { ...team, members, snaps };
+  }
   restoreFormations() {
-    this.comparisonFormation = readFormation(this.view?.prefs["comparison-team"]);
-    this.manualFormation = readFormation(this.view?.prefs["manual-team"]);
+    this.comparisonFormation = this.visibleFormation(readFormation(this.view?.prefs["comparison-team"]));
+    this.manualFormation = this.visibleFormation(readFormation(this.view?.prefs["manual-team"]));
   }
   restorePlanningPreferences() {
     this.restoreBuildPreferences();
@@ -1285,7 +1316,7 @@ export class TeamBuilder extends LitElement {
     const team = formation ?? this.manual;
     this.setTab("song-comparison");
     this.slotPicker = null;
-    this.manual = structuredClone(team);
+    this.manual = this.visibleFormation(structuredClone(team));
     if (source && challengeEventForGoal(source.goal) === null)
       this.songComparison.update({ songRules: source.songRules });
     this.requestUpdate();
@@ -1441,12 +1472,6 @@ export class TeamBuilder extends LitElement {
       if (!card) return false;
       const local = plannerMetadata(this.data!.members[String(cardId)]!);
       if (local.active === false) return false;
-      if (
-        s.scope === "theoretical" &&
-        local.active !== true &&
-        !isContentVisible("cards", this.data!.members[String(cardId)], String(cardId))
-      )
-        return false;
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) &&
         (!s.bands.length || s.bands.includes(card.bandId)) &&
@@ -1458,12 +1483,6 @@ export class TeamBuilder extends LitElement {
       if (!card) return false;
       const local = plannerMetadata(this.data!.snapshots[String(cardId)]!);
       if (local.active === false) return false;
-      if (
-        s.scope === "theoretical" &&
-        local.active !== true &&
-        !isContentVisible("support-cards", this.data!.snapshots[String(cardId)], String(cardId))
-      )
-        return false;
       return (
         (!s.attributes.length || s.attributes.includes(card.cardType)) && cardRarityAtLeast(card.rarity, s.minRarity)
       );
@@ -1488,6 +1507,7 @@ export class TeamBuilder extends LitElement {
     return {
       members: base.members.filter(
         (row) =>
+          master.members.has(row.cardId) &&
           !excludedMembers.has(row.cardId) &&
           plannerMetadata(this.data!.members[String(row.cardId)]!).active !== false &&
           this.memberAvailableForTask(row.cardId) &&
@@ -1495,6 +1515,7 @@ export class TeamBuilder extends LitElement {
       ),
       snaps: base.snaps.filter(
         (row) =>
+          master.snaps.has(row.cardId) &&
           !excludedSnaps.has(row.cardId) &&
           plannerMetadata(this.data!.snapshots[String(row.cardId)]!).active !== false &&
           (this.tab !== "arena" ||
@@ -1509,6 +1530,12 @@ export class TeamBuilder extends LitElement {
       ? maxAccountPlayer(this.master!, this.view!.player)
       : this.view!.player;
   }
+  get manualDetailsVisible(): boolean {
+    const catalog = this.catalog;
+    return !!catalog &&
+      this.manual.members.every((id) => id !== null && catalog.cardDetailsVisible("members", id)) &&
+      this.manual.snaps.every((id) => id === null || catalog.cardDetailsVisible("snaps", id));
+  }
   manualInputs(team = this.manual, settings = this.settings) {
     const owned = this.view ? engineInputs(this.view, true) : { members: [], snaps: [] };
     const theoretical = settings.scope === "theoretical";
@@ -1516,7 +1543,8 @@ export class TeamBuilder extends LitElement {
     const members = team.members.flatMap((id) => {
       const row = owned.members.find((row) => row.cardId === id);
       const card = id === null ? undefined : this.master?.members.get(id);
-      if (card && fullGrowth) return [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }];
+      if (!card) return [];
+      if (fullGrowth) return [{ key: `m${id}`, cardId: card.id, ...maxMemberGrowth(this.master!, card) }];
       if (row) return [row];
       const planning = id === null ? undefined : this.planner.cardById(id);
       if (card && planning)
@@ -1526,7 +1554,8 @@ export class TeamBuilder extends LitElement {
     const snaps = team.snaps.flatMap((id) => {
       const row = owned.snaps.find((row) => row.cardId === id);
       const card = id === null ? undefined : this.master?.snaps.get(id);
-      if (card && fullGrowth) return [{ key: `s${id}`, cardId: card.id, ...maxSnapGrowth(this.master!, card) }];
+      if (!card) return [];
+      if (fullGrowth) return [{ key: `s${id}`, cardId: card.id, ...maxSnapGrowth(this.master!, card) }];
       if (row) return [row];
       const planning = id === null ? undefined : this.planner.cardById(id);
       if (card && planning)
@@ -1676,7 +1705,37 @@ export class TeamBuilder extends LitElement {
   effectiveSettings(mode?: string): BuildSettings {
     return this.compatibleSettings(this.tab === "arena" ? this.arena.settings : this.settings, mode);
   }
+  private visibleSettings(settings: BuildSettings): BuildSettings {
+    const master = this.master;
+    if (!master) return settings;
+    const visible = (cards: BuildSettings["required"]) => ({
+      members: cards.members.filter((id) => master.members.has(id)),
+      snaps: cards.snaps.filter((id) => master.snaps.has(id)),
+    });
+    const required = visible(settings.required);
+    const theoreticalExcluded = visible(settings.theoreticalExcluded);
+    const bindings = settings.bindings.filter(([member, snap]) =>
+      master.members.has(member) && (snap === null || master.snaps.has(snap)),
+    );
+    const leader = settings.leader !== null && master.members.has(settings.leader) ? settings.leader : null;
+    const eventId = settings.eventId !== null && master.events.has(settings.eventId) ? settings.eventId : null;
+    const { manualEvent } = settings;
+    const templateId = manualEvent.templateId !== null && master.events.has(manualEvent.templateId) ? manualEvent.templateId : null;
+    const members = manualEvent.members.filter(({ cardId }) => master.members.has(cardId));
+    const snaps = manualEvent.snaps.filter(({ cardId }) => master.snaps.has(cardId));
+    if (leader === settings.leader && eventId === settings.eventId && bindings.length === settings.bindings.length &&
+        required.members.length === settings.required.members.length && required.snaps.length === settings.required.snaps.length &&
+        theoreticalExcluded.members.length === settings.theoreticalExcluded.members.length &&
+        theoreticalExcluded.snaps.length === settings.theoreticalExcluded.snaps.length &&
+        templateId === manualEvent.templateId && members.length === manualEvent.members.length && snaps.length === manualEvent.snaps.length)
+      return settings;
+    return {
+      ...settings, leader, eventId, bindings, required, theoreticalExcluded,
+      manualEvent: { ...manualEvent, templateId, members, snaps },
+    };
+  }
   private compatibleSettings(settings: BuildSettings, mode?: string): BuildSettings {
+    settings = this.visibleSettings(settings);
     if (mode === "recommendation" || (this.tab === "pt" && settings.rewardMode !== "plan" && !mode))
       settings = farmingSettings(settings);
     if (!this.catalog) return settings;

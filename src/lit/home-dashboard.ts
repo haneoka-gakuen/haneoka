@@ -548,9 +548,10 @@ export class HomeDashboard extends LitElement {
     const catalog = this.crossServerCatalogs[resource];
     if (!catalog) {
       const rows = resource === "events" ? (fallback as JsonRecord | undefined)?.entries : fallback;
-      return recordValues(rows).flatMap((row) =>
-        isContentVisible(resource, row) ? [row] : isContentListed(resource, row) ? [contentPreview(row)] : [],
-      );
+      return recordValues(rows).flatMap((row) => {
+        if (!isContentListed(resource, row)) return [];
+        return [isContentVisible(resource, row) ? row : contentPreview(row)];
+      });
     }
     return releasedCatalog(catalog, isContentListed).entries.map((entry) => {
       const variant = entry.perServer[entry.displayServer]!;

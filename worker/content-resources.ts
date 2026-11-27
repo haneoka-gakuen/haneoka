@@ -12,8 +12,9 @@ import {
 } from "../src/lib/asset-page-data";
 
 import { contentPublished } from "../src/lib/content-publication";
-import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
-import { VISIBILITY_TYPES, visibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { contentListing, contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
+import { VISIBILITY_TYPES, visibilityType, visibilityRuleFor, isCardVisibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { cardRarityId } from "../src/lib/card-rarity";
 import { UI_MARK_NAMES } from "../src/lib/ui-marks";
 import { publicChartAsset } from "./chart-assets";
 import {
@@ -105,11 +106,12 @@ export type ContentIndexReader = (
 export const unrestricted = (view: RequestContentView, kinds: readonly VisibilityType[] = VISIBILITY_TYPES): boolean =>
   kinds.every((kind) => {
     if (isModelVisibilityType(kind)) return true;
-    const rule = view.policy.types[kind];
-    return (
-      contentVisible(view, kind, { __publicationPending: true }) &&
-      (!rule?.hide.length || (view.override && rule.allowOverride))
-    );
+    const pending = { __publicationPending: true };
+    const all = (rule: ReturnType<typeof visibilityRuleFor>, value: unknown) =>
+      contentVisible(view, kind, value) && (!rule.hide.length || (view.override && rule.allowOverride));
+    return all(visibilityRuleFor(view.policy, kind), pending) &&
+      (!isCardVisibilityType(kind) ||
+        all(visibilityRuleFor(view.policy, "special-cards"), { ...pending, rarity: cardRarityId("BD") }));
   });
 const notPublic = () =>
   new Response(JSON.stringify({ error: { code: "content_unpublished", message: "Content is not public" } }), {
@@ -213,15 +215,13 @@ function mayReadAsset(
     );
   const preview =
     !allowed &&
-    view.spoilers &&
     index.previewAssets?.includes(path) &&
     owners.some((chain) =>
       chain.every((id) => {
         const ref = index.records[id];
         return (
           ref &&
-          (contentVisible(view, ref.kind, ref.publication, ref.id) ||
-            view.policy.types[ref.kind]?.restrictedDisplay === "unpublished")
+          contentListing(view, ref.kind, ref.publication, ref.id) !== "hidden"
         );
       }),
     );

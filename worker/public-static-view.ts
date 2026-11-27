@@ -1,3 +1,4 @@
+import { maySeeUnpublishedType } from "../src/lib/content-view";
 import {
   readPrivatePageData,
   readStaticDocumentSnapshot,
@@ -7,7 +8,7 @@ import {
 import { unrestricted } from "./content-resources";
 import { inheritContentView, requestContentView, type RequestContentView } from "./content-view";
 import { applySiteSettings, type DocumentContentContext } from "./site-settings";
-import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, type VisibilityType } from "../src/lib/content-visibility-policy";
+import { VISIBILITY_TYPES, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { coreStaticDocumentPath } from "../src/lib/static-documents";
 import { parseResourceRoute } from "../src/lib/resource-route";
 import { isCommunityPagePath } from "../src/lib/site-community";
@@ -44,15 +45,6 @@ export function publicStaticViewPath(path: string): boolean {
     return Boolean(route && (!route.view || (route.kind === "songs" && route.view === "chart")));
   }
   return LOCALE.test(parts[0] || "") && parts.length > 1 && !PRIVATE_GLOBAL_SECTIONS.has(parts[1]!);
-}
-
-/** Whether this viewer may see any unpublished entry of a type. */
-function permitted(view: RequestContentView, kind: VisibilityType): boolean {
-  const rule = view.policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
-  if (view.override && rule.allowOverride) return true;
-  if (view.spoilers && rule.restrictedDisplay === "unpublished") return true;
-  if (!rule.groups.includes(view.group)) return false;
-  return rule.mode === "visible" || rule.show.length > 0 || view.spoilers;
 }
 
 function viewHeaders(view: RequestContentView, freshUntil: number | undefined): Headers {
@@ -172,7 +164,7 @@ export async function handlePublicStaticViewRequest(
   const kinds = (types.length ? types : VISIBILITY_TYPES) as readonly VisibilityType[];
   // Content published since the public page was built is public even when nothing private is permitted.
   const published = since !== undefined && since <= view.now;
-  if (!published && !kinds.some((kind) => permitted(view, kind))) {
+  if (!published && !kinds.some((kind) => maySeeUnpublishedType(view, kind))) {
     const etag = `W/"content-view-none-${view.key}"`;
     metadata.set("ETag", etag);
     return new Response(null, { status: request.headers.get("If-None-Match") === etag ? 304 : 204, headers: metadata });

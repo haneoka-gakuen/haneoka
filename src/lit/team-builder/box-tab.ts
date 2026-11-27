@@ -50,7 +50,11 @@ export function visibleCards(host: TeamBuilder): Row[] {
 const prefix = (kind: Kind) => (kind === "members" ? "m" : "s");
 function clearRequiredChanges(host: TeamBuilder) {
   return Object.entries(host.temporary.merge(host.snapshot?.entries ?? {}))
-    .filter(([key, entry]) => /^[ms]\.[1-9]\d*\.lock$/u.test(key) && entry.v === true)
+    .filter(([key, entry]) => {
+      const card = /^([ms])\.([1-9]\d*)\.lock$/u.exec(key);
+      if (!card || entry.v !== true) return false;
+      return card[1] === "m" ? !!host.catalog?.member(Number(card[2])) : !!host.catalog?.snap(Number(card[2]));
+    })
     .map(([key]) => ({ key, value: false }));
 }
 /** Bulk edits keep the previous values for one undo. */

@@ -6,8 +6,9 @@
 import { dateField } from "./ui/date-field";
 import { communityStoryPath } from "../lib/community-story-route";
 import { applyVisibilitySettings } from "../lib/content-policy-browser";
-import { DEFAULT_VISIBILITY_RULE, VISIBILITY_TYPES, parseVisibilityPolicy,
-  type ContentVisibilityPolicy, type ContentVisibilitySettings, type VisibilityRule, type VisibilityType } from "../lib/content-visibility-policy";
+import { VISIBILITY_SETTING_TYPES, parseVisibilityPolicy, visibilityRuleFor,
+  type ContentVisibilityPolicy, type ContentVisibilitySettings,
+  type VisibilityRule, type VisibilitySettingType } from "../lib/content-visibility-policy";
 import { USER_GROUPS, USER_ROLES, isUserRole, type UserGroup } from "../lib/user-roles";
 import { modal } from "./ui/modal";
 import "../styles/admin-forums.css";
@@ -174,7 +175,7 @@ export class AdminWorkspace extends LitElement {
   declare phase: "loading" | "ready" | "error";
   declare document: Value;
   declare private visibilityDraft: ContentVisibilityPolicy | null;
-  declare private visibilityEditing: VisibilityType | "";
+  declare private visibilityEditing: VisibilitySettingType | "";
   declare private visibilityIdDrafts: Record<string, string>;
   declare private visibilityInvalid: boolean;
   declare private visibilityBulkGroups: UserGroup[];
@@ -800,11 +801,15 @@ export class AdminWorkspace extends LitElement {
       await this.load(false);
     });
   }
-  private changeVisibilityRule(kind: VisibilityType, patch: Partial<VisibilityRule>) {
+  private changeVisibilityRule(kind: VisibilitySettingType, patch: Partial<VisibilityRule>) {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
     this.visibilityDraftVersion ??= settings.version;
     const current = this.visibilityDraft ?? settings.policy;
-    this.visibilityDraft = { ...current, types: { ...current.types, [kind]: { ...DEFAULT_VISIBILITY_RULE, ...current.types[kind], ...patch } } };
+    this.visibilityDraft = {
+      ...current,
+      cardRulesVersion: 2,
+      types: { ...current.types, [kind]: { ...visibilityRuleFor(current, kind), ...patch } },
+    };
   }
   private saveVisibility() {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
@@ -833,13 +838,17 @@ export class AdminWorkspace extends LitElement {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
     this.visibilityDraftVersion ??= settings.version;
     const policy = this.visibilityDraft ?? settings.policy;
-    this.visibilityDraft = { ...policy, types: Object.fromEntries(VISIBILITY_TYPES.map((kind) => [
-      kind, { ...DEFAULT_VISIBILITY_RULE, ...policy.types[kind], groups: [...this.visibilityBulkGroups] },
-    ])) };
+    this.visibilityDraft = {
+      ...policy,
+      cardRulesVersion: 2,
+      types: Object.fromEntries(VISIBILITY_SETTING_TYPES.map((kind) => [
+        kind, { ...visibilityRuleFor(policy, kind), groups: [...this.visibilityBulkGroups] },
+      ])),
+    };
   }
-  private visibilityRule(kind: VisibilityType): VisibilityRule {
+  private visibilityRule(kind: VisibilitySettingType): VisibilityRule {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings;
-    return { ...DEFAULT_VISIBILITY_RULE, ...(this.visibilityDraft ?? settings.policy).types[kind] };
+    return visibilityRuleFor(this.visibilityDraft ?? settings.policy, kind);
   }
   private renderVisibilitySettings() {
     const settings = this.document.visibilitySettings as unknown as ContentVisibilitySettings | undefined;
@@ -852,7 +861,7 @@ export class AdminWorkspace extends LitElement {
     const modeLabel = this.label("visibilityModeVisible", "Always show");
     const entryLabel = this.label("visibilityShowEntry", "Show entry");
     const overrideLabel = this.label("visibilityAllowOverride", "Allow spoiler parameter override");
-    const exceptionsLabel = this.label("visibilityExceptions", "ID exceptions");
+    const detailsLabel = this.label("visibilityExceptions", "ID exceptions");
     const showLabel = this.label("visibilityShowIds", "Show unreleased IDs by default");
     const hideLabel = this.label("visibilityHideIds", "Hide unreleased IDs by default");
     const checkbox = (label: string, checked: boolean, onChange: (checked: boolean) => void) => html`<td class="admin-visibility__control">
@@ -874,7 +883,7 @@ export class AdminWorkspace extends LitElement {
                 <th class="admin-visibility__control" rowspan="2" scope="col"
                   title=${`${this.label("visibilityRestrictedDisplay", "Display for restricted groups")}: ${this.label("visibilityRestrictedUnpublished", "Show catalog entry; detail not yet public")}`}>${entryLabel}</th>
                 <th class="admin-visibility__control" rowspan="2" scope="col" title=${overrideLabel}>${this.label("visibilityOverride", "Parameter override")}</th>
-                <th rowspan="2" scope="col">${exceptionsLabel}</th>
+                <th rowspan="2" scope="col">${detailsLabel}</th>
               </tr>
               <tr>${USER_GROUPS.map((group) => html`<th class="admin-visibility__control admin-visibility__group" scope="col">${role(group)}</th>`)}</tr>
             </thead>
@@ -890,10 +899,10 @@ export class AdminWorkspace extends LitElement {
                   (checked) => { this.visibilityBulkGroups = toggled(this.visibilityBulkGroups, group, checked); }))}
                 <td colspan="4"></td>
               </tr>
-              ${VISIBILITY_TYPES.map((kind) => {
+              ${VISIBILITY_SETTING_TYPES.map((kind) => {
                 const rule = this.visibilityRule(kind);
                 const title = this.label(`visibilityTypes.${kind}`, kind);
-                const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, types: { [kind]: rule } });
+                const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, cardRulesVersion: 2, types: { [kind]: rule } });
                 return html`<tr class=${this.visibilityEditing === kind ? "is-selected" : ""}>
                   <th class="is-sticky" scope="row">${title}</th>
                   ${USER_GROUPS.map((group) => checkbox(`${title} / ${role(group)}`, rule.groups.includes(group),
@@ -906,7 +915,8 @@ export class AdminWorkspace extends LitElement {
                     (selected) => this.changeVisibilityRule(kind, { allowOverride: selected }))}
                   <td>
                     <button class=${`button button--text admin-visibility__exceptions${invalid ? " is-invalid" : ""}`} type="button" aria-haspopup="dialog"
-                      aria-label=${`${title} / ${exceptionsLabel}: ${showLabel} ${rule.show.length}, ${hideLabel} ${rule.hide.length}`}
+                      title=${detailsLabel}
+                      aria-label=${`${title} / ${detailsLabel}: ${showLabel} ${rule.show.length}, ${hideLabel} ${rule.hide.length}`}
                       @click=${() => { this.visibilityEditing = kind; }}>
                       ${icon("visibility", 18)}<span>${rule.show.length}</span>${icon("visibility_off", 18)}<span>${rule.hide.length}</span>
                     </button>
@@ -929,9 +939,10 @@ export class AdminWorkspace extends LitElement {
     const kind = this.visibilityEditing;
     if (!kind) return nothing;
     const rule = this.visibilityRule(kind);
-    const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, types: { [kind]: rule } });
+    const invalid = this.visibilityInvalid && !parseVisibilityPolicy({ eventChallengeSongs: true, cardRulesVersion: 2, types: { [kind]: rule } });
     const ids = (value: string) => [...new Set(value.split(/[\s,，]+/u).filter(Boolean))];
     const field = (list: "show" | "hide", label: string) => html`<md-outlined-text-field type="textarea" rows="5" label=${label}
+      placeholder=${kind === "cards" || kind === "special-cards" ? "123, cards:123, support-cards:456" : nothing}
       .value=${this.visibilityIdDrafts[`${kind}:${list}`] ?? rule[list].join("\n")} ?disabled=${Boolean(this.busy)} ?error=${invalid}
       @input=${(event: Event) => {
         const value = (event.currentTarget as HTMLElement & { value: string }).value;

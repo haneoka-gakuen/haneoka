@@ -197,6 +197,7 @@
     "src/i18n/language-flags.ts",
     "src/i18n/server.ts",
     "src/lib/team-builder/data.ts",
+    "src/lib/team-builder/visibility.ts",
     "src/lib/team-builder/arena.ts",
     "src/lib/team-builder/data/load.ts",
     "src/lib/team-builder/data/source.ts",

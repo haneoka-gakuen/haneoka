@@ -7194,8 +7194,8 @@
       "visibilityExceptions": "ID 예외",
       "visibilityApplyShort": "일괄 적용",
       "visibilityTypes": {
-        "cards": "멤버",
-        "support-cards": "스냅",
+        "cards": "일반 카드",
+        "special-cards": "BD / EX 카드",
         "songs": "곡",
         "characters": "캐릭터",
         "stories": "스토리",
@@ -7216,7 +7216,6 @@
         "passes": "패스",
         "challenge": "챌린지 라이브",
         "circle": "서클",
-        "real-lives": "리얼 라이브",
         "live2d": "Live2D",
         "spine": "Spine",
         "help": "도움말",

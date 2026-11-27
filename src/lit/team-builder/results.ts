@@ -477,12 +477,15 @@ export function formation(host: TeamBuilder, hit: EngineHit): TemplateResult {
   return teamFormation(host, hit.members.map((key, index) => {
     const member = cardIdOf(key);
     const snapKey = hit.snaps[index];
+    const name = catalog.characterName(catalog.member(member)?.characterId ?? 0);
+    const showPower = catalog.cardDetailsVisible("members", member) &&
+      (!snapKey || catalog.cardDetailsVisible("snaps", cardIdOf(snapKey)));
     return {
       member,
       snap: snapKey ? cardIdOf(snapKey) : null,
       memberGrowth: resultGrowth(host, "members", key),
       snapGrowth: snapKey ? resultGrowth(host, "snaps", snapKey) : null,
-      title: `${catalog.characterName(catalog.member(member)?.characterId ?? 0)} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}`,
+      title: showPower ? `${name} / ${host.t("slotPower", "Slot power")} ${format(host, hit.slotPowers[index] ?? 0)}` : name,
       flag: !host.view?.members.has(member) && resultSettings(host).scope === "theoretical"
         ? html`<span class="tb-slot__flag">${host.t("notOwned", "Not owned")}</span>` : undefined,
     };
@@ -1124,6 +1127,7 @@ function skillOrderView(host: TeamBuilder, hit: EngineHit): TemplateResult {
 }
 
 export function renderResultDetails(host: TeamBuilder, hit: EngineHit): TemplateResult {
+  const detailed = host.catalog?.resultDetailsVisible(hit);
   return html`
     <div class="tb-hit__detail stack stack--flex">
       ${host.results && !usesPtResults(host) && !manualResultSource(hit)
@@ -1146,7 +1150,7 @@ export function renderResultDetails(host: TeamBuilder, hit: EngineHit): Template
           { label: host.t("analysis.dropRisk", "Orders below target"), value: risk === null ? "—" : `${format(host,risk*100,1)}%` },
           { label: host.t("analysis.nextRank", "Next grade gap"), value: next ? format(host,personalRankTarget(next,room)-hit.score!.min) : "—" }]);
       })() : nothing}
-      ${distribution(host, hit, hit.song)} ${powerNeeded(host, hit, hit.song)} ${skillOrderView(host, hit)}
+      ${distribution(host, hit, hit.song)} ${powerNeeded(host, hit, hit.song)} ${detailed ? skillOrderView(host, hit) : nothing}
     </div>
   `;
 }
@@ -1307,6 +1311,7 @@ export function renderHit(
       })}`, host.server, host.locale as Locale)
     : undefined;
   const main = primary(host, hit);
+  const detailed = host.catalog?.resultDetailsVisible(hit);
   return html`
     <article
       data-result-key=${key}
@@ -1365,7 +1370,7 @@ export function renderHit(
         <button class="button button--tonal" type="button" data-tb-save-team ?disabled=${stale}
           @click=${() => saveResultTeam(host, hit)}>${host.t("saveTeam", "Save team")}</button>
         ${paceHref ? html`<a class="button button--text" href=${paceHref}>${host.t("openPacePlanner", "Plan with these points")}</a>` : nothing}
-        ${hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
+        ${detailed && hit.song && hit.score && resultSettings(host,hit).route !== "skip" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openMistakes(hit)}>${host.t("analysis.mistakes", "Mistake positions")}</button>` : nothing}
         ${(() => {
           const input = resultRequest(host, hit);
           return input && host.analysis.canShowLuckScore({ hit, input }) ? html`
@@ -1374,7 +1379,7 @@ export function renderHit(
             : nothing;
         })()}
         ${resultRequest(host,hit)?.goal.kind === "gekiso" ? html`<button class="button button--text" ?disabled=${host.running || stale} @click=${() => host.analysis.openPressure(hit)}>${host.t("analysis.pressure", "Opponent scenarios")}</button>` : nothing}
-        ${resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
+        ${detailed && resultSettings(host, hit).scope !== "theoretical" && resultSettings(host, hit).goal !== "plan" ? html`
           <button class="button button--tonal" type="button" ?disabled=${host.running}
             @click=${() => host.teamGrowth.openResult(hit)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
         ${
@@ -1470,8 +1475,9 @@ export function renderHit(
   `;
 }
 
-function growthSection(host: TeamBuilder, hit: EngineHit): TemplateResult {
+function growthSection(host: TeamBuilder, hit: EngineHit): TemplateResult | typeof nothing {
   const catalog = host.catalog!;
+  if (!catalog.resultDetailsVisible(hit)) return nothing;
   const growth = host.growth?.context === host.calculationContext() ? host.growth : null;
   const upgrades = growth?.result?.upgrades.filter((row) => row.gain > 1e-9).slice(0, 8) ?? [];
   const base = growth?.result?.base ?? 0;

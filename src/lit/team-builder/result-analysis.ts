@@ -191,7 +191,7 @@ export class ResultAnalysis {
   }
   openMistakes(hit: EngineHit) {
     const input = resultRequest(this.host, hit);
-    if (!input || !hit.song) return;
+    if (!input || !hit.song || !this.host.catalog?.resultDetailsVisible(hit)) return;
     this.close();
     this.sources = [{ hit: structuredClone(hit), input: structuredClone(input) }];
     this.mode = "mistakes";

@@ -2136,6 +2136,27 @@ async function catalogPage(
 
 const contentOwnershipShards = new Map<string, Promise<Pick<ContentResourceIndex, "assets" | "previewAssets"> | null>>();
 const resourceContentIndexes = new Map<string, Promise<ContentResourceIndex | null>>();
+
+async function attachCardRarities(env: Env, release: Release, index: ContentResourceIndex): Promise<void> {
+  const catalog = await catalogStorageManifest(env, release);
+  const rarities = new Map<string, number>();
+  await Promise.all((["cards", "support-cards"] as const).map(async (kind) => {
+    const path = catalog?.resources[kind]?.index;
+    if (!path) return;
+    const cards = await readReleaseJson(env, release, path);
+    if (!isJsonObject(cards)) return;
+    for (const [id, card] of Object.entries(cards))
+      if (isJsonObject(card) && typeof card.rarity === "number") rarities.set(`${kind}:${id}`, card.rarity);
+  }));
+  for (const [key, publication] of Object.entries(index.publications ?? {})) {
+    const rarity = rarities.get(key);
+    if (rarity !== undefined) publication.rarity = rarity;
+  }
+  for (const ref of Object.values(index.records)) {
+    const rarity = rarities.get(`${ref.kind}:${ref.id}`);
+    if (rarity !== undefined) ref.publication.rarity = rarity;
+  }
+}
 async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: string, id?: string, assetPath?: string): Promise<ContentResourceIndex | null> {
   const server = await activeResourceServer(env, slug);
   const release = server && (id ? await requestedRelease(env, server, id) : await currentRelease(env, server));
@@ -2154,6 +2175,7 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
         : JSON.parse(compiled) as JsonValue;
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
+        await attachCardRarities(env, release, result);
         if (result.eventSongReleasesPrepared) return result;
         const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
         const starts = eventSongReleases(events, challenges);

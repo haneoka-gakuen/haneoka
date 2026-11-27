@@ -25,6 +25,7 @@ import { clock } from "../../lib/team-builder/engine/execution";
 import { MAX_GEKISO_COUNT, validGekisoCount } from "../../lib/team-builder/constraint-feasibility";
 import { compareHits } from "../../lib/team-builder/engine/merge";
 import type { TeamBuilder } from "../team-builder";
+import { readFormation } from "../../lib/team-builder/song-comparison";
 
 const format = (host: TeamBuilder, value: number, digits = 0) =>
   new Intl.NumberFormat(host.locale, { maximumFractionDigits: digits }).format(value);
@@ -254,7 +255,7 @@ async function suggest(host: TeamBuilder, slot: number) {
 
 export function savedFormation(team: SavedTeam) {
   const leader = team.leader === null ? 0 : team.members.indexOf(team.leader);
-  return { members: [...team.members], snaps: [...team.snaps], leader: leader < 0 ? 0 : leader };
+  return readFormation({ members: team.members, snaps: team.snaps, leader: leader < 0 ? 0 : leader });
 }
 export function renderTeamsTab(host: TeamBuilder): TemplateResult {
   return renderTeamWorkspace(host, "teams");
@@ -634,8 +635,8 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                           ], { numeric: true })}</div>
                           ${row && hit ? html`
                             <div class="cluster">
-                              <button class="button button--tonal" type="button" ?disabled=${host.running}
-                                @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>
+                              ${host.manualDetailsVisible ? html`<button class="button button--tonal" type="button" ?disabled=${host.running}
+                                @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>` : nothing}
                               <button class="button button--text" type="button" aria-pressed=${compared}
                                 @click=${() => host.comparison.toggle(host, hit)}>${host.t(compared ? "comparisonAdded" : "addComparison", compared ? "Added to comparison" : "Add to comparison")}</button>
                             </div>

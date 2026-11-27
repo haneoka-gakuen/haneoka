@@ -8,10 +8,10 @@ import {
 } from "../src/lib/site-community";
 import { providerEntityFromUrl } from "../src/lib/provider-entity-routing";
 import { requestContentView } from "./content-view";
-import { contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
+import { contentListing, contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
 import { decodePageData } from "../src/lib/page-data-codec";
 import { unrestricted } from "./content-resources";
-import { visibilityType } from "../src/lib/content-visibility-policy";
+import { isCardVisibilityType, visibilityType } from "../src/lib/content-visibility-policy";
 import { contentPublished } from "../src/lib/content-publication";
 import { parseHtmlJson } from "../src/lib/html-json";
 import { parseResourceRoute } from "../src/lib/resource-route";
@@ -168,13 +168,13 @@ export async function applySiteSettings(
           const refs = parseHtmlJson<ContentReference[]>(element.getAttribute("data-content-references") || "[]");
           if (
             refs.some(
-              (ref) =>
-                !contentVisible(
-                  view,
-                  ref.kind,
-                  context.publications?.[`${ref.kind}:${ref.id}`] ?? ref.publication,
-                  ref.id,
-                ),
+              (ref) => {
+                const publication = { ...ref.publication, ...context.publications?.[`${ref.kind}:${ref.id}`] };
+                if (ref.publication.rarity !== undefined) publication.rarity = ref.publication.rarity;
+                return contentListing(view, ref.kind, publication, ref.id) !== "full" ||
+                  (isCardVisibilityType(ref.kind) &&
+                    contentListing(view, ref.kind, ref.publication, ref.id) !== "full");
+              },
             )
           )
             usePublicView = true;

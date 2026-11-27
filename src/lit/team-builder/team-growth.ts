@@ -139,7 +139,7 @@ export class TeamGrowthComparison {
   private resultSource(hit: EngineHit): Source | undefined {
     const host = this.host;
     const input = resultRequest(host, hit);
-    if (!input || host.running) return;
+    if (!input || host.running || !host.catalog?.resultDetailsVisible(hit)) return;
     const settings = structuredClone(resultSettings(host, hit));
     const request = freshGrowthRequest(input);
     if (request.goal.kind === "plan") return;
@@ -170,7 +170,7 @@ export class TeamGrowthComparison {
   }
   openManual(row: TeamEvaluation) {
     const host = this.host;
-    if (host.running || host.manualResultsFor !== host.manualContext() || !host.manualResults?.includes(row)) return;
+    if (host.running || !host.manualDetailsVisible || host.manualResultsFor !== host.manualContext() || !host.manualResults?.includes(row)) return;
     const goal = host.manualGoal(),
       base = host.request(goal);
     if (!base || !host.view) return;

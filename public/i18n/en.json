@@ -7194,8 +7194,8 @@
       "visibilityExceptions": "ID exceptions",
       "visibilityApplyShort": "Apply to all",
       "visibilityTypes": {
-        "cards": "Members",
-        "support-cards": "Snapshot",
+        "cards": "Standard cards",
+        "special-cards": "BD / EX cards",
         "songs": "Songs",
         "characters": "Characters",
         "stories": "Stories",
@@ -7216,7 +7216,6 @@
         "passes": "Passes",
         "challenge": "Challenge LIVE",
         "circle": "Circle",
-        "real-lives": "Real Lives",
         "live2d": "Live2D",
         "spine": "Spine",
         "help": "Help",

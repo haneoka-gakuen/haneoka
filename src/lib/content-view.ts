@@ -6,12 +6,15 @@
 import { withEventSongRelease } from "./event-song-release";
 import { contentPublished, publicationFields } from "./content-publication";
 import {
-  DEFAULT_VISIBILITY_RULE,
   inferredVisibilityType,
+  isCardVisibilityType,
+  isSpecialCard,
   isModelVisibilityType,
   visibilityId,
+  visibilityRuleFor,
   visibilityType,
   type ContentVisibilityPolicy,
+  type VisibilityRule,
   type VisibilityType,
 } from "./content-visibility-policy";
 import { isPublicReleaseServer } from "./temporary-public-routing";
@@ -26,17 +29,43 @@ export interface ContentView {
 }
 export type ContentReference = { kind: VisibilityType; id: string; publication: Record<string, unknown> };
 export { spoilerOverrideEnabled as explicitContentOverride } from "./spoiler-cookie";
-export function contentVisible(view: ContentView, kind: VisibilityType, value: unknown, id = ""): boolean {
-  if (isModelVisibilityType(kind)) return true;
-  if (contentPublished(value, view.now)) return true;
-  const rule = view.policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
+function unpublishedVisible(
+  view: ContentView, rule: VisibilityRule, kind: VisibilityType | undefined, id: string,
+): boolean {
+  const matches = (ids: readonly string[]) => ids.includes(id) ||
+    (isCardVisibilityType(kind) && ids.includes(`${kind}:${id}`));
   if (view.override && rule.allowOverride) return true;
-  if (!rule.groups.includes(view.group) || rule.hide.includes(id)) return false;
-  if (rule.show.includes(id) || rule.mode === "visible") return true;
+  if (!rule.groups.includes(view.group) || matches(rule.hide)) return false;
+  if (matches(rule.show) || rule.mode === "visible") return true;
   return view.spoilers;
 }
+
+/** Reject an upgrade only when no unpublished entry could be visible. */
+export function maySeeUnpublishedType(view: Pick<ContentView, "policy" | "group" | "spoilers" | "override">, kind: VisibilityType): boolean {
+  const permits = (rule: VisibilityRule) =>
+    (view.override && rule.allowOverride) ||
+    (view.spoilers && rule.restrictedDisplay === "unpublished") ||
+    (rule.groups.includes(view.group) && (rule.mode === "visible" || rule.show.length > 0 || view.spoilers));
+  return permits(visibilityRuleFor(view.policy, kind)) ||
+    (isCardVisibilityType(kind) && permits(visibilityRuleFor(view.policy, "special-cards")));
+}
+
+export function contentVisible(view: ContentView, kind: VisibilityType | undefined, value: unknown, id = ""): boolean {
+  if (isModelVisibilityType(kind) || contentPublished(value, view.now)) return true;
+  const rule = visibilityRuleFor(view.policy, isSpecialCard(kind, value) ? "special-cards" : kind);
+  return unpublishedVisible(view, rule, kind, id);
+}
+
+export function contentListing(view: ContentView, kind: VisibilityType, value: unknown, id = ""): "full" | "preview" | "hidden" {
+  if (contentVisible(view, kind, value, id)) return "full";
+  const rule = visibilityRuleFor(view.policy, isSpecialCard(kind, value) ? "special-cards" : kind);
+  return view.spoilers && rule.restrictedDisplay === "unpublished" ? "preview" : "hidden";
+}
+
 export function contentReference(kind: VisibilityType, value: Record<string, unknown>, id?: string): ContentReference {
-  return { kind, id: id ?? visibilityId(kind, value), publication: publicationFields(value) };
+  const publication = publicationFields(value);
+  if (isCardVisibilityType(kind) && value.rarity !== undefined) publication.rarity = value.rarity;
+  return { kind, id: id ?? visibilityId(kind, value), publication };
 }
 
 const aliases: Record<string, string> = {
@@ -128,7 +157,6 @@ export function filterContentData(
   if (object(value) && (value.schema === "haneoka-team-builder-page-v1" || value.schema === "haneoka-team-builder-data-v1"))
     return { value, changed: false };
   const sourceServer = (node: Record<string, unknown>, inherited?: string): string | undefined => {
-    if (!publicationsByServer) return inherited;
     const identity = object(node.identity) ? node.identity : undefined;
     return typeof identity?.server === "string" ? identity.server : typeof node.server === "string" ? node.server : inherited;
   };
@@ -144,7 +172,8 @@ export function filterContentData(
     const publication = publicationFor(key, server);
     if (!publication) return row;
     const foreign = !publicationsByServer && server !== undefined && typeof own === "string" && server !== own;
-    return foreign ? { ...publication, ...row } : { ...row, ...publication };
+    if (foreign) return { ...publication, ...row };
+    return { ...row, ...publication, ...(row.rarity === undefined ? {} : { rarity: row.rarity }) };
   };
   if (object(value)) {
     const identity = String(value.id ?? value.entityId ?? "");
@@ -156,7 +185,7 @@ export function filterContentData(
         : (episode ?? (value.entityId && object(value.document) ? value.document : undefined));
     const kind = visibilityType(resource ?? String(value.resource ?? value.kind ?? (episode ? "stories" : "")));
     if (primary && kind && identity) {
-      const publication = publicationFor(`${kind}:${identity}`, sourceServer(value)) ?? primary;
+      const publication = withPublication(primary, `${kind}:${identity}`, sourceServer(value));
       if (!contentVisible(view, kind, publication, identity)) {
         omitted?.push(contentReference(kind, publication, identity));
         return { value: null, changed: true };
@@ -235,12 +264,15 @@ export function filterContentData(
       const { eventPublishedAt, ...song } = input;
       input = withEventSongRelease(song, { [String(input.musicId)]: Number(eventPublishedAt) });
     }
-    if (kind && entity && !contentVisible(view, kind, input, identity)) {
-      changed = true;
-      omitted?.push(contentReference(kind, input, identity));
-      const rule = view.policy.types[kind] ?? DEFAULT_VISIBILITY_RULE;
-      if (previews && rule.restrictedDisplay === "unpublished" && view.spoilers) return contentPreview(input);
-      return drop;
+    if (kind && entity) {
+      const access = previews
+        ? contentListing(view, kind, input, identity)
+        : contentVisible(view, kind, input, identity) ? "full" : "hidden";
+      if (access !== "full") {
+        changed = true;
+        omitted?.push(contentReference(kind, input, identity));
+        return access === "preview" ? contentPreview(input) : drop;
+      }
     }
     const ownKind = typeof input.resource === "string" ? visibilityType(input.resource) : kind;
     const document = envelope || node === value || typeof input.schema === "string" || typeof input.resource === "string";
@@ -310,8 +342,10 @@ export function filterContentData(
     const servers = Object.keys(perServer);
     if (!servers.length) return drop;
     const removed = servers.length !== Object.keys(variants).length;
+    const previewed = isCardVisibilityType(kind) &&
+      Object.values(perServer).some((variant) => object(variant.row) && variant.row.__contentPreview);
     const output: Record<string, unknown> = { ...input, perServer };
-    if (removed) {
+    if (removed || previewed) {
       changed = true;
       const reset: Record<string, unknown> = {
         displayServer: servers.includes(String(input.displayServer)) ? input.displayServer : servers[0],
@@ -329,7 +363,7 @@ export function filterContentData(
       const identity = object(input.identity) ? input.identity : {};
       const active = perServer[String(input.activeServer ?? identity.server)];
       if (!active) return drop;
-      const row = removed ? active.row : walk(input.row, kind, String(active.id), true, true, String(input.activeServer ?? identity.server));
+      const row = removed || previewed ? active.row : walk(input.row, kind, String(active.id), true, true, String(input.activeServer ?? identity.server));
       if (row === drop) return drop;
       output.row = row;
     }

@@ -14,6 +14,7 @@ import type { CatalogCost } from "../../lib/catalog-cost-summary";
 import { formatDate } from "../../lib/date-format";
 import type { OwnedMember, OwnedSnap } from "../../lib/team-builder/sync/box-view";
 import { accordion } from "../ui/accordion";
+import { icon } from "../ui/icon";
 import type { TeamBuilder } from "../team-builder";
 import type { Catalog } from "./catalog";
 import { stripSkillDescriptionMarkup } from "../shared/skill-text";
@@ -103,6 +104,7 @@ export function cardEditorPreview(host: TeamBuilder) {
   const { kind, cardId } = editing;
   const catalog = host.catalog!;
   const master = host.master!;
+  const detailVisible = catalog.cardDetailsVisible(kind, cardId);
   const owned = kind === "members" ? host.view!.members.get(cardId) : host.view!.snaps.get(cardId);
   const current = growth(kind, owned);
   let session = sessions.get(host);
@@ -119,7 +121,7 @@ export function cardEditorPreview(host: TeamBuilder) {
   const before = session.before;
   const state = session;
   const planning=host.planner.cardById(cardId);
-  const resource:Resource = planning?{error:false}:descriptions(host);
+  const resource: Resource = !detailVisible || planning ? { error: false } : descriptions(host);
   const detail = resource.data?.cards.find(
     (card) => card.id === cardId && card.kind === (kind === "members" ? "member" : "support"),
   );
@@ -186,8 +188,8 @@ export function cardEditorPreview(host: TeamBuilder) {
       ? card.statMax.map((max, index) => memberStat(max, level[index]!, training[index]!, rank.rates[index]!))
       : null;
   };
-  const priorStats = stats(before),
-    currentStats = stats(current);
+  const priorStats = detailVisible ? stats(before) : null,
+    currentStats = detailVisible ? stats(current) : null;
   const metric = (label: string, previous: number | null, value: number | null, percent = false) => {
     const delta = previous === null || value === null ? null : value - previous;
     return html`
@@ -213,7 +215,7 @@ export function cardEditorPreview(host: TeamBuilder) {
     const rank = value.break == null ? undefined : master.snapRanks.get(card.rankGroup)?.get(value.break);
     return rank?.typeLinkRate ?? null;
   };
-  const statistics = html`
+  const statistics = detailVisible ? html`
     <section class="tb-editor__statistics" aria-labelledby="tb-editor-stats-title">
       <div class="tb-editor__section-heading">
         <h3 id="tb-editor-stats-title" class="detail-section-title">
@@ -226,7 +228,7 @@ export function cardEditorPreview(host: TeamBuilder) {
         ${kind === "snaps" ? metric(host.t("editorPreview.typeLink", "Type Link"), bonus(before, "typeLinkRate"), bonus(current, "typeLinkRate"), true) : nothing}
       </dl>
     </section>
-  `;
+  ` : nothing;
   const skill = (
     group: "leader" | "live" | "gekisou" | "support" | "gekisouSupport",
     slot = 0,
@@ -245,6 +247,30 @@ export function cardEditorPreview(host: TeamBuilder) {
           ? snap!.supportSkillIds[slot]
           : snap!.gekisoSupportSkillIds[slot];
     if (!id) return nothing;
+    const label = host.t(
+      `editorPreview.terms.${group === "gekisou" ? "gekisouSkill" : group === "gekisouSupport" ? "gekisouSupportSkill" : group === "support" ? "supportSkill" : group === "leader" ? "leaderSkill" : "liveSkill"}`,
+      {
+        leader: "Leader Skill",
+        live: "LIVE Skill",
+        gekisou: "GEKISO Skill",
+        support: "Support Skill",
+        gekisouSupport: "GEKISO Support Skill",
+      }[group],
+    );
+    const panel = (mark: TemplateResult | typeof nothing, name?: string, details?: TemplateResult) => html`
+      <section class="tb-editor-skill">
+        <div class="tb-editor-skill__header">
+          ${mark}
+          <div>
+            <span class="tb-editor-skill__kind">${label}</span>
+            ${name === undefined ? nothing : html`<h3>${name}</h3>`}
+          </div>
+        </div>
+        ${controls ?? nothing}
+        ${details ?? nothing}
+      </section>
+    `;
+    if (!detailVisible) return panel(icon("help", 32));
     const sourceGroup = group === "gekisou" ? "gekiso" : group === "gekisouSupport" ? "gekisoSupport" : group;
     const source = catalog.data.skills[sourceGroup]?.[String(id)];
     if(planning){const definition=planning.skills[kind==="members"?(group==="leader"?0:group==="live"?1:2):(group==="support"?slot:slot+2)];if(definition)host.planner.describeSkill(definition);}
@@ -293,34 +319,12 @@ export function cardEditorPreview(host: TeamBuilder) {
     };
     const levelLabel = (value: number | null) =>
       value === null ? "—" : value === 0 ? host.t("editorPreview.locked", "Locked") : `Lv.${value}`;
-    const label = host.t(
-      `editorPreview.terms.${group === "gekisou" ? "gekisouSkill" : group === "gekisouSupport" ? "gekisouSupportSkill" : group === "support" ? "supportSkill" : group === "leader" ? "leaderSkill" : "liveSkill"}`,
-      {
-        leader: "Leader Skill",
-        live: "LIVE Skill",
-        gekisou: "GEKISO Skill",
-        support: "Support Skill",
-        gekisouSupport: "GEKISO Support Skill",
-      }[group],
-    );
     const currentEffect =
       resource.error && (group === "leader" || (group === "support" && slot === 0)) ? skillsStatus : changedEffect();
-    return html`
-      <section class="tb-editor-skill">
-        <div class="tb-editor-skill__header">
-          ${
-            source?.icon
-              ? html`
-                  <img src=${source.icon} alt="" width="32" height="32" />
-                `
-              : nothing
-          }
-          <div>
-            <span class="tb-editor-skill__kind">${label}</span>
-            <h3>${data?.name ?? catalog.text(source?.skillName)}</h3>
-          </div>
-        </div>
-        ${controls ?? nothing}
+    return panel(
+      source?.icon ? html`<img src=${source.icon} alt="" width="32" height="32" />` : nothing,
+      data?.name ?? catalog.text(source?.skillName),
+      html`
         <p class="tb-editor-skill__effect tb-editor-skill__effect--current">
           ${data?.levels.map(
             (level) => html`
@@ -356,11 +360,11 @@ export function cardEditorPreview(host: TeamBuilder) {
             <p class="tb-editor-skill__effect">${effect(previous)}</p>
           `,
         })}
-      </section>
-    `;
+      `,
+    );
   };
   const bonuses =
-    kind === "members"
+    detailVisible && kind === "members"
       ? html`
           <dl class="spec-list tb-editor__bonuses">
             ${(

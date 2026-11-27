@@ -3,10 +3,10 @@
 // Output: Authorized seeds before initialization, cached navigation views and explicit display changes.
 // Pos: [Map](L2-2.md); browser-side adoption of build-produced public and complete page variants.
 // Effects/Dependencies: Requests existing view grants, opens immutable encrypted payloads and preserves page state; no focus-triggered revalidation.
+import { maySeeUnpublishedType } from "./content-view";
 import { navigate } from "astro:transitions/client";
 import type { TransitionBeforePreparationEvent, TransitionBeforeSwapEvent } from "astro:transitions/client";
 import {
-  DEFAULT_VISIBILITY_RULE,
   VISIBILITY_TYPES,
   parseVisibilityPolicy,
   type ContentVisibilityPolicy,
@@ -144,15 +144,8 @@ function storeMetadata(headers: Headers): void {
 /** Mirrors the endpoint's decision so a known-public viewer makes no request. */
 function permitted(metadata: Metadata, types: readonly VisibilityType[]): boolean {
   if (!metadata.policy) return true;
-  const spoilers = spoilerContentEnabled();
-  const override = overridden();
-  return (types.length ? types : VISIBILITY_TYPES).some((kind) => {
-    const rule = metadata.policy!.types[kind] ?? DEFAULT_VISIBILITY_RULE;
-    if (override && rule.allowOverride) return true;
-    if (spoilers && rule.restrictedDisplay === "unpublished") return true;
-    if (!rule.groups.includes(metadata.group)) return false;
-    return rule.mode === "visible" || rule.show.length > 0 || spoilers;
-  });
+  const view = { policy: metadata.policy, group: metadata.group, spoilers: spoilerContentEnabled(), override: overridden() };
+  return (types.length ? types : VISIBILITY_TYPES).some((kind) => maySeeUnpublishedType(view, kind));
 }
 
 const wantsGrant = (descriptor: Descriptor): boolean =>

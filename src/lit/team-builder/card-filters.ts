@@ -9,11 +9,10 @@ import { filterDateBound } from "../../lib/filter-date";
 import { catalogQueryNames, matchesCatalogRarity, parseCatalogQuery, type CatalogQuery } from "../../lib/catalog-query";
 import { chooserGroup } from "../ui/chooser-filters";
 import { filterChip } from "../ui/controls";
+import { plannerMetadata } from "../../lib/team-builder/planner-data";
 import { cardRarityName, cardRarityRank } from "../../lib/card-rarity";
 import type { TeamBuilder } from "../team-builder";
 import type { BoxFilters } from "./types";
-import { isContentVisible } from "../../lib/content-release";
-import { plannerMetadata } from "../../lib/team-builder/planner-data";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
@@ -61,11 +60,9 @@ function cardQuery(host: TeamBuilder, query: string): CatalogQuery {
 export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps", id: number, f: BoxFilters): boolean {
   const catalog = host.catalog!;
   const card = kind === "members" ? catalog.member(id) : catalog.snap(id);
-  if (!card) return false;
+  if (!card || plannerMetadata(card).active === false) return false;
   if (f.facets.hideRequired?.includes("yes") &&
       ((kind === "members" ? host.view?.members : host.view?.snaps)?.get(id)?.lock || host.searchSettings.required[kind].includes(id))) return false;
-  const planning=plannerMetadata(card);
-  if (planning.active===false || planning.active!==true && !isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(id))) return false;
   if (!matchesSelections(catalog.bandIds(kind, id).map(String), f.bands.map(String)) ||
       !matchesSelections(catalog.characterIds(kind, id).map(String), f.characters.map(String)) ||
       !matchesSelections([String(card.attribute)], f.attributes.map(String)) ||
@@ -103,7 +100,8 @@ export function matchesCardFilters(host: TeamBuilder, kind: "members" | "snaps",
 export function renderCardFilters(host: TeamBuilder, f: BoxFilters, set: (patch: Partial<BoxFilters>) => void) {
   const catalog = host.catalog!;
   const kind = f.kind;
-  const cards = Object.values(kind === "members" ? catalog.data.members : catalog.data.snapshots).filter((card) => isContentVisible(kind === "members" ? "cards" : "support-cards", card, String(card.id)));
+  const cards = Object.values(kind === "members" ? catalog.data.members : catalog.data.snapshots)
+    .filter((card) => plannerMetadata(card).active !== false);
   const label = (key: string) => clientText(host.locale, (uiLabelPaths[key] ?? key), key);
   const all = host.common("common.states.all", "All");
   const group = (title: string, values: string[], options: {value: string; label: string; image?: string; imageOnly?: boolean}[], change: (values: string[]) => void) => chooserGroup(title, html`

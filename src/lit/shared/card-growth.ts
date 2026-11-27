@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { icon } from "../ui/icon";
 import type { CardGrowthIcons } from "../../lib/ui-marks";
 
 export interface CardGrowth {
@@ -10,6 +11,7 @@ export interface CardGrowth {
   liveSkill?: { level: number | null; icon: string; label: string };
   gekisoSkill?: { level: number | null; icon: string; label: string };
   unknown?: string;
+  hideSkillIcons?: boolean;
   trainingLabel: string;
   rankLabel: string;
 }
@@ -19,9 +21,9 @@ export function cardGrowth(options: CardGrowth) {
   const rank = options.kind === "member" ? options.icons.memberRanks : options.icons.supportRanks;
   const rankImage = rank[options.rank ?? 0];
   const skills = [options.liveSkill, options.gekisoSkill];
-  const skillMarks = skills.map((skill) => skill?.icon
+  const skillMarks = skills.map((skill) => skill && (options.hideSkillIcons || skill.icon)
     ? html`<span title=${`${skill.label} ${value(skill.level)}`} aria-label=${`${skill.label} ${value(skill.level)}`}>
-        <img src=${skill.icon} alt="" /><span>${value(skill.level)}</span>
+        ${options.hideSkillIcons ? icon("help", 16) : html`<img src=${skill.icon} alt="" />`}<span>${value(skill.level)}</span>
       </span>` : nothing);
   return html`<span class=${`card-growth card-growth--${options.kind}`}>
     ${options.level !== undefined

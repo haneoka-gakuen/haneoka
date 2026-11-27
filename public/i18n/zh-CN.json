@@ -7194,8 +7194,8 @@
       "visibilityExceptions": "ID 例外",
       "visibilityApplyShort": "全部应用",
       "visibilityTypes": {
-        "cards": "成员",
-        "support-cards": "留影",
+        "cards": "普通卡牌",
+        "special-cards": "BD / EX 卡牌",
         "songs": "乐曲",
         "characters": "角色",
         "stories": "故事",
@@ -7216,7 +7216,6 @@
         "passes": "通行证",
         "challenge": "挑战演出",
         "circle": "社团",
-        "real-lives": "现场演出",
         "live2d": "Live2D",
         "spine": "Spine",
         "help": "帮助",

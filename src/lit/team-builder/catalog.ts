@@ -7,9 +7,10 @@ import { CONTENT_SOURCE_IDS } from "../../lib/content-sources";
 import { HANEOKA_CHART_ASSETS_PROJECTION } from "../../../packages/api-client/src/chart-assets";
 import { isReleasedContent } from "../../lib/content-release";
 import { contentPublished } from "../../lib/content-publication";
+import { teamCardDetailsVisible } from "../../lib/team-builder/visibility";
 import { eventSongReleases, withEventSongRelease, type EventSongReleases } from "../../lib/event-song-release";
 import { crossServerPublicCache } from "../../lib/cross-server/cache";
-import type { SongRef } from "../../lib/team-builder/engine/api";
+import type { EngineHit, SongRef } from "../../lib/team-builder/engine/api";
 /** Names, tiles and growth helpers shared by the team builder views. */
 import { html, nothing } from "lit";
 import { clientText, getI18nClient } from "../../i18n/client";
@@ -34,7 +35,7 @@ import {
 } from "../../lib/team-builder/engine/box";
 import { memberLevelCap, snapLevelCap } from "../../lib/team-builder/engine/power";
 import type { fetchCatalogVisuals } from "../../lib/catalog-visuals";
-import type { OwnedMember } from "../../lib/team-builder/sync/box-view";
+import { cardIdOf, type OwnedMember } from "../../lib/team-builder/sync/box-view";
 import { cardRarityName } from "../shared/rarity-icon";
 import { cardTile } from "../shared/card-tile";
 import { cardGrowthIcons } from "../../lib/ui-marks";
@@ -99,7 +100,8 @@ export class Catalog {
     return this.data.crossServer?.identities[server] ?? this.data.identity;
   }
   songVisible(id: number) {
-    const releases = this.eventReleases ??= eventSongReleases(this.data.events, this.data.crossServer?.challengeMusics ?? this.data.challengeMusicTable?.rows);
+    const source = this.songReleaseSource;
+    const releases = this.eventReleases ??= eventSongReleases(source.events, source.crossServer?.challengeMusics ?? source.challengeMusicTable?.rows);
     return isReleasedContent(withEventSongRelease(this.data.songs[String(id)] || {}, releases));
   }
   chartMetadata(song: SongRef) {
@@ -154,6 +156,7 @@ export class Catalog {
     private readonly host: TeamBuilder,
     readonly data: TeamBuilderData,
     readonly master: EngineMaster,
+    private readonly songReleaseSource: TeamBuilderData = data,
   ) {}
   setVisuals(visuals: Visuals) {
     this.visuals = visuals;
@@ -178,6 +181,14 @@ export class Catalog {
   }
   snap(id: number): SnapshotCatalog | undefined {
     return this.data.snapshots[String(id)];
+  }
+  cardDetailsVisible(kind: "members" | "snaps", id: number): boolean {
+    const card = kind === "members" ? this.member(id) : this.snap(id);
+    return Boolean(card && teamCardDetailsVisible(kind, card));
+  }
+  resultDetailsVisible(hit: Pick<EngineHit, "members" | "snaps">): boolean {
+    return hit.members.every((key) => this.cardDetailsVisible("members", cardIdOf(key))) &&
+      hit.snaps.every((key) => !key || this.cardDetailsVisible("snaps", cardIdOf(key)));
   }
   characterName(id: number) {
     return this.text(this.data.characters[String(id)]?.characterName);
@@ -240,6 +251,8 @@ export class Catalog {
   cardFilterItem(kind: "members" | "snaps", id: number): Record<string, unknown> {
     const card = kind === "members" ? this.member(id) : this.snap(id);
     if (!card) return {};
+    if (!this.cardDetailsVisible(kind, id))
+      return { id, cardType: card.attribute, rarity: card.rarity, images: { thumbnail: card.image }, releasedAt: card.catalogMetadata?.releasedAt };
     const keys: Record<string, number[]> =
       kind === "members"
         ? {
@@ -336,13 +349,21 @@ export class Catalog {
     return card ? this.growthDisplay(kind, input.cardId, snapGrowth(this.master, card, input, policy)) : null;
   }
   private growthDisplay(kind: "members" | "snaps", id: number, row: GrowthValues, unknown = "?"): CardGrowth {
-    const card = kind === "members" ? this.member(id) : undefined;
-    const liveSkillIcon = card ? String(this.data.skills.live?.[String(card.liveSkillId)]?.icon ?? "") : "";
-    const gekisoSkillIcon = card ? String(this.data.skills.gekiso?.[String(card.gekisoSkillId)]?.icon ?? "") : "";
-    return {
-      kind: kind === "members" ? "member" : "support",
+    const base = {
+      kind: kind === "members" ? "member" as const : "support" as const,
       icons: cardGrowthIcons((name) => this.visuals?.marks.get(name) ?? ""),
       level: row.level,
+      unknown,
+      trainingLabel: this.host.t("training", "Training"),
+      rankLabel: this.host.t("awakening", "Awakening"),
+    };
+    const card = kind === "members" ? this.member(id) : undefined;
+    const detailVisible = this.cardDetailsVisible(kind, id);
+    const liveSkillIcon = detailVisible && card ? String(this.data.skills.live?.[String(card.liveSkillId)]?.icon ?? "") : "";
+    const gekisoSkillIcon = detailVisible && card ? String(this.data.skills.gekiso?.[String(card.gekisoSkillId)]?.icon ?? "") : "";
+    return {
+      ...base,
+      hideSkillIcons: !detailVisible,
       rank: row.rank,
       training: row.awake,
       liveSkill:
@@ -353,9 +374,6 @@ export class Catalog {
         row.gekisoSkillLevel !== undefined
           ? { level: row.gekisoSkillLevel, icon: gekisoSkillIcon, label: this.host.t("gekisoSkill", "GEKISO skill") }
           : undefined,
-      unknown,
-      trainingLabel: this.host.t("training", "Training"),
-      rankLabel: this.host.t("awakening", "Awakening"),
     };
   }
   memberLimits(id: number, awake: number | null) {
@@ -456,8 +474,8 @@ export class Catalog {
   events() {
     return [...this.master.events.values()]
       .filter((event) => {
-        const row=this.data.events[String(event.id)]!;
-        return row.kind==="planner-event"?(row.planner as {active:boolean}).active:isReleasedContent(row);
+        const row = this.data.events[String(event.id)]!;
+        return row.kind !== "planner-event" || (row.planner as { active: boolean }).active;
       })
       .filter((event) => event.livePoints.size || event.challengePoints.size || event.effects.length)
       .sort((a, b) => (b.startAt ?? 0) - (a.startAt ?? 0))
@@ -471,7 +489,9 @@ export class Catalog {
       }));
   }
   challengeSongs(eventId: number | null) {
-    return this.master.challengeMusics.filter((row) => eventId === null || row.eventId === eventId);
+    return this.master.challengeMusics.filter((row) =>
+      this.master.events.has(row.eventId) && (eventId === null || row.eventId === eventId),
+    );
   }
   normalEventSongIds(eventId: number | null) {
     const custom = eventId === null ? undefined : this.data.events[String(eventId)]?.plannerRules as { normalSongs: number[] } | undefined;

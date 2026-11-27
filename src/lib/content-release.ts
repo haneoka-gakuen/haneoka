@@ -4,8 +4,8 @@ import { navigationDocumentUrl } from "./document-url";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { contentPublished } from "./content-publication";
 import { currentContentGroup, currentVisibilityPolicy } from "./content-policy-browser";
+import { contentListing, contentVisible, type ContentView } from "./content-view";
 import {
-  DEFAULT_VISIBILITY_RULE,
   inferredVisibilityType,
   isModelVisibilityType,
   visibilityId,
@@ -29,32 +29,40 @@ export function isReleasedContent(value: unknown): boolean {
   return kind ? isContentVisible(kind, row) : showUnreleasedContent() || released(value, Date.now());
 }
 
+function pendingContentPolicy(): boolean {
+  const data = document.documentElement.dataset;
+  return data.contentFunctional === "1" && (data.contentVisibilityPending === "1" || !data.contentVisibilityPolicy);
+}
+
+function browserView(now: number): ContentView {
+  return {
+    policy: currentVisibilityPolicy(),
+    group: currentContentGroup(),
+    spoilers: spoilerContentEnabled(),
+    override: showUnreleasedContent(),
+    now,
+  };
+}
+
 export function isContentVisible(resource: string, value: unknown, id?: string): boolean {
   const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   const kind = visibilityType(resource);
   if (isModelVisibilityType(kind)) return true;
-  const rule = kind ? (currentVisibilityPolicy().types[kind] ?? DEFAULT_VISIBILITY_RULE) : DEFAULT_VISIBILITY_RULE;
   if (typeof document === "undefined" || !document.documentElement) return prerenderContentVisible(kind, row, id);
-  if (released(value, Date.now())) return true;
-  if (document.documentElement.dataset.contentFunctional === "1" &&
-    (document.documentElement.dataset.contentVisibilityPending === "1" || !document.documentElement.dataset.contentVisibilityPolicy))
-    return false;
-  if (rule.allowOverride && showUnreleasedContent()) return true;
-  if (!rule.groups.includes(currentContentGroup())) return false;
-  const identity = id ?? (kind ? visibilityId(kind, row) : "");
-  if (rule.hide.includes(identity)) return false;
-  if (rule.show.includes(identity)) return true;
-  if (rule.mode === "visible") return true;
-  return rule.mode === "spoiler" && spoilerContentEnabled();
+  const now = Date.now();
+  if (released(value, now)) return true;
+  return !pendingContentPolicy() && contentVisible(browserView(now), kind, row, id ?? (kind ? visibilityId(kind, row) : ""));
 }
 
 export function isContentListed(resource: string, value: unknown, id?: string): boolean {
-  if (typeof document === "undefined" || !document.documentElement) return isContentVisible(resource, value, id);
-  if (isContentVisible(resource, value, id)) return true;
   const kind = visibilityType(resource);
-  return Boolean(
-    kind && currentVisibilityPolicy().types[kind]?.restrictedDisplay === "unpublished" && spoilerContentEnabled(),
-  );
+  if (!kind || typeof document === "undefined" || !document.documentElement)
+    return isContentVisible(resource, value, id);
+  const now = Date.now();
+  if (released(value, now)) return true;
+  if (pendingContentPolicy()) return false;
+  const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return contentListing(browserView(now), kind, row, id ?? visibilityId(kind, row)) !== "hidden";
 }
 
 export function isListedContent(value: unknown): boolean {

@@ -7194,8 +7194,8 @@
       "visibilityExceptions": "ID 例外",
       "visibilityApplyShort": "一括適用",
       "visibilityTypes": {
-        "cards": "メンバー",
-        "support-cards": "スナップ",
+        "cards": "通常カード",
+        "special-cards": "BD・EXカード",
         "songs": "楽曲",
         "characters": "キャラクター",
         "stories": "ストーリー",
@@ -7216,7 +7216,6 @@
         "passes": "パス",
         "challenge": "チャレンジライブ",
         "circle": "サークル",
-        "real-lives": "リアルライブ",
         "live2d": "Live2D",
         "spine": "Spine",
         "help": "ヘルプ",
