@@ -51,6 +51,7 @@ export interface SongPickerState {
   maxLevel?: number | null;
   maxSeconds?: number | null;
   allowedSongIds?: number[];
+  challengeEventId?: number;
   allowedCharts?: SongRef[];
   songRules?: ArenaRule;
   title?: string;
@@ -228,12 +229,13 @@ export function renderSongPicker(host: TeamBuilder): TemplateResult {
   const allowedCharts = state.allowedCharts && new Set(state.allowedCharts.map(chartKey));
   const allowed = (song: SongRef) => (!allowedSongs || allowedSongs.has(song.songId)) &&
     (!allowedCharts || allowedCharts.has(chartKey(song)));
-  const legal = (song: SongRef) => allowed(song) &&
+  const visibleInPool = (id: number) => catalog.songVisible(id, state.challengeEventId);
+  const legal = (song: SongRef) => allowed(song) && visibleInPool(song.songId) &&
     catalog.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty);
   const songIds = state.allowedCharts ? [...new Set(state.allowedCharts.map(song => song.songId))]
     : allowedSongs ? [...allowedSongs] : Object.keys(catalog.data.songs).map(Number);
   const allCharts = songIds
-    .filter((id) => catalog.songVisible(id))
+    .filter(visibleInPool)
     .sort((a, b) => b - a)
     .flatMap((songId) =>
       catalog

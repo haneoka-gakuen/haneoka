@@ -99,7 +99,9 @@ export class Catalog {
     const server = this.data.crossServer?.owners.songs?.[String(id)] ?? this.data.identity.server;
     return this.data.crossServer?.identities[server] ?? this.data.identity;
   }
-  songVisible(id: number) {
+  songVisible(id: number, challengeEventId?: number) {
+    if (challengeEventId !== undefined)
+      return this.challengeSongs(challengeEventId).some((track) => track.liveMusicId === id);
     const source = this.songReleaseSource;
     const releases = this.eventReleases ??= eventSongReleases(source.events, source.crossServer?.challengeMusics ?? source.challengeMusicTable?.rows);
     return isReleasedContent(withEventSongRelease(this.data.songs[String(id)] || {}, releases));

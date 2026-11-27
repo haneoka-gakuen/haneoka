@@ -334,7 +334,7 @@ export function songList(
   allowedSongIds?: number[],
   fieldId = "tb-songs",
   allowedCharts?: readonly SongRef[],
-  options?: { context?: string; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean; removable?: boolean; poolAction?: TemplateResult | typeof nothing },
+  options?: { context?: string; challengeEventId?: number; songRules?: ReturnType<TeamBuilder["songRules"]> | null; showMissions?: boolean; removable?: boolean; poolAction?: TemplateResult | typeof nothing },
 ): TemplateResult {
   const catalog = host.catalog!;
   const activeRules = () => options?.songRules === null ? undefined : options?.songRules ?? (host.tab === "arena" ? host.arena.rule : host.songRules());
@@ -342,6 +342,7 @@ export function songList(
   const showMissions = options?.showMissions ?? ((host.tab !== "arena" && host.searchSettings.goal === "gekiso") || (host.tab === "pt" && host.settings.rewardMode === "recommendation" && host.searchSettings.ptMode === "gekiso"));
   const available = (song: SongRef) =>
     (!allowedSongIds || allowedSongIds.includes(song.songId)) &&
+    (options?.challengeEventId === undefined || catalog.songVisible(song.songId, options.challengeEventId)) &&
     (!allowedCharts || allowedCharts.some((ref) => ref.songId === song.songId && ref.difficulty === song.difficulty)) &&
     catalog.difficultyRows(song.songId).some((row) => Number(row.difficulty) === song.difficulty);
   return html`
@@ -369,6 +370,7 @@ export function songList(
               gekisouTypes: [],
               difficulty: 3,
               allowedSongIds,
+              challengeEventId: options?.challengeEventId,
               allowedCharts: allowedCharts ? [...allowedCharts] : undefined,
               songRules: activeRules(),
               change,
@@ -1104,7 +1106,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 <span class="tb-field__label">${host.t("planChallengeSongs", "Challenge songs")}</span>
                 ${songList(host, host.settings.planChallengeSongs, (planChallengeSongs) => set({ planChallengeSongs }),
                   false, challengeSongs, "tb-challenge-songs", undefined,
-                  { poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => set({ planChallengeSongs })) })}
+                  { challengeEventId: s.eventId ?? undefined, poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => set({ planChallengeSongs })) })}
               </section>
             `
           : nothing
@@ -1117,6 +1119,7 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
                 ${sectionHeading({ icon: "library_music", label: challenge ? host.t("planChallengeSongs", "Challenge songs") : s.goal === "plan" ? host.t("planNormalSongs", "Normal-live songs") : host.t("songs", "Songs"), count: s.songs.length || undefined })}
                 ${songList(host, s.goal === "power" ? s.songs : host.settings.songs, (songs) => set({ songs }),
                   s.goal === "power", allowedSongIds, "tb-songs", undefined, {
+                    challengeEventId: challenge ? s.eventId ?? undefined : undefined,
                     poolAction: challenge && !s.manualEventEnabled
                       ? useChallengeSongsButton(host, challengeSongs, (songs) => set({ songs: s.goal === "power" ? songs.slice(0, 1) : songs }), s.goal === "power")
                       : nothing,

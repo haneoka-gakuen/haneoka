@@ -1584,14 +1584,14 @@ export class HomeDashboard extends LitElement {
                             href=${eventHref}
                             aria-label=${`${title} / ${countdown}`}
                           >
-                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale)}
+                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale, event.image)}
                             <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
                             <span class="home-event__countdown tabular" role="timer" aria-live="off">${countdown}</span>
                           </a>
                         `
                       : html`
                           <span class="home-event__media media-loading">
-                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale)}
+                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale, event.image)}
                             <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
                             <span class="home-event__countdown tabular" role="timer" aria-live="off">${countdown}</span>
                           </span>

@@ -547,7 +547,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               challengeSongIds,
               "tb-songs",
               undefined,
-              { poolAction: useChallengeSongsButton(host, challengeSongIds ?? [], (songs) => host.updateSettings({ songs })) },
+              { challengeEventId: challengeSongIds ? eventId ?? undefined : undefined, poolAction: useChallengeSongsButton(host, challengeSongIds ?? [], (songs) => host.updateSettings({ songs })) },
             )}
               ${songRulesControl(host)}
             </section>

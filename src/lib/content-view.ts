@@ -59,10 +59,20 @@ export function contentVisible(view: ContentView, kind: VisibilityType | undefin
   return unpublishedVisible(view, rule, kind, id);
 }
 
+function listedChallengeEvents(view: ContentView, events: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(events)) return [];
+  return events.filter((event) => object(event) && typeof event.id === "string" &&
+    typeof event.startAt === "number" && event.startAt > 0 && contentListing(view, "events", event, event.id) !== "hidden");
+}
+
 export function contentListing(view: ContentView, kind: VisibilityType, value: unknown, id = ""): "full" | "preview" | "hidden" {
   if (contentVisible(view, kind, value, id)) return "full";
   const rule = visibilityRuleFor(view.policy, isSpecialCard(kind, value) ? "special-cards" : kind);
-  return view.spoilers && rule.restrictedDisplay === "unpublished" ? "preview" : "hidden";
+  if (!view.spoilers) return "hidden";
+  if (rule.restrictedDisplay === "unpublished") return "preview";
+  if (kind === "songs" && !rule.hide.includes(id) && object(value) && listedChallengeEvents(view, value.challengeEvents).length)
+    return "preview";
+  return "hidden";
 }
 
 export function contentReference(kind: VisibilityType, value: Record<string, unknown>, id?: string): ContentReference {
@@ -360,13 +370,23 @@ export function filterContentData(
       if (access !== "full") {
         changed = true;
         omitted?.push(contentReference(kind, input, identity));
-        return access === "preview" ? contentPreview(input, kind) : drop;
+        if (access !== "preview") return drop;
+        const preview = contentPreview(input, kind);
+        if (kind === "songs" && Array.isArray(input.challengeEvents))
+          preview.challengeEvents = listedChallengeEvents(view, input.challengeEvents);
+        return preview;
       }
     }
     const ownKind = typeof input.resource === "string" ? visibilityType(input.resource) : kind;
     const document = envelope || node === value || typeof input.schema === "string" || typeof input.resource === "string";
     const output: Record<string, unknown> = {};
     for (const [field, child] of Object.entries(input)) {
+      if (kind === "songs" && field === "challengeEvents") {
+        const events = listedChallengeEvents(view, child);
+        output[field] = events;
+        if (!Array.isArray(child) || events.length !== child.length) changed = true;
+        continue;
+      }
       if (field === "catalogMetadata" || dependencyFields.has(field)) {
         output[field] = child;
         continue;

@@ -37,6 +37,7 @@ export interface ContentResourceIndex {
   publications?: Record<string, Record<string, unknown>>;
   assetShards?: { prefix: string; count: number };
   eventSongReleasesPrepared?: true;
+  eventArtwork?: readonly string[];
 }
 const entityReferences = new WeakMap<ContentResourceIndex["records"], Map<string, ContentReference[]>>();
 function referencesFor(index: ContentResourceIndex | null, kind: VisibilityType, id: string): readonly ContentReference[] {
@@ -124,15 +125,29 @@ const notPublic = () =>
       "Access-Control-Allow-Origin": "*",
     },
   });
+export function contentAssetPath(path: string): string {
+  return path
+    .replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/")
+    .replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "");
+}
+/** Match the event list's own banner, background and logo in current and older releases. */
+export function eventPreviewAssetOwners(document: unknown, server: string): Map<string, string[]> {
+  const artwork = new Map<string, string[]>();
+  const entries = (document as { entries?: Record<string, Record<string, unknown>> } | null)?.entries ?? {};
+  const prefix = `/assets/${server}/`;
+  for (const [id, row] of Object.entries(entries)) {
+    for (const source of [row.image, row.backgroundImage, row.logo]) {
+      if (typeof source !== "string" || !source.startsWith(prefix)) continue;
+      const path = contentAssetPath(`assets/${decodeURIComponent(source.slice(prefix.length).split(/[?#]/u)[0]!)}`);
+      const events = artwork.get(path);
+      if (events) events.push(id);
+      else artwork.set(path, [id]);
+    }
+  }
+  return artwork;
+}
 function assetOwners(index: ContentResourceIndex, path: string): string[][] | undefined {
-  return (
-    index.assets[path] ??
-    index.assets[
-      path
-        .replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/")
-        .replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "")
-    ]
-  );
+  return index.assets[path] ?? index.assets[contentAssetPath(path)];
 }
 function functionalDocument(request: Request): boolean {
   const source = request.headers.get("Referer");
@@ -214,19 +229,23 @@ function mayReadAsset(
         return ref && contentVisible(view, ref.kind, ref.publication, ref.id);
       }),
     );
-  const preview =
-    !allowed &&
-    index.previewAssets?.includes(path) &&
-    owners.some((chain) =>
-      chain.every((id) => {
-        const ref = index.records[id];
-        return (
-          ref &&
-          contentListing(view, ref.kind, ref.publication, ref.id) !== "hidden"
-        );
-      }),
-    );
-  return { allowed: allowed || Boolean(preview), public: publicAsset };
+  const listedArtwork = index.eventArtwork?.some((id) => {
+    const publication = index.publications?.[`events:${id}`];
+    return publication
+      ? contentListing(view, "events", publication, id) !== "hidden"
+      : referencesFor(index, "events", id).some((ref) => contentListing(view, "events", ref.publication, id) !== "hidden");
+  });
+  const preview = (index.previewAssets?.includes(path) || index.previewAssets?.includes(contentAssetPath(path))) && owners.some((chain) =>
+    chain.every((id) => {
+      const ref = index.records[id];
+      if (!ref) return false;
+      const publication = ref.kind === "songs" && index.publications?.[`songs:${ref.id}`];
+      return contentListing(view, ref.kind, publication && publication.challengeEvents
+        ? { ...ref.publication, challengeEvents: publication.challengeEvents }
+        : ref.publication, ref.id) !== "hidden";
+    }),
+  );
+  return { allowed: allowed || Boolean(preview) || Boolean(listedArtwork), public: publicAsset };
 }
 export async function contentResourceBoundary(
   request: Request,
@@ -423,7 +442,7 @@ export async function contentResourceBoundary(
   cacheUrl.searchParams.delete("__content");
   cacheUrl.searchParams.delete("cv");
   cacheUrl.searchParams.sort();
-  cacheUrl.searchParams.set("__content-view", `catalog-v2:${view.key}:${epoch}`);
+  cacheUrl.searchParams.set("__content-view", `catalog-v3:${view.key}:${epoch}`);
   const key = new Request(cacheUrl, { method: "GET" });
   const hit = await caches.default.match(key);
   let response = hit;

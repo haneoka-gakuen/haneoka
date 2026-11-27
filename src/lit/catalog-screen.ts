@@ -2350,7 +2350,7 @@ export class CatalogScreen extends LitElement {
     return item.__contentPreview !== true && isContentVisible(this.settings.resource, item, this.itemEntityId(item));
   }
   private itemEntityLink(item: Item, difficulty?: number): string | undefined {
-    if (!this.itemDetailAvailable(item)) return undefined;
+    if (this.settings.resource !== "gacha" && !this.itemDetailAvailable(item)) return undefined;
     const id = this.itemEntityId(item);
     const server = this.itemSourceServer(item);
     // Restricted sources have no static entity page; open their detail in place.
@@ -3125,7 +3125,7 @@ export class CatalogScreen extends LitElement {
     // result count is measured against — not the whole catalogue.
     const source = (this.hasBandRail()
       ? this.items.filter((item) => this.activeBand > 0 && Number(item.bandId) === this.activeBand)
-      : this.expandedItems()).filter((item) => isContentListed(this.settings.resource, item, this.itemId(item)));
+      : this.expandedItems()).filter((item) => isContentListed(this.settings.resource, item, this.itemEntityId(item)));
     let items = source.filter((item) => this.matchesFacets(item, "", facets) && this.queryTextMatches(item, query.text));
     if (this.settings.resource === "shop" && (facets.shopServer?.length || facets.shopPayment?.length)) {
       items = items.map((item) => {
@@ -4642,7 +4642,6 @@ export class CatalogScreen extends LitElement {
     return nothing;
   }
   private async open(item: Item) {
-    if (!this.itemDetailAvailable(item)) return;
     if (this.selected === item && this.selectedId === this.itemId(item) && this.selected) return;
     const id = this.itemId(item);
     // A meta row identifies as `<musicId>-<difficulty>`, which has no page of
@@ -4671,6 +4670,7 @@ export class CatalogScreen extends LitElement {
       return;
     }
 
+    if (!this.itemDetailAvailable(item)) return;
     this.selected = item;
     this.selectedId = id;
     this.detailAux = {};
@@ -5665,18 +5665,20 @@ export class CatalogScreen extends LitElement {
             `
         : this.view === "list"
           ? collectionList(
-              items.map((item) => ({
-                id: this.itemKey(item),
-                title: this.itemTitle(item),
-                titleLanguage: this.itemTitleLanguage(item),
-                subtitle: this.tileDescriptionContent(item),
-                trailing: this.itemExclusive(item),
-                image: this.image(item),
-                href: this.itemEntityLink(item),
-                onOpen: () => this.open(item),
-                static: !this.itemDetailAvailable(item),
-                itemId: this.itemKey(item),
-              })),
+              items.map((item) => {
+                const href = this.itemEntityLink(item);
+                return {
+                  id: this.itemKey(item),
+                  title: this.itemTitle(item),
+                  titleLanguage: this.itemTitleLanguage(item),
+                  subtitle: this.tileDescriptionContent(item),
+                  trailing: this.itemExclusive(item),
+                  image: this.image(item),
+                  href,
+                  onOpen: () => this.open(item),
+                  static: !href && !this.itemDetailAvailable(item),
+                };
+              }),
             )
           : html`
               <div
@@ -5761,7 +5763,7 @@ export class CatalogScreen extends LitElement {
   private renderTile(item: Item, offscreen = false) {
     const kind = this.profile.presentation;
     const href = this.itemEntityLink(item);
-    const locked = !this.itemDetailAvailable(item);
+    const locked = !href && !this.itemDetailAvailable(item);
     const link = { href, onOpen: href || locked ? undefined : () => this.open(item), static: locked, itemId: this.itemKey(item) };
     if (kind === "system") return this.renderSystemTile(item, this.settings.resource, link);
     const image = this.image(item);
@@ -5877,7 +5879,7 @@ export class CatalogScreen extends LitElement {
       subtitle: this.systemTileSubtitle(item, resource),
       image,
       imageFallback: image,
-      media: event && item.logo ? eventArtwork(asset(item.backgroundImage) || image, asset(item.logo), title) : undefined,
+      media: event && item.logo ? eventArtwork(asset(item.backgroundImage) || image, asset(item.logo), title, true, this.settings.locale, image) : undefined,
       aspectRatio: event ? "16 / 9" : undefined,
       placeholder: icon("image", 32),
       fit: "contain",

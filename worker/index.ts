@@ -31,7 +31,7 @@ import { handleApiDiscovery } from "./api-discovery";
 import { handleResourceImage } from "./resource-image";
 import { handleContentVisibilityRequest } from "./content-visibility";
 import { handlePublicStaticViewRequest } from "./public-static-view";
-import { eventSongReleases } from "../src/lib/event-song-release";
+import { eventSongAvailability, type EventSongAvailability } from "../src/lib/event-song-release";
 import { publicStampManifest } from "../src/lib/stamp-maker/public-manifest";
 import { projectUiMarks, withUiMarksProjection } from "../src/lib/ui-marks.ts";
 import catalogPageRollout from "../config/catalog-page-rollout.json";
@@ -41,7 +41,7 @@ import { PageDataError, type PageSource } from "../src/lib/catalog-page-contract
 import { fnv1a32Shard } from "../src/lib/hash-partition.ts";
 import { CRI_SOURCE_ROOT, criSourceDescriptor, mergeCriSourceTree } from "../src/lib/asset-page-data";
 import type { SourceNode } from "../src/lib/source-tree-search";
-import { criSourceEntry, criSourceIndex } from "./content-resources";
+import { contentAssetPath, eventPreviewAssetOwners, criSourceEntry, criSourceIndex } from "./content-resources";
 import { refreshCommunityRanking, COMMUNITY_RANKING_CRON } from "./community-ranking";
 import { handleCommunityBootstrap } from "./community-bootstrap";
 import { retainRequestRead, withRequestWork } from "./request-work";
@@ -2157,6 +2157,53 @@ async function attachCardRarities(env: Env, release: Release, index: ContentReso
     if (rarity !== undefined) ref.publication.rarity = rarity;
   }
 }
+const eventMusicByRelease = new Map<string, Promise<EventSongAvailability>>();
+function releaseEventMusic(env: Env, release: Release): Promise<EventSongAvailability> {
+  const key = `${release.server}:${release.releaseId}`;
+  const existing = eventMusicByRelease.get(key);
+  if (existing) return existing;
+  const pending = Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) =>
+    readReleaseJson(env, release, `objects/master/${table}.json`),
+  )).then(([events, challenges]) => eventSongAvailability(events, challenges));
+  pending.catch(() => eventMusicByRelease.delete(key));
+  boundedPromiseCache(eventMusicByRelease, key, pending, 4);
+  return pending;
+}
+
+const eventArtworkByRelease = new Map<string, Promise<Map<string, string[]>>>();
+function eventPreviewArtwork(env: Env, release: Release): Promise<Map<string, string[]>> {
+  const key = `${release.server}:${release.releaseId}`;
+  const existing = eventArtworkByRelease.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const catalog = await catalogStorageManifest(env, release);
+    const events = catalog?.resources.events;
+    const document = events && await readReleaseJson(env, release, events.index);
+    if (!isJsonObject(document)) return new Map();
+    const entities = events?.entities;
+    const withArtwork = entities ? await eventArtworkIndex(
+      document,
+      (id) => fnv1a32Shard(id, RELEASE_INDEX_SHARDS),
+      (id) => readCatalogShard(env, release, entities, id),
+    ) : document;
+    return eventPreviewAssetOwners(withArtwork, release.server);
+  })();
+  pending.catch(() => eventArtworkByRelease.delete(key));
+  boundedPromiseCache(eventArtworkByRelease, key, pending, 4);
+  return pending;
+}
+
+async function withEventPreviewArtwork(
+  env: Env, release: Release, index: ContentResourceIndex, path: string,
+): Promise<ContentResourceIndex> {
+  if (index.previewAssets?.includes(path) || !index.assets[path]?.some((chain) =>
+    chain.length === 1 && index.records[chain[0]!]?.kind === "events"
+  )) return index;
+  const artwork = await eventPreviewArtwork(env, release).catch(() => undefined);
+  const events = artwork?.get(path);
+  return events?.length ? { ...index, eventArtwork: events } : index;
+}
+
 async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: string, id?: string, assetPath?: string): Promise<ContentResourceIndex | null> {
   const server = await activeResourceServer(env, slug);
   const release = server && (id ? await requestedRelease(env, server, id) : await currentRelease(env, server));
@@ -2176,16 +2223,20 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
       if (isJsonObject(prepared) && prepared.schema === "haneoka-content-index-v1" && prepared.server === slug && prepared.releaseId === release.releaseId && prepared.sourceId === release.sourceId) {
         const result = prepared as unknown as ContentResourceIndex;
         await attachCardRarities(env, release, result);
-        if (result.eventSongReleasesPrepared) return result;
-        const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) => readReleaseJson(env, release, `objects/master/${table}.json`)));
-        const starts = eventSongReleases(events, challenges);
-        for (const reference of Object.values(result.records)) if (reference.kind === "songs" && starts[reference.id]) {
-          const publication = result.publications?.[`songs:${reference.id}`];
-          const raw = publication?.publishedAt;
-          const base = Number(Array.isArray(raw) ? raw.find((at) => Number(at) > 0) : raw);
-          if (!base || contentPublished(reference.publication, base)) reference.publication.eventPublishedAt = starts[reference.id];
+        const { releases, challengeEvents } = await releaseEventMusic(env, release);
+        if (!result.eventSongReleasesPrepared) {
+          for (const reference of Object.values(result.records)) if (reference.kind === "songs" && releases[reference.id]) {
+            const raw = result.publications?.[`songs:${reference.id}`]?.publishedAt;
+            const base = Number(Array.isArray(raw) ? raw.find((at) => Number(at) > 0) : raw);
+            if (!base || contentPublished(reference.publication, base)) reference.publication.eventPublishedAt = releases[reference.id];
+          }
         }
-        for (const [song, start] of Object.entries(starts)) if (result.publications?.[`songs:${song}`]) result.publications[`songs:${song}`]!.eventPublishedAt = start;
+        for (const [song, events] of Object.entries(challengeEvents)) {
+          const publication = result.publications?.[`songs:${song}`];
+          if (!publication) continue;
+          publication.challengeEvents = events;
+          if (!result.eventSongReleasesPrepared) publication.eventPublishedAt = releases[song];
+        }
         return result;
       }
       return null;
@@ -2195,8 +2246,9 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
   try {
     const index = await pending;
     if (!index) resourceContentIndexes.delete(identity);
-    if (!index?.assetShards || !assetPath) return index;
-    const path = assetPath.replace(/^(assets|runtime)\/(ja|en|ko|zh-CN|zh-TW)\//u, "$1/").replace(/\((en|ko|zh-Hans|zh-Hant)\)(?=\.[^/]+$)/u, "");
+    if (!index || !assetPath) return index;
+    const path = contentAssetPath(assetPath);
+    if (!index.assetShards) return withEventPreviewArtwork(env, release, index, path);
     const shard = `${index.assetShards.prefix}${fnv1a32Shard(path, index.assetShards.count)}.json`;
     let ownership = contentOwnershipShards.get(shard);
     if (ownership) {
@@ -2207,7 +2259,9 @@ async function resourceContentIndex(env: Env, ctx: ExecutionContext, slug: strin
       boundedPromiseCache(contentOwnershipShards, shard, ownership, 64);
     }
     const values = await ownership;
-    return { ...index, assets: values?.assets ?? {}, previewAssets: values?.previewAssets ?? [] };
+    return withEventPreviewArtwork(env, release, {
+      ...index, assets: values?.assets ?? {}, previewAssets: values?.previewAssets ?? [],
+    }, path);
   }
   catch (error) { resourceContentIndexes.delete(identity); throw error; }
 }
@@ -2549,10 +2603,9 @@ async function handleCatalogApiRequest(
         prepared.identity.server === release.server && prepared.identity.releaseId === release.releaseId && prepared.identity.sourceId === release.sourceId)
         return jsonResponse(request, { identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },
           releases: prepared.releases }, CATALOG_API_CACHE_CONTROL);
-      const [events, challenges] = await Promise.all(["MasterEvent", "MasterChallengeMusic"].map((table) =>
-        readReleaseJson(env, release, `objects/master/${table}.json`)));
+      const { releases } = await releaseEventMusic(env, release);
       return jsonResponse(request, { identity: { server: release.server, releaseId: release.releaseId, sourceId: release.sourceId },
-        releases: eventSongReleases(events, challenges) }, CATALOG_API_CACHE_CONTROL);
+        releases }, CATALOG_API_CACHE_CONTROL);
     }, CATALOG_API_CACHE_CONTROL);
     return releaseResponseHeaders(response, release);
   }

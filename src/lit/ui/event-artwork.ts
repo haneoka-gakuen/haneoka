@@ -19,8 +19,9 @@ export function eventBanner(image: string, label = "", deferred = true) {
 }
 
 /** The event's own illustration and title logo, composed inside a catalog tile. */
-export function eventArtwork(image: string, logo: string, label: string, deferred = true, locale = "ja") {
-  const backgrounds = localeTaggedCandidates(image, locale);
+export function eventArtwork(image: string, logo: string, label: string, deferred = true, locale = "ja", banner = "") {
+  const fallbacks = banner && banner !== image ? localeTaggedCandidates(banner, locale) : [];
+  const backgrounds = [...localeTaggedCandidates(image, locale), ...fallbacks];
   const logos = localeTaggedCandidates(logo, locale);
   const eagerError = (event: Event) => {
     const element = event.currentTarget as HTMLImageElement;
@@ -33,6 +34,7 @@ export function eventArtwork(image: string, logo: string, label: string, deferre
         class="event-artwork__background"
         src=${deferred ? nothing : backgrounds[0]}
         data-src=${deferred ? image : nothing}
+        data-fallbacks=${deferred && fallbacks.length ? JSON.stringify(fallbacks) : nothing}
         alt=""
         decoding="async"
         @error=${deferred ? nextImageCandidate : eagerError}

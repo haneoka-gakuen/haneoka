@@ -25,6 +25,7 @@ export function publicationFields(value: Row): Row {
       "releaseAt",
       "startAt",
       "eventPublishedAt",
+      "challengeEvents",
       "chapterId",
       "catalogMetadata",
       "__publicationPending",

@@ -571,7 +571,8 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                   s.route === "challenge" ? challengeSongs : catalog.normalEventSongIds(s.manualEventEnabled ? null : s.eventId),
                   "tb-songs",
                   undefined,
-                  { poolAction: s.route === "challenge" && !s.manualEventEnabled
+                  { challengeEventId: s.route === "challenge" ? s.eventId ?? undefined : undefined,
+                    poolAction: s.route === "challenge" && !s.manualEventEnabled
                     ? useChallengeSongsButton(host, challengeSongs, (songs) => host.updateSettings({ songs }))
                     : nothing },
                 ),
@@ -593,7 +594,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                           challengeSongs,
                           "tb-challenge-songs",
                           undefined,
-                          { poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => host.updateSettings({ planChallengeSongs })) },
+                          { challengeEventId: s.eventId ?? undefined, poolAction: useChallengeSongsButton(host, challengeSongs, (planChallengeSongs) => host.updateSettings({ planChallengeSongs })) },
                         ),
                       )}
                       ${ptField(
