@@ -126,7 +126,7 @@ export class AssetExplorer extends LitElement {
     super.update(changed);
   }
   private syncIdentity() {
-    if (this.path.length || this.selected)
+    if (this.path.length)
       setAppBarIdentity(
         this,
         "asset-explorer",
@@ -135,20 +135,11 @@ export class AssetExplorer extends LitElement {
             ${this.path.map(
               (part, index) => html`
                 ${icon("chevron_right", 20)}
-                <button type="button" class="chip" @click=${() => this.choose(this.path.slice(0, index + 1))}>
+                <button type="button" class="button button--text" @click=${() => this.choose(this.path.slice(0, index + 1))}>
                   ${AssetExplorer.plainName(part)}
                 </button>
               `,
-            )}${
-              this.selected
-                ? html`
-                    ${icon("chevron_right", 20)}
-                    <span class="chip">
-                      ${AssetExplorer.plainName(this.displayName(this.selected).split("/").at(-1) || "")}
-                    </span>
-                  `
-                : nothing
-            }
+            )}
           </div>
         `,
       );

@@ -1364,13 +1364,8 @@ export class SongPuzzle extends LitElement {
           ? this.text("remaining", { moves: total - this.follow })
           : this.statusText();
     return html`
-      <span class="chip chip--static" title=${this.text("moves")}>
-        <span class="chip__label tabular">${this.text("moveCount", { moves: this.moves })}</span>
-      </span>
-      <span class="chip chip--static puzzle-bar-status"><span class="chip__label tabular">${status}</span></span>
-      <span class="chip chip--static puzzle-bar-status">
-        <span class="chip__label">${this.text(this.source)} ${this.size}×${this.size}</span>
-      </span>
+      <span class="top-app-bar__status tabular">${this.text("moveCount", { moves: this.moves })}</span>
+      <span class="top-app-bar__status top-app-bar__status--wide tabular">${status}</span>
     `;
   }
   private statusText() {

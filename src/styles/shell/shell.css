@@ -91,6 +91,20 @@
 .top-app-bar__identity:not(:empty) {
   animation: motion-fade var(--motion-effects) backwards;
 }
+.top-app-bar__status {
+  max-inline-size: min(28vw, 18rem);
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  font: var(--md-sys-typescale-label-medium-weight) var(--md-sys-typescale-label-medium-size) /
+    var(--md-sys-typescale-label-medium-line-height) var(--app-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 599px) {
+  .top-app-bar__status--wide {
+    display: none;
+  }
+}
 .top-app-bar > h1 {
   flex: 0 1 auto;
   min-width: 0;

@@ -224,6 +224,10 @@
 .browse__crumbs > .chip {
   flex: none;
 }
+.browse__crumbs > .button--text {
+  min-inline-size: 48px;
+  padding-inline: 4px;
+}
 
 /* ---------- Results ---------- */
 .browse__results {

@@ -1692,9 +1692,15 @@ def _mission_description(
     color_keys = ("Red", "Blue", "Green", "Yellow", "Purple")
     card_type = _number(row, "_cardType")
     difficulty = _number(row, "_musicDifficulty")
+    band_rank = _number(row, "_bandRank", "_bandRankId")
+    band_tiers = ("D", "C", "B", "A", "S", "SS")
+    band_rank_name = str(band_rank)
+    if 1 <= band_rank <= len(band_tiers) * 4:
+        tier, step = divmod(band_rank - 1, 4)
+        band_rank_name = f"{band_tiers[tier]}{step + 1}"
     values: dict[str, Any] = {
         "AchievementCount": str(_number(row, "_achievementCount")),
-        "BandRank": str(_number(row, "_bandRank", "_bandRankId")),
+        "BandRank": band_rank_name,
         "ScoreRank": score_ranks.get(_number(row, "_scoreRank"), ""),
         "Value": str(_number(row, "_value")),
         "EpisodeId.Value": str(_number(episode_row or {}, "_episodeNumber")),

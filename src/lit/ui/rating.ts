@@ -1,8 +1,9 @@
-import { html } from "lit";
+import { html, nothing } from "lit";
+import { bandRatingName } from "../../lib/band-rating";
 
 export function bandRatingIcon(server: string, rank: number) {
-  // UIBandRankIcon._type maps ranks 1–24 to D1–SS4.
-  const name = `${["D", "C", "B", "A", "S", "SS"][Math.floor((rank - 1) / 4)]}${((rank - 1) % 4) + 1}`;
+  const name = bandRatingName(rank);
+  if (!name) return nothing;
   return html`
     <img
       src=${`/assets/${server}/Assets/AddressableResources/UI/Texture/BandRank/ImgScorerank_${name}.png`}

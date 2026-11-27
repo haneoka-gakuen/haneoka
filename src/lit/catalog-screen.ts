@@ -2113,7 +2113,7 @@ export class CatalogScreen extends LitElement {
         this.entityAppBarOwner,
         html`
           ${this.renderDetailLeading(item)}
-          ${this.settings.resource === "songs" && this.pageChartState === "pending" ? html`<span class="chip" role="status">${this.label("chartPending", "")}</span>` : nothing}
+          ${this.settings.resource === "songs" && this.pageChartState === "pending" ? html`<span class="top-app-bar__status" role="status">${this.label("chartPending", "")}</span>` : nothing}
         `,
       );
       setAppBarActions(

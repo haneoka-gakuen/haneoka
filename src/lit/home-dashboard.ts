@@ -2,7 +2,8 @@ import { returnLink, rememberReturnLink } from "../lib/document-url";
 import { decodePageData, pageDataViewCurrent } from "../lib/page-data";
 import { communityVisible } from "../lib/site-community";
 import { SPOILER_CONTENT_EVENT } from "../lib/spoiler-content";
-import { isContentVisible, isReleasedContent } from "../lib/content-release";
+import { isContentListed, isContentVisible, isReleasedContent } from "../lib/content-release";
+import { contentPreview } from "../lib/content-view";
 import { needsEventSongRelease } from "../lib/event-song-release";
 import { releasedCatalog } from "../lib/cross-server/releases";
 import { readCommunityBootstrap } from "../lib/community-bootstrap";
@@ -545,18 +546,28 @@ export class HomeDashboard extends LitElement {
   }
   private catalogRows(resource: "cards" | "support-cards" | "songs" | "events", fallback: unknown): JsonRecord[] {
     const catalog = this.crossServerCatalogs[resource];
-    return catalog
-      ? releasedCatalog(catalog).entries.map((entry) => ({
-          ...(resource === "events"
-            ? (pinCrossCatalogValue(
-                homeEventDisplay({ ...entry.perServer[entry.displayServer]!.row, ...entry.nameOverrides }),
-                entry.perServer[entry.displayServer]!.identity,
-              ) as JsonRecord)
-            : crossServerDisplayRow(entry)),
-          homeCatalogEntry: entry,
-          homeSourceServer: entry.displayServer,
-        }))
-      : values(fallback, resource === "events" ? "entries" : undefined);
+    if (!catalog) {
+      const rows = resource === "events" ? (fallback as JsonRecord | undefined)?.entries : fallback;
+      return recordValues(rows).flatMap((row) =>
+        isContentVisible(resource, row) ? [row] : isContentListed(resource, row) ? [contentPreview(row)] : [],
+      );
+    }
+    return releasedCatalog(catalog, isContentListed).entries.map((entry) => {
+      const variant = entry.perServer[entry.displayServer]!;
+      const preview = variant.row.__contentPreview === true || !isContentVisible(resource, variant.row, variant.id);
+      const row = resource === "events"
+        ? { ...variant.row, ...entry.nameOverrides }
+        : crossServerDisplayRow(entry);
+      const listed = preview ? contentPreview(row) : row;
+      return {
+        ...(resource === "events"
+          ? (pinCrossCatalogValue(homeEventDisplay(listed), variant.identity) as JsonRecord)
+          : listed),
+        ...(preview ? { __contentPreview: true } : {}),
+        homeCatalogEntry: entry,
+        homeSourceServer: entry.displayServer,
+      };
+    });
   }
   private sameVariant(entry: CrossCatalogEntry, row: JsonRecord) {
     const server = this.rowServer(row) as OfficialCatalogServer;
@@ -1397,7 +1408,7 @@ export class HomeDashboard extends LitElement {
         : "";
     const trackerHref = eventPage ? `/${eventPage}/${this.locale}/events/tracker/` : "";
     const storyHref =
-      eventPage && event
+      eventPage && event && event.details.__contentPreview !== true
         ? event.details.homeStoryId
           ? entityHref({
               server: eventPage,
@@ -1584,9 +1595,13 @@ export class HomeDashboard extends LitElement {
                         }
                       </h3>
                       <p class="home-event__range">
-                        <time datetime=${new Date(event.startAt).toISOString()}>${this.formatDate(event.startAt)}</time>
-                        –
-                        <time datetime=${new Date(event.endAt).toISOString()}>${this.formatDate(event.endAt)}</time>
+                        ${event.startAt
+                          ? html`<time datetime=${new Date(event.startAt).toISOString()}>${this.formatDate(event.startAt)}</time>`
+                          : nothing}
+                        ${event.startAt && event.endAt ? "–" : nothing}
+                        ${event.endAt
+                          ? html`<time datetime=${new Date(event.endAt).toISOString()}>${this.formatDate(event.endAt)}</time>`
+                          : nothing}
                       </p>
                       ${
                         event.endAt > event.startAt

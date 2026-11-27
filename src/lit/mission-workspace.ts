@@ -9,12 +9,12 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
 import { readPageData } from "../lib/page-data";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
-import { clearAppBarActions, setAppBarActions, setAppBarIdentity } from "../lib/app-bar";
+import { clearAppBarActions, setAppBarActions } from "../lib/app-bar";
+import { formatMissionBandRank } from "../lib/mission-description";
 import { navigationDocumentUrl } from "../lib/document-url";
 import { missionGroupFromPath } from "../lib/static-view-routing";
 import {
   groupMissions,
-  missionCategory,
   missionGroupStatus,
   type Mission,
   type MissionGroup,
@@ -233,9 +233,11 @@ export class MissionWorkspace extends LitElement {
   }
   private unionMissions?: CrossCatalogPresentation;
   private syncEntityHeading() {
-    if (!this.entityId || !this.missions[0]) return;
-    const title = isContentVisible("missions",this.missions[0],this.entityId)
-      ? this.name(this.missions[0].title) || this.entityId : uiText(this.locale,"common.states.unpublished");
+    const mission = this.missions[0];
+    if (!this.entityId || !mission) return;
+    const title = isContentVisible("missions", mission, this.entityId)
+      ? formatMissionBandRank(this.name(mission.title), mission.missionType) || this.entityId
+      : uiText(this.locale, "common.states.unpublished");
     updateEntityHeading(this, title, this.locale);
     syncEntityNavigation();
   }
@@ -410,6 +412,17 @@ export class MissionWorkspace extends LitElement {
     if (!start && !end) return this.text("missionNoEnd", "No end date");
     return start && end ? `${this.date(start)} – ${this.date(end)}` : this.date(start || end);
   }
+  private renderWindow(group: MissionGroup) {
+    return html`
+      <span class="mission-card__window">
+        ${icon("schedule", 16)}
+        <span>${this.windowText(group)}</span>
+      </span>
+    `;
+  }
+  private renderDetailWindow(group: MissionGroup) {
+    return group.timed || group.releaseDay || [1, 12].includes(group.category) ? this.renderWindow(group) : nothing;
+  }
   private openGroup(event: MouseEvent, key: string) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -450,10 +463,7 @@ export class MissionWorkspace extends LitElement {
                 `
               : nothing
           }
-          <span class="mission-card__window">
-            ${icon("schedule", 16)}
-            <span>${this.windowText(group)}</span>
-          </span>
+          ${this.renderWindow(group)}
           ${
             shown.length
               ? html`
@@ -477,10 +487,11 @@ export class MissionWorkspace extends LitElement {
   private groupView(group: MissionGroup) {
     return html`
       <section class="mission-group">
+        ${this.renderDetailWindow(group)}
         <ul class="mission-list" role="list">
           ${group.rows.map((mission) => {
             const href = this.entityLink(mission);
-            const title = this.name(mission.title) || "—";
+            const title = formatMissionBandRank(this.name(mission.title), mission.missionType) || "—";
             return html`
               <li class="mission-row">
                 <span class="mission-row__condition">
@@ -586,11 +597,13 @@ export class MissionWorkspace extends LitElement {
         `;
   }
   private entityView(mission: Mission) {
-    const title = this.name(mission.title) || mission.id;
-    const description = this.name(mission.description);
+    const title = formatMissionBandRank(this.name(mission.title), mission.missionType) || mission.id;
+    const description = formatMissionBandRank(this.name(mission.description), mission.missionType);
     const discussion = missionDiscussionIdentity(mission.id);
+    const [group] = groupMissions([mission], this.locale);
     return html`
       <section class="mission-group">
+        ${this.renderDetailWindow(group)}
         <ul class="mission-list" role="list">
           <li class="mission-row">
             <span class="mission-row__condition">
@@ -637,25 +650,8 @@ export class MissionWorkspace extends LitElement {
     `;
   }
   renderStaticChrome() {
-    const groups = this.groups();
-    const selected = this.groupKey ? groups.find(group => group.key === this.groupKey) : undefined;
-    const mission = this.entityId ? this.missions[0] : undefined;
-    const group = mission ? groupMissions([mission], this.locale)[0] : selected;
-    const count = selected ? selected.rows.length : groups.reduce((total, value) => total + value.rows.length, 0);
-    setAppBarIdentity(this, "missions", html`
-      <div class="browse__crumbs">
-        ${!mission ? html`
-          <span class="chip chip--static tabular" role="status">
-            ${this.text("missionCount", "{count} missions", { count: count.toLocaleString(this.locale) })}
-          </span>
-        ` : nothing}
-        ${group ? html`
-          <span class="chip chip--static"><span class="chip__label">${this.categoryLabel(mission ? missionCategory(mission) : group.category)}</span></span>
-          <span class="chip chip--static"><span class="chip__label">${this.windowText(group)}</span></span>
-        ` : nothing}
-      </div>
-    `);
-    if (mission || selected) clearAppBarActions(this, "missions");
+    const inGroup = this.groupKey && this.groups().some((group) => group.key === this.groupKey);
+    if ((this.entityId && this.missions[0]) || inGroup) clearAppBarActions(this, "missions");
     else setAppBarActions(this, "missions", this.modeFilter());
   }
 

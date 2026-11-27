@@ -3,11 +3,6 @@
   .puzzle-bar-keep {
     display: contents;
   }
-  @media (max-width: 599px) {
-    .puzzle-bar-status {
-      display: none;
-    }
-  }
   .song-slide-puzzle {
     container: song-puzzle / inline-size;
     --control-height: var(--md-comp-control-height-touch, 48px);

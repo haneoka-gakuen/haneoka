@@ -19,6 +19,7 @@ import type { ReleaseServer } from "./release-server";
 import { formatDate as siteDate } from "./date-format";
 import { cardRarityName } from "./card-rarity";
 import { contentPublished } from "./content-publication";
+import { formatMissionBandRank } from "./mission-description";
 
 export interface SearchableCatalogFact {
   key: string;
@@ -600,8 +601,9 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
       const id = recordId(value, key, definition.resource);
       if (!isStaticEntityId(definition, id, server)) return [];
       const ids = characterIds(value);
+      const missionType = definition.resource === "missions" ? value.missionType : undefined;
       const titles = Object.fromEntries(
-        LOCALES.map((locale) => [locale, text(value[definition.titleField], locale) || id]),
+        LOCALES.map((locale) => [locale, formatMissionBandRank(text(value[definition.titleField], locale), missionType) || id]),
       ) as Record<Locale, string>;
       const subtitles = Object.fromEntries(
         LOCALES.map((locale) => {
@@ -625,7 +627,7 @@ async function buildSearchableCatalogPages(server: ReleaseServer): Promise<Searc
             definition.kind === "character"
               ? text(value.description, locale)
               : plainGameText(value.description, locale);
-          return [locale, body];
+          return [locale, formatMissionBandRank(body, missionType)];
         }),
       ) as Record<Locale, string>;
       const facts = Object.fromEntries(
