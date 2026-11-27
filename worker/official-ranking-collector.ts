@@ -37,7 +37,7 @@ const ARENA_SWEEP_WINDOWS = 20;
 const ARENA_PARALLEL_WINDOWS = 12;
 const ARENA_SWEEP_INTERVAL_MS = 30_000;
 const ARENA_OVERDUE_MS = 2 * 3_600_000;
-const arenaPagesPerMinute = (region: GameRecordsRegion) => region === "tw" ? 52 : 40;
+const TW_ARENA_CATCHUP_MS = 3_600_000;
 const ARENA_SWEEP_DURING_POPULATION = 4;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
@@ -146,6 +146,7 @@ interface CollectorState {
   arenaSweepRetryAtMs?: number;
   arenaCoverage?: ArenaCoverage;
   arenaParallelReads?: number;
+  arenaParallelDeepReads?: number;
   eventSweep?: { eventId: string; next: number; maxRank: number | null };
   eventInterests?: EventInterest[];
   strikesApplied?: boolean;
@@ -157,6 +158,13 @@ interface CollectorState {
   arenaWarmupRuns?: number;
   nextFinalAtMs?: number;
   platformRenewals?: Record<string, PlatformRenewal>;
+}
+
+function arenaPagesPerMinute(state: CollectorState, now: number): number {
+  if (state.region !== "tw") return 40;
+  const behind = state.arenaCoverage?.bands.some(({ oldestObservedAtMs }) =>
+    oldestObservedAtMs !== null && now - oldestObservedAtMs >= TW_ARENA_CATCHUP_MS);
+  return behind ? 64 : 52;
 }
 
 export function officialRegionEnabled(value: string | undefined, region: GameRecordsRegion): boolean {
@@ -1302,7 +1310,7 @@ export class OfficialRankingCollector extends Container<Env> {
     const arena = state.arenaCatalog;
     if (!arena || count <= 0 || now < (state.arenaSweepRetryAtMs ?? 0) || now < arena.startAtMs
       || now >= arena.rankingEndAtMs || !arena.bandIds.length) return [];
-    const rate = arenaPagesPerMinute(region), budget = state.arenaSweepBudget;
+    const rate = arenaPagesPerMinute(state, now), budget = state.arenaSweepBudget;
     const credits = budget ? Math.min(rate, budget.credits + Math.max(0, now - budget.atMs) * rate / 60_000) : rate;
     count = Math.min(count, Math.floor(credits));
     if (count <= 0) return [];
@@ -1905,6 +1913,7 @@ export class OfficialRankingCollector extends Container<Env> {
           if (state.status === "no_available_account") state.status = "ok";
           state.arenaStoredReads = (state.arenaStoredReads ?? 0) + 1;
           state.arenaParallelReads = (state.arenaParallelReads ?? 0) + 1;
+          if (observation.startRank > RANKING_HEAD_LAST_START) state.arenaParallelDeepReads = (state.arenaParallelDeepReads ?? 0) + 1;
         } else state.arenaProbeReads = (state.arenaProbeReads ?? 0) + 1;
         const health = run.accountIdentity ? state.accounts?.[run.accountIdentity] : undefined;
         if (health) {
@@ -2227,9 +2236,10 @@ export class OfficialRankingCollector extends Container<Env> {
       sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
         windowReuseSeconds: WINDOW_REUSE_MS / 1000, windowReuses: state.windowReuses ?? 0, windowDeferrals: state.windowDeferrals ?? 0,
         parallelArenaWorkers: Object.values(state.arenaSweepRuns ?? {}).filter((run) => !run.complete && run.deadlineMs > now).length,
-        arenaSweepIntervalSeconds: ARENA_SWEEP_INTERVAL_MS / 1000, arenaSweepPagesPerMinute: arenaPagesPerMinute(region),
+        arenaSweepIntervalSeconds: ARENA_SWEEP_INTERVAL_MS / 1000, arenaSweepPagesPerMinute: arenaPagesPerMinute(state, now),
         arenaCoverage: state.arenaCoverage?.seasonId === state.arenaCatalog?.seasonId ? state.arenaCoverage ?? null : null,
         parallelArenaStoredWindows: state.arenaParallelReads ?? 0,
+        parallelArenaDeepWindows: state.arenaParallelDeepReads ?? 0,
         populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000,
         populationCatchupSeconds: ARENA_POPULATION_CATCHUP_MS / 1000,
         populationProgress: Object.entries(state.arenaProgress ?? {}).map(([key, progress]) => ({
