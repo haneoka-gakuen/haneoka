@@ -950,9 +950,16 @@ export class OfficialRankingCollector extends Container<Env> {
         else {
           sdkAvailable = true;
           phase = "game";
+          const { playerProfile, sdkProfile } = prepared.config;
+          const clientVersion = this.clientVersion(region, playerProfile.client_version);
+          const gameConfig = {
+            ...prepared.config,
+            playerProfile: { ...playerProfile, client_version: clientVersion },
+            sdkProfile: { ...sdkProfile, common_params: { ...sdkProfile.common_params, app_ver: clientVersion } },
+          };
           result = platformLoginResult(await dispatchPhase("game", { contract: "haneoka:official-account-job/1", action: "game", region,
             runId: prepared.lease.runId, deadlineMs: prepared.lease.deadlineMs, expectedPlayerId: prepared.job.expectedPlayerId,
-            expectedSdkUid: sdk.sdkSession.uid, sdkSession: sdk.sdkSession, ...prepared.config }), prepared.lease.runId, region, prepared.config, sdk.sdkSession.uid);
+            expectedSdkUid: sdk.sdkSession.uid, sdkSession: sdk.sdkSession, ...gameConfig }), prepared.lease.runId, region, gameConfig, sdk.sdkSession.uid);
         }
       }
     } catch (error) {
