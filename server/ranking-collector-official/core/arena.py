@@ -53,7 +53,7 @@ class EventWindows:
 
     def __init__(self, job, catalog, sampler, updates, deadline, provenance):
         self.job, self.catalog, self.sampler, self.updates = job, catalog, sampler, updates
-        self.deadline = min(time.time() + 25, deadline)
+        self.deadline = min(time.time() + (35 if job.get('finalEvent') is None else 25), deadline)
         self.provenance = provenance
 
     def run(self):

@@ -949,12 +949,14 @@ export async function readOfficialEventWindows(env: OfficialRankingStoreBindings
 export async function readOfficialEventWindow(env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   start: number): Promise<OfficialEventWindow | null> {
   const { db } = storage(env);
-  const row = await db.prepare(`SELECT payload_key, payload_hash FROM official_event_window_metadata
-    WHERE region = ? AND event_id = ? AND start_rank = ?`).bind(region, eventId, start).first<{ payload_key: string; payload_hash: string }>();
+  const row = await db.prepare(`SELECT snapshot_id, observed_at_ms, payload_key, payload_hash FROM official_event_window_metadata
+    WHERE region = ? AND event_id = ? AND start_rank = ?`).bind(region, eventId, start)
+    .first<{ snapshot_id: string; observed_at_ms: number; payload_key: string; payload_hash: string }>();
   if (!row) return null;
   const observation = await readPayload<OfficialEventWindow>(env, row.payload_key, row.payload_hash);
-  if (observation.region !== region || observation.eventId !== eventId) throw new Error("official_observation_identity_mismatch");
-  return observation;
+  if (observation.region !== region || observation.eventId !== eventId || observation.startRank !== start
+    || observation.snapshotId !== row.snapshot_id) throw new Error("official_observation_identity_mismatch");
+  return { ...observation, observedAtMs: Math.max(observation.observedAtMs, row.observed_at_ms) };
 }
 
 /** The last rank an event's point board is known to reach, or null while its end is unseen. */
@@ -1003,19 +1005,20 @@ export async function readOfficialArenaLatest(env: OfficialRankingStoreBindings,
   bandId: string, rank: number): Promise<OfficialArenaObservation | null> {
   const { db } = storage(env);
   const start = Math.floor((rank - 1) / 100) * 100 + 1;
-  const current = await db.prepare(`SELECT end_rank, payload_key, payload_hash FROM official_arena_window_metadata
+  const current = await db.prepare(`SELECT end_rank, snapshot_id, observed_at_ms, payload_key, payload_hash FROM official_arena_window_metadata
     WHERE region=? AND season_id=? AND band_id=? AND start_rank=?`).bind(region, seasonId, bandId, start)
-    .first<{ end_rank: number; payload_key: string; payload_hash: string }>();
+    .first<{ end_rank: number; snapshot_id: string; observed_at_ms: number; payload_key: string; payload_hash: string }>();
   if (current && current.end_rank < rank) return null;
   const row = current ?? await db.prepare(`SELECT payload_key, payload_hash FROM official_arena_ranking_observations
     WHERE region = ? AND season_id = ? AND band_id = ? AND start_rank = ? AND end_rank >= ? AND error IS NULL
     ORDER BY observed_at_ms DESC, cursor DESC LIMIT 1`).bind(region, seasonId, bandId, start, rank).first<Pick<ObservationRow, "payload_key" | "payload_hash">>();
   if (!row) return null;
   const observation = await readPayload<OfficialArenaObservation>(env, row.payload_key, row.payload_hash);
-  if (observation.region !== region || observation.seasonId !== seasonId || observation.bandId !== bandId) {
+  if (observation.region !== region || observation.seasonId !== seasonId || observation.bandId !== bandId
+    || observation.startRank !== start || current && observation.snapshotId !== current.snapshot_id) {
     throw new Error("official_observation_identity_mismatch");
   }
-  return observation;
+  return current ? { ...observation, observedAtMs: Math.max(observation.observedAtMs, current.observed_at_ms) } : observation;
 }
 
 export async function readOfficialArenaMetadata(env: OfficialRankingStoreBindings, region: GameRecordsRegion,

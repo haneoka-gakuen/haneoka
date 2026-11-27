@@ -12,7 +12,7 @@ import { adoptGuestAccount, claimGuestRegistration, claimGuestVerification, crea
   readReadyGuestAccounts, saveGuestRegistration, saveGuestRequest, type GuestLease } from "./official-guest-accounts";
 import { GuestJobContractError, guestConfiguration, guestPhaseResult, type GuestConfiguration, type GuestPhaseResult } from "./official-guest-jobs";
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, newerOfficialClientVersion, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
+import { OFFICIAL_EVENT_QUERY_GRACE_MS, OFFICIAL_RANKING_HEAD_PAGES as RANKING_HEAD_PAGES, OFFICIAL_RANKING_HEAD_LAST_START as RANKING_HEAD_LAST_START, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, newerOfficialClientVersion, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
 import { readOfficialQueryableEvent, queueOfficialFinalEventWindows, readOfficialEventWindows, flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation, recordOfficialEventRank } from "./official-ranking-store";
@@ -34,8 +34,10 @@ const ARENA_POPULATION_CATCHUP_MS = ARENA_POPULATION_TARGET_MS - INTERVAL_MS;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
-const ARENA_PARALLEL_WINDOWS = 8;
-const ARENA_SWEEP_INTERVAL_MS = 60_000;
+const ARENA_PARALLEL_WINDOWS = 12;
+const ARENA_SWEEP_INTERVAL_MS = 30_000;
+const ARENA_OVERDUE_MS = 2 * 3_600_000;
+const arenaPagesPerMinute = (region: GameRecordsRegion) => region === "tw" ? 52 : 40;
 const ARENA_SWEEP_DURING_POPULATION = 4;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
@@ -100,7 +102,10 @@ interface DemandInterest {
 interface ArenaCoverage {
   seasonId: string;
   measuredAtMs: number;
-  bands: Array<{ bandId: string; expectedPages: number; observedPages: number; oldestObservedAtMs: number | null }>;
+  bands: Array<{
+    bandId: string; expectedPages: number; observedPages: number; oldestObservedAtMs: number | null;
+    headPages?: number; headObservedPages?: number; headOldestObservedAtMs?: number | null;
+  }>;
 }
 
 interface CollectorState {
@@ -135,9 +140,10 @@ interface CollectorState {
   arenaProgress?: Record<string, OfficialArenaProgress>;
   arenaCatalog?: OfficialCatalog["arena"];
   arenaCatalogIdentity?: Pick<OfficialCatalog, "masterVersion" | "resourceVersion" | "tableHashes">;
-  /** Next band to receive a background window. */
   arenaSweepRuns?: Record<string, CollectorRun>;
   arenaSweepNextAtMs?: number;
+  arenaSweepBudget?: { credits: number; atMs: number };
+  arenaSweepRetryAtMs?: number;
   arenaCoverage?: ArenaCoverage;
   arenaParallelReads?: number;
   eventSweep?: { eventId: string; next: number; maxRank: number | null };
@@ -1288,16 +1294,27 @@ export class OfficialRankingCollector extends Container<Env> {
     state.nextAtMs = state.nextAtMs ? Math.min(state.nextAtMs, next) : next;
   }
 
-  /** Missing windows lead, then the oldest retained observations across bands. */
+  /** Reserve capacity for the first ten pages while draining the oldest deep windows across bands. */
   private async arenaSweep(
     state: CollectorState, region: GameRecordsRegion, now: number, count: number,
     reserved: ReadonlySet<string>,
   ): Promise<NonNullable<OfficialCollectorJob["arenaWindows"]>> {
     const arena = state.arenaCatalog;
-    if (!arena || count <= 0 || now < arena.startAtMs || now >= arena.rankingEndAtMs || !arena.bandIds.length) return [];
+    if (!arena || count <= 0 || now < (state.arenaSweepRetryAtMs ?? 0) || now < arena.startAtMs
+      || now >= arena.rankingEndAtMs || !arena.bandIds.length) return [];
+    const rate = arenaPagesPerMinute(region), budget = state.arenaSweepBudget;
+    const credits = budget ? Math.min(rate, budget.credits + Math.max(0, now - budget.atMs) * rate / 60_000) : rate;
+    count = Math.min(count, Math.floor(credits));
+    if (count <= 0) return [];
     const scheduled = activeRuns(state, now).flatMap((run) => run.sweepWindows ?? []);
     const excluded = new Set(reserved);
     for (const row of scheduled) if (row.seasonId === arena.seasonId) excluded.add(row.bandId + ":" + row.startRank);
+    for (const { window_key } of this.ctx.storage.sql.exec<{ window_key: string }>(
+      "SELECT window_key FROM collector_window_cache WHERE attempted_at_ms>? AND window_key LIKE ?",
+      now - WINDOW_REUSE_MS, `arena/${arena.seasonId}/%`).toArray()) {
+      const [, , band, start] = window_key.split("/");
+      excluded.add(band + ":" + start);
+    }
     const rows = await this.env.DB.prepare(
       `SELECT band_id AS band, start_rank AS start, max_rank AS maximum, observed_at_ms AS observed
        FROM official_arena_window_metadata WHERE region = ? AND season_id = ?`,
@@ -1307,36 +1324,53 @@ export class OfficialRankingCollector extends Container<Env> {
       const entry = byBand.get(row.band);
       if (!entry) continue;
       if (row.start === 1) entry.maximum = row.maximum ?? 0;
-      else entry.observed.set(row.start, row.observed);
+      entry.observed.set(row.start, row.observed);
     }
     const coverage: ArenaCoverage = { seasonId: arena.seasonId, measuredAtMs: now, bands: [] };
-    const windows = arena.bandIds.flatMap((band) => {
+    type Candidate = { bandId: string; startRank: number; observed: number };
+    const heads: Candidate[] = [], deep: Candidate[] = [];
+    for (const band of arena.bandIds) {
       const entry = byBand.get(band)!;
       let observedPages = 0;
       let oldestObservedAtMs: number | null = null;
       for (const [rank, observed] of entry.observed) {
-        if (rank > entry.maximum) continue;
+        if (rank === 1 || rank > entry.maximum) continue;
         observedPages++;
         oldestObservedAtMs = Math.min(oldestObservedAtMs ?? observed, observed);
+        if (rank > RANKING_HEAD_LAST_START && now - observed >= ARENA_REFRESH_MS && !excluded.has(band + ":" + rank))
+          deep.push({ bandId: band, startRank: rank, observed });
       }
-      coverage.bands.push({ bandId: band, expectedPages: Math.max(0, Math.ceil(entry.maximum / 100) - 1), observedPages, oldestObservedAtMs });
-      const candidates: { bandId: string; startRank: number; observed: number }[] = [];
-      for (let rank = 101; rank <= entry.maximum && candidates.length < count; rank += 100) {
-        if (!entry.observed.has(rank) && !excluded.has(band + ":" + rank))
-          candidates.push({ bandId: band, startRank: rank, observed: 0 });
+      const headPages = Math.min(RANKING_HEAD_PAGES, Math.max(1, Math.ceil(entry.maximum / 100)));
+      let headObservedPages = 0, headOldestObservedAtMs: number | null = null;
+      for (let page = 0; page < headPages; page++) {
+        const rank = 1 + page * 100, observed = entry.observed.get(rank) ?? 0;
+        if (observed) {
+          headObservedPages++;
+          headOldestObservedAtMs = Math.min(headOldestObservedAtMs ?? observed, observed);
+        }
+        if (now - observed >= WINDOW_REUSE_MS && !excluded.has(band + ":" + rank))
+          heads.push({ bandId: band, startRank: rank, observed });
       }
-      if (candidates.length < count) {
-        const oldest = [...entry.observed].filter(([rank, observed]) => rank <= entry.maximum
-          && now - observed >= ARENA_REFRESH_MS && !excluded.has(band + ":" + rank))
-          .sort((left, right) => left[1] - right[1] || left[0] - right[0]);
-        candidates.push(...oldest.slice(0, count - candidates.length)
-          .map(([startRank, observed]) => ({ bandId: band, startRank, observed })));
+      coverage.bands.push({ bandId: band, expectedPages: Math.max(0, Math.ceil(entry.maximum / 100) - 1),
+        observedPages, oldestObservedAtMs, headPages, headObservedPages, headOldestObservedAtMs });
+      let missing = 0;
+      for (let rank = RANKING_HEAD_LAST_START + 100; rank <= entry.maximum && missing < count; rank += 100) {
+        if (!entry.observed.has(rank) && !excluded.has(band + ":" + rank)) {
+          deep.push({ bandId: band, startRank: rank, observed: 0 });
+          missing++;
+        }
       }
-      return candidates;
-    });
+    }
     state.arenaCoverage = coverage;
-    return windows.sort((left, right) => left.observed - right.observed || left.startRank - right.startRank)
-      .slice(0, count).map(({ bandId, startRank }) => ({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 }));
+    const ageOrder = (left: Candidate, right: Candidate) => left.observed - right.observed || left.startRank - right.startRank;
+    const urgency = ({ observed }: Candidate) => observed === 0 ? 1 : now - observed >= ARENA_OVERDUE_MS ? 0 : 2;
+    heads.sort(ageOrder);
+    deep.sort((left, right) => urgency(left) - urgency(right) || ageOrder(left, right));
+    const headCount = Math.min(heads.length, Math.ceil(count / 3));
+    const cold = deep.slice(0, count - headCount);
+    const selected = [...heads.slice(0, count - cold.length), ...cold];
+    state.arenaSweepBudget = { credits: credits - selected.length, atMs: now };
+    return selected.map(({ bandId, startRank }) => ({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 }));
   }
 
   private async runningEvent(region: GameRecordsRegion, now: number) {
@@ -1344,17 +1378,20 @@ export class OfficialRankingCollector extends Container<Env> {
     return event?.pointRankingEnabled && officialEventQueryOpen(event, now) ? event : null;
   }
 
-  /** The latest queryable event's top window and its next windows in turn. */
+  /** The latest queryable point board's first ten pages, then its rolling tail. */
   private async eventSweep(state: CollectorState, region: GameRecordsRegion, now: number) {
     const event = await this.runningEvent(region, now);
     if (!event) return [];
-    if (state.eventSweep?.eventId !== event.id) state.eventSweep = { eventId: event.id, next: 101, maxRank: null };
-    const sweep = state.eventSweep, starts = [1];
-    let next = sweep.next;
+    const deepStart = RANKING_HEAD_LAST_START + 100;
+    if (state.eventSweep?.eventId !== event.id) state.eventSweep = { eventId: event.id, next: deepStart, maxRank: null };
+    const sweep = state.eventSweep;
+    const starts = Array.from({ length: RANKING_HEAD_PAGES }, (_, page) => 1 + page * 100)
+      .filter((start) => start === 1 || sweep.maxRank === null || start <= sweep.maxRank);
+    let next = Math.max(deepStart, sweep.next);
     for (let turn = 0; turn < EVENT_SWEEP_WINDOWS; turn++) {
       if (sweep.maxRank !== null && next > sweep.maxRank) {
-        next = 101;
-        if (sweep.maxRank <= 100) break;
+        next = deepStart;
+        if (sweep.maxRank < deepStart) break;
       }
       starts.push(next);
       next += 100;
@@ -2190,7 +2227,7 @@ export class OfficialRankingCollector extends Container<Env> {
       sampling: { arenaProbes: state.arenaProbeReads ?? 0, arenaStoredWindows: state.arenaStoredReads ?? 0,
         windowReuseSeconds: WINDOW_REUSE_MS / 1000, windowReuses: state.windowReuses ?? 0, windowDeferrals: state.windowDeferrals ?? 0,
         parallelArenaWorkers: Object.values(state.arenaSweepRuns ?? {}).filter((run) => !run.complete && run.deadlineMs > now).length,
-        arenaSweepIntervalSeconds: ARENA_SWEEP_INTERVAL_MS / 1000,
+        arenaSweepIntervalSeconds: ARENA_SWEEP_INTERVAL_MS / 1000, arenaSweepPagesPerMinute: arenaPagesPerMinute(region),
         arenaCoverage: state.arenaCoverage?.seasonId === state.arenaCatalog?.seasonId ? state.arenaCoverage ?? null : null,
         parallelArenaStoredWindows: state.arenaParallelReads ?? 0,
         populationTargetSeconds: ARENA_POPULATION_TARGET_MS / 1000,
@@ -2217,11 +2254,13 @@ export class OfficialRankingCollector extends Container<Env> {
   private async finishArenaSweep(state: CollectorState, run: CollectorRun, update?: Extract<OfficialCollectorUpdate, { type: "complete" }>) {
     if (run.complete) return;
     run.complete = true;
+    const cooldown = update?.status === "rate_limited" ? Date.now() + retryMs(update.retryAfterSeconds) : 0;
+    if (cooldown) state.arenaSweepRetryAtMs = Math.max(state.arenaSweepRetryAtMs ?? 0, cooldown);
     if (run.accountIdentity) {
       const health = state.accounts?.[run.accountIdentity];
       if (health) {
         if (health.leaseUntilMs <= run.deadlineMs + 15_000) health.leaseUntilMs = 0;
-        if (update?.status === "rate_limited") health.cooldownUntilMs = Math.max(health.cooldownUntilMs, Date.now() + retryMs(update.retryAfterSeconds));
+        if (cooldown) health.cooldownUntilMs = Math.max(health.cooldownUntilMs, cooldown);
         if (update?.status === "ok") health.failures = 0;
         if (update?.status === "auth_paused") {
           health.rejections = (health.rejections ?? 0) + 1;
@@ -2280,7 +2319,7 @@ export class OfficialRankingCollector extends Container<Env> {
   private async planArenaSweepJobs(state: CollectorState, accounts: OfficialCollectorAccount[],
     windows: NonNullable<OfficialCollectorJob["arenaWindows"]>, now: number): Promise<OfficialCollectorJob[]> {
     const arena = state.arenaCatalog, identity = state.arenaCatalogIdentity;
-    if (!arena || !identity) return [];
+    if (!arena || !identity || now < (state.arenaSweepRetryAtMs ?? 0)) return [];
     const runs = state.arenaSweepRuns ??= {};
     for (const [id, run] of Object.entries(runs)) {
       if (run.deadlineMs + 15_000 <= now) delete runs[id];
@@ -2294,8 +2333,8 @@ export class OfficialRankingCollector extends Container<Env> {
       .sort((a, b) => populationAge(a) - populationAge(b) || progressAge(a) - progressAge(b)).slice(0, accounts.length);
     const workers = accounts.slice(0, windows.length + populationBands.length), jobs: OfficialCollectorJob[] = [];
     // Put population work on the lightest batches so every assigned account has work.
-    const batches = workers.map((_, index) => windows.slice(Math.floor(index * windows.length / workers.length),
-      Math.floor((index + 1) * windows.length / workers.length))).sort((left, right) => left.length - right.length);
+    const batches = workers.map((_, index) => windows.filter((_, slot) => slot % workers.length === index))
+      .sort((left, right) => left.length - right.length);
     for (const [index, account] of workers.entries()) {
       const arenaWindows = batches[index]!;
       const populationBand = populationBands[index];
@@ -2341,8 +2380,9 @@ export class OfficialRankingCollector extends Container<Env> {
       if (state.arenaSweepNextAtMs && now + 1_000 < state.arenaSweepNextAtMs) return [];
       await this.queueArenaSweep(state, now);
       let jobs: OfficialCollectorJob[] = [];
-      const rateLimited = state.status === "rate_limited" && state.nextAtMs > now;
-      if (!rateLimited && state.arenaCatalogIdentity && !(region === "jp" ? await this.guestJobView() : await this.platformLoginView(region))) {
+      const upstreamWaiting = now < (state.arenaSweepRetryAtMs ?? 0) || state.nextAtMs > now
+        && (state.status === "rate_limited" || state.status === "failed" && state.lastFailure?.stage === "catalog_version");
+      if (!upstreamWaiting && state.arenaCatalogIdentity && !(region === "jp" ? await this.guestJobView() : await this.platformLoginView(region))) {
         const pool = await this.poolFor(region).catch(() => null);
         if (pool) {
           this.synchronizePool(state, pool);
@@ -2419,15 +2459,18 @@ export class OfficialRankingCollector extends Container<Env> {
         ? this.arenaSweepAccounts(state, pool, now, false) : [];
       const sweepLimit = final ? 0 : Math.min(spare.length ? 2 : populationDue ? ARENA_SWEEP_DURING_POPULATION : ARENA_SWEEP_WINDOWS, 20 - demanded.length);
       const reserved = new Set(demanded.filter((row) => row.seasonId === arena?.seasonId).map((row) => row.bandId + ":" + row.startRank));
+      if (!final) for (const band of arena?.bandIds ?? []) reserved.add(band + ":1");
       const windows = await this.arenaSweep(state, region, now, sweepLimit + spare.length * ARENA_PARALLEL_WINDOWS, reserved).catch(() => []);
       const mainWindows = Math.min(sweepLimit, Math.max(0, windows.length - spare.length));
       const swept = windows.slice(0, mainWindows);
       sweepJobs.push(...await this.planArenaSweepJobs(state, spare, windows.slice(mainWindows), now));
       await this.queueArenaSweep(state, now);
-      state.run.eventSweepWindows = eventSwept;
+      const pointHead = eventSwept.filter((row) => row.startRank <= RANKING_HEAD_LAST_START);
+      const pointTail = eventSwept.filter((row) => row.startRank > RANKING_HEAD_LAST_START);
+      state.run.eventSweepWindows = pointTail;
       state.run.sweepWindows = swept;
-      const eventWindows = final ? eventFinal?.windows ?? [] : [...eventDemand, ...eventSwept
-        .filter((row) => !eventDemand.some((entry) => entry.eventId === row.eventId && entry.startRank === row.startRank))];
+      const eventWindows = final ? eventFinal?.windows ?? [] : [...new Map(
+        [...pointHead, ...eventDemand, ...pointTail].map((row) => [row.startRank, row])).values()].slice(0, 20);
       const arenaWindows = final ? arenaFinal?.windows ?? [] : [...demanded, ...swept
         .filter((window) => !demanded.some((row) => row.seasonId === window.seasonId && row.bandId === window.bandId && row.startRank === window.startRank))];
       let serviceToken = await this.ctx.storage.get<string>("containerToken");
@@ -2732,7 +2775,7 @@ export class OfficialRankingCollector extends Container<Env> {
               const last = observation.maxRank ?? null;
               // A full window past the known end means the board grew.
               if (last !== null) sweep.maxRank = Math.min(sweep.maxRank ?? last, last);
-              else if (sweep.maxRank !== null && observation.endRank > sweep.maxRank) sweep.maxRank = null;
+              else if (sweep.maxRank !== null && observation.endRank >= sweep.maxRank) sweep.maxRank = null;
             }
           }
           run.pendingAttempt = null;

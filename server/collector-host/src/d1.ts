@@ -6,6 +6,7 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { HOST_LOCAL_UPSERTS } from "../../../worker/official-host";
 import { EVENT_RANK_DAY_MS, EVENT_RANK_JST_MS } from "../../../worker/event-rank-archive";
+import { OFFICIAL_RANKING_HEAD_LAST_START } from "../../../src/lib/official-ranking";
 
 type Row = Record<string, unknown>;
 
@@ -131,7 +132,8 @@ export function installOutbox(db: DatabaseSync, owned: (table: string) => boolea
     const upsert = HOST_LOCAL_UPSERTS.has(name) ? "SELECT 1;" : queue("NEW");
     const sameKey = key.map((column) => `OLD."${column}" IS NEW."${column}"`).join(" AND ");
     const changed = columns.map((column) => name === "official_arena_window_metadata" && column === "observed_at_ms"
-      ? "(OLD.observed_at_ms IS NOT NEW.observed_at_ms AND (NEW.start_rank=1 OR OLD.observed_at_ms/900000<>NEW.observed_at_ms/900000))"
+      ? `(OLD.observed_at_ms IS NOT NEW.observed_at_ms AND (NEW.start_rank<=${OFFICIAL_RANKING_HEAD_LAST_START}
+          OR OLD.observed_at_ms/900000<>NEW.observed_at_ms/900000))`
       : `OLD."${column}" IS NOT NEW."${column}"`).join(" OR ");
     db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_key_change";
       DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";

@@ -6,6 +6,8 @@
 import type { GameRecordsRegion } from "./game-records";
 
 export const OFFICIAL_EVENT_QUERY_GRACE_MS = 5 * 86_400_000;
+export const OFFICIAL_RANKING_HEAD_PAGES = 10;
+export const OFFICIAL_RANKING_HEAD_LAST_START = 1 + (OFFICIAL_RANKING_HEAD_PAGES - 1) * 100;
 export const officialEventQueryOpen = (event: { startAtMs: number; endAtMs: number }, now: number) =>
   now >= event.startAtMs && now < event.endAtMs + OFFICIAL_EVENT_QUERY_GRACE_MS;
 
