@@ -1,9 +1,10 @@
 // L3 — GEB
-// Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调；私有分片可返回待补分候选。
+// Input: 配队资料、Engine 请求及进度／快照／单 Worker 最终结果回调、联机房各席谱面与步进预算；私有分片可返回待补分候选。
 // Output: 共享计算模型版本、EngineClient、搜索／成长／活动养成分页／评价／批量评价／区间点数分布／单顺序样例／解释结果、证明进度及当前 Worker 阶段。
 // Pos: [Map](L2-2.md)；主线程到当前引擎 Worker 的生命周期与分片协调。
 // Effects/Dependencies: 在现有池中调度普通演出各曲分区和联合收益证明；首个候选即时发布、节流结束补发最新候选；共享 WASM 编译、UTF-8 计算资料和固定谱面缓存，多曲载荷只编码一次，与引擎初始化并行加载；复用同输入已证明的自动 CP 校准；条件上限最多读取四张固定谱面且不启动 Worker；排队、初始化和请求应答有独立收尾，故障或取消时替换对应实例；沿用现有计算预算与证明完成条件。
 import type { SampleRequest, PlaySample, SectionMetricDistribution } from "./protocol";
+import type { RoomSearchInput, RoomSearchSlice } from "../cooperative-room";
 /** Main-thread handle on the engine Worker. Cancelling replaces the Worker, so a long search never blocks. */
 import { dataRows, nativeRow, objectRow, type DataRow, type TeamBuilderData } from "../data";
 import { teamBuilderSourceIdentity } from "../data/source";
@@ -354,7 +355,7 @@ class EngineWorker {
       const signal = this.lifetime!.signal;
       const songs = message.type === "run" || message.type === "growth" ? requestChartSongs(message.request).filter((song): song is SongRef => song !== null)
         : message.type === "evaluate" || message.type === "sample" || message.type === "sectionMetrics" ? message.request.songs : message.type === "explain" ? [message.request.song]
-          : message.type === "charts" ? message.songs : [];
+          : message.type === "charts" || message.type === "roomStart" ? message.songs : [];
       const staged = [...this.cachedCharts];
       const missing = songs.filter(song => {
         const key = chartKey(song), index = staged.indexOf(key);
@@ -1722,6 +1723,14 @@ export class EngineClient {
   }
   pauseEventGrowth(paused: boolean) {
     this.pool[0]!.pauseEventGrowth(paused);
+  }
+  roomSearchStart(request: RoomSearchInput, maxWork: number, budgetMs: number) {
+    const songs = [...new Set(request.players.map(player => player.difficulty))]
+      .map(difficulty => ({ songId: request.song.songId, difficulty }));
+    return this.enqueue(() => this.pool[0]!.send<RoomSearchSlice>({ type: "roomStart", id: 0, request, songs, maxWork, budgetMs }));
+  }
+  roomSearchStep(searchId: number, maxWork: number, budgetMs: number) {
+    return this.enqueue(() => this.pool[0]!.send<RoomSearchSlice>({ type: "roomStep", id: 0, searchId, maxWork, budgetMs }));
   }
   explain(request: ExplainRequest) {
     return this.enqueue(() => this.pool[0]!.send<Timeline>({ type: "explain", id: 0, request }));

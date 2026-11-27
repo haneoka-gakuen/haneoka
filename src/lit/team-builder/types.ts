@@ -6,10 +6,13 @@ import type { FrameRate } from "../../lib/team-builder/engine/live";
 import type { RewardPlan } from "../../lib/team-builder/reward-plan";
 import { emptyManualEvent, type ManualEventDraft } from "../../lib/team-builder/manual-event";
 
-export type Tab = "build" | "live" | "challenge" | "arena" | "box" | "account" | "teams" | "pt" | "song-comparison";
+export type Tab = "build" | "live" | "challenge" | "arena" | "room" | "box" | "account" | "teams" | "pt" | "song-comparison";
 export type GoalKind = "score" | "gekiso" | "power" | "event" | "potential" | "plan";
 export type LuckSamplingMode = "auto" | "manual";
 export interface BuildSettings {
+  challengeTotal?: boolean;
+  challengeShared?: boolean;
+  challengeDifficulties?: number[];
   challengeBoard?: { eventId: number; challengeId: number; region: import("../../lib/game-records").GameRecordsRegion } | null;
   aggregation: "individual" | "mean";
   songRules?: import("../../lib/team-builder/arena").SongRules;
@@ -109,6 +112,7 @@ export interface BuildSettings {
 export interface FarmingSettings extends Pick<BuildSettings,
   "aggregation" | "playMode" | "great" | "good" | "miss" | "missEvery" | "measure" | "weighted" |
   "weightPoints" | "weightItems" | "weightCp" | "rewardPlan" | "rewardRoomMode" | "rewardPlayers" | "rewardOtherScore" | "unknownPolicy" | "fullRanking" | "k" | "timeLimit" | "ptCycle"> {
+  fixedTeam?: import("../../lib/team-builder/song-comparison").Formation | null;
   play: "solo" | "gekiso" | "challenge" | "skip";
   requireGrowth: boolean;
   includeMemory: boolean;

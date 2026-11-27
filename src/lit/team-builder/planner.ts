@@ -166,14 +166,16 @@ export class Planner {
   private changed() {
     this.host.requestUpdate();
   }
-  restore(owner: string | null | undefined) {
-    const key = `haneoka.planner.v1.${this.host.server}.${owner || "local"}`;
+  restore() {
+    const owner = this.host.snapshot?.owner;
+    const account = this.host.gameAccount?.id;
+    const key = owner === undefined ? "" : `haneoka.planner.v1.${this.host.server}.${owner ?? "local"}${account && !account.startsWith("legacy-") ? "." + account : ""}`;
     if (this.key === key) return;
     this.key = key;
     this.close();
     this.document = emptyPlanner();
     try {
-      const text = localStorage.getItem(key);
+      const text = key && localStorage.getItem(key);
       if (text) this.document = this.parse(JSON.parse(text));
     } catch {
       this.error = this.host.t("planner.loadFailed", "Planning data could not be loaded");

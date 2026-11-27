@@ -796,6 +796,9 @@ export class EventTracker extends LitElement {
           <section class="detail-section" role="tabpanel" id="event-ranking-total"
             aria-labelledby="event-board-total" ?hidden=${activeBoard !== "total"}>
             ${renderDetailSectionHeading(this.label("totalRanking", "Total song ranking"), "works")}
+            <a class="button button--tonal" href=${eventChallengeHref(this.locale, this.sourceServer(), event.id, undefined, this.region, true)}>
+              ${clientText(this.locale, "tools.teamBuilder.challenge.all", "All challenge songs")}
+            </a>
             ${totalReadable ? html`
               <song-ranking
                 .active=${activeBoard === "total"}

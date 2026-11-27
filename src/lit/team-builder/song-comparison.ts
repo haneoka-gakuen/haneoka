@@ -74,7 +74,7 @@ export class SongComparison {
       s = this.effectiveSettings;
     const team = this.team();
     return canonical([
-      host.snapshot?.owner,
+      host.checkpointOwner,
       host.server,
       host.data?.identity,
       host.data?.crossServer,
@@ -98,7 +98,7 @@ export class SongComparison {
     const signature = this.context(),
       selection = canonical(this.settings.songs);
     const owner = canonical([
-      this.host.snapshot?.owner,
+      this.host.checkpointOwner,
       this.host.server,
       this.host.data?.identity,
       this.host.data?.crossServer,
@@ -252,7 +252,8 @@ export class SongComparison {
       signature = this.signature;
     const team = structuredClone(this.team()),
       settings = structuredClone(this.effectiveSettings);
-    const current = () => generation === this.generation && host.ownsTask(token) && this.context() === signature;
+    const current = () => generation === this.generation && host.ownsTask(token) && host.tab === "song-comparison" &&
+      host.engine === engine && this.context() === signature && canonical(this.settings.songs) === this.selection;
     const queue = this.rows.filter(
       (row) => row.status !== "complete" && (!only || chartKey(row.song) === chartKey(only)),
     );

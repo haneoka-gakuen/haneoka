@@ -891,6 +891,10 @@ def _events(
             rankingDisabled=bool(row.get("_isRankingDisabled")),
             musicRankingDisabled=bool(row.get("_isMusicRankingDisabled")),
             totalMusicRankingDisabled=bool(row.get("_isTotalMusicRankingDisabled")),
+            totalMusicRankingEnabled=(
+                not row["_isTotalMusicRankingDisabled"]
+                if isinstance(row.get("_isTotalMusicRankingDisabled"), bool) else None
+            ),
             rewardGroups=support["groups"],
             pickupCards=pickup_cards,
             recruitments=_event_recruitments(data, identity, gacha),

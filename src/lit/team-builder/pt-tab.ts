@@ -1,6 +1,7 @@
+import type { ComparisonSettings, Formation } from "../../lib/team-builder/song-comparison";
 import { skillRoleControls } from "./skill-role-controls";
 import { farmingRewardPlan, renderRewardPlan } from "./reward-plan-view";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { renderParking } from "./parking-view";
 import { html, nothing, type TemplateResult } from "lit";
 import { live } from "lit/directives/live.js";
@@ -26,9 +27,9 @@ import {
   type PtMeasure,
   type PtScope,
 } from "../../lib/team-builder/pt-recommendation";
-import { completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
+import { clock, completeResponse, improvementPercent, pendingSong } from "../../lib/team-builder/engine/execution";
 import { PtCheckpoint } from "../../lib/team-builder/pt-checkpoint";
-import { renderHit, renderResults } from "./results";
+import { teamFormation, renderHit, renderResults, searchMobileAction } from "./results";
 import {
   renderBuildTab,
   renderBuildRun,
@@ -51,8 +52,10 @@ import { accordion } from "../ui/accordion";
 import { issueField, ptField, ptFieldInvalid } from "./pt-fields";
 import { chartKey, farmingConditions, farmingMode, farmingSettings, resolveLuckSamples, justWindowGoal } from "./workspace-state";
 import type { BuildSettings, FarmingSettings } from "./types";
-import { usesPtResults } from "./score-goal";
-import { changeRewardMode } from "../../lib/team-builder/reward-plan";
+import { stoppedSearchLabel, usesPtResults } from "./score-goal";
+import { sampledLuck } from "./result-metric";
+import { ORIGINAL_SONG_RULES } from "../../lib/team-builder/arena";
+import { changeRewardMode, legacyRewardPlan } from "../../lib/team-builder/reward-plan";
 
 export class PtController {
   parking = false;
@@ -128,8 +131,30 @@ export class PtController {
   private runner: PtRunner | null = null;
   private readonly store = new PtCheckpoint();
   constructor(private readonly host: TeamBuilder) {}
+  get fixedTeam() {
+    const host = this.host;
+    return host.tab === "pt" && host.settings.rewardMode !== "plan" && !this.parking ? host.settings.farming.fixedTeam : null;
+  }
+  openRewards(team: Formation, songs: SongRef[], conditions: {
+    event?: ComparisonSettings["farmingEvent"]; just?: number | null; players?: number; songRules?: BuildSettings["songRules"];
+  }) {
+    const host = this.host;
+    host.setTab("pt");
+    this.parking = false;
+    const farming: FarmingSettings = { ...host.settings.farming, fixedTeam: structuredClone(team),
+      play: conditions.event?.challenge ? "challenge" : "gekiso",
+      ...(conditions.players ? { rewardPlayers: conditions.players } : {}),
+    };
+    if (farming.ptCycle && farming.play === "gekiso" && !farming.rewardPlan && farmingMode(farming) === "event")
+      farming.rewardPlan = legacyRewardPlan(farmingConditions(farming));
+    host.updateSettings({
+      farming, rewardMode: farmingMode(farming), songs: structuredClone(songs), songRules: conditions.songRules,
+      ...(conditions.event ? { eventId: conditions.event.id } : {}),
+      manualEventEnabled: false, ptJust: conditions.just ?? host.settings.ptJust,
+    });
+  }
   private get owner() {
-    return this.host.snapshot?.owner ?? "local";
+    return this.host.checkpointOwner;
   }
   request(): EngineRequest | null {
     const { view } = this.host;
@@ -247,6 +272,7 @@ export class PtController {
     return (
       !!this.job &&
       (this.host.settings.rewardMode !== "recommendation" ||
+        !!this.job.presentation && this.job.presentation.scope !== this.host.searchSettings.scope ||
         canonical([this.job.request, this.job.cycle, this.job.owner, this.host.data?.identity]) !==
           this.inputSignature() ||
         this.job.owner !== this.owner ||
@@ -258,6 +284,9 @@ export class PtController {
     if (!data || this.host.snapshot?.owner === undefined) return;
     const key = `${data.identity.server}|${this.owner}|${data.identity.releaseId}`;
     if (key === this.restoreKey) return;
+    this.stop();
+    this.job = null;
+    this.dataFingerprint = "";
     this.restoreKey = key;
     const generation = ++this.generation;
     const owner = this.owner;
@@ -292,19 +321,25 @@ export class PtController {
     const host = this.host;
     if (!host.data || !host.results || !host.resultInputs || !host.resultSettings || !this.dataFingerprint
         || !completeResponse(host.results) || host.results.stopReason !== "complete") return;
+    const generation = this.generation;
     try {
       await this.store.saveResult({ server: host.data.identity.server, owner: this.owner, dataFingerprint: this.dataFingerprint,
         contextKey: host.resultsFor, request: host.resultInputs, response: host.results, settings: host.resultSettings,
         session: host.resultSession, updatedAt: Date.now() });
     } catch {
-      this.storageError = true;
+      if (generation === this.generation) this.storageError = true;
     }
   }
   stop() {
+    if (!this.task) return;
     ++this.generation;
-    if (this.task && this.host.ownsTask(this.task)) {
+    if (this.host.ownsTask(this.task)) {
       this.runner?.stop();
+      this.host.releaseTask(this.task);
     }
+    this.task = null;
+    this.runner = null;
+    this.running = false;
     this.host.requestUpdate();
   }
   dispose() {
@@ -319,9 +354,7 @@ export class PtController {
     this.storageError = false;
     this.error = "";
   }
-  async start(resume: boolean, scope?: PtScope) {
-    // Results stream in as they are found; the search runs until every song is proven or it is stopped.
-    const deadline = Infinity;
+  async start(resume: boolean, scope?: PtScope, untilProven = false) {
     this.sync();
     const host = this.host;
     host.submitted = true;
@@ -353,15 +386,20 @@ export class PtController {
     const task = host.acquireTask("pt");
     if (!task) return;
     this.task = task;
-    const generation = this.generation;
+    const generation = ++this.generation;
     const cycle = this.cycle();
     const signature = this.inputSignature();
+    const engine = host.engine;
+    const cardScope = host.searchSettings.scope;
+    const current = () => generation === this.generation && host.ownsTask(task) && host.engine === engine &&
+      host.tab === "pt" && host.settings.rewardMode === "recommendation" && cardScope === host.searchSettings.scope && signature === this.inputSignature();
     this.running = host.running = true;
     this.error = "";
     host.requestUpdate();
     try {
       let job = this.job;
       const fingerprint = await ptFingerprint(request, this.dataFingerprint, this.owner, cycle);
+      if (!current()) return;
       if (!resume || !job || job.fingerprint !== fingerprint) {
         if (resume) throw new Error("pt-input-changed");
         job = await createPtJob(
@@ -376,33 +414,33 @@ export class PtController {
           },
           cycle,
         );
-        job.presentation = { scope: host.settings.scope, maxAccountBonuses: host.settings.maxAccountBonuses };
+        job.presentation = { scope: host.searchSettings.scope, maxAccountBonuses: host.searchSettings.maxAccountBonuses };
       }
-      if (generation !== this.generation || signature !== this.inputSignature()) return;
+      if (!current()) return;
+      if (!untilProven || job.budgetSeconds === undefined) job.budgetSeconds = host.searchSettings.timeLimit;
+      const deadline = untilProven || job.budgetSeconds === null ? Infinity : clock() + job.budgetSeconds * 1000;
       this.job = job;
       host.calculationSubmitted();
       host.farmResultMode = "recommendation";
       this.runner = new PtRunner(
-        host.engine,
+        engine,
         this.store,
-        (next) => {
-          if (generation !== this.generation || signature !== this.inputSignature()) return;
-          this.job = next;
-          host.requestUpdate();
-        },
+        () => host.requestUpdate(),
         () => {
           if (generation === this.generation) {
             this.storageError = true;
             host.requestUpdate();
           }
         },
+        current,
       );
       await this.runner.run(job, scope, deadline);
     } catch (error) {
-      if (generation === this.generation) this.error = host.errorReason(error);
+      if (current()) this.error = host.errorReason(error);
     } finally {
       if (this.task === task) {
         this.running = false;
+        this.runner = null;
         this.task = null;
       }
       host.releaseTask(task);
@@ -461,6 +499,7 @@ function renderSetup(host: TeamBuilder): TemplateResult {
     f = farmingConditions(s.farming),
     catalog = host.catalog!;
   const set = (patch: Partial<FarmingSettings>) => host.updateFarming(patch);
+  const fixedTeam = host.pt.fixedTeam;
   const event = s.eventId === null ? undefined : host.master!.events.get(s.eventId);
   const challengeSongs = catalog.challengeSongs(s.eventId).map((row) => row.liveMusicId);
   const normal = !event || !!event.livePoints.size || !!event.liveRewards.length;
@@ -608,7 +647,14 @@ function renderSetup(host: TeamBuilder): TemplateResult {
           `
         : nothing
     }
-    ${renderCandidates(host)}
+    ${fixedTeam ? html`<section class="surface stack" id="tb-cards">
+      ${sectionHeading({ icon: "groups", label: host.t("farm.fixedTeam", "Fixed team") })}
+      ${teamFormation(host, fixedTeam.members.flatMap((member, i) => member === null ? [] :
+        [{ member, snap: fixedTeam.snaps[i] ?? null }]), fixedTeam.leader, false)}
+      <button type="button" class="button button--text" @click=${() => set({ fixedTeam: null })}>
+        ${host.t("farm.releaseTeam", "Choose from my cards")}
+      </button>
+    </section>` : renderCandidates(host)}
       ${host.searchSettings.ptMode === "gekiso" ? skillRoleControls(host) : nothing}
     <section class="surface stack">
       ${sectionHeading({ icon: "piano", label: host.t("farm.conditions", "Play and account conditions") })}
@@ -687,15 +733,15 @@ function renderSetup(host: TeamBuilder): TemplateResult {
                       options: [1,3,5,10,15,20].map(k => ({value: String(k), label: String(k)})),
                       onSelect: value => set({k: Number(value)}),
                     })}
-                    ${choiceField({
-                      type: "select",
-                      label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
-                      options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
-                        ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
-                      onSelect: value => set({timeLimit: Number(value) || null}),
-                    })}
                   `
             }
+            ${choiceField({
+              type: "select",
+              label: host.t("timeLimit", "Time limit"), value: String(f.timeLimit ?? 0),
+              options: [0,3,5,15,60].map(limit => ({value: String(limit), label: limit
+                ? host.t("secondsShort", "{count} s", {count: limit}) : host.t("noLimit", "Until proven")})),
+              onSelect: value => set({timeLimit: Number(value) || null}),
+            })}
           </div>
         `,
       })}
@@ -748,6 +794,7 @@ function renderRun(host: TeamBuilder): TemplateResult {
   const job = pt.job;
   const blocked = host.running || host.manualBusy || !pt.dataFingerprint;
   const resume = !!job && !ptComplete(job) && !pt.stale;
+  const budget = host.searchSettings.timeLimit;
   return html`
     <div class="tb-run">
       ${
@@ -783,8 +830,10 @@ function renderRun(host: TeamBuilder): TemplateResult {
                 ?disabled=${blocked}
                 @click=${() => void pt.start(resume)}
               >
-                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
+                ${icon("search", 20)}${host.submitted && host.inputIssues(true).length ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues(true).length }) : resume && budget ? host.t("search.extend", "Search another {count} s", { count: budget }) : resume ? host.t("continueOptimal", "Continue verifying optimality") : pt.stale ? host.t("rerun", "Search again") : host.t("farm.run", "Recommend songs and teams")}
               </button>
+              ${resume && budget ? html`<button class="button button--text" type="button" ?disabled=${blocked}
+                @click=${() => void pt.start(true, undefined, true)}>${host.t("search.verify", "Continue until optimal")}</button>` : nothing}
             `
       }
       ${
@@ -854,45 +903,68 @@ function renderFollowUp(host: TeamBuilder, key: string | EngineRequest, measure:
         ${field(t("startingCp", "Starting CP"), cp, 0, value => update({ cp: value }))}
       </div>
       <dl class="spec-list tabular">
+        <div><dt>${host.t("pointsPerPlay", "Event points per play")}</dt><dd>${number(counts.perPlay.points)}</dd></div>
+        <div><dt>${host.t("rewardPlan.itemsPerPlay", "Badges per play")}</dt><dd>${number(counts.perPlay.items)}</dd></div>
         <div><dt>${t("challengeRunCount", "Challenge Live plays")}</dt><dd>${number(counts.plays)}</dd></div>
         <div><dt>${t("remainingCp", "Remaining CP")}</dt><dd>${number(counts.remaining)}</dd></div>
-        <div><dt>${t("points", "Event points")}</dt><dd>${total(counts.points, baseline?.points)}</dd></div>
-        <div><dt>${t("items", "Shop medals")}</dt><dd>${total(counts.items, baseline?.items)}</dd></div>
+        <div><dt>${t("challengePt", "PT from challenge plays")}</dt><dd>${number(counts.followUp.points)}</dd></div>
+        <div><dt>${t("challengeItems", "Medals from challenge plays")}</dt><dd>${number(counts.followUp.items)}</dd></div>
+        <div><dt>${t("totalPt", "Total PT")}</dt><dd>${total(counts.points, baseline?.points)}</dd></div>
+        <div><dt>${t("totalItems", "Total medals")}</dt><dd>${total(counts.items, baseline?.items)}</dd></div>
       </dl>
     </section>
     ${renderHit(host, challenge, -1, { rank: icon("swords", 18), subtitle: t("challengeBest", "Challenge team"), stale })}
   `;
 }
 
-function renderRanking(host: TeamBuilder): TemplateResult {
+function rankingSelection(host: TeamBuilder, job: PtJob) {
   const pt = host.pt;
-  const t = (key: string, fallback: string, params?: Record<string, string | number>) =>
-    host.t(`pt.${key}`, fallback, params);
-  const job = pt.job;
-  if (!job) return renderChecklist(host, host.inputIssues(true));
-  const measure = job.request.goal.kind === "event" && job.request.goal.measure === "items" ? "items" : "points";
+  const measure: PtMeasure = job.request.goal.kind === "event" && job.request.goal.measure === "items" ? "items" : "points";
   const ranking = ptSongRanking(job, measure);
-  const challenge = ptChallengeBest(job, measure);
-  const gap = ptComplete(job)
+  const filtered = host.analysis.filter(ranking);
+  const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
+  return { measure, ranking, filtered, shown, challenge: ptChallengeBest(job, measure) };
+}
+
+function renderRanking(host: TeamBuilder, selection: ReturnType<typeof rankingSelection> | null): TemplateResult {
+  const pt = host.pt;
+  const t = (key: string, fallback: string, params?: Record<string, string | number>) => host.t(`pt.${key}`, fallback, params);
+  const job = pt.job;
+  if (!job || !selection) return renderChecklist(host, host.inputIssues(true));
+  const { measure, ranking, challenge, filtered, shown } = selection;
+  const complete = ptComplete(job);
+  const gap = complete || pt.stale
     ? null
     : improvementPercent(
         job.tasks
           .filter((task) => task.measure === measure && task.route === "live")
           .map((task) => task.result ?? pendingSong(task.song)),
       );
-  const filtered = host.analysis.filter(ranking);
   const followUpCharts = job.cycle ? ptChallengeCharts(job, measure) : [];
-  const shown = pt.showAll ? filtered : filtered.slice(0, job.scope === "top-one" ? 1 : 5);
   const number = (n: number) => new Intl.NumberFormat(host.locale, { maximumFractionDigits: 1 }).format(n);
   const settled = job.tasks.filter(
     (task) => task.status === "complete" || task.status === "empty" || task.status === "pruned",
   ).length;
+  const status = () => {
+    if (pt.stale) return host.t("recomputeNeeded", "Recalculation needed");
+    if (complete) {
+      if (!ranking.length) return host.t("challenge.empty", "No eligible team");
+      const goal = job.request.goal;
+      const sampled = ranking.some(hit => sampledLuck(host, hit)) ||
+        goal.kind === "event" && !!goal.gekiso?.luckSamples &&
+          host.hasMission("Luck", goal.songs, job.request.songRules ?? ORIGINAL_SONG_RULES);
+      return sampled ? host.t("sampledProven", "Optimal within samples") : host.t("search.optimal", "Optimal within the selected search");
+    }
+    const hasCandidate = ranking.length > 0 || !!challenge;
+    if (job.stopReason) return stoppedSearchLabel(host, job.stopReason, hasCandidate);
+    return hasCandidate ? host.t("search.candidate", "Candidate found") : host.t("noCandidate", "No recommendation yet");
+  };
   return html`
     <section id="pt-results" class="stack">
       <div class="pt-results-bar">
         ${host.analysis.filters()}
         <span class="tb-proof">
-          ${ptComplete(job) ? ranking.some(hit => hit.gekiso?.sampled) ? host.t("sampledProven", "Optimal within samples") : host.t("proven", "Proven optimal") : host.t("recommendation", "Recommendation")}${
+          ${status()}${
             gap === null
               ? nothing
               : html`
@@ -901,13 +973,6 @@ function renderRanking(host: TeamBuilder): TemplateResult {
           }
         </span>
         <span class="pt-progress tabular">${settled}/${job.tasks.length}</span>
-        ${
-          pt.stale
-            ? html`
-                <span class="chip chip--static"><span class="chip__label">${t("stale", "Inputs changed")}</span></span>
-              `
-            : nothing
-        }
       </div>
       <md-linear-progress
         style=${pt.running ? "" : "visibility: hidden"}
@@ -922,9 +987,9 @@ function renderRanking(host: TeamBuilder): TemplateResult {
             : nothing
       }
       ${
-        !ranking.length && !pt.running
+        !filtered.length
           ? html`
-              <div class="state"><p class="state__title">${host.t("noCandidate", "No recommendation yet")}</p></div>
+              <div class="state"><p class="state__title">${host.analysis.emptyRewards(ranking.length > 0, pt.noFeasibleTeams, pt.running)}</p></div>
             `
           : nothing
       }
@@ -1034,12 +1099,18 @@ export function renderPtTab(host: TeamBuilder): TemplateResult {
   `;
   if (host.pt.parking) return renderParking(host, modes);
   if (mode === "plan") return renderBuildTab(host, modes);
+  const recommendation = usesPtResults(host);
+  const job = host.pt.job;
+  const selection = recommendation && job ? rankingSelection(host, job) : null;
   return toolLayout(
     host,
     html`
       ${modes}${renderSetup(host)} ${host.pt.showIssues && host.pt.issues.length ? renderIssues(host) : nothing}
     `,
     mode === "recommendation" ? renderRun(host) : renderBuildRun(host, false),
-    usesPtResults(host) ? renderRanking(host) : renderResults(host, rewardFollowUp(host)),
+    recommendation ? renderRanking(host, selection) : renderResults(host, rewardFollowUp(host)),
+    { mobileAction: recommendation
+      ? selection && job && ptComplete(job) && !host.pt.stale && mobileSaveAction(host, selection.shown.length + Number(!!selection.challenge))
+      : searchMobileAction(host) },
   );
 }

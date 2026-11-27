@@ -43,7 +43,7 @@ import { isContentListed, isContentVisible } from "../lib/content-release";
 import { localizedContent } from "./ui/localized-content";
 import { renderLevelSwitch } from "./ui/level-switch";
 import { clientText } from "../i18n/client";
-import { eventChallengeHref } from "../lib/event-challenge-route";
+import { eventChallengeHref, releaseSongTotal } from "../lib/event-challenge-route";
 import { resourcePath } from "../lib/resource-route";
 import { isPublicReleaseServer } from "../lib/temporary-public-routing";
 import {
@@ -1109,7 +1109,9 @@ function renderRotatingOverview(c: Controller, item: Item) {
     ["musicRankingDisabled", "eventSongRanking", "Song ranking"],
     ["totalMusicRankingDisabled", "eventTotalSongRanking", "Total song ranking"],
   ];
-  const activeRankings = rankingFields.filter(([field]) => item[field] === false);
+  const server = c.unionDetail?.activeServer ?? c.itemSourceServer(item);
+  const activeRankings = rankingFields.filter(([field]) => field === "totalMusicRankingDisabled" && item.kind === "game-event"
+    ? releaseSongTotal(server, Number(item.id), item.totalMusicRankingEnabled) === true : item[field] === false);
   return html`
     <section class="detail-section">
       ${renderDetailSectionHeading(c.label("details", "Details"), "details")}
@@ -1223,6 +1225,10 @@ function renderChallengeLinks(c: Controller, item: Item) {
   const event = String(item.id);
   return html`<section class="detail-section">
     ${renderDetailSectionHeading(label, "songs")}
+    ${releaseSongTotal(server, Number(event), item.totalMusicRankingEnabled) ? html`<a class="button button--tonal"
+      href=${eventChallengeHref(locale, server, event, undefined, undefined, true)}>
+      ${clientText(locale, "tools.teamBuilder.challenge.all", "All challenge songs")}
+    </a>` : nothing}
     ${tracks.length ? html`<div class="collection collection--song">
       ${tracks.map(({ track, song, id }) => {
         const options = c.songTileOptions(song);

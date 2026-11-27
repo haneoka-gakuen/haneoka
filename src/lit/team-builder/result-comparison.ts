@@ -14,7 +14,7 @@ import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { isCpChallenge, resultRequest, resultSettings, usesPtResults, manualResultSource, resultOrderIndex } from "./score-goal";
 import { manualResultHit } from "./manual-results";
-import { resultMetric, type ResultMetric } from "./result-metric";
+import { resultMetric, sampledLuck, type ResultMetric } from "./result-metric";
 import { cardScopeLabel } from "./card-input-controls";
 
 export interface ComparisonEntry {
@@ -27,6 +27,7 @@ export interface ComparisonEntry {
   metric: ResultMetric;
   listed: boolean;
   proven: boolean;
+  sampled: boolean;
   placements?: number[];
   selectedOrder?: number;
 }
@@ -111,6 +112,7 @@ function entry(
     metric: resultMetric(host, hit, settings),
     listed: true,
     proven: result.proven,
+    sampled: sampledLuck(host, hit),
     placements: result.placements?.slice(),
     selectedOrder,
   };
@@ -249,7 +251,15 @@ export class ResultComparison {
   private titleView(host: TeamBuilder, item: ComparisonEntry) {
     return item.hit.song ? html`<span lang=${host.catalog!.songTitleLanguage(item.hit.song.songId)}>${host.catalog!.songTitle(item.hit.song.songId)}</span> / ${host.catalog!.difficultyLabel(item.hit.song.songId, item.hit.song.difficulty)}` : item.metric.label;
   }
+  compareAction(host: TeamBuilder) {
+    return {
+      label: `${host.t("compareTeams", "Compare teams")} / ${this.items.length}/3`,
+      disabled: this.items.length < 2,
+      run: () => { this.open = true; host.requestUpdate(); },
+    };
+  }
   tray(host: TeamBuilder) {
+    const compare = this.compareAction(host);
     return this.items.length
       ? html`
           <div class="tb-compare-tray" aria-label=${host.t("comparison", "Comparison")}>
@@ -266,16 +276,8 @@ export class ResultComparison {
                 ),
               )}
             </div>
-            <button
-              class="button button--tonal"
-              ?disabled=${this.items.length < 2}
-              @click=${() => {
-                this.open = true;
-                host.requestUpdate();
-              }}
-            >
-              ${host.t("compareTeams", "Compare teams")} / ${this.items.length}/3
-            </button>
+            <button class="button button--tonal" ?disabled=${compare.disabled}
+              @click=${compare.run}>${compare.label}</button>
           </div>
         `
       : nothing;
@@ -405,7 +407,7 @@ export class ResultComparison {
                   <span>${item.metric.label}</span>
                   <small>
                     ${item.source === "manual" ? host.t("manualTeam", "Build a team by hand")
-                      : item.proven && item.hit.gekiso?.sampled ? host.t("sampledProven", "Optimal within samples") : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
+                      : item.proven && item.sampled ? host.t("sampledProven", "Optimal within samples") : host.t(item.proven ? "proven" : "recommendation", item.proven ? "Proven optimal" : "Recommendation")}
                   </small>
                 `,
               )}

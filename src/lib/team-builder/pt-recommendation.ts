@@ -34,6 +34,8 @@ export interface PtJob {
   cycle: PtCycleInput | null;
   /** Missing on older jobs, which retain their original exhaustive chart scope. */
   scope?: PtScope;
+  budgetSeconds?: number | null;
+  stopReason?: "budget" | "cancelled";
   assumptions: string[];
   presentation?: { scope: "box" | "theoretical"; maxAccountBonuses?: boolean };
   createdAt: number;
@@ -175,17 +177,20 @@ export function ptFollowUpTotals(live: EngineHit, challenge: EngineHit, measure:
       ? event.directMean ?? event.mean - (event.convertedMean ?? 0) : event.otherMean);
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   };
-  const total = (metric: PtMeasure) => {
-    const live = reward(normal, metric);
-    const followUp = reward(next, metric);
-    return live !== null && (plays === 0 || followUp !== null)
-      ? live * normalPlays + (followUp ?? 0) * plays : null;
+  const settlement = (metric: PtMeasure) => {
+    const perPlay = reward(normal, metric);
+    const perChallenge = reward(next, metric);
+    const followUp = plays === 0 ? 0 : perChallenge === null ? null : perChallenge * plays;
+    return { perPlay, followUp, total: perPlay === null || followUp === null ? null : perPlay * normalPlays + followUp };
   };
+  const points = settlement("points"), items = settlement("items");
   return {
     plays,
     remaining: (budget - plays * consumption) / orders,
-    points: total("points"),
-    items: total("items"),
+    perPlay: { points: points.perPlay, items: items.perPlay },
+    followUp: { points: points.followUp, items: items.followUp },
+    points: points.total,
+    items: items.total,
   };
 }
 
@@ -236,21 +241,27 @@ export interface PtJobStore {
 export class PtRunner {
   running = false;
   private stopped = false;
+  private checkpointStop?: () => void;
   constructor(
     private readonly engine: PtEngine,
     private readonly store: PtJobStore,
     private readonly changed: (job: PtJob) => void,
     private readonly storageFailed: () => void,
+    private readonly current: () => boolean = () => true,
   ) {}
   stop() {
+    if (this.stopped || !this.running) return;
     this.stopped = true;
+    this.checkpointStop?.();
     this.engine.cancel();
   }
   async run(job: PtJob, scope: PtScope = job.scope ?? "top-one", deadline = clock() + 3000): Promise<void> {
     if (this.running) throw new Error("pt-busy");
     this.running = true;
     this.stopped = false;
+    delete job.stopReason;
     job.scope = scope;
+    let budgetReached = false;
     let savedAt = 0;
     let shownAt = 0;
     const publish = async (force = false) => {
@@ -266,6 +277,15 @@ export class PtRunner {
       } catch {
         this.storageFailed();
       }
+    };
+    const active = () => this.running && !this.stopped && this.current();
+    const requeue = () => {
+      for (const task of job.tasks) if (task.status === "running") task.status = "queued";
+    };
+    this.checkpointStop = () => {
+      requeue();
+      job.stopReason = "cancelled";
+      void publish(true);
     };
     try {
       const initiallyComplete = proofStatus(job);
@@ -300,10 +320,13 @@ export class PtRunner {
         };
       };
       const accept = (task: PtTask, response: EngineResponse) => {
-        if (this.stopped) return;
+        if (!active()) return;
+        if (response.stopReason === "budget") budgetReached = true;
         const result = response.results.find(r => r.song && chartKey(r.song) === chartKey(task.song));
         if (!result) return;
-        if (!result.hits.length && !result.proven) result.hits = task.result?.hits ?? [];
+        const previous = task.result?.hits[0];
+        if (previous && !result.proven && (!result.hits.length || compareHit(previous, result.hits[0]!) < 0))
+          result.hits = [previous];
         if (result.exclusion && result.hits.length && result.hits[0]!.key >= result.exclusion.key) {
           result.proven = true;
           result.bound = null;
@@ -316,7 +339,7 @@ export class PtRunner {
         task.status = result.exclusion ? "pruned" : result.proven ? (result.hits.length ? "complete" : "empty") : "partial";
       };
       const snapshot = (task: PtTask, value: EngineSnapshot) => {
-        if (this.stopped || value.contextKey !== job.fingerprint) return;
+        if (!active() || value.contextKey !== job.fingerprint) return;
         const first = !job.tasks.some(entry => entry.result?.hits.length) && value.response.overall.length > 0;
         accept(task, value.response);
         void publish(first);
@@ -326,7 +349,7 @@ export class PtRunner {
       const completed = (task: PtTask) => chartComplete(task) || chartExcluded(job, task);
       /** Runs one task; false once the run was stopped. */
       const step = async (task: PtTask, index: number): Promise<boolean> => {
-        if (this.stopped || !remaining(deadline)) return false;
+        if (!active() || !remaining(deadline)) return false;
         if (completed(task)) return true;
         const challenge = challengeFor(task);
         if (job.cycle && task.route === "live" && !challenge) return true;
@@ -337,22 +360,17 @@ export class PtRunner {
           .map(next => next.song));
         task.status = "running";
         await publish();
-        if (this.stopped) {
-          task.status = "queued";
-          return false;
-        }
+        if (!active()) return false;
         try {
           const request = { ...buildRequest(task, challenge), cutoff: ptTaskCutoff(job, task) };
           const response = await this.engine.run(request, undefined, value => snapshot(task, value));
           accept(task, response);
         } catch (error) {
-          if (this.stopped) {
-            task.status = "queued";
-            return false;
-          }
+          if (!active()) return false;
           task.status = "failed";
           task.error = error instanceof Error ? error.message : String(error);
         }
+        if (!active()) return false;
         await publish();
         return true;
       };
@@ -368,19 +386,20 @@ export class PtRunner {
         if (pending.length < 2) continue;
         try {
           await runBatch(pending.map(next => buildRequest(next, challengeFor(next))), (i, response) => {
+            if (!active()) return;
             accept(pending[i]!, response);
             void publish();
           }, {
             prepare: (i, request) => {
               const next = pending[i]!;
-              next.status = "running";
+              if (active()) next.status = "running";
               return { ...request, cutoff: ptTaskCutoff(job, next) };
             },
             snapshot: (i, value) => snapshot(pending[i]!, value),
           });
           break;
         } catch {
-          if (this.stopped) break;
+          if (!active()) break;
           runBatch = undefined;
           // Retry unresolved charts via the original per-chart path so a
           // failed Worker or resource does not discard completed results.
@@ -388,9 +407,13 @@ export class PtRunner {
         }
       }
     } finally {
-      for (const task of job.tasks) if (task.status === "running") task.status = "queued";
+      if (active()) {
+        requeue();
+        if (!ptComplete(job) && (budgetReached || !remaining(deadline))) job.stopReason = "budget";
+        await publish(true);
+      }
+      this.checkpointStop = undefined;
       this.running = false;
-      await publish(true);
     }
   }
 }

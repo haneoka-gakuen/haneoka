@@ -1,0 +1,54 @@
+{
+  "server": "intl",
+  "event": 5,
+  "song": {
+    "songId": 100116,
+    "difficulty": 3
+  },
+  "members": [
+    51,
+    2,
+    3,
+    4,
+    5
+  ],
+  "locked": 2,
+  "leader": 51,
+  "snaps": [],
+  "playMode": "ap",
+  "frameRate": 60,
+  "scope": "box",
+  "criterion": "max",
+  "aggregation": "individual",
+  "timeLimit": 3,
+  "k": 1,
+  "releaseId": "r-2e427037b9e4e81159c8",
+  "unknownPolicy": "max",
+  "player": {
+    "characterRanks": {},
+    "characterTotalRank": null,
+    "bandItems": {},
+    "vipRank": null,
+    "characterMemory": {},
+    "musicMemory": {}
+  },
+  "gekiso": {
+    "accuracy": {
+      "great": 0,
+      "just": 1,
+      "missEvery": 0
+    },
+    "ranks": [
+      1,
+      1,
+      1
+    ],
+    "seeds": 0
+  },
+  "expectedScore": {
+    "build": 1781921,
+    "challenge": 1781921,
+    "live": 4320356.750348805
+  },
+  "engineCommit": "097f96b7470696d8490372dc0a8e3976ad4ff394"
+}

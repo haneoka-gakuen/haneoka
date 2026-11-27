@@ -460,6 +460,18 @@
   }
 
   /* ---------- Tool layout ---------- */
+  .team-builder gekiso-online-room .tb-room-connection {
+    display: inline-grid;
+  }
+  .team-builder gekiso-online-room .tb-room-connection > span {
+    grid-area: 1 / 1;
+  }
+  .team-builder gekiso-online-room .tb-room-connection > [aria-hidden="true"] {
+    visibility: hidden;
+  }
+  .team-builder gekiso-online-room :is(.tb-operation:empty, .tb-mobile-operation:has(> .tb-operation:empty)) {
+    display: none;
+  }
   .tb-tool {
     display: grid;
     min-width: 0;
@@ -662,9 +674,6 @@
   .tb-conditions .tb-config-body {
     flex: 1 1 auto;
     padding-block-start: 0;
-  }
-  .tb-conditions .tb-compare-tray {
-    display: none;
   }
   @media (max-width: 639px) {
     .tb-conditions {

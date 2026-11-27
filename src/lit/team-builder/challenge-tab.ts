@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: An account's challenge draft, release-scoped event rules and an optional event or ranking link.
-// Output: One eligible chart under the event's score rules and a return link to its source.
+// Output: A single chart or the event totals under the selected region’s ranking rules, with a return link to the source.
 // Pos: [Map](../L2-2.md); event challenge task in the shared team workspace.
 // Effects/Dependencies: Updates the challenge draft and current URL, delegates search and saving to the existing engine and results.
 import { html, nothing } from "lit";
@@ -8,8 +8,10 @@ import type { TeamBuilder } from "../team-builder";
 import type { BuildSettings } from "./types";
 import { playConditions, renderBuildRun, renderCandidates } from "./build-tab";
 import { choiceField, sectionHeading } from "./catalog";
-import { renderResults } from "./results";
-import { toolLayout } from "./tool-layout";
+import { renderResults, searchMobileAction } from "./results";
+import { countChallengeSongs } from "../../lib/team-builder/challenge-total";
+import { ChallengeTotal, totalControls, totalResults } from "./challenge-total";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 
 function queryInteger(params: URLSearchParams, name: string, minimum = 1) {
   const raw = params.get(name);
@@ -22,7 +24,8 @@ export class ChallengeController {
   private route = new URLSearchParams();
   private unavailable: Pick<BuildSettings, "eventId" | "songs"> | null = null;
 
-  constructor(private readonly host: TeamBuilder) {}
+  readonly total: ChallengeTotal;
+  constructor(private readonly host: TeamBuilder) { this.total = new ChallengeTotal(host); }
 
   readRoute(params: URLSearchParams) {
     this.route = new URLSearchParams(params);
@@ -31,12 +34,16 @@ export class ChallengeController {
   clearOwnerRoute() {
     this.readRoute(new URLSearchParams());
     const url = new URL(location.href);
-    for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge"])
+    for (const key of ["event", "challenge", "song", "difficulty", "region", "returnEvent", "returnChallenge", "ranking", "returnBoard"])
       url.searchParams.delete(key);
     if (url.href !== location.href) history.replaceState(history.state, "", url);
   }
   get settings(): BuildSettings {
-    return this.unavailable ? { ...this.host.settings, ...this.unavailable } : this.host.settings;
+    const s = this.host.settings;
+    if (this.unavailable) return { ...s, ...this.unavailable };
+    if (s.challengeTotal) return { ...s, songs: this.total.selected ? this.total.charts(s.eventId) : [],
+      aggregation: this.total.shared ? "mean" : "individual", criterion: this.total.shared ? "mean" : "max" };
+    return s;
   }
 
   events() {
@@ -47,9 +54,13 @@ export class ChallengeController {
   }
 
   tracks(eventId: number | null) {
-    const { catalog } = this.host;
-    return eventId === null || !catalog ? [] : catalog.challengeSongs(eventId)
-      .filter(track => catalog.songVisible(track.liveMusicId) && catalog.difficultyRows(track.liveMusicId).length);
+    const { catalog, data } = this.host;
+    if (eventId === null || !catalog) return [];
+    const regional = this.total.rankedEvent(eventId);
+    return catalog.challengeSongs(eventId).filter(track =>
+      catalog.songVisible(track.liveMusicId) && catalog.difficultyRows(track.liveMusicId).length > 0 &&
+      (regional?.challenges.find(row => Number(row.id) === track.id)?.enabled ??
+        data?.events[String(eventId)]?.musicRankingDisabled !== true));
   }
 
   private chart(songId: number, requested: number | null) {
@@ -76,14 +87,16 @@ export class ChallengeController {
       const selected = tracks.find(track => (challenge === null || challenge === track.id) && (song === null || song === track.liveMusicId));
       songs = selected ? this.chart(selected.liveMusicId, difficulty) : [];
     } else if (requestedEvent !== null && current.eventId !== requestedEvent) songs = [];
-    const selection = { eventId: event?.id ?? null, songs };
+    const challengeTotal = this.route.get("ranking") === "total" ||
+      (!this.wantedEvent && !!current.challengeTotal);
+    const selection = { eventId: event?.id ?? null, songs, challengeTotal };
     if ((requestedEvent !== null && !event) || (this.wantedChart && !songs.length)) {
       this.unavailable = selection;
     } else {
       this.unavailable = null;
       const challengeBoard = this.routeBoard();
       const oldSong = current.songs[0], newSong = songs[0];
-      if (selection.eventId !== current.eventId || oldSong?.songId !== newSong?.songId || oldSong?.difficulty !== newSong?.difficulty ||
+      if (challengeTotal !== !!current.challengeTotal || selection.eventId !== current.eventId || oldSong?.songId !== newSong?.songId || oldSong?.difficulty !== newSong?.difficulty ||
           challengeBoard?.region !== current.challengeBoard?.region || challengeBoard?.eventId !== current.challengeBoard?.eventId ||
           challengeBoard?.challengeId !== current.challengeBoard?.challengeId) {
         const patch = { ...selection, challengeBoard };
@@ -94,18 +107,20 @@ export class ChallengeController {
     host.requestUpdate();
   }
 
-  select(eventId: number, challengeId?: number, difficulty?: number) {
+  select(eventId: number, challengeId?: number, difficulty?: number, total = false) {
     const track = this.tracks(eventId).find(row => row.id === challengeId);
     const songs = track ? this.chart(track.liveMusicId, difficulty ?? null) : [];
     const url = new URL(location.href);
     const board = this.routeBoard();
     url.searchParams.set("event", String(eventId));
-    for (const key of ["challenge", "song", "difficulty", "returnEvent", "returnChallenge"]) url.searchParams.delete(key);
+    for (const key of ["challenge", "song", "difficulty", "returnEvent", "returnChallenge", "ranking", "returnBoard"]) url.searchParams.delete(key);
     if (board) {
       url.searchParams.set("region", board.region);
       if (eventId !== board.eventId) url.searchParams.set("returnEvent", String(board.eventId));
-      if (challengeId !== board.challengeId) url.searchParams.set("returnChallenge", String(board.challengeId));
+      if (board.challengeId === 0) url.searchParams.set("returnBoard", "total");
+      else if (challengeId !== board.challengeId) url.searchParams.set("returnChallenge", String(board.challengeId));
     }
+    if (total) url.searchParams.set("ranking", "total");
     if (track) {
       url.searchParams.set("challenge", String(track.id));
       url.searchParams.set("song", String(track.liveMusicId));
@@ -113,15 +128,16 @@ export class ChallengeController {
     }
     this.readRoute(url.searchParams);
     history.replaceState(history.state, "", url);
-    this.host.updateSettings({ eventId, songs, challengeBoard: board });
+    this.host.updateSettings({ eventId, songs, challengeBoard: board, challengeTotal: total });
   }
 
   private routeBoard(): NonNullable<BuildSettings["challengeBoard"]> | null {
     if (!this.wantedEvent) return this.host.settings.challengeBoard ?? null;
     const region = this.route.get("region");
     const eventId = queryInteger(this.route, "returnEvent") ?? queryInteger(this.route, "event");
-    const challengeId = queryInteger(this.route, "returnChallenge") ?? queryInteger(this.route, "challenge");
-    if (!eventId || !challengeId) return null;
+    const challengeId = this.route.get("returnBoard") === "total" ? 0 :
+      queryInteger(this.route, "returnChallenge") ?? queryInteger(this.route, "challenge");
+    if (!eventId || challengeId === null || !Number.isFinite(challengeId)) return null;
     return ((this.host.server === "jp" && region === "jp") ||
       (this.host.server === "intl" && (region === "en" || region === "tw" || region === "kr"))) ? { eventId, challengeId, region } : null;
   }
@@ -132,12 +148,14 @@ export class ChallengeController {
     const base = `/${host.server}/${host.locale}/events/`;
     const board = this.routeBoard();
     if (board) {
-      const params = new URLSearchParams({ event: String(board.eventId), region: board.region, board: "challenge", challenge: String(board.challengeId) });
+      const params = new URLSearchParams({ event: String(board.eventId), region: board.region, board: board.challengeId === 0 ? "total" : "challenge" });
+      if (board.challengeId) params.set("challenge", String(board.challengeId));
       return `${base}tracker/?${params}`;
     }
     const event = this.settings.eventId ?? queryInteger(this.route, "event");
     return event && host.data?.events[String(event)] ? `${base}${event}/` : null;
   }
+  get sourceIsTotal() { return this.routeBoard()?.challengeId === 0; }
   get wantedEvent() { return this.route.has("event"); }
   get wantedChart() { return this.route.has("challenge") || this.route.has("song"); }
 }
@@ -150,12 +168,15 @@ export function renderChallengeTab(host: TeamBuilder) {
   const tracks = challenge.tracks(event?.id ?? null);
   const song = s.songs[0];
   const track = tracks.find(row => row.liveMusicId === song?.songId);
+  const total = challenge.total.selected;
   const title = host.t("challenge.title", "Challenge song ranking");
   const max = host.t("criterionMax", "Single-run maximum (ranking)");
   const unavailable = host.t("unavailable", "Unavailable");
-  const summary = [event?.name, track && catalog!.songTitle(track.liveMusicId),
+  const summary = total ? [event?.name, host.t("challenge.all", "All challenge songs"), host.t(challenge.total.shared ? "challenge.shared" : "challenge.individual", max)].join(" / ") : [event?.name, track && catalog!.songTitle(track.liveMusicId),
     song && catalog!.difficultyLabel(song.songId, song.difficulty), max].filter(Boolean).join(" / ");
   const back = challenge.returnHref;
+  const completed = total && challenge.total.result && !challenge.total.stale && !challenge.total.resumable
+    ? countChallengeSongs(challenge.total.result) : null;
   return toolLayout(host, () => html`
     <section class="surface stack">
       ${sectionHeading({ icon: "emoji_events", label: title })}
@@ -166,23 +187,30 @@ export function renderChallengeTab(host: TeamBuilder) {
         onSelect: value => challenge.select(Number(value)),
       })}</div>
       <div id="tb-songs" class="stack" data-tb-field tabindex="-1">
-        ${choiceField({ type: "select", label: host.t("planChallengeSongs", "Challenge songs"), value: String(track?.id ?? ""),
+        ${challenge.total.enabled(event?.id ?? null) ? choiceField({
+          type: "buttons", label: host.t("challenge.board", "Ranking"), value: total ? "all" : "single",
+          options: [{ value: "single", label: host.t("challenge.single", "Single song"), disabled: !tracks.length },
+            { value: "all", label: host.t("challenge.all", "All challenge songs") }],
+          onSelect: value => challenge.select(event!.id, undefined, undefined, value === "all"),
+        }) : nothing}
+        ${!total ? choiceField({ type: "select", label: host.t("planChallengeSongs", "Challenge songs"), value: String(track?.id ?? ""),
           options: [...(track ? [] : [{ value: "", label: (!tracks.length || challenge.wantedChart) ? unavailable : host.t("addSongs", "Choose songs"), disabled: true }]),
             ...tracks.map(row => ({ value: String(row.id), label: catalog!.songTitle(row.liveMusicId) }))],
           onSelect: value => challenge.select(event!.id, Number(value)),
-        })}
-        ${track ? choiceField({ type: "buttons", label: host.t("difficulty", "Difficulty"), value: String(song?.difficulty),
+        }) : nothing}
+        ${total ? totalControls(host) : track ? choiceField({ type: "buttons", label: host.t("difficulty", "Difficulty"), value: String(song?.difficulty),
           options: catalog!.difficultyRows(track.liveMusicId).map(row => ({
             value: String(row.difficulty), label: catalog!.difficultyLabel(track.liveMusicId, Number(row.difficulty)),
           })),
           onSelect: value => challenge.select(event!.id, track.id, Number(value)),
         }) : nothing}
       </div>
-      <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")} / ${max}</span>
+      <span>${host.t("challengeRules", "Challenge live rules (event parameter bonus)")} / ${total && challenge.total.shared ? host.t("criterionMean", "Average score") : max}</span>
       ${playConditions(host, s)}
     </section>
     ${renderCandidates(host)}`, renderBuildRun(host), html`
-      ${back ? html`<a class="button button--text" href=${back}>${host.t(challenge.region ? "challenge.backRanking" : "challenge.backEvent",
+      ${back ? html`<a class="button button--text" href=${back}>${host.t(challenge.sourceIsTotal ? "challenge.backTotal" : challenge.region ? "challenge.backRanking" : "challenge.backEvent",
         challenge.region ? "Return to ranking" : "Return to event")}</a>` : nothing}
-      ${renderResults(host)}`, { summary });
+      ${total ? html`${totalResults(host)}
+        ${!challenge.sourceIsTotal ? html`<a class="button button--text" href=${`/${host.server}/${host.locale}/events/tracker/?event=${s.eventId}&region=${challenge.total.region}&board=total`}>${host.t("challenge.regional","Regional leaderboard")}</a>` : nothing}` : renderResults(host)}`, { summary, mobileAction: total ? mobileSaveAction(host, completed?.covered ?? 0) : searchMobileAction(host) });
 }

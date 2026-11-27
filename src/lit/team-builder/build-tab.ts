@@ -3,7 +3,7 @@ import { gekisoHelpButton } from "./gekiso-help";
 import { rangeRankControl } from "./gekiso-rank";
 import { farmingMode, justBaseWindow } from "./workspace-state";
 import { enableManualEvent, renderManualEvent } from "./manual-event";
-import { mobilePrerequisite, toolLayout } from "./tool-layout";
+import { toolLayout } from "./tool-layout";
 import { songMissions } from "../../lib/catalog-filters";
 import { multiSongControl, songRulesControl } from "./song-rules";
 import { arenaSongView } from "../../lib/team-builder/arena";
@@ -23,7 +23,7 @@ import { accordion } from "../ui/accordion";
 import { icon } from "../ui/icon";
 import { tileMedia } from "../ui/tile";
 import { choiceField, sectionHeading } from "./catalog";
-import { renderResults, resultSelection, saveResultTeam } from "./results";
+import { renderResults, searchMobileAction } from "./results";
 import { rankTargetControl, renderScoreGoal, scoreGoal } from "./score-goal";
 import { CUSTOM_ACCURACY, type BuildSettings, type GoalKind, type LuckSamplingMode } from "./types";
 import type { TeamBuilder } from "../team-builder";
@@ -1130,33 +1130,22 @@ export function renderBuildTab(host: TeamBuilder, leading?: TemplateResult): Tem
     `,
     renderBuildRun(host),
     renderResults(host),
-    { mobileAction: host.tab === "build" && !host.classicLayout && host.compactConditions && !host.running ? freeMobileAction(host) : null },
+    { mobileAction: searchMobileAction(host) },
   );
-}
-
-function freeMobileAction(host: TeamBuilder) {
-  const prerequisite = mobilePrerequisite(host);
-  if (prerequisite || !host.results || host.stale) return prerequisite;
-  const { shown } = resultSelection(host, host.results);
-  if (!shown.length) return null;
-  const hit = shown.length === 1 ? shown[0] : null;
-  return html`<button class="button button--full" type="button" @click=${() => {
-    if (hit) saveResultTeam(host, hit);
-    else {
-      const save = host.querySelector<HTMLButtonElement>(".tb-results-column [data-tb-save-team]");
-      save?.scrollIntoView({ block: "center" });
-      save?.focus({ preventScroll: true });
-    }
-  }}>${hit ? host.t("saveTeam", "Save team") : host.t("chooseTeamToSave", "Choose a team to save")}</button>`;
 }
 
 export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): TemplateResult {
   const s = host.searchSettings,
     progress = host.progress;
-  const resumable = !host.stale && !!host.results && host.results.results.some((result) => !result.proven);
+  const total = host.tab === "challenge" && host.challenge.total.selected ? host.challenge.total : null;
+  const resumable = total ? total.resumable : host.resumable;
+  const budget = total ? total.budgetSeconds : host.searchBudgetSeconds;
+  const resumeAction = !resumable ? "start" : s.timeLimit === null ? "verify" : budget === s.timeLimit ? "extend" : "start";
   const proof = progress?.proof;
+  const totalProgress = total?.runningProgress;
   let status = host.computationStatus();
-  if (proof && progress && (progress.done > 0 || proof.checkedTeams !== undefined)) {
+  if (totalProgress) status = host.t("provenChartProgress", "Charts proven {done}/{total}", totalProgress);
+  else if (proof && progress) {
     const counts = { done: progress.done, total: progress.total };
     if (proof.unit === "charts")
       status = host.t("provenChartProgress", "Charts proven {done}/{total}", counts);
@@ -1195,19 +1184,20 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
           : nothing
       }
       ${
-        host.taskKind === "build"
+        host.taskKind === "build" || host.taskKind === "challenge-total"
           ? html`
               <button
                 class="button button--tonal button--full tb-run__button"
                 type="button"
+                data-search-action="cancel"
                 @click=${() => host.cancel()}
               >
                 ${icon("stop", 18)}${host.common("common.actions.cancel", "Cancel")}
               </button>
               <span role="status">${status}</span>
               <md-linear-progress
-                .value=${progress && progress.total ? progress.done / progress.total : 0}
-                ?indeterminate=${!progress || progress.total <= 1 || !!proof && progress.done === 0}
+                .value=${totalProgress?.total ? totalProgress.done / totalProgress.total : progress?.total ? progress.done / progress.total : 0}
+                ?indeterminate=${!totalProgress && !proof && !progress?.done}
                 aria-label=${host.t("searching", "Searching teams")}
               ></md-linear-progress>
             `
@@ -1215,23 +1205,29 @@ export function renderBuildRun(host: TeamBuilder, showTimeLimit = true): Templat
               <button
                 class="button button--full tb-run__button"
                 type="button"
+                data-search-action=${resumeAction}
                 ?disabled=${host.running}
-                @click=${() => void host.run(resumable)}
+                @click=${() => void host.run(resumeAction === "extend" ? "extend" : resumeAction === "verify")}
               >
                 ${
                   host.running
                     ? host.t("sc.busy", "Another calculation is running")
                     : host.submitted && host.inputIssues().length
                       ? host.t("fixConditions", "Adjust {count} conditions", { count: host.inputIssues().length })
-                    : resumable
-                      ? host.t("continueOptimal", "Continue verifying optimality")
-                      : host.stale
+                    : resumable && s.timeLimit !== null
+                      ? host.t("search.extend", "Search another {count} s", { count: s.timeLimit })
+                    : resumeAction === "verify"
+                      ? host.t("search.verify", "Continue until optimal")
+                      : (total ? total.stale : host.stale)
                         ? host.t("rerun", "Search again")
                         : html`
-                            ${icon("search", 20)}${host.tab === "pt" ? (s.goal === "plan" ? host.t("farm.planRun", "Calculate resource plan") : s.route === "skip" ? host.t("farm.skipRun", "Recommend skip team") : host.t("farm.run", "Recommend songs and teams")) : host.t("findTeams", "Find teams")}
+                            ${icon("search", 20)}${total ? host.t("challenge.runTotal", "Calculate song total") : host.tab === "pt" ? (s.goal === "plan" ? host.t("farm.planRun", "Calculate resource plan") : s.route === "skip" ? host.t("farm.skipRun", "Recommend skip team") : host.t("farm.run", "Recommend songs and teams")) : host.t("findTeams", "Find teams")}
                           `
                 }
               </button>
+              ${resumable && resumeAction !== "verify" && !(host.submitted && host.inputIssues().length)
+                ? html`<button type="button" class="button button--text" data-search-action="verify"
+                    ?disabled=${host.running} @click=${() => void host.run(true)}>${host.t("search.verify", "Continue until optimal")}</button>` : nothing}
             `
       }
     </div>

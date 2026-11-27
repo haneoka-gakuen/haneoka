@@ -94,6 +94,8 @@ function fixAction(host: TeamBuilder, issue: InputIssue): StepAction {
 
 /** Each prerequisite links to the control that can satisfy it. */
 export function renderChecklist(host: TeamBuilder, issues = host.inputIssues()) {
+  if (host.tab === "pt" && host.running && !issues.length)
+    return html`<div class="state" role="status"><p class="state__title">${host.t("searching", "Finding candidates")}</p></div>`;
   if (!host.submitted) issues = issues.filter(issue => !issue.validation);
   const cardIssue = issues.find(issue => issue.field === "tb-cards");
   const rest = issues.filter(issue => issue !== cardIssue);
@@ -152,6 +154,18 @@ export function mobilePrerequisite(host: TeamBuilder) {
   if (!issue) return null;
   const action = fixAction(host, issue);
   return html`<button class="button button--full" type="button" @click=${action.run}>${action.label}</button>`;
+}
+
+export function mobileSaveAction(host: TeamBuilder, count: number) {
+  if (!host.compactConditions || host.classicLayout || host.running || !count) return null;
+  return html`<button class="button button--full tb-run__button" type="button" @click=${() => {
+    const save = host.querySelector<HTMLButtonElement>(".tb-results-column [data-tb-save-team]:enabled");
+    if (count === 1) save?.click();
+    else {
+      save?.scrollIntoView({ block: "center" });
+      save?.focus({ preventScroll: true });
+    }
+  }}>${count === 1 ? host.t("saveTeam", "Save team") : host.t("chooseTeamToSave", "Choose a team to save")}</button>`;
 }
 
 export function toolLayout(host: TeamBuilder, body: unknown, actions: unknown, results: unknown, options?: { summary?: string; validate?: boolean; mobileAction?: unknown }) {

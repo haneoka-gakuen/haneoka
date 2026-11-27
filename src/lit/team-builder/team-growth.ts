@@ -94,7 +94,7 @@ export class TeamGrowthComparison {
   private identity() {
     return JSON.stringify([
       this.host.server,
-      this.host.snapshot?.owner,
+      this.host.checkpointOwner,
       this.host.data?.identity,
       this.host.data?.crossServer?.identities,
     ]);
@@ -123,7 +123,12 @@ export class TeamGrowthComparison {
   }
   openResult(hit: EngineHit, upgrade?: { kind: "members" | "snaps"; key: string }) {
     const source = this.resultSource(hit);
-    if (source) this.show(source, upgrade);
+    if (source) this.show(source, upgrade && { ...upgrade, actions: teamGrowthActions(upgrade.kind), target: "cap" });
+  }
+  tryCard(hit: EngineHit, kind: "members" | "snaps", cardId: number) {
+    const source = this.resultSource(hit);
+    if (!source) return;
+    this.show(source, { kind, key: `${kind === "members" ? "m" : "s"}${cardId}`, actions: ["level"], target: "next" });
   }
   openTraining(hit: EngineHit) {
     const source = this.resultSource(hit);
@@ -212,17 +217,12 @@ export class TeamGrowthComparison {
       identity: this.identity(),
     });
   }
-  private show(source: Source, upgrade?: { kind: "members" | "snaps"; key: string }) {
+  private show(source: Source, choice?: TeamGrowthChoice) {
     this.source = source;
     this.results = {};
     this.error = "";
     this.settingsOpen = true;
-    this.choice = {
-      kind: upgrade?.kind ?? "members",
-      key: upgrade?.key ?? source.hit.members[0]!,
-      actions: upgrade ? teamGrowthActions(upgrade.kind) : ["level"],
-      target: upgrade ? "cap" : "next",
-    };
+    this.choice = choice ?? { kind: "members", key: source.hit.members[0]!, actions: ["level"], target: "next" };
     this.restoreSearch();
     void this.loadMaterials(source);
     this.host.requestUpdate();

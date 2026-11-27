@@ -5,7 +5,7 @@
 // Effects/Dependencies: Lit light DOM；事件回调交由控制器处理。
 import { rangeRankControl } from "./gekiso-rank";
 import { songRulesControl } from "./song-rules";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { html, nothing } from "lit";
 import { live } from "lit/directives/live.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -242,6 +242,13 @@ function conditions(host: TeamBuilder) {
   `;
 }
 
+function openRewards(host: TeamBuilder, event?: { id: number; challenge: boolean }) {
+  const { effectiveSettings, settings } = host.songComparison;
+  host.pt.openRewards(host.comparisonFormation, effectiveSettings.songs, {
+    event, just: effectiveSettings.just, players: settings.players, songRules: settings.songRules,
+  });
+}
+
 function eventBonus(host: TeamBuilder) {
   const c = host.songComparison,
     team = c.team(),
@@ -257,12 +264,13 @@ function eventBonus(host: TeamBuilder) {
         now < event.endAt &&
         event.livePoints.size,
     );
-  if (!current.length) return nothing;
+  const origin = c.settings.farmingEvent;
+  const events = origin ? host.catalog!.events().filter(row => row.id === origin.id) : current;
   const t = (key: keyof typeof COMPARISON_TEXT) => scText(host, key);
   return html`
     <section class="surface stack">
       ${sectionHeading({ icon: "emoji_events", label: t("event") })}
-      ${current.map(({ event, name }) => {
+      ${events.map(({ event, name }) => {
         const bonus = (type: number) =>
           Math.floor(
             (team.box.members.reduce((sum, member) => sum + memberEventPercent(event.effects, member, type), 0) +
@@ -279,6 +287,10 @@ function eventBonus(host: TeamBuilder) {
           </dl>
         `;
       })}
+      ${!origin?.challenge && (c.settings.mode === "custom" || c.settings.ranks.some(rank => rank !== null && rank !== 1))
+        ? html`<span class="tb-results__meta">${host.t("farm.rewardConditions", "Event rewards: All Perfect / 1st in each section")}</span>` : nothing}
+      <button type="button" class="button button--tonal" ?disabled=${!c.effectiveSettings.songs.length || team.issues.length > 0 || host.running}
+        @click=${() => openRewards(host, origin ?? (current.length === 1 ? { id: current[0]!.id, challenge: false } : undefined))}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>
     </section>
   `;
 }
@@ -421,6 +433,7 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
     <th>${t("remaining")}</th>
   `;
   const done = rows.filter((row) => row.status === "complete").length;
+  const origin = s.farmingEvent;
   return toolLayout(
     host,
     html`
@@ -708,5 +721,10 @@ export function renderSongComparison(host: TeamBuilder, editor?: unknown) {
         </section>
       </div>
     `,
+    { mobileAction: !host.classicLayout && !host.running && rows.length && done === rows.length && !c.stale
+      ? origin ? html`<button type="button" class="button button--full tb-run__button"
+          @click=${() => openRewards(host, origin)}>${host.t("farm.teamRewards", "Check event rewards with this team")}</button>`
+        : mobileSaveAction(host, 1)
+      : null },
   );
 }

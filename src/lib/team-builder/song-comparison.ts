@@ -13,6 +13,7 @@ import type { TeamBuilderData } from "./data";
 import { engineInputs, type BoxView } from "./sync/box-view";
 
 export interface ComparisonSettings {
+  farmingEvent?: { id: number; challenge: boolean } | null;
   songRules?: SongRules;
   songs: SongRef[];
   target: "S" | "SS";
@@ -76,6 +77,8 @@ export function readComparisonSettings(value: unknown): ComparisonSettings {
       ...new Map(songs.map((song) => [chartKey(song), { songId: song.songId, difficulty: song.difficulty }])).values(),
     ],
     players,
+    farmingEvent: saved.farmingEvent && integer(saved.farmingEvent.id, 1, Number.MAX_SAFE_INTEGER)
+      ? { id: saved.farmingEvent.id, challenge: saved.farmingEvent.challenge === true } : null,
     songRules: readSongRules(saved.songRules),
     target: saved.target === "S" ? "S" : "SS",
     mode: saved.mode === "ap" || saved.mode === "custom" ? saved.mode : null,

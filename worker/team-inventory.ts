@@ -137,7 +137,7 @@ const readBody = async (request: Request): Promise<BodyResult> => {
   }
   const length = request.headers.get("Content-Length");
   if (length !== null && (!/^\d+$/u.test(length) || Number(length) > MAX_BODY_BYTES)) {
-    await request.body?.cancel();
+    // Let the HTTP server discard the upload. Canceling here can reset the next keep-alive request.
     return { ok: false, response: error(request, 413, "request_too_large", "Inventory request exceeds 1 MiB") };
   }
   if (!request.body) return { ok: false, response: error(request, 400, "invalid_body", "A JSON body is required") };
@@ -149,7 +149,7 @@ const readBody = async (request: Request): Promise<BodyResult> => {
     if (part.done) break;
     size += part.value.byteLength;
     if (size > MAX_BODY_BYTES) {
-      await reader.cancel();
+      reader.releaseLock();
       return { ok: false, response: error(request, 413, "request_too_large", "Inventory request exceeds 1 MiB") };
     }
     chunks.push(part.value);

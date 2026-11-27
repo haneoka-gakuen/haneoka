@@ -12,12 +12,12 @@ import { tileMedia } from "../ui/tile";
 import { specList } from "../ui/spec";
 import { sectionHeading } from "./catalog";
 import { songRulesControl } from "./song-rules";
-import { renderResultDetails, resultSong, saveTeam, teamFormation } from "./results";
+import { formation, renderResultDetails, resultSong, saveTeam, teamFormation } from "./results";
 import { accordion } from "../ui/accordion";
 import { attachManualResults, clearManualOrders, manualOrderScore, manualResultHit, manualResultRequest, manualResultSettings, snapshotManualResults } from "./manual-results";
-import { resultRequest } from "./score-goal";
+import { resultRequest, resultSettings } from "./score-goal";
 import { renderSongComparison } from "./song-comparison-view";
-import { toolLayout } from "./tool-layout";
+import { mobileSaveAction, toolLayout } from "./tool-layout";
 import { eventSection, eventSectionHeading, gekisoSamplingAdvanced, justWindowControl, playConditions, songList, useChallengeSongsButton } from "./build-tab";
 import { segmented } from "../ui/controls";
 import { cardScopeControl, unknownGrowthControl } from "./card-input-controls";
@@ -254,7 +254,7 @@ async function suggest(host: TeamBuilder, slot: number) {
 
 export function savedFormation(team: SavedTeam) {
   const leader = team.leader === null ? 0 : team.members.indexOf(team.leader);
-  return { members: [...team.members], snaps: [...team.snaps], leader: leader < 0 ? 0 : leader };
+  return { members: [...team.members], snaps: team.members.map((_, index) => team.snaps[index] ?? null), leader: leader < 0 ? 0 : leader };
 }
 export function renderTeamsTab(host: TeamBuilder): TemplateResult {
   return renderTeamWorkspace(host, "teams");
@@ -274,8 +274,11 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
   const characters = host.manual.members.map((id) => (id === null ? null : (catalog.member(id)?.characterId ?? null)));
   const duplicate = characters.some((id, index) => id !== null && characters.indexOf(id) !== index);
   const context = host.manualContext();
-  const results = host.manualResultsFor === context ? host.manualResults : null;
-  const rows = host.manualGoal().songs.map((song) => ({ song,
+  const results = host.manualResults;
+  const firstResult = results?.[0];
+  const stale = !!firstResult && host.manualResultsFor !== context;
+  const songs = stale ? results.map(row => row.song) : host.manualGoal().songs;
+  const rows = songs.map((song) => ({ song,
     row: results?.find((result) => result.song.songId === song.songId && result.song.difficulty === song.difficulty) ?? null }));
   const baseline = host.manualBaseline && host.manualBaseline.conditions === host.manualConditions() ? host.manualBaseline : null;
   const baseOf = (song: { songId: number; difficulty: number }) =>
@@ -284,6 +287,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
   const suggesting = host.manualSuggesting;
   const calculating = host.taskKind === "evaluation" || host.taskKind === "suggestion";
   const showSkipScore = host.settings.manualScoreMode !== "gekiso";
+  const showLiveScore = stale ? resultSettings(host, manualResultHit(firstResult)).goal !== "gekiso" : showSkipScore;
   const { eventId, manualChallengeRules } = host.settings;
   const challengeSongIds = showSkipScore && manualChallengeRules && eventId !== null
     ? catalog.challengeSongs(eventId).map((row) => row.liveMusicId)
@@ -317,6 +321,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
           <button
             class="button button--text button--small"
             type="button"
+            data-tb-save-team
             ?disabled=${!manualReady(host)}
             @click=${() => saveTeam(host, [host.manual.members[host.manual.leader]!, ...(host.manual.members.filter((_, index) => index !== host.manual.leader) as number[])], [host.manual.snaps[host.manual.leader] ?? null, ...host.manual.snaps.filter((_, index) => index !== host.manual.leader)], (comparison ? host.songComparison.settings.songs[0] : host.settings.songs[0]) ?? null)}
           >
@@ -611,15 +616,16 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               ${editor}
               <section class="surface stack stack--flex tb-manual__scores">
                 <div class="row row--between row--wrap">
-                  ${sectionHeading({ icon: "query_stats", label: showSkipScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
-                  ${baselineBar(host, !!results && manualReady(host))}
+                  ${sectionHeading({ icon: "query_stats", label: showLiveScore ? host.t("goalScore", "Live score") : host.t("goalGekiso", "GEKISO score"), count: rows.length || undefined })}
+                  ${stale ? html`<span class="tb-proof" role="status">${host.t("recomputeNeeded", "Recalculation needed")}</span>` : nothing}
+                  ${baselineBar(host, !!results && !stale && manualReady(host))}
                 </div>
                 <div class="stack stack--flex stack--loose">
                   ${rows.map(({ song, row }) => {
                     const hit = row ? manualResultHit(row) : null;
                     const key = `manual:${song.songId}:${song.difficulty}`;
                     const expanded = host.expanded.has(key);
-                    const base = baseOf(song);
+                    const base = stale ? undefined : baseOf(song);
                     const reference = hit ? host.comparison.idFor(host, hit) : null;
                     const compared = !!reference && host.comparison.items.some((item) => item.id === reference);
                     return html`
@@ -632,9 +638,10 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                             { label: host.t("power", "Power"), value: row ? html`${format(host, row.power)} ${delta(host, row.power, base?.power)}` : "—" },
                             { label: host.t("scoreRange", "Range"), value: row ? `${format(host, row.score.min)} – ${format(host, row.score.max)}` : "—" },
                           ], { numeric: true })}</div>
+                          ${stale && hit ? formation(host, hit, false) : nothing}
                           ${row && hit ? html`
                             <div class="cluster">
-                              <button class="button button--tonal" type="button" ?disabled=${host.running}
+                              <button class="button button--tonal" type="button" ?disabled=${host.running || stale}
                                 @click=${() => host.teamGrowth.openManual(row)}>${host.t("tg.title", "Team growth comparison")}</button>
                               <button class="button button--text" type="button" aria-pressed=${compared}
                                 @click=${() => host.comparison.toggle(host, hit)}>${host.t(compared ? "comparisonAdded" : "addComparison", compared ? "Added to comparison" : "Add to comparison")}</button>
@@ -658,6 +665,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
               </section>
             </div>
           `,
+          { mobileAction: firstResult && !stale && manualReady(host) ? mobileSaveAction(host, 1) : null },
         )}
 
       </div>
@@ -747,7 +755,7 @@ function renderTeamWorkspace(host: TeamBuilder, mode: "teams" | "manual" | "comp
                                       host.requestUpdate();
                                     }}
                                   >
-                                    ${icon("edit", 18)}${host.t("loadTeam", "Open in the editor")}
+                                    ${icon("edit", 18)}${host.t("loadTeam", "Load formation")}
                                   </button>
                                   <button
                                     class="button button--text"
