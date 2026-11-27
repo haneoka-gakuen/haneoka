@@ -6,6 +6,7 @@
 import { EVENT_HISTORY_MILESTONES, type EventRankingDto, type EventTrackerDto, type GameRecordsRegion, type SongRankingCardDto, type SongRankingRowDto, type TrackedEventDto } from "../src/lib/game-records";
 import { exactEventScore } from "../src/lib/game-event-history";
 import { readProviderEventRankSeries, type EventHistoryBindings } from "./game-event-history";
+import { readEventParticipation } from "./event-participation";
 import { moenotesEventRanking } from "./moenotes-fallback";
 import { officialEventQueryOpen } from "../src/lib/official-ranking";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
@@ -248,6 +249,15 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
   const route = /^\/api\/(v1|v2)\/game\/records\/([^/]+)\/events\/(.+)$/u.exec(url.pathname);
   if (!route || !regionValue(route[2])) return null;
   const version = route[1], region = route[2], path = route[3]!;
+  const participation = /^([1-9][0-9]{0,18})\/participation$/u.exec(path);
+  if (version === "v2" && participation) {
+    if (url.searchParams.size) return failure(request, "invalid_request", 400);
+    if (!env.OFFICIAL_RANKING_DATA) return failure(request, "upstream", 503);
+    try {
+      const observed = await readEventParticipation(env.OFFICIAL_RANKING_DATA, region, participation[1]!);
+      return observed ? response(request, observed, 200, "public, max-age=300") : failure(request, "not_found", 404);
+    } catch { return failure(request, "upstream", 503); }
+  }
   const timeline = /^([1-9][0-9]{0,18})\/(total|points|challenges\/([1-9][0-9]{0,18}))\/timeline$/u.exec(path);
   if (version === "v2" && timeline) {
     const rank = url.searchParams.get("rank") ?? "";
