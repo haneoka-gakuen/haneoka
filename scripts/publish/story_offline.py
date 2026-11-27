@@ -2,11 +2,13 @@
 # Input: 一份完整的正式服 release、目录分片与原生剧情依赖。
 # Output: 按章节组织的内容清单、对象允许索引和固定 release 的离线入口。
 # Pos: [Map](L2-2.md)；App 剧情离线资源投影。
-# Effects/Dependencies: 按摘要去重并有界读取 R2 JSON、并发发布对象索引，全部成功后切换入口；媒体复用原有 CAS。
+# Effects/Dependencies: 复用同服上一发布的已验证依赖路径；按新 release 组装对象清单，全部成功后切换入口。
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import re
 import tempfile
@@ -19,6 +21,8 @@ from download_store import DownloadStore, json_bytes
 
 SCHEMA = "haneoka-story-offline-v2"
 RECIPE = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+GRAPH_CACHE = "dependency-paths.json.gz"
+GRAPH_CACHE_BYTES = 64 << 20
 COMMON_SOURCES = (
     "Assets/AddressableResources/Common/Prefab/CameraManager.prefab",
     "Assets/AddressableResources/Common/Adv/Prefab/AdvCharacterField.prefab",
@@ -29,13 +33,17 @@ COMMON_SOURCES = (
 
 
 class StoryOfflineProjection:
-    def __init__(self, store, manifest, cache):
+    def __init__(self, store, manifest, cache, graphs=None):
         self.store, self.manifest, self.cache = store, manifest, cache
         self.server = manifest["server"]
         self.entries = {row["path"]: row for row in manifest["entries"]}
         self.catalog = self.read("api/v1/catalog/manifest.json")
         self.entities = {}
+        self.resource_indexes = {}
         self.story_context = None
+        self.previous_graphs = graphs or {}
+        self.graphs = {}
+        self.reused_graphs = 0
 
     def read(self, path):
         entry = self.entries[path]
@@ -57,7 +65,9 @@ class StoryOfflineProjection:
 
     def resource(self, name):
         spec = self.catalog["resources"][name]
-        return self.read(spec["index"]), spec
+        if name not in self.resource_indexes:
+            self.resource_indexes[name] = self.read(spec["index"])
+        return self.resource_indexes[name], spec
 
     def read_many(self, paths, executor):
         representatives = {}
@@ -90,13 +100,38 @@ class StoryOfflineProjection:
         return f"/{tree}/{self.server}/{tail}"
 
     def collect(self, seeds, documents):
+        identity = hashlib.sha256(json_bytes([seeds, documents])).hexdigest()
+        graph = self.graphs.get(identity) or self.previous_graphs.get(identity)
+        if (
+            graph
+            and all(path in self.entries for path in graph["paths"])
+            and not any(path in self.entries for path in graph["missing"])
+            and all(self.entries[path]["sha256"] == digest for path, digest in graph["json"].items())
+        ):
+            if identity not in self.graphs:
+                self.reused_graphs += 1
+            self.graphs[identity] = graph
+            return self.manifest_for_graph(graph)
+        graph = self.collect_paths(seeds, documents)
+        self.graphs[identity] = graph
+        return self.manifest_for_graph(graph)
+
+    def collect_paths(self, seeds, documents):
         paths = set()
+        missing = set()
+        json_inputs = {}
         refs = dict(documents)
         pending = list(seeds)
 
+        def available(path):
+            if path in self.entries:
+                return True
+            missing.add(path)
+            return False
+
         def source(value):
             descriptor = f"metadata/sources/{value}.json"
-            if descriptor in self.entries:
+            if available(descriptor):
                 refs[self.api("sources/" + value)] = {"path": descriptor}
                 pending.append(descriptor)
 
@@ -129,14 +164,14 @@ class StoryOfflineProjection:
                     candidate = str(PurePosixPath(parent).parent / raw)
                     if ".." not in PurePosixPath(candidate).parts:
                         path = candidate
-                if path in self.entries:
+                if path and available(path):
                     refs[self.media(path)] = {"path": path}
                     pending.append(path)
                     suffix = PurePosixPath(path).suffix
                     if suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
                         for language in ("en", "ko", "zh-Hans", "zh-Hant"):
                             localized = f"{path[:-len(suffix)]}({language}){suffix}"
-                            if localized in self.entries:
+                            if available(localized):
                                 refs[self.media(localized)] = {"path": localized}
                                 pending.append(localized)
 
@@ -161,6 +196,7 @@ class StoryOfflineProjection:
                     if path.endswith(".json") and not standalone and path not in selected_paths:
                         batch.append(path)
                 for path, value in zip(batch, self.read_many(batch, executor)):
+                    json_inputs[path] = self.entries[path]["sha256"]
                     if path.startswith("metadata/sources/"):
                         visit(value.get("objectArchive", {}), path)
                     elif path == self.catalog["resources"]["stories"]["index"]:
@@ -169,14 +205,17 @@ class StoryOfflineProjection:
                         visit({key: child for key, child in value.items() if key != "stages"}, path)
                     else:
                         visit(value, path)
+        return {"paths": sorted(paths), "missing": sorted(missing), "json": json_inputs, "refs": refs}
+
+    def manifest_for_graph(self, graph):
         return {
             "schema": SCHEMA,
             "resources": {url: {"sha256": self.entries[row["path"]]["sha256"],
                                 **({"selector": row["selector"]} if "selector" in row else {})}
-                          for url, row in sorted(refs.items())},
+                          for url, row in sorted(graph["refs"].items())},
             "objects": {self.entries[path]["sha256"]: {"bytes": self.entries[path]["bytes"],
                                                        "mediaType": self.entries[path]["mediaType"]}
-                        for path in sorted(paths)},
+                        for path in graph["paths"]},
         }
 
     def common_manifest(self):
@@ -271,6 +310,7 @@ class StoryOfflineProjection:
 
         common_hash, body = manifest_bytes(common)
         publish_manifest((common_hash, body))
+        written = {common_hash}
         grouped = defaultdict(list)
         for key, episode in stories.get("episodes", {}).items():
             grouped[str(episode.get("chapterId") or episode.get("chapterKey") or key)].append((key, episode))
@@ -284,7 +324,9 @@ class StoryOfflineProjection:
                     value = self.episode_manifest(key, thumbnail)
                     objects.update(value["objects"])
                     digest, body = manifest_bytes(value)
-                    writes[digest] = body
+                    if digest not in written:
+                        writes[digest] = body
+                        written.add(digest)
                     rows.append({"id": key, "title": summary.get("title"),
                                  "episodeNumber": summary.get("episodeNumber"), "manifest": digest, "thumbnail": thumbnail,
                                  "bytes": sum(entry["bytes"] for entry in value["objects"].values())})
@@ -313,10 +355,19 @@ class StoryOfflineProjection:
         with ThreadPoolExecutor(max_workers=8) as executor:
             list(executor.map(publish_objects, shards.items()))
         self.store.put_bytes(prefix + f"manifests/{root_hash}.json", root_body)
+        cache = json_bytes(self.graphs)
+        if len(cache) <= GRAPH_CACHE_BYTES:
+            self.store.put_bytes(
+                prefix + GRAPH_CACHE,
+                gzip.compress(cache, compresslevel=3, mtime=0),
+                content_type="application/gzip",
+                cache_control="private, no-store",
+            )
         pointer = {"schema": SCHEMA, "server": server, "releaseId": release, "sourceId": self.manifest["sourceId"],
                    "sha256": root_hash, "recipeSHA256": RECIPE,
                    "manifestUrl": f"/downloads/stories/{server}/{release}/manifests/{root_hash}.json"}
         self.store.put_bytes(prefix + "latest.json", json_bytes(pointer))
+        print(f"Reused {self.reused_graphs}/{len(self.graphs)} {server} dependency graphs", flush=True)
         return pointer
 
 
@@ -324,7 +375,25 @@ def publish_story_offline(store, manifest, cache):
     if manifest["server"] not in {"jp", "intl"}:
         return None
     cache.mkdir(parents=True, exist_ok=True)
-    return StoryOfflineProjection(store, manifest, cache).publish()
+    server = manifest["server"]
+    previous = store.get_json(f"servers/{server}/offline/current.json")
+    graphs = None
+    if (
+        previous and previous.get("schema") == SCHEMA and previous.get("recipeSHA256") == RECIPE
+        and previous.get("server") == server and re.fullmatch(r"r-[0-9a-f]{20}", previous.get("releaseId", ""))
+    ):
+        body = store.get_bytes(f"servers/{server}/releases/{previous['releaseId']}/offline/{GRAPH_CACHE}")
+        if body:
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(body)) as archive:
+                    decoded = archive.read(GRAPH_CACHE_BYTES + 1)
+                if len(decoded) <= GRAPH_CACHE_BYTES:
+                    value = json.loads(decoded)
+                    if isinstance(value, dict):
+                        graphs = value
+            except (OSError, EOFError, ValueError):
+                print(f"Rebuilding unreadable {server} dependency path cache", flush=True)
+    return StoryOfflineProjection(store, manifest, cache, graphs).publish()
 
 
 def main():
