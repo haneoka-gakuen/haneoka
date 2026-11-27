@@ -3200,6 +3200,8 @@ def _stage_runtime(data: BuildData, asset_name: str) -> dict[str, Any]:
     profiles_by_object_id, _ = _stage_volume_profiles(data)
     profile_refs = []
     for pointer in raw.get("_allVolumeProfileCollection", {}).get("_profiles", []):
+        if isinstance(pointer, dict) and pointer.get("m_PathID") in (0, "0"):
+            continue
         profile_identity = data.unity_pointer_identity(
             pointer, str(descriptor.get("serializedFile") or "")
         )
