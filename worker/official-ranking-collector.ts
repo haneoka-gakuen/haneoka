@@ -12,7 +12,7 @@ import { adoptGuestAccount, claimGuestRegistration, claimGuestVerification, crea
   readReadyGuestAccounts, saveGuestRegistration, saveGuestRequest, type GuestLease } from "./official-guest-accounts";
 import { GuestJobContractError, guestConfiguration, guestPhaseResult, type GuestConfiguration, type GuestPhaseResult } from "./official-guest-jobs";
 import type { GameRecordsRegion } from "../src/lib/game-records";
-import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
+import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, newerOfficialClientVersion, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
 import { readOfficialQueryableEvent, queueOfficialFinalEventWindows, readOfficialEventWindows, flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
@@ -494,6 +494,10 @@ export class OfficialRankingCollector extends Container<Env> {
   override pingEndpoint = "container/health";
   /** Where the collector reports runs: the site, or the collector host itself when it runs there. */
   private get callbackOrigin(): string { return this.env.OFFICIAL_CALLBACK_ORIGIN ?? "https://haneoka.org"; }
+  private clientVersion(region: GameRecordsRegion, configured: string): string {
+    const env: Env & { OFFICIAL_RANKING_CLIENT_VERSIONS?: Partial<Record<GameRecordsRegion, string>> } = this.env;
+    return newerOfficialClientVersion(configured, env.OFFICIAL_RANKING_CLIENT_VERSIONS?.[region]);
+  }
   private mutations: Promise<void> = Promise.resolve();
 
   constructor(ctx: ConstructorParameters<typeof Container<Env>>[0], env: Env) {
@@ -1178,6 +1182,7 @@ export class OfficialRankingCollector extends Container<Env> {
         }
         await this.ctx.storage.put("guestJob", { ...lease, started: true });
         await this.schedule(new Date(lease.deadlineMs + 15_001), "runGuestJob", region);
+        config.guestProfile.client_version = this.clientVersion(region, config.guestProfile.client_version);
         const configuration = pending.action === "verify" ? await readGuestVerificationInput(this.env, lease) : null;
         if (pending.action === "verify" && !configuration) throw new GuestJobContractError("guest_lease_invalidated");
         const credentials = configuration ? object(object(configuration.credentials).credentials) : undefined;
@@ -1470,6 +1475,14 @@ export class OfficialRankingCollector extends Container<Env> {
 
   /** Secret/manual entries and verified regional platform sessions share selection and health. */
   private async poolFor(region: GameRecordsRegion): Promise<OfficialCollectorPool | null> {
+    const pool = await this.configuredPool(region);
+    if (pool) {
+      for (const account of pool.accounts) account.clientVersion = this.clientVersion(region, account.clientVersion);
+    }
+    return pool;
+  }
+
+  private async configuredPool(region: GameRecordsRegion): Promise<OfficialCollectorPool | null> {
     const extra = await this.ctx.storage.get<Record<string, unknown>[]>("extraAccounts") ?? [];
     const [managed, ownedPlayers] = region === "jp"
       ? await Promise.all([readReadyGuestAccounts(this.env), readGuestPlayerIds(this.env)])

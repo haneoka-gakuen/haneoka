@@ -36,6 +36,12 @@ export interface OfficialCollectorPool {
   accounts: OfficialCollectorAccount[];
   preferredIdentity: string | null;
 }
+
+export const officialClientVersionPattern = /^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$/u;
+
+export function newerOfficialClientVersion(configured: string, published?: string): string {
+  return published && published.localeCompare(configured, "en", { numeric: true }) > 0 ? published : configured;
+}
 export interface OfficialCollectorAccountHealth {
   blocked: Record<string, "auth_paused" | "auth_uncertain">;
   lastUsedAtMs: number;

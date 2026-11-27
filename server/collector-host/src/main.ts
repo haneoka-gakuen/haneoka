@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: Collector callbacks on loopback, the Worker's authenticated calls, the host's secrets and local data.
+// Input: Collector callbacks on loopback, the Worker's authenticated calls and published client versions, and local data.
 // Output: Regional collectors, authenticated staged observations, and rows for the site's D1 projection.
 // Pos: [Map](../../L2.md); entry point of the collector host.
 // Effects/Dependencies: Listens on HOST_PORT; reads and writes DATA_DIR; calls the site's internal endpoints and the local collector.
@@ -10,6 +10,7 @@ import { DatabaseSync } from "node:sqlite";
 import { timingSafeEqual } from "node:crypto";
 import { OfficialRankingCollector } from "../../../worker/official-ranking-collector";
 import { maintainOfficialStorage } from "../../../worker/official-ranking-maintenance";
+import { newerOfficialClientVersion, officialClientVersionPattern } from "../../../src/lib/official-ranking";
 import * as platform from "../../../worker/official-platform-accounts";
 import * as guests from "../../../worker/official-guest-accounts";
 import { LocalStorage } from "./storage";
@@ -33,6 +34,19 @@ const hostToken = required("HOST_TOKEN");
 mkdirSync(join(dataDir, "objects"), { recursive: true });
 
 const d1 = new LocalD1(join(dataDir, "official.sqlite"));
+d1.handle.exec("CREATE TABLE IF NOT EXISTS _collector_client_versions (resource TEXT PRIMARY KEY, client_version TEXT NOT NULL)");
+const readClientVersion = d1.handle.prepare("SELECT client_version AS version FROM _collector_client_versions WHERE resource=?");
+const writeClientVersion = d1.handle.prepare(`INSERT INTO _collector_client_versions(resource,client_version) VALUES(?,?)
+  ON CONFLICT(resource) DO UPDATE SET client_version=excluded.client_version`);
+const resourceServers = { jp: ["jp"], intl: ["tw", "en", "kr"] } as const;
+const clientVersions: Partial<Record<Region, string>> = {};
+const clientVersionFloor = process.env.OFFICIAL_RANKING_CLIENT_VERSION ?? "";
+if (clientVersionFloor && !officialClientVersionPattern.test(clientVersionFloor)) throw new Error("invalid_collector_client_version");
+for (const [resource, regions] of Object.entries(resourceServers)) {
+  const stored = readClientVersion.get(resource) as { version: string } | undefined;
+  const version = newerOfficialClientVersion(clientVersionFloor, stored?.version);
+  if (version) for (const region of regions) clientVersions[region] = version;
+}
 // The site writes its search backfill leases itself; everything else official is this host's.
 const replicated = new Map<string, ReplicatedTable>(installOutbox(d1.handle,
   (table) => table.startsWith("official_") && table !== "official_ranking_search_backfills").map((table) => [table.name, table]));
@@ -42,6 +56,7 @@ const env: Record<string, unknown> = {
   OFFICIAL_RANKING_DATA: new RemoteBucket(siteOrigin, hostToken),
   OFFICIAL_COLLECTOR_REMOTE_ORIGIN: process.env.COLLECTOR_ORIGIN ?? "http://127.0.0.1:8080",
   OFFICIAL_COLLECTOR_REMOTE_TOKEN: required("COLLECTOR_TOKEN"),
+  OFFICIAL_RANKING_CLIENT_VERSIONS: clientVersions,
   OFFICIAL_CALLBACK_ORIGIN: `http://127.0.0.1:${port}`,
 };
 for (const name of ["OFFICIAL_RANKING_ENABLED_REGIONS", "OFFICIAL_RANKING_READ_REGIONS", "OFFICIAL_RANKING_JP_CONFIG", "OFFICIAL_RANKING_TW_CONFIG",
@@ -148,7 +163,7 @@ async function rpc(body: { object?: string; module?: string; method: string; arg
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://host");
   try {
-    if (url.pathname === "/health") return send(response, 200, { ok: true, outbox: outboxSize(), replicatedAt: lastReplication });
+    if (url.pathname === "/health") return send(response, 200, { ok: true, outbox: outboxSize(), replicatedAt: lastReplication, clientVersions });
     if (url.pathname === "/staged-observation" && request.method === "GET") {
       if (!authorized(request)) return send(response, 401, { error: "unauthorized" });
       const key = url.searchParams.get("key"), hash = url.searchParams.get("hash");
@@ -223,6 +238,27 @@ async function replicationLoop(): Promise<void> {
 
 // ---------- schedules and the Worker's former cron ----------
 
+async function refreshClientVersions(): Promise<void> {
+  try {
+    const response = await fetch(new URL("/api/internal/official-host/client-versions", siteOrigin), {
+      headers: { Authorization: `Bearer ${hostToken}` }, redirect: "error", signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`client_versions_${response.status}`);
+    const versions = await response.json() as Record<string, unknown>;
+    for (const [resource, regions] of Object.entries(resourceServers)) {
+      const version = versions[resource];
+      if (typeof version !== "string" || !officialClientVersionPattern.test(version)) continue;
+      const current = clientVersions[regions[0]] ?? "";
+      if (newerOfficialClientVersion(current, version) === current) continue;
+      writeClientVersion.run(resource, version);
+      for (const region of regions) clientVersions[region] = version;
+      log("client_version_updated", { resource, version });
+    }
+  } catch (error) {
+    log("client_version_refresh_failed", { error: message(error) });
+  }
+}
+
 const enabled = (region: Region) =>
   String(env.OFFICIAL_RANKING_ENABLED_REGIONS ?? "").split(",").map((part) => part.trim()).includes(region);
 
@@ -259,3 +295,5 @@ scheduleLoop();
 void replicationLoop();
 setInterval(() => void maintenance(), 120_000);
 void maintenance();
+setInterval(() => void refreshClientVersions(), 300_000);
+void refreshClientVersions();

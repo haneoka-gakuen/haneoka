@@ -70,7 +70,8 @@ import { assetBrowserLocation, assetStaticDocumentFromUrl, assetStaticDocumentPa
 import { legacyPlaylistRedirectTarget, playlistStaticDocumentFromUrl } from "../src/lib/playlists/static-routing";
 import { legacyEditorRedirectTarget } from "../src/lib/editor-document-route";
 import { isCommunityForumDetailPath, restoreCommunityForumDetailShell } from "../src/lib/community-forum-document";
-import { collectorFor, handleOfficialHost } from "./official-host";
+import { authorizedHost, collectorFor, handleOfficialHost } from "./official-host";
+import { officialClientVersionPattern } from "../src/lib/official-ranking";
 import { handleAccountRegistrationRequest, handleAuthRequest } from "./auth";
 import { handleAppAccountRequest } from "./app-account";
 import { handleAvatarRequest } from "./avatar";
@@ -210,6 +211,7 @@ type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 
 interface Release {
+  clientVersion?: string;
   identityKey: string;
   indexPrefix: string;
   manifestKey: string;
@@ -798,6 +800,8 @@ async function currentRelease(env: Env, server: ResourceServerRoute, fresh = fal
     throw new Error(`invalid release pointer: ${key}`);
   }
   const release: Release = {
+    ...(typeof value.clientVersion === "string" && officialClientVersionPattern.test(value.clientVersion)
+      ? { clientVersion: value.clientVersion } : {}),
     identityKey: `${server.resourcePrefix}/releases/${releaseId}/${RELEASE_IDENTITY_FILENAME}`,
     indexPrefix,
     manifestKey,
@@ -4890,6 +4894,15 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   const officialHost = /^\/api\/internal\/official-host\/(.+)$/u.exec(url.pathname);
   if (officialHost) {
     const path = officialHost[1]!;
+    if (path === "client-versions" && request.method === "GET") {
+      const headers = { "Cache-Control": "no-store" };
+      if (!authorizedHost(request, env)) return Response.json({ error: "unauthorized" }, { status: 401, headers });
+      const versions = await Promise.all(["jp", "intl"].map(async (slug) => {
+        const server = await activeResourceServer(env, slug);
+        return [slug, server ? (await currentRelease(env, server))?.clientVersion ?? null : null];
+      }));
+      return Response.json(Object.fromEntries(versions), { headers });
+    }
     return handleOfficialHost(request, env, path);
   }
   const officialStatus = /^\/api\/v2\/game\/records\/(jp|tw|en|kr)\/status$/u.exec(url.pathname);

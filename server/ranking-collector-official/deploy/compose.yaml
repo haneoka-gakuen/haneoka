@@ -40,6 +40,7 @@ services:
       HOST_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
       COLLECTOR_TOKEN: ${OFFICIAL_COLLECTOR_TOKEN}
       COLLECTOR_ORIGIN: http://127.0.0.1:8080
+      OFFICIAL_RANKING_CLIENT_VERSION: ${OFFICIAL_RANKING_CLIENT_VERSION:-1.2.0}
     volumes:
       - ${DATA_DIR:-/opt/haneoka-collector/data}:/data
     mem_limit: 768m
