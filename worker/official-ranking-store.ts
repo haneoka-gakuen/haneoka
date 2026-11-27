@@ -6,7 +6,8 @@
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen } from "../src/lib/official-ranking";
 import { rankingSearchRows, saveRankingSearchWindow } from "./ranking-search";
 import { retainRequestRead } from "./request-work";
-import { readStagedOfficialPayload, type CollectorBindings } from "./official-host";
+import { officialHostModule, readOfficialHotEventRank, readStagedOfficialPayload, type CollectorBindings } from "./official-host";
+import { EVENT_RANK_DAY_MS, EVENT_RANK_JST_MS, readEventRankArchive, type EventRankIdentity, type EventRankPoint } from "./event-rank-archive";
 import { EVENT_HISTORY_MILESTONES, type EventRankMilestoneTimeline, type EventRankTimeline, type GameRecordsRegion } from "../src/lib/game-records";
 import { exactEventScore } from "../src/lib/game-event-history";
 import type { OfficialArenaObservation, OfficialArenaPopulationObservation, OfficialArenaProgress, OfficialCatalog, OfficialEventWindow, OfficialObservation } from "../src/lib/official-ranking";
@@ -14,6 +15,9 @@ import type { OfficialArenaObservation, OfficialArenaPopulationObservation, Offi
 export interface OfficialRankingStoreBindings extends CollectorBindings {
   DB?: D1Database;
   OFFICIAL_RANKING_DATA?: R2Bucket;
+  OFFICIAL_EVENT_RANK_BUFFER?: {
+    record(identity: EventRankIdentity, point: EventRankPoint, endAt?: number, finalAt?: number): void;
+  };
 }
 
 export interface StoredOfficialObservation extends OfficialObservation {
@@ -31,7 +35,7 @@ const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 const BATCH_PAYLOADS = true;
 const GZIP_PAYLOADS = true;
 const INLINE_PAYLOAD_BYTES = 256 * 1024;
-const BATCH_PAYLOAD_BYTES = 2 * 1024 * 1024;
+const BATCH_PAYLOAD_BYTES = 3 * 1024 * 1024;
 const BATCH_DELAY_MS = 60_000;
 const BATCH_CONTRACT = "haneoka:official-observation-batch/1";
 export const OFFICIAL_RANKING_STALE_MS = 1_200_000;
@@ -421,6 +425,11 @@ async function saveDailyObservation(db: D1Database, board: string,
 }
 
 export async function readOfficialDailyArchives(env: OfficialRankingStoreBindings, region: GameRecordsRegion, day: number) {
+  if (env.OFFICIAL_HOST_ORIGIN && day >= Math.floor((Date.now() + EVENT_RANK_JST_MS) / EVENT_RANK_DAY_MS) - 1) {
+    const recent = await officialHostModule<{ boardKey: string; snapshotId: string; observedAtMs: number; payloadHash: string }[]>(
+      env, "history", "dailyArchives", region, day).catch(() => null);
+    if (recent) return recent;
+  }
   const { db } = storage(env);
   const { results } = await db.prepare(`SELECT board_key AS boardKey, snapshot_id AS snapshotId,
     observed_at_ms AS observedAtMs, payload_hash AS payloadHash FROM official_ranking_daily
@@ -513,6 +522,18 @@ const POINT_BOARD = "point";
 const boardKey = (kind: OfficialObservation["kind"], challengeId: string): [string, string] =>
   kind === "point" ? ["challenge", POINT_BOARD] : [kind, challengeId];
 
+export function recordOfficialEventRank(env: OfficialRankingStoreBindings,
+  observation: OfficialObservation | OfficialEventWindow, event?: OfficialCatalog["event"] | null): void {
+  if (!env.OFFICIAL_EVENT_RANK_BUFFER || observation.error || !observation.players?.length) return;
+  const kind = "kind" in observation ? observation.kind : "point";
+  const challenge = "challengeId" in observation ? observation.challengeId : "";
+  const start = "startRank" in observation ? observation.startRank : 1;
+  const end = kind === "challenge" ? event?.challenges.find((row) => row.id === challenge)?.endAtMs : event?.endAtMs;
+  const scores = observation.players.map((row) => exactEventScore(kind === "point" ? row.point ?? row.score : row.score));
+  env.OFFICIAL_EVENT_RANK_BUFFER.record([observation.region, observation.eventId, kind, challenge, start],
+    [observation.observedAtMs, scores], end, end && event ? end + event.aggregationSeconds * 1000 : undefined);
+}
+
 async function observationPayload(env: OfficialRankingStoreBindings, row: ObservationRow, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string, batches?: PayloadBatchCache): Promise<StoredOfficialObservation> {
   const observation = await readPayload<OfficialObservation>(env, row.payload_key, row.payload_hash, batches);
@@ -570,6 +591,40 @@ async function readOfficialRankSeries(
   env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
   kind: OfficialObservation["kind"], challengeId: string, ranks: readonly number[], before: number,
 ): Promise<EventRankMilestoneTimeline> {
+  const start = Math.floor((ranks[0]! - 1) / 100) * 100 + 1;
+  const identity: EventRankIdentity = [region, eventId, kind, challengeId, start];
+  const archive = env.OFFICIAL_RANKING_DATA ? await readEventRankArchive(env.OFFICIAL_RANKING_DATA, identity).catch(() => null) : null;
+  const needsLegacy = archive?.archive.legacyBefore !== null;
+  const latestArchived = archive?.archive.points[0]?.[0] ?? 0;
+  const needsHot = before > latestArchived && !archive?.archive.points.some(([, , pin]) => pin === "final");
+  const hot = env.OFFICIAL_HOST_ORIGIN && (needsHot || needsLegacy)
+    ? await readOfficialHotEventRank(env, identity, before, needsLegacy).catch(() => [])
+    : [];
+  const points = new Map<number, EventRankMilestoneTimeline["samples"][number]>();
+  const compact = [...archive?.archive.points ?? [], ...hot];
+  for (const [atMs, scores] of compact) {
+    if (atMs < before) points.set(atMs, { atMs, scores: ranks.map((rank) => scores[rank - start] ?? null) });
+  }
+  if (!compact.length) return readLegacyOfficialRankSeries(env, region, eventId, kind, challengeId, ranks, before, true);
+  const pageSize = 256;
+  let older: number | null = null;
+  if (needsLegacy && points.size <= pageSize) {
+    const earliestCompact = Math.min(...compact.map(([at]) => at));
+    const legacy = await readLegacyOfficialRankSeries(env, region, eventId, kind, challengeId, ranks,
+      Math.min(before, earliestCompact, archive?.archive.legacyBefore ?? Infinity), true)
+      .catch(() => ({ samples: [], nextBefore: null }));
+    for (const row of legacy.samples) points.set(row.atMs, row);
+    older = legacy.nextBefore;
+  }
+  const samples = [...points.values()].sort((left, right) => right.atMs - left.atMs);
+  const page = samples.slice(0, pageSize);
+  return { samples: page, nextBefore: samples.length > pageSize ? page.at(-1)!.atMs : older };
+}
+
+export async function readLegacyOfficialRankSeries(
+  env: OfficialRankingStoreBindings, region: GameRecordsRegion, eventId: string,
+  kind: OfficialObservation["kind"], challengeId: string, ranks: readonly number[], before: number, hourly = false,
+): Promise<EventRankMilestoneTimeline> {
   const { db } = storage(env);
   const rank = ranks[0]!;
   const windowStart = Math.floor((rank - 1) / 100) * 100 + 1;
@@ -600,7 +655,8 @@ async function readOfficialRankSeries(
       WHERE region=? AND board_key IN (?,?) AND observed_at_ms<? AND snapshot_id IS NOT NULL
     ), unique_times AS (
       SELECT *, ROW_NUMBER() OVER (
-        PARTITION BY observed_at_ms ORDER BY error IS NULL DESC, priority DESC, payload_key DESC
+        PARTITION BY CASE WHEN ? THEN CAST(observed_at_ms / 3600000 AS INTEGER) ELSE observed_at_ms END
+        ORDER BY error IS NULL DESC, observed_at_ms DESC, priority DESC, payload_key DESC
       ) AS position FROM candidates
     )
     SELECT observed_at_ms, payload_key, payload_hash, error, start_rank
@@ -611,7 +667,7 @@ async function readOfficialRankSeries(
     kind, region, eventId, windowStart, before,
     windowKey, windowStart, region, ...archiveKeys, before,
     windowKey, windowStart, region, ...archiveKeys, before,
-    pageSize + 1,
+    Number(hourly), pageSize + 1,
   ).all<{ observed_at_ms: number; payload_key: string; payload_hash: string; error: string | null; start_rank: number }>();
   const selected = results.slice(0, pageSize);
   const batches: PayloadBatchCache = new Map();
@@ -622,7 +678,12 @@ async function readOfficialRankSeries(
       samples.push({ atMs, scores: ranks.map(() => null) });
       continue;
     }
-    const observation = await readPayload<OfficialObservation | OfficialEventWindow>(env, row.payload_key, row.payload_hash, batches);
+    const observation = await readPayload<OfficialObservation | OfficialEventWindow>(env, row.payload_key, row.payload_hash, batches)
+      .catch((error: unknown) => {
+        if (error instanceof Error && ["official_payload_unavailable", "official_payload_integrity"].includes(error.message)) return null;
+        throw error;
+      });
+    if (!observation) { samples.push({ atMs, scores: ranks.map(() => null) }); continue; }
     if (observation.region !== region || observation.eventId !== eventId ||
       ("kind" in observation ? observation.kind !== kind || observation.challengeId !== challengeId
         : kind !== "point" || observation.startRank !== row.start_rank)) {

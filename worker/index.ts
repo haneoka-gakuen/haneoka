@@ -5224,6 +5224,11 @@ async function handleScopedRequest(request: Request, env: Env, ctx: ExecutionCon
   if (arenaRanking) return arenaRanking;
   const eventPoints = await handleEventPointRankingApi(request, ctx, url, env);
   if (eventPoints) return eventPoints;
+  if (/^\/api\/v2\/game\/records\/(?:jp|tw|en|kr)\/events\/[1-9][0-9]{0,18}\/(?:total|points|challenges\/[1-9][0-9]{0,18})\/timeline$/u.test(url.pathname)
+    && (request.method === "GET" || request.method === "HEAD")) {
+    return edgeCached(request, ctx, 30, async () =>
+      (await handleOfficialRankingApi(request, url, env)) ?? new Response(null, { status: 404 }), "public, max-age=30");
+  }
   const officialRecords = await handleOfficialRankingApi(request, url, env);
   if (officialRecords) return officialRecords;
   const officialPlayer = await handleOfficialPlayerApi(request, ctx, url, env);

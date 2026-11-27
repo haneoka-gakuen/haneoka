@@ -1,9 +1,11 @@
 // L3 — GEB
 // Input: D1 statements from the collector code; the official tables copied from D1.
-// Output: D1 results from the host's own copy; every changed row of a replicated table queued for D1.
+// Output: Local SQLite results and a coalesced queue for live projections and completed daily archives.
 // Pos: [Map](../../L2.md); the collector host's database and its change outbox.
 // Effects/Dependencies: Reads and writes the local official database; triggers record changed primary keys. Coalesced profile observation times stay local.
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { HOST_LOCAL_UPSERTS } from "../../../worker/official-host";
+import { EVENT_RANK_DAY_MS, EVENT_RANK_JST_MS } from "../../../worker/event-rank-archive";
 
 type Row = Record<string, unknown>;
 
@@ -103,6 +105,12 @@ export interface ReplicatedTable { name: string; key: string[]; columns: string[
 export function installOutbox(db: DatabaseSync, owned: (table: string) => boolean): ReplicatedTable[] {
   db.exec(`CREATE TABLE IF NOT EXISTS _replica_outbox (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, tbl TEXT NOT NULL, pk TEXT NOT NULL, UNIQUE (tbl, pk))`);
+  if (!db.prepare("PRAGMA table_info(_replica_outbox)").all().some((row) => row.name === "available_at"))
+    db.exec("ALTER TABLE _replica_outbox ADD COLUMN available_at INTEGER NOT NULL DEFAULT 0");
+  db.exec(`CREATE TABLE IF NOT EXISTS _replica_policy (key TEXT PRIMARY KEY,value INTEGER NOT NULL) WITHOUT ROWID`);
+  const cutover = Math.floor((Date.now() + EVENT_RANK_JST_MS) / EVENT_RANK_DAY_MS) + 1;
+  db.prepare("INSERT OR IGNORE INTO _replica_policy VALUES ('arena_daily_cutover', ?)").run(cutover);
+  const dailyCutover = Number(db.prepare("SELECT value FROM _replica_policy WHERE key='arena_daily_cutover'").get()?.value);
   const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite%'").all() as { name: string }[])
     .map((row) => row.name).filter(owned);
   const replicated: ReplicatedTable[] = [];
@@ -114,17 +122,24 @@ export function installOutbox(db: DatabaseSync, owned: (table: string) => boolea
     const pick = (row: "NEW" | "OLD") => `json_array(${key.map((column) => `${row}."${column}"`).join(",")})`;
     // A trigger's own conflict clause yields to the outer statement's, so the
     // key moves to the end of the queue by removing it first.
+    const defer = name === "official_ranking_daily"
+      ? `CASE WHEN NEW.day >= ${dailyCutover} AND NEW.board_key LIKE 'arena/%' AND NEW.board_key NOT LIKE '%/1'
+          THEN (NEW.day+1)*${EVENT_RANK_DAY_MS}-${EVENT_RANK_JST_MS} ELSE 0 END`
+      : "0";
     const queue = (row: "NEW" | "OLD") => `DELETE FROM _replica_outbox WHERE tbl='${name}' AND pk=${pick(row)};
-        INSERT INTO _replica_outbox (tbl, pk) VALUES ('${name}', ${pick(row)});`;
+        INSERT INTO _replica_outbox (tbl, pk, available_at) VALUES ('${name}', ${pick(row)}, ${row === "NEW" ? defer : "0"});`;
+    const upsert = HOST_LOCAL_UPSERTS.has(name) ? "SELECT 1;" : queue("NEW");
     const sameKey = key.map((column) => `OLD."${column}" IS NEW."${column}"`).join(" AND ");
-    const changed = columns.map((column) => `OLD."${column}" IS NOT NEW."${column}"`).join(" OR ");
+    const changed = columns.map((column) => name === "official_arena_window_metadata" && column === "observed_at_ms"
+      ? "(OLD.observed_at_ms IS NOT NEW.observed_at_ms AND (NEW.start_rank=1 OR OLD.observed_at_ms/900000<>NEW.observed_at_ms/900000))"
+      : `OLD."${column}" IS NOT NEW."${column}"`).join(" OR ");
     db.exec(`DROP TRIGGER IF EXISTS "_replica_${name}_key_change";
       DROP TRIGGER IF EXISTS "_replica_${name}_insert"; DROP TRIGGER IF EXISTS "_replica_${name}_update"; DROP TRIGGER IF EXISTS "_replica_${name}_delete";
-      CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN ${queue("NEW")} END;
+      CREATE TRIGGER "_replica_${name}_insert" AFTER INSERT ON "${name}" BEGIN ${upsert} END;
       CREATE TRIGGER "_replica_${name}_update" AFTER UPDATE ON "${name}"
-        WHEN (${sameKey}) AND (${changed}) BEGIN ${queue("NEW")} END;
+        WHEN (${sameKey}) AND (${changed}) BEGIN ${upsert} END;
       CREATE TRIGGER "_replica_${name}_key_change" AFTER UPDATE ON "${name}"
-        WHEN NOT (${sameKey}) BEGIN ${queue("OLD")} ${queue("NEW")} END;
+        WHEN NOT (${sameKey}) BEGIN ${queue("OLD")} ${upsert} END;
       CREATE TRIGGER "_replica_${name}_delete" AFTER DELETE ON "${name}" BEGIN ${queue("OLD")} END;`);
     replicated.push({ name, key, columns });
   }
@@ -135,9 +150,6 @@ export type ReplicaOperation =
   | { table: string; upsert: Record<string, unknown> }
   | { table: string; remove: Record<string, unknown> };
 
-const BATCH_TABLE = "official_observation_batches";
-const PAYLOAD_TABLE = "official_observation_payloads";
-
 function readReplicaRow(db: DatabaseSync, table: string, key: Record<string, unknown>): Row | undefined {
   const columns = Object.keys(key);
   return db.prepare(`SELECT * FROM "${table}" WHERE ${columns.map((column) => `"${column}" IS ?`).join(" AND ")}`)
@@ -146,41 +158,29 @@ function readReplicaRow(db: DatabaseSync, table: string, key: Record<string, unk
 
 /** The next run of queued changes: each row as it is now, or its removal. */
 export function takeOutbox(db: DatabaseSync, tables: Map<string, ReplicatedTable>, limit: number, byteBudget: number) {
-  const queued = db.prepare("SELECT seq, tbl, pk FROM _replica_outbox ORDER BY seq LIMIT ?").all(limit) as { seq: number; tbl: string; pk: string }[];
+  const queued = db.prepare("SELECT seq, tbl, pk FROM _replica_outbox WHERE available_at<=? ORDER BY seq LIMIT ?")
+    .all(Date.now(), limit) as { seq: number; tbl: string; pk: string }[];
   const operations: ReplicaOperation[] = [];
-  const includedBatches = new Set<string>();
-  let bytes = 0, last = 0;
+  const sequences: number[] = [];
+  let bytes = 0;
   const append = (operation: ReplicaOperation) => {
     operations.push(operation);
     bytes += Buffer.byteLength(JSON.stringify(operation)) + 1;
   };
   for (const entry of queued) {
     const table = tables.get(entry.tbl);
-    last = entry.seq;
+    sequences.push(entry.seq);
     if (!table) continue;
     const values = JSON.parse(entry.pk) as unknown[];
     const where = Object.fromEntries(table.key.map((column, index) => [column, values[index]]));
     const row = readReplicaRow(db, table.name, where);
-    const key = row?.payload_key;
-    if (row && typeof key === "string") {
-      // Appending a payload updates the parent's byte size and moves its outbox entry.
-      // Include the parent even if a byte-limited chunk ends before that entry.
-      if (table.name === PAYLOAD_TABLE && !includedBatches.has(key)) {
-        const batch = readReplicaRow(db, BATCH_TABLE, { payload_key: key });
-        if (!batch) throw new Error("replica_observation_batch_missing");
-        append({ table: BATCH_TABLE, upsert: { ...batch } });
-        includedBatches.add(key);
-      } else if (table.name === BATCH_TABLE) {
-        if (includedBatches.has(key)) continue;
-        includedBatches.add(key);
-      }
-    }
+    if (row && HOST_LOCAL_UPSERTS.has(table.name)) continue;
     append(row ? { table: table.name, upsert: { ...row } } : { table: table.name, remove: where });
     if (bytes >= byteBudget) break;
   }
-  return { operations, last };
+  return { operations, sequences };
 }
 
-export function clearOutbox(db: DatabaseSync, through: number): void {
-  db.prepare("DELETE FROM _replica_outbox WHERE seq<=?").run(through);
+export function clearOutbox(db: DatabaseSync, sequences: readonly number[]): void {
+  db.prepare("DELETE FROM _replica_outbox WHERE seq IN (SELECT value FROM json_each(?))").run(JSON.stringify(sequences));
 }

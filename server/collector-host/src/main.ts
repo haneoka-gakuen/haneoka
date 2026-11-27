@@ -10,12 +10,15 @@ import { DatabaseSync } from "node:sqlite";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { OfficialRankingCollector } from "../../../worker/official-ranking-collector";
 import { maintainOfficialStorage } from "../../../worker/official-ranking-maintenance";
+import { readLegacyOfficialRankSeries, readOfficialDailyArchives, type OfficialRankingStoreBindings } from "../../../worker/official-ranking-store";
+import type { EventRankIdentity } from "../../../worker/event-rank-archive";
 import { newerOfficialClientVersion, officialClientVersionPattern } from "../../../src/lib/official-ranking";
 import * as platform from "../../../worker/official-platform-accounts";
 import * as guests from "../../../worker/official-guest-accounts";
 import { LocalStorage } from "./storage";
 import { LocalD1, clearOutbox, installOutbox, takeOutbox, type ReplicatedTable } from "./d1";
 import { RemoteBucket } from "./r2";
+import { EventRankBuffer } from "./event-rank-buffer";
 import type { HostContext } from "./containers";
 
 const REGIONS = ["jp", "tw", "en", "kr"] as const;
@@ -37,6 +40,8 @@ const clientVersionToken = createHmac("sha256", hostToken).update("official-coll
 mkdirSync(join(dataDir, "objects"), { recursive: true });
 
 const d1 = new LocalD1(join(dataDir, "official.sqlite"));
+const rankBuffer = new EventRankBuffer(join(dataDir, "event-rank-buffer.sqlite"));
+const bucket = new RemoteBucket(siteOrigin, hostToken);
 d1.handle.exec("CREATE TABLE IF NOT EXISTS _collector_client_versions (resource TEXT PRIMARY KEY, client_version TEXT NOT NULL)");
 d1.handle.exec(`CREATE TABLE IF NOT EXISTS _collector_client_candidates (
   region TEXT PRIMARY KEY, client_version TEXT NOT NULL, expires_at INTEGER NOT NULL)`);
@@ -62,7 +67,8 @@ const replicated = new Map<string, ReplicatedTable>(installOutbox(d1.handle,
 
 const env: Record<string, unknown> = {
   DB: d1,
-  OFFICIAL_RANKING_DATA: new RemoteBucket(siteOrigin, hostToken),
+  OFFICIAL_RANKING_DATA: bucket,
+  OFFICIAL_EVENT_RANK_BUFFER: rankBuffer,
   OFFICIAL_COLLECTOR_REMOTE_ORIGIN: collectorOrigin,
   OFFICIAL_COLLECTOR_REMOTE_TOKEN: collectorToken,
   OFFICIAL_RANKING_CLIENT_VERSIONS: clientVersions,
@@ -131,6 +137,16 @@ const COLLECTOR_METHODS = new Set(["status", "requestDemand", "requestArenaWindo
   "platformAccountView", "platformLoginView", "requestPlatformLogin", "guestJobView", "guestAccountView", "adoptConfiguredGuests",
   "requestGuestRegistration", "requestGuestVerification", "collectorRuntimeInfo"]);
 const MODULES: Record<string, Record<string, unknown>> = {
+  history: {
+    eventRankBuffer: (bindings: OfficialRankingStoreBindings, identity: EventRankIdentity, before: number, importLegacy: boolean) => {
+      const [region, event, kind, challenge] = identity;
+      if (importLegacy) void rankBuffer.importLegacy(bucket as never, identity, (ranks, cursor) =>
+        readLegacyOfficialRankSeries(bindings, region, event, kind, challenge, ranks, cursor, true))
+        .catch((error: unknown) => log("event_rank_import_failed", { region, error: message(error) }));
+      return rankBuffer.read(identity, before);
+    },
+    dailyArchives: readOfficialDailyArchives,
+  },
   platform: Object.fromEntries(["createPlatformAccount", "updatePlatformAccount", "removePlatformAccount", "savePlatformDeviceId", "adoptPlatformSessions",
     "resolvePlatformSdkConflict", "listPlatformAccounts", "listPlatformSdkConflicts", "readPlatformBootstraps"].map((name) => [name, (platform as Record<string, unknown>)[name]])),
   guests: Object.fromEntries(["removeGuestAccount", "listGuestAccounts"].map((name) => [name, (guests as Record<string, unknown>)[name]])),
@@ -230,12 +246,12 @@ const server = createServer(async (request, response) => {
 // ---------- replication to D1 ----------
 
 let lastReplication = 0;
-const outboxSize = () => Number((d1.handle.prepare("SELECT COUNT(*) AS n FROM _replica_outbox").get() as { n: number }).n);
+const outboxSize = () => Number(d1.handle.prepare("SELECT COUNT(*) AS n FROM _replica_outbox WHERE available_at<=?").get(Date.now())?.n);
 
 async function replicate(): Promise<void> {
   for (;;) {
-    const { operations, last } = takeOutbox(d1.handle, replicated, 400, 3_000_000);
-    if (!last) return;
+    const { operations, sequences } = takeOutbox(d1.handle, replicated, 400, 3_000_000);
+    if (!sequences.length) return;
     if (operations.length) {
       const response = await fetch(new URL("/api/internal/official-host/sync", siteOrigin), {
         method: "POST",
@@ -245,16 +261,17 @@ async function replicate(): Promise<void> {
       });
       if (!response.ok) throw new Error(`sync_${response.status}: ${(await response.text()).slice(0, 300)}`);
     }
-    clearOutbox(d1.handle, last);
+    clearOutbox(d1.handle, sequences);
     lastReplication = Date.now();
   }
 }
 
-let replicationDelay = 2_000;
+const REPLICATION_MS = 6_000;
+let replicationDelay = REPLICATION_MS;
 async function replicationLoop(): Promise<void> {
   try {
     await replicate();
-    replicationDelay = 2_000;
+    replicationDelay = REPLICATION_MS;
   } catch (error) {
     replicationDelay = Math.min(60_000, replicationDelay * 2);
     log("replication_failed", { error: message(error), retryMs: replicationDelay });
@@ -315,6 +332,8 @@ async function maintenance(): Promise<void> {
       catch (error) { log("watchdog_failed", { region, error: message(error) }); }
     }
   }
+  try { await rankBuffer.flush(bucket as never); }
+  catch (error) { log("event_rank_archive_failed", { error: message(error) }); }
 }
 
 let stopping = false;

@@ -6,6 +6,7 @@
 import type { GameRecordsRegion } from "../src/lib/game-records";
 import type { OfficialRankingCollector } from "./official-ranking-collector";
 import { AccountVaultUnavailable } from "./official-platform-accounts";
+import type { EventRankIdentity, EventRankPoint } from "./event-rank-archive";
 
 type CollectorCalls = Pick<OfficialRankingCollector, "status" | "requestDemand" | "requestArenaWindows" | "requestEventWindows" | "poolView" | "poolAction" |
   "poolAdd" | "platformAccountView" | "requestPlatformLogin" | "guestAccountView" | "adoptConfiguredGuests" | "requestGuestRegistration" | "requestGuestVerification">;
@@ -25,14 +26,15 @@ export interface CollectorBindings {
 
 const hostToken = (env: CollectorBindings) => env.OFFICIAL_COLLECTOR_REMOTE_TOKEN && env.OFFICIAL_COLLECTOR_REMOTE_TOKEN.length >= 32 ? env.OFFICIAL_COLLECTOR_REMOTE_TOKEN : null;
 
-async function hostCall<T>(env: CollectorBindings, body: { object?: string; module?: string; method: string; args: unknown[] }): Promise<T> {
+async function hostCall<T>(env: CollectorBindings, body: { object?: string; module?: string; method: string; args: unknown[] },
+  timeoutMs = 120_000): Promise<T> {
   const token = hostToken(env);
   if (!env.OFFICIAL_HOST_ORIGIN || !token) throw new HostCallError("HostUnavailable", "collector_host_unconfigured");
   const response = await fetch(new URL("/rpc", env.OFFICIAL_HOST_ORIGIN), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   type Reply = { value?: T; error?: { name: string; message: string } };
   const result: Reply = await response.json<Reply>().catch(() => ({ error: { name: "HostUnavailable", message: `collector_host_${response.status}` } }));
@@ -56,6 +58,10 @@ export async function readStagedOfficialPayload(env: CollectorBindings, key: str
   return response.text();
 }
 
+export function readOfficialHotEventRank(env: CollectorBindings, identity: EventRankIdentity, before: number, importLegacy: boolean) {
+  return hostCall<EventRankPoint[]>(env, { module: "history", method: "eventRankBuffer", args: [identity, before, importLegacy] }, 2_500);
+}
+
 /** A regional collector on the collector host. */
 export function officialCollector(env: CollectorBindings, region: GameRecordsRegion): CollectorCalls {
   return new Proxy({}, {
@@ -68,7 +74,7 @@ export function collectorFor(env: CollectorBindings, region: GameRecordsRegion):
 }
 
 /** Account-store calls the host owns, run there with its own bindings. */
-export function officialHostModule<T>(env: CollectorBindings, module: "platform" | "guests", method: string, ...args: unknown[]): Promise<T> {
+export function officialHostModule<T>(env: CollectorBindings, module: "platform" | "guests" | "history", method: string, ...args: unknown[]): Promise<T> {
   return hostCall<T>(env, { module, method, args });
 }
 
@@ -90,7 +96,7 @@ export function authorizedHost(request: Request, env: CollectorBindings): boolea
 type Operation = { table: string; upsert?: Record<string, unknown>; remove?: Record<string, unknown> };
 
 // Keep arena window pointers, search, archives and event history in D1.
-const HOST_LOCAL_UPSERTS = new Set([
+export const HOST_LOCAL_UPSERTS = new Set([
   "official_arena_ranking_observations", "official_observation_batches", "official_observation_payloads",
   "official_observation_payload_gc", "official_payload_maintenance", "official_storage_sweeps",
 ]);

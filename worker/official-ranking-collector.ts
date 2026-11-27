@@ -15,7 +15,7 @@ import type { GameRecordsRegion } from "../src/lib/game-records";
 import { OFFICIAL_EVENT_QUERY_GRACE_MS, officialEventQueryOpen, OFFICIAL_API_ORIGINS as REGION_ORIGINS, newerOfficialClientVersion, normalizeOfficialPlayerId, parseOfficialCollectorConfiguration, selectOfficialCollectorAccount,
   type OfficialCollectorAccount, type OfficialCollectorAccountHealth, type OfficialCollectorPool,
   type OfficialArenaObservation, type OfficialArenaPopulationObservation, type OfficialArenaProgress, type OfficialCatalog, type OfficialEventWindow, type OfficialCollectorFailure, type OfficialCollectorJob, type OfficialCollectorUpdate, type OfficialObservation } from "../src/lib/official-ranking";
-import { readOfficialQueryableEvent, queueOfficialFinalEventWindows, readOfficialEventWindows, flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation } from "./official-ranking-store";
+import { readOfficialQueryableEvent, queueOfficialFinalEventWindows, readOfficialEventWindows, flushOfficialPayloads, pruneOfficialObservations, readOfficialCatalog, takeOfficialFinalTarget, saveOfficialFinalArenaProgress, saveOfficialEventWindow, harvestOfficialPlayers, saveOfficialCardImage, saveOfficialPlayers, saveOfficialSongRanking, officialDigest, readOfficialArenaMetadata, readOfficialArenaPopulation, saveOfficialArenaObservation, saveOfficialArenaPopulation, saveOfficialCatalog, saveOfficialObservation, recordOfficialEventRank } from "./official-ranking-store";
 
 export const OFFICIAL_RANKING_REGIONS = ["jp", "tw", "en", "kr"] as const;
 export type OfficialCollectorConfigurationBindings = Partial<Pick<Env,
@@ -34,9 +34,8 @@ const ARENA_POPULATION_CATCHUP_MS = ARENA_POPULATION_TARGET_MS - INTERVAL_MS;
 const ARENA_INTEREST_TTL_MS = 3_600_000;
 /** Windows past the top 100 each run refreshes in turn; within the container's 40 s Arena demand budget. */
 const ARENA_SWEEP_WINDOWS = 20;
-const ARENA_PARALLEL_WINDOWS = 12;
-/** Deep pages turn over about every two hours with this pace; the top windows and demanded windows keep their own cadence. */
-const ARENA_SWEEP_INTERVAL_MS = 150_000;
+const ARENA_PARALLEL_WINDOWS = 8;
+const ARENA_SWEEP_INTERVAL_MS = 60_000;
 const ARENA_SWEEP_DURING_POPULATION = 4;
 /** Event point windows past the top 100 each run refreshes in turn. */
 const EVENT_SWEEP_WINDOWS = 9;
@@ -137,7 +136,6 @@ interface CollectorState {
   arenaCatalog?: OfficialCatalog["arena"];
   arenaCatalogIdentity?: Pick<OfficialCatalog, "masterVersion" | "resourceVersion" | "tableHashes">;
   /** Next band to receive a background window. */
-  arenaSweep?: { band: number };
   arenaSweepRuns?: Record<string, CollectorRun>;
   arenaSweepNextAtMs?: number;
   arenaCoverage?: ArenaCoverage;
@@ -1290,7 +1288,7 @@ export class OfficialRankingCollector extends Container<Env> {
     state.nextAtMs = state.nextAtMs ? Math.min(state.nextAtMs, next) : next;
   }
 
-  /** Round-robin bands. Previously unseen windows lead, then the oldest retained observations. */
+  /** Missing windows lead, then the oldest retained observations across bands. */
   private async arenaSweep(
     state: CollectorState, region: GameRecordsRegion, now: number, count: number,
     reserved: ReadonlySet<string>,
@@ -1312,7 +1310,7 @@ export class OfficialRankingCollector extends Container<Env> {
       else entry.observed.set(row.start, row.observed);
     }
     const coverage: ArenaCoverage = { seasonId: arena.seasonId, measuredAtMs: now, bands: [] };
-    const queues = arena.bandIds.map((band) => {
+    const windows = arena.bandIds.flatMap((band) => {
       const entry = byBand.get(band)!;
       let observedPages = 0;
       let oldestObservedAtMs: number | null = null;
@@ -1322,32 +1320,23 @@ export class OfficialRankingCollector extends Container<Env> {
         oldestObservedAtMs = Math.min(oldestObservedAtMs ?? observed, observed);
       }
       coverage.bands.push({ bandId: band, expectedPages: Math.max(0, Math.ceil(entry.maximum / 100) - 1), observedPages, oldestObservedAtMs });
-      const starts: number[] = [];
-      for (let rank = 101; rank <= entry.maximum && starts.length < count; rank += 100) {
-        if (!entry.observed.has(rank) && !excluded.has(band + ":" + rank)) starts.push(rank);
+      const candidates: { bandId: string; startRank: number; observed: number }[] = [];
+      for (let rank = 101; rank <= entry.maximum && candidates.length < count; rank += 100) {
+        if (!entry.observed.has(rank) && !excluded.has(band + ":" + rank))
+          candidates.push({ bandId: band, startRank: rank, observed: 0 });
       }
-      if (starts.length < count) {
+      if (candidates.length < count) {
         const oldest = [...entry.observed].filter(([rank, observed]) => rank <= entry.maximum
           && now - observed >= ARENA_REFRESH_MS && !excluded.has(band + ":" + rank))
           .sort((left, right) => left[1] - right[1] || left[0] - right[0]);
-        for (const [rank] of oldest.slice(0, count - starts.length)) starts.push(rank);
+        candidates.push(...oldest.slice(0, count - candidates.length)
+          .map(([startRank, observed]) => ({ bandId: band, startRank, observed })));
       }
-      return { band, starts, next: 0 };
+      return candidates;
     });
     state.arenaCoverage = coverage;
-    const stateSweep = state.arenaSweep ??= { band: 0 };
-    const windows: NonNullable<OfficialCollectorJob["arenaWindows"]> = [];
-    let emptyTurns = 0;
-    while (windows.length < count && emptyTurns < queues.length) {
-      const queue = queues[stateSweep.band % queues.length]!;
-      stateSweep.band = (stateSweep.band + 1) % queues.length;
-      const startRank = queue.starts[queue.next];
-      if (startRank === undefined) { emptyTurns++; continue; }
-      emptyTurns = 0;
-      queue.next++;
-      windows.push({ seasonId: arena.seasonId, bandId: queue.band, startRank, endRank: startRank + 99 });
-    }
-    return windows;
+    return windows.sort((left, right) => left.observed - right.observed || left.startRank - right.startRank)
+      .slice(0, count).map(({ bandId, startRank }) => ({ seasonId: arena.seasonId, bandId, startRank, endRank: startRank + 99 }));
   }
 
   private async runningEvent(region: GameRecordsRegion, now: number) {
@@ -2352,11 +2341,12 @@ export class OfficialRankingCollector extends Container<Env> {
       if (state.arenaSweepNextAtMs && now + 1_000 < state.arenaSweepNextAtMs) return [];
       await this.queueArenaSweep(state, now);
       let jobs: OfficialCollectorJob[] = [];
-      if (state.arenaCatalogIdentity && !(region === "jp" ? await this.guestJobView() : await this.platformLoginView(region))) {
+      const rateLimited = state.status === "rate_limited" && state.nextAtMs > now;
+      if (!rateLimited && state.arenaCatalogIdentity && !(region === "jp" ? await this.guestJobView() : await this.platformLoginView(region))) {
         const pool = await this.poolFor(region).catch(() => null);
         if (pool) {
           this.synchronizePool(state, pool);
-          const reserveRegular = (!state.run || state.run.complete) && state.nextAtMs <= now + ARENA_SWEEP_INTERVAL_MS;
+          const reserveRegular = (!state.run || state.run.complete) && state.nextAtMs <= now + LOOKUP_MS + 15_000;
           const accounts = this.arenaSweepAccounts(state, pool, now, reserveRegular);
           const pending = new Set((state.arenaInterests ?? []).filter((row) => row.seasonId === arena.seasonId
             && now - row.requestedAtMs < ARENA_INTEREST_TTL_MS).map((row) => row.bandId + ":" + row.startRank));
@@ -2679,6 +2669,7 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           await this.ctx.storage.put("collectorState", state);
           await saveOfficialObservation(this.env, update.observation);
+          recordOfficialEventRank(this.env, update.observation, event);
           if (update.observation.players) await harvestOfficialPlayers(this.env, region, update.observation.players, update.observation.observedAtMs);
           this.rememberWindow(run, update.observation, true);
           run.pendingAttempt = null;
@@ -2720,6 +2711,7 @@ export class OfficialRankingCollector extends Container<Env> {
           }
           await this.ctx.storage.put("collectorState", state);
           const windowChanged = await saveOfficialEventWindow(this.env, observation);
+          recordOfficialEventRank(this.env, observation, event);
           if (windowChanged && observation.startRank === 1) {
             const players = observation.players?.map((row) => ({ player_data: row.profile ?? {}, score: row.point ?? 0 }));
             await saveOfficialObservation(this.env, {

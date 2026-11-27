@@ -1,5 +1,5 @@
-import type { EventRankingDto, GameRecordsRegion } from "../src/lib/game-records";
-import { decodeEventHistory } from "../src/lib/game-event-history";
+import type { EventRankingDto, EventRankMilestoneTimeline, GameRecordsRegion } from "../src/lib/game-records";
+import { decodeEventHistory, exactEventScore } from "../src/lib/game-event-history";
 
 /** Where an archived ranking lives: summary rows in RECORDS_DB, full payloads
  * in R2. Rows not yet moved are still read from the community database. */
@@ -39,6 +39,25 @@ async function payload(env: EventHistoryBindings, id: string) {
 
 /** The databases holding rows, moved first. */
 const sources = (env: EventHistoryBindings) => [env.RECORDS_DB, env.DB].filter((db): db is D1Database => Boolean(db));
+
+/** Legacy challenge history retained its score vectors and original source times in the summary rows. */
+export async function readProviderEventRankSeries(env: EventHistoryBindings, region: GameRecordsRegion,
+  event: string, challenge: string, ranks: readonly number[], before: number): Promise<EventRankMilestoneTimeline> {
+  const pages = await Promise.all(sources(env).map((db) =>
+    db.prepare(`SELECT first_source_at_ms AS atMs, rows_json AS rows FROM game_event_ranking_history
+      WHERE region=? AND event_id=? AND challenge_id=? AND record_kind='snapshot'
+        AND first_source_at_ms>0 AND first_source_at_ms<?
+      ORDER BY first_source_at_ms DESC LIMIT 65`).bind(region, event, challenge, before)
+      .all<{ atMs: number; rows: string }>().then(({ results }) => results, () => [])));
+  const unique = new Map<number, string>();
+  for (const row of pages.flat()) if (!unique.has(row.atMs)) unique.set(row.atMs, row.rows);
+  const ordered = [...unique].sort((left, right) => right[0] - left[0]);
+  const samples = ordered.slice(0, 64).map(([atMs, json]) => {
+    const rows = JSON.parse(json) as { scoreExact?: unknown }[];
+    return { atMs, scores: ranks.map((rank) => exactEventScore(rows[rank - 1]?.scoreExact)) };
+  });
+  return { samples, nextBefore: ordered.length > 64 ? samples.at(-1)!.atMs : null };
+}
 
 export async function latestEventHistory(
   env: EventHistoryBindings,

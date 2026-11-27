@@ -3,14 +3,16 @@
 // Output: Normalized rankings, every archived event's boards, rank timelines and explicit pending availability.
 // Pos: [Map](L2.md); official read adapter alongside legacy PT and SHA history.
 // Effects/Dependencies: Reads D1/private R2; keeps boards read from Moenotes in the event archive; never requests the game or writes observations.
-import type { EventRankingDto, EventTrackerDto, GameRecordsRegion, SongRankingCardDto, SongRankingRowDto, TrackedEventDto } from "../src/lib/game-records";
+import { EVENT_HISTORY_MILESTONES, type EventRankingDto, type EventTrackerDto, type GameRecordsRegion, type SongRankingCardDto, type SongRankingRowDto, type TrackedEventDto } from "../src/lib/game-records";
+import { exactEventScore } from "../src/lib/game-event-history";
+import { readProviderEventRankSeries, type EventHistoryBindings } from "./game-event-history";
 import { moenotesEventRanking } from "./moenotes-fallback";
 import { officialEventQueryOpen } from "../src/lib/official-ranking";
 import type { OfficialCatalog, OfficialObservation } from "../src/lib/official-ranking";
 import { OFFICIAL_RANKING_REGIONS, officialCollectorAvailability, officialRegionEnabled, type OfficialCollectorConfigurationBindings } from "./official-ranking-collector";
 import { OFFICIAL_RANKING_STALE_MS, officialCardUrl, readOfficialBoardStatus, readOfficialCatalog, readOfficialHistory, readOfficialLatest, readOfficialRankMilestones, readOfficialRankTimeline, type OfficialRankingStoreBindings, type StoredOfficialObservation } from "./official-ranking-store";
 
-export interface OfficialRankingReadBindings extends OfficialRankingStoreBindings, OfficialCollectorConfigurationBindings {
+export interface OfficialRankingReadBindings extends OfficialRankingStoreBindings, OfficialCollectorConfigurationBindings, EventHistoryBindings {
   OFFICIAL_RANKING_READ_REGIONS?: string;
 }
 
@@ -267,6 +269,21 @@ export async function handleOfficialRankingApi(request: Request, url: URL, env: 
       const result = milestones
         ? await readOfficialRankMilestones(env, region, timeline[1]!, kind, timeline[3] ?? "", Number(before))
         : await readOfficialRankTimeline(env, region, timeline[1]!, kind, timeline[3] ?? "", Number(rank), Number(before));
+      if (!result.samples.length && kind !== "point") {
+        const ranks = milestones ? EVENT_HISTORY_MILESTONES : [Number(rank)];
+        const retained = timeline[3] ? await readProviderEventRankSeries(env, region, timeline[1]!, timeline[3], ranks, Number(before))
+          : { samples: [], nextBefore: null };
+        if (!retained.samples.length && !url.searchParams.has("before")) {
+          const saved = await archivedBoard(env, region, timeline[1]!, timeline[3] ?? "");
+          const observed = saved?.observedAtMs ?? saved?.fetchedAtMs;
+          if (saved && observed && observed > 0 && observed < Number(before)) {
+            retained.samples.push({ atMs: observed,
+              scores: ranks.map((position) => exactEventScore(saved.rows[position - 1]?.scoreExact ?? saved.rows[position - 1]?.score)) });
+          }
+        }
+        return response(request, milestones ? retained : { ...retained,
+          samples: retained.samples.map(({ atMs, scores }) => ({ atMs, score: scores[0] ?? null })) }, 200, "public, max-age=60");
+      }
       return response(request, result, 200, "public, max-age=60");
     } catch (error) {
       console.warn(JSON.stringify({ event: "official_rank_timeline_failed", region, error: error instanceof Error ? error.name : "Error" }));
