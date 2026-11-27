@@ -1,4 +1,4 @@
-import { renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
+import { renderCatalogueCollection, renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
 import { CatalogScreen } from "../lit/catalog-screen";
 import type { EntityPayload, StoryPayload } from "../lib/entity-graph";
 import type { Locale } from "../i18n/locales";
@@ -37,9 +37,11 @@ export function renderCatalogCollection(
   locale: Locale,
 ): StaticWorkspacePage {
   useStaticLocale(locale, "/catalog");
-  const screen = new CatalogScreen();
-  screen.prepareCollection(payload, config);
-  return renderWorkspacePage(screen, locale, "/catalog");
+  return renderCatalogueCollection(payload, payload.resource, locale, "/catalog", (data) => {
+    const screen = new CatalogScreen();
+    screen.prepareCollection(data, config);
+    return screen;
+  });
 }
 
 export async function renderStory(payload: StoryPayload, locale: Locale): Promise<string> {

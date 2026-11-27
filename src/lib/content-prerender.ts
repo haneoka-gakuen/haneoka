@@ -11,6 +11,7 @@ import { isModelVisibilityType, type VisibilityType } from "./content-visibility
 let publicView = false;
 let references: Map<string, ContentReference> | undefined;
 let cutoff: number | undefined;
+let allowPreview = false;
 export function prerenderViewKey(): string {
   return references ? (publicView ? "public" : "full") : "runtime";
 }
@@ -25,24 +26,28 @@ export function prerenderContentVisible(
     const reference = contentReference(kind, value, id);
     references?.set(JSON.stringify(reference), reference);
   }
-  return !publicView || published;
+  return !publicView || published || (allowPreview && value.__contentPreview === true);
 }
 export function withPrerenderView<T>(
   publishedOnly: boolean,
   render: () => T,
   now?: number,
+  preview = false,
 ): { result: T; references: ContentReference[] } {
   const previous = publicView,
     previousReferences = references,
-    previousCutoff = cutoff;
+    previousCutoff = cutoff,
+    previousPreview = allowPreview;
   publicView = publishedOnly;
   references = new Map();
   cutoff = now;
+  allowPreview = preview;
   try {
     return { result: render(), references: [...references.values()] };
   } finally {
     publicView = previous;
     references = previousReferences;
     cutoff = previousCutoff;
+    allowPreview = previousPreview;
   }
 }

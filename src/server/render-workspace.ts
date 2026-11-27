@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: 工作区实例、locale 和文档地址。
-// Output: Lit SSR HTML、应用栏状态及静态工作区页面。
+// Output: Lit SSR HTML、受控的图鉴预览及应用栏状态。
 // Pos: [Map](L2-2.md)；构建期复用 Lit 工作区的渲染桥。
 // Effects/Dependencies: 安装全局 DOM shim，设置国际化／文档上下文并序列化 light DOM。
 import "@lit-labs/ssr/lib/install-global-dom-shim.js";
@@ -16,7 +16,8 @@ import { appBarOwnerKind as kind, captureAppBar } from "../lib/app-bar";
 import { unpublishedState } from "../lit/ui/unpublished-state";
 import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
-import { staticVisibilityTime } from "./static-visibility";
+import { staticContentMarkup, staticPreview, staticVisibilityTime } from "./static-visibility";
+import type { ContentReference } from "../lib/content-view";
 
 type Node = DefaultTreeAdapterMap["node"];
 const MaterialStyleRenderer = createMaterialStyleRenderer(import.meta.env?.DEV === true);
@@ -79,12 +80,28 @@ export interface StaticWorkspacePage {
   body: string;
   appBar: { actions: string; identity: string; search: string };
 }
+type Workspace = { render(): unknown; renderStaticChrome?(): void };
+type Preview = { value: Workspace; version: number; next?: number };
+
+export function renderCatalogueCollection<T>(
+  payload: T,
+  resource: string,
+  locale: Locale,
+  route: string,
+  create: (data: T) => Workspace,
+): StaticWorkspacePage {
+  return renderWorkspacePage(create(payload), locale, route, (refs) => {
+    const preview = staticPreview(payload, resource, refs);
+    return preview && { ...preview, value: create(preview.value) };
+  });
+}
+
 function markup(value: unknown): string {
   const fragment = parseFragment(collectResultSync(render(value, { deferHydration: true, elementRenderers: [MaterialStyleRenderer, LitElementRenderer] })));
   lightDom(fragment);
   return serialize(fragment);
 }
-export function renderWorkspacePage(workspace: { render(): unknown; renderStaticChrome?(): void }, locale: Locale, route: string): StaticWorkspacePage {
+export function renderWorkspacePage(workspace: Workspace, locale: Locale, route: string, previewFor?: (refs: ContentReference[]) => Preview | undefined): StaticWorkspacePage {
   useStaticLocale(locale, route);
   const now = staticVisibilityTime();
   return withDocumentUrl(new URL(route, "https://haneoka.org"), () => {
@@ -97,12 +114,13 @@ export function renderWorkspacePage(workspace: { render(): unknown; renderStatic
       workspace.renderStaticChrome?.();
       return markup(workspace.render());
     }, now).result);
-  const refs = JSON.stringify(body.references).replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
-  const rendered = body.references.length || body.result !== publicBody
-    ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${body.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
-    : body.result;
+  const preview = previewFor?.(body.references);
+  const rendered = staticContentMarkup(body, publicBody, preview && {
+    ...preview,
+    value: captureAppBar(locale, () => withPrerenderView(true, () => markup(preview.value.render()), now, true).result).result,
+  });
   const view = (full: string, published: string) => full === published ? full
-    : `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${full}</div><div data-content-view="public" style="display:contents">${published}</div>`;
+    : staticContentMarkup({ result: full, references: body.references }, published);
   return { body: rendered, appBar: {
     actions: view(markup([...bar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)), markup([...publicBar.actions].map(([owner, content]) => html`<div class="top-app-bar__group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`))),
     identity: view(markup([...bar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`)), markup([...publicBar.identity].map(([owner, content]) => html`<div class="top-app-bar__identity-group" data-app-bar-owner=${owner} data-app-bar-static data-app-bar-owner-kind=${kind(owner)}>${content}</div>`))),

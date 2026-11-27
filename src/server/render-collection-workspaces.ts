@@ -1,4 +1,4 @@
-import { renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
+import { renderCatalogueCollection, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import type { Locale } from "../i18n/locales";
 import type { StoryMode } from "../lib/resource-route";
@@ -13,7 +13,9 @@ export async function renderCollectionWorkspace(payload: WorkspaceCollectionPayl
   };
   const Constructor = await constructors[payload.resource]();
   useStaticLocale(locale, route);
-  const workspace = new Constructor();
-  workspace.prepareCollection(payload, locale, mode);
-  return renderWorkspacePage(workspace, locale, route);
+  return renderCatalogueCollection(payload, payload.resource, locale, route, (data) => {
+    const workspace = new Constructor();
+    workspace.prepareCollection(data, locale, mode);
+    return workspace;
+  });
 }

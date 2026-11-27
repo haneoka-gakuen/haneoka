@@ -12,7 +12,7 @@ import { homePageData } from "./home-page-data";
 import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
 import { packHomeSeed } from "../lib/cross-server/home-seed";
-import { staticVisibilityTime } from "./static-visibility";
+import { staticContentMarkup, staticPreview, staticVisibilityTime } from "./static-visibility";
 
 const snapshots = new Map<string, Promise<HomeSeed>>();
 
@@ -45,15 +45,17 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
       if (seed) dashboard.prepareHome(seed, locale);
       return collectResultSync(render(dashboard.render()));
     }, now).result;
-    const refs = JSON.stringify(full.references)
-      .replace(/&/gu, "&amp;")
-      .replace(/"/gu, "&quot;")
-      .replace(/</gu, "&lt;");
-    const fragment = parseFragment(
-      full.references.length
-        ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${full.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`
-        : full.result,
-    );
+    const preview = seed && staticPreview(seed, undefined, full.references);
+    const fragment = parseFragment(staticContentMarkup(full, publicBody, preview && {
+      ...preview,
+      value: withPrerenderView(true, () => {
+        const dashboard = new HomeDashboard();
+        dashboard.locale = locale;
+        dashboard.server = server;
+        dashboard.prepareHome(preview.value, locale);
+        return collectResultSync(render(dashboard.render()));
+      }, now, true).result,
+    }));
     const promote = (node: DefaultTreeAdapterMap["node"]) => {
       if ("tagName" in node && node.tagName === "img") {
         const source = node.attrs.find((attribute) => attribute.name === "data-src");

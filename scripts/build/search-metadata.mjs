@@ -72,12 +72,12 @@ function searchMetadata(html, sourcePath) {
   if (/<html\b[^>]*\bdata-pagefind-ignore="all"/iu.test(html))
     return '<!doctype html><html data-pagefind-ignore="all"><head><title>haneoka</title></head><body></body></html>';
   html = withoutInlineJson(html);
-  if (html.includes('data-content-view="full"')) {
+  if (/data-content-view="(?:full|preview)"/u.test(html)) {
     const fragment = parse(html);
     const prune = (node) => {
       if (!node.childNodes) return;
       node.childNodes = node.childNodes.filter(
-        (child) => !child.attrs?.some(({ name, value }) => name === "data-content-view" && value === "full"),
+        (child) => !child.attrs?.some(({ name, value }) => name === "data-content-view" && (value === "full" || value === "preview")),
       );
       node.childNodes.forEach(prune);
     };
@@ -153,7 +153,7 @@ const hasClass = (attrs, name) => (attrs.class || "").split(/\s+/u).includes(nam
 const excludedBodyNode = (attrs) =>
   (attrs.hidden !== undefined && !hasClass(attrs, "md-accordion__panel")) ||
   attrs["aria-hidden"] === "true" || attrs.inert !== undefined || attrs.role === "dialog" ||
-  attrs["data-content-view"] === "full" || attrs["data-pagefind-ignore"] === "all" ||
+  attrs["data-content-view"] === "full" || attrs["data-content-view"] === "preview" || attrs["data-pagefind-ignore"] === "all" ||
   /(?:^|\s)(?:browse__filters|browse__filter-group|detail-level-switch|story-transcript__media)(?:\s|$)/u.test(attrs.class || "");
 
 function galleryImage(node) {

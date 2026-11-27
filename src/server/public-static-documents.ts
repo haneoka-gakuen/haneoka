@@ -581,6 +581,11 @@ export function materializePublicStaticDocument(
       return;
     }
     const contentView = attr(node, "data-content-view");
+    if (contentView === "preview") {
+      differs = true;
+      remove(node);
+      return;
+    }
     if (contentView === "full") {
       const refs = JSON.parse(attr(node, "data-content-references") || "[]") as ContentReference[];
       for (const ref of refs) {

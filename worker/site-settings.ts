@@ -163,7 +163,8 @@ export async function applySiteSettings(
     })
     .on("[data-content-view]", {
       element(element) {
-        const full = element.getAttribute("data-content-view") === "full";
+        const variant = element.getAttribute("data-content-view");
+        const full = variant === "full";
         if (full) {
           const refs = parseHtmlJson<ContentReference[]>(element.getAttribute("data-content-references") || "[]");
           if (
@@ -179,7 +180,11 @@ export async function applySiteSettings(
           )
             usePublicView = true;
         }
-        if (full === usePublicView) element.remove();
+        const preview = usePublicView && view.spoilers && !view.override &&
+          element.getAttribute("data-content-preview-version") === String(visibility.version) &&
+          view.now < Number(element.getAttribute("data-content-preview-until") ?? Infinity);
+        const show = full ? !usePublicView : variant === "preview" ? preview : usePublicView && !preview;
+        if (!show) element.remove();
         else element.removeAndKeepContent();
       },
     })

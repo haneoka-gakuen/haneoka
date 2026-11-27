@@ -26,6 +26,7 @@ export interface ContentView {
   spoilers: boolean;
   override: boolean;
   now: number;
+  previewOnly?: boolean;
 }
 export type ContentReference = { kind: VisibilityType; id: string; publication: Record<string, unknown> };
 export { spoilerOverrideEnabled as explicitContentOverride } from "./spoiler-cookie";
@@ -52,6 +53,7 @@ export function maySeeUnpublishedType(view: Pick<ContentView, "policy" | "group"
 
 export function contentVisible(view: ContentView, kind: VisibilityType | undefined, value: unknown, id = ""): boolean {
   if (isModelVisibilityType(kind) || contentPublished(value, view.now)) return true;
+  if (view.previewOnly) return false;
   const rule = visibilityRuleFor(view.policy, isSpecialCard(kind, value) ? "special-cards" : kind);
   return unpublishedVisible(view, rule, kind, id);
 }

@@ -1,4 +1,4 @@
-import { renderWorkspacePage, useStaticLocale } from "./render-workspace";
+import { renderCatalogueCollection, renderWorkspacePage, useStaticLocale } from "./render-workspace";
 import type { Locale } from "../i18n/locales";
 import type { WorkspaceCollectionPayload } from "../lib/workspace-page-data";
 import type { HelpCollectionPageData, HelpViewState } from "../lit/help-workspace";
@@ -22,7 +22,13 @@ export async function renderHelpView(
   const { HelpWorkspace } = await import("../lit/help-workspace");
   useStaticLocale(locale, "/catalog/help");
   const pageData: HelpCollectionPageData = { ...payload, helpView };
-  const workspace = new HelpWorkspace();
-  workspace.prepareCollection(pageData, locale);
-  return { ...renderWorkspacePage(workspace, locale, "/catalog/help"), payload: pageData };
+  const create = (data: HelpCollectionPageData) => {
+    const workspace = new HelpWorkspace();
+    workspace.prepareCollection(data, locale);
+    return workspace;
+  };
+  const page = helpView.topic
+    ? renderWorkspacePage(create(pageData), locale, "/catalog/help")
+    : renderCatalogueCollection(pageData, "help", locale, "/catalog/help", create);
+  return { ...page, payload: pageData };
 }

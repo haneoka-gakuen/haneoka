@@ -1,4 +1,4 @@
-import { renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
+import { renderCatalogueCollection, renderWorkspacePage, useStaticLocale, type StaticWorkspacePage } from "./render-workspace";
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import type { Locale } from "../i18n/locales";
 
@@ -13,7 +13,12 @@ export async function renderCatalogSystem(payload: CatalogSystemPayload, locale:
   const Constructor = await constructors[payload.kind]();
   const route = `/catalog/${payload.kind}${payload.kind === "anon-tokyo" ? `/${payload.mode}` : ""}`;
   useStaticLocale(locale, route);
-  const workspace = new Constructor();
-  workspace.preparePage(payload, locale);
-  return renderWorkspacePage(workspace, locale, route);
+  const create = (data: CatalogSystemPayload) => {
+    const workspace = new Constructor();
+    workspace.preparePage(data, locale);
+    return workspace;
+  };
+  return payload.entityId
+    ? renderWorkspacePage(create(payload), locale, route)
+    : renderCatalogueCollection(payload, payload.kind, locale, route, create);
 }
