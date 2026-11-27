@@ -199,13 +199,17 @@ export class SkillsWorkspace extends LitElement {
   render() {
     const data = this.data;
     if (!data) return nothing;
+    const canOpen = (entry: SkillCatalogEntry) =>
+      !("__contentPreview" in entry && entry.__contentPreview === true) &&
+      isContentVisible("skills", entry, skillPageId(entry));
+    const count = (entry: SkillCatalogEntry) => entry.cardCount ?? entry.cards?.length ?? 0;
     if (this.entityId) {
       const entry = data.entries.find((row) => skillPageId(row) === this.entityId);
-      return entry && !isContentVisible("skills", entry, this.entityId)
+      return entry && !canOpen(entry)
         ? unpublishedState(this.locale)
         : entry ? this.renderDetail(data, entry) : nothing;
     }
-    const source = data.entries.filter((entry) => (this.includeUnlinked || entry.cards.length > 0) && isContentListed("skills", entry, skillPageId(entry)));
+    const source = data.entries.filter((entry) => (this.includeUnlinked || count(entry) > 0) && isContentListed("skills", entry, skillPageId(entry)));
     const needle = normalizeSearchText(this.query.trim(), this.locale);
     const matches = (entry: SkillCatalogEntry, skip?: Facet) =>
       (skip === "family" || !this.facets.family.length || this.facets.family.includes(entry.family)) &&
@@ -218,7 +222,7 @@ export class SkillsWorkspace extends LitElement {
     const effects = new Map<string, unknown>();
     for (const entry of source) for (const effect of entry.effects) effects.set(String(effect.id), effect.name);
     const cardCount = (entry: SkillCatalogEntry) =>
-      this.text("catalog.skills.cardCount", "{count} cards", { count: entry.cards.length });
+      this.text("catalog.skills.cardCount", "{count} cards", { count: count(entry) });
     const results =
       this.view === "grid"
         ? html`
@@ -234,7 +238,8 @@ export class SkillsWorkspace extends LitElement {
                   aspectRatio: 1,
                   placeholder: icon("bolt", 32),
                   onImageError: nextImageCandidate,
-                  href: this.skillHref(entry),
+                  href: canOpen(entry) ? this.skillHref(entry) : undefined,
+                  static: !canOpen(entry),
                 }),
               )}
             </div>
@@ -246,8 +251,9 @@ export class SkillsWorkspace extends LitElement {
                 title: this.skillTitle(entry),
                 subtitle: [this.familyLabel(entry.family), this.effectNames(entry)].filter(Boolean).join(" / "),
                 image: entry.image,
-                trailing: entry.cards.length ? cardCount(entry) : nothing,
-                href: this.skillHref(entry),
+                trailing: count(entry) ? cardCount(entry) : nothing,
+                href: canOpen(entry) ? this.skillHref(entry) : undefined,
+                static: !canOpen(entry),
               })),
             )
           : collectionTable(
@@ -260,19 +266,19 @@ export class SkillsWorkspace extends LitElement {
                 this.text("navigation.cards", "Cards"),
                 "ID",
               ],
-              rows.map((entry) => [
-                html`
-                  <a class="table-entity" href=${this.skillHref(entry)}>
-                    <img src=${entry.image} alt="" loading="lazy" decoding="async" />
-                    ${this.skillTitle(entry)}
-                  </a>
-                `,
-                this.familyLabel(entry.family),
-                this.effectNames(entry) || "—",
-                this.levelRange(entry),
-                entry.cards.length.toLocaleString(this.locale),
-                entry.id,
-              ]),
+              rows.map((entry) => {
+                const identity = html`<img src=${entry.image} alt="" loading="lazy" decoding="async" />${this.skillTitle(entry)}`;
+                return [
+                  canOpen(entry)
+                    ? html`<a class="table-entity" href=${this.skillHref(entry)}>${identity}</a>`
+                    : html`<span class="table-entity">${identity}</span>`,
+                  this.familyLabel(entry.family),
+                  this.effectNames(entry) || "—",
+                  this.levelRange(entry),
+                  count(entry).toLocaleString(this.locale),
+                  entry.id,
+                ];
+              }),
             );
     const remove = this.text("common.actions.remove", "Remove");
     const applied = [

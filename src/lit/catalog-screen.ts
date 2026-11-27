@@ -2341,11 +2341,18 @@ export class CatalogScreen extends LitElement {
       },
     });
   }
-  private itemEntityLink(item: Item, difficulty?: number): string | undefined {
+  private itemEntityId(item: Item): string {
     const entry = this.unionEntry(item);
-    const variant = entry?.perServer[entry.displayServer];
-    const id = variant?.id || (this.profile.perDifficulty ? String(item.musicId || "") : "") || this.itemId(item);
-    const server = variant?.identity.server || this.dataServer();
+    return entry?.perServer[entry.displayServer]?.id ||
+      (this.profile.perDifficulty ? String(item.musicId || "") : "") || this.itemId(item);
+  }
+  private itemDetailAvailable(item: Item): boolean {
+    return item.__contentPreview !== true && isContentVisible(this.settings.resource, item, this.itemEntityId(item));
+  }
+  private itemEntityLink(item: Item, difficulty?: number): string | undefined {
+    if (!this.itemDetailAvailable(item)) return undefined;
+    const id = this.itemEntityId(item);
+    const server = this.itemSourceServer(item);
     // Restricted sources have no static entity page; open their detail in place.
     if (!isPublicReleaseServer(server)) return undefined;
     return this.entityLink(id, difficulty, server as ReleaseServer);
@@ -4635,6 +4642,7 @@ export class CatalogScreen extends LitElement {
     return nothing;
   }
   private async open(item: Item) {
+    if (!this.itemDetailAvailable(item)) return;
     if (this.selected === item && this.selectedId === this.itemId(item) && this.selected) return;
     const id = this.itemId(item);
     // A meta row identifies as `<musicId>-<difficulty>`, which has no page of
@@ -5666,6 +5674,7 @@ export class CatalogScreen extends LitElement {
                 image: this.image(item),
                 href: this.itemEntityLink(item),
                 onOpen: () => this.open(item),
+                static: !this.itemDetailAvailable(item),
                 itemId: this.itemKey(item),
               })),
             )
@@ -5752,13 +5761,14 @@ export class CatalogScreen extends LitElement {
   private renderTile(item: Item, offscreen = false) {
     const kind = this.profile.presentation;
     const href = this.itemEntityLink(item);
-    const onOpen = href ? undefined : () => this.open(item);
-    if (kind === "system") return this.renderSystemTile(item, this.settings.resource, { href, onOpen, itemId: this.itemKey(item) });
+    const locked = !this.itemDetailAvailable(item);
+    const link = { href, onOpen: href || locked ? undefined : () => this.open(item), static: locked, itemId: this.itemKey(item) };
+    if (kind === "system") return this.renderSystemTile(item, this.settings.resource, link);
     const image = this.image(item);
     const title = this.itemTitle(item);
     if (kind === "member" || kind === "support")
       return tile(
-        this.unionTile({ ...this.cardTileOptions(item, kind), href, onOpen, itemId: this.itemKey(item) }, item),
+        this.unionTile({ ...this.cardTileOptions(item, kind), ...link }, item),
       );
     if (kind === "character")
       return tile(
@@ -5773,9 +5783,7 @@ export class CatalogScreen extends LitElement {
             label: title,
             image,
             placeholder: icon("person", 32),
-            href,
-            onOpen,
-            itemId: this.itemKey(item),
+            ...link,
             onImageError: this.imageError,
             style: `--entity-accent:${String(item.colorCode || "var(--md-sys-color-primary)")}`,
           },
@@ -5786,9 +5794,9 @@ export class CatalogScreen extends LitElement {
     if (kind === "song")
       return html`
         <div class="catalog-song-tile" ?data-viewport-grid-offscreen=${offscreen}>
-          ${tile(this.unionTile({ ...this.songTileOptions(item), href, onOpen, itemId: this.itemKey(item) }, item))}
+          ${tile(this.unionTile({ ...this.songTileOptions(item), ...link }, item))}
           ${
-          item.musicUrl
+          !locked && item.musicUrl
             ? iconButton({
                 className: "catalog-song-tile__play",
                 variant: "tonal",
@@ -5822,9 +5830,7 @@ export class CatalogScreen extends LitElement {
           // its indexed dimensions do not match the presentation fallback.
           fit: "contain",
           natural: kind === "background",
-          href,
-          onOpen,
-          itemId: this.itemKey(item),
+          ...link,
           onImageError: this.imageError,
           style: kind === "band" ? `--entity-accent:${String(item.color || "var(--md-sys-color-primary)")}` : undefined,
           marks: [
@@ -5851,7 +5857,7 @@ export class CatalogScreen extends LitElement {
   private renderSystemTile(
     item: Item,
     resource: string,
-    link: Pick<TileOptions, "href" | "onOpen" | "itemId">,
+    link: Pick<TileOptions, "href" | "onOpen" | "itemId" | "static">,
     pin?: { server: string; releaseId: string },
   ) {
     const asset = (value: unknown) => {
@@ -5910,6 +5916,7 @@ export class CatalogScreen extends LitElement {
         detailPath: this.itemEntityLink(item, difficulty >= 0 ? difficulty : undefined),
       };
     };
+    if (!this.itemDetailAvailable(item)) return;
     const requested = { ...track(item), url };
     const { AudioDock } = await import("./runtime/audio-dock");
     const dock = AudioDock.ensure();
@@ -5918,7 +5925,7 @@ export class CatalogScreen extends LitElement {
       await dock.playTrack(
         requested,
         this.filtered()
-          .filter((entry) => entry.musicUrl)
+          .filter((entry) => entry.musicUrl && this.itemDetailAvailable(entry))
           .map(track),
       );
     } else await dock.enqueueTrack(requested, true);
@@ -6190,7 +6197,7 @@ export class CatalogScreen extends LitElement {
     this.missionIconProvision = pending;
   }
   private sonolusUrl(item: Item) {
-    if (this.profile.presentation !== "song") return "";
+    if (this.profile.presentation !== "song" || !this.itemDetailAvailable(item)) return "";
     const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
     const selectedDetail = this.selected && this.itemKey(item) === this.itemKey(this.selected);
     const row = this.profile.perDifficulty

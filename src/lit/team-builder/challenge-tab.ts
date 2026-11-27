@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: An account's challenge draft, release-scoped event rules and an optional event or ranking link.
+// Input: An account's challenge draft, visible events with their pinned challenge tracks, and an optional event or ranking link.
 // Output: One eligible chart under the event's score rules and a return link to its source.
 // Pos: [Map](../L2-2.md); event challenge task in the shared team workspace.
 // Effects/Dependencies: Updates the challenge draft and current URL, delegates search and saving to the existing engine and results.
@@ -49,7 +49,7 @@ export class ChallengeController {
   tracks(eventId: number | null) {
     const { catalog } = this.host;
     return eventId === null || !catalog ? [] : catalog.challengeSongs(eventId)
-      .filter(track => catalog.songVisible(track.liveMusicId) && catalog.difficultyRows(track.liveMusicId).length);
+      .filter((track) => catalog.difficultyRows(track.liveMusicId).length);
   }
 
   private chart(songId: number, requested: number | null) {

@@ -88,7 +88,10 @@
     border-start-end-radius: var(--md-sys-shape-corner-full);
     border-end-end-radius: var(--md-sys-shape-corner-full);
   }
-  .tgw-rank-button:hover {
+  span.tgw-rank-button {
+    cursor: default;
+  }
+  :is(a, button).tgw-rank-button:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container-highest));
   }
   .tgw-rank-button[aria-current="true"],

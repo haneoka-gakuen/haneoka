@@ -299,7 +299,11 @@ export class AnonTokyoWorkspace extends LitElement {
       /* The collection payload still provides the primary details. */
     }
   }
+  private itemDetailAvailable(item: Value): boolean {
+    return item.__contentPreview !== true && isContentVisible("anon-tokyo", item, String(item.id));
+  }
   private openItem(item: Value) {
+    if (!this.itemDetailAvailable(item)) return;
     if (this.openForeignItem(item, "item")) return;
     void this.loadReferenceData();
     this.selectedItem = String(item.id);
@@ -654,7 +658,7 @@ export class AnonTokyoWorkspace extends LitElement {
       this.view === "grid"
         ? html`
             <div class="collection collection--anon">
-              ${shown.map((item) => tile({ kind: "anon", title: title(item), subtitle: this.subtitle(item), label: this.entityTitle(item), image: this.media(item), fit: "contain", serverMark: catalogServerMark(this.unionDocument?.entries.get(item), this.locale), onOpen: () => this.openItem(item), onImageError: nextImageCandidate, placeholder: icon(this.mode === "fever" ? "music_note" : this.mode === "characters" ? "person" : "inventory_2", 32) }))}
+              ${shown.map((item) => tile({ kind: "anon", title: title(item), subtitle: this.subtitle(item), label: this.entityTitle(item), image: this.media(item), fit: "contain", serverMark: catalogServerMark(this.unionDocument?.entries.get(item), this.locale), onOpen: () => this.openItem(item), static: !this.itemDetailAvailable(item), onImageError: nextImageCandidate, placeholder: icon(this.mode === "fever" ? "music_note" : this.mode === "characters" ? "person" : "inventory_2", 32) }))}
             </div>
           `
         : this.view === "list"
@@ -665,27 +669,24 @@ export class AnonTokyoWorkspace extends LitElement {
                 subtitle: this.subtitle(item),
                 image: this.media(item),
                 onOpen: () => this.openItem(item),
+                static: !this.itemDetailAvailable(item),
               })),
             )
           : collectionTable(
               this.label(this.mode),
               ["ID", this.label("name"), this.label("details"), this.label("category")],
-              shown.map((item) => [
-                item.rawId,
-                html`
-                  <button class="anon-table-title" @click=${() => this.openItem(item)}>
-                    ${
-                      this.media(item)
-                        ? html`
-                            <img src=${this.media(item)} alt="" loading="lazy" />
-                          `
-                        : nothing
-                    }${title(item)}
-                  </button>
-                `,
-                this.subtitle(item),
-                this.label(String(item.entityGroup)),
-              ]),
+              shown.map((item) => {
+                const image = this.media(item);
+                const identity = html`${image ? html`<img src=${image} alt="" loading="lazy" />` : nothing}${title(item)}`;
+                return [
+                  item.rawId,
+                  this.itemDetailAvailable(item)
+                    ? html`<button class="anon-table-title" @click=${() => this.openItem(item)}>${identity}</button>`
+                    : html`<span class="anon-table-title">${identity}</span>`,
+                  this.subtitle(item),
+                  this.label(String(item.entityGroup)),
+                ];
+              }),
             );
     const selected = this.rowForId(source, this.selectedItem);
     return html`
@@ -788,7 +789,7 @@ export class AnonTokyoWorkspace extends LitElement {
     return value;
   }
   private renderDetail(item: Value) {
-    if (!isContentVisible("anon-tokyo",item,String(item.id)))
+    if (!this.itemDetailAvailable(item))
       return renderPane({title:uiText(this.locale,"common.states.unpublished"),kind:"anon",open:true,
         backLabel:uiText(this.locale,"common.actions.close"),onClose:()=>this.closeItem(),body:unpublishedState(this.locale)});
     const image = this.media(item);

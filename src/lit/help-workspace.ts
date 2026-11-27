@@ -243,6 +243,12 @@ export class HelpWorkspace extends LitElement {
       }
     }
   }
+  private entryDetailAvailable(item: JsonRecord): boolean {
+    return item.__contentPreview !== true &&
+      (this.mode === "tips"
+        ? isContentVisible("help-tips", item, String(item.tipId))
+        : isContentVisible("help", item, String(item.helpSubcategoryId)));
+  }
   private filteredEntries() {
     if (this.mode === "tips") return this.entityId ? this.tips : this.tips.filter((item)=>isContentListed("help-tips",item,String(item.tipId)));
     const category = this.categories.find((item) => Number(item.categoryId) === this.selectedCategory);
@@ -352,8 +358,12 @@ export class HelpWorkspace extends LitElement {
                       : nothing
                   }
                   <main class="help-entries">
-                    ${entries.map(
-                      (item, index) => html`
+                    ${entries.map((item, index) => {
+                      const entry = (this.mode === "tips" ? this.unionTips : this.unionHelp)?.entries.get(item);
+                      const summary = html`<span>${this.text(item.title) || "—"}</span>${catalogServerBadge(entry, this.locale)}`;
+                      if (!this.entryDetailAvailable(item))
+                        return html`<div class="help-entry"><span class="help-entry__summary">${summary}</span></div>`;
+                      return html`
                         <details
                           class="help-entry ${
                             item === this.topicForId(entries, this.selectedTopic) ? "selected" : ""
@@ -364,11 +374,7 @@ export class HelpWorkspace extends LitElement {
                           }
                         >
                           <summary>
-                            <span>${this.text(item.title) || "—"}</span>
-                            ${(() => {
-                              const entry = (this.mode === "tips" ? this.unionTips : this.unionHelp)?.entries.get(item);
-                              return catalogServerBadge(entry, this.locale);
-                            })()}
+                            ${summary}
                             <svg class="material-icon" width="20" height="20">
                               <use href="/icons.svg#expand_more"></use>
                             </svg>
@@ -387,8 +393,8 @@ export class HelpWorkspace extends LitElement {
                               )}
                           </div>
                         </details>
-                      `,
-                    )}
+                      `;
+                    })}
                   </main>
                 `
         }

@@ -25,7 +25,7 @@ import {
 import type { CatalogSystemPayload } from "../lib/catalog-system-data";
 import type { ArenaPopulationDto, ArenaRankingDto, GameRecordsRegion } from "../lib/game-records";
 import { readPageData } from "../lib/page-data";
-import { isReleasedContent } from "../lib/content-release";
+import { isContentListed, isContentVisible } from "../lib/content-release";
 import { adoptPrerenderedWorkspace } from "../lib/workspace-page-data";
 import { setAppBarActions } from "../lib/app-bar";
 import { resourcePath, releaseServerFromPath, type ReleaseServer } from "../lib/resource-route";
@@ -271,7 +271,8 @@ export class ArenaWorkspace extends LitElement {
 
   /* ---------- state and URL ---------- */
   private seasons() {
-    return Object.values(this.catalog?.entries || {}).filter(isReleasedContent).sort((a, b) => a.startAt - b.startAt);
+    return Object.values(this.catalog?.entries || {})
+      .filter((season) => isContentListed("arena", season, season.id)).sort((a, b) => a.startAt - b.startAt);
   }
   private season() {
     const seasons = this.seasons();
@@ -281,6 +282,9 @@ export class ArenaWorkspace extends LitElement {
       seasons.filter((season) => season.startAt <= this.now).at(-1) ||
       seasons[0]
     );
+  }
+  private seasonDetailAvailable(season: ArenaSeason) {
+    return season.__contentPreview !== true && isContentVisible("arena", season, season.id);
   }
   private league(season: ArenaSeason) {
     return season.leagues.find((league) => league.bandId === this.bandId) || season.leagues[0];
@@ -422,7 +426,7 @@ export class ArenaWorkspace extends LitElement {
       html`
         ${gameRecordsRegionPicker(this.locale, this.region, (region) => this.select({ region }), "arena-region", this.regions())}
         ${
-          league
+          season && league && this.seasonDetailAvailable(season)
             ? html`
                 <a
                   class="icon-button"
@@ -496,7 +500,7 @@ export class ArenaWorkspace extends LitElement {
   }
 
   /* ---------- hero ---------- */
-  private renderHero(season: ArenaSeason, selected: ArenaLeague) {
+  private renderHero(season: ArenaSeason, selected: ArenaLeague, detailAvailable: boolean) {
     const seasons = this.seasons();
     const index = seasons.indexOf(season);
     const status = this.seasonStatus(season);
@@ -537,11 +541,11 @@ export class ArenaWorkspace extends LitElement {
           class="arena-leagues"
           role="radiogroup"
           aria-label=${this.t("leagues")}
-          @keydown=${rovingKeydown(
+          @keydown=${detailAvailable ? rovingKeydown(
             season.leagues.map((league) => league.bandId),
             selected.bandId,
             (bandId) => this.select({ bandId }),
-          )}
+          ) : nothing}
         >
           ${season.leagues.map((league) => {
             const { rule, next } = this.ruleNow(season, league);
@@ -552,6 +556,7 @@ export class ArenaWorkspace extends LitElement {
                 class="arena-league"
                 role="radio"
                 aria-checked=${String(checked)}
+                ?disabled=${!detailAvailable}
                 tabindex=${checked ? "0" : "-1"}
                 @click=${() => this.select({ bandId: league.bandId })}
               >
@@ -1241,6 +1246,7 @@ export class ArenaWorkspace extends LitElement {
     const season = this.season();
     if (!season) return emptyState({ title: this.t("noSchedule") });
     const league = this.league(season);
+    const detailAvailable = this.seasonDetailAvailable(season);
     const panels: Record<Tab, () => unknown> = {
       overview: () => this.renderOverview(season, league),
       ranking: () => this.renderRanking(season, league),
@@ -1251,10 +1257,11 @@ export class ArenaWorkspace extends LitElement {
     };
     return html`
       <div class="page arena-page stack stack--loose">
-        ${this.renderHero(season, league)} ${this.renderTabs()}
-        <div class="arena-panel" id="arena-panel" role="tabpanel" aria-labelledby=${`arena-tab-${this.tab}`}>
-          ${panels[this.tab]()}
-        </div>
+        ${this.renderHero(season, league, detailAvailable)}
+        ${detailAvailable ? html`${this.renderTabs()}
+          <div class="arena-panel" id="arena-panel" role="tabpanel" aria-labelledby=${`arena-tab-${this.tab}`}>
+            ${panels[this.tab]()}
+          </div>` : nothing}
       </div>
     `;
   }

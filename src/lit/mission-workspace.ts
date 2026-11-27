@@ -222,6 +222,7 @@ export class MissionWorkspace extends LitElement {
   }
   /** A restricted edition has no page of its own, so its row keeps the current view. */
   private entityLink(mission: Mission) {
+    if (mission.__contentPreview === true || !isContentVisible("missions", mission, mission.id)) return undefined;
     const server = this.missionEntry(mission)?.displayServer || this.server;
     if (!isPublicReleaseServer(server)) return undefined;
     return entityHref({

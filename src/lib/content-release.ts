@@ -1,5 +1,5 @@
 import { spoilerOverrideEnabled } from "./spoiler-cookie";
-import { prerenderContentVisible } from "./content-prerender";
+import { prerenderContentListed, prerenderContentVisible } from "./content-prerender";
 import { navigationDocumentUrl } from "./document-url";
 import { spoilerContentEnabled } from "./spoiler-content";
 import { contentPublished } from "./content-publication";
@@ -56,12 +56,12 @@ export function isContentVisible(resource: string, value: unknown, id?: string):
 
 export function isContentListed(resource: string, value: unknown, id?: string): boolean {
   const kind = visibilityType(resource);
-  if (!kind || typeof document === "undefined" || !document.documentElement)
-    return isContentVisible(resource, value, id);
+  if (!kind) return isContentVisible(resource, value, id);
+  const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  if (typeof document === "undefined" || !document.documentElement) return prerenderContentListed(kind, row, id);
   const now = Date.now();
   if (released(value, now)) return true;
   if (pendingContentPolicy()) return false;
-  const row = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
   return contentListing(browserView(now), kind, row, id ?? visibilityId(kind, row)) !== "hidden";
 }
 

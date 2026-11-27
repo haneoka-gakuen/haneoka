@@ -86,7 +86,7 @@ import { liveMusicTypeMark, songTile } from "./shared/song-tile";
 import { createPerformerRegistry, resolveSongPerformer, type PerformerRegistry } from "../lib/song-performer";
 import { songPerformerAdornment } from "./shared/song-performer-adornment";
 import { resolveRelationshipText } from "../lib/localized-text";
-import { LazyImages, localeTaggedCandidates, localizedAssetUrl, nextImageCandidate } from "./ui/lazy-images";
+import { LazyImages, localeTaggedCandidates, localizedAssetUrl, retryImageCandidates, nextImageCandidate } from "./ui/lazy-images";
 import {
   BIRTHDAY_UTC_OFFSET,
   BIRTHDAY_DAY_MS,
@@ -560,7 +560,7 @@ export class HomeDashboard extends LitElement {
       const rows = resource === "events" ? (fallback as JsonRecord | undefined)?.entries : fallback;
       return recordValues(rows).flatMap((row) => {
         if (!isContentListed(resource, row)) return [];
-        return [isContentVisible(resource, row) ? row : contentPreview(row)];
+        return [isContentVisible(resource, row) ? row : contentPreview(row, resource)];
       });
     }
     return releasedCatalog(catalog, isContentListed).entries.map((entry) => {
@@ -569,7 +569,7 @@ export class HomeDashboard extends LitElement {
       const row = resource === "events"
         ? { ...variant.row, ...entry.nameOverrides }
         : crossServerDisplayRow(entry);
-      const listed = preview ? contentPreview(row) : row;
+      const listed = preview ? contentPreview(row, resource) : row;
       return {
         ...(resource === "events"
           ? (pinCrossCatalogValue(homeEventDisplay(listed), variant.identity) as JsonRecord)
@@ -765,7 +765,7 @@ export class HomeDashboard extends LitElement {
   }
 
   /* ---------- data ---------- */
-  private applyDocuments(documents: Record<string, JsonRecord>) {
+  private applyDocuments(documents: Record<string, JsonRecord>, eventRows = this.catalogRows("events", documents.events)) {
     this.songPerformers.clear();
     const now = Date.now();
     const resources = (documents.summary?.resources || {}) as Record<string, JsonRecord>;
@@ -792,7 +792,7 @@ export class HomeDashboard extends LitElement {
       if (typeof path === "string")
         this.marks.set(logical, `/runtime/${this.sourceServer()}/${path.replace(/^runtime\//u, "")}`);
     this.banners = this.carousel(documents["home-banners"], now);
-    this.events = this.catalogRows("events", documents.events).map((entry) => this.spotlightOf(entry, "events"));
+    this.events = eventRows.map((entry) => this.spotlightOf(entry, "events"));
     this.indexSourceRelations();
     this.phase = "ready";
   }
@@ -860,7 +860,16 @@ export class HomeDashboard extends LitElement {
       if (!this.isConnected || !this.catalogRequests.current(signal)) return;
       this.crossServerCatalogs = { ...this.crossServerCatalogs, ...catalogs };
     }
-    this.applyDocuments(documents);
+    let events = this.catalogRows("events", documents.events);
+    const featured = this.featuredEvent(events.map((entry) => this.spotlightOf(entry, "events")))?.entry;
+    if (featured && featured.details.effects === undefined) {
+      const source = featured.sourceServer ?? server;
+      const summary = await fetchJson<JsonRecord>(`${catalogUrl("events", featured.id, source)}?projection=home`, { signal })
+        .catch(() => undefined);
+      if (!this.isConnected || !this.catalogRequests.current(signal) || server !== readReleaseServer()) return;
+      if (summary) events = events.map((row) => row === featured.details ? { ...row, ...summary } : row);
+    }
+    this.applyDocuments(documents, events);
     if (results.every((result) => result.status === "rejected")) this.phase = "error";
   }
   private async loadLivePanels() {
@@ -1121,15 +1130,15 @@ export class HomeDashboard extends LitElement {
     return relativeRelease(this.locale, at);
   }
   /** Prefer an ongoing event, then the next event, then the latest ended event. */
-  private featuredEvent(): { entry: Spotlight; resource: string; ending: boolean } | null {
+  private featuredEvent(events = this.events): { entry: Spotlight; resource: string; ending: boolean } | null {
     const now = Date.now();
-    const ongoing = this.events
+    const ongoing = events
       .filter((entry) => entry.startAt <= now && entry.endAt && entry.endAt >= now)
       .sort((a, b) => a.endAt - b.endAt)[0];
     if (ongoing) return { entry: ongoing, resource: "events", ending: true };
-    const upcoming = this.events.filter((entry) => entry.startAt > now).sort((a, b) => a.startAt - b.startAt)[0];
+    const upcoming = events.filter((entry) => entry.startAt > now).sort((a, b) => a.startAt - b.startAt)[0];
     if (upcoming) return { entry: upcoming, resource: "events", ending: false };
-    const ended = this.events
+    const ended = events
       .filter((entry) => entry.endAt > 0 && entry.endAt < now)
       .sort(
         (a, b) => b.endAt - a.endAt || b.startAt - a.startAt || b.id.localeCompare(a.id, "en", { numeric: true }),
@@ -1276,18 +1285,14 @@ export class HomeDashboard extends LitElement {
     const slide = looping ? (position - 1 + banners.length) % banners.length : 0;
     const slideBody = (banner: Banner, index: number) => {
       const countdown = banner.endAt ? this.countdown(banner.endAt, true) : nothing;
-      // Banners ship per-locale variants beside the base art; fall back to it.
-      const localized = localizedAssetUrl(banner.image, this.locale);
+      const candidates = localeTaggedCandidates(banner.image, this.locale);
       const body = html`
         <img
-          src=${localized}
+          src=${candidates[0] || banner.image}
           alt=""
           loading=${index === position ? "eager" : "lazy"}
           decoding="async"
-          @error=${(event: Event) => {
-            const image = event.currentTarget as HTMLImageElement;
-            if (!image.src.endsWith(banner.image)) image.src = banner.image;
-          }}
+          @error=${(event: Event) => retryImageCandidates(event, candidates)}
         />
         <span class="home-carousel__copy">
           ${
@@ -1419,8 +1424,8 @@ export class HomeDashboard extends LitElement {
         : "";
     const trackerHref = eventPage ? `/${eventPage}/${this.locale}/events/tracker/` : "";
     const storyHref =
-      eventPage && event && event.details.__contentPreview !== true
-        ? event.details.homeStoryId
+      eventPage && event
+        ? event.details.__contentPreview !== true && event.details.homeStoryId
           ? entityHref({
               server: eventPage,
               locale: this.locale as Locale,
@@ -1780,9 +1785,7 @@ export class HomeDashboard extends LitElement {
                       .filter(Boolean)
                       .join(" / "),
                     kind: kind === "member-cards" ? "member" : "support",
-                    // Snapshot art letterboxes badly in the square tile; crop
-                    // it like the catalog's square support tiles.
-                    fit: kind === "member-cards" ? "contain" : "cover",
+                    fit: "contain",
                     adornment: related.adornment,
                     serverMark: this.exclusiveMark(card) ?? undefined,
                     image: String(images.thumbnail || card.thumbnail || card.image || ""),
@@ -2439,7 +2442,7 @@ export class HomeDashboard extends LitElement {
     const arena = this.arena;
     const now = Date.now();
     const seasons = Object.values(arena?.catalog.entries || {})
-      .filter(isReleasedContent)
+      .filter((season) => isContentListed("arena", season, season.id))
       .sort((a, b) => a.startAt - b.startAt);
     const season =
       seasons.find((entry) => arenaContains(entry, now)) ||

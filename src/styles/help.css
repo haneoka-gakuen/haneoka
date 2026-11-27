@@ -56,7 +56,7 @@
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface);
   }
-  .help-entry summary {
+  .help-entry :is(summary, .help-entry__summary) {
     display: grid;
     min-height: 56px;
     grid-template-columns: minmax(0, 1fr) 24px;
@@ -67,6 +67,8 @@
     border-radius: var(--md-sys-shape-corner-medium);
     font-size: var(--md-sys-typescale-title-small-size);
     font-weight: 500;
+  }
+  .help-entry summary {
     cursor: pointer;
   }
   .help-entry summary::-webkit-details-marker {

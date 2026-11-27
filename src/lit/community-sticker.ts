@@ -31,12 +31,15 @@ export function stampSources(stamp: JsonRecord, locale: string): string[] {
   ];
 }
 export class CommunitySticker extends LitElement {
-  static properties = { token: {}, locale: {}, label: {}, sources: { state: true }, index: { state: true } };
+  static properties = {
+    token: {}, locale: {}, label: {}, sources: { state: true }, index: { state: true }, pending: { state: true },
+  };
   declare token: string;
   declare locale: string;
   declare label: string;
   declare sources: string[];
   declare index: number;
+  private declare pending: boolean;
   private sequence = 0;
   constructor() {
     super();
@@ -45,12 +48,17 @@ export class CommunitySticker extends LitElement {
     this.label = "";
     this.sources = [];
     this.index = 0;
+    this.pending = true;
   }
   createRenderRoot() {
     return this;
   }
   updated(changed: Map<string, unknown>) {
     if (changed.has("token") || changed.has("locale")) void this.resolve();
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    if (this.hasUpdated && this.pending) void this.resolve();
   }
   disconnectedCallback() {
     this.sequence++;
@@ -60,7 +68,8 @@ export class CommunitySticker extends LitElement {
     const sequence = ++this.sequence;
     this.sources = [];
     this.index = 0;
-    if (!validStickerToken(this.token)) return;
+    this.pending = validStickerToken(this.token);
+    if (!this.pending) return;
     const [server, id, language] = this.token.split(":");
     for (const candidate of [...new Set([server, readReleaseServer(), "intl", "jp"])]) {
       try {
@@ -71,14 +80,17 @@ export class CommunitySticker extends LitElement {
         const sources = stampSources(stamp, language || this.locale);
         if (!sources.length) continue;
         this.sources = sources;
+        this.pending = false;
         if (!this.label) this.label = localizedText(stamp.name, language || this.locale);
         return;
       } catch {
         if (sequence !== this.sequence) return;
       }
     }
+    if (this.isConnected && sequence === this.sequence) this.pending = false;
   }
   render() {
+    if (this.pending) return nothing;
     const source = this.sources[this.index];
     return source
       ? html`

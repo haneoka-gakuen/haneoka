@@ -2,7 +2,7 @@
 // Input: Native event metadata and its resolved bonus targets.
 // Output: Source-preserving home artwork, story and complete band, character and attribute identities.
 // Pos: [Map](L2-2.md); compact home event projection.
-// Effects/Dependencies: Pure projection; retains each target rather than choosing one bonus.
+// Effects/Dependencies: Pure projection; the shared bonus summary contains presentation identities only.
 type Row = Record<string, unknown>;
 const object = (value: unknown): Row =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Row) : {};
@@ -31,32 +31,38 @@ export function homeEventDisplay(row: Row): Row {
     ...(row.homeStoryId !== undefined || row.story !== undefined
       ? { homeStoryId: row.homeStoryId ?? String(rows(object(row.story).episodes)[0]?.storyKey || "") }
       : {}),
-    ...(row.effects === undefined
-      ? {}
-      : {
-          effects: rows(row.effects).map((effect) => ({
-            targets: Object.fromEntries(
-              Object.entries(object(effect.targets)).map(([kind, value]) => {
-                const target = object(value),
-                  native = object(effect.raw);
-                return [
-                  kind,
-                  {
-                    ...pick(target, ["kind", "resourceId", "bandId", "characterId", "cardType", "name", "image", "icon"]),
-                    homeTargetKind: kind,
-                    bandId:
-                      kind === "band" ? Number(native._bandId ?? native._bandID ?? target.bandId ?? 0) : target.bandId,
-                    characterId:
-                      kind === "character" ? Number(native._characterId ?? target.characterId ?? target.resourceId ?? 0) : target.characterId,
-                    cardType:
-                      kind === "attribute"
-                        ? Number(effect.cardType ?? native._cardType ?? target.cardType ?? 0)
-                        : target.cardType,
-                  },
-                ];
-              }),
-            ),
-          })),
-        }),
+    ...homeEventBonuses(row),
+  };
+}
+
+/** Only the target identities that appear on the event spotlight. */
+export function homeEventBonuses(row: Row): Row {
+  if (row.effects === undefined) return {};
+  return {
+    effects: rows(row.effects).map((effect) => ({
+      targets: Object.fromEntries(
+        Object.entries(object(effect.targets))
+          .filter(([kind]) => kind === "band" || kind === "character" || kind === "attribute")
+          .map(([kind, value]) => {
+            const target = object(value);
+            const native = object(effect.raw);
+            return [
+              kind,
+              {
+                ...pick(target, ["kind", "resourceId", "bandId", "characterId", "cardType", "name", "image", "icon"]),
+                homeTargetKind: kind,
+                bandId:
+                  kind === "band" ? Number(native._bandId ?? native._bandID ?? target.bandId ?? 0) : target.bandId,
+                characterId:
+                  kind === "character" ? Number(native._characterId ?? target.characterId ?? target.resourceId ?? 0) : target.characterId,
+                cardType:
+                  kind === "attribute"
+                    ? Number(effect.cardType ?? native._cardType ?? target.cardType ?? 0)
+                    : target.cardType,
+              },
+            ];
+          }),
+      ),
+    })),
   };
 }

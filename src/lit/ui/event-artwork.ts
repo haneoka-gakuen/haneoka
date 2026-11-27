@@ -1,5 +1,5 @@
 import { html, nothing } from "lit";
-import { localeTaggedCandidates, nextImageCandidate } from "./lazy-images";
+import { localeTaggedCandidates, nextImageCandidate, retryImageCandidates } from "./lazy-images";
 import "../../styles/event-artwork.css";
 
 /** The game's authored home banner, shared by event list and table thumbnails. */
@@ -25,11 +25,7 @@ export function eventArtwork(image: string, logo: string, label: string, deferre
   const eagerError = (event: Event) => {
     const element = event.currentTarget as HTMLImageElement;
     const candidates = element.classList.contains("event-artwork__logo") ? logos : backgrounds;
-    element.dataset.candidates = JSON.stringify(candidates);
-    element.dataset.candidateIndex = String(
-      candidates.findIndex((source) => new URL(source, document.baseURI).href === element.src),
-    );
-    nextImageCandidate(event);
+    retryImageCandidates(event, candidates);
   };
   return html`
     <span class="event-artwork" role="img" aria-label=${label}>

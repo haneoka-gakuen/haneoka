@@ -2,9 +2,10 @@
 // Input: Resource data and the current rendering context.
 // Output: Visibility decisions and compatible document data.
 // Pos: [Map](L2-2.md); shared content presentation boundary.
-// Effects/Dependencies: Preserves complete source data and selects the current representation.
+// Effects/Dependencies: Projects catalogue metadata for preview rows and checks detail access separately.
 import { withEventSongRelease } from "./event-song-release";
 import { contentPublished, publicationFields } from "./content-publication";
+import { homeEventBonuses } from "./home-event-display";
 import {
   inferredVisibilityType,
   isCardVisibilityType,
@@ -92,55 +93,141 @@ const dependencyFields = new Set([
   "assets", "runtime", "commands", "resolvedSkills", "progression", "growth",
   "master", "masterData", "tables", "rules",
 ]);
-const previewFields = new Set([
-  "id",
-  "_key",
-  "key",
-  "kind",
-  "cardId",
-  "supportCardId",
-  "musicId",
-  "songId",
-  "storyId",
-  "storyKey",
-  "chapterId",
-  "comicId",
-  "stampId",
-  "stickerId",
-  "backgroundId",
-  "bandItemId",
-  "itemId",
-  "characterId",
-  "bandId",
-  "live2dKey",
-  "helpSubcategoryId",
-  "tipId",
-  "name",
-  "title",
-  "cardName",
-  "prefix",
-  "musicTitle",
-  "characterName",
-  "bandName",
-  "image",
-  "thumbnail",
-  "thumbnailImage",
-  "faceImage",
-  "jacketUrl",
-  "jacketThumbUrl",
-  "rarity",
-  "attribute",
-  "type",
-  "mode",
-]);
-/** Listing previews contain identity and artwork; detail and media reads use contentVisible. */
-export function contentPreview(value: Record<string, unknown>): Record<string, unknown> {
-  return {
-    ...Object.fromEntries(Object.entries(value).filter(([key]) => previewFields.has(key))),
-    ...(object(value.images) && value.images.thumbnail ? { images: { thumbnail: value.images.thumbnail } } : {}),
+const previewFields = [
+  "id", "_key", "key", "kind", "cardId", "supportCardId", "musicId", "songId", "storyId", "storyKey",
+  "chapterId", "comicId", "stampId", "stickerId", "backgroundId", "bandItemId", "itemId", "characterId",
+  "bandId", "live2dKey", "helpSubcategoryId", "tipId", "name", "title", "cardName", "prefix",
+  "musicTitle", "characterName", "bandName", "image", "thumbnail", "thumbnailImage", "faceImage",
+  "jacketUrl", "jacketThumbUrl", "rarity", "attribute", "type", "mode", "category", "endAt", "displayOrder",
+  "characterIds", "bandIds",
+] as const;
+const cardPreviewFields = ["cardType", "performance", "technique", "visual"];
+const songPreviewFields = [
+  "musicType", "musicCategories", "artistName", "vocalCharacterIds", "composer", "lyricist", "arranger",
+  "ruby", "phonetic", "sortOrder",
+];
+const chartPreviewFields = ["firstBpm", "minBpm", "maxBpm", "time", "n", "noteCount", "canonicalNoteCount", "nps", "score", "eff", "sr"];
+const resourcePreviewFields: Partial<Record<VisibilityType, readonly string[]>> = {
+  "anon-tokyo": [
+    "rawId", "displayName", "text", "nameKey", "categoryId", "subType", "customerKind", "taskTabId",
+    "taskTypeId", "levelLimit", "level", "isShow", "pageIndex", "cueName", "durationSeconds", "description",
+    "size", "customerCount", "exp", "point",
+  ],
+  arena: ["seasonId", "rankingEndAt", "timeZone"],
+  bands: ["englishName", "shortName", "description", "official", "memberCharacterIds", "memberBandIds", "memberNames", "color"],
+  backgrounds: ["description"],
+  challenge: ["band"],
+  "chat-customizations": ["initialOwnership"],
+  characters: ["school", "bandPart", "birthday", "colorCode", "firstName", "nickname"],
+  comics: ["subTitle", "characters"],
+  events: ["backgroundImage", "logo", "eventType"],
+  items: ["description", "itemTypeName", "max", "value"],
+  missions: ["group", "groupId", "groupCategory", "releaseDay", "priority", "goal", "missionType"],
+  skills: ["family", "skillName", "icon"],
+  stickers: ["description", "closedAt"],
+  "tgw-card": ["rank", "pointsRequired"],
+  stories: [
+    "chapterName", "episodeNumber", "storyCategory", "description", "caption", "duration", "storySort",
+    "unlockCharacterFriendshipLevel", "isAnotherEpisode", "isExtraEpisode", "perspectiveCharacterId", "banner", "episodeImage",
+  ],
+};
+
+const pickPreviewFields = (value: unknown, fields: readonly string[]): Record<string, unknown> =>
+  object(value) ? Object.fromEntries(fields.filter((key) => Object.hasOwn(value, key)).map((key) => [key, value[key]])) : {};
+
+/** Listing metadata only. Related records and playable assets have their own access checks. */
+export function contentPreview(value: Record<string, unknown>, kind: VisibilityType): Record<string, unknown> {
+  const preview: Record<string, unknown> = {
+    ...pickPreviewFields(value, previewFields),
+    ...pickPreviewFields(value, resourcePreviewFields[kind] ?? []),
     ...publicationFields(value),
     __contentPreview: true,
   };
+  if (object(value.images) && value.images.thumbnail) preview.images = { thumbnail: value.images.thumbnail };
+  if (isCardVisibilityType(kind)) {
+    Object.assign(preview, pickPreviewFields(value, cardPreviewFields));
+    if (object(value.stat)) preview.stat = pickPreviewFields(value.stat, ["performance", "technique", "visual"]);
+    if (object(value.resolvedSkills)) {
+      const summary = (skill: unknown) => pickPreviewFields(skill, ["id", "skillName", "icon"]);
+      preview.resolvedSkills = Object.fromEntries(
+        Object.entries(value.resolvedSkills).map(([role, skill]) => [role, Array.isArray(skill) ? skill.map(summary) : summary(skill)]),
+      );
+    }
+  }
+  if (kind === "songs") {
+    Object.assign(preview, pickPreviewFields(value, songPreviewFields));
+    if (Array.isArray(value.difficulty))
+      preview.difficulty = value.difficulty.map((row) => pickPreviewFields(row, ["difficulty", "difficultyName", "playLevel", "displayLevel", "sortLevel"]));
+    if (object(value.gekisou)) preview.gekisou = pickPreviewFields(value.gekisou, ["missionTypes", "missionPattern"]);
+    for (const [difficulty, metrics] of Object.entries(value)) {
+      if (!/^\d+$/u.test(difficulty) || !object(metrics) || !object(metrics.chart)) continue;
+      const chart = pickPreviewFields(metrics.chart, chartPreviewFields);
+      if (object(metrics.chart.profiles))
+        chart.profiles = Object.fromEntries(
+          Object.entries(metrics.chart.profiles).map(([key, profile]) => [key, pickPreviewFields(profile, ["score", "eff", "sr"])]),
+        );
+      preview[difficulty] = {
+        chart,
+        ...(object(metrics.gekisou) ? {
+          gekisou: {
+            ...pickPreviewFields(metrics.gekisou, ["score", "eff", "justableTotal", "justableRate"]),
+            ...(Array.isArray(metrics.gekisou.segments) ? {
+              segments: metrics.gekisou.segments.map((segment) => pickPreviewFields(segment, ["luckExpected", "timing"])),
+            } : {}),
+          },
+        } : {}),
+      };
+    }
+  }
+  if (kind === "anon-tokyo") {
+    Object.assign(preview, pickPreviewFields(value, ["icon", "avatar", "preview"]));
+    if (object(value.popularity)) preview.popularity = pickPreviewFields(value.popularity, ["count"]);
+    if (object(value.values)) preview.values = pickPreviewFields(value.values, ["customerLv"]);
+    if (object(value.reward)) preview.reward = pickPreviewFields(value.reward, ["raw"]);
+    else if (typeof value.reward === "string") preview.reward = value.reward;
+  }
+  if (kind === "arena" && Array.isArray(value.leagues))
+    preview.leagues = value.leagues.filter(object).map((league) => ({
+      ...pickPreviewFields(league, ["id", "bandId", "name", "image"]),
+      rules: Array.isArray(league.rules)
+        ? league.rules.map((rule) => pickPreviewFields(rule, ["id", "leagueId", "startAt", "endAt", "musicType", "missions"]))
+        : [],
+      songs: [],
+    }));
+  if (kind === "events") Object.assign(preview, homeEventBonuses(value));
+  if (kind === "skills") {
+    if (Array.isArray(value.effects)) preview.effects = value.effects.map((effect) => pickPreviewFields(effect, ["id", "name"]));
+    if (Array.isArray(value.levels)) preview.levels = value.levels.map((level) => pickPreviewFields(level, ["level"]));
+    if (Array.isArray(value.cards)) preview.cardCount = value.cards.length;
+    else if (typeof value.cardCount === "number") preview.cardCount = value.cardCount;
+  }
+  if (kind === "missions" && Array.isArray(value.rewards))
+    preview.rewards = value.rewards.map((reward) => pickPreviewFields(reward, ["kind", "resourceType", "resourceId", "name", "image", "count"]));
+  if (kind === "tgw-card" && object(value.artwork))
+    preview.artwork = pickPreviewFields(value.artwork, ["kind", "face", "plate", "badge"]);
+  if (kind === "stories" && Array.isArray(value.episodes))
+    preview.episodes = value.episodes.filter((episode) => typeof episode === "string" || typeof episode === "number");
+  if (kind === "shop") {
+    if (object(value.payment))
+      preview.payment = pickPreviewFields(value.payment, ["advertisement", "paymentType", "prices", "price", "currencyImage", "currency", "storePurchase"]);
+    if (object(value.starRewards))
+      preview.starRewards = pickPreviewFields(value.starRewards, ["paid", "free", "pass", "days", "total"]);
+  }
+  const imageVariants = value.imageVariants;
+  if (object(imageVariants)) {
+    const artwork = [
+      preview.image, preview.thumbnail, preview.thumbnailImage, preview.faceImage, preview.jacketUrl,
+      preview.jacketThumbUrl, preview.backgroundImage, preview.logo, preview.banner, preview.episodeImage,
+      object(preview.images) ? preview.images.thumbnail : undefined,
+    ];
+    const variants = Object.fromEntries(artwork.flatMap((source) => {
+      if (typeof source !== "string") return [];
+      const known = imageVariants[source] ?? imageVariants[source.split("?")[0]!];
+      return object(known) ? [[source, known]] : [];
+    }));
+    if (Object.keys(variants).length) preview.imageVariants = variants;
+  }
+  return preview;
 }
 export interface FilteredContent {
   value: unknown;
@@ -273,7 +360,7 @@ export function filterContentData(
       if (access !== "full") {
         changed = true;
         omitted?.push(contentReference(kind, input, identity));
-        return access === "preview" ? contentPreview(input) : drop;
+        return access === "preview" ? contentPreview(input, kind) : drop;
       }
     }
     const ownKind = typeof input.resource === "string" ? visibilityType(input.resource) : kind;
@@ -282,6 +369,18 @@ export function filterContentData(
     for (const [field, child] of Object.entries(input)) {
       if (field === "catalogMetadata" || dependencyFields.has(field)) {
         output[field] = child;
+        continue;
+      }
+      if (field === "tierDetails" && object(child) && object(input.catalog) && Array.isArray(input.catalog.entries)) {
+        output[field] = Object.fromEntries(input.catalog.entries.flatMap((entry) => {
+          if (!object(entry) || !object(entry.perServer) || typeof entry.key !== "string") return [];
+          const displayServer = String(entry.displayServer);
+          const variant = entry.perServer[displayServer];
+          const detail = child[entry.key];
+          if (!object(variant) || !object(detail)) return [];
+          const result = walk(detail, "tgw-card", String(variant.id), true, true, displayServer);
+          return result === drop ? [] : [[entry.key, result]];
+        }));
         continue;
       }
       // Cross-server catalogues key `documents` by source; team-builder keys them by resource.
@@ -344,8 +443,7 @@ export function filterContentData(
     const servers = Object.keys(perServer);
     if (!servers.length) return drop;
     const removed = servers.length !== Object.keys(variants).length;
-    const previewed = isCardVisibilityType(kind) &&
-      Object.values(perServer).some((variant) => object(variant.row) && variant.row.__contentPreview);
+    const previewed = Object.values(perServer).some((variant) => object(variant.row) && variant.row.__contentPreview);
     const output: Record<string, unknown> = { ...input, perServer };
     if (removed || previewed) {
       changed = true;

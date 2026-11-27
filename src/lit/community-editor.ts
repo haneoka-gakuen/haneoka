@@ -9,7 +9,6 @@ import { communityMarkup, communityDocument, safeCommunityLink } from "../lib/co
 import { communityStamps, stampServers } from "./community-sticker";
 import { currentReleaseServer, localizedText, type JsonRecord } from "./shared/catalog";
 import { icon } from "./ui/icon";
-import { loadingIndicator } from "./ui/loading-indicator";
 
 export class CommunityEditor extends LitElement {
   static properties = {
@@ -230,27 +229,25 @@ export class CommunityEditor extends LitElement {
   private async openStamps() {
     if (!this.allowStickers) return;
     this.picker = !this.picker;
-    if (!this.picker || this.stamps.length) return;
+    if (!this.picker || this.loading || this.stamps.length) return;
     const sequence = ++this.stampSequence;
     const reload = Boolean(this.error);
     this.loading = true;
     this.error = "";
+    const servers = stampServers(currentReleaseServer());
+    const catalogs = await Promise.allSettled(servers.map((server) => communityStamps(server, reload)));
+    if (!this.isConnected || sequence !== this.stampSequence) return;
     const entries = new Map<string, JsonRecord>();
-    for (const server of stampServers(currentReleaseServer())) {
-      try {
-        const catalog = await communityStamps(server, reload);
-        if (!this.isConnected || sequence !== this.stampSequence) return;
-        for (const [id, stamp] of Object.entries(catalog)) {
-          if (!stamp || typeof stamp !== "object" || entries.has(id)) continue;
-          const entry = stamp as JsonRecord;
-          if (!/^\d{1,12}$/.test(String(entry.stampId || id))) continue;
-          entries.set(id, { ...entry, stampId: entry.stampId || id, sourceServer: server });
-        }
-        this.stamps = [...entries.values()].sort((a, b) => Number(a.stampId) - Number(b.stampId));
-      } catch {
-        if (!this.isConnected || sequence !== this.stampSequence) return;
+    for (const [index, catalog] of catalogs.entries()) {
+      if (catalog.status === "rejected") continue;
+      for (const [id, stamp] of Object.entries(catalog.value)) {
+        if (!stamp || typeof stamp !== "object" || entries.has(id)) continue;
+        const entry = stamp as JsonRecord;
+        if (!/^\d{1,12}$/.test(String(entry.stampId || id))) continue;
+        entries.set(id, { ...entry, stampId: entry.stampId || id, sourceServer: servers[index] });
       }
     }
+    this.stamps = [...entries.values()].sort((a, b) => Number(a.stampId) - Number(b.stampId));
     this.loading = false;
     if (!this.stamps.length) this.error = this.text("stickersUnavailable");
   }
@@ -449,15 +446,9 @@ export class CommunityEditor extends LitElement {
                 <section
                   class="community-stamp-picker"
                   aria-label=${this.text("stickers")}
+                  aria-busy=${this.loading}
                   @pointerdown=${this.preserveSelection}
                 >
-                  ${
-                    this.loading
-                      ? html`
-                          ${loadingIndicator({ label: this.text("loading") })}
-                        `
-                      : nothing
-                  }
                   ${
                     this.error
                       ? html`

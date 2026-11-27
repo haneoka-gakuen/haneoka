@@ -286,6 +286,14 @@ export class LazyImages {
   }
 }
 
+/** Eager markup uses the same candidate order as deferred artwork. */
+export function retryImageCandidates(event: Event, candidates: readonly string[]) {
+  const image = event.currentTarget as HTMLImageElement;
+  image.dataset.candidates = JSON.stringify(candidates);
+  image.dataset.candidateIndex = String(candidates.findIndex((source) => sourceMatches(image, source)));
+  nextImageCandidate(event);
+}
+
 /**
  * The `@error` handler for a lazily-loaded image: steps to the next candidate
  * and hides the element once they are all exhausted, so a broken source shows

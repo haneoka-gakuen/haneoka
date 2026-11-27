@@ -32,11 +32,13 @@ export interface CollectionListEntry {
   /** A row that opens a page is a link to it. */
   href?: string;
   onOpen?(): void;
+  static?: boolean;
 }
 export function collectionList(entries: readonly CollectionListEntry[]) {
   return html`
     <ul class="list collection-list">
       ${entries.map((entry) => {
+        const layout = `list-item ${entry.threeLine ? "list-item--three-line" : "list-item--two-line"}`;
         const body = html`
           <span class="list-item__leading">
             ${
@@ -52,15 +54,17 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
             <strong class="list-item__headline" lang=${entry.titleLanguage || nothing}>${entry.title}</strong>
             <span class="list-item__supporting">${entry.subtitle || "—"}</span>
           </span>
-          <span class="list-item__trailing">${entry.trailing ?? nothing}${icon("chevron_right", 20)}</span>
+          <span class="list-item__trailing">${entry.trailing ?? nothing}${entry.static ? nothing : icon("chevron_right", 20)}</span>
         `;
         return html`
           <li>
             ${
-              entry.href
+              entry.static
+                ? html`<div class=${layout}>${body}</div>`
+                : entry.href
                 ? html`
                     <a
-                      class=${`list-item ${entry.threeLine ? "list-item--three-line" : "list-item--two-line"} list-item--interactive`}
+                      class=${`${layout} list-item--interactive`}
                       href=${entry.href}
                       data-open-item=${entry.id}
                     >
@@ -69,7 +73,7 @@ export function collectionList(entries: readonly CollectionListEntry[]) {
                   `
                 : html`
                     <button
-                      class=${`list-item ${entry.threeLine ? "list-item--three-line" : "list-item--two-line"} list-item--interactive`}
+                      class=${`${layout} list-item--interactive`}
                       type="button"
                       data-open-item=${entry.id}
                       @click=${entry.onOpen}

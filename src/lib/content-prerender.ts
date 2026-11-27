@@ -26,7 +26,10 @@ export function prerenderContentVisible(
     const reference = contentReference(kind, value, id);
     references?.set(JSON.stringify(reference), reference);
   }
-  return !publicView || published || (allowPreview && value.__contentPreview === true);
+  return !publicView || published;
+}
+export function prerenderContentListed(kind: VisibilityType, value: Record<string, unknown>, id?: string): boolean {
+  return prerenderContentVisible(kind, value, id) || (allowPreview && value.__contentPreview === true);
 }
 export function withPrerenderView<T>(
   publishedOnly: boolean,

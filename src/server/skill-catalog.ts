@@ -26,6 +26,8 @@ export interface SkillCatalogEntry {
   image: string;
   effects: Array<{ id: number; name: unknown }>;
   levels: Array<{ level: number; description: unknown; descriptionLocales?: string[] }>;
+  /** A preview keeps the list count without its related cards. */
+  cardCount?: number;
   cards: Array<{
     kind: "member-cards" | "support-cards";
     id: string;

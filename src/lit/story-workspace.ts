@@ -1794,12 +1794,22 @@ export class StoryWorkspace extends LitElement {
 
   /* ---------------------------------------------------------------- detail */
 
+  private episodeDetailAvailable(episode: JsonRecord): boolean {
+    return this.isProvider() || (episode.__contentPreview !== true && isReleasedContent(episode));
+  }
+  private episodeLink(episode: JsonRecord) {
+    return this.episodeDetailAvailable(episode)
+      ? { href: this.storyHref(episode), onOpen: () => void this.openStory(this.episodeId(episode), episode) }
+      : { static: true };
+  }
   /**
    * Opens what the collection holds. In the card section that is a card, not
    * a scenario — a card's own episodes are opened from inside its detail,
    * which is what `openScenario` is for.
    */
   private async openStory(id: string, source?: JsonRecord) {
+    const episode = source ?? this.episodeForId(id);
+    if (episode && !this.episodeDetailAvailable(episode)) return;
     if (this.isCardSection() && !id.startsWith("card.")) {
       void this.openBestdoriCard(source || this.episodeForId(id) || { cardId: id });
       return;
@@ -2255,8 +2265,7 @@ export class StoryWorkspace extends LitElement {
               subtitle: this.tileSubtitleContent(episode),
               image: this.episodeImage(episode),
               media: this.episodeMedia(episode),
-              href: this.storyHref(episode),
-              onOpen: () => void this.openStory(this.episodeId(episode), episode),
+              ...this.episodeLink(episode),
             })),
           )
         : html`
@@ -2326,7 +2335,6 @@ export class StoryWorkspace extends LitElement {
     return this.text(episode.description) || this.text(episode.caption) || this.cast(episode);
   }
   private renderTile(episode: JsonRecord) {
-    const id = this.episodeId(episode);
     const title = this.episodeTitle(episode);
     const chapter = this.chapterOf(episode);
     const band = Number(episode.bandId || chapter?.bandId || 0);
@@ -2343,8 +2351,7 @@ export class StoryWorkspace extends LitElement {
         media: this.episodeMedia(episode),
         fit: this.isProvider() && !this.isCardSection() ? "fill" : this.isCardSection() ? "contain" : "cover",
         natural: this.origin === "release" && !["home", "afterlive"].includes(this.mode),
-        href: this.storyHref(episode),
-        onOpen: () => void this.openStory(id, episode),
+        ...this.episodeLink(episode),
         serverMark: catalogServerMark(this.unionStories?.entries.get(episode), this.locale),
         onImageError: this.imageError,
         duration: this.duration(episode),
@@ -2392,6 +2399,7 @@ export class StoryWorkspace extends LitElement {
           <tbody>
             ${episodes.map((episode) => {
               const level = Number(episode.unlockCharacterFriendshipLevel || 0);
+              const link = this.episodeLink(episode);
               const identity = html`
                 <span
                   class=${`table-entity__media ${this.isCardSection() ? "story-table-media--cards" : "story-table-media"}`}
@@ -2427,19 +2435,11 @@ export class StoryWorkspace extends LitElement {
                        the same contract as every catalogue table. -->
                   <th scope="row" class="is-sticky">
                     ${
-                      this.storyHref(episode)
-                        ? html`
-                            <a class="table-entity state-layer" href=${this.storyHref(episode)!}>${identity}</a>
-                          `
-                        : html`
-                            <button
-                              class="table-entity state-layer"
-                              type="button"
-                              @click=${() => void this.openStory(this.episodeId(episode), episode)}
-                            >
-                              ${identity}
-                            </button>
-                          `
+                      link.static
+                        ? html`<span class="table-entity">${identity}</span>`
+                        : link.href
+                          ? html`<a class="table-entity state-layer" href=${link.href}>${identity}</a>`
+                          : html`<button class="table-entity state-layer" type="button" @click=${link.onOpen}>${identity}</button>`
                     }
                   </th>
                   <td>${localizedContent(this.chapterOf(episode)?.chapterName, this.locale)}</td>

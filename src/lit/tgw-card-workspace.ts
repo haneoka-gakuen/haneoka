@@ -115,8 +115,10 @@ export class TgwCardWorkspace extends LitElement {
     const full = new Map<string, Tier>();
     for (const entry of dto.entries) {
       const server = entry.displayServer, identity = dto.identities[server]!;
-      const detail = details[entry.key], source = entry.perServer[server]!;
-      if (!detail || String(detail.id) !== source.id) throw new Error("T.G.W detail unavailable");
+      const source = entry.perServer[server]!;
+      const listed = source.row.__contentPreview === true || !isContentVisible("tgw-card", source.row, source.id);
+      const detail = listed ? undefined : details[entry.key];
+      if (!listed && (!detail || String(detail.id) !== source.id)) throw new Error("T.G.W detail unavailable");
       const row = pinCrossCatalogValue({ ...source.row, ...detail }, identity) as Tier;
       presentation.entries.set(row, entry); full.set(entry.key, row);
     }
@@ -193,6 +195,9 @@ export class TgwCardWorkspace extends LitElement {
   private tierServer(tier: Tier) {
     return this.tierEntry(tier)?.displayServer || this.server;
   }
+  private tierDetailAvailable(tier: Tier): boolean {
+    return tier.__contentPreview !== true && isContentVisible("tgw-card", tier, String(tier.id));
+  }
   /** A restricted edition has no page of its own; its picker selects in place. */
   private entityLink(tier: Tier) {
     const server = this.tierServer(tier);
@@ -241,7 +246,10 @@ export class TgwCardWorkspace extends LitElement {
         const full: Record<string, JsonRecord> = {};
         await Promise.all(OFFICIAL_CATALOG_SERVERS.map(async (server) => {
           const identity = dto.identities[server];
-          const selected = dto.entries.filter((entry) => entry.displayServer === server);
+          const selected = dto.entries.filter((entry) => {
+            const source = entry.perServer[server];
+            return entry.displayServer === server && source && this.tierDetailAvailable(source.row as Tier);
+          });
           if (!identity || !selected.length) return;
           for (let offset = 0; offset < selected.length; offset += 80) {
             const chunk = selected.slice(offset, offset + 80), ids = chunk.map((entry) => entry.perServer[server]!.id);
@@ -402,6 +410,7 @@ export class TgwCardWorkspace extends LitElement {
     return this.text(keys[kind], fallback[kind]);
   }
   private select(event: MouseEvent, tier: Tier) {
+    if (!this.tierDetailAvailable(tier)) return;
     // Plain clicks select in place; modified clicks keep the link behaviour.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const server = this.tierServer(tier);
@@ -416,6 +425,8 @@ export class TgwCardWorkspace extends LitElement {
   private rankButton(tier: Tier, rank: string) {
     const label = this.name(tier.title);
     const current = tier === this.selectedTier();
+    if (!this.tierDetailAvailable(tier))
+      return html`<span class="tgw-rank-button tabular" title=${label}>${rank}</span>`;
     const href = this.entityLink(tier);
     return href
       ? html`
@@ -472,7 +483,7 @@ export class TgwCardWorkspace extends LitElement {
       </nav>
     `;
   }
-  private tier(tier: Tier) {
+  private tier(tier: Tier, summaryOnly = false) {
     const benefits = Array.isArray(tier.benefits) ? tier.benefits : [];
     const daily = Array.isArray(tier.dailyRewards) ? tier.dailyRewards : [];
     const rankRewards = Array.isArray(tier.rankRewards) ? tier.rankRewards : [];
@@ -520,7 +531,7 @@ export class TgwCardWorkspace extends LitElement {
             }
           </div>
         </section>
-        <div class="tgw-panels">
+        ${summaryOnly ? nothing : html`<div class="tgw-panels">
           <section class="tgw-panel surface">
             <h3 class="detail-section-title">${this.text("benefits", "Rank benefits")}</h3>
             ${
@@ -582,7 +593,7 @@ export class TgwCardWorkspace extends LitElement {
                   `
             }
           </section>
-        </div>
+        </div>`}
       </article>
     `;
   }
@@ -603,10 +614,10 @@ export class TgwCardWorkspace extends LitElement {
               : this.tiers.length
                 ? html`
                     ${this.entityId || this.tiers.length < 2 ? nothing : this.picker()}
-                    ${selected ? isContentVisible("tgw-card",selected,String(selected.id)) ? html`
+                    ${selected ? this.tierDetailAvailable(selected) ? html`
                       ${this.tier(selected)}
                       ${this.entityId ? entityDiscussion({ type: "tgw-card", id: String(selected.rank), server: this.tierServer(selected), locale: this.locale, title: this.name(selected.title) }) : nothing}
-                    ` : unpublishedState(this.locale) : nothing}
+                    ` : this.entityId ? unpublishedState(this.locale) : this.tier(selected, true) : nothing}
                   `
                 : emptyState({ title: this.text("empty", "No rank data in this release"), icon: "credit_card" })
         }

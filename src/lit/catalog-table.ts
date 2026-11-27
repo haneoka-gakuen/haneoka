@@ -5,6 +5,7 @@ import { difficultyKey, difficultyPicker } from "./ui/difficulty-picker";
 import { LitElement, html, nothing } from "lit";
 import { difficultyEstimatesEnabled, observeDifficultyDisplay } from "../lib/difficulty-display";
 import { icon } from "./ui/icon";
+import { retryImageCandidates } from "./ui/lazy-images";
 import { gekisoTimingView } from "./shared/gekiso-timing";
 import { formatMoney, shopPaymentPrices, shopStarsPer100, type ShopStarRewards } from "../lib/shop-currency";
 
@@ -415,6 +416,7 @@ export class CatalogTable extends LitElement {
 
     if (key === "title") {
       const image = c.image(item);
+      const candidates: string[] = c.localizedImageCandidates(image);
       const difficulty = Number(item.__difficultyIndex);
       const href = c.itemEntityLink(item, c.profile.perDifficulty && Number.isFinite(difficulty) && difficulty >= 0 ? difficulty : undefined);
       const body = html`
@@ -422,7 +424,13 @@ export class CatalogTable extends LitElement {
               image
                 ? html`
                     <span class="table-entity__media">
-                      <img src=${c.imageForLocale(image)} alt="" loading="lazy" decoding="async" />
+                      <img
+                        src=${candidates[0] || image}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        @error=${(event: Event) => retryImageCandidates(event, candidates)}
+                      />
                     </span>
                   `
                 : nothing
@@ -442,7 +450,9 @@ export class CatalogTable extends LitElement {
         <th scope="row" class=${classes || nothing} style=${CELL_MAX.title ? `--cell-max:${CELL_MAX.title}` : nothing}>
           ${href
             ? html`<a class="table-entity state-layer" href=${href} data-open-item=${c.itemKey(item)}>${body}</a>`
-            : html`<button class="table-entity state-layer" type="button" data-open-item=${c.itemKey(item)} @click=${() => c.open(item)}>${body}</button>`}
+            : c.itemDetailAvailable(item)
+              ? html`<button class="table-entity state-layer" type="button" data-open-item=${c.itemKey(item)} @click=${() => c.open(item)}>${body}</button>`
+              : html`<span class="table-entity">${body}</span>`}
         </th>
       `;
     }
@@ -527,7 +537,7 @@ export class CatalogTable extends LitElement {
     }
     if (key === "play")
       return wrap(
-        item.musicUrl
+        item.musicUrl && c.itemDetailAvailable(item)
           ? html`
               <button
                 class="icon-button icon-button--small"
@@ -547,7 +557,7 @@ export class CatalogTable extends LitElement {
     if (key === "chart") {
       const rows = Array.isArray(item.difficulty) ? (item.difficulty as Item[]) : [];
       return wrap(
-        rows.some((row) => row.file)
+        c.itemDetailAvailable(item) && rows.some((row) => row.file)
           ? html`
               <button
                 class="icon-button icon-button--small"

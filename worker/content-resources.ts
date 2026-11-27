@@ -11,7 +11,7 @@ import {
   type CriSourceProjection,
 } from "../src/lib/asset-page-data";
 
-import { contentPublished } from "../src/lib/content-publication";
+import { contentPublished, publicationFields } from "../src/lib/content-publication";
 import { contentListing, contentVisible, filterContentData, type ContentReference } from "../src/lib/content-view";
 import { VISIBILITY_TYPES, visibilityType, visibilityRuleFor, isCardVisibilityType, isModelVisibilityType, type VisibilityType } from "../src/lib/content-visibility-policy";
 import { cardRarityId } from "../src/lib/card-rarity";
@@ -25,6 +25,7 @@ import {
   type RequestContentView,
 } from "./content-view";
 import { decodePageData } from "../src/lib/page-data-codec";
+import { homeEventDisplay } from "../src/lib/home-event-display";
 
 export interface ContentResourceIndex {
   server?: string;
@@ -251,6 +252,7 @@ export async function contentResourceBoundary(
     return serve(request);
   if (sourceBrowser || (media && (url.searchParams.get("asset") === "1" || siteDocument(request)))) return serve(request);
   const tail = api?.[2] ?? "";
+  const homeEvent = url.searchParams.get("projection") === "home" ? /^events\/(\d+)$/u.exec(tail)?.[1] : undefined;
   if (imageEntity || (api && isModelVisibilityType(visibilityType(tail.split("/")[0]!)))) return serve(request);
   const componentData = api && /^(?:(?:live2d|spine)\/[^/]+|voices|options)$/u.test(tail);
   const serveFunctional = async () => {
@@ -380,7 +382,10 @@ export async function contentResourceBoundary(
       const id = decodeURIComponent(tail.split("/")[1]!);
       const index = await readIndex(server!, url.searchParams.get("release") ?? undefined);
       const refs = referencesFor(index, kind, id);
-      if (refs.length && !refs.some((ref) => contentVisible(view, kind, ref.publication, id))) return notPublic();
+      const readable = (ref: ContentReference) => homeEvent
+        ? contentListing(view, kind, ref.publication, id) !== "hidden"
+        : contentVisible(view, kind, ref.publication, id);
+      if (refs.length && !refs.some(readable)) return notPublic();
     }
   }
   if (api && /^live2d\/[^/]+$/u.test(tail) && unrestricted(view, ["live2d", "characters", "bands"]))
@@ -418,7 +423,7 @@ export async function contentResourceBoundary(
   cacheUrl.searchParams.delete("__content");
   cacheUrl.searchParams.delete("cv");
   cacheUrl.searchParams.sort();
-  cacheUrl.searchParams.set("__content-view", `${view.key}:${epoch}`);
+  cacheUrl.searchParams.set("__content-view", `catalog-v2:${view.key}:${epoch}`);
   const key = new Request(cacheUrl, { method: "GET" });
   const hit = await caches.default.match(key);
   let response = hit;
@@ -436,15 +441,20 @@ export async function contentResourceBoundary(
     )
       return notPublic();
     const index = contentIndex;
+    const homeRow = homeEvent && data && typeof data === "object" && !Array.isArray(data)
+      ? { ...homeEventDisplay(data as Record<string, unknown>), ...publicationFields(data as Record<string, unknown>), id: homeEvent }
+      : undefined;
+    if (homeEvent && !homeRow) return notPublic();
     const filtered = filterContentData(
-      data,
+      homeRow ? [homeRow] : data,
       view,
       pageData ? (url.searchParams.get("resource") ?? undefined) : api ? tail.split("/")[0] : undefined,
-      Boolean(api && !pageData && !/^[^/]+\/[^/]+$/u.test(tail)),
+      Boolean(homeRow || (api && !pageData && !/^[^/]+\/[^/]+$/u.test(tail))),
       index?.publications,
     );
-    if (filtered.value === null) return notPublic();
-    const body = JSON.stringify(filtered.value);
+    const value = homeRow && Array.isArray(filtered.value) ? filtered.value[0] : filtered.value;
+    if (value == null) return notPublic();
+    const body = JSON.stringify(value);
     const out = new Headers(input.headers);
     out.delete("Content-Encoding");
     out.delete("Content-Length");
