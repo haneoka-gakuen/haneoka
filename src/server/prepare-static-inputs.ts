@@ -1,6 +1,6 @@
 // L3 — GEB
 // Input: Fixed resource releases and normal production page data producers.
-// Output: Complete captured values and a release-consistent registry of primary content publication fields.
+// Output: Complete captured values, the current visibility snapshot and a release-consistent publication registry.
 // Pos: [Map](L2-2.md); shared preparation for independent locale and route partitions.
 // Effects/Dependencies: Uses captured readers and records the registry as a verified build input.
 import { LOCALES } from "../i18n/locales";
@@ -63,6 +63,7 @@ import { chartRates } from "./chart-rates";
 import { staticBuildJson, captureStaticBuildFile, finishStaticBuildInputs } from "./static-input-store";
 import { highScoreRatingPageData } from "./high-score-rating-page-data";
 import { growthPageData } from "./growth-page-data";
+import { captureStaticVisibility } from "./static-visibility";
 
 async function prepareAll(tasks: Array<() => Promise<unknown>>): Promise<void> {
   let cursor = 0;
@@ -86,6 +87,7 @@ async function prepareAll(tasks: Array<() => Promise<unknown>>): Promise<void> {
 /** Execute production data producers once before locale render workers start. */
 export async function prepareStaticInputs(): Promise<void> {
   if (process.env.STATIC_BUILD_INPUT_MODE !== "capture") throw new Error("Static preparation requires capture mode");
+  await captureStaticVisibility();
   const servers = await staticCatalogPageServers();
   const configured = await staticCatalogPageServers(true);
   const publications: Record<string, Record<string, Record<string, unknown>>> = {};

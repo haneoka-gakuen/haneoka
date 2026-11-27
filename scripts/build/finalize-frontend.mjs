@@ -115,13 +115,15 @@ async function loadPublicStatic() {
     },
   });
   const module = await import("../../src/server/public-static-documents.ts");
+  const { readStaticVisibility, staticVisibilityTime } = await import("../../src/server/static-visibility.ts");
   const staged = [];
   const targets = new Set();
   const privatePages = new Map();
   const mediaReferences = new Map();
   const token = process.env.STATIC_CATALOG_TOKEN || "";
   const selected = module.publicStaticSelection(value);
-  const now = Date.now();
+  const now = staticVisibilityTime();
+  const settings = readStaticVisibility()?.settings;
   const build = selected && JSON.parse(readFileSync(path.join(output, "build.json"), "utf8"));
   const publicationFile = path.resolve(".output/static-inputs/publications.json");
   if (materializeOnly && !existsSync(publicationFile))
@@ -140,6 +142,7 @@ async function loadPublicStatic() {
     now,
     build: build.web || build.id,
     publications,
+    settings,
     privateData: Boolean(token),
   };
   const tokenized = carriedMaterialization.length > 0 && carriedMaterialization.every((part) => part.tokenized);

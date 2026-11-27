@@ -1,5 +1,5 @@
 // L3 — GEB
-// Input: Complete prerendered HTML, publication fields and exact public media URL mappings.
+// Input: Complete prerendered HTML, frozen visibility settings and exact public media URL mappings.
 // Output: Public page projections, byte-range URL edits and sealed private page-data descriptors.
 // Pos: [Map](L2-2.md); build-only document privacy and transport transformations.
 // Effects/Dependencies: Parses owned JSON and HTML, uses build-secret cryptography and writes staged public pages.
@@ -22,7 +22,7 @@ import {
   DEFAULT_VISIBILITY_POLICY,
   VISIBILITY_TYPES,
   visibilityType,
-  type ContentVisibilityPolicy,
+  type ContentVisibilitySettings,
   type VisibilityType,
 } from "../lib/content-visibility-policy.ts";
 import { decodePageData, serializePageData } from "../lib/page-data-codec.ts";
@@ -71,8 +71,8 @@ export interface PublicStaticOptions {
   now: number;
   build?: string;
   publications: PublicStaticPublications;
-  /** Visibility policy applied to anonymous readers; the default policy shows only published content. */
-  policy?: ContentVisibilityPolicy;
+  /** Initial settings for pages that need the live visibility decision. */
+  settings?: ContentVisibilitySettings;
   rewriteUrl?: PublicUrlRewrite;
   /** Private page-data payloads can be sealed for this publication. */
   privateData?: boolean;
@@ -235,8 +235,8 @@ export function publicationBoundary(value: unknown, now: number): number | undef
   return Number.isFinite(at) ? at : undefined;
 }
 
-const publicView = (now: number, policy = DEFAULT_VISIBILITY_POLICY): ContentView => ({
-  policy,
+const publicView = (now: number): ContentView => ({
+  policy: DEFAULT_VISIBILITY_POLICY,
   group: "guest",
   spoilers: false,
   override: false,
@@ -510,7 +510,7 @@ export function materializePublicStaticDocument(
   const kind = route && visibilityType(route.kind);
   const serverPublications = (route && options.publications[route.server]) || {};
   const document = parse(html, { sourceCodeLocationInfo: true });
-  const view = publicView(now, options.policy);
+  const view = publicView(now);
   const edits: Edit[] = [];
   const types = new Set<VisibilityType>();
   let next = Infinity;
@@ -689,7 +689,11 @@ export function materializePublicStaticDocument(
     ...(privateData ? { private: true as const } : {}),
     ...(functional ? { functional: true as const } : {}),
   };
-  edits.push({ from: headEnd, to: headEnd, text: `${MARKER_PREFIX}${escapeAttribute(JSON.stringify(descriptor))}">` });
+  const settings = (unreleased || functional) && options.settings;
+  const visibility = settings
+    ? `<meta name="haneoka-static-visibility" content="${escapeAttribute(JSON.stringify(settings.policy))}" data-version="${settings.version}" data-at="${now}">`
+    : "";
+  edits.push({ from: headEnd, to: headEnd, text: `${MARKER_PREFIX}${escapeAttribute(JSON.stringify(descriptor))}">${visibility}` });
   return { html: applyEdits(html, edits), descriptor, ...(privateData ? { privateData } : {}) };
 }
 

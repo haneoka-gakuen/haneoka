@@ -12,6 +12,7 @@ import { homePageData } from "./home-page-data";
 import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
 import { packHomeSeed } from "../lib/cross-server/home-seed";
+import { staticVisibilityTime } from "./static-visibility";
 
 const snapshots = new Map<string, Promise<HomeSeed>>();
 
@@ -31,6 +32,7 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
   const i18nSeed = createServerI18nContext(locale, "/").seed();
   initializeI18nClient({ seed: i18nSeed }).adoptSeed(i18nSeed);
   return withDocumentUrl(new URL(`/${server}/${locale}/`, "https://haneoka.org"), () => {
+    const now = staticVisibilityTime();
     const dashboard = new HomeDashboard();
     dashboard.locale = locale;
     dashboard.server = server;
@@ -38,11 +40,11 @@ export async function renderHome(server: ReleaseServer, locale: Locale) {
     const full = withPrerenderView(false, () => {
       if (seed) dashboard.prepareHome(seed, locale);
       return collectResultSync(render(dashboard.render()));
-    });
+    }, now);
     const publicBody = withPrerenderView(true, () => {
       if (seed) dashboard.prepareHome(seed, locale);
       return collectResultSync(render(dashboard.render()));
-    }).result;
+    }, now).result;
     const refs = JSON.stringify(full.references)
       .replace(/&/gu, "&amp;")
       .replace(/"/gu, "&quot;")

@@ -165,6 +165,7 @@
     "src/server/render-workspace.ts",
     "src/server/static-input-store.ts",
     "src/server/prepare-static-inputs.ts",
+    "src/server/static-visibility.ts",
     "src/server/event-song-release.ts",
     "src/server/event-tracker-page-data.ts",
     "src/server/repository-commits.ts",

@@ -15,8 +15,20 @@ let activeRefresh: AbortSignal | undefined;
 let refreshPromise: Promise<void> | undefined;
 let parsed = "",
   policy = DEFAULT_VISIBILITY_POLICY;
+
+function seedStaticVisibility(doc: Document): void {
+  if (doc.documentElement.dataset.contentVisibilityPolicy) return;
+  const seed = doc.head?.querySelector<HTMLMetaElement>('meta[name="haneoka-static-visibility"]');
+  if (!seed) return;
+  const data = doc.documentElement.dataset;
+  data.contentVisibilityPolicy = seed.content;
+  data.contentVisibilityVersion = seed.dataset.version;
+  data.contentVisibilityAt = seed.dataset.at;
+}
+
 export function currentVisibilityPolicy(): ContentVisibilityPolicy {
   if (typeof document === "undefined" || !document.documentElement) return DEFAULT_VISIBILITY_POLICY;
+  seedStaticVisibility(document);
   const source = document.documentElement.dataset.contentVisibilityPolicy || "";
   if (source !== parsed) {
     parsed = source;
@@ -99,6 +111,7 @@ function refreshDocumentVisibility(): void {
 export function installContentVisibility(): void {
   if (installed) return;
   installed = true;
+  seedStaticVisibility(document);
   publishContentCacheScope();
   navigator.serviceWorker?.addEventListener("controllerchange", publishContentCacheScope);
   addEventListener(SPOILER_CONTENT_EVENT, publishContentCacheScope);
@@ -119,6 +132,7 @@ export function installContentVisibility(): void {
     requests.cancel();
     activeRefresh = undefined;
     const next = (event as Event & { newDocument: Document }).newDocument;
+    seedStaticVisibility(next);
     const current = document.documentElement.dataset;
     if (
       Number(current.contentVisibilityVersion || 0) > Number(next.documentElement.dataset.contentVisibilityVersion || 0)

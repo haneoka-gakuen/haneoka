@@ -1,5 +1,5 @@
-import { cardRarityName } from "./card-rarity";
-import { USER_GROUPS, isUserGroup, type UserGroup } from "./user-roles";
+import { cardRarityName } from "./card-rarity.ts";
+import { USER_GROUPS, isUserGroup, type UserGroup } from "./user-roles.ts";
 
 export const VISIBILITY_TYPES = [
   "cards",

@@ -16,6 +16,7 @@ import { appBarOwnerKind as kind, captureAppBar } from "../lib/app-bar";
 import { unpublishedState } from "../lit/ui/unpublished-state";
 import { withPrerenderView } from "../lib/content-prerender";
 import { withDocumentUrl } from "../lib/document-url";
+import { staticVisibilityTime } from "./static-visibility";
 
 type Node = DefaultTreeAdapterMap["node"];
 const MaterialStyleRenderer = createMaterialStyleRenderer(import.meta.env?.DEV === true);
@@ -85,16 +86,17 @@ function markup(value: unknown): string {
 }
 export function renderWorkspacePage(workspace: { render(): unknown; renderStaticChrome?(): void }, locale: Locale, route: string): StaticWorkspacePage {
   useStaticLocale(locale, route);
+  const now = staticVisibilityTime();
   return withDocumentUrl(new URL(route, "https://haneoka.org"), () => {
   const { result: body, bar } = captureAppBar(locale, () => {
     workspace.renderStaticChrome?.();
-    return withPrerenderView(false, () => markup(workspace.render()));
+    return withPrerenderView(false, () => markup(workspace.render()), now);
   });
   const { result: publicBody, bar: publicBar } = captureAppBar(locale, () =>
     withPrerenderView(true, () => {
       workspace.renderStaticChrome?.();
       return markup(workspace.render());
-    }).result);
+    }, now).result);
   const refs = JSON.stringify(body.references).replace(/&/gu, "&amp;").replace(/"/gu, "&quot;").replace(/</gu, "&lt;");
   const rendered = body.references.length || body.result !== publicBody
     ? `<div data-content-view="full" data-content-references="${refs}" style="display:contents">${body.result}</div><div data-content-view="public" style="display:contents">${publicBody}</div>`

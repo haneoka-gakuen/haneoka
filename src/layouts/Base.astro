@@ -13,6 +13,7 @@ import { renderUnavailableContent } from "../server/render-workspace";
 import { themeCharacters } from "../server/theme-characters";
 import { localizedSocialImage } from "../server/social-image";
 import { contentPublished, publicationFields } from "../lib/content-publication";
+import { staticVisibilityTime } from "../server/static-visibility";
 import { communityVisibilityCss, DEFAULT_COMMUNITY_HIDDEN_HOSTS } from "../lib/site-community";
 import { canonicalPath, pageDescriptionKey, pageSummary, pageTitle, pageKeywords, pageStructuredData, shouldNoindex, socialCardPath } from "../lib/seo";
 interface Props {
@@ -83,7 +84,7 @@ const birthdays = (await themeCharacters(locale)).flatMap((character) =>
 ---
 
 <!doctype html>
-<html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" data-pagefind-ignore={Astro.props.publication && !contentPublished(Astro.props.publication) ? "all" : undefined} transition:animate="none">
+<html lang={localeTag(locale)} data-locale={locale} data-seed="haneoka" data-nav="expanded" data-density="comfortable" data-pagefind-ignore={Astro.props.publication && !contentPublished(Astro.props.publication, staticVisibilityTime()) ? "all" : undefined} transition:animate="none">
   <head>
     <style is:inline data-community-visibility set:html={communityVisibilityCss(origin)} />
     <script is:inline data-astro-rerun define:vars={{ communityHiddenHosts }}>
