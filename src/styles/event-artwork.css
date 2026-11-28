@@ -20,7 +20,8 @@
     object-fit: contain;
     transform: translateY(-50%);
   }
-  .event-artwork__logo.is-error {
+  .event-artwork__logo.is-error,
+  .event-artwork:has(> .event-artwork__background[data-event-banner]:not(.is-error)) > .event-artwork__logo {
     display: none;
   }
 }

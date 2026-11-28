@@ -1118,8 +1118,8 @@ export class HomeDashboard extends LitElement {
   }
   /** The event card names its moment relatively — "ends in …", "starts in
    *  …", "ended … ago" — never as a full date range. */
-  private eventPhrase(startAt: number, endAt: number) {
-    return relativeTimeWindow(this.locale, startAt, endAt, { ongoing: this.text("ongoing", "Ongoing") });
+  private eventPhrase(startAt: number, endAt: number, options?: { now?: number; compact?: boolean }) {
+    return relativeTimeWindow(this.locale, startAt, endAt, { ...options, ongoing: this.text("ongoing", "Ongoing") });
   }
   private countdown(at: number, ending: boolean) {
     return relativeTimeWindow(this.locale, ending ? undefined : at, ending ? at : undefined);
@@ -1448,7 +1448,25 @@ export class HomeDashboard extends LitElement {
         `
       : nothing;
     const title = event ? localizedText(event.details.title, this.locale) || event.title : "";
-    const countdown = event ? this.eventPhrase(event.startAt, event.endAt) : "";
+    const artwork = event
+      ? eventArtwork(String(event.details.backgroundImage || ""), String(event.details.logo || ""), title, false, this.locale, event.image)
+      : nothing;
+    const now = Date.now();
+    const countdown = event ? this.eventPhrase(event.startAt, event.endAt, { now }) : "";
+    const countdownBadge =
+      event && countdown
+        ? html`
+            <span
+              class="home-event__countdown tabular"
+              role="timer"
+              aria-live="off"
+              aria-label=${countdown}
+              title=${countdown}
+            >
+              ${this.eventPhrase(event.startAt, event.endAt, { now, compact: true })}
+            </span>
+          `
+        : nothing;
     const targets = event
       ? values(event.details.effects).flatMap((effect) =>
           Object.values((effect.targets || {}) as Record<string, JsonRecord>),
@@ -1584,16 +1602,14 @@ export class HomeDashboard extends LitElement {
                             href=${eventHref}
                             aria-label=${`${title} / ${countdown}`}
                           >
-                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale, event.image)}
-                            <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
-                            <span class="home-event__countdown tabular" role="timer" aria-live="off">${countdown}</span>
+                            ${artwork}
+                            ${countdownBadge}
                           </a>
                         `
                       : html`
                           <span class="home-event__media media-loading">
-                            ${eventArtwork(String(event.details.backgroundImage || event.image), String(event.details.logo || ""), title, false, this.locale, event.image)}
-                            <span class="home-event__overline">${uiText(this.locale, "navigation.events")}</span>
-                            <span class="home-event__countdown tabular" role="timer" aria-live="off">${countdown}</span>
+                            ${artwork}
+                            ${countdownBadge}
                           </span>
                         `
                   }
@@ -1624,7 +1640,7 @@ export class HomeDashboard extends LitElement {
                           ? html`
                               <div class="home-event__progress">
                                 ${wavyProgress({
-                                  value: (Date.now() - event.startAt) / (event.endAt - event.startAt),
+                                  value: (now - event.startAt) / (event.endAt - event.startAt),
                                   thickness: 4,
                                   amplitude: 3,
                                   wavelength: 28,

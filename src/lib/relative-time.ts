@@ -26,15 +26,15 @@ export function relativeTimestamp(value: unknown, region?: TimeRegion): number |
   return Number.isFinite(at) && at > 0 && at <= 8_640_000_000_000_000 ? at : undefined;
 }
 
-/** Same minute rounding and day/hour precision as the existing home card. */
-export function relativeSpan(locale: string, milliseconds: number): string {
+/** Compact labels use the largest duration unit. */
+export function relativeSpan(locale: string, milliseconds: number, compact = false): string {
   if (!Number.isFinite(milliseconds)) return "";
   const minutes = Math.max(1, Math.round(milliseconds / 60_000));
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
   const count = (value: number) => new Intl.NumberFormat(normalizeLocale(locale)).format(value);
   const span = (key: RelativeTimeKey, value: number) => relativeTimeText(locale, key, { count: count(value) });
-  if (days >= 1) return hours ? `${span("spanDays", days)} ${span("spanHours", hours)}` : span("spanDays", days);
+  if (days >= 1) return hours && !compact ? `${span("spanDays", days)} ${span("spanHours", hours)}` : span("spanDays", days);
   if (hours >= 1) return span("spanHours", hours);
   return span("spanMinutes", minutes);
 }
@@ -43,17 +43,17 @@ export function relativeTimeWindow(
   locale: string,
   startValue: unknown,
   endValue: unknown,
-  options: { now?: number; region?: TimeRegion; ongoing?: string } = {},
+  options: { now?: number; region?: TimeRegion; ongoing?: string; compact?: boolean } = {},
 ): string {
   const now = options.now ?? Date.now();
   const start = relativeTimestamp(startValue, options.region);
   const end = relativeTimestamp(endValue, options.region);
   if (start !== undefined && end !== undefined && end < start) return "";
   if (start !== undefined && start > now)
-    return relativeTimeText(locale, "startsIn", { time: relativeSpan(locale, start - now) });
+    return relativeTimeText(locale, "startsIn", { time: relativeSpan(locale, start - now, options.compact) });
   if (end !== undefined)
     return relativeTimeText(locale, end < now ? "endedAgo" : "endsIn", {
-      time: relativeSpan(locale, Math.abs(end - now)),
+      time: relativeSpan(locale, Math.abs(end - now), options.compact),
     });
   return start !== undefined ? options.ongoing ?? "" : "";
 }

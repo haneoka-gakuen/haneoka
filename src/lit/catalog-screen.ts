@@ -5879,7 +5879,7 @@ export class CatalogScreen extends LitElement {
       subtitle: this.systemTileSubtitle(item, resource),
       image,
       imageFallback: image,
-      media: event && item.logo ? eventArtwork(asset(item.backgroundImage) || image, asset(item.logo), title, true, this.settings.locale, image) : undefined,
+      media: event && item.logo ? eventArtwork(asset(item.backgroundImage), asset(item.logo), title, true, this.settings.locale, image) : undefined,
       aspectRatio: event ? "16 / 9" : undefined,
       placeholder: icon("image", 32),
       fit: "contain",
