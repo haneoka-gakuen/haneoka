@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "โปรแกรมดูภาพ",
       "fields": {
         "cover": "ปิดบัง",
         "portrait": "ภาพเหมือน"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "รูปภาพก่อนหน้า",
         "nextImage": "รูปภาพถัดไป",
-        "originalImage": "เปิดต้นฉบับ"
+        "originalImage": "เปิดต้นฉบับ",
+        "saveImage": "บันทึกรูปภาพ",
+        "saveFailed": "บันทึกรูปภาพไม่สำเร็จ โปรดลองอีกครั้ง"
       }
     },
     "capture": {

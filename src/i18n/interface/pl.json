@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Przeglądarka obrazów",
       "fields": {
         "cover": "pokrycie",
         "portrait": "Portret"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "Poprzedni obraz",
         "nextImage": "Następny obraz",
-        "originalImage": "Otwarte oryginały"
+        "originalImage": "Otwarte oryginały",
+        "saveImage": "Zapisz obraz",
+        "saveFailed": "Nie udało się zapisać obrazu. Spróbuj ponownie."
       }
     },
     "capture": {

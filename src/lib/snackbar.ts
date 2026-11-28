@@ -7,6 +7,7 @@ export interface SnackbarOptions {
   error?: boolean;
   /** 0 keeps it until dismissed or replaced. */
   durationMs?: number;
+  container?: HTMLElement;
 }
 
 let host: HTMLElement | null = null;
@@ -25,8 +26,9 @@ export function snackbar(text: string, options: SnackbarOptions = {}): number {
   if (!host?.isConnected) {
     host = document.createElement("div");
     host.className = "snackbar-host";
-    document.body.append(host);
   }
+  const container = options.container ?? document.body;
+  if (host.parentElement !== container) container.append(host);
   const id = ++current;
   window.clearTimeout(timer);
   const action = options.action;

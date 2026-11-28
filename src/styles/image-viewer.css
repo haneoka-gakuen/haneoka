@@ -1,0 +1,10 @@
+.image-viewer .pswp__button--save-image {
+  display: grid;
+  place-items: center;
+  color: var(--pswp-icon-color);
+}
+
+.image-viewer .pswp__button--save-image[aria-disabled="true"] {
+  opacity: 0.3;
+  cursor: wait;
+}

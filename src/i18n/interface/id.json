@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Penampil gambar",
       "fields": {
         "cover": "Menutupi",
         "portrait": "Potret"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "Gambar sebelumnya",
         "nextImage": "Gambar berikutnya",
-        "originalImage": "Buka yang asli"
+        "originalImage": "Buka yang asli",
+        "saveImage": "Simpan gambar",
+        "saveFailed": "Gambar gagal disimpan. Coba lagi."
       }
     },
     "capture": {

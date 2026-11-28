@@ -1994,6 +1994,7 @@
       }
     },
     "images": {
+      "viewerTitle": "이미지 뷰어",
       "fields": {
         "cover": "재킷",
         "portrait": "캐릭터 일러스트"
@@ -2001,7 +2002,9 @@
       "actions": {
         "previousImage": "이전 이미지",
         "nextImage": "다음 이미지",
-        "originalImage": "원본 열기"
+        "originalImage": "원본 열기",
+        "saveImage": "이미지 저장",
+        "saveFailed": "이미지를 저장하지 못했습니다. 다시 시도해 주세요."
       }
     },
     "capture": {

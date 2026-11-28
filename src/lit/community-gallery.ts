@@ -1,17 +1,13 @@
 import { LitElement, html, nothing } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { clientText } from "../i18n/client";
-import { trapFocus } from "../lib/overlay";
 import { icon } from "./ui/icon";
-import type PhotoSwipe from "photoswipe";
-import "photoswipe/style.css";
 import { communityImageRatio, type CommunityImage } from "../lib/community-media-layout";
+import { createImageViewer, type ImageViewer } from "./ui/image-viewer";
 import { loadingIndicator } from "./ui/loading-indicator";
 
 /** Message paths for this view's finite control/metadata identifiers. */
 const uiLabelPaths: Readonly<Record<string, string>> = {
-  "close": "common.actions.close",
-  "error": "common.states.error",
   "loading": "common.states.loading",
   "nextImage": "media.images.actions.nextImage",
   "previousImage": "media.images.actions.previousImage",
@@ -34,7 +30,7 @@ export class CommunityGallery extends LitElement {
   declare index: number;
   declare busy: boolean;
   declare error: string;
-  private viewer?: PhotoSwipe;
+  private viewer?: ImageViewer;
   private isVideo(image: CommunityImage) {
     return !!image.playbackUrl || String(image.displayMediaType || image.mediaType || "").startsWith("video/");
   }
@@ -45,7 +41,6 @@ export class CommunityGallery extends LitElement {
     for (const video of this.querySelectorAll<HTMLVideoElement>("video"))
       if (Number(video.dataset.index) !== this.index) video.pause();
   }
-  private releaseFocus?: () => void;
   private generation = 0;
   constructor() {
     super();
@@ -66,7 +61,7 @@ export class CommunityGallery extends LitElement {
       video.load();
     }
     this.viewer?.destroy();
-    this.releaseFocus?.();
+    this.busy = false;
     super.disconnectedCallback();
   }
   private text(key: string) {
@@ -88,48 +83,31 @@ export class CommunityGallery extends LitElement {
     this.error = "";
     const trigger = event.currentTarget as HTMLElement;
     try {
-      const { default: Viewer } = await import("photoswipe");
+      const viewer = await createImageViewer({
+        slides: this.images.map((entry, i) => {
+          if (this.isVideo(entry)) return null;
+          const image = this.querySelector<HTMLImageElement>(`img[data-index="${i}"]`);
+          return {
+            src: this.displaySource(entry),
+            width: image?.naturalWidth || entry.displayWidth || entry.width || 1200,
+            height: image?.naturalHeight || entry.displayHeight || entry.height || 1500,
+            alt: entry.fileName || "",
+            original: { source: entry.contentUrl, name: entry.fileName },
+          };
+        }),
+        index,
+        locale: this.locale,
+        trigger,
+        onChange: (active) => this.select(active),
+        onDestroy: () => {
+          this.viewer = undefined;
+        },
+      });
       if (!this.isConnected || this.generation !== generation) return;
-      const indices = this.images.flatMap((entry, i) => (this.isVideo(entry) ? [] : [i]));
-      const slides = indices.map((i) => {
-        const entry = this.images[i];
-        const image = this.querySelector<HTMLImageElement>(`img[data-index="${i}"]`);
-        return {
-          src: this.displaySource(entry),
-          width: image?.naturalWidth || entry.displayWidth || entry.width || 1200,
-          height: image?.naturalHeight || entry.displayHeight || entry.height || 1500,
-          alt: entry.fileName || "",
-        };
-      });
-      const viewer = new Viewer({
-        dataSource: slides,
-        index: indices.indexOf(index),
-        showHideAnimationType: "fade",
-        bgOpacity: 1,
-        trapFocus: false,
-        returnFocus: false,
-        wheelToZoom: true,
-        imageClickAction: "zoom",
-        closeTitle: this.text("close"),
-        zoomTitle: this.text("zoom"),
-        arrowPrevTitle: this.text("previousImage"),
-        arrowNextTitle: this.text("nextImage"),
-        errorMsg: this.text("unavailable"),
-      });
       this.viewer = viewer;
-      viewer.on("afterInit", () => {
-        if (viewer.element)
-          this.releaseFocus = trapFocus(viewer.element, { onDismiss: () => viewer.close(), returnFocus: trigger });
-      });
-      viewer.on("destroy", () => {
-        this.releaseFocus?.();
-        this.releaseFocus = undefined;
-        this.viewer = undefined;
-      });
-      viewer.on("change", () => this.select(indices[viewer.currIndex]));
       viewer.init();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
+      if (generation === this.generation) this.error = error instanceof Error ? error.message : String(error);
     } finally {
       if (generation === this.generation) this.busy = false;
     }

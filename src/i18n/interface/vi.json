@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Trình xem ảnh",
       "fields": {
         "cover": "Che phủ",
         "portrait": "Chân dung"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "Hình ảnh trước đó",
         "nextImage": "Hình ảnh tiếp theo",
-        "originalImage": "Mở bản gốc"
+        "originalImage": "Mở bản gốc",
+        "saveImage": "Lưu ảnh",
+        "saveFailed": "Không thể lưu ảnh. Hãy thử lại."
       }
     },
     "capture": {

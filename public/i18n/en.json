@@ -1994,6 +1994,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Image viewer",
       "fields": {
         "cover": "Cover",
         "portrait": "Portrait"
@@ -2001,7 +2002,9 @@
       "actions": {
         "previousImage": "Previous image",
         "nextImage": "Next image",
-        "originalImage": "Open original"
+        "originalImage": "Open original",
+        "saveImage": "Save image",
+        "saveFailed": "Couldn’t save image. Try again."
       }
     },
     "capture": {

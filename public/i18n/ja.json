@@ -1994,6 +1994,7 @@
       }
     },
     "images": {
+      "viewerTitle": "画像ビューア",
       "fields": {
         "cover": "ジャケット",
         "portrait": "立ち絵"
@@ -2001,7 +2002,9 @@
       "actions": {
         "previousImage": "前の画像",
         "nextImage": "次の画像",
-        "originalImage": "元の画像を開く"
+        "originalImage": "元の画像を開く",
+        "saveImage": "画像を保存",
+        "saveFailed": "画像を保存できませんでした。もう一度お試しください。"
       }
     },
     "capture": {

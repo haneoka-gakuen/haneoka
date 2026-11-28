@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Visionneuse d’images",
       "fields": {
         "cover": "Couverture",
         "portrait": "Portrait"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "Image précédente",
         "nextImage": "Image suivante",
-        "originalImage": "Ouvrir l'original"
+        "originalImage": "Ouvrir l'original",
+        "saveImage": "Enregistrer l’image",
+        "saveFailed": "Impossible d’enregistrer l’image. Réessayez."
       }
     },
     "capture": {

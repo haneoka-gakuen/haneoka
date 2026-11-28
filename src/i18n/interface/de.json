@@ -1970,6 +1970,7 @@
       }
     },
     "images": {
+      "viewerTitle": "Bildanzeige",
       "fields": {
         "cover": "Abdeckung",
         "portrait": "Porträt"
@@ -1977,7 +1978,9 @@
       "actions": {
         "previousImage": "Vorheriges Bild",
         "nextImage": "Nächstes Bild",
-        "originalImage": "Original öffnen"
+        "originalImage": "Original öffnen",
+        "saveImage": "Bild speichern",
+        "saveFailed": "Das Bild konnte nicht gespeichert werden. Erneut versuchen."
       }
     },
     "capture": {

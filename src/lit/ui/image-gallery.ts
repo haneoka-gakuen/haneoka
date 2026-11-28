@@ -1,15 +1,13 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
-import type PhotoSwipe from "photoswipe";
 import { backdropPress, isBackdropClick, modal } from "./modal";
-import { trapFocus } from "../../lib/overlay";
 import { uiText } from "../shared/catalog";
 import { iconButton, rovingKeydown } from "./controls";
 import { icon } from "./icon";
 import { nextImageCandidate } from "./lazy-images";
 import { knownImageSize, rememberImageSize } from "../../lib/image-dimensions";
 import { publicMediaAddress } from "../../lib/document-address";
+import { createImageViewer, type ImageViewer } from "./image-viewer";
 import "../../styles/image-gallery.css";
-import "photoswipe/style.css";
 
 export interface GalleryClip {
   url: string;
@@ -83,8 +81,7 @@ export class ImageGallery extends LitElement {
   private movieFetchLifetime?: AbortController;
   /** Clip downloads, kept across loops, replays and switches until the image set changes. */
   private movieBlobs = new Map<string, Promise<Blob>>();
-  private viewer?: PhotoSwipe;
-  private releaseFocus?: () => void;
+  private viewer?: ImageViewer;
   private generation = 0;
   private dimensions = new Map<string, { src: string; width: number; height: number }>();
   constructor() {
@@ -125,7 +122,7 @@ export class ImageGallery extends LitElement {
     this.stopMovie();
     this.dropMovieDownloads();
     this.viewer?.destroy();
-    this.releaseFocus?.();
+    this.busy = false;
     super.disconnectedCallback();
   }
   protected willUpdate(changed: PropertyValues) {
@@ -455,45 +452,22 @@ export class ImageGallery extends LitElement {
     this.busy = true;
     this.error = "";
     try {
-      const [{ default: Viewer }, slides] = await Promise.all([
-        import("photoswipe"),
-        Promise.all(this.images.map((entry) => this.imageData(entry).catch(() => null))),
-      ]);
+      const viewer = await createImageViewer({
+        slides: this.images.map((entry) => this.imageData(entry).catch(() => null)),
+        index,
+        locale: this.locale,
+        title: this.title,
+        trigger,
+        onChange: (active) => this.select(active),
+        onDestroy: () => {
+          this.viewer = undefined;
+        },
+      });
       if (!this.isConnected || generation !== this.generation) return;
-      if (!slides[index]) throw new Error(uiText(this.locale, "common.states.unavailable"));
-      const indices = slides.flatMap((slide, i) => (slide ? [i] : []));
-      const viewer = new Viewer({
-        dataSource: slides.filter((slide): slide is NonNullable<typeof slide> => slide !== null),
-        index: indices.indexOf(index),
-        bgOpacity: 1,
-        showHideAnimationType: "fade",
-        trapFocus: false,
-        returnFocus: false,
-        wheelToZoom: true,
-        imageClickAction: "zoom",
-        padding: { top: 64, bottom: 24, left: 12, right: 12 },
-        closeTitle: uiText(this.locale, "common.actions.close"),
-        zoomTitle: uiText(this.locale, "media.models.labels.zoom"),
-        arrowPrevTitle: uiText(this.locale, "media.images.actions.previousImage"),
-        arrowNextTitle: uiText(this.locale, "media.images.actions.nextImage"),
-        errorMsg: uiText(this.locale, "common.states.unavailable"),
-      });
       this.viewer = viewer;
-      viewer.on("afterInit", () => {
-        if (viewer.element) {
-          viewer.element.setAttribute("aria-label", this.title || uiText(this.locale, "image"));
-          this.releaseFocus = trapFocus(viewer.element, { onDismiss: () => viewer.close(), returnFocus: trigger });
-        }
-      });
-      viewer.on("change", () => this.select(indices[viewer.currIndex] ?? index));
-      viewer.on("destroy", () => {
-        this.releaseFocus?.();
-        this.releaseFocus = undefined;
-        this.viewer = undefined;
-      });
       viewer.init();
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
+      if (generation === this.generation) this.error = error instanceof Error ? error.message : String(error);
     } finally {
       if (generation === this.generation) this.busy = false;
     }

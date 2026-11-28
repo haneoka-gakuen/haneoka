@@ -1994,6 +1994,7 @@
       }
     },
     "images": {
+      "viewerTitle": "圖片檢視器",
       "fields": {
         "cover": "封面",
         "portrait": "立繪"
@@ -2001,7 +2002,9 @@
       "actions": {
         "previousImage": "上一張圖片",
         "nextImage": "下一張圖片",
-        "originalImage": "開啟原圖"
+        "originalImage": "開啟原圖",
+        "saveImage": "儲存圖片",
+        "saveFailed": "圖片儲存失敗，請重試。"
       }
     },
     "capture": {
