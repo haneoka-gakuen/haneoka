@@ -38,6 +38,7 @@ import type { CubismRuntimeAdapter } from "@haneoka/vega-plugin-cubism";
 import { hydrateStoryPayload } from "@haneoka/vega-plugin-haneoka";
 import { applyRenderQuality, observeRenderQuality } from "../../lib/render-quality";
 import "../ui/render-quality-settings";
+import { renderStoryTransport } from "../shared/story-transport";
 import {
   createHaneokaThemeAssetsPlugin,
   createHaneokaThemeHostPlugin,
@@ -1054,85 +1055,33 @@ export class VegaStoryStage extends LitElement {
       </section>
     `;
   }
-  /**
-   * The shared playback footer (`.chart-runtime__controls` from catalog.css):
-   * outside the letterboxed stage and always laid out, never scaled with the
-   * game viewport. The lead button carries the chart player's play/pause
-   * glyphs over the AUTO toggle — play while auto is off, pause while it is
-   * on — and the slider scrubs the reachable-line timeline.
-   */
   private renderTransport() {
     if (this.phase !== "ready") return nothing;
-    const maximum = Math.max(0, this.maximum);
-    return html`
-      <footer
-        class="chart-runtime__controls playback-controls"
-        ?hidden=${!this.transportVisible || this.transportCollapsed}
-        data-collapsed=${this.transportCollapsed ? "true" : "false"}
-        aria-label=${uiText(this.locale, "media.audio.morePlaybackControls")}
-      >
-        <div
-          class="playback-controls__expanded"
-          ?inert=${this.transportCollapsed}
-          aria-hidden=${this.transportCollapsed}
-        >
-          <button
-            class="icon-button"
-            type="button"
-            aria-pressed=${this.started && !this.completed ? this.autoMode : nothing}
-            aria-label=${this.completed ? uiText(this.locale, "common.actions.replay") : this.started ? this.ui("auto") : uiText(this.locale, "common.actions.play")}
-            .title=${this.completed ? uiText(this.locale, "common.actions.replay") : this.started ? this.ui("auto") : uiText(this.locale, "common.actions.play")}
-            @click=${this.toggleAutoMode}
-          >
-            <svg class="material-icon" width="24" height="24">
-              <use href=${`/icons.svg#${this.completed ? "replay" : this.autoMode ? "pause" : "play_arrow"}`}></use>
-            </svg>
-          </button>
-          <div class="chart-runtime__timeline">
-            <small>${this.ordinal}</small>
-            <md-slider
-              class="md3-slider md3-slider--runtime"
-              min="0"
-              max=${maximum || 1}
-              step="1"
-              .value=${this.ordinal}
-              aria-label=${this.ui("storyProgress")}
-              aria-valuetext=${`${this.ordinal} / ${maximum}`}
-              ?disabled=${maximum < 1}
-              @input=${(event: Event) =>
-                this.previewTransportSeek(Number((event.target as HTMLElement & { value?: number }).value))}
-              @change=${(event: Event) =>
-                void this.commitTransportSeek(Number((event.target as HTMLElement & { value?: number }).value))}
-            ></md-slider>
-            <small>${maximum}</small>
-          </div>
-          <div class="chart-runtime__actions">
-            <button
-              class="icon-button"
-              type="button"
-              aria-pressed=${this.fullscreenActive}
-              aria-label=${uiText(this.locale, this.fullscreenActive ? "common.actions.fullscreenExit" : "common.actions.fullscreen")}
-              title=${uiText(this.locale, this.fullscreenActive ? "common.actions.fullscreenExit" : "common.actions.fullscreen")}
-              @click=${() => void this.toggleFullscreen()}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href=${`/icons.svg#${this.fullscreenActive ? "fullscreen_exit" : "fullscreen"}`}></use>
-              </svg>
-            </button>
-            <button
-              class="icon-button"
-              type="button"
-              @click=${this.collapseTransport}
-              aria-label=${this.ui("collapse")}
-            >
-              <svg class="material-icon" width="20" height="20">
-                <use href="/icons.svg#expand_more"></use>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </footer>
-    `;
+    return renderStoryTransport({
+      visible: this.transportVisible,
+      collapsed: this.transportCollapsed,
+      started: this.started,
+      completed: this.completed,
+      auto: this.autoMode,
+      fullscreen: this.fullscreenActive,
+      ordinal: this.ordinal,
+      maximum: Math.max(0, this.maximum),
+      labels: {
+        controls: uiText(this.locale, "media.audio.morePlaybackControls"),
+        play: uiText(this.locale, "common.actions.play"),
+        replay: uiText(this.locale, "common.actions.replay"),
+        auto: this.ui("auto"),
+        progress: this.ui("storyProgress"),
+        fullscreen: uiText(this.locale, "common.actions.fullscreen"),
+        fullscreenExit: uiText(this.locale, "common.actions.fullscreenExit"),
+        collapse: this.ui("collapse"),
+      },
+      onPlay: () => this.toggleAutoMode(),
+      onPreviewSeek: (ordinal) => this.previewTransportSeek(ordinal),
+      onSeek: (ordinal) => void this.commitTransportSeek(ordinal),
+      onFullscreen: () => void this.toggleFullscreen(),
+      onCollapse: this.collapseTransport,
+    });
   }
 }
 if (!customElements.get("vega-story-stage")) customElements.define("vega-story-stage", VegaStoryStage);

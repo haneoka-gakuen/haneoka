@@ -156,6 +156,64 @@ for (const [name, { directory }] of packages) {
 const compatibility = await restorePublishedEmbedCompatibility(output);
 
 const chartStyle = await readFile(path.join(root, "packages/embed-cassiopeia/src/style.css"), "utf8");
+let storyStyle = "", storySymbols = "", storyLabels = {};
+if (!runtimeOnly && (!modulesArg || modulesArg.slice("--modules=".length).split(",").includes("vega-haneoka"))) {
+  const css = (file) => readFile(path.join(root, file), "utf8");
+  const tokens = (await css(".dependencies/design-tokens/src/tokens.css")).replace(/^@import[^;]+;/mu, "");
+  const schemes = [...(await css(".dependencies/design-tokens/src/schemes.css")).matchAll(/^:root[^{]*\{[^}]+\}/gmu)]
+    .map(([rule]) => rule).filter((rule) => !rule.includes("data-seed=")).join("\n");
+  const components = await Promise.all(["state", "action", "input", "playback", "render-quality"].map((file) => css(`src/styles/components/${file}.css`)));
+  storyStyle = `
+    @scope (.haneoka-story-embed) {
+      ${[tokens, schemes, await css("src/styles/base/tokens.css")].join("\n").replace(/:root\b/gu, ":scope")}
+      ${components.join("\n")}
+      :scope {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        min-width: 0;
+        font-family: var(--app-font);
+        --haneoka-font: var(--app-font);
+        background: var(--md-sys-color-surface-container-lowest);
+      }
+      :scope > .haneoka-story-embed__controls { display: contents; }
+      :scope > .vega-story-embed__viewport {
+        grid-area: 1 / 1;
+        min-height: 0;
+        min-width: 0;
+        background: #111317;
+      }
+      :scope:has(.vega-shell-host--active) .vega-story-runtime__start { visibility: hidden; }
+      :scope:is(:fullscreen, [data-app-fullscreen]) { width: 100%; height: 100dvh; }
+      :scope[data-app-fullscreen] {
+        position: fixed !important;
+        inset: 0;
+        z-index: var(--md-sys-z-index-overlay-dialog);
+        overscroll-behavior: contain;
+      }
+      :is(.icon-button, .button) { box-sizing: border-box; border: 0; padding: 0; }
+      .button { padding-inline: var(--md-sys-spacing-4); }
+      .material-icon { display: block; fill: currentColor; }
+      :scope :is(.playback-controls, .vega-story-runtime__start, .haneoka-menu-press) :where(*) {
+        margin-block: 0;
+      }
+      :scope .haneoka-menu-press img { display: block; }
+      [hidden]:not([hidden="until-found"]) { display: none !important; }
+    }`;
+  const icons = await css("public/icons.svg");
+  storySymbols = ["play_arrow", "pause", "replay", "fullscreen", "fullscreen_exit", "expand_more"].map((name) => {
+    const symbol = new RegExp(`<symbol id="${name}"[^>]*>[\\s\\S]*?</symbol>`, "u").exec(icons)?.[0];
+    if (!symbol) throw new Error(`Missing story control icon: ${name}`);
+    return symbol;
+  }).join("");
+  storyLabels = Object.fromEntries(await Promise.all(["en", "ja", "ko", "zh-CN", "zh-TW"].map(async (locale) => {
+    const { common, story, media } = JSON.parse(await css(`public/i18n/${locale}.json`));
+    return [locale, {
+      controls: media.audio.morePlaybackControls, play: common.actions.play, replay: common.actions.replay,
+      auto: story.playback.auto, progress: story.playback.storyProgress, fullscreen: common.actions.fullscreen,
+      fullscreenExit: common.actions.fullscreenExit, collapse: common.actions.collapse, rendering: media.rendering,
+    }];
+  })));
+}
 const entries = {
   "api-client": `export * from "@haneoka/api-client";export * from "@haneoka/api-client/haneoka";export * from "@haneoka/api-client/game";`,
   core: `export * from "@haneoka/embed-core";export * from "@haneoka/embed-core/haneoka";export * from "@haneoka/embed-core/branding";`,
@@ -176,8 +234,14 @@ const entries = {
   "vega-theme": `export * from "@haneoka/embed-vega/theme";`,
   "vega-haneoka": `
     import {mountHaneokaStory as mount} from "@haneoka/embed-vega/hosted";
+    import {hostedStoryPresentation} from "./src/lit/runtime/hosted-story-presentation";
+    const presentation=hostedStoryPresentation(${JSON.stringify(storyStyle)},${JSON.stringify(storySymbols)},${JSON.stringify(storyLabels)});
     export function mountHaneokaStory(container,options){
-      return mount(container,{manifestUrl:new URL("./manifest.json",import.meta.url).href,...options});
+      const player=options.playerOptions||{};
+      const themed=(!player.theme||player.theme==="haneoka")&&player.shell!==false
+        && !player.plugins?.some(plugin=>plugin.manifest.id==="haneoka.theme-host");
+      return mount(container,{manifestUrl:new URL("./manifest.json",import.meta.url).href,...options,
+        playerOptions:{...(themed?{presentation}:{}),...player}});
     }
   `,
   cassiopeia: `
@@ -246,8 +310,13 @@ const assetPlugin = {
       return { contents: bytes, loader: "file" };
     });
     builder.onLoad({ filter: /\.[cm]?[jt]s$/ }, async (args) => {
-      const code = await readFile(args.path, "utf8");
+      let code = await readFile(args.path, "utf8");
       consumedInputs.set(path.relative(root, args.path), hash(code));
+      // Host pages and older SDK releases may already provide these standard elements.
+      if (args.path.includes("/@material/web/")) {
+        code = code.replace(/\bcustomElement\((['"]md-[a-z-]+['"])\)/gu,
+          "(customElements.get($1) ? undefined : customElement($1))");
+      }
       const loader = /\.[cm]?ts$/u.test(args.path) ? "ts" : "js";
       const unchanged = { contents: code, loader, resolveDir: path.dirname(args.path) };
       if (!code.includes("import.meta.url")) return unchanged;

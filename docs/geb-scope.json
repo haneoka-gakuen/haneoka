@@ -193,6 +193,8 @@
     "src/lit/team-builder/arena-tab.ts",
     "src/lit/ui/browse.ts",
     "src/lit/runtime/vega-story-stage.ts",
+    "src/lit/runtime/hosted-story-presentation.ts",
+    "src/lit/shared/story-transport.ts",
     "src/i18n/client.ts",
     "src/i18n/interface-languages.ts",
     "src/i18n/interface-route.ts",

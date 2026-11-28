@@ -19,13 +19,19 @@ const home = await renderHome(server, locale);
     const home = document.currentScript?.previousElementSibling;
     const board = home?.querySelector(".home-board");
     if (!board) return;
-    const ids = ["birthdays", "news", "cards", "songs", "community", "fanInfo"];
+    const slots = new Map(Array.from(board.children, slot => [slot.dataset.homeModule, slot]));
+    const ids = [...slots.keys()];
     const storageKey = "haneoka:home-layout:v6";
     let order = [...ids];
     let hidden = {};
     try {
       const current = localStorage.getItem(storageKey);
       const state = JSON.parse(current || localStorage.getItem("haneoka:home-layout:v5") || localStorage.getItem("haneoka:home-layout:v4") || "null");
+      if (Array.isArray(state?.order)) state.order = state.order.map(id => id === "news" ? "arena" : id);
+      if (state?.hidden && typeof state.hidden === "object" && "news" in state.hidden) {
+        state.hidden.arena = state.hidden.news;
+        delete state.hidden.news;
+      }
       if (
         Array.isArray(state?.order) &&
         new Set(state.order).size === state.order.length &&
@@ -44,11 +50,11 @@ const home = await renderHome(server, locale);
     } catch {
     }
     for (const id of order) {
-      const slot = board.querySelector(`.home-board__slot--${id}`);
+      const slot = slots.get(id);
       if (slot) board.append(slot);
     }
     for (const id of ids) {
-      const slot = board.querySelector(`.home-board__slot--${id}`);
+      const slot = slots.get(id);
       if (slot) slot.hidden = Boolean(hidden[id]);
     }
   })();

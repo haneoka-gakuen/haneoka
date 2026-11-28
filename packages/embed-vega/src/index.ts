@@ -62,12 +62,14 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
   // Attribution overlays the scene without reducing its viewport.
   const brand = createHaneokaBranding(container.ownerDocument, { corner: options.brandingCorner ?? "top-left" });
   const viewport = container.ownerDocument.createElement("div");
-  viewport.style.cssText = "position:absolute;inset:0;overflow:hidden;";
+  viewport.className = "vega-story-embed__viewport";
+  viewport.style.cssText = "position:absolute;inset:0;overflow:hidden;container-type:size;";
   stage.append(brand, viewport);
   container.append(stage);
   let phase: StoryEmbedPhase = "loading";
   let engine: VegaEngine | undefined;
   let player: VegaPlayerHandle | undefined;
+  let controls: ReturnType<ReturnType<NonNullable<MountStoryOptions["presentation"]>>["mount"]> | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let disposal: Promise<void> | undefined;
   let releasePlayer: Promise<void> | undefined;
@@ -99,6 +101,7 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
     });
   let lastSnapshot = "";
   const publish = () => {
+    controls?.update();
     // Native shell controls and background tasks report through player state.
     if (phase === "ready" && player?.player.state.error) {
       fail(new Error(player.player.state.error));
@@ -117,7 +120,11 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
       timer = undefined;
     }
     releasePlayer ??= Promise.resolve()
-      .then(() => engine?.dispose())
+      .then(() => {
+        controls?.dispose();
+        controls = undefined;
+        return engine?.dispose();
+      })
       .then(() => {
         player = undefined;
       });
@@ -264,6 +271,13 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
         models.plugins(),
       ]);
       controller.signal.throwIfAborted();
+      const presentation = options.presentation?.(stage, viewport, loader.locale);
+      const replacements = new Map(presentation?.plugins.map((plugin) => [plugin.manifest.id, plugin]));
+      const additionalPlugins = (options.plugins ?? []).map((plugin) => {
+        const replacement = replacements.get(plugin.manifest.id);
+        replacements.delete(plugin.manifest.id);
+        return replacement ?? plugin;
+      });
       const plugins = [
         createVegaRichTextPlugin(),
         vegaPortableUiPlugin,
@@ -291,7 +305,8 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
           },
         }),
         ...modelPlugins,
-        ...(options.plugins ?? []),
+        ...additionalPlugins,
+        ...replacements.values(),
       ];
       controller.signal.throwIfAborted();
       engine = createVega({ plugins });
@@ -318,18 +333,14 @@ export function mountStory(container: HTMLElement, options: MountStoryOptions): 
       controller.signal.throwIfAborted();
       // The shell fullscreens player.root. Keep both attribution and the
       // full scene area inside that root, including in native fullscreen.
-      const scene = container.ownerDocument.createElement("div");
-      scene.style.cssText = `${viewport.style.cssText}container-type:size;`;
-      scene.append(...Array.from(player.root.childNodes));
-      player.root.append(brand, scene);
-      stage.append(player.root);
-      viewport.remove();
+      player.root.append(brand);
       // Shell settings are reapplied together, including after UI changes.
       // Keep the story preference aligned with the embed's requested locale.
       player.shell?.setSetting("language", loader.locale);
       player.shell?.setSetting("uiLanguage", loader.locale);
       player.player.setLocale(loader.locale, { refresh: true });
       if (player.player.state.error) throw new Error(player.player.state.error);
+      controls = presentation?.mount(player);
       phase = "ready";
       timer = setInterval(publish, 100);
       publish();

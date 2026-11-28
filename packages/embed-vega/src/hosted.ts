@@ -244,12 +244,18 @@ export function mountHaneokaStory(container: HTMLElement, options: HaneokaStoryO
       )
         ? []
         : [sourceAssets];
+      const themeId = playerOptions.theme ?? "haneoka";
+      const renderer = playerOptions.renderer;
+      const postTextureAssets = themeId === "haneoka" && !renderer?.postTextureResolver && !renderer?.postTextureAssets
+        ? theme.HANEOKA_POST_TEXTURE_ASSETS
+        : undefined;
       child = sdk.mountStory(container, {
         ...playerOptions,
         source,
         server,
         locale: options.locale ?? "ja",
-        theme: playerOptions.theme ?? "haneoka",
+        theme: themeId,
+        ...(postTextureAssets ? { renderer: { ...renderer, postTextureAssets } } : {}),
         plugins: [
           ...theme.haneokaStoryPlugins,
           ...assetPlugins,

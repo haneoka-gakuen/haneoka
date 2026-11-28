@@ -2760,7 +2760,7 @@ export class HomeDashboard extends LitElement {
             visible,
             (id) => id,
             (id) => html`
-              <div class=${`home-board__slot home-board__slot--${id}`}>${this.renderModule(id)}</div>
+              <div class=${`home-board__slot home-board__slot--${id}`} data-home-module=${id}>${this.renderModule(id)}</div>
             `,
           )}
         </div>

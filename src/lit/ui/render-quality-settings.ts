@@ -25,17 +25,18 @@ export class RenderQualitySettings extends LitElement {
     settings: { state: true },
     catalog: { state: true },
     story: { type: Boolean },
+    labels: { attribute: false },
   };
   declare locale: string;
   declare settings: RenderQuality;
   declare story: boolean;
+  declare labels?: Readonly<Record<string, string>>;
   private stopObserving?: () => void;
-  declare private catalog: Catalog;
+  declare private catalog: Catalog | undefined;
   private catalogRequest?: AbortController;
 
   constructor() {
     super();
-    this.catalog = initializeI18nClient().current();
     this.locale = "en";
     this.settings = readRenderQuality();
     this.story = false;
@@ -59,10 +60,11 @@ export class RenderQualitySettings extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues) {
-    if (!changed.has("locale")) return;
+    if (!changed.has("locale") || this.labels) return;
     this.catalogRequest?.abort();
     const locale = isLocale(this.locale) ? this.locale : "en";
     const client = initializeI18nClient();
+    this.catalog ??= client.current();
     if (client.current().locale === locale) {
       this.catalog = client.current();
       return;
@@ -80,7 +82,7 @@ export class RenderQualitySettings extends LitElement {
   }
 
   private text(key: string) {
-    return this.catalog.text(`media.rendering.${key}`);
+    return this.labels?.[key] ?? this.catalog?.text(`media.rendering.${key}`) ?? "";
   }
 
   render() {
@@ -142,4 +144,4 @@ export class RenderQualitySettings extends LitElement {
   }
 }
 
-customElements.define("render-quality-settings", RenderQualitySettings);
+if (!customElements.get("render-quality-settings")) customElements.define("render-quality-settings", RenderQualitySettings);

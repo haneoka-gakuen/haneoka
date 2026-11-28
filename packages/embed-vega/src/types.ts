@@ -32,6 +32,11 @@ export type StoryEmbedEvent =
 type StoryInput =
   | { readonly document: AdvStory; readonly source?: never }
   | { readonly source: DataSourceInput<AdvStory>; readonly document?: never };
+export type StoryEmbedPresentation = (frame: HTMLElement, viewport: HTMLElement, locale: string) => {
+  readonly plugins: readonly VegaPlugin[];
+  mount(player: VegaPlayerHandle): { update(): void; dispose(): void };
+};
+
 export type MountStoryOptions = StoryInput &
   Omit<EmbedLoaderOptions<AdvStory>, "source"> & {
     /** Existing portable UI by default; Haneoka requires plugins from the ./theme entry. */
@@ -39,6 +44,7 @@ export type MountStoryOptions = StoryInput &
     /** Attribution always remains visible in a reserved corner outside the scene. */
     readonly brandingCorner?: "top-left" | "top-right";
     readonly shell?: false | VegaPlayerShellOptions;
+    readonly presentation?: StoryEmbedPresentation;
     /** Additional model/command providers use Vega's existing plugin contract. */
     readonly plugins?: readonly VegaPlugin[];
     /** Existing sound/cue IDs mapped to playable source URLs or local audio files. */
